@@ -27,7 +27,7 @@ flowchart LR
     CLIENT --> WEB
 ```
 
-## Deployment topology for the free MVP
+## Deployment topology for the free pilot
 
 ```mermaid
 flowchart TB
@@ -67,4 +67,3 @@ flowchart TB
 - Payment provider callbacks are verified and idempotent.
 - Object-storage access is private by default and uses time-limited access where needed.
 - Production databases and Redis are not exposed publicly.
-

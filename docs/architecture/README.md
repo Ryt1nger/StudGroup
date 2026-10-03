@@ -4,3 +4,4 @@ This directory contains system context, component boundaries, data flows, securi
 
 Architecture must preserve approved product rules and versioned contracts.
 
+Current implementation sequence: [Pilot vertical delivery plan](pilot-vertical-slice.md).

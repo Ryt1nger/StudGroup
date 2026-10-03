@@ -15,3 +15,8 @@ Date: YYYY-MM-DD
 ## Consequences
 ```
 
+Accepted decisions:
+
+- [ADR-001: Backend foundation](ADR-001-backend-foundation.md)
+- [ADR-002: Portable pilot deployment](ADR-002-free-mvp-deployment.md)
+- [ADR-003: Pilot vertical delivery](ADR-003-pilot-vertical-delivery.md)
