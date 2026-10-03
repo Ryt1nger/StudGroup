@@ -1,0 +1,32 @@
+name: Feature
+description: Propose a product or engineering feature
+title: "[Feature]: "
+labels: ["feature"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the user or product outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Product
+        - Backend
+        - Frontend
+        - Contract
+        - Infrastructure
+        - Documentation
+    validations:
+      required: true
+
