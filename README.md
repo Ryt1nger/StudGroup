@@ -32,5 +32,9 @@ tests/              Cross-application and end-to-end tests
 
 Backend and frontend are developed independently against versioned contracts in `packages/contracts`. A contract change must be reviewed before either side relies on it.
 
-The technology stack will be selected and recorded during Module 1. Until then, the repository remains framework-neutral.
+Approved product behavior and technical decisions are recorded in Git:
 
+- [Module 0: Product domain rules](docs/product/module-0-domain-rules.md)
+- [Module 1: Technical foundation and infrastructure](docs/product/module-1-technical-foundation.md)
+
+These Markdown files are canonical. PDF exports, mockups, and earlier documentation versions are supporting material and must not define a conflicting implementation.
