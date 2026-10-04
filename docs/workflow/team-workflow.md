@@ -31,6 +31,13 @@ Every pull request must state:
 
 Do not combine unrelated backend and frontend work in one pull request.
 
+## Documentation updates
+
+- Keep one current canonical file per specification and update it in place.
+- Do not add historical product PDFs or duplicate `old`, versioned, `updated`, or `final` documents.
+- Git history provides rollback and audit history.
+- Obsolete documentation is not an input to design, contracts, or implementation.
+
 ## Handoff
 
 1. Product owner approves the behavior.

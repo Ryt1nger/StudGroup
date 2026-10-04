@@ -41,7 +41,9 @@ Approved product behavior and technical decisions are recorded in Git:
 - [MVP implementation boundaries](docs/product/mvp-implementation-boundaries.md)
 - [WebApp screen-to-data matrix](docs/product/screen-data-matrix.md)
 
-These Markdown files are canonical. PDF exports, mockups, and earlier documentation versions are supporting material and must not define a conflicting implementation.
+These Markdown files are canonical. Each specification is a living document and is updated in place. Git history preserves prior revisions.
+
+Historical product documents, including `StudGroup documentation v0.3`, are obsolete and must not be reviewed, reconciled, copied into the repository, or used for implementation. Mockups describe visual intent only and cannot redefine product behavior.
 
 The current implementation milestone is the first vertical slice: a Telegram text message becomes a sourced homework card visible in the WebApp.
 

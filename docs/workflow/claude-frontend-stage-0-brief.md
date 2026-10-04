@@ -46,15 +46,18 @@ Read the following repository documents in order:
 9. `docs/workflow/team-workflow.md`
 10. `packages/contracts/README.md`
 
-Priority when sources disagree:
+Priority when current sources disagree:
 
 1. Latest explicit product-owner decision committed in the canonical Markdown specifications.
 2. Approved OpenAPI contract.
 3. This handoff.
 4. Design mockups and assets.
-5. Earlier PDFs, archive documents, and chat summaries.
 
 Mockups describe visual intent. They do not override approved roles, statuses, permissions, retention, or data behavior.
+
+Do not open, compare, reconcile, cite, or preserve `StudGroup documentation v0.3`, earlier PDFs, archive documents, or historical chat summaries as product specifications. They are obsolete. In particular, the old price of 499 RUB is invalid; the current approved price is 599 RUB per 30 days per group.
+
+Maintain one current frontend architecture file and one current design handoff file. Apply approved changes directly to them. Do not create `v2`, `updated`, `final`, or similar parallel copies; Git history preserves revisions.
 
 ## 3. Product summary
 
@@ -247,6 +250,8 @@ After the product owner supplies mockups and assets:
 - do not encode text inside raster assets when it should remain selectable UI text;
 - provide graceful behavior when optional illustrations are absent;
 - ensure dark and light versions have identical information architecture.
+
+Evaluate supplied mockups against current canonical Markdown rules only. Do not use historical PDFs to “complete” or correct the current design package.
 
 The design package will be supplied separately by the product owner after this brief.
 

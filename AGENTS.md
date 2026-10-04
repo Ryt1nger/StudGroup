@@ -24,3 +24,10 @@ Codex owns backend implementation, Telegram bot behavior, data model, AI pipelin
 - Record significant technical decisions in `docs/decisions`.
 - Update contracts before implementing behavior consumed by the frontend.
 
+## Documentation lifecycle
+
+- Keep one current living document per module or specification and update it in place.
+- Do not create or retain parallel files named `old`, `v0.3`, `updated`, `final`, `final-2`, or similar historical copies.
+- Git history is the revision archive; the working tree contains only the current approved text.
+- `StudGroup documentation v0.3` is obsolete and must not be reviewed, reconciled, copied, cited, or used as an implementation source.
+- When an approved decision changes, edit the canonical file directly and update affected links and acceptance criteria in the same change.

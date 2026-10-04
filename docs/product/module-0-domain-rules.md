@@ -10,7 +10,7 @@ Final product authority: Ryt1nger
 
 This document is the canonical source of truth for the approved product rules of StudGroup Module 0. It defines product behavior that backend, frontend, AI processing, notifications, payments, and tests must follow.
 
-PDF files and design mockups are presentation artifacts. If they conflict with this document, this document takes precedence. An approved product rule may be changed only after confirmation by the product owner and an update to this file.
+This is a living specification and is updated in place. Git history preserves its revisions. Historical PDFs and product documents are obsolete implementation inputs; design mockups describe visual intent only. An approved product rule may be changed only after confirmation by the product owner and a direct update to this file.
 
 Module 0 defines behavior and domain meaning. Technology choices belong to Module 1 and later architecture decisions.
 
