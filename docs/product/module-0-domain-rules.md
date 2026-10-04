@@ -53,9 +53,16 @@ Module 0 defines behavior and domain meaning. Technology choices belong to Modul
 
 ## 4. Membership and group lifecycle
 
+### Connecting a group
+
+- The headman adds the bot as an administrator with only the required minimum permissions and runs `/connect`.
+- The backend verifies that the caller is a Telegram group administrator before creating the StudGroup group and assigning the headman role.
+- During the closed pilot, group creation additionally requires owner authorization through an allowlist or pilot code.
+
 ### Joining and switching groups
 
-- A user joins through a deep link and `/start`.
+- A student joins through `/start` using a unique one-time invitation code or link generated in a batch by the headman.
+- An invitation is bound to one group, expires after 24 hours, may be revoked, and is consumed by the first successful activation.
 - The backend verifies actual membership in the Telegram chat before activating access.
 - Manual approval by the headman is not required.
 - Switching groups requires a warning and explicit confirmation.
@@ -73,6 +80,15 @@ Module 0 defines behavior and domain meaning. Technology choices belong to Modul
 - The group becomes `deletion_pending`; ingestion, AI processing, notifications, and WebApp mutations stop.
 - The group can be restored for seven days.
 - After seven days, its educational data is deleted according to the approved deletion workflow.
+
+### Importing existing semester context
+
+- The headman may upload a Telegram Desktop export for the current semester during onboarding.
+- The last seven days are analysed completely. Older messages receive a low-cost scan, followed by deep analysis only for still-relevant long-term academic information.
+- Long-term information includes control work, tests, credits, exams, projects, presentations, future deadlines, active schedule patterns, permanent schedule changes, and materials connected to future events.
+- Only active or future facts become cards. Imported evidence is labelled as imported.
+- StudGroup does not request or store the headman's personal Telegram session.
+- Raw imported data follows retention from its original message timestamp. Already-expired raw data is deleted after required extraction and validation.
 
 ## 5. Personal schedule
 

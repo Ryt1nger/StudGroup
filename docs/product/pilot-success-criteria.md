@@ -12,6 +12,8 @@ The first product milestone is not completion of every production-grade capabili
 
 The initial external pilot lasts 30 days and targets five unrelated student groups. Internal testing on the owner's group happens before those five groups are invited.
 
+Pilot group creation is closed. A group must be allowlisted by the product owner or present a valid owner-issued pilot authorization code. Student invitations cannot bypass this group-level gate.
+
 ## 2. Pilot hypothesis
 
 StudGroup creates enough trustworthy value that students use its cards and notifications, headmen spend less time repeating information, and at least some groups voluntarily renew for 599 RUB per 30 days.
@@ -56,6 +58,7 @@ During the pilot the team must be able to answer:
 - Is the oldest actionable background job within its allowed processing window?
 - How many AI tokens and rubles has each group consumed?
 - Has a newer revision ever been rejected or overwritten incorrectly?
+- Did the product owner receive a deduplicated incident alert and recovery notification for every confirmed critical service outage?
 
 The pilot does not require a large dashboard suite. Logs, health checks, a small alert set, and queryable metrics are sufficient when they answer these questions reliably.
 

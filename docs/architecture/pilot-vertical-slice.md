@@ -32,7 +32,10 @@ source action opens the original Telegram message
 
 ### Included
 
-- one configured Telegram group and one active membership path;
+- closed-pilot group authorization;
+- headman `/connect` with Telegram administrator verification;
+- minimal bot administrator-permission validation;
+- batched one-time student invitations and membership verification;
 - text messages only;
 - `homework` extraction only;
 - PostgreSQL persistence for RawMessage, Event, Evidence, and processing state;
@@ -40,8 +43,11 @@ source action opens the original Telegram message
 - one Celery worker with conservative concurrency and Redis as broker;
 - source link or source reference in the API contract;
 - one read endpoint required by the frontend Today screen;
+- a production-quality WebApp shell whose other approved sections expose honest unavailable states;
+- a screen-to-data matrix covering all approved screens without placeholder endpoints;
 - loading, empty, incomplete, and error API states;
 - structured logs, health, readiness, and AI cost attribution;
+- private owner alerts for confirmed DeepSeek incidents and recovery;
 - unit, PostgreSQL integration, contract, and one end-to-end happy-path test.
 
 ### Explicitly excluded
@@ -66,7 +72,19 @@ source action opens the original Telegram message
 - [ ] The frontend can render the documented response without handwritten conflicting types.
 - [ ] The source action identifies the original Telegram message.
 - [ ] AI tokens and estimated cost are attributed to the group and extraction.
+- [ ] A DeepSeek outage preserves work, retries safely, and produces one deduplicated owner incident plus recovery alert.
+- [ ] A non-allowlisted group cannot complete `/connect` during the pilot.
 - [ ] The end-to-end path runs locally through Docker Compose.
+
+## 2.1 Onboarding import extension
+
+After the live text path is stable, extend onboarding before broad external pilot use:
+
+- accept a Telegram Desktop export for the current semester;
+- analyse the last seven days completely;
+- cheaply scan older history and deeply process only active long-term academic candidates;
+- mark imported evidence and remove raw imported data whose retention has already expired;
+- present discovered active cards to the headman for one onboarding confirmation pass.
 
 ## 3. Vertical slice 2: edits, corrections, and revision safety
 

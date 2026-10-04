@@ -163,6 +163,8 @@ The MVP includes:
 - external uptime checks;
 - Celery queue, age, retry, and failure monitoring;
 - alerts when API, workers, or scheduled jobs fail;
+- immediate private Telegram incident and recovery alerts to the product owner's allowlisted administrator identity;
+- incident deduplication so one provider outage does not generate one alert per failed job;
 - per-group and per-reasoning-level DeepSeek usage and cost metrics.
 
 A full Prometheus, Grafana, and Loki stack is deferred until real usage justifies the memory and maintenance cost.
@@ -252,3 +254,14 @@ Module 1 is the target architecture. It is not a requirement to complete every o
 - expanded monitoring and capacity planning based on pilot evidence.
 
 P0, P1, and P2 change implementation order only. They do not weaken the domain guarantees of Module 0 for any behavior already exposed to users.
+
+## 17. AI provider boundary
+
+- DeepSeek is the only live provider in the initial MVP.
+- All live calls pass through a single internal `AIProvider` adapter.
+- Domain and application services do not depend on DeepSeek request or response classes.
+- Provider output is validated against strict internal schemas before it may affect domain state.
+- A deterministic fake provider is used by automated tests.
+- Source messages are persisted before an AI task is queued.
+- Failed calls use bounded backoff and recoverable job state; late results must pass message-version and aggregate-revision checks.
+- Multi-provider failover is deferred until availability or quality evidence justifies it.

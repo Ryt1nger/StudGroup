@@ -38,6 +38,8 @@ Approved product behavior and technical decisions are recorded in Git:
 - [Module 1: Technical foundation and infrastructure](docs/product/module-1-technical-foundation.md)
 - [Pilot success criteria](docs/product/pilot-success-criteria.md)
 - [Pilot vertical delivery plan](docs/architecture/pilot-vertical-slice.md)
+- [MVP implementation boundaries](docs/product/mvp-implementation-boundaries.md)
+- [WebApp screen-to-data matrix](docs/product/screen-data-matrix.md)
 
 These Markdown files are canonical. PDF exports, mockups, and earlier documentation versions are supporting material and must not define a conflicting implementation.
 
