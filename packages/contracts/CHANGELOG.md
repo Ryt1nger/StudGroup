@@ -1,5 +1,13 @@
 # Contract changelog
 
+## 0.1.1 — 2026-10-04
+
+- Removed Today pagination from Slice 1, eliminating cross-page section merging.
+- Clarified that personal completion does not change group status or revision.
+- Restricted source actions to backend-built `https://t.me/` URLs.
+- Clarified that CORS trusts the deployed WebApp origin, not Telegram as an origin.
+- Added renderable 200-response examples for session, Today and homework details.
+
 ## 0.1.0 — 2026-10-04
 
 - Added the initial Slice 1 contract for Telegram session bootstrap, Today,

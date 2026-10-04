@@ -24,7 +24,9 @@
 - The frontend sends `Authorization: Bearer <access_token>` and keeps the token
   in memory only. It must not write it to localStorage, IndexedDB, URL parameters,
   analytics, logs or error reports.
-- Production CORS allows only the configured Telegram WebApp origin. It allows
+- Production CORS allows only the configured origin that actually serves the
+  deployed WebApp (for the pilot, its Cloudflare Pages origin). Telegram itself
+  is not added as a CORS origin. The policy allows
   `GET`, `POST`, `PUT` and the `Authorization`/`Content-Type` headers; browser
   credentials are disabled. Explicit local-development origins are configuration,
   never a production wildcard.
@@ -38,6 +40,16 @@ Every mutable homework representation has a monotonically increasing `revision`.
 The completion mutation requires `expected_revision`. A stale write returns HTTP
 409 with error code `revision_conflict`; the client refetches the resource, shows
 the updated state and only then lets the user repeat the action.
+
+The personal completion write does not increment the group-card `revision` and
+does not alter its group `status`. `expected_revision` protects the user from
+marking an obsolete card revision; repeating the same boolean value is idempotent.
+
+## Today response size
+
+Slice 1 returns the complete bounded Today feed without pagination. Backend rules
+already limit `upcoming` to three cards and cards are de-duplicated across the four
+sections. Pagination can be added only with an explicit section-merge contract.
 
 ## Telegram Mini App deep link
 
@@ -59,3 +71,5 @@ the updated state and only then lets the user repeat the action.
 - Numeric confidence and revision values are never displayed to students.
 - Source availability is a normal state. `unavailable` is not rendered as a
   generic application error.
+- `source.action.url` is backend-built and, in Slice 1, may use only an HTTPS URL
+  on the exact `t.me` host. Redirector and arbitrary external hosts are rejected.

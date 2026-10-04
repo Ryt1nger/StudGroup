@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.1.0
+  version: 0.1.1
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -35,6 +35,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionBootstrapResponse'
+              examples:
+                active:
+                  $ref: '#/components/examples/SessionActive'
+                noActiveGroup:
+                  $ref: '#/components/examples/SessionNoActiveGroup'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -44,13 +49,6 @@ paths:
       tags: [Today]
       summary: Get the backend-ordered homework feed for the active group
       operationId: getToday
-      parameters:
-        - name: cursor
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Opaque cursor returned as next_cursor; clients do not parse it.
       responses:
         '200':
           description: Today feed
@@ -58,6 +56,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TodayResponse'
+              examples:
+                populated:
+                  $ref: '#/components/examples/TodayPopulated'
+                empty:
+                  $ref: '#/components/examples/TodayEmpty'
+                delayed:
+                  $ref: '#/components/examples/TodayDelayed'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -78,6 +83,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HomeworkDetail'
+              examples:
+                availableSource:
+                  $ref: '#/components/examples/HomeworkDetailAvailable'
+                unknownDeadlineUnavailableSource:
+                  $ref: '#/components/examples/HomeworkDetailUnavailable'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -227,6 +237,228 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+  examples:
+    SessionActive:
+      summary: Active student session
+      value:
+        access_token: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        token_type: Bearer
+        expires_at: '2026-10-05T00:00:00Z'
+        session:
+          user:
+            id: 11111111-1111-4111-8111-111111111111
+            telegram_user_id: 123456789
+            display_name: Анна
+            username: anna_student
+          access_state: active
+          membership:
+            id: 22222222-2222-4222-8222-222222222222
+            role: student
+            status: active
+            next_check_at: null
+            can_recheck: false
+          group:
+            id: 33333333-3333-4333-8333-333333333333
+            name: ИВТ-21
+            timezone: Europe/Moscow
+            status: active
+            pilot_authorized: true
+          permissions: [today.read, homework.read, homework.completion.write]
+          server_time: '2026-10-04T12:00:00Z'
+    SessionNoActiveGroup:
+      summary: Authenticated user without an activated group
+      value:
+        access_token: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+        token_type: Bearer
+        expires_at: '2026-10-05T00:00:00Z'
+        session:
+          user:
+            id: 11111111-1111-4111-8111-111111111111
+            telegram_user_id: 123456789
+            display_name: Анна
+            username: null
+          access_state: no_active_group
+          membership: null
+          group: null
+          permissions: []
+          server_time: '2026-10-04T12:00:00Z'
+    TodayPopulated:
+      summary: One due-today homework card
+      value:
+        generated_at: '2026-10-04T12:00:00Z'
+        server_time: '2026-10-04T12:00:00Z'
+        group_timezone: Europe/Moscow
+        freshness:
+          last_successful_sync_at: '2026-10-04T11:58:00Z'
+          stale: false
+        processing:
+          state: idle
+          retry_after_seconds: null
+        empty: false
+        sections:
+          - kind: due_today
+            items:
+              - id: 44444444-4444-4444-8444-444444444444
+                type: homework
+                title: ДЗ №12–140
+                subject:
+                  id: 55555555-5555-4555-8555-555555555555
+                  name: Математический анализ
+                summary: Решить задания из методички
+                deadline:
+                  state: known
+                  at: '2026-10-04T20:59:00Z'
+                  date_only: false
+                status: published
+                urgency: urgent
+                visibility: group
+                verification_state: from_group_message
+                revision: 3
+                source:
+                  kind: telegram_group_message
+                  imported: false
+                  availability:
+                    state: available
+                    reason: null
+                processing:
+                  state: none
+                  retry_after_seconds: null
+                significant_update: false
+                significant_updated_at: null
+                my_state:
+                  completion: pending
+                  completed_at: null
+                  completed_revision: null
+                created_at: '2026-10-04T09:20:00Z'
+                updated_at: '2026-10-04T09:20:00Z'
+    TodayEmpty:
+      summary: Successfully loaded empty feed
+      value:
+        generated_at: '2026-10-04T12:00:00Z'
+        server_time: '2026-10-04T12:00:00Z'
+        group_timezone: Europe/Moscow
+        freshness:
+          last_successful_sync_at: '2026-10-04T11:58:00Z'
+          stale: false
+        processing:
+          state: idle
+          retry_after_seconds: null
+        empty: true
+        sections: []
+    TodayDelayed:
+      summary: Feed update is delayed without a fictitious card
+      value:
+        generated_at: '2026-10-04T12:00:00Z'
+        server_time: '2026-10-04T12:00:00Z'
+        group_timezone: Europe/Moscow
+        freshness:
+          last_successful_sync_at: '2026-10-04T11:40:00Z'
+          stale: true
+        processing:
+          state: delayed
+          retry_after_seconds: 30
+        empty: true
+        sections: []
+    HomeworkDetailAvailable:
+      summary: Published homework with an available Telegram source
+      value:
+        id: 44444444-4444-4444-8444-444444444444
+        type: homework
+        title: ДЗ №12–140
+        subject:
+          id: 55555555-5555-4555-8555-555555555555
+          name: Математический анализ
+        summary: Решить задания из методички
+        deadline:
+          state: known
+          at: '2026-10-04T20:59:00Z'
+          date_only: false
+        status: published
+        urgency: urgent
+        visibility: group
+        verification_state: manual_confirmed
+        revision: 3
+        source:
+          kind: telegram_group_message
+          imported: false
+          availability:
+            state: available
+            reason: null
+        processing:
+          state: none
+          retry_after_seconds: null
+        significant_update: false
+        significant_updated_at: null
+        my_state:
+          completion: pending
+          completed_at: null
+          completed_revision: null
+        created_at: '2026-10-04T09:20:00Z'
+        updated_at: '2026-10-04T09:20:00Z'
+        description: Решить задания №12–140 и оформить ответ в PDF.
+        source_detail:
+          kind: telegram_group_message
+          imported: false
+          availability:
+            state: available
+            reason: null
+          message_date: '2026-10-04T09:15:00Z'
+          excerpt: По матану решаем номера 12–140.
+          action:
+            type: open_telegram_link
+            url: https://t.me/c/1234567890/42
+        permissions: [homework.read, homework.completion.write]
+        generated_at: '2026-10-04T12:00:00Z'
+    HomeworkDetailUnavailable:
+      summary: Imported homework with unknown deadline and unavailable source
+      value:
+        id: 66666666-6666-4666-8666-666666666666
+        type: homework
+        title: Подготовить презентацию
+        subject:
+          id: 77777777-7777-4777-8777-777777777777
+          name: Маркетинг
+        summary: Точная дата уточняется
+        deadline:
+          state: unknown
+          at: null
+          date_only: false
+        status: needs_clarification
+        urgency: normal
+        visibility: group
+        verification_state: imported
+        revision: 1
+        source:
+          kind: imported_history
+          imported: true
+          availability:
+            state: unavailable
+            reason: imported_without_link
+        processing:
+          state: none
+          retry_after_seconds: null
+        significant_update: false
+        significant_updated_at: null
+        my_state:
+          completion: pending
+          completed_at: null
+          completed_revision: null
+        created_at: '2026-09-20T10:00:00Z'
+        updated_at: '2026-09-20T10:00:00Z'
+        description: Подготовить презентацию; срок в исходной переписке не указан.
+        source_detail:
+          kind: imported_history
+          imported: true
+          availability:
+            state: unavailable
+            reason: imported_without_link
+          message_date: '2026-09-20T09:55:00Z'
+          excerpt: null
+          action:
+            type: none
+            url: null
+        permissions: [homework.read, homework.completion.write]
+        generated_at: '2026-10-04T12:00:00Z'
   schemas:
     SessionBootstrapRequest:
       type: object
@@ -361,7 +593,6 @@ components:
         - processing
         - empty
         - sections
-        - next_cursor
       properties:
         generated_at:
           type: string
@@ -383,9 +614,6 @@ components:
           description: Ordered by backend; the client preserves section and item order.
           items:
             $ref: '#/components/schemas/TodaySection'
-        next_cursor:
-          type: [string, 'null']
-          description: Opaque pagination cursor, or null when the feed is complete.
     TodaySection:
       type: object
       additionalProperties: false
@@ -465,6 +693,7 @@ components:
         revision:
           type: integer
           minimum: 1
+          description: Group-card revision; personal completion never increments it.
         source:
           $ref: '#/components/schemas/SourceSummary'
         processing:
@@ -603,6 +832,8 @@ components:
         url:
           type: [string, 'null']
           format: uri
+          pattern: '^https://t\.me/'
+          description: Backend-built Telegram message URL; only the https://t.me host is allowed.
     ItemProcessing:
       type: object
       additionalProperties: false
