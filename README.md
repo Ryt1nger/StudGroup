@@ -44,3 +44,5 @@ Approved product behavior and technical decisions are recorded in Git:
 These Markdown files are canonical. PDF exports, mockups, and earlier documentation versions are supporting material and must not define a conflicting implementation.
 
 The current implementation milestone is the first vertical slice: a Telegram text message becomes a sourced homework card visible in the WebApp.
+
+Frontend Stage 0 handoff for Claude: [Claude frontend brief](docs/workflow/claude-frontend-stage-0-brief.md).

@@ -1,5 +1,7 @@
 # Claude working instructions
 
+For the current assignment, read `docs/workflow/claude-frontend-stage-0-brief.md` completely before proposing or implementing frontend work.
+
 ## Role
 
 Claude owns the Telegram WebApp frontend: user interface, client state, accessibility, responsive behavior, and integration with approved API contracts.
@@ -24,4 +26,3 @@ Claude owns the Telegram WebApp frontend: user interface, client state, accessib
 - Never rely on client-side authorization; backend decisions are authoritative.
 - Do not commit secrets, tokens, or production credentials.
 - Include screenshots or a short visual description in UI pull requests.
-

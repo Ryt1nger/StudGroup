@@ -7,6 +7,7 @@
 | Product scope and priority | Product owner | Product owner |
 | Backend, bot, AI, data, integrations | Codex | Product owner |
 | Frontend and WebApp | Claude | Product owner |
+| Visual design, mockups, and assets | ChatGPT designer | Product owner |
 | Shared API contracts | Codex proposes, Claude reviews | Product owner |
 
 ## Branches
@@ -37,4 +38,3 @@ Do not combine unrelated backend and frontend work in one pull request.
 3. Backend and frontend work from that contract.
 4. Contract and integration tests run.
 5. Product owner accepts the result.
-
