@@ -1,0 +1,689 @@
+openapi: 3.1.0
+info:
+  title: StudGroup Slice 1 API
+  version: 0.1.0
+  description: >-
+    Contract for the first live vertical slice. Prepared frontend sections are
+    intentionally absent until their backend behavior is implemented.
+servers:
+  - url: https://api.studgroup.example/v1
+    description: Production placeholder; deployment supplies the real origin.
+security:
+  - bearerAuth: []
+tags:
+  - name: Session
+  - name: Today
+  - name: Homework
+  - name: Membership
+paths:
+  /session/bootstrap:
+    post:
+      tags: [Session]
+      summary: Exchange validated Telegram Mini App data for a StudGroup session
+      security: []
+      operationId: bootstrapSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionBootstrapRequest'
+      responses:
+        '200':
+          description: Authenticated session, including a possible access gate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionBootstrapResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /today:
+    get:
+      tags: [Today]
+      summary: Get the backend-ordered homework feed for the active group
+      operationId: getToday
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Opaque cursor returned as next_cursor; clients do not parse it.
+      responses:
+        '200':
+          description: Today feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /homework/{homework_id}:
+    parameters:
+      - $ref: '#/components/parameters/HomeworkId'
+    get:
+      tags: [Homework]
+      summary: Get one homework card with source details
+      operationId: getHomework
+      responses:
+        '200':
+          description: Homework detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeworkDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '410':
+          $ref: '#/components/responses/Gone'
+  /homework/{homework_id}/completion:
+    parameters:
+      - $ref: '#/components/parameters/HomeworkId'
+    put:
+      tags: [Homework]
+      summary: Set or undo the current student's completion mark
+      operationId: setHomeworkCompletion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetCompletionRequest'
+      responses:
+        '200':
+          description: Updated homework state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeworkDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/RevisionConflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+  /membership/recheck:
+    post:
+      tags: [Membership]
+      summary: Recheck Telegram membership after an access gate
+      operationId: recheckMembership
+      responses:
+        '200':
+          description: Current session access state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionContext'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Opaque 256-bit-or-stronger session token; never a JWT.
+  parameters:
+    HomeworkId:
+      name: homework_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Unauthorized:
+      description: Telegram bootstrap or bearer session is invalid or expired
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            sessionExpired:
+              value:
+                error:
+                  code: session_expired
+                  message: Сессия истекла. Откройте приложение заново.
+                  correlation_id: 01J9Z4A8Z1R9N2Y3P4Q5W6E7T8
+                  retryable: false
+    Forbidden:
+      description: Authenticated user cannot access the active group or resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            membershipSuspended:
+              value:
+                error:
+                  code: membership_suspended
+                  message: Не удалось подтвердить участие в группе.
+                  correlation_id: 01J9Z4A8Z1R9N2Y3P4Q5W6E7T8
+                  retryable: true
+    NotFound:
+      description: Resource is unknown within the active group
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Gone:
+      description: Resource existed but is no longer retained
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            dataExpired:
+              value:
+                error:
+                  code: gone
+                  message: Эти данные больше не хранятся.
+                  correlation_id: 01J9Z4A8Z1R9N2Y3P4Q5W6E7T8
+                  retryable: false
+    RevisionConflict:
+      description: The resource changed after the client last read it
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            staleHomework:
+              value:
+                error:
+                  code: revision_conflict
+                  message: Данные задания изменились. Обновите карточку и повторите действие.
+                  correlation_id: 01J9Z4A8Z1R9N2Y3P4Q5W6E7T8
+                  retryable: true
+                  details:
+                    resource_id: 550e8400-e29b-41d4-a716-446655440000
+                    expected_revision: 3
+                    current_revision: 4
+                    action: refetch
+    RateLimited:
+      description: Request rate limit was reached
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: A transient dependency or server failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    SessionBootstrapRequest:
+      type: object
+      additionalProperties: false
+      required: [init_data]
+      properties:
+        init_data:
+          type: string
+          minLength: 1
+          description: Raw Telegram Mini App initData string, not parsed client data.
+    SessionBootstrapResponse:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_at, session]
+      properties:
+        access_token:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Unpadded base64url encoding of 32 random bytes; never a JWT.
+        token_type:
+          type: string
+          const: Bearer
+        expires_at:
+          type: string
+          format: date-time
+        session:
+          $ref: '#/components/schemas/SessionContext'
+    SessionContext:
+      type: object
+      additionalProperties: false
+      required: [user, access_state, permissions, server_time]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        access_state:
+          $ref: '#/components/schemas/AccessState'
+        membership:
+          oneOf:
+            - $ref: '#/components/schemas/Membership'
+            - type: 'null'
+        group:
+          oneOf:
+            - $ref: '#/components/schemas/Group'
+            - type: 'null'
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/Permission'
+        server_time:
+          type: string
+          format: date-time
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, telegram_user_id, display_name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        telegram_user_id:
+          type: integer
+          format: int64
+        display_name:
+          type: string
+        username:
+          type: [string, 'null']
+    Membership:
+      type: object
+      additionalProperties: false
+      required: [id, role, status, can_recheck]
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/MemberRole'
+        status:
+          type: string
+          enum: [active, suspended, left]
+        next_check_at:
+          type: [string, 'null']
+          format: date-time
+        can_recheck:
+          type: boolean
+    Group:
+      type: object
+      additionalProperties: false
+      required: [id, name, timezone, status, pilot_authorized]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        timezone:
+          type: string
+          example: Europe/Moscow
+        status:
+          type: string
+          enum: [active, deletion_pending, read_only]
+        pilot_authorized:
+          type: boolean
+          description: Always true for a group exposed by an active pilot session.
+    AccessState:
+      type: string
+      enum:
+        - active
+        - no_active_group
+        - membership_suspended
+        - membership_left
+        - group_deletion_pending
+    MemberRole:
+      type: string
+      enum: [student, deputy, headman]
+    Permission:
+      type: string
+      enum:
+        - today.read
+        - homework.read
+        - homework.completion.write
+    TodayResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - generated_at
+        - server_time
+        - group_timezone
+        - freshness
+        - processing
+        - empty
+        - sections
+        - next_cursor
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        server_time:
+          type: string
+          format: date-time
+        group_timezone:
+          type: string
+          example: Europe/Moscow
+        freshness:
+          $ref: '#/components/schemas/Freshness'
+        processing:
+          $ref: '#/components/schemas/FeedProcessing'
+        empty:
+          type: boolean
+        sections:
+          type: array
+          description: Ordered by backend; the client preserves section and item order.
+          items:
+            $ref: '#/components/schemas/TodaySection'
+        next_cursor:
+          type: [string, 'null']
+          description: Opaque pagination cursor, or null when the feed is complete.
+    TodaySection:
+      type: object
+      additionalProperties: false
+      required: [kind, items]
+      properties:
+        kind:
+          type: string
+          enum: [overdue, due_today, new_or_changed, upcoming]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HomeworkSummary'
+    Freshness:
+      type: object
+      additionalProperties: false
+      required: [last_successful_sync_at, stale]
+      properties:
+        last_successful_sync_at:
+          type: string
+          format: date-time
+        stale:
+          type: boolean
+          description: True after 15 minutes without a successful refresh.
+    FeedProcessing:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [idle, updating, delayed]
+        retry_after_seconds:
+          type: [integer, 'null']
+          minimum: 1
+    HomeworkSummary:
+      type: object
+      required:
+        - id
+        - type
+        - title
+        - subject
+        - deadline
+        - status
+        - urgency
+        - visibility
+        - verification_state
+        - revision
+        - source
+        - processing
+        - significant_update
+        - my_state
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          const: homework
+        title:
+          type: string
+        subject:
+          $ref: '#/components/schemas/SubjectRef'
+        summary:
+          type: [string, 'null']
+        deadline:
+          $ref: '#/components/schemas/Deadline'
+        status:
+          $ref: '#/components/schemas/HomeworkStatus'
+        urgency:
+          $ref: '#/components/schemas/Urgency'
+        visibility:
+          $ref: '#/components/schemas/Visibility'
+        verification_state:
+          $ref: '#/components/schemas/VerificationState'
+        revision:
+          type: integer
+          minimum: 1
+        source:
+          $ref: '#/components/schemas/SourceSummary'
+        processing:
+          $ref: '#/components/schemas/ItemProcessing'
+        significant_update:
+          type: boolean
+        significant_updated_at:
+          type: [string, 'null']
+          format: date-time
+        my_state:
+          $ref: '#/components/schemas/MyHomeworkState'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    HomeworkDetail:
+      allOf:
+        - $ref: '#/components/schemas/HomeworkSummary'
+        - type: object
+          required: [description, source_detail, permissions, generated_at]
+          properties:
+            description:
+              type: [string, 'null']
+            source_detail:
+              $ref: '#/components/schemas/SourceDetail'
+            permissions:
+              type: array
+              uniqueItems: true
+              items:
+                $ref: '#/components/schemas/Permission'
+            generated_at:
+              type: string
+              format: date-time
+    SubjectRef:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    Deadline:
+      type: object
+      additionalProperties: false
+      required: [state, date_only]
+      properties:
+        state:
+          type: string
+          enum: [known, unknown]
+        at:
+          type: [string, 'null']
+          format: date-time
+          description: Null when state is unknown.
+        date_only:
+          type: boolean
+          description: True when no exact time was established.
+    HomeworkStatus:
+      type: string
+      description: detected and incomplete_hidden are internal and never returned.
+      enum: [needs_clarification, published, completed, cancelled]
+    Urgency:
+      type: string
+      enum: [normal, urgent, super_urgent]
+      description: Sole source of urgent labels and styling in the client.
+    Visibility:
+      type: string
+      enum: [group, personal]
+    VerificationState:
+      type: string
+      enum:
+        - manual_confirmed
+        - from_group_message
+        - inferred
+        - needs_clarification
+        - imported
+    SourceSummary:
+      type: object
+      required: [kind, imported, availability]
+      properties:
+        kind:
+          $ref: '#/components/schemas/SourceKind'
+        imported:
+          type: boolean
+        availability:
+          $ref: '#/components/schemas/SourceAvailability'
+    SourceDetail:
+      allOf:
+        - $ref: '#/components/schemas/SourceSummary'
+        - type: object
+          required: [message_date, excerpt, action]
+          properties:
+            message_date:
+              type: [string, 'null']
+              format: date-time
+            excerpt:
+              type: [string, 'null']
+            action:
+              $ref: '#/components/schemas/SourceAction'
+    SourceKind:
+      type: string
+      enum:
+        - telegram_group_message
+        - telegram_direct_message
+        - imported_history
+        - manual_entry
+    SourceAvailability:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [available, unavailable]
+        reason:
+          type: [string, 'null']
+          enum:
+            - retention_expired
+            - no_deep_link
+            - message_deleted
+            - no_access
+            - imported_without_link
+            - unknown
+            - null
+    SourceAction:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [open_telegram_link, none]
+        url:
+          type: [string, 'null']
+          format: uri
+    ItemProcessing:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [none, reanalyzing, delayed]
+        retry_after_seconds:
+          type: [integer, 'null']
+          minimum: 1
+    MyHomeworkState:
+      type: object
+      additionalProperties: false
+      required: [completion]
+      properties:
+        completion:
+          type: string
+          enum: [pending, completed]
+        completed_at:
+          type: [string, 'null']
+          format: date-time
+        completed_revision:
+          type: [integer, 'null']
+          minimum: 1
+    SetCompletionRequest:
+      type: object
+      additionalProperties: false
+      required: [completed, expected_revision]
+      properties:
+        completed:
+          type: boolean
+        expected_revision:
+          type: integer
+          minimum: 1
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ApiError'
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [code, message, correlation_id, retryable]
+      properties:
+        code:
+          type: string
+          enum:
+            - unauthenticated
+            - initdata_invalid
+            - initdata_expired
+            - session_expired
+            - no_active_group
+            - not_group_member
+            - membership_suspended
+            - membership_left
+            - group_not_authorized_for_pilot
+            - invitation_expired
+            - invitation_consumed
+            - group_deletion_pending
+            - permission_denied
+            - not_found
+            - gone
+            - revision_conflict
+            - rate_limited
+            - service_unavailable
+            - internal_error
+        message:
+          type: string
+        correlation_id:
+          type: string
+        retryable:
+          type: boolean
+        retry_after_seconds:
+          type: [integer, 'null']
+          minimum: 1
+        field_path:
+          type: [string, 'null']
+          description: JSON Pointer to an invalid request field when applicable.
+        details:
+          type: [object, 'null']
+          additionalProperties: true

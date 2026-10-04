@@ -21,3 +21,4 @@ Accepted decisions:
 - [ADR-002: Portable pilot deployment](ADR-002-free-mvp-deployment.md)
 - [ADR-003: Pilot vertical delivery](ADR-003-pilot-vertical-delivery.md)
 - [ADR-004: Pilot bootstrap and AI operations](ADR-004-pilot-bootstrap-and-ai-operations.md)
+- [ADR-005: WebApp session and optimistic concurrency](ADR-005-webapp-session-and-concurrency.md)

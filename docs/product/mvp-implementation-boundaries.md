@@ -77,6 +77,27 @@ Details not listed here are deliberately deferred until the corresponding slice 
 - Ordinary student invitations do not bypass this group-level gate.
 - The gate is configuration-driven and can be disabled after the pilot without changing membership or group data.
 
+### D9. Slice 1 student UI semantics
+
+- The Slice 1 student feed contains homework cards only. Prepared schedule,
+  subjects and AI sections remain visibly unavailable until their own slices.
+- Chips and actions without implemented behavior are hidden. This includes the
+  mockup-only `Практика`, `Добавлено преподавателем`, calendar and `⋯` controls.
+- Red styling and the `Срочно` label are driven only by the backend `urgency`
+  field. The frontend must not derive urgency from deadline proximity.
+- `Подтверждено` means an explicit confirmation by the headman or deputy.
+  Information published from ordinary group conversation is labelled
+  `Из сообщения группы`.
+- The personal completion action is named `Выполнено мной`, supports undo and
+  uses revision protection. A materially changed card may reappear after it was
+  completed and must say `Изменено после выполнения`.
+- Students never see numeric confidence values or internal revision numbers.
+- The full source is shown on the detail screen. Lists may use the compact labels
+  `Из группы` and `Импортировано`. An unavailable source is a normal retention or
+  access state, not a generic application error.
+- The WebApp follows the Telegram theme automatically and has no manual theme
+  switch in Slice 1.
+
 ## 3. Remaining module boundaries
 
 | Module | Implement now | Deliberately defer |
