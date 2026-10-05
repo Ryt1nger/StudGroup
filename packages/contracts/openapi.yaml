@@ -372,7 +372,7 @@ components:
             starts_at: '2026-10-05T09:00:00+03:00'
             ends_at: '2026-10-05T10:30:00+03:00'
             teacher: Иванов А. С.
-            location: '320'
+            location: Ауд. 320
             status: scheduled
         freshness:
           last_successful_sync_at: '2026-10-04T11:58:00Z'
@@ -570,7 +570,9 @@ components:
         starts_at: {type: string, format: date-time}
         ends_at: {type: string, format: date-time}
         teacher: {type: [string, 'null']}
-        location: {type: [string, 'null']}
+        location:
+          type: [string, 'null']
+          description: Display-ready location text, e.g. «Ауд. 320» or «Зал 2». Clients render it as supplied without adding a prefix.
         status: {type: string, enum: [scheduled]}
     SessionBootstrapRequest:
       type: object

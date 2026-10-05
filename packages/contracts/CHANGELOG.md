@@ -5,6 +5,7 @@
 - Added nullable next_lesson to TodayResponse, selected by backend server time.
 - Added populated, empty and unresolved-week schedule examples.
 - Added schedule.read to the active session example.
+- Aligned example location labels; location is display-ready text without client-added prefixes.
 
 ## 0.2.0 — 2026-10-05
 
