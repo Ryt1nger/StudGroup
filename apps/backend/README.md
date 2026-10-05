@@ -17,7 +17,11 @@ features: `/health`, dependency-aware `/ready`, exact-origin CORS, persistent
 Telegram session bootstrap and group-scoped `/v1/schedule`. Apply database
 migrations with `uv run alembic upgrade head` before startup. Schedule patterns
 and activated memberships currently require provisioning; Telegram onboarding,
-ingestion, homework endpoints and extraction remain in progress. Cancellation
+extraction remain in progress. Telegram webhook text ingestion and homework
+read/completion endpoints are now implemented. Configure TELEGRAM_WEBHOOK_SECRET
+and deliver updates to /v1/telegram/webhook with Telegram's secret header. Delivery
+markers and raw text commit together; pending messages are durable in PostgreSQL.
+The extraction worker is not yet implemented. Cancellation
 and reschedule overrides are not yet exposed.
 
 Run from `apps/backend`:

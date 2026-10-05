@@ -10,7 +10,9 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Integer,
     String,
+    Text,
     Time,
     UniqueConstraint,
     Uuid,
@@ -86,3 +88,59 @@ class WebSession(Base):
         ForeignKey("memberships.id", ondelete="CASCADE")
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RawMessage(Base):
+    __tablename__ = "raw_messages"
+    __table_args__ = (UniqueConstraint("group_id", "telegram_message_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
+    telegram_message_id: Mapped[int] = mapped_column(BigInteger)
+    sender_id: Mapped[int | None] = mapped_column(BigInteger)
+    text: Mapped[str] = mapped_column(Text)
+    message_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    version_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    processing_state: Mapped[str] = mapped_column(String(16), default="pending")
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ReceivedUpdate(Base):
+    __tablename__ = "received_updates"
+    update_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Homework(Base):
+    __tablename__ = "homework"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    raw_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="SET NULL"), unique=True
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    subject_name: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deadline_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(32), default="published")
+    urgency: Mapped[str] = mapped_column(String(16), default="normal")
+    verification_state: Mapped[str] = mapped_column(String(32), default="from_group_message")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    significant_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PersonalCompletion(Base):
+    __tablename__ = "personal_completions"
+    __table_args__ = (UniqueConstraint("homework_id", "user_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    homework_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("homework.id", ondelete="CASCADE"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_revision: Mapped[int | None] = mapped_column(Integer)

@@ -14,6 +14,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from studgroup.api import ApiError, router
+from studgroup.homework import router as homework_router
+from studgroup.ingestion import router as ingestion_router
 
 
 class Settings(BaseSettings):
@@ -22,6 +24,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     webapp_origin: str = "http://localhost:5173"
     telegram_bot_token: str = ""
+    telegram_webhook_secret: str = ""
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -40,6 +43,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="StudGroup", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.include_router(router)
+    app.include_router(ingestion_router)
+    app.include_router(homework_router)
 
     @app.exception_handler(ApiError)
     async def api_error(request, error):
