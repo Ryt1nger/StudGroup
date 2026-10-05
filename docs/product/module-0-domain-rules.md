@@ -294,6 +294,14 @@ Telegram username is used only to start deputy appointment. The stable identity 
 
 ## 15. Subscription and payment
 
+### Today feed display rule (owner update, 2026-10-05)
+
+Today sections are ordered: due_today, overdue, new_or_changed, upcoming.
+A homework item with a known deadline disappears from every Today section at
+exactly 24 hours after its deadline. Earlier-today deadlines already count as
+overdue. This is a display rule, not deletion; unknown deadlines and the existing
+storage/detail access rules remain unchanged.
+
 - Payment method: SBP through T-Bank.
 - Price: `599 RUB` for `30 days` per group.
 - The subscription belongs to `group_id`, not to an individual student.

@@ -1,5 +1,13 @@
 # Contract compatibility
 
+## Today deadline window (0.2.2)
+
+Backend now orders due_today before overdue. Any known deadline at least 24 hours
+in the past is excluded from Today even if the card was recently created/updated.
+Overdue means deadline strictly before server time (including earlier today).
+Unknown deadlines do not expire by this rule. Clients must preserve server order;
+the detail endpoint and existing retention rules are unchanged.
+
 ## Next lesson (0.2.1)
 
 TodayResponse.next_lesson is an additive optional field; the backend supplies it

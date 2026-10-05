@@ -1,5 +1,10 @@
 # Contract changelog
 
+## 0.2.2 — 2026-10-05
+
+- Owner-approved Today behavior: due_today precedes overdue; expired deadlines remain visible for strictly less than 24 hours after the deadline, then disappear from all Today sections.
+- Storage and direct homework reads are unchanged. No response fields changed.
+
 ## 0.2.1 — 2026-10-05
 
 - Added nullable next_lesson to TodayResponse, selected by backend server time.

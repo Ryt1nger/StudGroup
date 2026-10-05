@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.2.1
+  version: 0.2.2
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -731,7 +731,7 @@ components:
           type: boolean
         sections:
           type: array
-          description: Ordered by backend; the client preserves section and item order.
+          description: Ordered by backend (due_today, overdue, new_or_changed, upcoming); the client preserves order. Items are excluded from Today at deadline plus 24 hours, regardless of section. This does not delete stored homework.
           items:
             $ref: '#/components/schemas/TodaySection'
     TodaySection:

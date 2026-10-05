@@ -2,12 +2,46 @@ import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.models import Group, Homework, RawMessage
 
 pytest_plugins = ["test_schedule_api"]
+
+
+@pytest.mark.parametrize(
+    "elapsed_seconds,visible", [(1, True), (86399, True), (86400, False), (86401, False)]
+)
+def test_overdue_disappears_at_exactly_24_hours(client, monkeypatch, elapsed_seconds, visible):
+    import studgroup.homework as homework_api
+
+    now = datetime(2026, 10, 5, 6, tzinfo=UTC)
+    card_id = seed_card(client)
+
+    class ServerClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now.astimezone(tz)
+
+    async def update_deadline():
+        async with AsyncSession(client.app.state.engine) as db:
+            card = await db.get(Homework, uuid.UUID(card_id))
+            card.deadline_at = now - timedelta(seconds=elapsed_seconds)
+            card.created_at = now  # A new card must not bypass the expiry window.
+            card.delete_at = now + timedelta(days=90)
+            await db.commit()
+
+    asyncio.run(update_deadline())
+    monkeypatch.setattr(homework_api, "datetime", ServerClock)
+    headers = {"Authorization": "Bearer valid"}
+    sections = client.get("/v1/today", headers=headers).json()["sections"]
+    ids = [item["id"] for section in sections for item in section["items"]]
+    assert (card_id in ids) is visible
+    if visible:
+        assert sections[0]["kind"] == "overdue"
+    assert client.get(f"/v1/homework/{card_id}", headers=headers).status_code == 200
 
 
 def seed_card(client):

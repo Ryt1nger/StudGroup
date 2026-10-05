@@ -4,7 +4,24 @@ Status: implementation authorized by the owner on 2026-10-05
 
 Date: 2026-10-05
 
+## Coordinated frontend repair: route transitions
+
+At the owner's explicit request, Codex added subtle 180 ms content entrance in
+AppShell. A follow-up repair removes native View Transition snapshots because
+they can flash the glass navigation panel. Do not reintroduce viewTransition
+props on route links or browser root snapshots. Background/navigation stay live.
+BottomNav keeps both active/inactive images mounted with stable sources and
+switches opacity over 120 ms instead of replacing image URLs. Content animation
+does not transform fixed descendants. Reduced-motion disables both animations.
+Preserve these changes and tests/navigationStability.test.tsx when synchronizing
+cloud frontend work. Real Telegram-device animation checks remain pending.
+
 ## Current assignment: start frontend implementation
+
+Owner update 2026-10-05, contract 0.2.2: Today displays due_today before overdue.
+Known deadlines disappear from every Today section at deadline + 24 hours (not
+database deletion). Codex updated mocks/data.ts and tests/todayExpiry.test.ts;
+preserve these changes during cloud sync and regenerate client at next update.
 
 Schedule is included in Slice 1 by the owner's 2026-10-05 decision. Contract
 0.2.1 includes GET /v1/schedule with start/end query dates and schedule.read permission.

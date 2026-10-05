@@ -167,7 +167,7 @@ async def today(group: CurrentGroup, db: Database, authorization: str = Header()
             )
         )
     ).all()
-    buckets = {"overdue": [], "due_today": [], "new_or_changed": [], "upcoming": []}
+    buckets = {"due_today": [], "overdue": [], "new_or_changed": [], "upcoming": []}
     candidates = []
     for row in rows:
         card = await representation(db, row, user, now)
@@ -179,7 +179,9 @@ async def today(group: CurrentGroup, db: Database, authorization: str = Header()
             continue
         deadline = utc(row.deadline_at) if row.deadline_at else None
         due = deadline.astimezone(ZoneInfo(group.timezone)).date() if deadline else None
-        if due and due < current_date:
+        if deadline and now >= deadline + timedelta(hours=24):
+            continue  # Hide from Today, not from storage or the detail endpoint.
+        if deadline and deadline < now:
             buckets["overdue"].append(card)
         elif due == current_date:
             buckets["due_today"].append(card)
