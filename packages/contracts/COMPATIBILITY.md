@@ -1,5 +1,14 @@
 # Contract compatibility
 
+## Next lesson (0.2.1)
+
+TodayResponse.next_lesson is an additive optional field; the backend supplies it
+as null or {state: current|upcoming, lesson: LessonOccurrence}. Selection uses
+server time and group timezone. Current means starts_at <= server_time < ends_at;
+otherwise the earliest future lesson within the next 32 days is selected. Missing
+week anchor never yields a guessed alternating lesson. Existing empty describes
+homework sections only; next_lesson can be present when empty=true.
+
 ## Schedule integration (0.2.0)
 
 `GET /v1/schedule?start=YYYY-MM-DD&end=YYYY-MM-DD` returns an inclusive range

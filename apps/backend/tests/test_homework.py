@@ -87,3 +87,35 @@ def test_conflicting_revision_rejected(client):
 def test_no_token_cannot_read_homework(client):
     card = seed_card(client)
     assert client.get(f"/v1/homework/{card}").status_code == 401
+
+
+def test_today_includes_server_selected_lesson_even_without_homework(client, monkeypatch):
+    import studgroup.homework as homework_api
+
+    class ServerClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 5, 6, 15, tzinfo=UTC).astimezone(tz)
+
+    monkeypatch.setattr(homework_api, "datetime", ServerClock)
+    response = client.get("/v1/today", headers={"Authorization": "Bearer valid"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["empty"] is True  # Homework emptiness does not hide a real lesson.
+    assert body["next_lesson"]["state"] == "current"
+    assert body["next_lesson"]["lesson"]["subject"] == "Математика"
+    assert body["next_lesson"]["lesson"]["starts_at"] == "2026-10-05T09:00:00+03:00"
+
+
+def test_today_returns_null_after_schedule_validity_ends(client, monkeypatch):
+    import studgroup.homework as homework_api
+
+    class ServerClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2027, 2, 1, 6, tzinfo=UTC).astimezone(tz)
+
+    monkeypatch.setattr(homework_api, "datetime", ServerClock)
+    response = client.get("/v1/today", headers={"Authorization": "Bearer valid"})
+    assert response.status_code == 200
+    assert response.json()["next_lesson"] is None

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.2.0
+  version: 0.2.1
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -38,6 +38,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ScheduleResponse'
+              examples:
+                populated:
+                  $ref: '#/components/examples/SchedulePopulated'
+                empty:
+                  $ref: '#/components/examples/ScheduleEmpty'
+                needsClarification:
+                  $ref: '#/components/examples/ScheduleNeedsClarification'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -270,6 +277,43 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   examples:
+    SchedulePopulated:
+      value:
+        generated_at: '2026-10-05T06:00:00Z'
+        group_timezone: Europe/Moscow
+        start: '2026-10-05'
+        end: '2026-10-11'
+        week_state: ready
+        first_week_anchor: '2026-10-05'
+        selected_week: first
+        lessons:
+          - id: '55555555-5555-4555-8555-555555555555:2026-10-05'
+            subject: Математический анализ
+            starts_at: '2026-10-05T09:00:00+03:00'
+            ends_at: '2026-10-05T10:30:00+03:00'
+            teacher: Иванов А. С.
+            location: Ауд. 320
+            status: scheduled
+    ScheduleEmpty:
+      value:
+        generated_at: '2026-10-05T06:00:00Z'
+        group_timezone: Europe/Moscow
+        start: '2026-10-05'
+        end: '2026-10-11'
+        week_state: ready
+        first_week_anchor: null
+        selected_week: null
+        lessons: []
+    ScheduleNeedsClarification:
+      value:
+        generated_at: '2026-10-05T06:00:00Z'
+        group_timezone: Europe/Moscow
+        start: '2026-10-05'
+        end: '2026-10-11'
+        week_state: needs_clarification
+        first_week_anchor: null
+        selected_week: null
+        lessons: []
     SessionActive:
       summary: Active student session
       value:
@@ -295,7 +339,7 @@ components:
             timezone: Europe/Moscow
             status: active
             pilot_authorized: true
-          permissions: [today.read, homework.read, homework.completion.write]
+          permissions: [today.read, homework.read, homework.completion.write, schedule.read]
           server_time: '2026-10-04T12:00:00Z'
     SessionNoActiveGroup:
       summary: Authenticated user without an activated group
@@ -320,6 +364,16 @@ components:
         generated_at: '2026-10-04T12:00:00Z'
         server_time: '2026-10-04T12:00:00Z'
         group_timezone: Europe/Moscow
+        next_lesson:
+          state: upcoming
+          lesson:
+            id: '55555555-5555-4555-8555-555555555555:2026-10-05'
+            subject: Математический анализ
+            starts_at: '2026-10-05T09:00:00+03:00'
+            ends_at: '2026-10-05T10:30:00+03:00'
+            teacher: Иванов А. С.
+            location: '320'
+            status: scheduled
         freshness:
           last_successful_sync_at: '2026-10-04T11:58:00Z'
           stale: false
@@ -408,7 +462,7 @@ components:
         status: published
         urgency: urgent
         visibility: group
-        verification_state: manual_confirmed
+        verification_state: from_group_message
         revision: 3
         source:
           kind: telegram_group_message
@@ -653,6 +707,11 @@ components:
         - empty
         - sections
       properties:
+        next_lesson:
+          description: Backend-selected current or next group lesson within 32 days; null if none.
+          oneOf:
+            - $ref: '#/components/schemas/NextLesson'
+            - type: 'null'
         generated_at:
           type: string
           format: date-time
@@ -685,6 +744,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/HomeworkSummary'
+    NextLesson:
+      type: object
+      additionalProperties: false
+      required: [state, lesson]
+      properties:
+        state: {type: string, enum: [current, upcoming]}
+        lesson:
+          $ref: '#/components/schemas/LessonOccurrence'
     Freshness:
       type: object
       additionalProperties: false

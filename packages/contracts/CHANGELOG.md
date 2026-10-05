@@ -1,5 +1,11 @@
 # Contract changelog
 
+## 0.2.1 — 2026-10-05
+
+- Added nullable next_lesson to TodayResponse, selected by backend server time.
+- Added populated, empty and unresolved-week schedule examples.
+- Added schedule.read to the active session example.
+
 ## 0.2.0 — 2026-10-05
 
 - Added group schedule read API with explicit week anchor and unresolved parity state.

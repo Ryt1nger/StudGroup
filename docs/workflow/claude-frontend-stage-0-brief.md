@@ -7,12 +7,29 @@ Date: 2026-10-05
 ## Current assignment: start frontend implementation
 
 Schedule is included in Slice 1 by the owner's 2026-10-05 decision. Contract
-0.2.0 adds GET /v1/schedule with start/end query dates and schedule.read permission.
+0.2.1 includes GET /v1/schedule with start/end query dates and schedule.read permission.
 Regenerate the client, use the existing schedule mockups, and render the explicit
 week_state=needs_clarification when alternation has no anchor. The endpoint returns
 an inclusive date range (maximum 32 days), lesson timestamps with offset and
-backend ordering. Cancel/reschedule overrides and next-lesson Today integration
-are the next backend increment.
+backend ordering. Cancel/reschedule overrides remain outside this increment.
+
+Backend integration update (2026-10-05):
+
+- Regenerate the client from contract 0.2.1. Schedule populated, empty and
+  needs-clarification examples are now included; SessionActive includes schedule.read.
+- Connect NextClassCard to TodayResponse.next_lesson. It is null or
+  {state: current | upcoming, lesson: LessonOccurrence}. Backend selects it using
+  server time and group timezone, looking from today through the next 31 days.
+- The Today empty flag describes homework sections only. Do not hide a non-null
+  next_lesson just because empty is true. Omitted/null next_lesson hides the card.
+- Choose the initial schedule request week using session.server_time and group
+  timezone, not Date.now(). Advance server time by elapsed monotonic time where
+  needed. Add a test with an intentionally incorrect device date.
+- Current lesson data does not expose lesson type, subject ID, or actual last
+  content update time. Do not invent values or present generated_at as a content
+  update timestamp. These remain explicitly absent until a documented increment.
+- Rerun frontend unit and Playwright tests after regenerating the client. Mock
+  tests are not a substitute for the real-backend acceptance run.
 
 The owner has authorized development. Use the existing majority of mockups and
 assets in `design/` and your current `apps/frontend/DESIGN_HANDOFF.md` and
@@ -20,7 +37,7 @@ assets in `design/` and your current `apps/frontend/DESIGN_HANDOFF.md` and
 
 Deliver a runnable frontend: scaffold the approved stack, Telegram adapter,
 theme tokens, variable Inter, app shell and navigation; generate the API client
-from `packages/contracts/openapi.yaml` (0.1.1). Implement Today, homework detail,
+from `packages/contracts/openapi.yaml` (0.2.1). Implement Today, homework detail,
 source and personal completion using the available designs. Develop against the
 contract examples with development-only mocks until the backend is available.
 

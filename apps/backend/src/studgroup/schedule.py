@@ -56,3 +56,20 @@ def expand(pattern: LessonPattern, start: date, end: date, timezone: str, anchor
             )
         day += timedelta(days=1)
     return result
+
+
+def next_lesson(lessons: list[dict], now: datetime) -> dict | None:
+    """Prefer a running lesson, otherwise the earliest upcoming one."""
+    candidates = [
+        lesson
+        for lesson in lessons
+        if lesson["status"] == "scheduled" and datetime.fromisoformat(lesson["ends_at"]) > now
+    ]
+    candidates.sort(key=lambda lesson: (datetime.fromisoformat(lesson["starts_at"]), lesson["id"]))
+    if not candidates:
+        return None
+    lesson = candidates[0]
+    return {
+        "state": "current" if datetime.fromisoformat(lesson["starts_at"]) <= now else "upcoming",
+        "lesson": lesson,
+    }

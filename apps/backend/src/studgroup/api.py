@@ -150,6 +150,11 @@ async def schedule(
     group: Annotated[Group, Depends(active_group)],
     db: Annotated[AsyncSession, Depends(database)],
 ):
+    return await schedule_data(start, end, group, db)
+
+
+async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):
+    """Shared group calendar projection for schedule and Today; no device clock."""
     if end < start or (end - start).days > 31:
         raise ApiError("invalid_request", "Выберите период до 32 дней", 422)
     patterns = (

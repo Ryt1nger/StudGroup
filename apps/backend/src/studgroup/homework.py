@@ -10,8 +10,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.api import ApiError, active_group, database
+from studgroup.api import ApiError, active_group, database, schedule_data
 from studgroup.models import Group, Homework, PersonalCompletion, RawMessage, WebSession
+from studgroup.schedule import next_lesson
 from studgroup.security import token_hash
 
 router = APIRouter(prefix="/v1")
@@ -203,7 +204,9 @@ async def today(group: CurrentGroup, db: Database, authorization: str = Header()
         .where(RawMessage.group_id == group.id, RawMessage.processing_state == "pending")
         .limit(1)
     )
+    calendar = await schedule_data(current_date, current_date + timedelta(days=31), group, db)
     return {
+        "next_lesson": next_lesson(calendar["lessons"], now),
         "generated_at": now,
         "server_time": now,
         "group_timezone": group.timezone,
