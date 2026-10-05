@@ -1,5 +1,14 @@
 # Contract compatibility
 
+## Schedule integration (0.2.0)
+
+`GET /v1/schedule?start=YYYY-MM-DD&end=YYYY-MM-DD` returns an inclusive range
+of at most 32 days. Occurrences are ordered by starts_at and id. Week alternation
+uses first_week_anchor, never ISO calendar parity. Missing anchor omits alternating
+patterns and sets week_state=needs_clarification; the client must show this state.
+selected_week refers to start. All timestamps include timezone offset.
+Frontend regenerates the client for the new schedule.read permission and error enum.
+
 ## Versioning
 
 - HTTP paths use the major prefix `/v1`.

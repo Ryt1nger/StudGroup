@@ -1,5 +1,11 @@
 # Contract changelog
 
+## 0.2.0 — 2026-10-05
+
+- Added group schedule read API with explicit week anchor and unresolved parity state.
+- Added schedule.read permission and invalid_request error; frontend must regenerate its client.
+- Existing endpoint fields are preserved. Cancellation and reschedule overrides are still being implemented.
+
 ## 0.1.1 — 2026-10-04
 
 - Removed Today pagination from Slice 1, eliminating cross-page section merging.

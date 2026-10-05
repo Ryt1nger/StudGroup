@@ -13,10 +13,12 @@ This application will contain:
 - HTTP API consumed by the WebApp.
 
 The first implemented foundation uses Python and FastAPI. Current executable
-features: `/health`, dependency-aware `/ready`, exact-origin CORS, Telegram
-initData verification and opaque token primitives. Public Slice 1 endpoints,
-ingestion, migrations and extraction are still in progress; the published
-contract describes their target behavior, not their current availability.
+features: `/health`, dependency-aware `/ready`, exact-origin CORS, persistent
+Telegram session bootstrap and group-scoped `/v1/schedule`. Apply database
+migrations with `uv run alembic upgrade head` before startup. Schedule patterns
+and activated memberships currently require provisioning; Telegram onboarding,
+ingestion, homework endpoints and extraction remain in progress. Cancellation
+and reschedule overrides are not yet exposed.
 
 Run from `apps/backend`:
 

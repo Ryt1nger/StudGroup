@@ -13,12 +13,15 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from studgroup.api import ApiError, router
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     database_url: str = "postgresql+asyncpg://studgroup:studgroup@localhost:5432/studgroup"
     redis_url: str = "redis://localhost:6379/0"
     webapp_origin: str = "http://localhost:5173"
+    telegram_bot_token: str = ""
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -35,6 +38,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await app.state.redis.aclose()
 
     app = FastAPI(title="StudGroup", version="0.1.0", lifespan=lifespan)
+    app.state.settings = settings
+    app.include_router(router)
+
+    @app.exception_handler(ApiError)
+    async def api_error(request, error):
+        from uuid import uuid4
+
+        return JSONResponse(
+            {
+                "error": {
+                    "code": error.code,
+                    "message": error.message,
+                    "correlation_id": str(uuid4()),
+                    "retryable": error.status == 503,
+                }
+            },
+            status_code=error.status,
+        )
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[settings.webapp_origin],

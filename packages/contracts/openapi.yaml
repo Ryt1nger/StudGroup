@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.1.1
+  version: 0.2.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -11,11 +11,43 @@ servers:
 security:
   - bearerAuth: []
 tags:
+  - name: Schedule
   - name: Session
   - name: Today
   - name: Homework
   - name: Membership
 paths:
+  /schedule:
+    get:
+      tags: [Schedule]
+      operationId: getSchedule
+      summary: Group schedule expanded for the requested date range
+      parameters:
+        - name: start
+          in: query
+          required: true
+          schema: {type: string, format: date}
+        - name: end
+          in: query
+          required: true
+          schema: {type: string, format: date}
+      responses:
+        '200':
+          description: Up to 32 calendar days; unresolved alternating patterns are omitted explicitly
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: Invalid date range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /session/bootstrap:
     post:
       tags: [Session]
@@ -460,6 +492,32 @@ components:
         permissions: [homework.read, homework.completion.write]
         generated_at: '2026-10-04T12:00:00Z'
   schemas:
+    ScheduleResponse:
+      type: object
+      required: [generated_at, group_timezone, start, end, week_state, first_week_anchor, selected_week, lessons]
+      properties:
+        generated_at: {type: string, format: date-time}
+        group_timezone: {type: string}
+        start: {type: string, format: date}
+        end: {type: string, format: date}
+        week_state: {type: string, enum: [ready, needs_clarification]}
+        first_week_anchor: {type: [string, 'null'], format: date}
+        selected_week: {type: [string, 'null'], enum: [first, second, null]}
+        lessons:
+          type: array
+          items:
+            $ref: '#/components/schemas/LessonOccurrence'
+    LessonOccurrence:
+      type: object
+      required: [id, subject, starts_at, ends_at, teacher, location, status]
+      properties:
+        id: {type: string}
+        subject: {type: string}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        teacher: {type: [string, 'null']}
+        location: {type: [string, 'null']}
+        status: {type: string, enum: [scheduled]}
     SessionBootstrapRequest:
       type: object
       additionalProperties: false
@@ -579,6 +637,7 @@ components:
     Permission:
       type: string
       enum:
+        - schedule.read
         - today.read
         - homework.read
         - homework.completion.write
@@ -884,6 +943,7 @@ components:
         code:
           type: string
           enum:
+            - invalid_request
             - unauthenticated
             - initdata_invalid
             - initdata_expired

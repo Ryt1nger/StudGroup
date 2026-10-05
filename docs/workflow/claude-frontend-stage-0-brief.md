@@ -6,6 +6,14 @@ Date: 2026-10-05
 
 ## Current assignment: start frontend implementation
 
+Schedule is included in Slice 1 by the owner's 2026-10-05 decision. Contract
+0.2.0 adds GET /v1/schedule with start/end query dates and schedule.read permission.
+Regenerate the client, use the existing schedule mockups, and render the explicit
+week_state=needs_clarification when alternation has no anchor. The endpoint returns
+an inclusive date range (maximum 32 days), lesson timestamps with offset and
+backend ordering. Cancel/reschedule overrides and next-lesson Today integration
+are the next backend increment.
+
 The owner has authorized development. Use the existing majority of mockups and
 assets in `design/` and your current `apps/frontend/DESIGN_HANDOFF.md` and
 `FRONTEND_ARCHITECTURE.md`. Begin work immediately using those materials.
