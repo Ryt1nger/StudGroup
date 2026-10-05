@@ -1,8 +1,37 @@
 # Claude frontend handoff: Stage 0 and Vertical Slice 1
 
-Status: ready for frontend review
+Status: implementation authorized by the owner on 2026-10-05
 
-Date: 2026-10-04
+Date: 2026-10-05
+
+## Current assignment: start frontend implementation
+
+The owner has authorized development. Use the existing majority of mockups and
+assets in `design/` and your current `apps/frontend/DESIGN_HANDOFF.md` and
+`FRONTEND_ARCHITECTURE.md`. Begin work immediately using those materials.
+
+Deliver a runnable frontend: scaffold the approved stack, Telegram adapter,
+theme tokens, variable Inter, app shell and navigation; generate the API client
+from `packages/contracts/openapi.yaml` (0.1.1). Implement Today, homework detail,
+source and personal completion using the available designs. Develop against the
+contract examples with development-only mocks until the backend is available.
+
+Cover loading, empty, offline, access and expired-session states. Session expiry
+requires reopening the Mini App from Telegram; refresh is excluded from Slice 1.
+Use available components for routine states; list genuinely missing designs
+without delaying the runnable portions. Do not introduce new product features.
+
+Keep undefined decorative badges hidden until their semantics are settled. The
+backend owns urgency, permissions and feed ordering. Unimplemented sections show
+`Раздел готовится`. No AI chat, payment or schedule implementation in this slice.
+
+Acceptance: the app starts locally; generated types drive the requests; a mocked
+homework opens details and source; completion and its failure are handled; both
+themes work. Run lint, type checks, tests and production build. Report the run
+command, changed files, screenshots and remaining integration gaps. Update the
+existing documents in place. Own frontend workspace configuration and client
+generation; coordinate any contract change with Codex. Backend and infra remain
+Codex's responsibility.
 
 Product: StudGroup Telegram Mini App
 
