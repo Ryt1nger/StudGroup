@@ -13,9 +13,9 @@ const DAY = 24 * HOUR;
 
 export const exampleSession = contractExamples.SessionActive as unknown as SessionBootstrapResponse;
 export const exampleNoGroup = contractExamples.SessionNoActiveGroup as unknown as SessionBootstrapResponse;
-const exampleSummary = (contractExamples.TodayPopulated.sections[0]!.items[0]) as unknown as HomeworkSummary;
+export const exampleSummary = (contractExamples.TodayPopulated.sections[0]!.items[0]) as unknown as HomeworkSummary;
 const exampleDetailAvailable = contractExamples.HomeworkDetailAvailable as unknown as HomeworkDetail;
-const exampleDetailUnavailable = contractExamples.HomeworkDetailUnavailable as unknown as HomeworkDetail;
+export const exampleDetailUnavailable = contractExamples.HomeworkDetailUnavailable as unknown as HomeworkDetail;
 export const exampleTodayEmpty = contractExamples.TodayEmpty as unknown as TodayResponse;
 export const exampleTodayDelayed = contractExamples.TodayDelayed as unknown as TodayResponse;
 

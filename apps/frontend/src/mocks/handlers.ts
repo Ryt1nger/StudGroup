@@ -4,6 +4,7 @@ import { addManyHomework, buildNextLesson, buildSchedule, buildToday, buildWorld
 import type { Scenario } from './scenarios';
 import { CURSOR_TTL_MS, decodeCursor, encodeCursor, GROUP_TZ, isListFilter, selectHomework } from './homeworkList';
 import { addDays, dayKey } from '../lib/format';
+import { buildReviewedNextLesson, buildReviewedSchedule, buildReviewedWorld, reviewedDeadlineArchived, reviewedDeadlines } from './reviewedDemoData';
 
 function apiError(code: ApiError['code'], message: string, status: number, extra: Partial<ApiError> = {}) {
   const error: ApiError = { code, message, correlation_id: '01J9Z4A8Z1R9N2Y3P4Q5W6E7T8', retryable: status >= 500 || status === 429, ...extra };
@@ -12,7 +13,8 @@ function apiError(code: ApiError['code'], message: string, status: number, extra
 
 /** Stateful, contract-shaped API for development and tests. Personal completion persists in memory. */
 export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'): HttpHandler[] {
-  const world: MockWorld = buildWorld();
+  const publicDemo = import.meta.env.MODE === 'demo';
+  const world: MockWorld = publicDemo ? buildReviewedWorld() : buildWorld();
   if (scenario === 'single') {
     world.sections = world.sections.filter((s) => s.kind === 'due_today');
   }
@@ -45,7 +47,16 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
       if (scenario === 'left') {
         return HttpResponse.json(sessionAt(exampleSession, now(), (s) => ({ ...s, access_state: 'membership_left', membership: { ...s.membership!, status: 'left', can_recheck: false }, permissions: [] })));
       }
-      return HttpResponse.json(sessionAt(exampleSession, now()) satisfies SessionBootstrapResponse);
+      const active = sessionAt(exampleSession, now(), (session) =>
+        publicDemo
+          ? {
+              ...session,
+              user: { ...session.user, telegram_user_id: 0, display_name: 'Демо', username: null },
+              group: session.group ? { ...session.group, name: 'БИ 1.2 · обезличено' } : null,
+            }
+          : session,
+      );
+      return HttpResponse.json(active satisfies SessionBootstrapResponse);
     }),
 
     http.post(url('/membership/recheck'), async () => {
@@ -60,7 +71,9 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
       if (scenario === 'service-error') return apiError('service_unavailable', 'Сервис недоступен.', 503);
       const stamp = { server_time: new Date(now()).toISOString(), generated_at: new Date(now()).toISOString() };
       // `next_lesson` is independent of `empty`: a feed without homework still shows the lesson.
-      const next_lesson = buildNextLesson(now(), scenario === 'next-current' ? 'current' : scenario === 'next-null' ? 'none' : 'upcoming');
+      const next_lesson = publicDemo
+        ? buildReviewedNextLesson(now())
+        : buildNextLesson(now(), scenario === 'next-current' ? 'current' : scenario === 'next-null' ? 'none' : 'upcoming');
       let today: TodayResponse;
       if (scenario === 'empty') today = { ...exampleTodayEmpty, ...stamp };
       else if (scenario === 'delayed') today = { ...exampleTodayDelayed, ...stamp };
@@ -78,10 +91,20 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
       return HttpResponse.json({ ...today, next_lesson } satisfies TodayResponse);
     }),
 
-    http.get(url('/deadlines'), () => HttpResponse.json({ generated_at: new Date(now()).toISOString(), group_timezone: GROUP_TZ, items: [] })),
+    http.get(url('/deadlines'), ({ request }) => {
+      const archive = new URL(request.url).searchParams.get('archive') === 'true';
+      const items = publicDemo ? reviewedDeadlines.filter((item) => reviewedDeadlineArchived(item, now()) === archive) : [];
+      return HttpResponse.json({ generated_at: new Date(now()).toISOString(), group_timezone: GROUP_TZ, items });
+    }),
+
+    http.get(url('/deadlines/:deadline_id'), ({ params }) => {
+      const item = publicDemo ? reviewedDeadlines.find((candidate) => candidate.id === params.deadline_id) : null;
+      if (!item) return apiError('not_found', 'Контрольная точка не найдена', 404);
+      return HttpResponse.json({ generated_at: new Date(now()).toISOString(), group_timezone: GROUP_TZ, item });
+    }),
 
     http.get(url('/lessons/:lesson_id/subject'), ({ params }) => {
-      const next = buildNextLesson(now(), scenario === 'next-current' ? 'current' : 'upcoming');
+      const next = publicDemo ? buildReviewedNextLesson(now()) : buildNextLesson(now(), scenario === 'next-current' ? 'current' : 'upcoming');
       if (!next || next.lesson.id !== params.lesson_id) return apiError('not_found', 'Пара не найдена', 404);
       const homework = buildToday(world, now()).sections.flatMap((section) => section.items).filter((item) => item.subject.name === next.lesson.subject);
       return HttpResponse.json({ generated_at: new Date(now()).toISOString(), group_timezone: GROUP_TZ, lesson: next.lesson, homework, homework_total: homework.length, events_state: 'not_connected', materials_state: 'not_connected' });
@@ -97,7 +120,7 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
       const end = params.get('end');
       if (!start || !end) return apiError('invalid_request', 'Укажите start и end.', 422);
       const variant = scenario === 'schedule-clarify' ? 'clarify' : scenario === 'schedule-empty' ? 'empty' : 'ready';
-      return HttpResponse.json(buildSchedule(start, end, now(), variant) satisfies ScheduleResponse);
+      return HttpResponse.json((publicDemo ? buildReviewedSchedule(start, end, now()) : buildSchedule(start, end, now(), variant)) satisfies ScheduleResponse);
     }),
 
     // Canonical GET /homework (contract 0.3.0): server-side filters, created_at/id ordering, opaque
