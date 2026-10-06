@@ -19,8 +19,9 @@ Native PostgreSQL migrations and concurrent processing tests have passed.
 
 The owner selected Render Free. `studgroup-db` (PostgreSQL 17, Oregon) and
 `studgroup-frontend` are provisioned alongside the existing StudGroup API. The free
-database expires on 2026-11-05; it is not permanent storage. No private chat export
-is uploaded as part of deployment. Actual live Telegram access is a separate step.
+database expires on 2026-11-05; it is not permanent storage. After deployment the
+owner explicitly approved importing their export. Actual live Telegram ingestion
+remains a separate step.
 
 Set `PROCESSING_MODE=embedded` for the free API pilot: one async SQL-inbox loop runs
 inside the API, and Redis is not a readiness requirement. Shutdown cancels the loop;
@@ -42,7 +43,18 @@ API `/health` and `/ready` return 200 with PostgreSQL connected. Frontend `/`,
 `/today`, `/tasks` and `/deadlines` return HTML/200. CORS accepts the frontend
 origin; unauthenticated homework requests return 401. The database's external
 IP allowlist is empty; do not weaken it merely to query through hosted MCP.
-No private chat data has been migrated to Render and AI remains disabled.
+The approved private import committed 3,065 text messages, 14 reviewed homework
+records, 15 academic events and 40 schedule records. Only the explicitly supplied
+Telegram account was given an active student membership; local preview users and
+session tokens were not copied. Reviewed personal completion state was preserved.
+Other history is retained for review, not falsely marked as fully AI-analyzed.
+AI remains disabled. Attachments without text were not uploaded or OCR-processed.
+
+The importer (`studgroup.group_import`) is insert-only and idempotent. The payload
+was transferred via a temporary Render secret file with a checked SHA-256 digest,
+not via Git or public static assets. The private file was removed after committed
+counts were verified; normal API startup was restored. The database's external
+access is closed. Reopen the Telegram Mini App to get a new session with membership.
 
 ### Optional portable container deployment
 
