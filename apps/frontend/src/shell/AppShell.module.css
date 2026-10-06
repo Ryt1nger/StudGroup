@@ -1,0 +1,26 @@
+.shell {
+  position: relative;
+  width: min(100%, 480px);
+  min-height: var(--sg-viewport-height);
+  margin: 0 auto;
+}
+.main {
+  padding-bottom: calc(100px + var(--sg-safe-bottom));
+}
+.screen {
+  animation: screen-enter 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+/* Opacity only: a transform here would re-anchor fixed descendants (completion bar). */
+@keyframes screen-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .screen { animation: none; }
+}
+.offline {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: calc(var(--sg-safe-top) + 8px) 16px 0;
+}

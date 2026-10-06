@@ -1,0 +1,6 @@
+.solid {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 24px; padding: 3px 10px; border-radius: var(--sg-radius-pill);
+  background: var(--sg-gradient-primary); color: var(--sg-color-on-primary);
+  font-size: var(--sg-type-badge-size); font-weight: var(--sg-type-badge-weight); line-height: var(--sg-type-badge-lh);
+}

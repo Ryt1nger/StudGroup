@@ -4,7 +4,9 @@ Owner: Claude.
 
 Current onboarding and Slice 1 requirements: [`docs/workflow/claude-frontend-stage-0-brief.md`](../../docs/workflow/claude-frontend-stage-0-brief.md).
 
-This application will contain the Telegram WebApp and consume versioned contracts from `packages/contracts`.
+Run: `pnpm install` then `pnpm --filter @studgroup/frontend dev:mock` (see `FRONTEND_ARCHITECTURE.md` §16).
+
+This application contains the Telegram WebApp and consume versioned contracts from `packages/contracts`.
 
 Expected product areas include:
 

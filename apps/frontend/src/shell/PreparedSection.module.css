@@ -1,0 +1,7 @@
+.page { padding: 8px 20px 0; }
+.title {
+  margin: 8px 0 0;
+  font-size: var(--sg-type-h1-size);
+  line-height: var(--sg-type-h1-lh);
+  font-weight: var(--sg-type-h1-weight);
+}

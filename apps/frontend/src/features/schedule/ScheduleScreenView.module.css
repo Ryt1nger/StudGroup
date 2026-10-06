@@ -1,0 +1,15 @@
+.page { padding: 8px 20px 0; }
+.title { margin: 12px 0 14px; font-size: var(--sg-type-h1-size); line-height: var(--sg-type-h1-lh); font-weight: var(--sg-type-h1-weight); }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.tab, .tabActive {
+  min-height: var(--sg-hit-min); border: 0; border-radius: var(--sg-radius-pill); cursor: pointer;
+  padding: 0 8px; font-size: 14px; font-weight: 600; background: var(--sg-color-surface); color: var(--sg-color-text-secondary-strong);
+  box-shadow: var(--sg-shadow-card);
+}
+.tabActive { background: var(--sg-gradient-primary); color: var(--sg-color-on-primary); }
+.week {
+  margin-bottom: 8px; padding: 14px 16px; border-radius: var(--sg-radius-lg);
+  background: var(--sg-color-surface); box-shadow: var(--sg-shadow-card); font-size: 16px;
+  color: var(--sg-color-text-secondary-strong);
+}
+.loading { display: grid; gap: 12px; margin-top: 12px; }

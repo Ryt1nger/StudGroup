@@ -1,0 +1,12 @@
+{
+  "name": "studgroup",
+  "private": true,
+  "packageManager": "pnpm@12.9.1",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "frontend": "pnpm --filter @studgroup/frontend",
+    "dev": "pnpm --filter @studgroup/frontend dev",
+    "generate": "pnpm --filter @studgroup/shared-types generate",
+    "check": "pnpm --filter @studgroup/frontend check"
+  }
+}

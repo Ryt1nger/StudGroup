@@ -1,0 +1,2798 @@
+[
+ {
+  "file": "backgrounds-lowres/C-01-glass-card.dark.png",
+  "size": [
+   215,
+   104
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   742,
+   151,
+   957,
+   255
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/C-02-glass-card-active.dark.png",
+  "size": [
+   216,
+   104
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   979,
+   151,
+   1195,
+   255
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/C-03-subtle-gradient-card.dark.png",
+  "size": [
+   192,
+   104
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   1217,
+   151,
+   1409,
+   255
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/C-04-elevated-card.dark.png",
+  "size": [
+   215,
+   114
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   742,
+   326,
+   957,
+   440
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/C-05-wave-accent-card.dark.png",
+  "size": [
+   216,
+   114
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   979,
+   326,
+   1195,
+   440
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/C-06-banner-highlight.dark.png",
+  "size": [
+   192,
+   114
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   1217,
+   326,
+   1409,
+   440
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/D-01-soft-wave.dark.png",
+  "size": [
+   547,
+   40
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   160,
+   803,
+   707,
+   843
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/D-02-layered-waves.dark.png",
+  "size": [
+   547,
+   41
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   160,
+   859,
+   707,
+   900
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/D-03-orb-light-flow.dark.png",
+  "size": [
+   547,
+   51
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   160,
+   916,
+   707,
+   967
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/D-04-gradient-sweep.dark.png",
+  "size": [
+   547,
+   44
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   160,
+   985,
+   707,
+   1029
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/DS-01-gentle-wave.light.png",
+  "size": [
+   318,
+   44
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   47,
+   913,
+   365,
+   957
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/DS-02-layered-waves.light.png",
+  "size": [
+   317,
+   44
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   384,
+   913,
+   701,
+   957
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/DS-03-floating-orbs.light.png",
+  "size": [
+   318,
+   44
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   47,
+   993,
+   365,
+   1037
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/DS-04-curved-gradient.light.png",
+  "size": [
+   317,
+   44
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   384,
+   993,
+   701,
+   1037
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/EL-01-card-base.light.png",
+  "size": [
+   209,
+   110
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   726,
+   169,
+   935,
+   279
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/EL-02-elevated-card.light.png",
+  "size": [
+   210,
+   110
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   957,
+   169,
+   1167,
+   279
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/EL-03-header.light.png",
+  "size": [
+   214,
+   110
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   1189,
+   169,
+   1403,
+   279
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/EL-04-accent-card.light.png",
+  "size": [
+   209,
+   111
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   726,
+   371,
+   935,
+   482
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/EL-05-glass-panel.light.png",
+  "size": [
+   209,
+   111
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   958,
+   371,
+   1167,
+   482
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/EL-06-tag.light.png",
+  "size": [
+   213,
+   111
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   1190,
+   371,
+   1403,
+   482
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/FS-01-main.dark.png",
+  "size": [
+   194,
+   298
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   41,
+   146,
+   235,
+   444
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/FS-01-subtle-blobs.light.png",
+  "size": [
+   193,
+   331
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   47,
+   163,
+   240,
+   494
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/FS-02-soft-waves.light.png",
+  "size": [
+   193,
+   331
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   261,
+   163,
+   454,
+   494
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/FS-02-waves-flow.dark.png",
+  "size": [
+   193,
+   298
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   265,
+   146,
+   458,
+   444
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/FS-03-orb-gradient.dark.png",
+  "size": [
+   190,
+   298
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   488,
+   146,
+   678,
+   444
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/FS-03-orb-gradient.light.png",
+  "size": [
+   192,
+   331
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   475,
+   163,
+   667,
+   494
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/H-01-hero-gradient.dark.png",
+  "size": [
+   447,
+   139
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   40,
+   568,
+   487,
+   707
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/H-02-abstract-waves.dark.png",
+  "size": [
+   422,
+   139
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   513,
+   568,
+   935,
+   707
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/H-03-orb-composition.dark.png",
+  "size": [
+   447,
+   139
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   962,
+   568,
+   1409,
+   707
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/HB-01-hero-gradient.light.png",
+  "size": [
+   435,
+   116
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   47,
+   651,
+   482,
+   767
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/HB-02-wave-flow.light.png",
+  "size": [
+   434,
+   116
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   508,
+   651,
+   942,
+   767
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/HB-03-orb-composition.light.png",
+  "size": [
+   435,
+   116
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   968,
+   651,
+   1403,
+   767
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/O-01-large-orb.dark.png",
+  "size": [
+   146,
+   140
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   772,
+   814,
+   918,
+   954
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/O-02-dual-orbs.dark.png",
+  "size": [
+   145,
+   140
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   935,
+   814,
+   1080,
+   954
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/O-03-wave-shape.dark.png",
+  "size": [
+   145,
+   140
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   1097,
+   814,
+   1242,
+   954
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/O-04-corner-glow.dark.png",
+  "size": [
+   147,
+   140
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_37-6.png",
+  "source_sheet": "B6",
+  "source_bbox": [
+   1260,
+   814,
+   1407,
+   954
+  ],
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/SH-01-top-left-orb.light.png",
+  "size": [
+   145,
+   82
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   747,
+   910,
+   892,
+   992
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/SH-02-bottom-right-orb.light.png",
+  "size": [
+   147,
+   82
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   916,
+   910,
+   1063,
+   992
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/SH-03-wave-shape.light.png",
+  "size": [
+   146,
+   82
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   1087,
+   910,
+   1233,
+   992
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "backgrounds-lowres/SH-04-dual-orbs.light.png",
+  "size": [
+   147,
+   82
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_36-5.png",
+  "source_sheet": "B5",
+  "source_bbox": [
+   1258,
+   910,
+   1405,
+   992
+  ],
+  "theme": "light",
+  "status": "low-res",
+  "note": "Миниатюра из библиотечного листа (~200 px на длинную сторону). НЕ годится для продакшена: нужны экспорты дизайнера (заявлено 1170×2080 и т.д.) либо CSS/SVG-градиенты"
+ },
+ {
+  "file": "brand/app-icon.dark.png",
+  "size": [
+   254,
+   257
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   939,
+   55,
+   1193,
+   312
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "brand/app-icon.light.png",
+  "size": [
+   257,
+   261
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   1129,
+   65,
+   1386,
+   326
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "brand/logo-lockup-with-tagline.dark.png",
+  "size": [
+   860,
+   239
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "theme": "dark",
+  "status": "needs-check",
+  "note": "Тэглайн «AI FOR STUDY GROUPS» вырезан вместе с лого; читаемость мелкого текста проверить; растр, нужен SVG"
+ },
+ {
+  "file": "brand/logo-lockup-with-tagline.light.png",
+  "size": [
+   1834,
+   425
+  ],
+  "source": "Unknown-4.png",
+  "source_sheet": "U4",
+  "theme": "light",
+  "status": "ok",
+  "note": "Максимальное разрешение из пакета; с тэглайном; растр"
+ },
+ {
+  "file": "brand/logo-lockup.dark.png",
+  "size": [
+   860,
+   239
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "theme": "dark",
+  "status": "needs-check",
+  "note": "Горизонтальный лого без тэглайна; растр (SVG от дизайнера обязателен для финальной сборки)"
+ },
+ {
+  "file": "brand/logo-lockup.light.png",
+  "size": [
+   843,
+   206
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "theme": "light",
+  "status": "ok",
+  "note": "Горизонтальный лого без тэглайна; растр (SVG от дизайнера обязателен для финальной сборки)"
+ },
+ {
+  "file": "brand/logo-symbol-lockup.dark.png",
+  "size": [
+   184,
+   239
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   44,
+   35,
+   228,
+   274
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "brand/logo-symbol-lockup.light.png",
+  "size": [
+   155,
+   206
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   55,
+   87,
+   210,
+   293
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "brand/logo-symbol.dark.png",
+  "size": [
+   176,
+   231
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   1223,
+   57,
+   1399,
+   288
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "brand/logo-symbol.light.png",
+  "size": [
+   151,
+   202
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   935,
+   88,
+   1086,
+   290
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "brand/wordmark-with-tagline.dark.png",
+  "size": [
+   662,
+   161
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   242,
+   99,
+   904,
+   260
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": "Вместе с тэглайном «AI FOR STUDY GROUPS»; растр"
+ },
+ {
+  "file": "brand/wordmark.dark.png",
+  "size": [
+   662,
+   135
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   242,
+   99,
+   904,
+   260
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": "Без тэглайна (тэглайн отрезан); растр"
+ },
+ {
+  "file": "brand/wordmark.light.png",
+  "size": [
+   677,
+   144
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   221,
+   133,
+   898,
+   277
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/file-document.dark.png",
+  "size": [
+   124,
+   141
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   220,
+   780,
+   344,
+   921
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/file-document.light.png",
+  "size": [
+   123,
+   141
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   220,
+   691,
+   343,
+   832
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/file-image.dark.png",
+  "size": [
+   124,
+   143
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   559,
+   780,
+   683,
+   923
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/file-image.light.png",
+  "size": [
+   132,
+   141
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   549,
+   692,
+   681,
+   833
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/file-pdf.dark.png",
+  "size": [
+   117,
+   137
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   54,
+   783,
+   171,
+   920
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/file-pdf.light.png",
+  "size": [
+   135,
+   140
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   51,
+   691,
+   186,
+   831
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/file-video.dark.png",
+  "size": [
+   124,
+   140
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   390,
+   780,
+   514,
+   920
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/file-video.light.png",
+  "size": [
+   123,
+   139
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   381,
+   693,
+   504,
+   832
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/status-announcement.dark.png",
+  "size": [
+   161,
+   129
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   890,
+   785,
+   1051,
+   914
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/status-announcement.light.png",
+  "size": [
+   165,
+   124
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   872,
+   707,
+   1037,
+   831
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/status-deadline.dark.png",
+  "size": [
+   142,
+   142
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   1087,
+   786,
+   1229,
+   928
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/status-deadline.light.png",
+  "size": [
+   144,
+   134
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   1083,
+   696,
+   1227,
+   830
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/status-link.dark.png",
+  "size": [
+   116,
+   125
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   728,
+   789,
+   844,
+   914
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/status-link.light.png",
+  "size": [
+   123,
+   123
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   718,
+   704,
+   841,
+   827
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/status-update-change.dark.png",
+  "size": [
+   140,
+   150
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   1270,
+   778,
+   1410,
+   928
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "files-status/status-update-change.light.png",
+  "size": [
+   128,
+   135
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   1270,
+   694,
+   1398,
+   829
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/empty-no-materials.dark.png",
+  "size": [
+   307,
+   274
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   297,
+   401,
+   604,
+   675
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": "Иллюстрация для пустого состояния; использование и тексты утверждает владелец"
+ },
+ {
+  "file": "illustrations/empty-no-materials.light.png",
+  "size": [
+   306,
+   263
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   333,
+   359,
+   639,
+   622
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": "Иллюстрация для пустого состояния; использование и тексты утверждает владелец"
+ },
+ {
+  "file": "illustrations/empty-no-tasks.dark.png",
+  "size": [
+   273,
+   272
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   19,
+   402,
+   292,
+   674
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": "Иллюстрация для пустого состояния; использование и тексты утверждает владелец"
+ },
+ {
+  "file": "illustrations/empty-no-tasks.light.png",
+  "size": [
+   262,
+   241
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   39,
+   365,
+   301,
+   606
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": "Иллюстрация для пустого состояния; использование и тексты утверждает владелец"
+ },
+ {
+  "file": "illustrations/empty-no-updates.dark.png",
+  "size": [
+   269,
+   271
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   605,
+   393,
+   874,
+   664
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": "Иллюстрация для пустого состояния; использование и тексты утверждает владелец"
+ },
+ {
+  "file": "illustrations/empty-no-updates.light.png",
+  "size": [
+   243,
+   245
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   649,
+   366,
+   892,
+   611
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": "Иллюстрация для пустого состояния; использование и тексты утверждает владелец"
+ },
+ {
+  "file": "illustrations/folder-compact.dark.png",
+  "size": [
+   203,
+   234
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   1229,
+   158,
+   1432,
+   392
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/folder-compact.light.png",
+  "size": [
+   165,
+   169
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   1265,
+   177,
+   1430,
+   346
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/folder-large.dark.png",
+  "size": [
+   306,
+   339
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   913,
+   62,
+   1219,
+   401
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/folder-large.light.png",
+  "size": [
+   285,
+   269
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   971,
+   80,
+   1256,
+   349
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/glass-cards.dark.png",
+  "size": [
+   372,
+   219
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   764,
+   671,
+   1136,
+   890
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/glass-cards.light.png",
+  "size": [
+   598,
+   232
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   827,
+   635,
+   1425,
+   867
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/glass-strip.dark.png",
+  "size": [
+   286,
+   139
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   1139,
+   727,
+   1425,
+   866
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/illustration-announcement.dark.png",
+  "size": [
+   295,
+   257
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   880,
+   415,
+   1175,
+   672
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/illustration-announcement.light.png",
+  "size": [
+   257,
+   243
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   907,
+   385,
+   1164,
+   628
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/illustration-deadline.dark.png",
+  "size": [
+   277,
+   267
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   1161,
+   406,
+   1438,
+   673
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/illustration-deadline.light.png",
+  "size": [
+   253,
+   271
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   1169,
+   378,
+   1422,
+   649
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/illustration-materials.dark.png",
+  "size": [
+   403,
+   234
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   19,
+   664,
+   422,
+   898
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/illustration-materials.light.png",
+  "size": [
+   403,
+   255
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   37,
+   618,
+   440,
+   873
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/orbs.dark.png",
+  "size": [
+   306,
+   202
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   439,
+   669,
+   745,
+   871
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/orbs.light.png",
+  "size": [
+   297,
+   258
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   486,
+   624,
+   783,
+   882
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/robot-banner.dark.png",
+  "size": [
+   475,
+   369
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   287,
+   22,
+   762,
+   391
+  ],
+  "theme": "dark",
+  "status": "deferred",
+  "note": "AI-маскот/AI-мотив: не использовать в Slice 1 (Q10, отложенный «Спросить AI»)"
+ },
+ {
+  "file": "illustrations/robot-banner.light.png",
+  "size": [
+   452,
+   337
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   295,
+   14,
+   747,
+   351
+  ],
+  "theme": "light",
+  "status": "deferred",
+  "note": "AI-маскот/AI-мотив: не использовать в Slice 1 (Q10, отложенный «Спросить AI»)"
+ },
+ {
+  "file": "illustrations/robot-mascot.dark.png",
+  "size": [
+   301,
+   336
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   13,
+   46,
+   314,
+   382
+  ],
+  "theme": "dark",
+  "status": "deferred",
+  "note": "AI-маскот/AI-мотив: не использовать в Slice 1 (Q10, отложенный «Спросить AI»)"
+ },
+ {
+  "file": "illustrations/robot-mascot.light.png",
+  "size": [
+   253,
+   308
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   17,
+   34,
+   270,
+   342
+  ],
+  "theme": "light",
+  "status": "deferred",
+  "note": "AI-маскот/AI-мотив: не использовать в Slice 1 (Q10, отложенный «Спросить AI»)"
+ },
+ {
+  "file": "illustrations/sparkle-badge.dark.png",
+  "size": [
+   178,
+   241
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   747,
+   119,
+   925,
+   360
+  ],
+  "theme": "dark",
+  "status": "deferred",
+  "note": "AI-маскот/AI-мотив: не использовать в Slice 1 (Q10, отложенный «Спросить AI»)"
+ },
+ {
+  "file": "illustrations/sparkle-badge.light.png",
+  "size": [
+   174,
+   183
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   777,
+   113,
+   951,
+   296
+  ],
+  "theme": "light",
+  "status": "deferred",
+  "note": "AI-маскот/AI-мотив: не использовать в Slice 1 (Q10, отложенный «Спросить AI»)"
+ },
+ {
+  "file": "illustrations/wave-1.dark.png",
+  "size": [
+   483,
+   179
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   19,
+   884,
+   502,
+   1063
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/wave-1.light.png",
+  "size": [
+   510,
+   188
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   17,
+   880,
+   527,
+   1068
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/wave-2.dark.png",
+  "size": [
+   407,
+   208
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   515,
+   862,
+   922,
+   1070
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/wave-2.light.png",
+  "size": [
+   384,
+   180
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   535,
+   884,
+   919,
+   1064
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/wave-3.dark.png",
+  "size": [
+   505,
+   201
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_18-4.png",
+  "source_sheet": "B4",
+  "source_bbox": [
+   927,
+   864,
+   1432,
+   1065
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "illustrations/wave-3.light.png",
+  "size": [
+   508,
+   192
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_17-3.png",
+  "source_sheet": "B3",
+  "source_bbox": [
+   925,
+   882,
+   1433,
+   1074
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "nav/hires-partial/nav-home.dark.png",
+  "size": [
+   109,
+   110
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   43,
+   524,
+   152,
+   634
+  ],
+  "theme": "dark",
+  "status": "partial",
+  "note": "Высокое разрешение, но неполный набор состояний (см. nav/*.png — полный набор из листа A)"
+ },
+ {
+  "file": "nav/hires-partial/nav-home.light.png",
+  "size": [
+   83,
+   85
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   51,
+   554,
+   134,
+   639
+  ],
+  "theme": "light",
+  "status": "partial",
+  "note": "Высокое разрешение, но неполный набор состояний (см. nav/*.png — полный набор из листа A)"
+ },
+ {
+  "file": "nav/hires-partial/nav-schedule.dark.png",
+  "size": [
+   106,
+   109
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   314,
+   525,
+   420,
+   634
+  ],
+  "theme": "dark",
+  "status": "partial",
+  "note": "Высокое разрешение, но неполный набор состояний (см. nav/*.png — полный набор из листа A)"
+ },
+ {
+  "file": "nav/hires-partial/nav-schedule.light.png",
+  "size": [
+   80,
+   85
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   261,
+   554,
+   341,
+   639
+  ],
+  "theme": "light",
+  "status": "partial",
+  "note": "Высокое разрешение, но неполный набор состояний (см. nav/*.png — полный набор из листа A)"
+ },
+ {
+  "file": "nav/hires-partial/nav-subjects.dark.png",
+  "size": [
+   114,
+   106
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   443,
+   524,
+   557,
+   630
+  ],
+  "theme": "dark",
+  "status": "partial",
+  "note": "Высокое разрешение, но неполный набор состояний (см. nav/*.png — полный набор из листа A)"
+ },
+ {
+  "file": "nav/hires-partial/nav-subjects.light.png",
+  "size": [
+   85,
+   78
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   363,
+   559,
+   448,
+   637
+  ],
+  "theme": "light",
+  "status": "partial",
+  "note": "Высокое разрешение, но неполный набор состояний (см. nav/*.png — полный набор из листа A)"
+ },
+ {
+  "file": "nav/hires-partial/nav-tasks-active-only.dark.png",
+  "size": [
+   107,
+   120
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   176,
+   517,
+   283,
+   637
+  ],
+  "theme": "dark",
+  "status": "partial",
+  "note": "Высокое разрешение, но неполный набор состояний (см. nav/*.png — полный набор из листа A)"
+ },
+ {
+  "file": "nav/hires-partial/nav-tasks-active-only.light.png",
+  "size": [
+   79,
+   86
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   161,
+   553,
+   240,
+   639
+  ],
+  "theme": "light",
+  "status": "partial",
+  "note": "Высокое разрешение, но неполный набор состояний (см. nav/*.png — полный набор из листа A)"
+ },
+ {
+  "file": "nav/home.active.dark.png",
+  "size": [
+   51,
+   53
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_59-3.png",
+  "source_sheet": "A3",
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A3; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(245, 245, 255)"
+ },
+ {
+  "file": "nav/home.active.light.png",
+  "size": [
+   50,
+   52
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_55-1.png",
+  "source_sheet": "A1",
+  "theme": "light",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A1; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(53, 24, 254)"
+ },
+ {
+  "file": "nav/home.inactive.dark.png",
+  "size": [
+   51,
+   54
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_59-3.png",
+  "source_sheet": "A3",
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A3; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(150, 161, 240)"
+ },
+ {
+  "file": "nav/home.inactive.light.png",
+  "size": [
+   49,
+   52
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_55-1.png",
+  "source_sheet": "A1",
+  "theme": "light",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A1; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(97, 103, 145)"
+ },
+ {
+  "file": "nav/schedule.active.dark.png",
+  "size": [
+   51,
+   54
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_59-3.png",
+  "source_sheet": "A3",
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A3; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(245, 245, 255)"
+ },
+ {
+  "file": "nav/schedule.active.light.png",
+  "size": [
+   50,
+   53
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_55-1.png",
+  "source_sheet": "A1",
+  "theme": "light",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A1; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(49, 20, 253)"
+ },
+ {
+  "file": "nav/schedule.inactive.dark.png",
+  "size": [
+   51,
+   53
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_59-3.png",
+  "source_sheet": "A3",
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A3; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(151, 159, 239)"
+ },
+ {
+  "file": "nav/schedule.inactive.light.png",
+  "size": [
+   49,
+   52
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_55-1.png",
+  "source_sheet": "A1",
+  "theme": "light",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A1; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(97, 102, 142)"
+ },
+ {
+  "file": "nav/subjects.active.dark.png",
+  "size": [
+   53,
+   50
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_59-3.png",
+  "source_sheet": "A3",
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A3; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(245, 245, 255)"
+ },
+ {
+  "file": "nav/subjects.active.light.png",
+  "size": [
+   51,
+   50
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_55-1.png",
+  "source_sheet": "A1",
+  "theme": "light",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A1; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(50, 20, 253)"
+ },
+ {
+  "file": "nav/subjects.inactive.dark.png",
+  "size": [
+   55,
+   51
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_59-3.png",
+  "source_sheet": "A3",
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A3; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(157, 165, 242)"
+ },
+ {
+  "file": "nav/subjects.inactive.light.png",
+  "size": [
+   52,
+   49
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_55-1.png",
+  "source_sheet": "A1",
+  "theme": "light",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A1; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(94, 100, 142)"
+ },
+ {
+  "file": "nav/tasks.active.dark.png",
+  "size": [
+   48,
+   55
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_59-3.png",
+  "source_sheet": "A3",
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A3; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(245, 245, 255)"
+ },
+ {
+  "file": "nav/tasks.active.light.png",
+  "size": [
+   48,
+   54
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_55-1.png",
+  "source_sheet": "A1",
+  "theme": "light",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A1; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(60, 34, 253)"
+ },
+ {
+  "file": "nav/tasks.inactive.dark.png",
+  "size": [
+   53,
+   54
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_59-3.png",
+  "source_sheet": "A3",
+  "theme": "dark",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A3; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(155, 164, 238)"
+ },
+ {
+  "file": "nav/tasks.inactive.light.png",
+  "size": [
+   48,
+   53
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_10_55-1.png",
+  "source_sheet": "A1",
+  "theme": "light",
+  "status": "low-res",
+  "note": "Цвет-в-альфу из плитки листа A1; глиф ~50 px — для продакшена нужен SVG; оценённый цвет глифа rgb(100, 106, 146)"
+ },
+ {
+  "file": "subjects/subject-economics.dark.png",
+  "size": [
+   149,
+   169
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   278,
+   322,
+   427,
+   491
+  ],
+  "theme": "dark",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-economics.light.png",
+  "size": [
+   137,
+   143
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   272,
+   356,
+   409,
+   499
+  ],
+  "theme": "light",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-english.dark.png",
+  "size": [
+   162,
+   119
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   758,
+   354,
+   920,
+   473
+  ],
+  "theme": "dark",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-english.light.png",
+  "size": [
+   174,
+   120
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   717,
+   372,
+   891,
+   492
+  ],
+  "theme": "light",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-history.dark.png",
+  "size": [
+   207,
+   158
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   495,
+   333,
+   702,
+   491
+  ],
+  "theme": "dark",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-history.light.png",
+  "size": [
+   173,
+   152
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   475,
+   354,
+   648,
+   506
+  ],
+  "theme": "light",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-marketing.dark.png",
+  "size": [
+   170,
+   169
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   975,
+   324,
+   1145,
+   493
+  ],
+  "theme": "dark",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-marketing.light.png",
+  "size": [
+   158,
+   162
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   958,
+   346,
+   1116,
+   508
+  ],
+  "theme": "light",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-math.dark.png",
+  "size": [
+   135,
+   158
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   66,
+   332,
+   201,
+   490
+  ],
+  "theme": "dark",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-math.light.png",
+  "size": [
+   112,
+   135
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   81,
+   358,
+   193,
+   493
+  ],
+  "theme": "light",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-pe.dark.png",
+  "size": [
+   210,
+   149
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   1199,
+   331,
+   1409,
+   480
+  ],
+  "theme": "dark",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "subjects/subject-pe.light.png",
+  "size": [
+   210,
+   138
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   1185,
+   366,
+   1395,
+   504
+  ],
+  "theme": "light",
+  "status": "deferred",
+  "note": "Не нужен в Slice 1 (C9: цвет/иконка предмета — отдельное решение)"
+ },
+ {
+  "file": "utility/avatar-a.dark.png",
+  "size": [
+   112,
+   113
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   441,
+   650,
+   553,
+   763
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/avatar-a.light.png",
+  "size": [
+   84,
+   85
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   784,
+   970,
+   868,
+   1055
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/notification-dot.dark.png",
+  "size": [
+   70,
+   69
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   600,
+   672,
+   670,
+   741
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/notification-dot.light.png",
+  "size": [
+   54,
+   55
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   915,
+   982,
+   969,
+   1037
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-ai-sparkle.dark.png",
+  "size": [
+   111,
+   113
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   844,
+   524,
+   955,
+   637
+  ],
+  "theme": "dark",
+  "status": "deferred",
+  "note": "Связан с отложенным «Спросить AI» (Q10) — не использовать в Slice 1"
+ },
+ {
+  "file": "utility/util-ai-sparkle.light.png",
+  "size": [
+   85,
+   85
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   671,
+   553,
+   756,
+   638
+  ],
+  "theme": "light",
+  "status": "deferred",
+  "note": "Связан с отложенным «Спросить AI» (Q10) — не использовать в Slice 1"
+ },
+ {
+  "file": "utility/util-attachment.dark.png",
+  "size": [
+   94,
+   103
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   45,
+   656,
+   139,
+   759
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-attachment.light.png",
+  "size": [
+   83,
+   90
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   1142,
+   552,
+   1225,
+   642
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-bell-unread.dark.png",
+  "size": [
+   103,
+   116
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   1114,
+   524,
+   1217,
+   640
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-bell-unread.light.png",
+  "size": [
+   80,
+   88
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   870,
+   552,
+   950,
+   640
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-bell.dark.png",
+  "size": [
+   101,
+   109
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   984,
+   529,
+   1085,
+   638
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-bell.light.png",
+  "size": [
+   76,
+   86
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   779,
+   553,
+   855,
+   639
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-chevron-left.dark.png",
+  "size": [
+   70,
+   99
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   1238,
+   531,
+   1308,
+   630
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-chevron-left.light.png",
+  "size": [
+   45,
+   68
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   976,
+   562,
+   1021,
+   630
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-chevron-right.dark.png",
+  "size": [
+   68,
+   100
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   1342,
+   530,
+   1410,
+   630
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-chevron-right.light.png",
+  "size": [
+   46,
+   68
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   1060,
+   562,
+   1106,
+   630
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-external-link.dark.png",
+  "size": [
+   99,
+   99
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   187,
+   657,
+   286,
+   756
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-external-link.light.png",
+  "size": [
+   84,
+   85
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   1251,
+   554,
+   1335,
+   639
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-more-horizontal.dark.png",
+  "size": [
+   107,
+   48
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   583,
+   556,
+   690,
+   604
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-more-horizontal.light.png",
+  "size": [
+   67,
+   26
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   476,
+   587,
+   543,
+   613
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-more-vertical.dark.png",
+  "size": [
+   48,
+   101
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   342,
+   657,
+   390,
+   758
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-more-vertical.light.png",
+  "size": [
+   29,
+   83
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   1367,
+   548,
+   1396,
+   631
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-search.dark.png",
+  "size": [
+   100,
+   101
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_15-1.png",
+  "source_sheet": "B1",
+  "source_bbox": [
+   717,
+   528,
+   817,
+   629
+  ],
+  "theme": "dark",
+  "status": "ok",
+  "note": ""
+ },
+ {
+  "file": "utility/util-search.light.png",
+  "size": [
+   81,
+   83
+  ],
+  "source": "Изображение ChatGPT 1 окт. 2026 г., 20_27_16-2.png",
+  "source_sheet": "B2",
+  "source_bbox": [
+   567,
+   555,
+   648,
+   638
+  ],
+  "theme": "light",
+  "status": "ok",
+  "note": ""
+ }
+]

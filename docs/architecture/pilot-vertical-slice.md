@@ -12,6 +12,20 @@ The first slice must prove the core value chain before broadening event types or
 
 ## 2. Vertical slice 1: Telegram message to visible homework
 
+### Current delivery progress (2026-10-05)
+
+The owner accepted the Today presentation. The frontend mock screens now include
+Today, homework detail, group Schedule and full Tasks. This closes the mock UI
+stage, not the live vertical slice acceptance criteria below.
+
+The next delivery stage connects real data and AI. GET /homework is implemented
+with server filters and cursor pagination (contract 0.4.0); frontend integration
+is handed to Claude. The strict, bounded DeepSeek text provider adapter is implemented
+and unit-tested; it is not yet wired to durable processing or card publication.
+Remaining: extraction worker, usage budget tracking,
+deduplicated owner incidents/recovery, onboarding and a deployed group test.
+Do not claim live AI or PostgreSQL integration from SQLite unit-test results.
+
 ```text
 Telegram group message
         ↓

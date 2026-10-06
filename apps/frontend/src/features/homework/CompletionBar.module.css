@@ -1,0 +1,12 @@
+.bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--sg-nav-bottom) + var(--sg-nav-height) + var(--sg-action-nav-gap) + var(--sg-safe-bottom));
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(100%, 480px);
+  padding: 0 16px;
+  transform: translateX(-50%);
+}

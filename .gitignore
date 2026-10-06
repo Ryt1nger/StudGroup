@@ -5,11 +5,14 @@
 
 # Dependencies and build output
 node_modules/
+.pnpm-store/
 dist/
 build/
 coverage/
 .next/
 .turbo/
+package-lock.json
+*.tsbuildinfo
 
 # Python
 __pycache__/
@@ -26,6 +29,10 @@ __pycache__/
 
 # Local artifacts
 tmp/
+_tmp_*
+**/_tmp_*
 output/
 *.log
 
+# Local frontend review captures
+Claude outputs/

@@ -4,8 +4,10 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -13,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from studgroup.academic_deadlines import router as deadlines_router
 from studgroup.api import ApiError, router
 from studgroup.homework import router as homework_router
 from studgroup.ingestion import router as ingestion_router
@@ -25,6 +28,9 @@ class Settings(BaseSettings):
     webapp_origin: str = "http://localhost:5173"
     telegram_bot_token: str = ""
     telegram_webhook_secret: str = ""
+    deepseek_api_key: SecretStr = SecretStr("")
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-flash"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -45,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(ingestion_router)
     app.include_router(homework_router)
+    app.include_router(deadlines_router)
 
     @app.exception_handler(ApiError)
     async def api_error(request, error):
@@ -61,6 +68,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
             status_code=error.status,
         )
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request, error):
+        # Never echo request bodies (Telegram initData or other credentials).
+        return await api_error(request, ApiError("invalid_request", "Некорректный запрос", 422))
 
     app.add_middleware(
         CORSMiddleware,

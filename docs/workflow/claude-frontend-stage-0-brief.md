@@ -15,13 +15,51 @@ switches opacity over 120 ms instead of replacing image URLs. Content animation
 does not transform fixed descendants. Reduced-motion disables both animations.
 Preserve these changes and tests/navigationStability.test.tsx when synchronizing
 cloud frontend work. Real Telegram-device animation checks remain pending.
+Owner follow-up: preserve shared --sg-nav-height / --sg-nav-bottom and the
+16px --sg-action-nav-gap. CompletionBar uses these tokens instead of a hardcoded
+76px bottom offset; BottomNav has the matching fixed height. Verify the visible
+gap in both themes and on Telegram devices when extending these screens.
 
 ## Current assignment: start frontend implementation
 
-Owner update 2026-10-05, contract 0.2.2: Today displays due_today before overdue.
-Known deadlines disappear from every Today section at deadline + 24 hours (not
-database deletion). Codex updated mocks/data.ts and tests/todayExpiry.test.ts;
-preserve these changes during cloud sync and regenerate client at next update.
+### Stage 2 handoff: connect Tasks to real API (contract 0.4.0)
+
+Regenerate the client from openapi.yaml. Replace HomeworkListDemo and the
+handwritten GET /homework call with generated listHomework/HomeworkListResponse.
+Enable /tasks outside mock mode. Pass filter=all|today|week|mine|archive to the server.
+Use cursor pagination with limit=50 and a Load more action; merge pages by id,
+then group once into upcoming/unknown/done/overdue/cancelled in the owner-approved
+order. Do not treat a single empty page as a globally empty result.
+Server filters are authoritative: group the returned items without applying the
+selected date/completion filter a second time on the client.
+Reset cursors on filter/session/group changes and on completion mutations/conflicts; refetch
+Today/details as before. Server selection time is frozen per cursor chain;
+use generated_at for the live clock, never device wall time.
+
+Archive contains immediately cancelled and passed-deadline items. Active filters
+and Today exclude them; date-only deadlines stay active until next group day.
+There is no +12h cancellation or +24h overdue display window anymore. Preserve current
+Today rules, icon mapping, 0.90 dark background veil, stable navigation images,
+content-only transitions and the 16px completion-action gap.
+Mocks must implement the canonical response, filters and pagination. Add tests
+for multiple pages, duplicated ids, cancellation boundary, mutation refresh,
+filter reset and cursor expiry (422 invalid_request: restart list once, no loop).
+Show loading/retry/no-access/offline/empty and loading-more failure without losing
+already fetched cards. Run lint/types/unit/build/Playwright; do not claim live
+backend verification until backend and PostgreSQL are actually running.
+
+DeepSeek remains backend-only. This handoff adds no frontend AI credentials or
+requests, no mock data in production and no new visual redesign.
+
+Owner update: hide all personally completed cards in Today, including updated
+ones; omit empty sections/headings. Preserve the mock filter and tests added by
+Codex. Full Tasks screen is now requested as a mock-mode implementation first;
+completed and older overdue items remain available there, not sourced from Today.
+
+Owner update 2026-10-05, contract 0.4.0: add Archive to Tasks. Cancelled and
+passed-deadline items are archived immediately and excluded from Today/active
+Tasks. Personal completion and retention remain unchanged. Preserve the updated
+mock filters, archive helper and tests during synchronization.
 
 Schedule is included in Slice 1 by the owner's 2026-10-05 decision. Contract
 0.2.1 includes GET /v1/schedule with start/end query dates and schedule.read permission.

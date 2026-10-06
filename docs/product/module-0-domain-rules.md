@@ -160,6 +160,24 @@ Supported card types:
 
 Common data includes group, type, title, description, event date and time, source, status, urgency, confidence, visibility, revision, and timestamps.
 
+### Homework deadline resolution
+
+- Resolve relative dates using the original source message timestamp in the group timezone, never the current/import date. A later explicit clarification uses its own message timestamp.
+- «До конца недели» means Sunday of the source message's week, active through that day. «К следующей среде» means the next Wednesday after the source day. An explicit time is preserved.
+- When homework has no stated deadline, use the start of the next scheduled, non-cancelled lesson of the identified subject after the original assignment message.
+- A stated ambiguous deadline is not a missing deadline: do not replace it with the next lesson. Keep it for clarification.
+- If subject matching or timetable coverage is missing or uncertain, leave the deadline unknown. Do not substitute the first lesson in a later known week for a missing historical week.
+- A schedule-derived deadline is an inference, not manual confirmation. Preserve personal completion and increment the homework revision when the deadline changes.
+- For the owner's isolated local test only, the supplied 5–11 October 2026 schedule is copied to 12–18 October. This is a test assumption, not evidence of the real next week's timetable or a semester recurrence.
+
+### Important academic deadlines
+
+- Explicit «КТ» / «контрольная точка» is a control-point deadline, not homework, including essays or projects prepared at home. Tests and graded assessments are separate event types.
+- Respect corrections such as «это не КТ» and distinguish mentions/questions from new tasks. A title alone must not cause frontend reclassification.
+- Keep exact dates, explicit availability/submission periods and approximate dates distinct. «Конец ноября» is not an invented day; a 10–15 October period is not automatically a 15 October submission deadline.
+- Important deadlines have a dedicated list and appear on the relevant subject page. Their importance does not manufacture urgency or red styling.
+- Personal homework completion is not transferred into an assessment grade or control-point completion. Original evidence and conflicting date statements are retained for review.
+
 The core lifecycle is:
 
 `detected -> incomplete_hidden -> needs_clarification -> published -> completed | cancelled`
@@ -296,11 +314,19 @@ Telegram username is used only to start deputy appointment. The stable identity 
 
 ### Today feed display rule (owner update, 2026-10-05)
 
-Today sections are ordered: due_today, overdue, new_or_changed, upcoming.
-A homework item with a known deadline disappears from every Today section at
-exactly 24 hours after its deadline. Earlier-today deadlines already count as
-overdue. This is a display rule, not deletion; unknown deadlines and the existing
-storage/detail access rules remain unchanged.
+Today sections are ordered: due_today, new_or_changed, upcoming.
+Tasks has an Archive filter. Cancelled homework immediately appears only in
+Archive. Known timed deadlines archive at deadline <= server time; date-only
+deadlines archive on the next group calendar day. Archived items are excluded
+from Today and active Tasks filters (all/today/week/mine), regardless of personal
+completion. Unknown deadlines do not automatically archive unless cancelled.
+Archive does not change personal completion, delete rows or revoke detail access;
+normal retention applies. This replaces the previous 24-hour overdue and
+12-hour cancellation display windows.
+Personally completed homework with a known active deadline remains eligible in its
+normal Today section, visibly marked as completed. Completed homework without a
+known deadline remains excluded. Archive rules take precedence. Completion is not reset. Empty sections and their headings
+are omitted; the page title remains. Detail access and retention are unchanged.
 
 - Payment method: SBP through T-Bank.
 - Price: `599 RUB` for `30 days` per group.

@@ -1,0 +1,31 @@
+.day { margin-top: 20px; }
+.heading { margin: 0 0 12px; font-size: 22px; line-height: 28px; font-weight: 700; }
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.item { position: relative; display: grid; grid-template-columns: 52px 20px 1fr; column-gap: 10px; align-items: start; padding-bottom: 12px; }
+.time { padding-top: 14px; font-size: 16px; line-height: 22px; font-weight: 500; color: var(--sg-color-text-secondary-strong); }
+.current .time { color: var(--sg-color-primary-text); font-weight: 700; }
+.node {
+  position: relative; z-index: 1; margin-top: 18px; width: 16px; height: 16px; justify-self: center;
+  border-radius: 50%; background: var(--sg-color-disabled); display: grid; place-items: center; color: #fff;
+}
+.item::before {
+  content: ''; position: absolute; left: calc(52px + 10px + 10px - 1px); top: 26px; bottom: -18px; width: 2px;
+  background: var(--sg-color-border-control); opacity: 0.55;
+}
+.item:last-child::before { display: none; }
+.done .node { background: var(--sg-color-success); }
+.done::before { background: var(--sg-color-success); opacity: 0.6; }
+.current .node { background: var(--sg-color-surface); border: 4px solid var(--sg-color-primary); width: 22px; height: 22px; margin-top: 15px; }
+.card {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 12px; border: 0; text-align: left; color: inherit; font: inherit;
+  border-radius: var(--sg-radius-lg); background: var(--sg-color-surface); box-shadow: var(--sg-shadow-card);
+}
+button.card { cursor: pointer; }
+.cardCurrent { background: color-mix(in srgb, var(--sg-color-primary) 9%, var(--sg-color-surface)); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--sg-color-primary) 35%, transparent), var(--sg-shadow-card); }
+.cancelled .title { text-decoration: line-through; opacity: 0.75; }
+.tile { flex: none; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: var(--sg-tint-primary); color: var(--sg-color-primary-text); }
+.body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.title { font-size: var(--sg-type-card-title-size); line-height: var(--sg-type-card-title-lh); font-weight: var(--sg-type-card-title-weight); }
+.subtitle { font-size: 14px; line-height: 20px; color: var(--sg-color-text-secondary-strong); }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.chevron { flex: none; align-self: center; color: var(--sg-color-text-secondary-strong); }

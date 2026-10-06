@@ -1,0 +1,9 @@
+.page { padding: calc(var(--sg-safe-top) + 48px) 20px 40px; max-width: 480px; margin: 0 auto; }
+.note { text-align: center; color: var(--sg-color-danger-text); font-size: var(--sg-type-meta-size); }
+.splash {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; min-height: var(--sg-viewport-height); padding: 24px;
+}
+.splashLogo { height: 72px; width: auto; }
+.splashText { margin: 0; color: var(--sg-color-text-secondary-strong); }
+.splashBars { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 160px; }

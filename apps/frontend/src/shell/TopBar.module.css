@@ -1,0 +1,14 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(var(--sg-safe-top) + 12px) 20px 4px;
+}
+.symbol {
+  height: 34px;
+  width: auto;
+}
+.wordmark {
+  height: 22px;
+  width: auto;
+}

@@ -101,6 +101,7 @@ class RawMessage(Base):
     message_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     version_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    imported: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     processing_state: Mapped[str] = mapped_column(String(16), default="pending")
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -132,7 +133,34 @@ class Homework(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     significant_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AcademicDeadline(Base):
+    __tablename__ = "academic_deadlines"
+    __table_args__ = (UniqueConstraint("group_id", "import_key"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    raw_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="SET NULL")
+    )
+    import_key: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(String(32))
+    subject: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    date_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    date_hint: Mapped[str | None] = mapped_column(String(1000))
+    needs_clarification: Mapped[bool] = mapped_column(Boolean, default=True)
+    source_message_ids: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 

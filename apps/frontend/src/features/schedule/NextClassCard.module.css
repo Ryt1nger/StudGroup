@@ -1,0 +1,49 @@
+.card {
+  display: flex; flex-direction: column; gap: 10px; width: 100%;
+  padding: 16px 16px 40px; text-align: left; color: inherit; font: inherit;
+  border-radius: 26px; background: var(--sg-nav-glass-bg); border: 1px solid var(--sg-nav-glass-border);
+  box-shadow: var(--sg-nav-glass-shadow);
+  -webkit-backdrop-filter: blur(var(--sg-nav-glass-blur)) saturate(180%); backdrop-filter: blur(var(--sg-nav-glass-blur)) saturate(180%);
+  transition: transform var(--sg-motion-fast) var(--sg-ease);
+  position: relative; overflow: hidden; isolation: isolate;
+}
+button.card { cursor: pointer; }
+/* Designer artwork: stacked glass pages (light) / wave with pages (dark). Never under the text: fades out to the left/top. */
+.decor {
+  opacity: var(--sg-decor-opacity);
+  position: absolute; right: 0; bottom: 0; z-index: -1; pointer-events: none; user-select: none;
+  right: -4px; bottom: -6px; width: 62%; height: 66%; object-fit: cover; object-position: right bottom;
+  -webkit-mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 30%, transparent 78%);
+  mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 30%, transparent 78%);
+}
+:global(:root[data-theme='light']) .decor, :global(:root:not([data-theme])) .decor { mix-blend-mode: multiply; right: -8px; bottom: -10px; width: 118px; height: 104px; object-fit: contain; -webkit-mask-image: radial-gradient(closest-side, #000 62%, transparent 100%); mask-image: radial-gradient(closest-side, #000 62%, transparent 100%); }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.glyph {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 13px;
+  background: var(--sg-chip-bg); border: 1px solid var(--sg-chip-border); box-shadow: var(--sg-tile-glow);
+  color: var(--sg-color-primary-text);
+}
+.heading { flex: 1 1 auto; min-width: 0; white-space: nowrap; font-size: 15px; line-height: 22px; font-weight: 700; }
+.when {
+  padding: 4px 10px; border-radius: var(--sg-radius-pill); background: var(--sg-chip-bg); border: 1px solid var(--sg-chip-border);
+  color: var(--sg-color-primary-text); font-size: 12px; font-weight: 600; line-height: 18px; white-space: nowrap;
+  margin-left: auto;
+}
+.row { display: flex; align-items: flex-start; gap: 8px; }
+.main { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.time { font-size: var(--sg-type-display-size); line-height: var(--sg-type-display-lh); font-weight: var(--sg-type-display-weight); letter-spacing: -0.01em; }
+.subject { font-size: var(--sg-type-h2-size); line-height: var(--sg-type-h2-lh); font-weight: var(--sg-type-h2-weight); }
+.details { color: var(--sg-color-text-secondary-strong); font-size: 15px; line-height: 21px; }
+.go {
+  flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid var(--sg-chip-border); background: var(--sg-glass-bg); color: var(--sg-color-text);
+}
+.badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.updated {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--sg-type-meta-size); line-height: var(--sg-type-meta-lh); color: var(--sg-color-text-secondary-strong);
+}
+:global(:root[data-theme='dark']) .glyph { background: rgba(34, 50, 170, 0.38); color: #dfe6ff; }
+
+button.card:active { transform: scale(0.99); }
+@media (prefers-reduced-motion: reduce) { .card { transition: none; } }

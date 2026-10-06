@@ -1,0 +1,9 @@
+.page { padding: 8px 16px 20px; }
+.title { margin: 12px 4px 4px; font-size: var(--sg-type-h1-size); line-height: 1.15; font-weight: var(--sg-type-h1-weight); overflow-wrap: anywhere; }
+.date { margin: 4px 4px 18px; color: var(--sg-color-text-secondary-strong); font-size: 16px; }
+.panel { padding: 20px; margin: 0; border-radius: var(--sg-radius-lg); background: var(--sg-color-surface); box-shadow: var(--sg-shadow-card); color: var(--sg-color-text-secondary-strong); }
+.time { margin: 0 0 8px; color: var(--sg-color-text); font-size: 24px; font-weight: 750; }
+.note { margin: 4px 0; }
+.section { margin-top: 24px; }
+.section h2 { margin: 0 4px 12px; font-size: var(--sg-type-h2-size); line-height: var(--sg-type-h2-lh); }
+.list { display: flex; flex-direction: column; gap: 12px; }

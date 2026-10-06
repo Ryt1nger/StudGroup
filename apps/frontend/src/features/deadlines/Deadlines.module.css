@@ -1,0 +1,22 @@
+.page { padding: 8px 16px 20px; }
+.page h1 { margin: 12px 4px 16px; font-size: var(--sg-type-h1-size); }
+.list { display: flex; flex-direction: column; gap: 12px; }
+.card { padding: 16px; border-radius: var(--sg-radius-lg); background: var(--sg-color-surface); box-shadow: var(--sg-shadow-card); }
+.summary { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; list-style: none; }
+.summary::-webkit-details-marker { display: none; }
+.summary h3 { margin: 0 0 5px; font-size: 17px; line-height: 24px; }
+.cardText { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.eventLink, .eventLink:visited { display: block; text-decoration: none; color: var(--sg-color-text); }
+.eventLink:focus-visible { outline: 2px solid var(--sg-color-primary-text); outline-offset: 3px; }
+.chevron { flex-shrink: 0; align-self: center; color: var(--sg-color-text-secondary-strong); }
+.summary p { margin: 3px 0; color: var(--sg-color-text-secondary-strong); }
+.icon { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; }
+.when { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; }
+.when svg { flex-shrink: 0; }
+.detailTitle { margin: 12px 4px 16px; overflow-wrap: anywhere; }
+.detailTask { margin: 0 0 12px; font-size: var(--sg-type-h2-size); line-height: var(--sg-type-h2-lh); }
+.detailBody { margin-top: 16px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.body { margin-top: 16px; border-top: 1px solid var(--sg-color-text-secondary-strong); padding-top: 12px; }
+.body p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.warning { color: var(--sg-color-warning-text); }
+.filters { margin-bottom: 20px; }

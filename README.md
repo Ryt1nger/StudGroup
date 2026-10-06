@@ -2,6 +2,9 @@
 
 StudGroup is a Telegram bot and WebApp that turns group-chat messages, files, and schedule changes into structured academic information and useful notifications.
 
+Public mock-data demo: **[open StudGroup WebApp](https://ryt1nger.github.io/StudGroup/)**.
+The demo is isolated from the production backend and does not require a Telegram account.
+
 ## Team
 
 - Product owner, Project Manager, Product Manager: **Ryt1nger**

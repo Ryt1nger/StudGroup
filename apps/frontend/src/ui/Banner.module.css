@@ -1,0 +1,18 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--sg-radius-md);
+  font-size: var(--sg-type-meta-size);
+  font-weight: var(--sg-type-meta-weight);
+  line-height: var(--sg-type-meta-lh);
+}
+.icon { display: inline-flex; flex: none; }
+.icon svg { width: 18px; height: 18px; }
+.text { flex: 1; min-width: 0; }
+.action { flex: none; }
+.info { background: var(--sg-tint-info); color: var(--sg-color-info-text); }
+.warning { background: var(--sg-tint-warning); color: var(--sg-color-warning-text); }
+.danger { background: var(--sg-tint-danger); color: var(--sg-color-danger-text); }
+.success { background: var(--sg-tint-success); color: var(--sg-color-success-text); }

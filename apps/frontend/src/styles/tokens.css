@@ -1,0 +1,187 @@
+/*
+ * StudGroup design tokens.
+ * Colour and typography values are approved by the product owner (FRONTEND_ARCHITECTURE.md §6).
+ * Tokens marked TODO(design) are proposals pending the designer's confirmation.
+ * Components may use only the semantic layer (--sg-color-*, --sg-font-*, ...).
+ */
+:root {
+  /* --- primitives: typography scale (approved) --- */
+  --sg-font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --sg-type-display-size: 34px;
+  --sg-type-display-weight: 700;
+  --sg-type-display-lh: 40px;
+  --sg-type-h1-size: 30px;
+  --sg-type-h1-weight: 750;
+  --sg-type-h1-lh: 36px;
+  --sg-type-h2-size: 20px;
+  --sg-type-h2-weight: 700;
+  --sg-type-h2-lh: 26px;
+  --sg-type-card-title-size: 15px;
+  --sg-type-card-title-weight: 700;
+  --sg-type-card-title-lh: 21px;
+  --sg-type-body-strong-size: 14px;
+  --sg-type-body-strong-weight: 600;
+  --sg-type-body-strong-lh: 20px;
+  --sg-type-body-size: 14px;
+  --sg-type-body-weight: 400;
+  --sg-type-body-lh: 20px;
+  --sg-type-meta-size: 12px;
+  --sg-type-meta-weight: 500;
+  --sg-type-meta-lh: 17px;
+  --sg-type-badge-size: 11px;
+  --sg-type-badge-weight: 600;
+  --sg-type-badge-lh: 16px;
+  --sg-type-button-size: 14px;
+  --sg-type-button-weight: 650;
+  --sg-type-button-lh: 20px;
+  --sg-type-nav-size: 10px;
+  --sg-type-nav-weight: 600;
+  --sg-type-nav-lh: 14px;
+  --sg-nav-height: 70px;
+  --sg-nav-bottom: 8px;
+  --sg-action-nav-gap: 16px;
+
+  /* --- spacing / radius / motion (scale proposal; TODO(design)) --- */
+  --sg-space-1: 4px;
+  --sg-space-2: 8px;
+  --sg-space-3: 12px;
+  --sg-space-4: 16px;
+  --sg-space-5: 20px;
+  --sg-space-6: 24px;
+  --sg-space-8: 32px;
+  --sg-radius-sm: 10px;
+  --sg-radius-md: 16px;
+  --sg-radius-lg: 22px;
+  --sg-radius-pill: 999px;
+  --sg-hit-min: 44px;
+  --sg-motion-fast: 120ms;
+  --sg-motion-base: 200ms;
+  --sg-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* --- viewport / safe area (set by the Telegram adapter) --- */
+  --sg-safe-top: env(safe-area-inset-top, 0px);
+  --sg-safe-right: env(safe-area-inset-right, 0px);
+  --sg-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --sg-safe-left: env(safe-area-inset-left, 0px);
+  --sg-viewport-height: 100dvh;
+}
+
+/* --- light theme (approved values) --- */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --sg-color-background: #f6f8ff;
+  --sg-color-surface: #ffffff;
+  --sg-color-surface-elevated: #fbfcff;
+  --sg-color-text: #0a1024;
+  --sg-color-text-secondary: #68769a;
+  --sg-color-border: #e1e7f2;
+  --sg-color-primary: #5b4dff;
+  --sg-color-on-primary: #ffffff;
+  --sg-gradient-primary: linear-gradient(135deg, #7c5cff 0%, #425bff 100%);
+  --sg-color-success: #12b76a;
+  --sg-color-warning: #f79009;
+  --sg-color-danger: #f04438;
+  --sg-color-info: #2e90fa;
+  --sg-color-disabled: #b7c0d1;
+  --sg-color-focus: #8b5cf6;
+  --sg-color-overlay: rgba(10, 16, 36, 0.36);
+  --sg-shadow-color: rgba(35, 44, 90, 0.12);
+  --sg-shadow-card: 0 6px 20px var(--sg-shadow-color);
+
+  /*
+   * TODO(design): text-safe variants. The approved semantic colours give 2.4–3.8:1 as text on
+   * white in the light theme, below WCAG AA. These darker values (≥4.5:1 on #fff) are proposals.
+   */
+  --sg-color-success-text: #0c804a;
+  --sg-color-warning-text: #ac6406;
+  --sg-color-danger-text: #c0362c;
+  --sg-color-info-text: #2473c8;
+  --sg-color-text-secondary-strong: #535e7b; /* TODO(design): secondary text on background/elevated needs ≥4.5:1 */
+  --sg-color-primary-text: #5b4dff;
+  --sg-color-border-control: #8b97b3; /* TODO(design): interactive control border ≥3:1 */
+
+  --sg-tint-success: rgba(18, 183, 106, 0.12);
+  --sg-tint-warning: rgba(247, 144, 9, 0.14);
+  --sg-tint-danger: rgba(240, 68, 56, 0.1);
+  --sg-tint-info: rgba(46, 144, 250, 0.12);
+  --sg-tint-primary: rgba(91, 77, 255, 0.1);
+  --sg-page-glow: radial-gradient(120% 60% at 80% -10%, rgba(124, 92, 255, 0.12), transparent 60%);
+  /* --- visual layer from the mockups (surfaces, depth, backgrounds) --- */
+  --sg-bg-image: url('../assets/visual/bg.light.png');
+  --sg-glass-bg: rgba(255, 255, 255, 0.84);
+  --sg-glass-border: rgba(255, 255, 255, 0.9);
+  --sg-glass-shadow: 0 6px 18px rgba(76, 84, 170, 0.08), 0 1px 2px rgba(76, 84, 170, 0.05);
+  --sg-bg-veil: rgba(247, 248, 253, 0.55);
+  --sg-tile-filter: saturate(0.88);
+  --sg-decor-opacity: 0.6;
+  --sg-glass-blur: 14px;
+  /* Bottom menu: real glass (translucent, strong blur + saturation, light rim) */
+  --sg-nav-glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.54) 100%);
+  --sg-nav-glass-border: rgba(255, 255, 255, 0.75);
+  --sg-nav-glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(91, 77, 255, 0.06), 0 10px 30px rgba(76, 84, 170, 0.16);
+  --sg-nav-glass-blur: 30px;
+  --sg-chip-bg: rgba(236, 238, 255, 0.9);
+  --sg-chip-border: rgba(91, 77, 255, 0.08);
+  --sg-tile-glow: 0 0 0 transparent;
+}
+
+/* --- dark theme (approved values) --- */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --sg-color-background: #071225;
+  --sg-color-surface: #0c1730;
+  --sg-color-surface-elevated: #111f3b;
+  --sg-color-text: #f7f9fc;
+  --sg-color-text-secondary: #aab6cf;
+  --sg-color-border: #263a65;
+  --sg-color-primary: #7367ff;
+  --sg-color-on-primary: #ffffff;
+  --sg-gradient-primary: linear-gradient(135deg, #8b5cf6 0%, #4c6fff 100%);
+  --sg-color-success: #32d583;
+  --sg-color-warning: #fdb022;
+  --sg-color-danger: #ff5a65;
+  --sg-color-info: #53b1fd;
+  --sg-color-disabled: #52617f;
+  --sg-color-focus: #a78bfa;
+  --sg-color-overlay: rgba(0, 0, 0, 0.55);
+  --sg-shadow-color: rgba(0, 0, 0, 0.45);
+
+  --sg-color-success-text: #32d583;
+  --sg-color-warning-text: #fdb022;
+  --sg-color-danger-text: #ff5a65;
+  --sg-color-info-text: #53b1fd;
+  --sg-color-text-secondary-strong: #aab6cf;
+  --sg-color-primary-text: #a89fff; /* TODO(design): #7367ff gives 4.3:1 on surface */
+  --sg-color-border-control: #5a6f9f;
+
+  --sg-tint-success: rgba(50, 213, 131, 0.14);
+  --sg-tint-warning: rgba(253, 176, 34, 0.14);
+  --sg-tint-danger: rgba(255, 90, 101, 0.14);
+  --sg-tint-info: rgba(83, 177, 253, 0.14);
+  --sg-tint-primary: rgba(115, 103, 255, 0.18);
+  --sg-page-glow: radial-gradient(120% 60% at 80% -10%, rgba(139, 92, 246, 0.22), transparent 60%);
+  --sg-bg-image: url('../assets/visual/bg.dark.png');
+  --sg-glass-bg: linear-gradient(180deg, rgba(20, 30, 72, 0.66) 0%, rgba(12, 20, 52, 0.66) 100%);
+  --sg-glass-border: rgba(120, 140, 230, 0.2);
+  --sg-glass-shadow: inset 0 1px 0 rgba(150, 170, 255, 0.05), 0 8px 22px rgba(0, 0, 16, 0.3);
+  --sg-bg-veil: rgba(6, 10, 30, 0.90);
+  --sg-tile-filter: saturate(0.8) brightness(0.94);
+  --sg-decor-opacity: 0.5;
+  --sg-glass-blur: 16px;
+  --sg-nav-glass-bg: linear-gradient(180deg, rgba(40, 56, 130, 0.52) 0%, rgba(14, 22, 58, 0.42) 100%);
+  --sg-nav-glass-border: rgba(150, 170, 255, 0.26);
+  --sg-nav-glass-shadow: inset 0 1px 0 rgba(190, 205, 255, 0.22), inset 0 -1px 0 rgba(0, 0, 16, 0.25), 0 12px 32px rgba(0, 0, 16, 0.45);
+  --sg-nav-glass-blur: 32px;
+  --sg-chip-bg: rgba(40, 56, 140, 0.3);
+  --sg-chip-border: rgba(110, 135, 255, 0.22);
+  --sg-tile-glow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sg-motion-fast: 0ms;
+    --sg-motion-base: 0ms;
+  }
+}

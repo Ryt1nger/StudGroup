@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.2.2
+  version: 0.6.1
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -88,6 +88,11 @@ paths:
       tags: [Today]
       summary: Get the backend-ordered homework feed for the active group
       operationId: getToday
+      parameters:
+        - in: query
+          name: day
+          schema: {type: string, enum: [today, tomorrow], default: today}
+          description: Tomorrow selects known deadlines on the next calendar day in the group timezone and the first lesson of that day. Unknown deadlines and other days are omitted. Server time remains the actual current time; response shape is unchanged.
       responses:
         '200':
           description: Today feed
@@ -108,6 +113,126 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /lessons/{lesson_id}/subject:
+    get:
+      tags: [Subjects]
+      operationId: getLessonSubject
+      summary: Subject page in the context of a specific lesson occurrence
+      description: Active group only. Uses the lesson occurrence date, never the device date. Homework has an exact normalized subject match, is retained and not archived at current server time, and was assigned no later than the lesson. Known deadlines beyond the lesson calendar day are excluded. Events/control points and materials are explicitly not connected, not falsely empty.
+      parameters:
+        - in: path
+          name: lesson_id
+          required: true
+          schema: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: Subject context
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LessonSubjectResponse'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /deadlines:
+    get:
+      tags: [Deadlines]
+      operationId: listAcademicDeadlines
+      summary: Important academic deadlines, separate from homework
+      parameters:
+        - in: query
+          name: archive
+          schema: {type: boolean, default: false}
+      responses:
+        '200':
+          description: Active or archived retained deadlines for the active group
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, group_timezone, items]
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  group_timezone: {type: string}
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/AcademicDeadline'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /deadlines/{deadline_id}:
+    get:
+      tags: [Deadlines]
+      operationId: getAcademicDeadline
+      summary: Retained event details for the active group
+      parameters:
+        - in: path
+          name: deadline_id
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Subject, task and source-derived date or date window; includes archived events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, group_timezone, item]
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  group_timezone: {type: string}
+                  item: {$ref: '#/components/schemas/AcademicDeadline'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /homework:
+    get:
+      tags: [Homework]
+      operationId: listHomework
+      summary: Full retained homework list for the current student and active group
+      description: >-
+        Active filters exclude archived items. Archive contains cancelled items
+        immediately and items whose known deadline has passed, regardless of personal completion.
+        A timed deadline archives at deadline <= current server time; a date-only
+        deadline archives at the next calendar day in the group's timezone.
+        Never deletes stored homework. Ordering is created_at ascending then id ascending.
+        Cursors are opaque, bound to the current session, group and filter, expire in
+        15 minutes and freeze selection time. This is not an immutable snapshot;
+        changes to item state can affect later pages. Restart pagination after mutations.
+      parameters:
+        - name: filter
+          in: query
+          schema: {type: string, enum: [all, today, week, mine, archive], default: all}
+          description: >-
+            all includes active items, including personally completed; mine is active personal completion.
+            today excludes completed and selects active deadlines on the group's current calendar day.
+            week excludes completed and selects active deadlines in the current
+            group calendar week Monday through Sunday. archive includes all cancelled or past-deadline items.
+            Unknown deadlines never archive automatically unless cancelled.
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - name: cursor
+          in: query
+          schema: {type: string, maxLength: 2048}
+      responses:
+        '200':
+          description: One page; empty items do not imply an empty full list when a cursor was used
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeworkListResponse'
+              examples:
+                empty:
+                  $ref: '#/components/examples/HomeworkListEmpty'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: Invalid filter, page size, expired cursor or cursor from another session/group/filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /homework/{homework_id}:
     parameters:
       - $ref: '#/components/parameters/HomeworkId'
@@ -277,6 +402,15 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   examples:
+    HomeworkListEmpty:
+      value:
+        server_time: '2026-10-05T06:00:00Z'
+        generated_at: '2026-10-05T06:00:00Z'
+        group_timezone: Europe/Moscow
+        freshness: {last_successful_sync_at: '2026-10-05T06:00:00Z', stale: false}
+        processing: {state: idle, retry_after_seconds: null}
+        items: []
+        next_cursor: null
     SchedulePopulated:
       value:
         generated_at: '2026-10-05T06:00:00Z'
@@ -697,6 +831,31 @@ components:
         - today.read
         - homework.read
         - homework.completion.write
+    HomeworkListResponse:
+      type: object
+      additionalProperties: false
+      required: [server_time, generated_at, group_timezone, freshness, processing, items, next_cursor]
+      properties:
+        server_time:
+          type: string
+          format: date-time
+          description: Selection time frozen across a cursor chain; use generated_at for the live clock.
+        generated_at:
+          type: string
+          format: date-time
+        group_timezone:
+          type: string
+        freshness:
+          $ref: '#/components/schemas/Freshness'
+        processing:
+          $ref: '#/components/schemas/FeedProcessing'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HomeworkSummary'
+        next_cursor:
+          type: [string, 'null']
+          description: Pass unchanged with the same filter and session; null means no further page.
     TodayResponse:
       type: object
       additionalProperties: false
@@ -714,6 +873,10 @@ components:
           oneOf:
             - $ref: '#/components/schemas/NextLesson'
             - type: 'null'
+        day_lessons_state:
+          type: string
+          enum: [scheduled, finished, empty, unknown]
+          description: State of the selected group calendar day. Finished means at least one scheduled lesson existed and all have ended according to actual server time. Empty means covered timetable with no scheduled lessons. Unknown means missing coverage or unresolved timetable; never claim lessons finished from next_lesson alone. Optional for backward compatibility. Today UI uses next_lesson only when its start is on the selected day.
         generated_at:
           type: string
           format: date-time
@@ -731,7 +894,7 @@ components:
           type: boolean
         sections:
           type: array
-          description: Ordered by backend (due_today, overdue, new_or_changed, upcoming); the client preserves order. Items are excluded from Today at deadline plus 24 hours, regardless of section. This does not delete stored homework.
+          description: Ordered by backend (due_today, new_or_changed, upcoming); the client preserves order. new_or_changed contains only existing assignments with a significant update within the last 24 hours, not newly created or imported assignments. Import normalization and initial inferred timetable dates do not count as live updates. Personally completed items with a known active deadline remain eligible in their normal sections with my_state preserved; completed items without a known deadline are excluded. Cancelled and past-deadline items are archived and excluded immediately; date-only deadlines remain active through their group calendar day. Empty sections are omitted. These display rules do not delete stored homework. Legacy overdue section kind remains accepted but is no longer returned.
           items:
             $ref: '#/components/schemas/TodaySection'
     TodaySection:
@@ -746,6 +909,50 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/HomeworkSummary'
+    AcademicDeadline:
+      type: object
+      additionalProperties: false
+      required: [id, kind, subject, title, description, deadline_at, date_only, window_start, window_end, date_hint, needs_clarification, source_message_ids]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string, enum: [control_point, assessment, test]}
+        subject: {type: string}
+        title: {type: string}
+        description: {type: string}
+        deadline_at: {type: [string, 'null'], format: date-time}
+        date_only: {type: boolean}
+        window_start: {type: [string, 'null'], format: date-time}
+        window_end: {type: [string, 'null'], format: date-time}
+        date_hint: {type: [string, 'null']}
+        needs_clarification: {type: boolean}
+        source_message_ids: {type: array, items: {type: integer}}
+    LessonSubjectResponse:
+      type: object
+      additionalProperties: false
+      required: [generated_at, group_timezone, lesson, homework, homework_total, events_state, materials_state]
+      properties:
+        generated_at: {type: string, format: date-time}
+        group_timezone: {type: string}
+        lesson: {$ref: '#/components/schemas/LessonOccurrence'}
+        homework:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/HomeworkSummary'}
+        homework_total:
+          type: integer
+          minimum: 0
+          description: Number matching the context. Response includes at most 100; full list remains available in Tasks.
+        events_state:
+          type: string
+          enum: [not_connected, ready]
+          description: Ready indicates connected academic deadlines. Do not infer classification from the homework title on the client.
+        events:
+          type: array
+          items: {$ref: '#/components/schemas/AcademicDeadline'}
+        materials_state:
+          type: string
+          enum: [not_connected]
+          description: Materials are not yet backed by persistence. No invented links or demo assets.
     NextLesson:
       type: object
       additionalProperties: false
@@ -831,6 +1038,10 @@ components:
         significant_updated_at:
           type: [string, 'null']
           format: date-time
+        cancelled_at:
+          type: [string, 'null']
+          format: date-time
+          description: Time cancellation took effect; later edits do not reset it. Cancelled items appear immediately in the archive regardless of whether this timestamp is known. No deletion.
         my_state:
           $ref: '#/components/schemas/MyHomeworkState'
         created_at:

@@ -4,6 +4,17 @@ Status: accepted
 
 Date: 2026-10-04
 
+## Owner update — 2026-10-06: provisional homework deadlines
+
+For homework whose deadline cannot be resolved, use the start of the next scheduled
+lesson of the same subject. If the original message is outside timetable coverage,
+use the next lesson from the current server time as a provisional pilot assumption.
+Do not present this as a date stated in the chat: verification remains inferred.
+Never invent a lesson when the subject or timetable is unavailable. Explicit source
+information takes precedence on re-extraction. Filling missing dates must not change
+already known dates, personal completion marks, or repeatedly slide the saved deadline.
+This default applies to homework, not independently dated control points or assessments.
+
 ## Context
 
 Implementation needs stable decisions for Telegram onboarding, existing group history, frontend scope, AI provider boundaries, outage handling, and pilot access. Fully designing Modules 2–15 before coding would delay the first validated product journey.
@@ -37,6 +48,41 @@ Keep the pilot closed through a configurable owner-controlled group allowlist or
 - Deferred choices remain explicit and cannot silently become product rules through code.
 
 ## References
+
+### Implementation checkpoint (2026-10-05)
+
+The backend provider boundary uses a strict JSON-only text adapter with an
+explicit original-message timestamp and group timezone. Chat content is untrusted
+input, not executable instructions. Keys are backend-only; remote error bodies
+are not logged. HTTP redirects and arbitrary provider hosts are prohibited.
+The economical first pass has explicit input/output limits and no automatic
+retries; it is not the full reasoning cascade. Only one-homework proposals are
+supported by the single-message interface; explicit КТ/control points, assessments
+and tests now have separate extraction kinds and independent deadline persistence.
+The explicit import batch can return several sourced proposals. Cross-message
+corrections still require evidence review, not invented homework cards.
+Queue persistence, budget reservations and deduplicated owner alerts remain
+required before automatic production runs. Schema-valid AI output is not itself
+proof that its extracted facts are correct.
+
+Deadline resolution now follows Module 0: relative dates use original source timestamps;
+missing homework deadlines fall back to the next subject lesson only with valid calendar
+coverage. Deterministic common relative-date checks override a misdated model proposal.
+Ambiguous stated dates block timetable fallback. The isolated preview can explicitly copy
+one supplied week into the next week; stable IDs make this operation idempotent. Updating
+preview deadlines preserves personal marks, records a significant revision and does not
+publish to production or make additional paid model requests.
+
+The local archive review scanned 3,322 message records and inspected academic text
+and reply context. Its reviewed decisions live in the ignored private preview
+directory; private chat contents are not committed as source code. Exact deadlines,
+date windows and approximate/unresolved date hints are preserved distinctly.
+Control-point reclassification hides the old homework representation without
+deleting evidence or personal marks. The production queue/incident machinery is
+still a separate unfinished integration; this local review is not autonomous live AI.
+
+- [DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)
+- [DeepSeek thinking controls](https://api-docs.deepseek.com/guides/thinking_mode/)
 
 - [Telegram Bot API: getChatMember](https://core.telegram.org/bots/api#getchatmember)
 - [Telegram API: messages.getHistory](https://core.telegram.org/method/messages.getHistory)
