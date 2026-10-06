@@ -4,8 +4,9 @@
 
 Real preview data was copied insert-only from SQLite to local PostgreSQL; the
 SQLite source is retained. Local API bootstrap, Today, homework and deadlines
-respond successfully against PostgreSQL. This is not public hosting: the owner's
-Mac must remain running. No paid resources or public webhook were provisioned.
+respond successfully against PostgreSQL. That isolated preview still runs on the
+owner's Mac; it is separate from the Render deployment below. No paid resources
+or Telegram webhook registration were provisioned.
 
 `compose.pilot.yaml` prepares PostgreSQL 17, Redis, API, a single Celery worker,
 SQL inbox scheduler, migrations and Caddy TLS. Docker builds and the complete
@@ -36,12 +37,18 @@ region. Do not publish credentials. The frontend uses only the public API base U
 Static site build: repository root; `corepack pnpm install --frozen-lockfile
 && corepack pnpm --filter @studgroup/frontend build`; publish `apps/frontend/dist`.
 Do not run `corepack enable` on Render: `/usr/bin` is read-only.
-Configure `/*` → `/index.html` as a Rewrite in Render before testing deep links.
-Creating resources does not by itself confirm successful deployment or live analysis.
+The `/*` → `/index.html` Rewrite is configured. Both services reached `live`;
+API `/health` and `/ready` return 200 with PostgreSQL connected. Frontend `/`,
+`/today`, `/tasks` and `/deadlines` return HTML/200. CORS accepts the frontend
+origin; unauthenticated homework requests return 401. The database's external
+IP allowlist is empty; do not weaken it merely to query through hosted MCP.
+No private chat data has been migrated to Render and AI remains disabled.
+
+### Optional portable container deployment
 
 Required: a continuously running Docker Compose host, an API domain pointing to
 it, open HTTPS ports 80/443, a hosted frontend and an off-machine backup destination.
-Hosting selection remains with the owner; free capacity is not assumed.
+This remains an alternative to the selected Render pilot; free VM capacity is not assumed.
 
 Copy `.env.pilot.example` to a private `.env.pilot`, fill its placeholders and
 restrict permissions with `chmod 600 .env.pilot`. Use a unique PostgreSQL password;
@@ -79,8 +86,9 @@ Incidents are deduplicated in SQL. Actual private Telegram delivery is unverifie
 it requires a configured owner ID and the owner having started the bot. Regression
 tests use a fake provider and do not spend DeepSeek balance.
 
-Before online readiness: verify containers/broker, real webhook and onboarding,
-worker restart/recovery, TLS/auth boundaries, owner alerts, encrypted off-machine
-backup and restoration. Paid chat re-evaluation is deferred at the owner's request.
+Before live-group readiness: verify real Telegram webhook/onboarding, extraction
+quality after the latest fixes, processor restart/recovery with live messages,
+owner alerts, and encrypted off-machine backup/restoration. A bounded real-provider
+evaluation returned 5/8 before subsequent fixes; it is not a completed quality gate.
 
 No production secrets belong in this directory.

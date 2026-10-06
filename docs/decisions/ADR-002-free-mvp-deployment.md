@@ -6,11 +6,12 @@ Date: 2026-10-03
 
 ## Availability checkpoint — 2026-10-06
 
-The owner has no server. No Oracle account or free VM capacity has been verified,
-and no resources have been provisioned. The preference below is not an available
-deployment. Container definitions remain portable; selecting/acquiring a host is
-pending owner direction. Do not assume eligibility, free capacity or permission
-to purchase infrastructure.
+The owner selected Render Free instead of acquiring a VM. The API, static frontend
+and PostgreSQL 17 are provisioned and deployment health checks pass. No Oracle
+capacity is assumed. Render's free database expires on 2026-11-05; its API can sleep
+after inactivity. The application processor runs inside the API using durable SQL
+leases, rather than a separate paid worker. AI is initially disabled. An external
+cron was mentioned by the owner but its setup/interval have not been verified.
 
 ## Context
 
@@ -24,7 +25,10 @@ The MVP should operate continuously without the product owner's laptop and shoul
 
 ## Decision
 
-Use an Oracle Cloud Always Free VM for the pilot deployment of FastAPI, PostgreSQL, Redis, Celery, and the scheduler. This is pilot infrastructure, not the assumed long-term production topology. Use Cloudflare Pages for the frontend and Cloudflare R2 for object storage and encrypted backups.
+Use Render Free for the temporary pilot: FastAPI web service, managed PostgreSQL
+and static frontend. Keep the containerized PostgreSQL/Redis/Celery topology as an
+optional migration path, not a provisioned service. Persistent backups and a
+non-expiring database destination remain required before long-term group operation.
 
 Use Docker Compose locally. Production may initially use the same container definitions with production overrides, while preserving the option to move to an orchestrated platform later.
 
