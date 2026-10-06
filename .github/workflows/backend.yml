@@ -7,6 +7,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: studgroup_test
+          POSTGRES_USER: studgroup_test
+          POSTGRES_PASSWORD: ephemeral-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U studgroup_test -d studgroup_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql+asyncpg://studgroup_test:ephemeral-ci-only@localhost:5432/studgroup_test
+      POSTGRES_TEST_URL: postgresql+asyncpg://studgroup_test:ephemeral-ci-only@localhost:5432/studgroup_test
     defaults:
       run:
         working-directory: apps/backend
@@ -18,4 +32,5 @@ jobs:
       - run: uv sync --dev --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      - run: uv run alembic upgrade head
       - run: uv run pytest

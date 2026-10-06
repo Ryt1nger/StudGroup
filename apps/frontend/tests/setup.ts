@@ -1,9 +1,11 @@
 import '@testing-library/jest-dom/vitest';
-import { afterAll, afterEach, beforeAll } from 'vitest';
+import { afterAll, afterEach, beforeAll, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { server } from './helpers';
 
 beforeAll(() => {
+  // JSDOM has no layout/scroll implementation; route behavior is asserted separately.
+  vi.stubGlobal('scrollTo', vi.fn());
   server.events.on('request:unhandled', ({ request }) => {
     throw new Error(`Unhandled request in test: ${request.method} ${request.url}`);
   });

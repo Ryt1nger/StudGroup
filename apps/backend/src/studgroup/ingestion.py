@@ -25,6 +25,10 @@ class Sender(BaseModel):
     id: int
 
 
+class ReplyReference(BaseModel):
+    message_id: int
+
+
 class Message(BaseModel):
     message_id: int
     date: int = Field(ge=0)
@@ -32,6 +36,7 @@ class Message(BaseModel):
     text: str | None = Field(default=None, max_length=65536)
     edit_date: int | None = Field(default=None, ge=0)
     sender: Sender | None = Field(default=None, alias="from")
+    reply_to_message: ReplyReference | None = None
 
 
 class Update(BaseModel):
@@ -77,6 +82,22 @@ async def webhook(update: Update, db: Annotated[AsyncSession, Depends(database)]
         await db.commit()
         return {"ok": True}
 
+    await store_message(db, group, message)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Never acknowledge an edit that was not durably committed.
+        await db.rollback()
+        raise ApiError("service_unavailable", "Повторите доставку", 503) from None
+    return {"ok": True}
+
+
+async def store_message(db, group, message, *, imported=False):
+    """One inbox path for Telegram delivery and explicitly scoped history replay.
+
+    The caller commits before acknowledgement. History never overwrites a newer
+    live edit; every timestamp represents the original source, not import time.
+    """
     version = datetime.fromtimestamp(message.edit_date or message.date, UTC)
     row = await db.scalar(
         select(RawMessage)
@@ -91,28 +112,30 @@ async def webhook(update: Update, db: Annotated[AsyncSession, Depends(database)]
             group_id=group.id,
             telegram_message_id=message.message_id,
             sender_id=message.sender.id if message.sender else None,
+            reply_to_message_id=message.reply_to_message.message_id
+            if message.reply_to_message
+            else None,
             text=message.text,
             message_date=original_date,
             version_date=version,
             revision=1,
             processing_state="pending",
+            imported=imported,
             delete_at=original_date + timedelta(days=30),
         )
         db.add(row)
+        return "inserted"
     else:
         saved_version = row.version_date
         if saved_version.tzinfo is None:
             saved_version = saved_version.replace(tzinfo=UTC)
         if version > saved_version:
             row.text = message.text
+            row.reply_to_message_id = (
+                message.reply_to_message.message_id if message.reply_to_message else None
+            )
             row.version_date = version
             row.revision += 1
             row.processing_state = "pending"
-    try:
-        await db.commit()
-    except IntegrityError:
-        # Two different updates can introduce the same message simultaneously.
-        # Ask Telegram to redeliver rather than acknowledge an uncommitted edit.
-        await db.rollback()
-        raise ApiError("service_unavailable", "Повторите доставку", 503) from None
-    return {"ok": True}
+            return "updated"
+    return "unchanged"

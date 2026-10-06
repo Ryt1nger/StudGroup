@@ -61,9 +61,10 @@ supported by the single-message interface; explicit КТ/control points, assessm
 and tests now have separate extraction kinds and independent deadline persistence.
 The explicit import batch can return several sourced proposals. Cross-message
 corrections still require evidence review, not invented homework cards.
-Queue persistence, budget reservations and deduplicated owner alerts remain
-required before automatic production runs. Schema-valid AI output is not itself
-proof that its extracted facts are correct.
+SQL job leases, budget reservations, stale-attempt fencing and deduplicated incident
+records are implemented and regression-tested as of 2026-10-06. The Celery/Redis
+deployment and actual private alert delivery are still unverified. Schema-valid
+AI output is not itself proof that its extracted facts are correct.
 
 Deadline resolution now follows Module 0: relative dates use original source timestamps;
 missing homework deadlines fall back to the next subject lesson only with valid calendar
@@ -78,8 +79,10 @@ and reply context. Its reviewed decisions live in the ignored private preview
 directory; private chat contents are not committed as source code. Exact deadlines,
 date windows and approximate/unresolved date hints are preserved distinctly.
 Control-point reclassification hides the old homework representation without
-deleting evidence or personal marks. The production queue/incident machinery is
-still a separate unfinished integration; this local review is not autonomous live AI.
+deleting evidence or personal marks. The SQL processing core now has a PostgreSQL
+concurrency test; hosting, live onboarding and broker deployment remain unfinished.
+The local review is not autonomous live AI. Paid re-evaluation and error analysis
+are deferred at the owner's request until after the infrastructure work.
 
 - [DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)
 - [DeepSeek thinking controls](https://api-docs.deepseek.com/guides/thinking_mode/)

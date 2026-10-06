@@ -4,6 +4,14 @@ Status: accepted
 
 Date: 2026-10-03
 
+## Availability checkpoint — 2026-10-06
+
+The owner has no server. No Oracle account or free VM capacity has been verified,
+and no resources have been provisioned. The preference below is not an available
+deployment. Container definitions remain portable; selecting/acquiring a host is
+pending owner direction. Do not assume eligibility, free capacity or permission
+to purchase infrastructure.
+
 ## Context
 
 The MVP should operate continuously without the product owner's laptop and should initially minimize infrastructure cost.

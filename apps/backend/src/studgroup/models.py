@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import date, datetime, time
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     Time,
@@ -97,6 +99,7 @@ class RawMessage(Base):
     group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
     telegram_message_id: Mapped[int] = mapped_column(BigInteger)
     sender_id: Mapped[int | None] = mapped_column(BigInteger)
+    reply_to_message_id: Mapped[int | None] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
     message_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     version_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -172,3 +175,67 @@ class PersonalCompletion(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_revision: Mapped[int | None] = mapped_column(Integer)
+
+
+class AIControl(Base):
+    __tablename__ = "ai_control"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    spent_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=Decimal(0))
+
+
+class AIJob(Base):
+    __tablename__ = "ai_jobs"
+    __table_args__ = (UniqueConstraint("raw_message_id", "source_revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    raw_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="SET NULL")
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    source_revision: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(20), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AICandidate(Base):
+    __tablename__ = "ai_candidates"
+    __table_args__ = (UniqueConstraint("job_id", "ordinal"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ai_jobs.id", ondelete="CASCADE"))
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    ordinal: Mapped[int] = mapped_column(Integer)
+    payload: Mapped[str] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AIAttempt(Base):
+    __tablename__ = "ai_attempts"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ai_jobs.id", ondelete="CASCADE"))
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    charged_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8))
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    model: Mapped[str] = mapped_column(String(64))
+    prompt_version: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class OwnerIncident(Base):
+    __tablename__ = "owner_incidents"
+    code: Mapped[str] = mapped_column(String(64), primary_key=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    recovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notification_pending: Mapped[bool] = mapped_column(Boolean, default=True)

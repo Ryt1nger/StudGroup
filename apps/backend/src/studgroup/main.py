@@ -1,13 +1,14 @@
 """Application factory; dependency readiness never exposes credentials."""
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -31,6 +32,24 @@ class Settings(BaseSettings):
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
+    ai_daily_group_budget_usd: float = 0.05
+    ai_total_budget_usd: float = 1.70
+    ai_enabled: bool = False
+    processing_mode: Literal["external", "embedded"] = "external"
+    owner_telegram_user_id: int | None = None
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def postgres_driver(cls, value):
+        for prefix in ("postgres://", "postgresql://"):
+            if isinstance(value, str) and value.startswith(prefix):
+                return "postgresql+asyncpg://" + value[len(prefix) :]
+        return value
+
+    @field_validator("owner_telegram_user_id", mode="before")
+    @classmethod
+    def empty_owner(cls, value):
+        return None if value == "" else value
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -40,9 +59,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         app.state.engine = create_async_engine(settings.database_url, pool_pre_ping=True)
         app.state.redis = Redis.from_url(settings.redis_url, socket_connect_timeout=2)
+        processor = None
+        if settings.processing_mode == "embedded":
+            from studgroup.runtime import processing_loop
+
+            processor = asyncio.create_task(processing_loop(app.state.engine, settings))
+        app.state.processor = processor
         try:
             yield
         finally:
+            if processor is not None:
+                processor.cancel()
+                with suppress(asyncio.CancelledError):
+                    await processor
             await app.state.engine.dispose()
             await app.state.redis.aclose()
 
@@ -100,8 +129,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except (OSError, TimeoutError, RedisError, SQLAlchemyError):
                 return False
 
-        database, redis = await asyncio.gather(check(postgres), check(app.state.redis.ping))
-        ok = database and redis
+        if settings.processing_mode == "embedded":
+            database = await check(postgres)
+            redis = None  # SQL inbox is authoritative; no Redis is used in this pilot mode.
+            processor_ok = app.state.processor is not None and not app.state.processor.done()
+            ok = database and processor_ok
+        else:
+            database, redis = await asyncio.gather(check(postgres), check(app.state.redis.ping))
+            ok = database and redis
         return JSONResponse(
             {
                 "status": "ready" if ok else "not_ready",

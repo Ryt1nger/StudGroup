@@ -2,16 +2,17 @@
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, model_validator
 
 from studgroup.deadlines import ScheduleDeadlineContext, resolve_deadline
 
-PROMPT_VERSION = "academic-text-4"
+PROMPT_VERSION = "academic-text-6"
+BATCH_PROMPT_VERSION = "academic-import-5"
 MAX_TEXT_CHARS = 12000
 MAX_OUTPUT_TOKENS = 1400
 
@@ -39,6 +40,10 @@ Return JSON only, with exactly these fields (null for unknown facts):
 "description":"Номера 1–3","deadline_at":null,"deadline_date_only":false,
 "urgency":"normal","confidence":90}
 kind is homework, control_point, assessment, test, irrelevant or needs_context.
+Use control_point ONLY for explicitly named КТ/control points. A regular контрольная
+работа or самостоятельная is assessment, not automatically a КТ.
+Negating an earlier deadline ("это не на завтра") does NOT cancel the homework.
+Keep its task facts and leave the withdrawn date unknown; do not discard the task.
 For irrelevant/needs_context use null
 for subject/title/description/deadline_at, false for deadline_date_only, normal urgency.
 When several assignments or an amendment to another message needs context, use needs_context.
@@ -64,6 +69,9 @@ class Extraction(BaseModel):
     deadline_date_only: bool
     urgency: Literal["normal", "urgent"]
     confidence: int = Field(ge=0, le=100)
+    _deadline_basis: str = PrivateAttr(default="unresolved")
+    _window_start: datetime | None = PrivateAttr(default=None)
+    _window_end: datetime | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def validate_facts(self):
@@ -129,7 +137,7 @@ class BatchResult(BaseModel):
     batch: BatchExtraction
     usage: TokenUsage
     model: str
-    prompt_version: str = "academic-import-3"
+    prompt_version: str = BATCH_PROMPT_VERSION
 
 
 class DeepSeekProvider:
@@ -209,6 +217,12 @@ class DeepSeekProvider:
         correction = re.search(r"(?:это\s+)?не\s+кт\b", source_text, re.IGNORECASE)
         if extraction.kind == "homework" and explicit_control and not correction:
             extraction.kind = "control_point"
+        elif (
+            extraction.kind == "control_point"
+            and not explicit_control
+            and re.search(r"контрольная\s+работа|самостоятельная", source_text, re.IGNORECASE)
+        ):
+            extraction.kind = "assessment"
         resolved = resolve_deadline(
             sources,
             timezone,
@@ -220,6 +234,26 @@ class DeepSeekProvider:
         )
         extraction.deadline_at = resolved.at
         extraction.deadline_date_only = resolved.date_only
+        extraction._deadline_basis = resolved.basis
+        if extraction.kind != "homework" and resolved.basis == "ambiguous_date_range":
+            for text, stamp in sources:
+                match = re.search(r"\b(\d{1,2})\.(\d{1,2})\s*[-–—]\s*(\d{1,2})\.(\d{1,2})\b", text)
+                if match:
+                    year = stamp.astimezone(ZoneInfo(timezone)).year
+                    try:
+                        start = datetime(
+                            year, int(match[2]), int(match[1]), tzinfo=ZoneInfo(timezone)
+                        )
+                        end = datetime(
+                            year, int(match[4]), int(match[3]), tzinfo=ZoneInfo(timezone)
+                        )
+                        if end < start and int(match[2]) >= 11 and int(match[4]) <= 2:
+                            end = end.replace(year=year + 1)
+                        if end >= start:
+                            extraction._window_start = start
+                            extraction._window_end = end + timedelta(days=1)
+                    except ValueError:
+                        pass
 
     @staticmethod
     def _validate_date_only(extraction, timezone):
@@ -259,7 +293,9 @@ test/exam is homework. Explicit КТ labels take precedence over homework-like c
 Do not turn timetable changes into homework. Unknown deadlines stay null. Do not
 guess years in quoted historical events. Confidence is evidence-based, not optimism.
 If a date range like 10.10–15.10 does not explicitly name the submission deadline,
-leave deadline_at=null and confidence below 85. Preserve task content and topics.
+leave deadline_at=null. The backend preserves the date window instead of inventing
+a single deadline. A clearly specified event and date window do not lower confidence
+merely because no single due date is given. Preserve task content and topics.
 """
         )
         if target_message_id is not None:
@@ -295,6 +331,20 @@ leave deadline_at=null and confidence below 85. Preserve task content and topics
                     and target_message_id not in extraction.source_message_ids
                 ):
                     raise ProviderFailure("invalid_target_reference", True)
+                if target_message_id is not None and extraction.kind == "homework":
+                    from studgroup.academic_context import homework_range_applies
+
+                    target = by_id[target_message_id]
+                    target_date = datetime.fromisoformat(target["message_date"])
+                    for message in messages:
+                        clarification_date = datetime.fromisoformat(message["message_date"])
+                        if (
+                            0 <= (clarification_date - target_date).total_seconds() <= 7 * 86400
+                            and homework_range_applies(target["text"], message["text"])
+                            and message["message_id"] not in extraction.source_message_ids
+                            and len(extraction.source_message_ids) < 12
+                        ):
+                            extraction.source_message_ids.append(message["message_id"])
                 self._resolve_deadline(
                     extraction,
                     [

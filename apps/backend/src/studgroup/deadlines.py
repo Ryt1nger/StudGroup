@@ -53,6 +53,8 @@ def contextual_deadline(text: str, sent_at: datetime, timezone: str) -> Deadline
         raise ValueError("source_timestamp_requires_offset")
     local = sent_at.astimezone(ZoneInfo(timezone))
     text = text.casefold().replace("ё", "е")
+    if re.search(r"(?:это\s+)?не\s+(?:на\s+|к\s+|до\s+)?(?:завтра|послезавтра|сегодня)\b", text):
+        return DeadlineResolution(None, False, "withdrawn_deadline")
 
     def calendar(days):
         clock = re.search(r"\b(\d{1,2}):(\d{2})\b", text)

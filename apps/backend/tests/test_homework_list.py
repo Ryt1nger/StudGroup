@@ -102,14 +102,25 @@ def test_active_and_archive_lists_preserve_details(client, cards):
     ids, _ = cards
     response = client.get("/v1/homework", headers=HEADERS)
     assert titles(response) == {
-        "today", "unknown", "done", "week", "date_only",
+        "today",
+        "unknown",
+        "done",
+        "week",
+        "date_only",
     }
     archive = client.get("/v1/homework?filter=archive", headers=HEADERS)
     assert titles(archive) == {
-        "overdue", "old", "cancelled_recent", "cancelled_expired", "cancelled_unknown",
+        "overdue",
+        "old",
+        "cancelled_recent",
+        "cancelled_expired",
+        "cancelled_unknown",
     }
-    assert all(item["status"] == "cancelled" for item in archive.json()["items"]
-               if item["title"].startswith("cancelled"))
+    assert all(
+        item["status"] == "cancelled"
+        for item in archive.json()["items"]
+        if item["title"].startswith("cancelled")
+    )
     assert response.json()["next_cursor"] is None
     assert response.json()["group_timezone"] == "Europe/Moscow"
     assert response.json()["processing"]["state"] == "idle"
@@ -195,4 +206,6 @@ def test_invalid_query(client, query):
 
 def test_list_requires_active_session(client):
     assert client.get("/v1/homework").status_code == 401
-    assert client.get("/v1/homework", headers={"Authorization": "Bearer expired"}).status_code == 401
+    assert (
+        client.get("/v1/homework", headers={"Authorization": "Bearer expired"}).status_code == 401
+    )

@@ -1,4 +1,5 @@
 import { Outlet, useLocation } from 'react-router';
+import { useLayoutEffect } from 'react';
 import { Banner } from '../ui/Banner';
 import { WifiOff } from '../ui/icons';
 import { ru } from '../i18n/ru';
@@ -10,6 +11,11 @@ import styles from './AppShell.module.css';
 export function AppShell() {
   const online = useOnline();
   const { pathname } = useLocation();
+  useLayoutEffect(() => {
+    // Route content changes inside one document; don't inherit the previous page's offset.
+    // Query-only filter/day changes keep their scroll position.
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [pathname]);
   return (
     <div className={styles.shell}>
       {!online ? (

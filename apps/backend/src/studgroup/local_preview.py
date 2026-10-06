@@ -276,9 +276,12 @@ def create_preview_app():
     if len(secret) < 40 or not (directory / "preview.sqlite").exists():
         raise RuntimeError("preview_not_prepared")
     settings = Settings(
-        database_url=f"sqlite+aiosqlite:///{directory / 'preview.sqlite'}",
+        database_url=os.environ.get("STUDGROUP_PREVIEW_DATABASE_URL")
+        or f"sqlite+aiosqlite:///{directory / 'preview.sqlite'}",
         webapp_origin="http://localhost:5173",
         telegram_bot_token="",
+        ai_enabled=False,
+        processing_mode="external",
     )
     app = create_app(settings)
 

@@ -13,10 +13,10 @@
 .icon { width: 48px; height: 48px; object-fit: contain; flex-shrink: 0; }
 .when { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; }
 .when svg { flex-shrink: 0; }
-.detailTitle { margin: 12px 4px 16px; overflow-wrap: anywhere; }
 .detailTask { margin: 0 0 12px; font-size: var(--sg-type-h2-size); line-height: var(--sg-type-h2-lh); }
-.detailBody { margin-top: 16px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.detailBody { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.materialsEmpty { margin: 0; color: var(--sg-color-text-secondary-strong); line-height: 1.5; }
 .body { margin-top: 16px; border-top: 1px solid var(--sg-color-text-secondary-strong); padding-top: 12px; }
 .body p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .warning { color: var(--sg-color-warning-text); }
-.filters { margin-bottom: 20px; }
+.page .filters { margin-bottom: 20px; }

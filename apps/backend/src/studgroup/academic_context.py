@@ -8,6 +8,38 @@ def tags(text):
     return set(re.findall(r"#[\w]+", text.casefold()))
 
 
+def homework_range_applies(task_text, clarification):
+    """Strict page + exercise-range + single-subject evidence, not generic proximity."""
+    subject = tags(task_text)
+    if len(subject) != 1 or tags(clarification) != subject:
+        return False
+    number = re.search(r"(?:^|\n|номер\w*\s+|№\s*)(\d{1,2})(?:[.,]\d+)?\b", task_text)
+    page = re.search(r"стр\.?\s*(\d{1,3})", task_text, re.IGNORECASE)
+    numbers = re.search(
+        r"(?:с\s+)?(\d{1,2})\s+по\s+(\d{1,2})\s+номер", clarification, re.IGNORECASE
+    )
+    pages = re.search(r"стр\.?\s*(\d{1,3})\s*[-–—]\s*(\d{1,3})", clarification, re.IGNORECASE)
+    return bool(
+        number
+        and page
+        and numbers
+        and pages
+        and int(numbers[1]) <= int(number[1]) <= int(numbers[2])
+        and int(pages[1]) <= int(page[1]) <= int(pages[2])
+    )
+
+
+def has_date_cue(text):
+    return bool(
+        re.search(
+            r"завтра|послезавтра|сегодня|(?:следующ|ближайш|конц[ае])\w*\s+(?:недел|сред|четверг|пятниц|суббот|воскрес|понедель|вторник)|"
+            r"(?:до|к|на|в)\s+(?:\d{1,2}[./]\d{1,2}|\d{1,2}\s+[а-я]+|понедельник|вторник|сред[уы]|четверг|пятниц[уы]|суббот[уы]|воскресенье)",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
 def build_context(messages, target_id, max_bytes=13000):
     by_id = {message.message_id: message for message in messages}
     target = by_id[target_id]
@@ -31,7 +63,12 @@ def build_context(messages, target_id, max_bytes=13000):
         correction = abs(message.message_date - target.message_date) <= timedelta(
             minutes=3
         ) and re.search(r"оказывается|это не кт|перенес|отмен", message.text, re.IGNORECASE)
-        if direct or correction or (same_subject and nearby):
+        # Adjacent date fragments are evidence candidates, not automatic inherited dates.
+        # The provider must cite supporting IDs and match the task/subject before using them.
+        date_fragment = abs(message.message_date - target.message_date) <= timedelta(
+            minutes=3
+        ) and (has_date_cue(target.text) or has_date_cue(message.text))
+        if direct or correction or date_fragment or (same_subject and nearby):
             ranked.append((not direct, abs(message.message_date - target.message_date), message))
     used = len(target.text.encode()) + 300
     chosen = [target]

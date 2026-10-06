@@ -25,3 +25,27 @@ def test_cors_allows_only_frontend_origin():
         assert client.options("/health", headers=headers).status_code == 200
         headers["Origin"] = "https://untrusted.example"
         assert client.options("/health", headers=headers).status_code == 400
+
+
+def test_embedded_mode_needs_no_redis_and_stops_on_shutdown(tmp_path):
+    app = create_app(
+        Settings(
+            database_url=f"sqlite+aiosqlite:///{tmp_path}/test.db",
+            processing_mode="embedded",
+            ai_enabled=False,
+            owner_telegram_user_id=None,
+        )
+    )
+    with TestClient(app) as client:
+        processor = app.state.processor
+        app.state.redis.ping = AsyncMock(side_effect=AssertionError("Redis must not be called"))
+        assert client.get("/ready").status_code == 200
+        assert client.get("/ready").json()["checks"]["redis"] is None
+    assert processor.cancelled()
+
+
+def test_render_postgres_urls_are_normalized_without_requiring_manual_driver_edits():
+    assert (
+        Settings(database_url="postgres://user:placeholder@host/db").database_url
+        == "postgresql+asyncpg://user:placeholder@host/db"
+    )

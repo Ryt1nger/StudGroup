@@ -1,0 +1,67 @@
+# Portable pilot: public TLS proxy only; PostgreSQL/Redis/API have no host ports.
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: studgroup
+      POSTGRES_USER: studgroup
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U studgroup -d studgroup]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes", --maxmemory-policy, noeviction]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build: ../apps/backend
+    env_file: ../.env.pilot
+    command: [alembic, upgrade, head]
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    build: ../apps/backend
+    env_file: ../.env.pilot
+    restart: unless-stopped
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+  worker:
+    build: ../apps/backend
+    env_file: ../.env.pilot
+    restart: unless-stopped
+    command: [celery, -A, studgroup.worker, worker, --concurrency=1, --loglevel=WARNING]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+  scheduler:
+    build: ../apps/backend
+    env_file: ../.env.pilot
+    restart: unless-stopped
+    command: [celery, -A, studgroup.worker, beat, --schedule=/tmp/studgroup-beat, --loglevel=WARNING]
+    depends_on:
+      worker: {condition: service_started}
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddy-data:/data, caddy-config:/config]
+    depends_on:
+      api: {condition: service_started}
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:

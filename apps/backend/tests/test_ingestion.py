@@ -74,3 +74,12 @@ def test_invalid_secret_rejected(client):
         == 401
     )
     assert rows(client) == []
+
+
+def test_reply_reference_is_validated_and_saved(client):
+    payload = delivery()
+    payload["message"]["reply_to_message"] = {"message_id": 41, "text": "Original"}
+    assert send(client, payload).status_code == 200
+    assert rows(client)[0].reply_to_message_id == 41
+    payload["message"]["reply_to_message"]["message_id"] = "invalid"
+    assert send(client, payload).status_code == 422
