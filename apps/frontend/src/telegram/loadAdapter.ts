@@ -6,10 +6,13 @@ import { createRealAdapter } from './realAdapter';
  * `import.meta.env.DEV` is replaced by `false`, so Rollup drops the dynamic import.
  */
 export async function loadTelegramAdapter(): Promise<TelegramAdapter | null> {
-  const real = createRealAdapter();
-  if (real) return real;
-
   const isDemo = import.meta.env.MODE === 'demo';
+  const real = createRealAdapter();
+  if (real) {
+    if (!isDemo) return real;
+    const { createDemoAdapter } = await import('./demoAdapter');
+    return createDemoAdapter(real);
+  }
 
   if (import.meta.env.DEV && import.meta.env.VITE_LOCAL_PREVIEW === 'true') {
     const { createLocalPreviewAdapter } = await import('./localPreviewAdapter');
