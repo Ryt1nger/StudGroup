@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { createReadStream, existsSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
@@ -30,22 +30,9 @@ function devMockServiceWorker(): Plugin {
   };
 }
 
-/** Emits the MSW worker only for the deliberately public, mock-data demo build. */
-function demoMockServiceWorker(enabled: boolean): Plugin {
-  return {
-    name: 'studgroup-demo-msw-worker',
-    apply: 'build',
-    generateBundle() {
-      if (!enabled) return;
-      const file = path.resolve(path.dirname(require.resolve('msw')), '../mockServiceWorker.js');
-      this.emitFile({ type: 'asset', fileName: 'mockServiceWorker.js', source: readFileSync(file) });
-    },
-  };
-}
-
 export default defineConfig(({ mode }) => ({
   base: mode === 'demo' ? '/StudGroup/' : '/',
-  plugins: [react(), devMockServiceWorker(), demoMockServiceWorker(mode === 'demo')],
+  plugins: [react(), devMockServiceWorker()],
   server: { host: true, port: 5173 },
   preview: { host: true, port: 4173 },
   build: { target: 'es2022', sourcemap: false },

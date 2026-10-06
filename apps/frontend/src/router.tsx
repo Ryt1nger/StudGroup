@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createBrowserRouter, createHashRouter, createMemoryRouter, Navigate, useRouteError } from 'react-router';
+import { createBrowserRouter, createMemoryRouter, Navigate, useRouteError } from 'react-router';
 import { TodayScreen } from './features/today/TodayScreen';
 import { HomeworkScreen } from './features/homework/HomeworkScreen';
 import { ru } from './i18n/ru';
@@ -63,8 +63,9 @@ export function appRoutes(startParam: string | null) {
 }
 
 export function createAppRouter(startParam: string | null) {
-  if (import.meta.env.MODE === 'demo') return createHashRouter(appRoutes(startParam));
-  return createBrowserRouter(appRoutes(startParam));
+  return createBrowserRouter(appRoutes(startParam), {
+    basename: import.meta.env.MODE === 'demo' ? import.meta.env.BASE_URL : undefined,
+  });
 }
 
 export function createTestRouter(startParam: string | null, initialEntries: string[]) {

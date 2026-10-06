@@ -12,13 +12,17 @@ async function start() {
     await Promise.all(registrations.filter((registration) => registration.active?.scriptURL.endsWith('/mockServiceWorker.js')).map((registration) => registration.unregister()));
   }
   const apiBase = import.meta.env.VITE_API_BASE_URL;
-  // Mock data is available in development and in the explicit static demo build. The normal
-  // production build keeps this branch unreachable and is checked by scripts/check-dist.mjs.
-  if (isDemo || (import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true')) {
+  let demoFetch: typeof fetch | undefined;
+  // The public demo uses an in-memory Fetch implementation: Telegram WebViews do not need
+  // Service Worker support. Local development keeps MSW and the production build keeps neither.
+  if (isDemo) {
+    const { createStaticDemoFetch } = await import('./mocks/staticDemoFetch');
+    demoFetch = createStaticDemoFetch();
+  } else if (import.meta.env.DEV && import.meta.env.VITE_API_MOCK === 'true') {
     const { startApiMock } = await import('./mocks/start');
     await startApiMock(apiBase ?? 'https://api.studgroup.example/v1');
   }
-  configureApiClient();
+  configureApiClient(demoFetch);
   const adapter = await loadTelegramAdapter();
   createRoot(document.getElementById('root')!).render(<App adapter={adapter} />);
 }

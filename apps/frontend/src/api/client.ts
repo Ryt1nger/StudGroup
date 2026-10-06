@@ -13,10 +13,11 @@ export function hasAccessToken(): boolean {
   return accessToken !== null;
 }
 
-export function configureApiClient(): void {
+export function configureApiClient(fetchImplementation?: typeof fetch): void {
   const baseUrl = import.meta.env.VITE_API_BASE_URL;
   client.setConfig({
     ...(baseUrl ? { baseUrl } : {}),
+    ...(fetchImplementation ? { fetch: fetchImplementation } : {}),
     auth: () => accessToken ?? undefined,
     credentials: 'omit', // contract: browser credentials are disabled
   });
