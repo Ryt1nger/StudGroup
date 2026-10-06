@@ -33,8 +33,9 @@ region. Do not publish credentials. The frontend uses only the public API base U
 (`https://studgroup.onrender.com/v1`), never bot or AI keys. The native build runs
 `uv sync --frozen --no-dev`; startup applies migrations before Uvicorn binds `$PORT`.
 
-Static site build: repository root; `corepack enable && pnpm install --frozen-lockfile
-&& pnpm --filter @studgroup/frontend build`; publish `apps/frontend/dist`.
+Static site build: repository root; `corepack pnpm install --frozen-lockfile
+&& corepack pnpm --filter @studgroup/frontend build`; publish `apps/frontend/dist`.
+Do not run `corepack enable` on Render: `/usr/bin` is read-only.
 Configure `/*` → `/index.html` as a Rewrite in Render before testing deep links.
 Creating resources does not by itself confirm successful deployment or live analysis.
 
