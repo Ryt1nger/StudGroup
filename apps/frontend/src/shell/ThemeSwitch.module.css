@@ -1,0 +1,10 @@
+.row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0 4px; font-weight: 600; }
+.switch { position: relative; display: flex; align-items: center; width: 96px; height: 48px; padding: 4px; border: 1px solid var(--sg-chip-border); border-radius: 999px; background: var(--sg-chip-bg); color: var(--sg-color-text-secondary-strong); cursor: pointer; }
+.thumb { position: absolute; top: 4px; left: 4px; width: 38px; height: 38px; border-radius: 50%; background: var(--sg-color-primary); transition: transform 220ms ease; }
+.sun, .moon { position: relative; display: grid; place-items: center; width: 42px; height: 38px; transition: color 220ms ease; }
+.sun { color: white; }
+.switch[aria-checked='true'] .thumb { transform: translateX(46px); }
+.switch[aria-checked='true'] .sun { color: var(--sg-color-text-secondary-strong); }
+.switch[aria-checked='true'] .moon { color: white; }
+.switch:focus-visible { outline: 2px solid var(--sg-color-primary-text); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .thumb, .sun, .moon { transition: none; } }

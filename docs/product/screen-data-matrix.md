@@ -35,7 +35,7 @@ This matrix ensures that the backend domain model can support every approved Web
 | Personal schedule upload | file/text input, extraction, semester, week mapping, confirmation | PersonalSchedule, PersonalScheduleEntry, Evidence | Prepared |
 | Personal/group conflict | both variants, event horizon, student decision | ScheduleConflict, PersonalSchedule, EventRevision | Prepared |
 | Notification centre | real homework/event changes, personal read state, related entity | Notification, NotificationRead | Live in contract 0.7.0; scheduled Telegram reminders remain out of scope |
-| Profile and settings | authenticated name, Telegram ID, group and role; Telegram theme | User, Membership | Live profile in contract 0.7.0; editable preferences remain prepared |
+| Profile and settings | authenticated name, Telegram ID, group and role; light/dark theme switch | User, Membership | Live profile in contract 0.7.0; appearance preference persists on this device in a non-sensitive cookie, initially follows Telegram; other editable preferences remain prepared |
 | Headman tools | correction, confirmation, cancellation, actor, expected revision | Correction, EventRevision, AuditLog | Slice 2 |
 | Deputy invitation | invitee identity, inviter, acceptance and role status | RoleInvitation, Membership | Prepared |
 | Question digest | unresolved issue, recipient, routing, batch, answer, escalation | QuestionQueue, QuestionBatch | Prepared |

@@ -42,6 +42,30 @@ describe('mock-only header actions (bell + avatar)', () => {
     expect(marked).toBe(true);
   });
 
+  it('switches the real profile theme and restores it after reopening', async () => {
+    const view = renderApp();
+    await userEvent.click(await screen.findByRole('button', { name: /Профиль/ }));
+    const toggle = screen.getByRole('switch', { name: 'Тёмная тема' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await userEvent.click(toggle);
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(document.cookie).toContain('studgroup_theme=dark');
+    view.unmount();
+    renderApp();
+    await userEvent.click(await screen.findByRole('button', { name: /Профиль/ }));
+    expect(screen.getByRole('switch', { name: 'Тёмная тема' })).toHaveAttribute('aria-checked', 'true');
+    await userEvent.click(screen.getByRole('switch', { name: 'Тёмная тема' }));
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(document.cookie).toContain('studgroup_theme=light');
+  });
+
+  it('ignores an invalid saved appearance and starts with the Telegram theme', async () => {
+    document.cookie = 'studgroup_theme=invalid; Path=/';
+    renderApp({ adapter: createMockAdapter({ scheme: 'dark', startParam: null, hasInitData: true }) });
+    await userEvent.click(await screen.findByRole('button', { name: /Профиль/ }));
+    expect(screen.getByRole('switch', { name: 'Тёмная тема' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('shows the bell with an unread dot and the avatar with test-user initials', async () => {
     vi.stubEnv('VITE_API_MOCK', 'true');
     renderApp();

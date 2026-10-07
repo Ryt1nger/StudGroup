@@ -4,7 +4,10 @@ Owner: Codex.
 
 ## Profile, inbox and private bot administration (contract 0.7.0)
 
-The production header reads the authenticated session, not demo data. The group-scoped
+The production header reads the authenticated session, not demo data. Its profile
+offers a light/dark switch (sun/moon). A non-sensitive appearance cookie remembers
+the choice on this device; before the first choice, the theme follows Telegram.
+No credentials or learning data are stored in that cookie. The group-scoped
 `GET /v1/notifications` inbox persists personal read receipts via
 `POST /v1/notifications/read-all`. Changed homework and academic events generate
 deduplicated notifications; the first historical import does not. This is an in-app

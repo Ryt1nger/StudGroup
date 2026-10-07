@@ -4,13 +4,14 @@ import { useNavigate } from 'react-router';
 import { listNotifications, readAllNotifications } from '@studgroup/shared-types';
 import { unwrap } from '../api/errors';
 import { useSession } from '../session/SessionProvider';
-import { useTheme } from '../telegram/TelegramProvider';
+import { useTelegram } from '../telegram/TelegramProvider';
 import { Bell, Close } from '../ui/icons';
 import styles from './demo/DemoHeaderActions.module.css';
+import { ThemeSwitch } from './ThemeSwitch';
 
 export function HeaderActions() {
   const { state } = useSession();
-  const scheme = useTheme();
+  const { scheme, setTheme } = useTelegram();
   const [open, setOpen] = useState<'profile' | 'bell' | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
@@ -58,7 +59,7 @@ export function HeaderActions() {
             <span className={styles.profileName}>{user.display_name}</span>{user.username ? <span>@{user.username}</span> : null}
             <span>{membership ? roles[membership.role] : ''}</span></div></div>
           <p>{group?.name}</p><p className={styles.note}>Telegram ID: {user.telegram_user_id}</p>
-          <p className={styles.note}>Тема: {scheme === 'dark' ? 'тёмная' : 'светлая'} · из настроек Telegram</p>
+          <ThemeSwitch scheme={scheme} onChange={setTheme} />
         </> : <>
           {inbox.isPending ? <p role="status">Загрузка уведомлений…</p> : null}
           {inbox.isError ? <button className={styles.link} onClick={() => void inbox.refetch()}>Не удалось загрузить. Повторить</button> : null}

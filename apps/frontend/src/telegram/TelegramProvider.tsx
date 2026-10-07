@@ -1,16 +1,34 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { ColorScheme, TelegramAdapter } from './adapter';
 
 interface TelegramContextValue {
   adapter: TelegramAdapter | null;
   scheme: ColorScheme;
+  setTheme: (scheme: ColorScheme) => void;
 }
 
 const TelegramContext = createContext<TelegramContextValue | null>(null);
 
+// Only a non-sensitive appearance preference; never store learning data or credentials.
+const THEME_COOKIE = 'studgroup_theme';
+function savedTheme(): ColorScheme | null {
+  try {
+    const value = document.cookie.split('; ').find((part) => part.startsWith(`${THEME_COOKIE}=`))?.split('=')[1];
+    return value === 'dark' || value === 'light' ? value : null;
+  } catch { return null; }
+}
+
 export function TelegramProvider({ adapter, children }: { adapter: TelegramAdapter | null; children: ReactNode }) {
   const subscribe = useCallback((notify: () => void) => adapter?.onThemeChange(notify) ?? (() => undefined), [adapter]);
-  const scheme = useSyncExternalStore<ColorScheme>(subscribe, () => adapter?.colorScheme ?? 'light', () => 'light');
+  const telegramScheme = useSyncExternalStore<ColorScheme>(subscribe, () => adapter?.colorScheme ?? 'light', () => 'light');
+  const [preferred, setPreferred] = useState<ColorScheme | null>(savedTheme);
+  const scheme = preferred ?? telegramScheme;
+  const setTheme = useCallback((next: ColorScheme) => {
+    setPreferred(next);
+    try {
+      document.cookie = `${THEME_COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+    } catch { /* Appearance still works when persistent cookies are blocked. */ }
+  }, []);
 
   useEffect(() => {
     adapter?.ready();
@@ -34,7 +52,7 @@ export function TelegramProvider({ adapter, children }: { adapter: TelegramAdapt
     return adapter.onViewportChange(apply);
   }, [adapter]);
 
-  const value = useMemo(() => ({ adapter, scheme }), [adapter, scheme]);
+  const value = useMemo(() => ({ adapter, scheme, setTheme }), [adapter, scheme, setTheme]);
   return <TelegramContext.Provider value={value}>{children}</TelegramContext.Provider>;
 }
 

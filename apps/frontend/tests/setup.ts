@@ -13,6 +13,7 @@ beforeAll(() => {
 });
 afterEach(() => {
   cleanup();
+  document.cookie = 'studgroup_theme=; Path=/; Max-Age=0';
   server.resetHandlers();
 });
 afterAll(() => server.close());
