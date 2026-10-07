@@ -21,6 +21,7 @@ from studgroup.academic_deadlines import router as deadlines_router
 from studgroup.api import ApiError, router
 from studgroup.homework import router as homework_router
 from studgroup.ingestion import router as ingestion_router
+from studgroup.notifications import router as notifications_router
 
 
 class Settings(BaseSettings):
@@ -40,6 +41,7 @@ class Settings(BaseSettings):
     ai_import_chat_id: int | None = None
     processing_mode: Literal["external", "embedded"] = "external"
     owner_telegram_user_id: int | None = None
+    bot_admin_user_id: int | None = None
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -61,7 +63,9 @@ class Settings(BaseSettings):
             raise ValueError("AI deadline requires an explicit timezone")
         return value
 
-    @field_validator("owner_telegram_user_id", "ai_import_chat_id", mode="before")
+    @field_validator(
+        "owner_telegram_user_id", "ai_import_chat_id", "bot_admin_user_id", mode="before"
+    )
     @classmethod
     def empty_owner(cls, value):
         return None if value == "" else value
@@ -80,9 +84,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             processor = asyncio.create_task(processing_loop(app.state.engine, settings))
         app.state.processor = processor
+        delivery = None
+        if settings.bot_admin_user_id is not None:
+            from studgroup.bot_admin import delivery_loop
+
+            delivery = asyncio.create_task(delivery_loop(app.state.engine, settings))
         try:
             yield
         finally:
+            if delivery is not None:
+                delivery.cancel()
+                with suppress(asyncio.CancelledError):
+                    await delivery
             if processor is not None:
                 processor.cancel()
                 with suppress(asyncio.CancelledError):
@@ -96,6 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ingestion_router)
     app.include_router(homework_router)
     app.include_router(deadlines_router)
+    app.include_router(notifications_router)
 
     @app.exception_handler(ApiError)
     async def api_error(request, error):

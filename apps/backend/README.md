@@ -2,6 +2,25 @@
 
 Owner: Codex.
 
+## Profile, inbox and private bot administration (contract 0.7.0)
+
+The production header reads the authenticated session, not demo data. The group-scoped
+`GET /v1/notifications` inbox persists personal read receipts via
+`POST /v1/notifications/read-all`. Changed homework and academic events generate
+deduplicated notifications; the first historical import does not. This is an in-app
+change inbox, not scheduled Telegram reminders. Inbox visibility lasts 90 days.
+
+Set backend-only `BOT_ADMIN_USER_ID` to the platform owner's Telegram ID. In the
+owner's private bot chat, `/admin` offers active pilot groups, then manual numeric ID
+or Telegram's native user picker, followed by explicit confirmation. New memberships
+are ordinary students; existing roles are preserved. Telegram cannot enumerate all
+group members through this picker. Sessions expire after 15 minutes; stale callbacks
+are rejected. Membership changes and audit records commit with the received update;
+durable outbox replies retry independently of AI availability. Telegram delivery is
+at-least-once, while update handling is deduplicated. Apply migration 0010 before use.
+Configure the webhook for message, edited_message and callback_query updates with
+`TELEGRAM_WEBHOOK_SECRET`; never put bot credentials in the frontend.
+
 This application will contain:
 
 - Telegram bot update ingestion;

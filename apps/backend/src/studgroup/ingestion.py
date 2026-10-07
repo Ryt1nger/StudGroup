@@ -29,6 +29,15 @@ class ReplyReference(BaseModel):
     message_id: int
 
 
+class SharedUser(BaseModel):
+    user_id: int = Field(gt=0, lt=2**63)
+
+
+class UsersShared(BaseModel):
+    request_id: int
+    users: list[SharedUser] = Field(max_length=10)
+
+
 class Message(BaseModel):
     message_id: int
     date: int = Field(ge=0)
@@ -37,12 +46,21 @@ class Message(BaseModel):
     edit_date: int | None = Field(default=None, ge=0)
     sender: Sender | None = Field(default=None, alias="from")
     reply_to_message: ReplyReference | None = None
+    users_shared: UsersShared | None = None
+
+
+class CallbackQuery(BaseModel):
+    id: str = Field(max_length=256)
+    sender: Sender = Field(alias="from")
+    message: Message | None = None
+    data: str | None = Field(default=None, max_length=64)
 
 
 class Update(BaseModel):
     update_id: int
     message: Message | None = None
     edited_message: Message | None = None
+    callback_query: CallbackQuery | None = None
 
 
 async def authenticate_webhook(
@@ -57,7 +75,7 @@ async def authenticate_webhook(
 
 
 @router.post("/webhook", dependencies=[Depends(authenticate_webhook)])
-async def webhook(update: Update, db: Annotated[AsyncSession, Depends(database)]):
+async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, Depends(database)]):
     # A savepoint lets concurrent duplicate deliveries acknowledge without losing
     # the transaction containing the authoritative inbox update.
     try:
@@ -67,6 +85,11 @@ async def webhook(update: Update, db: Annotated[AsyncSession, Depends(database)]
     except IntegrityError:
         return {"ok": True}
 
+    from studgroup.bot_admin import handle
+
+    if await handle(db, update, request.app.state.settings):
+        await db.commit()
+        return {"ok": True}
     message = update.edited_message or update.message
     if message is None or message.text is None or message.chat.type not in {"group", "supergroup"}:
         await db.commit()

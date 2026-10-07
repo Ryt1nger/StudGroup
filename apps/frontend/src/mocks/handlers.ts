@@ -29,6 +29,8 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
   };
 
   const handlers: HttpHandler[] = [
+    http.get(url('/notifications'), () => HttpResponse.json({ items: [], unread_count: 0, generated_at: new Date().toISOString() })),
+    http.post(url('/notifications/read-all'), () => HttpResponse.json({ items: [], unread_count: 0, generated_at: new Date().toISOString() })),
     http.post(url('/session/bootstrap'), async () => {
       await maybeSlow();
       if (scenario === 'offline') return HttpResponse.error();

@@ -208,3 +208,11 @@ synonymous with urgent/red. Subject pages can now return `events_state=ready`
 and a typed `events` array; `not_connected` is retained for older servers/mocks.
 Migration 0007 adds independent persistence; local reclassification preserves old
 source records and personal marks without destructive deletion.
+# 0.7.0 — Real notification inbox
+
+Adds authenticated active-group `GET /notifications` and `POST /notifications/read-all`.
+Reads are personal and persistent, never a group-wide read marker. Historical imports
+do not create fake new notifications. This is the in-app inbox for actual card changes;
+scheduled Telegram reminders/digests remain outside this slice. Existing endpoints and
+session/profile fields are unchanged. `/admin` is an owner-only private bot workflow,
+not a frontend endpoint and does not confer headman rights on participants.

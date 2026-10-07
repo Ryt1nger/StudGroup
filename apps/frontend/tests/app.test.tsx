@@ -105,7 +105,7 @@ describe('Today', () => {
     // urgent badge appears for urgent/super_urgent cards only
     expect(screen.getAllByText('Срочно')).toHaveLength(1);
     expect(screen.queryByText(/Найти или спросить/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/уведомл/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Уведомления/ })).toBeInTheDocument();
     // Completed cards with active deadlines stay visible, including meaningful updates.
     expect(screen.getByText('Эссе по маркетингу')).toBeInTheDocument();
     expect(screen.getByText('Обновлено — проверьте')).toBeInTheDocument();

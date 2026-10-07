@@ -1,10 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { http, HttpResponse } from 'msw';
 import { createMockAdapter } from '../src/telegram/mockAdapter';
 import { createLocalPreviewAdapter } from '../src/telegram/localPreviewAdapter';
 import { resetDemoNotifications } from '../src/shell/demo/demoStore';
-import { renderApp, useScenario } from './helpers';
+import { API, server, renderApp, useScenario } from './helpers';
 
 describe('mock-only header actions (bell + avatar)', () => {
   beforeEach(() => {
@@ -13,11 +14,32 @@ describe('mock-only header actions (bell + avatar)', () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('is hidden unless mock API mode is on', async () => {
+  it('shows real header actions outside mock mode', async () => {
     renderApp();
     await screen.findByText('ДЗ №12–140');
-    expect(screen.queryByRole('button', { name: /Уведомления/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Профиль/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Уведомления/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Профиль/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Профиль/ }));
+    expect(within(screen.getByRole('dialog')).queryByText('Демо')).not.toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('button', { name: /Уведомления/ }));
+    expect(await within(screen.getByRole('dialog')).findByText('Пока уведомлений нет')).toBeInTheDocument();
+  });
+
+  it('reads production inbox changes and persists mark-all through the API', async () => {
+    const item = { id: 'n1', title: 'Математика', body: 'Срок задания изменён',
+      entity_type: 'homework', entity_id: 'h1', created_at: '2026-10-07T10:00:00Z', read: false };
+    let marked = false;
+    const result = () => ({ items: [{ ...item, read: marked }], unread_count: marked ? 0 : 1, generated_at: '2026-10-07T10:00:00Z' });
+    server.use(http.get(`${API}/notifications`, () => HttpResponse.json(result())),
+      http.post(`${API}/notifications/read-all`, () => { marked = true; return HttpResponse.json(result()); }));
+    renderApp();
+    await userEvent.click(await screen.findByRole('button', { name: /Уведомления, есть непрочитанные/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(item.body)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Отметить все прочитанными' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Уведомления' })).toBeInTheDocument());
+    expect(marked).toBe(true);
   });
 
   it('shows the bell with an unread dot and the avatar with test-user initials', async () => {

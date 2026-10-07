@@ -4,6 +4,20 @@ export type ClientOptions = {
     baseUrl: 'https://api.studgroup.example/v1' | (string & {});
 };
 
+export type NotificationInbox = {
+    generated_at: string;
+    unread_count: number;
+    items: Array<{
+        id: string;
+        title: string;
+        body: string;
+        entity_type: 'homework' | 'deadline';
+        entity_id: string;
+        created_at: string;
+        read: boolean;
+    }>;
+};
+
 export type ScheduleResponse = {
     generated_at: string;
     group_timezone: string;
@@ -310,6 +324,64 @@ export type ApiError = {
 };
 
 export type HomeworkId = string;
+
+export type ListNotificationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/notifications';
+};
+
+export type ListNotificationsErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+};
+
+export type ListNotificationsError = ListNotificationsErrors[keyof ListNotificationsErrors];
+
+export type ListNotificationsResponses = {
+    /**
+     * Notification inbox
+     */
+    200: NotificationInbox;
+};
+
+export type ListNotificationsResponse = ListNotificationsResponses[keyof ListNotificationsResponses];
+
+export type ReadAllNotificationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/notifications/read-all';
+};
+
+export type ReadAllNotificationsErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+};
+
+export type ReadAllNotificationsError = ReadAllNotificationsErrors[keyof ReadAllNotificationsErrors];
+
+export type ReadAllNotificationsResponses = {
+    /**
+     * Updated notification inbox
+     */
+    200: NotificationInbox;
+};
+
+export type ReadAllNotificationsResponse = ReadAllNotificationsResponses[keyof ReadAllNotificationsResponses];
 
 export type GetScheduleData = {
     body?: never;

@@ -2,10 +2,11 @@ import { lazy, Suspense } from 'react';
 import { assets } from '../assets';
 import { ThemedImage } from '../ui/ThemedImage';
 import styles from './TopBar.module.css';
+import { HeaderActions } from './HeaderActions';
 
 /**
- * Bell and avatar exist in DEV mock, local real-data preview, or the explicit static demo.
- * The normal production build drops this import and check-dist.mjs fails if it leaks.
+ * Only demo fixtures are lazy-loaded in development or the explicit static demo.
+ * Production uses the authenticated session and persisted notification inbox.
  */
 const demoBuild = import.meta.env.MODE === 'demo';
 const DemoHeaderActions = import.meta.env.DEV || demoBuild ? lazy(() => import('./demo/DemoHeaderActions')) : null;
@@ -24,7 +25,7 @@ export function TopBar() {
         <Suspense fallback={null}>
           <DemoHeaderActions />
         </Suspense>
-      ) : null}
+      ) : <HeaderActions />}
     </header>
   );
 }

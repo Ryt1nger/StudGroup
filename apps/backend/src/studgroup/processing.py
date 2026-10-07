@@ -29,6 +29,7 @@ from studgroup.models import (
     RawMessage,
     SchedulePattern,
 )
+from studgroup.notifications import record_change
 
 MAX_ATTEMPTS = 2
 # Upper bound for the byte-bounded request + system instructions and 3,000 output tokens.
@@ -358,6 +359,7 @@ async def publish(db, raw, extraction, now):
             if name and name.casefold().strip() == extraction.subject.casefold().strip():
                 original = parent
     if extraction.kind == "homework":
+        changed = True
         existing = await db.scalar(
             select(Homework).where(Homework.raw_message_id == original.id).with_for_update()
         )
@@ -397,16 +399,18 @@ async def publish(db, raw, extraction, now):
                     utc(existing.delete_at), retain_until(existing.created_at, existing.deadline_at)
                 )
         else:
-            db.add(
-                Homework(
-                    group_id=raw.group_id,
-                    raw_message_id=original.id,
-                    **values,
-                    created_at=now,
-                    updated_at=now,
-                    delete_at=retain_until(now, deadline),
-                )
+            existing = Homework(
+                group_id=raw.group_id,
+                raw_message_id=original.id,
+                **values,
+                created_at=now,
+                updated_at=now,
+                delete_at=retain_until(now, deadline),
             )
+            db.add(existing)
+        await db.flush()
+        if changed:
+            await record_change(db, raw, existing, "homework", now)
         other = await db.scalar(
             select(AcademicDeadline).where(AcademicDeadline.raw_message_id == original.id)
         )
@@ -429,6 +433,15 @@ async def publish(db, raw, extraction, now):
                 delete_at=now + timedelta(days=90),
             )
             db.add(row)
+        before = (
+            row.kind,
+            row.subject,
+            row.title,
+            row.description,
+            row.deadline_at,
+            row.window_start,
+            row.window_end,
+        )
         row.kind = extraction.kind
         row.subject = extraction.subject
         row.title = extraction.title
@@ -450,6 +463,17 @@ async def publish(db, raw, extraction, now):
         old = await db.scalar(select(Homework).where(Homework.raw_message_id == original.id))
         if old:
             old.status = "incomplete_hidden"
+        await db.flush()
+        if before != (
+            row.kind,
+            row.subject,
+            row.title,
+            row.description,
+            row.deadline_at,
+            row.window_start,
+            row.window_end,
+        ):
+            await record_change(db, raw, row, "deadline", now)
     return True
 
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.6.1
+  version: 0.7.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -17,6 +17,36 @@ tags:
   - name: Homework
   - name: Membership
 paths:
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: Real retained notifications for the active group and current user
+      responses:
+        '200':
+          description: Notification inbox
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationInbox'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /notifications/read-all:
+    post:
+      operationId: readAllNotifications
+      summary: Mark current user's visible group notifications read
+      responses:
+        '200':
+          description: Updated notification inbox
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationInbox'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /schedule:
     get:
       tags: [Schedule]
@@ -680,6 +710,25 @@ components:
         permissions: [homework.read, homework.completion.write]
         generated_at: '2026-10-04T12:00:00Z'
   schemas:
+    NotificationInbox:
+      type: object
+      required: [items, unread_count, generated_at]
+      properties:
+        generated_at: {type: string, format: date-time}
+        unread_count: {type: integer, minimum: 0}
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, title, body, entity_type, entity_id, created_at, read]
+            properties:
+              id: {type: string, format: uuid}
+              title: {type: string}
+              body: {type: string}
+              entity_type: {type: string, enum: [homework, deadline]}
+              entity_id: {type: string, format: uuid}
+              created_at: {type: string, format: date-time}
+              read: {type: boolean}
     ScheduleResponse:
       type: object
       required: [generated_at, group_timezone, start, end, week_state, first_week_anchor, selected_week, lessons]
