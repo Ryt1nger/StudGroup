@@ -17,6 +17,7 @@ from studgroup.academic_context import build_context, has_date_cue
 from studgroup.ai import BATCH_PROMPT_VERSION, DeepSeekProvider, ProviderFailure
 from studgroup.api import schedule_data
 from studgroup.deadlines import ScheduleDeadlineContext
+from studgroup.homework_timing import lesson_deadline
 from studgroup.models import (
     AcademicDeadline,
     AIAttempt,
@@ -359,6 +360,15 @@ async def publish(db, raw, extraction, now):
             if name and name.casefold().strip() == extraction.subject.casefold().strip():
                 original = parent
     if extraction.kind == "homework":
+        group = await db.get(Group, raw.group_id)
+        deadline, date_only = await lesson_deadline(
+            db,
+            group,
+            extraction.subject,
+            deadline,
+            extraction.deadline_date_only,
+            raw.text + "\n" + original.text,
+        )
         changed = True
         existing = await db.scalar(
             select(Homework).where(Homework.raw_message_id == original.id).with_for_update()
@@ -369,7 +379,7 @@ async def publish(db, raw, extraction, now):
             "title": extraction.title,
             "description": extraction.description,
             "deadline_at": deadline,
-            "deadline_date_only": extraction.deadline_date_only,
+            "deadline_date_only": date_only,
             "status": state,
             "urgency": extraction.urgency,
             "verification_state": "inferred" if is_inferred else "from_group_message",

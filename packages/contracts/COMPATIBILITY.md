@@ -1,5 +1,15 @@
 # Contract compatibility
 
+## Homework lesson-time binding (owner decision, 2026-10-07)
+
+No schema change. A homework deadline with a date but no time is bound to the end
+of the first scheduled lesson of that subject on that date, when known. Explicit
+clock times and explicit end-of-day/week windows are preserved; no matching lesson
+means the existing calendar-day deadline remains. Inferred next-lesson deadlines
+remain due at lesson start. Control points are unchanged. Migration 0012 repairs
+retained date-only homework without AI calls or new-change announcements. Timed
+homework leaves active lists at its deadline, including Today, without layout changes.
+
 ## Source-anchored homework age (owner decision, 2026-10-07)
 
 No schema change. Undated homework uses the next known subject lesson after the
