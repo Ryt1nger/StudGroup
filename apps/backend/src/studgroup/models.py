@@ -133,6 +133,7 @@ class Homework(Base):
     status: Mapped[str] = mapped_column(String(32), default="published")
     urgency: Mapped[str] = mapped_column(String(16), default="normal")
     verification_state: Mapped[str] = mapped_column(String(32), default="from_group_message")
+    source_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     significant_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

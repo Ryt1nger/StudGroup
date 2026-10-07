@@ -7,7 +7,7 @@ from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, re
 TZ = "Europe/Moscow"
 
 
-def test_owner_approved_provisional_deadline_for_missing_historical_schedule():
+def test_missing_historical_schedule_never_rebases_to_current_time():
     result = resolve_deadline(
         [("Ст 46 N 10.1", datetime.fromisoformat("2026-09-30T12:00:00+03:00"))],
         TZ,
@@ -15,8 +15,8 @@ def test_owner_approved_provisional_deadline_for_missing_historical_schedule():
         schedule=timetable(),
         fallback_reference=datetime.fromisoformat("2026-10-06T11:00:00+03:00"),
     )
-    assert result.at.isoformat() == "2026-10-07T10:40:00+03:00"
-    assert result.basis == "provisional_next_subject_lesson"
+    assert result.at is None
+    assert result.basis == "schedule_does_not_cover_source_date"
 
 
 def test_new_explicit_information_replaces_provisional_lesson_deadline():

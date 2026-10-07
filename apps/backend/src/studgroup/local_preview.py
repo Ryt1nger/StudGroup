@@ -215,12 +215,23 @@ async def refresh_deadlines(
                 if fill_missing:
                     if row.deadline_at is not None or row.status == "incomplete_hidden":
                         continue
+                    raw = (
+                        await db.get(RawMessage, row.raw_message_id) if row.raw_message_id else None
+                    )
+                    if raw is None:
+                        continue
                     resolved = resolve_deadline(
-                        [("", now)],
+                        [
+                            (
+                                raw.text,
+                                raw.message_date.replace(tzinfo=UTC)
+                                if raw.message_date.tzinfo is None
+                                else raw.message_date,
+                            )
+                        ],
                         group.timezone,
                         row.subject_name,
                         schedule=schedule,
-                        fallback_reference=now,
                     )
                     if resolved.at is None:
                         continue

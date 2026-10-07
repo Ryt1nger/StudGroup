@@ -1,5 +1,17 @@
 # Contract compatibility
 
+## Source-anchored homework age (owner decision, 2026-10-07)
+
+No schema change. Undated homework uses the next known subject lesson after the
+original message timestamp, never after import/processing/current time. Missing
+historical timetable coverage leaves the deadline unknown. Homework without an
+explicit deadline (unknown or timetable-inferred) older than seven elapsed days
+from its original source moves to Archive and is omitted from Today and subject
+active homework. Explicit future deadlines remain active regardless of source age.
+Academic deadlines/control points are not subject to this homework age cutoff;
+their existing event date/archive rules remain unchanged. Migration 0011 repairs
+existing inferred dates without provider calls or fake change notifications.
+
 ## Event detail (0.6.1)
 
 Additive GET /deadlines/{deadline_id}, operation getAcademicDeadline. Returns

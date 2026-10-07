@@ -179,18 +179,10 @@ def resolve_deadline(
     schedule: ScheduleDeadlineContext | None = None,
     fallback_reference: datetime | None = None,
 ) -> DeadlineResolution:
-    """Source evidence wins; an approved provisional deadline may use today's timetable."""
-    resolved = _resolve_source_deadline(
+    """Resolve against source time only; legacy fallback_reference is intentionally ignored."""
+    return _resolve_source_deadline(
         sources, timezone, subject, proposed_at, proposed_date_only, schedule
     )
-    if resolved.at is not None or fallback_reference is None:
-        return resolved
-    provisional = _resolve_source_deadline(
-        [("", fallback_reference)], timezone, subject, schedule=schedule
-    )
-    if provisional.at is not None:
-        return DeadlineResolution(provisional.at, False, "provisional_next_subject_lesson")
-    return resolved
 
 
 def _resolve_source_deadline(

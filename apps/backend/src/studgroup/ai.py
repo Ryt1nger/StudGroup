@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -28,7 +28,8 @@ Resolve phrases such as tomorrow, next Wednesday and end of week against the ori
 source message date in the group timezone. End of week means Sunday, date-only.
 Missing deadline is NOT evidence of low confidence in otherwise explicit homework.
 If no deadline is stated, leave it null: backend assigns the next lesson of this subject
-from a valid timetable, never an invented lesson. An ambiguous stated date is NOT missing.
+after the ORIGINAL source timestamp from a valid timetable, never after processing time
+or today's date. An ambiguous stated date is NOT missing.
 Dates without a time use midnight in the group timezone and deadline_date_only=true.
 An ambiguous date range is NOT a single deadline: leave deadline_at null unless the
 message explicitly identifies its submission deadline. Never pick the first date.
@@ -231,7 +232,6 @@ class DeepSeekProvider:
             extraction.deadline_at,
             extraction.deadline_date_only,
             schedule if extraction.kind == "homework" else None,
-            fallback_reference=datetime.now(UTC) if extraction.kind == "homework" else None,
         )
         extraction.deadline_at = resolved.at
         extraction.deadline_date_only = resolved.date_only

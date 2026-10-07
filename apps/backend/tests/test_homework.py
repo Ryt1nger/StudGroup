@@ -1,6 +1,8 @@
 import asyncio
+import importlib.util
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -178,6 +180,73 @@ def seed_card(client):
             return str(card.id)
 
     return asyncio.run(seed())
+
+
+@pytest.mark.parametrize(
+    "age,kind,visible",
+    [(6, "unknown", True), (8, "unknown", False), (8, "inferred", False), (8, "explicit", True)],
+)
+def test_source_age_archives_only_undated_or_inferred_homework(client, age, kind, visible):
+    card_id = seed_card(client)
+
+    async def update():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.get(Homework, uuid.UUID(card_id))
+            raw = await db.get(RawMessage, row.raw_message_id)
+            now = datetime.now(UTC)
+            raw.message_date = now - timedelta(days=age)
+            # Import/processing time is recent, but must not reset message age.
+            row.created_at = now
+            if kind != "unknown":
+                row.deadline_at = now + timedelta(days=2)
+            if kind == "inferred":
+                row.verification_state = "inferred"
+            await db.commit()
+
+    asyncio.run(update())
+    headers = {"Authorization": "Bearer valid"}
+    active = client.get("/v1/homework?filter=all", headers=headers).json()["items"]
+    archive = client.get("/v1/homework?filter=archive", headers=headers).json()["items"]
+    assert (card_id in [r["id"] for r in active]) is visible
+    assert (card_id in [r["id"] for r in archive]) is not visible
+    if not visible:
+        sections = client.get("/v1/today", headers=headers).json()["sections"]
+        assert card_id not in [r["id"] for s in sections for r in s["items"]]
+    assert client.get(f"/v1/homework/{card_id}", headers=headers).status_code == 200
+
+
+def test_backfill_corrects_inferred_dates_from_source_without_resetting_age(client):
+    card_id = seed_card(client)
+    spec = importlib.util.spec_from_file_location(
+        "source_date_repair",
+        Path(__file__).parents[1] / "migrations/versions/0011_source_anchored_homework.py",
+    )
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.get(Homework, uuid.UUID(card_id))
+            raw = await db.get(RawMessage, row.raw_message_id)
+            raw.message_date = datetime(2026, 9, 14, 12, tzinfo=UTC)
+            row.deadline_at = datetime(2026, 10, 12, 6, tzinfo=UTC)
+            row.verification_state = "inferred"
+            before = row.updated_at
+            await db.commit()
+        async with client.app.state.engine.begin() as connection:
+            await migration.repair(connection)
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.get(Homework, uuid.UUID(card_id))
+            assert row.deadline_at.date().isoformat() == "2026-09-21"
+            assert row.updated_at == before
+            revision = row.revision
+        async with client.app.state.engine.begin() as connection:
+            await migration.repair(connection)
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.get(Homework, uuid.UUID(card_id))
+            assert row.revision == revision
+
+    asyncio.run(run())
 
 
 @pytest.mark.parametrize(

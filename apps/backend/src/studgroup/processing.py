@@ -373,6 +373,7 @@ async def publish(db, raw, extraction, now):
             "status": state,
             "urgency": extraction.urgency,
             "verification_state": "inferred" if is_inferred else "from_group_message",
+            "source_message_at": utc(original.message_date),
         }
         if existing:
             # A missing/model-assumed date never erases a previously explicit deadline.
@@ -383,7 +384,7 @@ async def publish(db, raw, extraction, now):
             changed = any(
                 (
                     utc(getattr(existing, key))
-                    if key == "deadline_at" and getattr(existing, key)
+                    if key in {"deadline_at", "source_message_at"} and getattr(existing, key)
                     else getattr(existing, key)
                 )
                 != value

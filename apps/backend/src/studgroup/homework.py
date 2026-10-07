@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.academic_deadlines import items as deadline_items
@@ -127,8 +127,27 @@ def archived_condition(now, timezone):
     start = datetime.combine(day, time.min, ZoneInfo(timezone)).astimezone(UTC)
     return or_(
         Homework.status == "cancelled",
-        and_(Homework.deadline_date_only.is_(True), Homework.deadline_at < start),
-        and_(Homework.deadline_date_only.is_(False), Homework.deadline_at <= now),
+        and_(
+            Homework.deadline_at.is_not(None),
+            Homework.deadline_date_only.is_(True),
+            Homework.deadline_at < start,
+        ),
+        and_(
+            Homework.deadline_at.is_not(None),
+            Homework.deadline_date_only.is_(False),
+            Homework.deadline_at <= now,
+        ),
+        and_(
+            or_(Homework.deadline_at.is_(None), Homework.verification_state == "inferred"),
+            func.coalesce(
+                Homework.source_message_at,
+                select(RawMessage.message_date)
+                .where(RawMessage.id == Homework.raw_message_id)
+                .scalar_subquery(),
+                Homework.created_at,
+            )
+            < now - timedelta(days=7),
+        ),
     )
 
 
@@ -173,7 +192,7 @@ async def homework_list(
     # SQL comparisons to NULL must not make an unknown deadline disappear.
     active = and_(
         Homework.status != "cancelled",
-        or_(Homework.deadline_at.is_(None), ~archived),
+        ~archived,
     )
     query = query.where(archived if filter == "archive" else active)
     if filter == "mine":
@@ -301,7 +320,7 @@ async def lesson_subject(
                 Homework.group_id == group.id,
                 Homework.status.in_(["published", "needs_clarification"]),
                 Homework.delete_at > now,
-                or_(Homework.deadline_at.is_(None), ~archived_condition(now, group.timezone)),
+                ~archived_condition(now, group.timezone),
             )
         )
     ).all()
@@ -357,7 +376,7 @@ async def today(
                 Homework.group_id == group.id,
                 Homework.status.in_(["published", "needs_clarification"]),
                 Homework.delete_at > now,
-                or_(Homework.deadline_at.is_(None), ~archived_condition(now, group.timezone)),
+                ~archived_condition(now, group.timezone),
             )
         )
     ).all()
