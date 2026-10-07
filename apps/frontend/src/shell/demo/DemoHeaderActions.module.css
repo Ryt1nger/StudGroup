@@ -6,10 +6,13 @@
   background: var(--sg-color-primary); box-shadow: 0 0 0 2px var(--sg-color-background);
 }
 .avatar {
-  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
-  background: linear-gradient(145deg, var(--sg-color-primary), color-mix(in srgb, var(--sg-color-primary) 70%, #7a5cff));
+  display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%;
+  /* Keep the solid fill separate: an unsupported gradient cannot erase it. */
+  background-color: #5b4dff;
+  background-color: var(--sg-color-primary, #5b4dff);
+  background-image: linear-gradient(145deg, var(--sg-color-primary, #5b4dff), #7a5cff);
   color: #fff; font-size: 17px; font-weight: 600; opacity: 0.92;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--sg-color-primary) 22%, transparent);
+  box-shadow: 0 2px 8px rgba(91, 77, 255, 0.22);
 }
 .bell:focus-visible, .avatar:focus-visible { outline: 2px solid var(--sg-color-primary); outline-offset: 2px; }
 
@@ -38,8 +41,10 @@
 .link:disabled { color: var(--sg-color-disabled); cursor: default; }
 .profile { display: flex; align-items: center; gap: 14px; padding: 6px 0 10px; }
 .avatarLarge {
-  display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; color: #fff; font-size: 22px; font-weight: 600; opacity: 0.92;
-  background: linear-gradient(145deg, var(--sg-color-primary), color-mix(in srgb, var(--sg-color-primary) 70%, #7a5cff));
+  display: grid; place-items: center; flex-shrink: 0; width: 56px; height: 56px; border-radius: 50%; color: #fff; font-size: 22px; font-weight: 600; opacity: 0.92;
+  background-color: #5b4dff;
+  background-color: var(--sg-color-primary, #5b4dff);
+  background-image: linear-gradient(145deg, var(--sg-color-primary, #5b4dff), #7a5cff);
 }
 .profileText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .profileName { font-size: 18px; line-height: 24px; font-weight: 700; }
