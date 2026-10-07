@@ -48,7 +48,12 @@ records, 15 academic events and 40 schedule records. Only the explicitly supplie
 Telegram account was given an active student membership; local preview users and
 session tokens were not copied. Reviewed personal completion state was preserved.
 Other history is retained for review, not falsely marked as fully AI-analyzed.
-AI remains disabled. Attachments without text were not uploaded or OCR-processed.
+AI was initially disabled. On 2026-10-07 the owner approved a one-time history
+analysis window ending at 2026-10-08 00:00 Europe/Moscow, under the existing daily
+and total budget caps. Cloud runtime logs confirm completed model processing.
+After the absolute cutoff no new model requests start, including after restart;
+there is no automatic next-day re-enable. Attachments without text were not uploaded
+or OCR-processed.
 
 The importer (`studgroup.group_import`) is insert-only and idempotent. The payload
 was transferred via a temporary Render secret file with a checked SHA-256 digest,
