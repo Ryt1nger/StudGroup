@@ -180,3 +180,16 @@ def test_approximate_month_is_not_an_exact_day():
     )
     assert result.at is None
     assert result.basis == "approximate_deadline"
+
+
+def test_subject_alias_requires_an_unambiguous_known_calendar_subject():
+    from datetime import date
+
+    from studgroup.deadlines import ScheduleDeadlineContext, canonical_subject
+
+    calendar = ScheduleDeadlineContext(
+        [{"subject": "Математический анализ"}], date(2026, 10, 5), date(2026, 10, 18)
+    )
+    assert canonical_subject("Матан", calendar) == "Математический анализ"
+    assert canonical_subject("История", calendar) == "История"
+    assert canonical_subject("Матан", None) == "Матан"

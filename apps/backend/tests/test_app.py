@@ -49,3 +49,10 @@ def test_render_postgres_urls_are_normalized_without_requiring_manual_driver_edi
         Settings(database_url="postgres://user:placeholder@host/db").database_url
         == "postgresql+asyncpg://user:placeholder@host/db"
     )
+
+
+def test_ai_cutoff_rejects_unspecified_timezone():
+    import pytest
+
+    with pytest.raises(ValueError):
+        Settings(ai_enabled_until="2026-10-08T00:00:00")

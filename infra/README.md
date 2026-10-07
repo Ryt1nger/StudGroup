@@ -89,6 +89,18 @@ UTC day per group and $1.70 total in this processing ledger. Other account consu
 and manual import scripts are outside this ledger; these limits do not guarantee
 provider balance or extraction quality.
 
+For an owner-approved one-time analysis window, set `AI_ENABLED_UNTIL` to an
+offset-aware absolute timestamp. No request starts at/after that instant; in-flight
+requests are cancelled at the boundary, and unknown usage retains its reservation.
+The cutoff survives process sleep/restart; it is not a daily automatic re-enable.
+`AI_IMPORT_CHAT_ID` opts exactly one authorized group's imported review queue into
+analysis (including expired raw history retained for required extraction). Existing
+reviewed/completed records and terminal jobs are not repeatedly sent to the model.
+Past/future context is bounded around the original source timestamp, not around the
+latest end of a large imported history. Calendar-known subject aliases are normalized
+before next-lesson fallback. Render sleeping still pauses execution; it does not erase
+the SQL queue or extend the analysis cutoff.
+
 The SQL inbox survives missed broker wakeups. Leases and attempt fencing prevent
 stale replies from replacing newer results. КТ/assessments are persisted separately
 from homework; explicit dates override provisional next-class homework dates.

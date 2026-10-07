@@ -189,6 +189,63 @@ def test_long_term_tasks_are_retained_until_after_event():
     assert retain_until(created, None) == created + timedelta(days=90)
 
 
+def test_cutoff_stops_calls_at_and_after_midnight(client):
+    source(client)
+    now = datetime(2026, 10, 7, 21, tzinfo=UTC)
+    provider = Provider()
+    settings = Settings(ai_enabled=True, ai_enabled_until=now)
+    assert (
+        asyncio.run(process_next(client.app.state.engine, settings, provider, now=now))
+        == "scheduled_off"
+    )
+    assert (
+        asyncio.run(
+            process_next(client.app.state.engine, settings, provider, now=now + timedelta(hours=12))
+        )
+        == "scheduled_off"
+    )
+    assert provider.calls == 0
+    assert count(client, AIAttempt) == 0
+
+
+def test_active_request_is_cancelled_at_cutoff_without_publishing(client):
+    source(client)
+    now = datetime.now(UTC)
+
+    class SlowProvider(Provider):
+        async def extract_batch(self, *args, **kwargs):
+            self.calls += 1
+            await asyncio.sleep(2)
+            return await super().extract_batch(*args, **kwargs)
+
+    provider = SlowProvider()
+    settings = Settings(ai_enabled=True, ai_enabled_until=now + timedelta(seconds=1))
+    assert (
+        asyncio.run(process_next(client.app.state.engine, settings, provider, now=now)) == "retry"
+    )
+    assert provider.calls == 1
+    assert count(client, Homework) == 0
+
+
+def test_import_history_review_is_processed_only_when_group_is_explicitly_enabled(client):
+    source(client)
+
+    async def prepare():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(RawMessage))
+            row.imported = True
+            row.processing_state = "needs_context"
+            row.delete_at = datetime.now(UTC) - timedelta(days=1)
+            await db.commit()
+
+    asyncio.run(prepare())
+    provider = Provider()
+    assert run(client, provider) == "idle"
+    assert provider.calls == 0
+    assert run(client, provider, ai_import_chat_id=-1001) == "completed"
+    assert provider.calls == 1
+
+
 def test_expired_worker_cannot_overwrite_new_attempt(client):
     source(client)
     now = datetime.now(UTC)
@@ -260,6 +317,7 @@ def test_uncertain_candidate_is_retained_for_review(client):
     assert run(client, UncertainProvider()) == "completed"
     assert count(client, Homework) == 0
     assert count(client, AICandidate) == 1
+    assert run(client, UncertainProvider()) == "idle"
 
     async def inspect():
         async with AsyncSession(client.app.state.engine) as db:

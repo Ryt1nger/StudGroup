@@ -21,6 +21,34 @@ class ScheduleDeadlineContext:
     ready: bool = True
 
 
+def canonical_subject(subject, schedule):
+    if not subject or schedule is None or not schedule.ready:
+        return subject
+    normalize = lambda value: " ".join(value.casefold().replace("ё", "е").split())
+    known = {normalize(lesson["subject"]): lesson["subject"] for lesson in schedule.lessons}
+    key = normalize(subject).lstrip("#")
+    if key in known:
+        return known[key]
+    aliases = {
+        "матан": "математический анализ",
+        "матанализ": "математический анализ",
+        "инфа": "основы информатики",
+        "информатика": "основы информатики",
+        "линал": "линейная алгебра",
+        "русский": "русский язык",
+        "английский": "иностранный язык",
+        "англ": "иностранный язык",
+        "история": "история россии",
+    }
+    wanted = aliases.get(key)
+    if not wanted:
+        return subject
+    matches = [
+        value for name, value in known.items() if name == wanted or name.startswith(wanted + " ")
+    ]
+    return matches[0] if len(matches) == 1 else subject
+
+
 WEEKDAYS = (
     r"понедельник(?:а|у)?",
     r"вторник(?:а|у)?",

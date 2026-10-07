@@ -1,14 +1,16 @@
 """Durable, lease-based extraction. SQL is authoritative; Redis is only a wakeup channel."""
 
+import asyncio
 import json
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from time import monotonic
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.academic_context import build_context, has_date_cue
@@ -112,15 +114,33 @@ async def claim(engine, settings, now):
             control = AIControl(id=1, spent_usd=Decimal(0))
             db.add(control)
             await db.flush()
+        import_scope = (
+            and_(
+                RawMessage.imported.is_(True), Group.telegram_chat_id == settings.ai_import_chat_id
+            )
+            if settings.ai_import_chat_id is not None
+            else False
+        )
+        already_processed = exists(
+            select(AIJob.id).where(
+                AIJob.raw_message_id == RawMessage.id,
+                AIJob.source_revision == RawMessage.revision,
+                AIJob.state.in_(["done", "failed", "superseded"]),
+            )
+        )
         raws = (
             await db.scalars(
                 select(RawMessage)
                 .join(Group)
                 .where(
-                    RawMessage.processing_state == "pending",
-                    RawMessage.delete_at > now,
+                    or_(
+                        RawMessage.processing_state == "pending",
+                        and_(import_scope, RawMessage.processing_state == "needs_context"),
+                    ),
+                    or_(RawMessage.delete_at > now, import_scope),
                     Group.pilot_authorized.is_(True),
                     Group.status == "active",
+                    ~already_processed,
                 )
                 .order_by(RawMessage.version_date)
                 .limit(50)
@@ -195,18 +215,43 @@ async def claim(engine, settings, now):
 
 
 async def context_for(db, raw, group, now):
-    rows = (
+    base = select(RawMessage).where(
+        RawMessage.group_id == raw.group_id,
+        or_(
+            RawMessage.delete_at > now,
+            RawMessage.imported.is_(True) if raw.imported else False,
+        ),
+        RawMessage.message_date >= utc(raw.message_date) - timedelta(days=7),
+        RawMessage.message_date <= utc(raw.message_date) + timedelta(days=7),
+    )
+    before = (
         await db.scalars(
-            select(RawMessage)
-            .where(
-                RawMessage.group_id == raw.group_id,
-                RawMessage.delete_at > now,
-                RawMessage.message_date >= utc(raw.message_date) - timedelta(days=7),
-            )
+            base.where(RawMessage.message_date <= utc(raw.message_date))
             .order_by(RawMessage.message_date.desc())
-            .limit(250)
+            .limit(125)
         )
     ).all()
+    after = (
+        await db.scalars(
+            base.where(RawMessage.message_date > utc(raw.message_date))
+            .order_by(RawMessage.message_date)
+            .limit(125)
+        )
+    ).all()
+    rows = [*before, *after]
+    if raw.reply_to_message_id is not None:
+        parent = await db.scalar(
+            select(RawMessage).where(
+                RawMessage.group_id == raw.group_id,
+                RawMessage.telegram_message_id == raw.reply_to_message_id,
+                or_(
+                    RawMessage.delete_at > now,
+                    RawMessage.imported.is_(True) if raw.imported else False,
+                ),
+            )
+        )
+        if parent:
+            rows.append(parent)
     indexed = {row.id: row for row in rows}
     indexed[raw.id] = raw
     messages = [
@@ -410,8 +455,15 @@ async def publish(db, raw, extraction, now):
 
 async def process_next(engine, settings, provider=None, now=None):
     now = now or datetime.now(UTC)
+    started = monotonic()
+
+    def clock():
+        return now + timedelta(seconds=monotonic() - started)
+
     if not settings.ai_enabled:
         return "disabled"
+    if settings.ai_enabled_until is not None and utc(settings.ai_enabled_until) <= clock():
+        return "scheduled_off"
     if settings.deepseek_model != "deepseek-flash":
         return "model_budget_not_reviewed"
     if not settings.deepseek_api_key.get_secret_value() and provider is None:
@@ -436,9 +488,20 @@ async def process_next(engine, settings, provider=None, now=None):
     result = None
     failure = None
     try:
-        result = await provider.extract_batch(
-            context, timezone, schedule, target_message_id=message_id
+        remaining = (
+            (utc(settings.ai_enabled_until) - clock()).total_seconds()
+            if settings.ai_enabled_until is not None
+            else None
         )
+        if remaining is not None and remaining <= 0:
+            failure = ProviderFailure("processing_window_closed", True)
+        else:
+            async with asyncio.timeout(remaining):
+                result = await provider.extract_batch(
+                    context, timezone, schedule, target_message_id=message_id
+                )
+    except TimeoutError:
+        failure = ProviderFailure("processing_window_closed", True)
     except ProviderFailure as error:
         failure = error
     async with AsyncSession(engine) as db:

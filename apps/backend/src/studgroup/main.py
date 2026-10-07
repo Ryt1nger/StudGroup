@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from datetime import datetime
 from typing import Literal
 
 from fastapi import FastAPI
@@ -35,6 +36,8 @@ class Settings(BaseSettings):
     ai_daily_group_budget_usd: float = 0.05
     ai_total_budget_usd: float = 1.70
     ai_enabled: bool = False
+    ai_enabled_until: datetime | None = None
+    ai_import_chat_id: int | None = None
     processing_mode: Literal["external", "embedded"] = "external"
     owner_telegram_user_id: int | None = None
 
@@ -46,7 +49,19 @@ class Settings(BaseSettings):
                 return "postgresql+asyncpg://" + value[len(prefix) :]
         return value
 
-    @field_validator("owner_telegram_user_id", mode="before")
+    @field_validator("ai_enabled_until", mode="before")
+    @classmethod
+    def empty_cutoff(cls, value):
+        return None if value == "" else value
+
+    @field_validator("ai_enabled_until")
+    @classmethod
+    def deadline_requires_timezone(cls, value):
+        if value is not None and value.utcoffset() is None:
+            raise ValueError("AI deadline requires an explicit timezone")
+        return value
+
+    @field_validator("owner_telegram_user_id", "ai_import_chat_id", mode="before")
     @classmethod
     def empty_owner(cls, value):
         return None if value == "" else value

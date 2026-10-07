@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, model_validator
 
-from studgroup.deadlines import ScheduleDeadlineContext, resolve_deadline
+from studgroup.deadlines import ScheduleDeadlineContext, canonical_subject, resolve_deadline
 
 PROMPT_VERSION = "academic-text-6"
 BATCH_PROMPT_VERSION = "academic-import-5"
@@ -208,6 +208,7 @@ class DeepSeekProvider:
     def _resolve_deadline(extraction, sources, timezone, schedule):
         if extraction.kind in {"irrelevant", "needs_context"}:
             return
+        extraction.subject = canonical_subject(extraction.subject, schedule)
         source_text = "\n".join(text for text, _ in sources)
         explicit_control = re.search(
             r"задание\s+к\s+контрольной\s+точке|(?:^|\n)\s*(?:кт|контрольная точка)\s*(?:\d+\s*[:.]|по\b)",
