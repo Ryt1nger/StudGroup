@@ -2,6 +2,30 @@
 
 Owner: Codex.
 
+## Headman cabinet /st (contract 0.8.0)
+
+Private Telegram command `/st` lists only the caller's active pilot groups where
+their membership role is headman or deputy. Every action rechecks membership;
+commands never promote users. The owner explicitly assigns roles through `/admin`.
+Apply migration 0013 before startup. Existing backend outbox delivery (configured
+with `BOT_ADMIN_USER_ID`) runs independently of AI and delivers cabinet replies.
+
+Available: question review and deferral, manual homework/control-point creation,
+editing, confirmation, cancellation, conversion, merging, retained source excerpts,
+forwarded-message drafts with original timestamps, HTTPS material links, revision
+protected card/schedule undo, single-occurrence and explicitly confirmed recurring
+schedule edits, online links, student-access suspension/restoration, one-time 24h
+invitations (1–10 per batch; Telegram membership verification required), group
+summary, timezone and opt-in personal question times. Material links and schedule
+changes are projected into the WebApp; files/OCR are not part of this release.
+
+Known pilot limitations accepted for publishing: participant/settings actions are
+not in the correction journal; undo of a card created from an AI candidate does not
+restore the candidate to review; owner role assignment has no role-removal button.
+Question delivery uses the existing web process, so a sleeping free Render instance
+catches up on waking; it is not a guaranteed always-on scheduler. Questions are off
+by default; no production role or notification preference is enabled automatically.
+
 ## Profile, inbox and private bot administration (contract 0.7.0)
 
 The production header reads the authenticated session, not demo data. Its profile

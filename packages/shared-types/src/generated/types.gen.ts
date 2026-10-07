@@ -11,7 +11,7 @@ export type NotificationInbox = {
         id: string;
         title: string;
         body: string;
-        entity_type: 'homework' | 'deadline';
+        entity_type: 'homework' | 'deadline' | 'schedule';
         entity_id: string;
         created_at: string;
         read: boolean;
@@ -39,7 +39,8 @@ export type LessonOccurrence = {
      * Display-ready location text, e.g. «Ауд. 320» or «Зал 2». Clients render it as supplied without adding a prefix.
      */
     location: string | null;
-    status: 'scheduled';
+    status: 'scheduled' | 'cancelled';
+    online_url?: string | null;
 };
 
 export type SessionBootstrapRequest = {
@@ -155,6 +156,15 @@ export type AcademicDeadline = {
     date_hint: string | null;
     needs_clarification: boolean;
     source_message_ids: Array<number>;
+    revision?: number;
+    cancelled_at?: string | null;
+    materials?: Array<MaterialLink>;
+};
+
+export type MaterialLink = {
+    id: string;
+    title: string;
+    url: string;
 };
 
 export type LessonSubjectResponse = {
@@ -172,9 +182,10 @@ export type LessonSubjectResponse = {
     events_state: 'not_connected' | 'ready';
     events?: Array<AcademicDeadline>;
     /**
-     * Materials are not yet backed by persistence. No invented links or demo assets.
+     * Ready means group-scoped manually added material links are connected.
      */
-    materials_state: 'not_connected';
+    materials_state: 'not_connected' | 'ready';
+    materials?: Array<MaterialLink>;
 };
 
 export type NextLesson = {
@@ -196,6 +207,7 @@ export type FeedProcessing = {
 };
 
 export type HomeworkSummary = {
+    materials?: Array<MaterialLink>;
     id: string;
     type: 'homework';
     title: string;

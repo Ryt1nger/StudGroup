@@ -359,7 +359,17 @@ async def publish(db, raw, extraction, now):
             name = card.subject_name if card else event.subject if event else None
             if name and name.casefold().strip() == extraction.subject.casefold().strip():
                 original = parent
+    # A manual candidate publication and an AI result for the same source serialize.
+    await db.scalar(
+        select(RawMessage.id)
+        .where(RawMessage.id == original.id, RawMessage.group_id == raw.group_id)
+        .with_for_update()
+    )
     if extraction.kind == "homework":
+        from studgroup.headman_domain import ai_locked
+
+        if await ai_locked(db, raw.group_id, original.id):
+            return False
         group = await db.get(Group, raw.group_id)
         deadline, date_only = await lesson_deadline(
             db,
@@ -373,6 +383,8 @@ async def publish(db, raw, extraction, now):
         existing = await db.scalar(
             select(Homework).where(Homework.raw_message_id == original.id).with_for_update()
         )
+        if existing and await ai_locked(db, raw.group_id, original.id):
+            return False
         values = {
             "subject_name": extraction.subject,
             "subject_id": uuid.uuid5(raw.group_id, extraction.subject.casefold()),
@@ -429,12 +441,18 @@ async def publish(db, raw, extraction, now):
             # Classification correction: retained old event becomes inaccessible, no duplicate list entry.
             other.delete_at = now
     else:
+        from studgroup.headman_domain import ai_locked
+
+        if await ai_locked(db, raw.group_id, original.id):
+            return False
         key = f"telegram:{original.telegram_message_id}"
         row = await db.scalar(
-            select(AcademicDeadline).where(
-                AcademicDeadline.group_id == raw.group_id, AcademicDeadline.import_key == key
-            )
+            select(AcademicDeadline)
+            .where(AcademicDeadline.group_id == raw.group_id, AcademicDeadline.import_key == key)
+            .with_for_update()
         )
+        if row and await ai_locked(db, raw.group_id, original.id):
+            return False
         if row is None:
             row = AcademicDeadline(
                 group_id=raw.group_id,
@@ -475,6 +493,16 @@ async def publish(db, raw, extraction, now):
         if old:
             old.status = "incomplete_hidden"
         await db.flush()
+        if before != (
+            row.kind,
+            row.subject,
+            row.title,
+            row.description,
+            row.deadline_at,
+            row.window_start,
+            row.window_end,
+        ):
+            row.revision += 1
         if before != (
             row.kind,
             row.subject,

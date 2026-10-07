@@ -58,6 +58,9 @@ class SchedulePattern(Base):
     week: Mapped[str] = mapped_column(String(8))
     teacher: Mapped[str | None] = mapped_column(String(255))
     location: Mapped[str | None] = mapped_column(String(512))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    online_url: Mapped[str | None] = mapped_column(String(2048))
+    cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class User(Base):
@@ -166,6 +169,8 @@ class AcademicDeadline(Base):
     source_message_ids: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PersonalCompletion(Base):
@@ -216,6 +221,7 @@ class AICandidate(Base):
     state: Mapped[str] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class AIAttempt(Base):
@@ -277,6 +283,7 @@ class BotAdminSession(Base):
     candidate_id: Mapped[int | None] = mapped_column(BigInteger)
     request_id: Mapped[int | None] = mapped_column(Integer)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    candidate_role: Mapped[str] = mapped_column(String(16), default="student")
 
 
 class BotOutbox(Base):
@@ -288,6 +295,86 @@ class BotOutbox(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dedup_key: Mapped[str | None] = mapped_column(String(200), unique=True)
+
+
+class HeadmanSession(Base):
+    __tablename__ = "headman_sessions"
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    group_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
+    nonce: Mapped[str] = mapped_column(String(24))
+    step: Mapped[str] = mapped_column(String(32))
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class HeadmanDecision(Base):
+    __tablename__ = "headman_decisions"
+    entity_key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
+    actor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    actor_role: Mapped[str] = mapped_column(String(16))
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    deferred_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class HeadmanAudit(Base):
+    __tablename__ = "headman_audit"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
+    actor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    entity_key: Mapped[str] = mapped_column(String(100))
+    operation: Mapped[str] = mapped_column(String(32))
+    before: Mapped[str] = mapped_column(Text)
+    after: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    undone: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class HeadmanSettings(Base):
+    __tablename__ = "headman_settings"
+    membership_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("memberships.id", ondelete="CASCADE"), primary_key=True
+    )
+    questions_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    digest_times: Mapped[str] = mapped_column(String(32), default="09:00")
+
+
+class GroupInvitation(Base):
+    __tablename__ = "group_invitations"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
+    issuer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("memberships.id", ondelete="CASCADE"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    used_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class ScheduleException(Base):
+    __tablename__ = "schedule_exceptions"
+    __table_args__ = (UniqueConstraint("pattern_id", "occurrence_date"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
+    pattern_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("schedule_patterns.id", ondelete="CASCADE")
+    )
+    occurrence_date: Mapped[date] = mapped_column(Date)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    location: Mapped[str | None] = mapped_column(String(512))
+    online_url: Mapped[str | None] = mapped_column(String(2048))
+    cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class MaterialLink(Base):
+    __tablename__ = "material_links"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
+    entity_key: Mapped[str] = mapped_column(String(100))
+    title: Mapped[str] = mapped_column(String(255))
+    url: Mapped[str] = mapped_column(String(2048))
 
 
 class BotAdminAudit(Base):
@@ -297,3 +384,17 @@ class BotAdminAudit(Base):
     target_id: Mapped[int] = mapped_column(BigInteger)
     group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class HeadmanQuestionDelivery(Base):
+    __tablename__ = "headman_question_deliveries"
+    __table_args__ = (UniqueConstraint("entity_key", "revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
+    entity_key: Mapped[str] = mapped_column(String(100))
+    revision: Mapped[int] = mapped_column(Integer)
+    membership_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("memberships.id", ondelete="CASCADE")
+    )
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    escalated: Mapped[bool] = mapped_column(Boolean, default=False)

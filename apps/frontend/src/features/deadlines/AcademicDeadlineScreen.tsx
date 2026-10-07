@@ -8,6 +8,7 @@ import { Skeleton } from '../../ui/Skeleton';
 import { ChevronLeft, Clock } from '../../ui/icons';
 import { formatEventDate } from './formatEventDate';
 import styles from './Deadlines.module.css';
+import { MaterialLinks } from '../../ui/MaterialLinks';
 import layout from '../homework/HomeworkScreen.module.css';
 
 export function AcademicDeadlineScreen() {
@@ -43,7 +44,7 @@ export function AcademicDeadlineScreen() {
       </section>
       <section className={styles.card} aria-labelledby="event-materials">
         <h2 id="event-materials" className={styles.detailTask}>Материалы</h2>
-        <p className={styles.materialsEmpty}>Материалы пока не подключены.</p>
+        <MaterialLinks items={item.materials} />
       </section>
       {item.date_hint && (headman || (!item.deadline_at && !item.window_start)) ? <section className={`${styles.card} ${styles.detailBody}`}><p className={styles.warning}>{item.date_hint}</p></section> : null}
     </div> : null}

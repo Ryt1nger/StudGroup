@@ -5,12 +5,9 @@ from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.api import schedule_data
 from studgroup.deadlines import ScheduleDeadlineContext, resolve_deadline
-from studgroup.models import Group, Homework, RawMessage
+from studgroup.migration_calendar import calendar, tables
 
 revision = "0011"
 down_revision = "0010"
@@ -19,47 +16,66 @@ depends_on = None
 
 
 async def repair(connection):
-    changed = 0
-    unknown = 0
-    async with AsyncSession(bind=connection) as db:
-        rows = (
-            await db.scalars(select(Homework).where(Homework.verification_state == "inferred"))
-        ).all()
-        for row in rows:
-            raw = await db.get(RawMessage, row.raw_message_id) if row.raw_message_id else None
-            if raw is None:
-                continue
-            group = await db.get(Group, row.group_id)
-            sent = raw.message_date
-            if sent.tzinfo is None:
-                sent = sent.replace(tzinfo=UTC)
-            if row.source_message_at is None:
-                row.source_message_at = sent
-            day = sent.astimezone(ZoneInfo(group.timezone)).date()
-            end = day + timedelta(days=14)
-            calendar = await schedule_data(day, end, group, db)
-            schedule = ScheduleDeadlineContext(
-                calendar["lessons"], day, end, calendar["week_state"] == "ready"
+    schema = await tables(connection)
+    hw, raw, groups, patterns = [
+        schema[t] for t in ["homework", "raw_messages", "groups", "schedule_patterns"]
+    ]
+    rows = (
+        (
+            await connection.execute(
+                sa.select(
+                    hw,
+                    raw.c.message_date,
+                    raw.c.text.label("source_text"),
+                    groups.c.timezone,
+                    groups.c.first_week_anchor,
+                )
+                .join(raw, raw.c.id == hw.c.raw_message_id)
+                .join(groups, groups.c.id == hw.c.group_id)
+                .where(hw.c.verification_state == "inferred")
             )
-            resolved = resolve_deadline(
-                [(raw.text, sent)], group.timezone, row.subject_name, schedule=schedule
-            )
-            previous = row.deadline_at
-            if previous and previous.tzinfo is None:
-                previous = previous.replace(tzinfo=UTC)
-            if previous != resolved.at or row.deadline_date_only != resolved.date_only:
-                row.deadline_at = resolved.at.astimezone(UTC) if resolved.at else None
-                row.deadline_date_only = resolved.date_only
-                row.revision += 1
-                changed += 1
-            if resolved.at is None:
-                unknown += 1
-            # Keep inferred provenance even when historical timetable coverage is absent.
-            # Do not reset source age, personal completion, updated/significant timestamps.
-        await db.flush()
-        print(
-            f"HOMEWORK_SOURCE_REPAIR inferred={len(rows)} corrected={changed} historical_unknown={unknown}"
         )
+        .mappings()
+        .all()
+    )
+    changed = unknown = 0
+    for row in rows:
+        sent = row["message_date"]
+        if sent.tzinfo is None:
+            sent = sent.replace(tzinfo=UTC)
+        day = sent.astimezone(ZoneInfo(row["timezone"])).date()
+        end = day + timedelta(days=14)
+        lessons, ready = await calendar(
+            connection,
+            patterns,
+            row["group_id"],
+            day,
+            end,
+            row["timezone"],
+            row["first_week_anchor"],
+        )
+        resolved = resolve_deadline(
+            [(row["source_text"], sent)],
+            row["timezone"],
+            row["subject_name"],
+            schedule=ScheduleDeadlineContext(lessons, day, end, ready),
+        )
+        previous = row["deadline_at"]
+        if previous and previous.tzinfo is None:
+            previous = previous.replace(tzinfo=UTC)
+        values = {"source_message_at": row["source_message_at"] or sent}
+        if previous != resolved.at or row["deadline_date_only"] != resolved.date_only:
+            values.update(
+                deadline_at=resolved.at.astimezone(UTC) if resolved.at else None,
+                deadline_date_only=resolved.date_only,
+                revision=row["revision"] + 1,
+            )
+            changed += 1
+        unknown += resolved.at is None
+        await connection.execute(hw.update().where(hw.c.id == row["id"]).values(**values))
+    print(
+        f"HOMEWORK_SOURCE_REPAIR inferred={len(rows)} corrected={changed} historical_unknown={unknown}"
+    )
 
 
 def upgrade():

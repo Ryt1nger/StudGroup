@@ -14,6 +14,7 @@ import { useBackButton } from '../../shell/useBackButton';
 import { Badge } from '../../ui/Badge';
 import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
+import { MaterialLinks } from '../../ui/MaterialLinks';
 import { RequestError } from '../../ui/RequestError';
 import { Skeleton } from '../../ui/Skeleton';
 import { ThemedImage } from '../../ui/ThemedImage';
@@ -236,6 +237,10 @@ function DetailBody({
       </section>
 
       <SourceBlock detail={detail} />
+      <section className={styles.card} aria-labelledby="homework-materials">
+        <h2 id="homework-materials" className={styles.cardTitle}>Материалы</h2>
+        <MaterialLinks items={detail.materials} />
+      </section>
       <div className={styles.ctaSpace} />
       <CompletionBar detail={detail} refreshing={refreshing} />
     </div>

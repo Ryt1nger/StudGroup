@@ -3,14 +3,15 @@
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.models import Group, Membership, SchedulePattern, User, WebSession
+from studgroup.models import Group, Membership, ScheduleException, SchedulePattern, User, WebSession
 from studgroup.schedule import LessonPattern, expand, week_kind
 from studgroup.security import InvalidInitData, issue_token, token_hash, verify_init_data
 
@@ -172,25 +173,73 @@ async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):
         if row.week != "all" and group.first_week_anchor is None:
             unresolved = True
             continue
-        lessons.extend(
-            expand(
-                LessonPattern(
-                    str(row.id),
-                    row.subject,
-                    row.weekday,
-                    row.starts,
-                    row.ends,
-                    row.valid_from,
-                    row.valid_until,
-                    row.week,
-                    row.teacher,
-                    row.location,
+        expanded = expand(
+            LessonPattern(
+                str(row.id),
+                row.subject,
+                row.weekday,
+                row.starts,
+                row.ends,
+                row.valid_from,
+                row.valid_until,
+                row.week,
+                row.teacher,
+                row.location,
+            ),
+            start,
+            end,
+            group.timezone,
+            group.first_week_anchor,
+        )
+        for lesson in expanded:
+            lesson["online_url"] = row.online_url
+            if row.cancelled:
+                lesson["status"] = "cancelled"
+        lessons.extend(expanded)
+    low = datetime.combine(start, datetime.min.time(), ZoneInfo(group.timezone))
+    high = datetime.combine(end + timedelta(days=1), datetime.min.time(), ZoneInfo(group.timezone))
+    exceptions = (
+        await db.scalars(
+            select(ScheduleException).where(
+                ScheduleException.group_id == group.id,
+                or_(
+                    and_(
+                        ScheduleException.occurrence_date >= start,
+                        ScheduleException.occurrence_date <= end,
+                    ),
+                    and_(ScheduleException.starts_at >= low, ScheduleException.starts_at < high),
                 ),
-                start,
-                end,
-                group.timezone,
-                group.first_week_anchor,
             )
+        )
+    ).all()
+    for exception in exceptions:
+        ident = f"{exception.pattern_id}:{exception.occurrence_date.isoformat()}"
+        lessons = [l for l in lessons if l["id"] != ident]
+        stamp = (
+            exception.starts_at.replace(tzinfo=UTC)
+            if exception.starts_at.tzinfo is None
+            else exception.starts_at
+        )
+        if not start <= stamp.astimezone(ZoneInfo(group.timezone)).date() <= end:
+            continue
+        pattern = await db.get(SchedulePattern, exception.pattern_id)
+        if pattern is None or pattern.group_id != group.id:
+            continue
+        lessons.append(
+            {
+                "id": ident,
+                "subject": pattern.subject,
+                "teacher": pattern.teacher,
+                "starts_at": stamp.isoformat(),
+                "ends_at": (
+                    exception.ends_at.replace(tzinfo=UTC)
+                    if exception.ends_at.tzinfo is None
+                    else exception.ends_at
+                ).isoformat(),
+                "location": exception.location,
+                "online_url": exception.online_url,
+                "status": "cancelled" if exception.cancelled else "scheduled",
+            }
         )
     lessons.sort(key=lambda lesson: (lesson["starts_at"], lesson["id"]))
     return {

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, active_group, database
+from studgroup.materials import links
 from studgroup.models import AcademicDeadline, Group
 
 router = APIRouter(prefix="/v1")
@@ -21,6 +22,8 @@ def utc(value):
 
 
 def archived(row, now, timezone):
+    if row.cancelled_at:
+        return True
     if row.deadline_at:
         at = utc(row.deadline_at)
         return (
@@ -45,6 +48,8 @@ def representation(row):
         "date_hint": row.date_hint,
         "needs_clarification": row.needs_clarification,
         "source_message_ids": json.loads(row.source_message_ids),
+        "revision": row.revision,
+        "cancelled_at": utc(row.cancelled_at) if row.cancelled_at else None,
     }
 
 
@@ -75,7 +80,12 @@ async def items(db, group, now, archive=False, subject=None):
             str(row.id),
         )
     )
-    return [representation(row) for row in selected]
+    result = []
+    for row in selected:
+        item = representation(row)
+        item["materials"] = await links(db, group.id, [f"e:{row.id}"])
+        result.append(item)
+    return result
 
 
 @router.get("/deadlines")
@@ -108,4 +118,6 @@ async def get_deadline(
     )
     if row is None:
         raise ApiError("not_found", "Событие не найдено", 404)
-    return {"generated_at": now, "group_timezone": group.timezone, "item": representation(row)}
+    item = representation(row)
+    item["materials"] = await links(db, group.id, [f"e:{row.id}"])
+    return {"generated_at": now, "group_timezone": group.timezone, "item": item}

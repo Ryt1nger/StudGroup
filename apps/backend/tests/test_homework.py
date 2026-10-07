@@ -32,7 +32,8 @@ def test_subject_page_has_related_homework_and_explicit_unconnected_sections(cli
     assert [row["id"] for row in data["homework"]] == [card]
     assert data["events_state"] == "ready"
     assert data["events"] == []
-    assert data["materials_state"] == "not_connected"
+    assert data["materials_state"] == "ready"
+    assert data["materials"] == []
 
 
 def test_subject_page_excludes_future_deadline_beyond_selected_lesson(client):

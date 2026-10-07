@@ -69,7 +69,7 @@ export const getToday = <ThrowOnError extends boolean = false>(options?: Options
 /**
  * Subject page in the context of a specific lesson occurrence
  *
- * Active group only. Uses the lesson occurrence date, never the device date. Homework has an exact normalized subject match, is retained and not archived at current server time, and was assigned no later than the lesson. Known deadlines beyond the lesson calendar day are excluded. Events/control points and materials are explicitly not connected, not falsely empty.
+ * Active group only. Uses the actual lesson occurrence date, including date-specific overrides, never the device date. Homework has an exact normalized subject match, is retained and not archived at current server time, and was assigned no later than the lesson. Known deadlines beyond the lesson calendar day are excluded. Events/control points and manually added material links are group-scoped.
  */
 export const getLessonSubject = <ThrowOnError extends boolean = false>(options: Options<GetLessonSubjectData, ThrowOnError>): RequestResult<GetLessonSubjectResponses, GetLessonSubjectErrors, ThrowOnError> => (options.client ?? client).get<GetLessonSubjectResponses, GetLessonSubjectErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

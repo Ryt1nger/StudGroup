@@ -15,18 +15,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from studgroup.models import BotAdminAudit, BotAdminSession, BotOutbox, Group, Membership, User
 
 
-def enqueue(db, method, payload):
+def enqueue(db, method, payload, dedup_key=None):
     db.add(
         BotOutbox(
             method=method,
             payload=json.dumps(payload, ensure_ascii=False),
             available_at=datetime.now(UTC),
+            dedup_key=dedup_key,
         )
     )
 
 
 def say(db, chat, text, markup=None):
-    payload = {"chat_id": chat, "text": text}
+    payload = {"chat_id": chat, "text": text, "link_preview_options": {"is_disabled": True}}
     if markup:
         payload["reply_markup"] = markup
     enqueue(db, "sendMessage", payload)
@@ -82,6 +83,7 @@ async def handle(db, update, settings):
         session.step = "groups"
         session.group_id = None
         session.candidate_id = None
+        session.candidate_role = "student"
         session.expires_at = now + timedelta(minutes=15)
         groups = (
             await db.scalars(
@@ -128,11 +130,20 @@ async def handle(db, update, settings):
                 db,
                 chat,
                 f"{group.name}\nКак выбрать участника?",
-                buttons(session, [[("Выбрать пользователя", "pick")], [("Добавить по ID", "id")]]),
+                buttons(
+                    session,
+                    [
+                        [("Выбрать пользователя", "pick")],
+                        [("Добавить по ID", "id")],
+                        [("Назначить старосту по ID", "headman")],
+                        [("Назначить помощника по ID", "deputy")],
+                    ],
+                ),
             )
-        elif action in ["pick", "id"] and session.step == "method":
-            session.step = action
-            if action == "id":
+        elif action in ["pick", "id", "headman", "deputy"] and session.step == "method":
+            session.candidate_role = action if action in {"headman", "deputy"} else "student"
+            session.step = "id" if action in {"headman", "deputy"} else action
+            if action != "pick":
                 say(db, chat, "Отправь числовой Telegram ID участника. Для отмены — /cancel.")
             else:
                 session.request_id = secrets.randbelow(2**31 - 1) + 1
@@ -188,6 +199,8 @@ async def handle(db, update, settings):
                 .with_for_update()
             )
             member.status = "active"
+            if session.candidate_role in {"headman", "deputy"}:
+                member.role = session.candidate_role
             db.add(
                 BotAdminAudit(
                     id=uuid.uuid5(uuid.NAMESPACE_URL, f"bot-admin:{update.update_id}"),
@@ -202,7 +215,7 @@ async def handle(db, update, settings):
             say(
                 db,
                 chat,
-                f"ID {target} подключён к «{group.name}». Попроси участника заново открыть Mini App.",
+                f"ID {target} подключён к «{group.name}». Роль: {member.role}. Попроси участника заново открыть Mini App. Для старосты/помощника доступен /st.",
                 {"remove_keyboard": True},
             )
         return True
@@ -227,7 +240,7 @@ async def handle(db, update, settings):
             say(
                 db,
                 chat,
-                f"Подключить ID {target} к «{group.name}» как обычного участника?",
+                f"Подключить ID {target} к «{group.name}»? Роль: {session.candidate_role}. Назначение роли произойдёт только после подтверждения.",
                 buttons(session, [[("Подключить", "yes")]]),
             )
     return True
@@ -271,9 +284,15 @@ async def deliver(engine, settings):
 
 
 async def delivery_loop(engine, settings):
+    iterations = 0
     while True:
         try:
             await deliver(engine, settings)
+            if iterations % 60 == 0:
+                from studgroup.headman_digest import tick
+
+                await tick(engine)
+            iterations += 1
         except Exception as error:  # noqa: BLE001 -- durable retry; never log sensitive exception text
             logging.getLogger(__name__).warning(
                 "bot_delivery_iteration_failed: %s", type(error).__name__

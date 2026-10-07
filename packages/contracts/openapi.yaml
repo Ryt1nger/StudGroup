@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.7.0
+  version: 0.8.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -148,7 +148,7 @@ paths:
       tags: [Subjects]
       operationId: getLessonSubject
       summary: Subject page in the context of a specific lesson occurrence
-      description: Active group only. Uses the lesson occurrence date, never the device date. Homework has an exact normalized subject match, is retained and not archived at current server time, and was assigned no later than the lesson. Known deadlines beyond the lesson calendar day are excluded. Events/control points and materials are explicitly not connected, not falsely empty.
+      description: Active group only. Uses the actual lesson occurrence date, including date-specific overrides, never the device date. Homework has an exact normalized subject match, is retained and not archived at current server time, and was assigned no later than the lesson. Known deadlines beyond the lesson calendar day are excluded. Events/control points and manually added material links are group-scoped.
       parameters:
         - in: path
           name: lesson_id
@@ -725,7 +725,7 @@ components:
               id: {type: string, format: uuid}
               title: {type: string}
               body: {type: string}
-              entity_type: {type: string, enum: [homework, deadline]}
+              entity_type: {type: string, enum: [homework, deadline, schedule]}
               entity_id: {type: string, format: uuid}
               created_at: {type: string, format: date-time}
               read: {type: boolean}
@@ -756,7 +756,8 @@ components:
         location:
           type: [string, 'null']
           description: Display-ready location text, e.g. «Ауд. 320» or «Зал 2». Clients render it as supplied without adding a prefix.
-        status: {type: string, enum: [scheduled]}
+        status: {type: string, enum: [scheduled, cancelled]}
+        online_url: {type: [string, 'null'], format: uri}
     SessionBootstrapRequest:
       type: object
       additionalProperties: false
@@ -975,6 +976,16 @@ components:
         date_hint: {type: [string, 'null']}
         needs_clarification: {type: boolean}
         source_message_ids: {type: array, items: {type: integer}}
+        revision: {type: integer, minimum: 1}
+        cancelled_at: {type: [string, 'null'], format: date-time}
+        materials: {type: array, items: {$ref: '#/components/schemas/MaterialLink'}}
+    MaterialLink:
+      type: object
+      required: [id, title, url]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        url: {type: string, format: uri}
     LessonSubjectResponse:
       type: object
       additionalProperties: false
@@ -1000,8 +1011,9 @@ components:
           items: {$ref: '#/components/schemas/AcademicDeadline'}
         materials_state:
           type: string
-          enum: [not_connected]
-          description: Materials are not yet backed by persistence. No invented links or demo assets.
+          enum: [not_connected, ready]
+          description: Ready means group-scoped manually added material links are connected.
+        materials: {type: array, items: {$ref: '#/components/schemas/MaterialLink'}}
     NextLesson:
       type: object
       additionalProperties: false
@@ -1052,6 +1064,7 @@ components:
         - created_at
         - updated_at
       properties:
+        materials: {type: array, items: {$ref: '#/components/schemas/MaterialLink'}}
         id:
           type: string
           format: uuid

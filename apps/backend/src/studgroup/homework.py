@@ -12,11 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.academic_deadlines import items as deadline_items
 from studgroup.api import ApiError, active_group, database, schedule_data
+from studgroup.materials import links
 from studgroup.models import (
     Group,
     Homework,
     PersonalCompletion,
     RawMessage,
+    ScheduleException,
     SchedulePattern,
     WebSession,
 )
@@ -59,12 +61,17 @@ async def representation(db, row, user, now):
     }
     imported = bool(raw and raw.imported)
     source = {
-        "kind": "imported_history" if imported else "telegram_group_message",
+        "kind": "manual_entry"
+        if row.raw_message_id is None
+        else "imported_history"
+        if imported
+        else "telegram_group_message",
         "imported": imported,
         "availability": availability,
     }
     return {
         "id": row.id,
+        "materials": await links(db, row.group_id, [f"h:{row.id}"]),
         "type": "homework",
         "title": row.title,
         "subject": {"id": row.subject_id, "name": row.subject_name},
@@ -307,6 +314,15 @@ async def lesson_subject(
     pattern = await db.get(SchedulePattern, pattern_id)
     if pattern is None or pattern.group_id != group.id:
         raise ApiError("not_found", "Пара не найдена", 404)
+    exception = await db.scalar(
+        select(ScheduleException).where(
+            ScheduleException.group_id == group.id,
+            ScheduleException.pattern_id == pattern.id,
+            ScheduleException.occurrence_date == lesson_day,
+        )
+    )
+    if exception:
+        lesson_day = utc(exception.starts_at).astimezone(ZoneInfo(group.timezone)).date()
     calendar = await schedule_data(lesson_day, lesson_day, group, db)
     lesson = next((item for item in calendar["lessons"] if item["id"] == lesson_id), None)
     if lesson is None:
@@ -355,7 +371,16 @@ async def lesson_subject(
         "homework_total": len(matching),
         "events_state": "ready",
         "events": await deadline_items(db, group, now, subject=lesson["subject"]),
-        "materials_state": "not_connected",
+        "materials_state": "ready",
+        "materials": await links(
+            db,
+            group.id,
+            [f"h:{r.id}" for r in matching]
+            + [
+                f"e:{r['id']}"
+                for r in await deadline_items(db, group, now, subject=lesson["subject"])
+            ],
+        ),
     }
 
 

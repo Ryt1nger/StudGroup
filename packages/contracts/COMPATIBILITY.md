@@ -1,5 +1,18 @@
 # Contract compatibility
 
+## Headman bot and manual group data (0.8.0)
+
+Additive material-link arrays on detail/subject responses; academic-event revisions
+and cancellation timestamp; optional lesson online_url. Lesson status now includes
+cancelled; notification entity_type includes schedule (navigate to Schedule, not
+event detail). The /st workflow is Telegram-only and permission-scoped to active
+headman/deputy memberships. Owner /admin can explicitly assign roles; no automatic
+promotion. Manual confirmations lock out AI overwrites, changes use revision checks
+and transactional audit/outbox, invitations expire after 24h and require verified
+Telegram group membership. Schedule exceptions affect one occurrence; recurring
+changes require a separate explicit confirmation. Materials are links, not file/OCR
+processing. No paid hosting or new provider calls are required for manual workflows.
+
 ## Homework lesson-time binding (owner decision, 2026-10-07)
 
 No schema change. A homework deadline with a date but no time is bound to the end

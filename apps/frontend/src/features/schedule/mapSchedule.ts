@@ -6,7 +6,8 @@ import type { ScheduleDayView, ScheduleItemView, ScheduleScreenView } from './vi
 function lessonItem(lesson: LessonOccurrence, nowMs: number, timeZone: string): ScheduleItemView {
   const start = Date.parse(lesson.starts_at);
   const end = Date.parse(lesson.ends_at);
-  const current = start <= nowMs && nowMs < end;
+  const cancelled = lesson.status === 'cancelled';
+  const current = !cancelled && start <= nowMs && nowMs < end;
   const done = end <= nowMs;
   // Only fields present in the contract are shown: no lesson type, no confirmed/moved badges.
   const subtitle = [lesson.location, lesson.teacher].filter((part): part is string => Boolean(part)).join(' · ');
@@ -15,8 +16,9 @@ function lessonItem(lesson: LessonOccurrence, nowMs: number, timeZone: string): 
     time: formatTime(lesson.starts_at, timeZone),
     title: lesson.subject,
     subtitle,
+    cancelled,
     state: current ? 'current' : done ? 'done' : 'upcoming',
-    badges: current ? [{ kind: 'now', label: ru.schedule.now, tone: 'solid' }] : [],
+    badges: cancelled ? [{ kind: 'cancelled', label: 'Отменено', tone: 'neutral' }] : current ? [{ kind: 'now', label: ru.schedule.now, tone: 'solid' }] : [],
   };
 }
 

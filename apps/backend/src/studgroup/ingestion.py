@@ -38,6 +38,11 @@ class UsersShared(BaseModel):
     users: list[SharedUser] = Field(max_length=10)
 
 
+class ForwardOrigin(BaseModel):
+    type: str
+    date: int = Field(ge=0)
+
+
 class Message(BaseModel):
     message_id: int
     date: int = Field(ge=0)
@@ -47,6 +52,7 @@ class Message(BaseModel):
     sender: Sender | None = Field(default=None, alias="from")
     reply_to_message: ReplyReference | None = None
     users_shared: UsersShared | None = None
+    forward_origin: ForwardOrigin | None = None
 
 
 class CallbackQuery(BaseModel):
@@ -83,6 +89,12 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
             db.add(ReceivedUpdate(update_id=update.update_id, received_at=datetime.now(UTC)))
             await db.flush()
     except IntegrityError:
+        return {"ok": True}
+
+    from studgroup.headman_bot import handle as handle_headman
+
+    if await handle_headman(db, update, request.app.state.settings):
+        await db.commit()
         return {"ok": True}
 
     from studgroup.bot_admin import handle

@@ -65,7 +65,7 @@ export function HeaderActions() {
           {inbox.isError ? <button className={styles.link} onClick={() => void inbox.refetch()}>Не удалось загрузить. Повторить</button> : null}
           {inbox.data?.items.length === 0 ? <p className={styles.note}>Пока уведомлений нет</p> : null}
           <ul className={styles.list}>{inbox.data?.items.map((item) => <li key={item.id}><button className={styles.item} onClick={() => {
-            setOpen(null); navigate(`/${item.entity_type === 'homework' ? 'homework' : 'deadlines'}/${item.entity_id}`);
+            setOpen(null); navigate(item.entity_type === 'schedule' ? '/schedule' : `/${item.entity_type === 'homework' ? 'homework' : 'deadlines'}/${item.entity_id}`);
           }}><span className={item.read ? styles.itemDotRead : styles.itemDot} /><span className={styles.itemBody}>
             <span className={styles.itemTitle}>{item.title}</span><span className={styles.itemText}>{item.body}</span>
           </span></button></li>)}</ul>
