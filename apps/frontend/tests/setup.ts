@@ -6,6 +6,7 @@ import { server } from './helpers';
 beforeAll(() => {
   // JSDOM has no layout/scroll implementation; route behavior is asserted separately.
   vi.stubGlobal('scrollTo', vi.fn());
+  Element.prototype.scrollIntoView = vi.fn();
   server.events.on('request:unhandled', ({ request }) => {
     throw new Error(`Unhandled request in test: ${request.method} ${request.url}`);
   });

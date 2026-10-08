@@ -14,6 +14,7 @@ import { emptyIllustrations } from '../../ui/entityIcons';
 import { ThemedImage } from '../../ui/ThemedImage';
 import { Clock, Lock } from '../../ui/icons';
 import { mapSchedule } from './mapSchedule';
+import { scheduleAnchor } from './scheduleAnchor';
 import { ScheduleScreenView } from './ScheduleScreenView';
 import styles from './ScheduleScreenView.module.css';
 
@@ -68,6 +69,7 @@ export function ScheduleScreen() {
   return (
     <ScheduleScreenView
       view={withWeek}
+      initialAnchorId={data ? scheduleAnchor(data, nowMs) : undefined}
       notice={
         <>
           {clarify}

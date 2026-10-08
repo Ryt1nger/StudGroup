@@ -3,6 +3,7 @@ import { ChevronRight, Check } from '../../ui/icons';
 import { ScheduleBadge } from './ScheduleBadge';
 import type { ScheduleDayView, ScheduleItemView } from './viewModel';
 import styles from './ScheduleTimeline.module.css';
+import { dayAnchorId, lessonAnchorId } from './scheduleAnchor';
 
 function SubjectTile() {
   // Subject icon/colour are not in the contract yet; a neutral book tile is used until they are.
@@ -18,7 +19,7 @@ function SubjectTile() {
 function Row({ item }: { item: ScheduleItemView }) {
   const Root = item.onOpen ? 'button' : 'div';
   return (
-    <li className={clsx(styles.item, styles[item.state])}>
+    <li id={lessonAnchorId(item.id)} className={clsx(styles.item, styles[item.state])}>
       <span className={styles.time}>{item.time}</span>
       <span className={styles.node} aria-hidden="true">
         {item.state === 'done' ? <Check size={12} strokeWidth={3} /> : null}
@@ -44,8 +45,9 @@ function Row({ item }: { item: ScheduleItemView }) {
 
 export function ScheduleTimeline({ day }: { day: ScheduleDayView }) {
   return (
-    <section className={styles.day} aria-label={day.heading}>
+    <section id={day.date ? dayAnchorId(day.date) : undefined} className={styles.day} aria-label={day.heading}>
       <h2 className={styles.heading}>{day.heading}</h2>
+      {day.items.length === 0 ? <p>Сегодня пар нет</p> : null}
       <ol className={styles.list}>
         {day.items.map((item) => (
           <Row key={item.id} item={item} />

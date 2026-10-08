@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useScheduleEntryAnchor } from './scheduleAnchor';
 import { TopBar } from '../../shell/TopBar';
 import { ru } from '../../i18n/ru';
 import { ScheduleTimeline } from './ScheduleTimeline';
@@ -12,6 +13,7 @@ import styles from './ScheduleScreenView.module.css';
  */
 interface Props {
   view: View;
+  initialAnchorId?: string;
   onScopeChange?: (key: string) => void;
   /** Banner shown above the timeline (e.g. «Расписание уточняется»). */
   notice?: ReactNode;
@@ -19,7 +21,8 @@ interface Props {
   children?: ReactNode;
 }
 
-export function ScheduleScreenView({ view, onScopeChange, notice, children }: Props) {
+export function ScheduleScreenView({ view, initialAnchorId, onScopeChange, notice, children }: Props) {
+  useScheduleEntryAnchor(initialAnchorId);
   return (
     <>
       <TopBar />

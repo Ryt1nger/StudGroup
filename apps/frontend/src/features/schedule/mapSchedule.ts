@@ -32,9 +32,9 @@ function dayHeading(key: string, nowMs: number, timeZone: string): string {
 }
 
 /**
- * Maps the generated `ScheduleResponse` to display-ready props. Lessons are grouped by the
- * group's calendar day in the order the backend returned them (starts_at, id); the client does
- * not re-sort, filter or infer anything the contract does not state.
+ * Groups contract lessons by the group's calendar day, preserving backend lesson order.
+ * An empty current-day section is inserted chronologically as an entry-scroll anchor;
+ * it does not invent lessons or lesson metadata.
  */
 export function mapSchedule(data: ScheduleResponse, nowMs: number): ScheduleScreenView {
   const groups = new Map<string, ScheduleItemView[]>();
@@ -44,7 +44,10 @@ export function mapSchedule(data: ScheduleResponse, nowMs: number): ScheduleScre
     items.push(lessonItem(lesson, nowMs, data.group_timezone));
     groups.set(key, items);
   }
-  const days: ScheduleDayView[] = [...groups.entries()].map(([key, items]) => ({
+  const today = dayKey(nowMs, data.group_timezone);
+  if (today >= data.start && today <= data.end && !groups.has(today)) groups.set(today, []);
+  const days: ScheduleDayView[] = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, items]) => ({
+    date: key,
     heading: dayHeading(key, nowMs, data.group_timezone),
     items,
   }));

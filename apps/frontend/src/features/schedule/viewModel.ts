@@ -1,9 +1,8 @@
 /**
  * PRESENTATION props for the schedule visuals — NOT API types.
  *
- * The schedule contract has not been published yet, so these components take display-ready
- * values (strings, tones, states). When Codex publishes the contract, a mapper from the
- * generated types to these props is added in one place; no API field is invented here.
+ * These components take display-ready values derived from the generated schedule contract
+ * by mapSchedule. Local anchor dates/IDs are presentation metadata, not new API fields.
  * The fields the visuals need from the contract are listed in FRONTEND_ARCHITECTURE.md §17.
  */
 import type { BadgeTone } from '../../ui/Badge';
@@ -48,6 +47,7 @@ export interface NextClassView {
 }
 
 export interface ScheduleDayView {
+  date?: string;
   /** e.g. "Сегодня, 2 октября". */
   heading: string;
   items: ScheduleItemView[];
