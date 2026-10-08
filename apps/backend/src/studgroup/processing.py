@@ -34,6 +34,19 @@ from studgroup.models import (
 from studgroup.notifications import record_change
 
 MAX_ATTEMPTS = 2
+RECOVERABLE_FAILURES = {
+    "provider_unreachable",
+    "provider_error",
+    "rate_limited",
+    "processing_window_closed",
+}
+
+
+def recovery_delay(attempts):
+    """Back off transport recovery without abandoning the durable source version."""
+    return min(30 * 2 ** min(max(attempts - 1, 0), 4), 300)
+
+
 # Upper bound for the byte-bounded request + system instructions and 3,000 output tokens.
 # Flash peak prices; a model change requires explicit budget/pricing review.
 RESERVATION = Decimal("0.012")
@@ -127,6 +140,34 @@ async def claim(engine, settings, now):
             control = AIControl(id=1, spent_usd=Decimal(0))
             db.add(control)
             await db.flush()
+        # Recover transport jobs abandoned by the previous two-attempt policy.
+        # Do not reopen invalid-output/rejected requests or obsolete source revisions.
+        abandoned = (
+            await db.execute(
+                select(AIJob, RawMessage)
+                .join(RawMessage, AIJob.raw_message_id == RawMessage.id)
+                .join(Group, RawMessage.group_id == Group.id)
+                .where(
+                    AIJob.state == "failed",
+                    AIJob.last_error.in_(
+                        ["provider_unreachable", "rate_limited", "processing_window_closed"]
+                    ),
+                    AIJob.source_revision == RawMessage.revision,
+                    RawMessage.processing_state == "failed",
+                    RawMessage.delete_at > now,
+                    Group.status == "active",
+                    Group.pilot_authorized.is_(True),
+                )
+                .limit(50)
+                .with_for_update(skip_locked=True)
+            )
+        ).all()
+        for abandoned_job, abandoned_raw in abandoned:
+            abandoned_job.state = "retry"
+            abandoned_job.available_at = now
+            abandoned_raw.processing_state = "pending"
+        if abandoned:
+            await db.flush()
         import_scope = (
             and_(
                 RawMessage.imported.is_(True), Group.telegram_chat_id == settings.ai_import_chat_id
@@ -195,9 +236,19 @@ async def claim(engine, settings, now):
                 or (job.lease_until and utc(job.lease_until) > now)
             ):
                 continue
-            if scheduled and job and job.schedule_slot and utc(job.schedule_slot) >= slot:
+            recovering = job and (
+                (job.state == "retry" and job.last_error in RECOVERABLE_FAILURES)
+                or (job.state == "running" and job.lease_until and utc(job.lease_until) <= now)
+            )
+            if (
+                scheduled
+                and job
+                and job.schedule_slot
+                and utc(job.schedule_slot) >= slot
+                and not recovering
+            ):
                 continue
-            if job and job.attempts >= MAX_ATTEMPTS:
+            if job and job.attempts >= MAX_ATTEMPTS and not recovering:
                 job.state = "failed"
                 raw.processing_state = "failed"
                 await incident(db, "processing_exhausted", now)
@@ -677,9 +728,18 @@ async def process_next(engine, settings, provider=None, now=None):
                 await incident(db, code, now, recover=True)
         elif failure:
             job.last_error = failure.code
-            job.state = "retry" if failure.retryable and job.attempts < MAX_ATTEMPTS else "failed"
+            recoverable = failure.retryable and failure.code in RECOVERABLE_FAILURES
+            job.state = (
+                "retry"
+                if failure.retryable and (recoverable or job.attempts < MAX_ATTEMPTS)
+                else "failed"
+            )
             outcome = job.state
-            job.available_at = now + timedelta(minutes=5)
+            job.available_at = (
+                now + timedelta(seconds=recovery_delay(job.attempts))
+                if recoverable
+                else now + timedelta(minutes=5)
+            )
             if raw and raw.revision == revision:
                 raw.processing_state = "pending" if job.state == "retry" else "failed"
             await incident(db, failure.code, now)

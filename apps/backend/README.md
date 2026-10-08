@@ -18,9 +18,18 @@ not silently create next-lesson dates. Conservative reservations and actual peak
 usage are saved before/after each call with a maximum separate run budget of $0.08
 (the owner-approved test ceiling). Prior diagnostic reservations must be deducted
 from this ceiling when resuming the current test across separate reports.
-Provider failures stop without retries; an existing report refuses paid replay
-unless explicitly resumed with `--resume` after reviewing the failure. Resumption
-preserves reservations and completed batches. Invalid screening IDs escalate the
+The CLI automatically waits and resumes retryable transport failures at the failed
+fragment, with 30/60/120/240/300-second capped backoff. `--once` stops after one
+iteration for diagnostics; `--once --resume` explicitly continues a saved report.
+Budget exhaustion, invalid output and permanent rejection require intervention.
+Resumption preserves reservations and completed batches. Reports are atomically
+replaced, successful provider responses are checkpointed before further processing,
+and a local file lock prevents parallel requests against the same report. Reopening
+a complete report is free; changed archives, time scopes or fragment plans are
+rejected. After restarting the command, it resumes rather than starts over. There
+is no claim of provider-side exactly-once execution: an ambiguous request without
+a saved response may need retrying and keeps its original reservation.
+Invalid screening IDs escalate the
 whole supplied batch instead of silently discarding possible signals.
 Reports contain private chat excerpts: keep them in ignored `tmp/` with mode 0600.
 Review duplicate/overlapping candidates before any production publication. The
@@ -53,8 +62,14 @@ Only retained, unprocessed live versions are eligible; imported history never
 wakes this schedule. Catch-up after a sleeping free Render instance is one current
 cutoff, not a replay of every missed slot. Quiet groups produce no AI calls. A cycle
 may process several relevant messages using the existing target-message extraction;
-it is not a guarantee of one provider request for the entire group. Retries are
-bounded and cannot repeat within one slot. Requests stop at the daily cutoff.
+it is not a guarantee of one provider request for the entire group. Transport
+recovery resumes only unfinished source versions, even in the same slot, after
+30/60/120/240/300-second backoff. Transient outages do not exhaust a two-attempt
+ceiling; invalid-output retries retain their limit. Expired SQL leases can be
+reclaimed after restart. Historical transport jobs abandoned by the old two-attempt
+policy are reopened only for current retained source revisions in active pilot
+groups, not completed tasks or permanent errors. Budgets, working hours and the
+late-activity gate still apply. Requests stop at the daily cutoff.
 The existing daily/global USD limits and usage ledger remain unchanged. Production
 also needs `AI_ENABLED=true`, and any old absolute `AI_ENABLED_UNTIL` must be cleared
 explicitly when replacing a one-time test window with this recurring policy.

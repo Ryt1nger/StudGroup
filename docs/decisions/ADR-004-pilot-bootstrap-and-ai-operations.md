@@ -22,6 +22,28 @@ Acceptance: confirmed rejection frees capacity; timeout cannot erase possible
 spend; releasing a failed deep-pass reservation preserves the successful screen
 charge; compatibility error codes and retry rules remain stable.
 
+## Owner update — 2026-10-08: resume unfinished analysis after outage
+
+Temporary transport/API availability errors remain durable retries, not permanent
+failure after two attempts. Reuse the existing SQL job/version and lease fencing;
+retry only unfinished work with 30-second exponential backoff capped at five
+minutes. Recovery may retry in the same half-hour slot, but does not bypass live
+hours, activity gates, total/daily budgets or retention. Reopen old exhausted
+transport failures only for current retained revisions; do not reopen completed,
+superseded or permanently rejected work.
+
+The export command uses an automatic recovery supervisor and atomic private
+checkpoints, saved successful responses, a single-report lock, and archive/time/
+fragment-plan validation. Restarting the command resumes its checkpoints. Reports
+stay local and ignored; this is not a hosted export queue. A provider request whose
+response was lost cannot be guaranteed exactly once without provider idempotency;
+its reservation remains conservative if the failed fragment must be retried.
+
+Acceptance: two outages followed by recovery do not replay successful screening or
+deep fragments; a restart after saving a response does not pay for it again; a
+completed report is idempotent; live recovery does not process newly arriving text
+before its regular slot or ignore budget/time constraints.
+
 ## Owner update — 2026-10-06: provisional homework deadlines
 
 For homework whose deadline cannot be resolved, use the start of the next scheduled

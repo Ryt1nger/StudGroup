@@ -305,12 +305,12 @@ def test_expired_worker_cannot_overwrite_new_attempt(client):
     asyncio.run(inspect())
 
 
-def test_outage_stops_after_two_attempts(client):
+def test_outage_stays_pending_until_recovery_without_replaying_completed_jobs(client):
     source(client)
     now = datetime.now(UTC)
     provider = Provider(failure="provider_unreachable")
     settings = Settings(ai_enabled=True)
-    for minutes, outcome in [(0, "retry"), (6, "failed"), (12, "idle")]:
+    for minutes, outcome in [(0, "retry"), (6, "retry"), (12, "retry")]:
         assert (
             asyncio.run(
                 process_next(
@@ -322,7 +322,46 @@ def test_outage_stops_after_two_attempts(client):
             )
             == outcome
         )
-    assert provider.calls == 2
+    assert provider.calls == 3
+    recovered = Provider()
+    assert (
+        asyncio.run(
+            process_next(
+                client.app.state.engine, settings, recovered, now=now + timedelta(minutes=18)
+            )
+        )
+        == "completed"
+    )
+    assert (
+        asyncio.run(
+            process_next(
+                client.app.state.engine, settings, recovered, now=now + timedelta(minutes=19)
+            )
+        )
+        == "idle"
+    )
+    assert recovered.calls == 1
+    assert count(client, Homework) == 1
+
+
+def test_old_transport_exhaustion_is_recovered_after_processor_restart(client):
+    source(client)
+    assert run(client, Provider(failure="provider_unreachable")) == "retry"
+
+    async def abandon():
+        async with AsyncSession(client.app.state.engine) as db:
+            job = await db.scalar(select(AIJob))
+            raw = await db.scalar(select(RawMessage))
+            job.state = "failed"
+            job.attempts = 2
+            raw.processing_state = "failed"
+            await db.commit()
+
+    asyncio.run(abandon())
+    recovered = Provider()
+    assert run(client, recovered) == "completed"
+    assert run(client, recovered) == "idle"
+    assert recovered.calls == 1
 
 
 def test_uncertain_candidate_is_retained_for_review(client):

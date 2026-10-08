@@ -116,6 +116,38 @@ def test_failed_request_is_not_retried_in_same_half_hour(client):
     assert provider.calls == 2
 
 
+def test_connection_recovery_retries_only_unfinished_job_in_same_slot(client):
+    provider = Provider(failure="provider_unreachable")
+    seed(client, stamp("07:00:00"))
+    assert run(client, stamp("07:00:00"), provider) == "retry"
+    seed(client, stamp("07:05:00"), mid=2)
+    assert run(client, stamp("07:00:20"), provider) == "idle"
+    assert run(client, stamp("07:00:30"), provider) == "retry"
+    provider.failure = None
+    assert run(client, stamp("07:01:30"), provider) == "completed"
+    assert run(client, stamp("07:02:00"), provider) == "idle"
+    assert provider.calls == 3
+    assert run(client, stamp("07:30:00"), provider) == "completed"
+    assert provider.calls == 4
+
+
+def test_expired_running_lease_resumes_after_restart_in_same_slot(client):
+    import asyncio
+
+    class Interrupted(Provider):
+        async def extract_batch(self, *args, **kwargs):
+            raise asyncio.CancelledError
+
+    seed(client, stamp("07:00:00"))
+    with pytest.raises(asyncio.CancelledError):
+        run(client, stamp("07:00:00"), Interrupted())
+    recovered = Provider()
+    assert run(client, stamp("07:02:00"), recovered) == "idle"
+    assert run(client, stamp("07:03:01"), recovered) == "completed"
+    assert run(client, stamp("07:04:00"), recovered) == "idle"
+    assert recovered.calls == 1
+
+
 def test_webhook_signal_is_idempotent_and_noop_edits_are_free(client):
     send(client, delivery())
     send(client, delivery())

@@ -203,6 +203,7 @@ The core lifecycle is:
 
 - No new messages means no processing run.
 - Owner's economy policy (2026-10-08): live text is processed at half-hour cutoffs from 07:00 to 23:00 Moscow time, only when unprocessed messages exist. Imported history does not wake this schedule.
+- Owner's recovery policy (2026-10-08): transient connection failures leave unfinished analysis pending. Resume from the failed source version/fragment after capped backoff, without replaying completed work; recovery need not wait for a new half-hour slot. Budget limits, working hours and the late-activity gate remain in force. A saved successful response is reused locally after restart; an ambiguous request with no saved response may require retrying with its earlier reservation retained.
 - Activity within the last 30 minutes permits the 23:00/23:30 cutoffs, stopping at midnight. Later text waits until 07:00; duplicate/no-op deliveries do not create fresh work.
 - Webhook activity is persisted independently of the provider. Quiet groups cause no AI requests. Missed windows after server sleep collapse into one current catch-up window.
 - Manual headman operations remain immediate and require no AI. Files/media may signal activity, but file extraction is not implemented in the text-only slice. The existing reasoning cascade is a target design, not permission to bypass this schedule or budget caps.
