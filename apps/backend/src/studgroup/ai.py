@@ -54,9 +54,11 @@ When several assignments or an amendment to another message needs context, use n
 class ProviderFailure(Exception):
     """A safe error code only: no exception chaining, request URL, key or remote body."""
 
-    def __init__(self, code: str, retryable: bool):
+    def __init__(self, code: str, retryable: bool, *, reservation_releasable: bool = False):
         self.code = code
         self.retryable = retryable
+        # Default is conservative: an error name alone cannot prove zero provider usage.
+        self.reservation_releasable = reservation_releasable
         super().__init__(code)
 
 
@@ -151,9 +153,9 @@ class DeepSeekProvider:
     ):
         # Never send the credential to an arbitrary host, HTTP endpoint or redirect.
         if base_url.rstrip("/") not in {"https://api.deepseek.com", "https://api.deepseek.com/v1"}:
-            raise ProviderFailure("invalid_provider_url", False)
+            raise ProviderFailure("invalid_provider_url", False, reservation_releasable=True)
         if not key.strip():
-            raise ProviderFailure("provider_not_configured", False)
+            raise ProviderFailure("provider_not_configured", False, reservation_releasable=True)
         self._key = key
         self.model = model
         self._base_url = base_url.rstrip("/")
@@ -167,9 +169,9 @@ class DeepSeekProvider:
         schedule: ScheduleDeadlineContext | None = None,
     ) -> ExtractionResult:
         if len(text) > MAX_TEXT_CHARS:
-            raise ProviderFailure("context_too_large", False)
+            raise ProviderFailure("context_too_large", False, reservation_releasable=True)
         if message_date.utcoffset() is None:
-            raise ProviderFailure("invalid_message_timestamp", False)
+            raise ProviderFailure("invalid_message_timestamp", False, reservation_releasable=True)
         ZoneInfo(timezone)
         payload = {
             "model": self.model,
@@ -274,7 +276,7 @@ class DeepSeekProvider:
         ZoneInfo(timezone)
         content = json.dumps({"group_timezone": timezone, "messages": messages}, ensure_ascii=False)
         if len(content.encode("utf-8")) > 18000 or len(messages) > 80:
-            raise ProviderFailure("context_too_large", False)
+            raise ProviderFailure("context_too_large", False, reservation_releasable=True)
         instructions = (
             SYSTEM_PROMPT.replace(
                 "Extract at most one homework assignment from the supplied Telegram message.",
@@ -301,7 +303,9 @@ merely because no single due date is given. Preserve task content and topics.
         )
         if target_message_id is not None:
             if target_message_id not in {message["message_id"] for message in messages}:
-                raise ProviderFailure("invalid_source_reference", False)
+                raise ProviderFailure(
+                    "invalid_source_reference", False, reservation_releasable=True
+                )
             instructions += "\nExtract ONLY the task(s) in message marked is_target=true. Others are context, not new tasks. Include the target ID and ONLY messages actually supporting its facts in source_message_ids. Match exercise numbers/pages and subject before inheriting a deadline. Questions, guesses and jokes cannot override an explicit deadline. Do not confuse the date of a topic/thread with the target's assignment date."
         body = await self._complete(
             {
@@ -371,6 +375,10 @@ merely because no single due date is given. Preserve task content and topics.
                     json=payload,
                     headers={"Authorization": f"Bearer {self._key}"},
                 )
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
+            raise ProviderFailure(
+                "provider_unreachable", True, reservation_releasable=True
+            ) from None
         except httpx.HTTPError:
             raise ProviderFailure("provider_unreachable", True) from None
         if response.status_code != 200:
@@ -378,6 +386,7 @@ merely because no single due date is given. Preserve task content and topics.
             raise ProviderFailure(
                 code.get(response.status_code, "provider_error"),
                 response.status_code == 429 or response.status_code >= 500,
+                reservation_releasable=response.status_code in {400, 401, 402, 422, 429},
             )
         try:
             body = response.json()

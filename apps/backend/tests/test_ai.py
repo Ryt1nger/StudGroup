@@ -148,7 +148,35 @@ def test_failures_are_safe_and_never_automatically_retried(status, code, retry):
         call(handler)
     assert error.value.code == code
     assert error.value.retryable == retry
+    assert error.value.reservation_releasable == (status in {401, 402, 429})
     assert len(requests) == 1
+    assert "private" not in str(error.value)
+
+
+@pytest.mark.parametrize("status,released", [(400, True), (422, True), (500, False), (503, False)])
+def test_rejection_and_ambiguous_server_error_have_distinct_billing(status, released):
+    with pytest.raises(ProviderFailure) as error:
+        call(lambda request: httpx.Response(status, text="untrusted private body"))
+    assert error.value.reservation_releasable is released
+
+
+@pytest.mark.parametrize(
+    "exception,released",
+    [
+        (httpx.ConnectError, True),
+        (httpx.ConnectTimeout, True),
+        (httpx.PoolTimeout, True),
+        (httpx.ReadTimeout, False),
+        (httpx.WriteError, False),
+    ],
+)
+def test_network_failure_only_releases_before_request_delivery(exception, released):
+    def handler(request):
+        raise exception("private transport details", request=request)
+
+    with pytest.raises(ProviderFailure) as error:
+        call(handler)
+    assert error.value.reservation_releasable is released
     assert "private" not in str(error.value)
 
 

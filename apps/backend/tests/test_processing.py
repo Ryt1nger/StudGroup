@@ -135,6 +135,26 @@ def test_outage_is_durable_delayed_and_conservatively_charged(client):
     asyncio.run(inspect())
 
 
+def test_confirmed_rejection_releases_attempt_and_global_budget(client):
+    source(client)
+
+    class Rejected:
+        async def extract_batch(self, *args, **kwargs):
+            raise ProviderFailure("rate_limited", True, reservation_releasable=True)
+
+    assert run(client, Rejected()) == "retry"
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            assert (await db.scalar(select(AIAttempt))).charged_usd == Decimal(0)
+            assert (await db.get(AIControl, 1)).spent_usd == Decimal(0)
+
+    asyncio.run(inspect())
+    # A different message can consume the otherwise blocked daily budget.
+    source(client, mid=32)
+    assert run(client, Provider(), ai_daily_group_budget_usd=0.012) == "completed"
+
+
 def test_control_point_is_never_published_as_homework(client):
     source(client, text="КТ: решить задачи")
     assert run(client, Provider(kind="control_point")) == "completed"

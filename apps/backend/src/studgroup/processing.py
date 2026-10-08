@@ -586,20 +586,20 @@ async def process_next(engine, settings, provider=None, now=None):
         group = await db.get(Group, raw.group_id)
         context, schedule = await context_for(db, raw, group, now)
         timezone, message_id = group.timezone, raw.telegram_message_id
-    provider = provider or DeepSeekProvider(
-        settings.deepseek_api_key.get_secret_value(),
-        model=settings.deepseek_model,
-        base_url=settings.deepseek_base_url,
-    )
     result = None
     failure = None
     try:
+        provider = provider or DeepSeekProvider(
+            settings.deepseek_api_key.get_secret_value(),
+            model=settings.deepseek_model,
+            base_url=settings.deepseek_base_url,
+        )
         cutoffs = [
             utc(value) for value in [settings.ai_enabled_until, daily_close] if value is not None
         ]
         remaining = (min(cutoffs) - clock()).total_seconds() if cutoffs else None
         if remaining is not None and remaining <= 0:
-            failure = ProviderFailure("processing_window_closed", True)
+            failure = ProviderFailure("processing_window_closed", True, reservation_releasable=True)
         else:
             async with asyncio.timeout(remaining):
                 result = await provider.extract_batch(
@@ -621,6 +621,11 @@ async def process_next(engine, settings, provider=None, now=None):
             attempt.prompt_tokens = result.usage.prompt_tokens
             attempt.completion_tokens = result.usage.completion_tokens
             attempt.prompt_version = result.prompt_version
+        elif failure and failure.reservation_releasable:
+            # Settle this attempt under the same singleton lock used to reserve funds.
+            # This also adjusts daily sums; a superseded job still owns its own charge.
+            control.spent_usd -= attempt.charged_usd
+            attempt.charged_usd = Decimal(0)
         # A timed-out worker must not overwrite the result or lease of a newer attempt.
         if job.attempts != generation or job.state != "running":
             await db.commit()
@@ -678,6 +683,6 @@ async def process_next(engine, settings, provider=None, now=None):
             if raw and raw.revision == revision:
                 raw.processing_state = "pending" if job.state == "retry" else "failed"
             await incident(db, failure.code, now)
-            # Unknown provider usage keeps the full reservation, never charges zero on timeout.
+            # Ambiguous usage (read/write timeout, HTTP 5xx, malformed 200) stays reserved.
         await db.commit()
     return outcome

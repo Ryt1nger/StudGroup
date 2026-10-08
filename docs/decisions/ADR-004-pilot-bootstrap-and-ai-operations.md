@@ -4,6 +4,24 @@ Status: accepted
 
 Date: 2026-10-04
 
+## Owner update — 2026-10-08: request reservation settlement
+
+Release a request's reservation only when the adapter confirms rejection before
+processing (HTTP 400/401/402/422/429), a connect/pool failure before delivery, or
+a local preflight failure before any provider call. Ambiguous read/write failures,
+5xx errors, malformed/truncated successful responses and in-flight cancellation
+retain reservations. Retryability is independent of billing certainty. Error
+bodies and credentials are never logged. A successful response settles to actual
+reported token usage. Live settlement updates the attempt and global ledger under
+the singleton budget lock, independently of stale job fencing; daily aggregates
+then reflect the settled attempt. Explicit export probes follow the same evidence
+policy. Existing historical reservations require separate evidence-based review;
+this change does not reset ledgers, change live budgets, or replay paid requests.
+
+Acceptance: confirmed rejection frees capacity; timeout cannot erase possible
+spend; releasing a failed deep-pass reservation preserves the successful screen
+charge; compatibility error codes and retry rules remain stable.
+
 ## Owner update — 2026-10-06: provisional homework deadlines
 
 For homework whose deadline cannot be resolved, use the start of the next scheduled

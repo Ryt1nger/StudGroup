@@ -2,6 +2,43 @@
 
 Owner: Codex.
 
+## Explicit two-pass export probe
+
+`python -m studgroup.two_pass_probe ARCHIVE PRIVATE_REPORT --as-of ISO_TIMESTAMP`
+screens every text message in the seven days ending at an explicitly zoned timestamp.
+DeepSeek selects even weak academic signals; a second extraction pass sees merged
+eight-message neighborhoods and reply relatives. Split contexts overlap by three
+messages. Output cites source IDs and dates, preserves date-window metadata, and
+retains private signal excerpts for materials/timetable review. Media/OCR is not
+analyzed. No lexical filter removes messages before the first model pass.
+
+This is an explicit test tool, not the live processor or an automatic publication
+path. It never writes production data, supplies no unverified timetable, and does
+not silently create next-lesson dates. Conservative reservations and actual peak
+usage are saved before/after each call with a maximum separate run budget of $0.08
+(the owner-approved test ceiling). Prior diagnostic reservations must be deducted
+from this ceiling when resuming the current test across separate reports.
+Provider failures stop without retries; an existing report refuses paid replay
+unless explicitly resumed with `--resume` after reviewing the failure. Resumption
+preserves reservations and completed batches. Invalid screening IDs escalate the
+whole supplied batch instead of silently discarding possible signals.
+Reports contain private chat excerpts: keep them in ignored `tmp/` with mode 0600.
+Review duplicate/overlapping candidates before any production publication. The
+live budget ledger and live processing policy are not modified by this probe.
+
+## Provider reservation settlement
+
+Each request reserves its maximum cost before sending. A confirmed pre-processing
+rejection (HTTP 400/401/402/422/429) or connection/pool failure before request
+delivery releases only that request's reservation. Read/write failures, HTTP 5xx,
+truncated/malformed successful responses and ambiguous cancellation retain their
+reservation until usage can be reconciled. An error code alone never establishes
+zero usage; the provider adapter supplies explicit evidence of releasability.
+The live processor settles both attempt and global totals under the reservation
+lock, including superseded attempts. Daily totals derive from settled attempts.
+Both export probes use the same error metadata and preserve earlier actual costs.
+No historic reservations are refunded automatically and budgets are not increased.
+
 ## Activity-driven AI schedule
 
 With `AI_SCHEDULE_ENABLED=true`, the embedded/external processor consumes live text
