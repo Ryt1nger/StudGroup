@@ -118,13 +118,6 @@ export function TodayScreen() {
           </div>
         ) : null}
 
-        {data && data.processing.state === 'updating' ? (
-          <div className={styles.banner}>
-            <Banner tone="info" icon={<Refresh />}>
-              {ru.today.updating}
-            </Banner>
-          </div>
-        ) : null}
         {data && data.processing.state === 'delayed' ? (
           <div className={styles.banner}>
             <Banner tone="warning" icon={<AlertCircle />}>

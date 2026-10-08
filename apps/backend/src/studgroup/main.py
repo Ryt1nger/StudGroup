@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     ai_schedule_timezone: str = "Europe/Moscow"
     processing_mode: Literal["external", "embedded"] = "external"
     owner_telegram_user_id: int | None = None
+    owner_update_notifications_enabled: bool = False
+    owner_update_notifications_since: datetime | None = None
     bot_admin_user_id: int | None = None
 
     @field_validator("database_url", mode="before")
@@ -65,7 +67,7 @@ class Settings(BaseSettings):
         ZoneInfo(value)
         return value
 
-    @field_validator("ai_enabled_until")
+    @field_validator("ai_enabled_until", "owner_update_notifications_since")
     @classmethod
     def deadline_requires_timezone(cls, value):
         if value is not None and value.utcoffset() is None:
@@ -94,7 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             processor = asyncio.create_task(processing_loop(app.state.engine, settings))
         app.state.processor = processor
         delivery = None
-        if settings.bot_admin_user_id is not None:
+        if settings.bot_admin_user_id is not None or settings.owner_update_notifications_enabled:
             from studgroup.bot_admin import delivery_loop
 
             delivery = asyncio.create_task(delivery_loop(app.state.engine, settings))

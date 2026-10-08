@@ -66,6 +66,25 @@ lost. A sleeping/down web process cannot deliver until it resumes; if PostgreSQL
 is unavailable, a new incident cannot be persisted until connectivity returns.
 The standalone local export probe is not the hosted incident sender.
 
+## Owner-only testing update feed
+
+`OWNER_UPDATE_NOTIFICATIONS_ENABLED=true` enables personal bot notices for persisted
+live academic changes. Set `OWNER_UPDATE_NOTIFICATIONS_SINCE` to an explicit
+timezone-aware activation timestamp; no old-history replay is inferred. The same
+positive `OWNER_TELEGRAM_USER_ID` is the only recipient. Published AI notices,
+headman audit changes (including description, confirmation, materials, schedule,
+conversion, cancellation and undo), and new review candidates are covered. Candidate
+messages explicitly say they require review, not that a real card was published.
+Baseline imports stay quiet and local probe reports are not published events.
+
+The existing bot outbox persists and deduplicates each source event. Already queued
+sources are excluded so bursts beyond one batch drain after restart. Telegram errors
+keep testing notices pending; acknowledgement loss still has at-least-once semantics.
+Disabling the flag supersedes pending testing notices and does not disable incident
+alerts, student inboxes or normal bot panels. Nothing is broadcast to students/groups.
+Mini-app links use only a configured HTTPS origin. This temporary feed does not
+change AI scheduling, budget limits or the normal product notification preferences.
+
 ## Activity-driven AI schedule
 
 With `AI_SCHEDULE_ENABLED=true`, the embedded/external processor consumes live text

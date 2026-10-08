@@ -276,6 +276,14 @@ async def deliver(engine, settings):
         )
         if not row:
             return
+        testing_update = (row.dedup_key or "").startswith("owner-test:")
+        if testing_update and (
+            not settings.owner_update_notifications_enabled
+            or json.loads(row.payload).get("chat_id") != settings.owner_telegram_user_id
+        ):
+            row.state = "superseded"
+            await db.commit()
+            return
         row.lease_until = now + timedelta(seconds=30)
         row.attempts += 1
         await db.commit()
@@ -296,7 +304,9 @@ async def deliver(engine, settings):
                 ok = result.get("ok") is True
         except (httpx.HTTPError, ValueError):
             pass
-        row.state = "sent" if ok else "failed" if row.attempts >= 5 else "pending"
+        row.state = (
+            "sent" if ok else "failed" if row.attempts >= 5 and not testing_update else "pending"
+        )
         row.lease_until = None
         row.available_at = now + timedelta(seconds=min(60, row.attempts * 10))
         await db.commit()
@@ -307,6 +317,10 @@ async def delivery_loop(engine, settings):
     while True:
         try:
             await deliver(engine, settings)
+            if iterations % 10 == 0:
+                from studgroup.owner_updates import tick as owner_update_tick
+
+                await owner_update_tick(engine, settings)
             if iterations % 60 == 0:
                 from studgroup.headman_digest import tick
 

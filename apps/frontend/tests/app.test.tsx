@@ -133,10 +133,11 @@ describe('Today', () => {
     expect(screen.queryByText('На сегодня заданий нет')).not.toBeInTheDocument();
   });
 
-  it('shows the feed-level update indicator', async () => {
+  it('updates the feed without the group-update banner', async () => {
     useScenario('updating');
     renderApp();
-    expect(await screen.findByText('Обновляем информацию группы')).toBeInTheDocument();
+    expect(await screen.findByText('Следующая пара')).toBeInTheDocument();
+    expect(screen.queryByText('Обновляем информацию группы')).not.toBeInTheDocument();
   });
 
   it('shows a retryable service error and recovers', async () => {

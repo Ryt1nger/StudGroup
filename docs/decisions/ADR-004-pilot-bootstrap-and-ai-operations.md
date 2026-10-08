@@ -55,6 +55,17 @@ private chat contents, keys or remote exception bodies. Telegram delivery retrie
 independently of provider availability. Acknowledgement loss can produce duplicate
 delivery; service/database downtime delays notifications.
 
+## Owner update — 2026-10-08: temporary academic testing feed
+
+During testing, opt into owner-only bot delivery of new/changed published academic
+cards, manual audit operations (including materials/schedule/confirmation/undo),
+and clearly labelled new AI review proposals. Use an explicit activation timestamp,
+not a semester-history replay, and durable event-keyed outbox delivery. Turning off
+the testing flag stops pending testing notices but preserves independent incident
+alerts. Do not broadcast or enable student notifications. This feed concerns
+persisted academic changes, not local unpublished probes or other students'
+personal completion marks. Frontend/backend contracts stay unchanged.
+
 ## Owner update — 2026-10-06: provisional homework deadlines
 
 For homework whose deadline cannot be resolved, use the start of the next scheduled
