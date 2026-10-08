@@ -202,10 +202,10 @@ The core lifecycle is:
 ### Processing cadence
 
 - No new messages means no processing run.
-- One to four new messages are processed no later than ten minutes after arrival.
-- Five or more new messages are processed every five minutes while the chat remains active.
-- Files, media, and clearly urgent information may trigger faster processing.
-- A direct message from the headman or deputy is processed separately and immediately.
+- Owner's economy policy (2026-10-08): live text is processed at half-hour cutoffs from 07:00 to 23:00 Moscow time, only when unprocessed messages exist. Imported history does not wake this schedule.
+- Activity within the last 30 minutes permits the 23:00/23:30 cutoffs, stopping at midnight. Later text waits until 07:00; duplicate/no-op deliveries do not create fresh work.
+- Webhook activity is persisted independently of the provider. Quiet groups cause no AI requests. Missed windows after server sleep collapse into one current catch-up window.
+- Manual headman operations remain immediate and require no AI. Files/media may signal activity, but file extraction is not implemented in the text-only slice. The existing reasoning cascade is a target design, not permission to bypass this schedule or budget caps.
 
 ### DeepSeek reasoning cascade
 

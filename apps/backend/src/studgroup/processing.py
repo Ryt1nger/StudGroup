@@ -25,6 +25,7 @@ from studgroup.models import (
     AIControl,
     AIJob,
     Group,
+    GroupAIActivity,
     Homework,
     OwnerIncident,
     RawMessage,
@@ -108,6 +109,16 @@ async def incident(db, code, now, recover=False):
 
 
 async def claim(engine, settings, now):
+    scheduled = settings.ai_schedule_enabled
+    slot = None
+    extended = False
+    if scheduled:
+        from studgroup.ai_schedule import window
+
+        timing = window(now, settings.ai_schedule_timezone)
+        if timing is None:
+            return None
+        slot, _close, extended = timing
     async with AsyncSession(engine, expire_on_commit=False) as db:
         # Singleton lock serializes budget reservations across groups/workers.
         control = await db.scalar(select(AIControl).where(AIControl.id == 1).with_for_update())
@@ -120,7 +131,7 @@ async def claim(engine, settings, now):
             and_(
                 RawMessage.imported.is_(True), Group.telegram_chat_id == settings.ai_import_chat_id
             )
-            if settings.ai_import_chat_id is not None
+            if settings.ai_import_chat_id is not None and not scheduled
             else False
         )
         already_processed = exists(
@@ -143,6 +154,23 @@ async def claim(engine, settings, now):
                     Group.pilot_authorized.is_(True),
                     Group.status == "active",
                     ~already_processed,
+                    *(
+                        [
+                            RawMessage.imported.is_(False),
+                            RawMessage.live_received_at.is_not(None),
+                            RawMessage.live_received_at <= slot,
+                            exists(
+                                select(GroupAIActivity.group_id).where(
+                                    GroupAIActivity.group_id == RawMessage.group_id,
+                                    GroupAIActivity.last_signal_at >= slot - timedelta(minutes=30),
+                                )
+                            )
+                            if extended
+                            else True,
+                        ]
+                        if scheduled
+                        else []
+                    ),
                 )
                 .order_by(RawMessage.version_date)
                 .limit(50)
@@ -166,6 +194,8 @@ async def claim(engine, settings, now):
                 or utc(job.available_at) > now
                 or (job.lease_until and utc(job.lease_until) > now)
             ):
+                continue
+            if scheduled and job and job.schedule_slot and utc(job.schedule_slot) >= slot:
                 continue
             if job and job.attempts >= MAX_ATTEMPTS:
                 job.state = "failed"
@@ -196,6 +226,11 @@ async def claim(engine, settings, now):
                 db.add(job)
                 await db.flush()
             job.state = "running"
+            if scheduled:
+                job.schedule_slot = slot
+                activity = await db.get(GroupAIActivity, raw.group_id)
+                if activity:
+                    activity.last_batch_slot = slot
             job.attempts += 1
             job.lease_until = now + timedelta(minutes=3)
             control.spent_usd += RESERVATION
@@ -517,7 +552,7 @@ async def publish(db, raw, extraction, now):
 
 
 async def process_next(engine, settings, provider=None, now=None):
-    now = now or datetime.now(UTC)
+    now = utc(now or datetime.now(UTC))
     started = monotonic()
 
     def clock():
@@ -527,6 +562,14 @@ async def process_next(engine, settings, provider=None, now=None):
         return "disabled"
     if settings.ai_enabled_until is not None and utc(settings.ai_enabled_until) <= clock():
         return "scheduled_off"
+    daily_close = None
+    if settings.ai_schedule_enabled:
+        from studgroup.ai_schedule import window
+
+        timing = window(clock(), settings.ai_schedule_timezone)
+        if timing is None:
+            return "outside_hours"
+        _slot, daily_close, _extended = timing
     if settings.deepseek_model != "deepseek-flash":
         return "model_budget_not_reviewed"
     if not settings.deepseek_api_key.get_secret_value() and provider is None:
@@ -551,11 +594,10 @@ async def process_next(engine, settings, provider=None, now=None):
     result = None
     failure = None
     try:
-        remaining = (
-            (utc(settings.ai_enabled_until) - clock()).total_seconds()
-            if settings.ai_enabled_until is not None
-            else None
-        )
+        cutoffs = [
+            utc(value) for value in [settings.ai_enabled_until, daily_close] if value is not None
+        ]
+        remaining = (min(cutoffs) - clock()).total_seconds() if cutoffs else None
         if remaining is not None and remaining <= 0:
             failure = ProviderFailure("processing_window_closed", True)
         else:

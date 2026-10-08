@@ -2,6 +2,26 @@
 
 Owner: Codex.
 
+## Activity-driven AI schedule
+
+With `AI_SCHEDULE_ENABLED=true`, the embedded/external processor consumes live text
+at fixed half-hour cutoffs (07:00, 07:30, …, 22:30) in `AI_SCHEDULE_TIMEZONE`
+(Europe/Moscow). In the 23:00–24:00 extension, a group needs a signal within the
+last 30 minutes; cutoff runs at 23:00/23:30. Text arriving after the last cutoff
+waits for 07:00. Webhook receipt timestamps and activity are committed with inbox
+changes. Service/media activity can signal the group, but does not itself invoke
+the text provider. Duplicate deliveries/no-op edits do not trigger fresh work.
+
+Only retained, unprocessed live versions are eligible; imported history never
+wakes this schedule. Catch-up after a sleeping free Render instance is one current
+cutoff, not a replay of every missed slot. Quiet groups produce no AI calls. A cycle
+may process several relevant messages using the existing target-message extraction;
+it is not a guarantee of one provider request for the entire group. Retries are
+bounded and cannot repeat within one slot. Requests stop at the daily cutoff.
+The existing daily/global USD limits and usage ledger remain unchanged. Production
+also needs `AI_ENABLED=true`, and any old absolute `AI_ENABLED_UNTIL` must be cleared
+explicitly when replacing a one-time test window with this recurring policy.
+
 ## Private command panels
 
 `/admin` and `/st` each own a separate durable Telegram message. Navigation edits

@@ -97,7 +97,7 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
         await db.commit()
         return {"ok": True}
     message = update.edited_message or update.message
-    if message is None or message.text is None or message.chat.type not in {"group", "supergroup"}:
+    if message is None or message.chat.type not in {"group", "supergroup"}:
         await db.commit()
         return {"ok": True}
     group = await db.scalar(
@@ -108,6 +108,13 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
         )
     )
     if group is None:
+        await db.commit()
+        return {"ok": True}
+
+    if message.text is None:
+        from studgroup.ai_schedule import signal
+
+        await signal(db, group.id)
         await db.commit()
         return {"ok": True}
 
@@ -137,6 +144,7 @@ async def store_message(db, group, message, *, imported=False):
     )
     if row is None:
         original_date = datetime.fromtimestamp(message.date, UTC)
+        received = datetime.now(UTC) if not imported else None
         row = RawMessage(
             group_id=group.id,
             telegram_message_id=message.message_id,
@@ -151,14 +159,23 @@ async def store_message(db, group, message, *, imported=False):
             processing_state="pending",
             imported=imported,
             delete_at=original_date + timedelta(days=30),
+            live_received_at=received,
         )
         db.add(row)
+        if received:
+            from studgroup.ai_schedule import signal
+
+            await signal(db, group.id, received)
         return "inserted"
     else:
         saved_version = row.version_date
         if saved_version.tzinfo is None:
             saved_version = saved_version.replace(tzinfo=UTC)
         if version > saved_version:
+            reply_id = message.reply_to_message.message_id if message.reply_to_message else None
+            if row.text == message.text and row.reply_to_message_id == reply_id:
+                row.version_date = version
+                return "unchanged"
             row.text = message.text
             row.reply_to_message_id = (
                 message.reply_to_message.message_id if message.reply_to_message else None
@@ -166,5 +183,11 @@ async def store_message(db, group, message, *, imported=False):
             row.version_date = version
             row.revision += 1
             row.processing_state = "pending"
+            if not imported:
+                from studgroup.ai_schedule import signal
+
+                row.imported = False
+                row.live_received_at = datetime.now(UTC)
+                await signal(db, group.id, row.live_received_at)
             return "updated"
     return "unchanged"

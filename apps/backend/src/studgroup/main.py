@@ -4,6 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -39,6 +40,8 @@ class Settings(BaseSettings):
     ai_enabled: bool = False
     ai_enabled_until: datetime | None = None
     ai_import_chat_id: int | None = None
+    ai_schedule_enabled: bool = False
+    ai_schedule_timezone: str = "Europe/Moscow"
     processing_mode: Literal["external", "embedded"] = "external"
     owner_telegram_user_id: int | None = None
     bot_admin_user_id: int | None = None
@@ -55,6 +58,12 @@ class Settings(BaseSettings):
     @classmethod
     def empty_cutoff(cls, value):
         return None if value == "" else value
+
+    @field_validator("ai_schedule_timezone")
+    @classmethod
+    def valid_schedule_timezone(cls, value):
+        ZoneInfo(value)
+        return value
 
     @field_validator("ai_enabled_until")
     @classmethod

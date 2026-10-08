@@ -110,6 +110,7 @@ class RawMessage(Base):
     imported: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     processing_state: Mapped[str] = mapped_column(String(16), default="pending")
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    live_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ReceivedUpdate(Base):
@@ -206,6 +207,17 @@ class AIJob(Base):
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    schedule_slot: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GroupAIActivity(Base):
+    __tablename__ = "group_ai_activity"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    last_signal_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    signal_count: Mapped[int] = mapped_column(Integer, default=1)
+    last_batch_slot: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AICandidate(Base):
