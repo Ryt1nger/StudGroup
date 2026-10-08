@@ -296,6 +296,38 @@ class BotOutbox(Base):
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     dedup_key: Mapped[str | None] = mapped_column(String(200), unique=True)
+    panel_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bot_panels.id", ondelete="CASCADE")
+    )
+    panel_generation: Mapped[int | None] = mapped_column(Integer)
+    panel_revision: Mapped[int | None] = mapped_column(Integer)
+
+
+class BotPanel(Base):
+    __tablename__ = "bot_panels"
+    __table_args__ = (UniqueConstraint("chat_id", "mode"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    mode: Mapped[str] = mapped_column(String(10))
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    message_id: Mapped[int | None] = mapped_column(BigInteger)
+
+
+class BotPanelMessage(Base):
+    __tablename__ = "bot_panel_messages"
+    __table_args__ = (UniqueConstraint("panel_id", "message_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    panel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bot_panels.id", ondelete="CASCADE"))
+    generation: Mapped[int] = mapped_column(Integer)
+    message_id: Mapped[int] = mapped_column(BigInteger)
+    kind: Mapped[str] = mapped_column(String(16))
+
+
+class BotDialogRoute(Base):
+    __tablename__ = "bot_dialog_routes"
+    chat_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    mode: Mapped[str] = mapped_column(String(10))
 
 
 class HeadmanSession(Base):

@@ -44,7 +44,7 @@ def session(client):
             messages = (
                 await db.scalars(
                     select(BotOutbox)
-                    .where(BotOutbox.method == "sendMessage")
+                    .where(BotOutbox.method.in_(["sendMessage", "renderPanel", "panelAux"]))
                     .order_by(BotOutbox.available_at)
                 )
             ).all()
@@ -91,7 +91,7 @@ def test_nonowner_has_no_admin_session_or_group_list(client):
     s, msg = session(client)
     assert s is None
     assert "недоступна" in msg[-1]["text"]
-    assert "reply_markup" not in msg[-1]
+    assert msg[-1].get("reply_markup", {}).get("inline_keyboard", []) == []
 
 
 def test_native_picker_is_bound_to_its_request(client):

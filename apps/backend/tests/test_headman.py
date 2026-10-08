@@ -59,6 +59,7 @@ def deliver(client, text="", callback=None, uid=1, forward=None):
         message["forward_origin"] = {"type": "hidden_user", "date": int(forward.timestamp())}
     body = {"update_id": ident, "message": message}
     if callback:
+        message["message_id"] = 51 if callback.startswith("s:") else 52
         body = {
             "update_id": ident,
             "callback_query": {
@@ -76,7 +77,7 @@ def last(client):
     async def read(db):
         row = await db.scalar(
             select(BotOutbox)
-            .where(BotOutbox.method == "sendMessage")
+            .where(BotOutbox.method.in_(["sendMessage", "renderPanel", "panelAux"]))
             .order_by(BotOutbox.available_at.desc())
             .limit(1)
         )
@@ -107,7 +108,17 @@ def test_students_cannot_open_st_or_impersonate_callback(client):
     deliver(client, "/st")
     assert "Нет роли" in last(client)["text"]
     deliver(client, callback="s:invalid:group0", uid=2)
-    assert "Сессия истекла" in last(client)["text"]
+
+    async def read_ack(db):
+        row = await db.scalar(
+            select(BotOutbox)
+            .where(BotOutbox.method == "answerCallbackQuery")
+            .order_by(BotOutbox.available_at.desc())
+            .limit(1)
+        )
+        assert "устарела" in json.loads(row.payload)["text"]
+
+    run(client, read_ack)
 
 
 def test_create_is_private_until_confirm_and_replay_cannot_duplicate(foreman):
@@ -123,7 +134,17 @@ def test_create_is_private_until_confirm_and_replay_cannot_duplicate(foreman):
     deliver(foreman, callback=old)
     assert run(foreman, lambda db: db.scalar(select(func.count()).select_from(Homework))) == 1
     assert run(foreman, lambda db: db.scalar(select(func.count()).select_from(HeadmanAudit))) == 1
-    assert "устарела" in last(foreman)["text"]
+
+    async def ack(db):
+        row = await db.scalar(
+            select(BotOutbox)
+            .where(BotOutbox.method == "answerCallbackQuery")
+            .order_by(BotOutbox.available_at.desc())
+            .limit(1)
+        )
+        assert "устарела" in json.loads(row.payload)["text"]
+
+    run(foreman, ack)
     data = foreman.get("/v1/homework", headers={"Authorization": "Bearer valid"}).json()
     assert data["items"][0]["verification_state"] == "manual_confirmed"
 

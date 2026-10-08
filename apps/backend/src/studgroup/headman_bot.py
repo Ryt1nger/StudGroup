@@ -35,7 +35,7 @@ def payload(session):
     return json.loads(session.payload)
 
 
-def screen(db, session, text, rows, step="menu", data=None):
+async def screen(db, session, text, rows, step="menu", data=None):
     session.nonce = secrets.token_hex(6)
     session.step = step
     session.payload = domain.dumps(data or {})
@@ -49,7 +49,7 @@ def screen(db, session, text, rows, step="menu", data=None):
             for row in rows
         ]
     }
-    say(db, session.telegram_user_id, text[:4000], keyboard)
+    await say(db, session.telegram_user_id, text[:4000], keyboard)
 
 
 def back():
@@ -59,7 +59,7 @@ def back():
 async def menu(db, session, group):
     questions = await domain.cards(db, group, "review")
     questions += await candidates(db, group)
-    screen(
+    await screen(
         db,
         session,
         f"Староста · {group.name}\nВыбери раздел. Изменения сохраняются только после подтверждения.",
@@ -79,7 +79,7 @@ async def menu(db, session, group):
 async def groups(db, session, forward=None):
     allowed = await domain.memberships(db, session.telegram_user_id)
     if not allowed:
-        screen(
+        await screen(
             db,
             session,
             "Нет роли старосты/помощника. Роль назначает владелец через /admin; /st не выдаёт её автоматически.",
@@ -88,7 +88,7 @@ async def groups(db, session, forward=None):
         )
         return
     session.group_id = None
-    screen(
+    await screen(
         db,
         session,
         "Выбери свою группу:",
@@ -98,8 +98,8 @@ async def groups(db, session, forward=None):
     )
 
 
-def forward_screen(db, session, group, forward):
-    screen(
+async def forward_screen(db, session, group, forward):
+    await screen(
         db,
         session,
         f"{group.name}\nПересланное сообщение от {forward['source_date']}:\n\n{forward['description'][:2500]}\n\nСначала выбери тип. Без подтверждения ничего не публикуется.",
@@ -192,7 +192,7 @@ async def listing(db, session, group, mode, search="", page=0):
         [("Актуальные", "active"), ("Архив", "archive")],
         back(),
     ]
-    screen(
+    await screen(
         db,
         session,
         f"{'Требует проверки' if mode == 'review' else 'Карточки'} · {len(rows)}\n"
@@ -210,7 +210,7 @@ async def detail(db, session, group, key):
         job = await db.get(AIJob, row.job_id)
         raw = await db.get(RawMessage, job.raw_message_id) if job else None
         text = f"Неопубликованный черновик\n{data.get('subject') or 'Предмет не определён'}\n{data.get('title') or 'Название не определено'}\n{data.get('description') or ''}\n\nИсточник: {raw.text[:1800] if raw else 'недоступен'}"
-        screen(
+        await screen(
             db,
             session,
             text,
@@ -236,7 +236,7 @@ async def detail(db, session, group, key):
     if kind == "e" and row.window_end:
         text += f"Период до {utc(row.window_end).astimezone(ZoneInfo(group.timezone)).strftime('%d.%m.%Y %H:%M')}\n"
     text += f"\nИсточник: {raw.text[:1500] if raw and utc(raw.delete_at) > datetime.now(UTC) else 'вручную или срок хранения истёк'}"
-    screen(
+    await screen(
         db,
         session,
         text,
@@ -255,12 +255,12 @@ async def detail(db, session, group, key):
     )
 
 
-def ask(db, session, prompt, data, field):
-    screen(db, session, prompt, [back()], "text", {**data, "field": field})
+async def ask(db, session, prompt, data, field):
+    await screen(db, session, prompt, [back()], "text", {**data, "field": field})
 
 
-def preview(db, session, text, draft):
-    screen(
+async def preview(db, session, text, draft):
+    await screen(
         db,
         session,
         "Предпросмотр\n\n" + text + "\n\nСохранить для группы?",
@@ -311,8 +311,8 @@ def parse_date(text, group, kind):
     )
 
 
-def date_menu(db, session, data):
-    screen(
+async def date_menu(db, session, data):
+    await screen(
         db,
         session,
         "Укажи срок. Указанное время сохранится точно; «До конца дня» не ограничивается парой.",
@@ -349,7 +349,7 @@ async def finish_date(db, session, group, data, value):
         }
         if kind == "e":
             patch.update({k: value.get(k) for k in ["window_start", "window_end"]})
-        preview(
+        await preview(
             db,
             session,
             "Новый срок: " + domain.dumps(value),
@@ -357,13 +357,13 @@ async def finish_date(db, session, group, data, value):
         )
     else:
         data["values"].update(value)
-        preview(db, session, domain.dumps(data["values"]), {**data, "action": "create"})
+        await preview(db, session, domain.dumps(data["values"]), {**data, "action": "create"})
 
 
 async def settings_screen(db, session, group, member):
     config = await db.get(HeadmanSettings, member.id)
     enabled = bool(config and config.questions_enabled)
-    screen(
+    await screen(
         db,
         session,
         f"Часовой пояс: {group.timezone}\nЛичные вопросы: {'включены' if enabled else 'выключены'}\nВремя вопросов: {config.digest_times if config else '09:00'}\nНе более двух непустых подборок в день; ручная работа доступна при выключенном ИИ.",
@@ -398,7 +398,7 @@ async def schedule_screen(db, session, group, page=0):
     if len(calendar["lessons"]) > (page + 1) * 8:
         buttons += [[("›", "schedule_next")]]
     buttons += [[("Добавить отдельную пару", "schedule_add")], back()]
-    screen(
+    await screen(
         db,
         session,
         "Расписание ближайших двух недель"
@@ -434,7 +434,7 @@ async def members_screen(db, session, group, member, page=0):
         [("Отозвать действующие приглашения", "revoke_invites")],
         back(),
     ]
-    screen(
+    await screen(
         db,
         session,
         f"Подключены к StudGroup: {len(rows)}. Это не полный список участников Telegram.",
@@ -457,7 +457,7 @@ async def handle(db, update, settings):
                 group = await domain.redeem_invite(
                     db, settings, sender.id, text.split("invite_", 1)[1]
                 )
-            say(
+            await say(
                 db,
                 sender.id,
                 f"Ты подключён к «{group.name}». Открой приложение заново.",
@@ -468,7 +468,7 @@ async def handle(db, update, settings):
                 },
             )
         except domain.StError as error:
-            say(db, sender.id, str(error))
+            await say(db, sender.id, str(error))
         return True
     session = await db.scalar(
         select(HeadmanSession).where(HeadmanSession.telegram_user_id == sender.id).with_for_update()
@@ -495,7 +495,7 @@ async def handle(db, update, settings):
         }
         if len(allowed) == 1:
             session.group_id = allowed[0][2].id
-            forward_screen(db, session, allowed[0][2], forward)
+            await forward_screen(db, session, allowed[0][2], forward)
         else:
             await groups(db, session, forward)
         return True
@@ -540,7 +540,7 @@ async def handle(db, update, settings):
         await groups(db, session)
         return True
     if not session or utc(session.expires_at) <= datetime.now(UTC):
-        say(db, sender.id, "Сессия истекла. Отправь /st заново.")
+        await say(db, sender.id, "Сессия истекла. Отправь /st заново.")
         return True
     try:
         data = payload(session)
@@ -558,7 +558,7 @@ async def handle(db, update, settings):
             user, member, group = await domain.access(db, sender.id, uuid.UUID(selected))
             session.group_id = group.id
             if data.get("forward"):
-                forward_screen(db, session, group, data["forward"])
+                await forward_screen(db, session, group, data["forward"])
             else:
                 await menu(db, session, group)
             return True
@@ -579,7 +579,7 @@ async def handle(db, update, settings):
         elif session.step == "list" and action.startswith("open"):
             await detail(db, session, group, data["keys"][int(action[4:])])
         elif action == "search":
-            ask(db, session, "Введи предмет или часть названия.", {}, "search")
+            await ask(db, session, "Введи предмет или часть названия.", {}, "search")
         elif action in {"new_h", "new_e", "candidate_h", "candidate_e", "forward_h", "forward_e"}:
             draft = {"kind": action[-1], "values": {}, "source_date": datetime.now(UTC).isoformat()}
             if action.startswith("forward"):
@@ -601,15 +601,17 @@ async def handle(db, update, settings):
                 draft["values"]["description"] = json.loads(candidate.payload).get(
                     "description"
                 ) or (raw.text if raw else "")
-            ask(db, session, "Предмет?", draft, "new_subject")
+            await ask(db, session, "Предмет?", draft, "new_subject")
         elif session.step == "detail" and action.startswith("edit_"):
             field = action[5:]
             if field == "deadline":
-                date_menu(db, session, {**data, "edit": True})
+                await date_menu(db, session, {**data, "edit": True})
             else:
-                ask(db, session, f"Новое значение: {field}. Отправь текст.", data, "edit_" + field)
+                await ask(
+                    db, session, f"Новое значение: {field}. Отправь текст.", data, "edit_" + field
+                )
         elif session.step == "detail" and action == "material":
-            ask(
+            await ask(
                 db,
                 session,
                 "Пришли название и HTTPS-ссылку на двух строках. Файлы/OCR в этот MVP не входят.",
@@ -622,7 +624,7 @@ async def handle(db, update, settings):
                 for r in await domain.cards(db, group)
                 if r[0] != data["key"] and r[1] == data["key"][0]
             ]
-            screen(
+            await screen(
                 db,
                 session,
                 "С какой карточкой объединить? Описание и материалы добавятся к выбранной, исходная уйдёт в архив.",
@@ -636,7 +638,7 @@ async def handle(db, update, settings):
             )
         elif session.step == "merge" and action.startswith("target"):
             target = data["targets"][int(action[6:])]
-            preview(
+            await preview(
                 db,
                 session,
                 "Объединить две карточки?",
@@ -649,7 +651,7 @@ async def handle(db, update, settings):
             "defer",
             "convert",
         }:
-            preview(
+            await preview(
                 db,
                 session,
                 {
@@ -663,7 +665,7 @@ async def handle(db, update, settings):
             )
         elif session.step == "date" and action.startswith("date_"):
             if action in {"date_manual", "date_end"}:
-                ask(
+                await ask(
                     db,
                     session,
                     "Дата: 12.10.2026. Можно указать время: 12.10.2026 18:30. Для КТ можно период 10.10.2026–15.10.2026.",
@@ -734,7 +736,7 @@ async def handle(db, update, settings):
         elif session.step == "schedule" and action.startswith("lesson"):
             ident = data["lessons"][int(action[6:])]
             pattern, override, lesson, _ = await headman_schedule.occurrence(db, group, ident)
-            screen(
+            await screen(
                 db,
                 session,
                 f"{lesson['subject']}\n{lesson['starts_at']} — {lesson['ends_at']}\n{lesson['location'] or ''}\n{lesson['status']}",
@@ -763,7 +765,7 @@ async def handle(db, update, settings):
             field = action[7:]
             if field == "cancel":
                 patch = {"cancelled": not data["cancelled"]}
-                screen(
+                await screen(
                     db,
                     session,
                     "Область изменения?",
@@ -776,7 +778,7 @@ async def handle(db, update, settings):
                     {**data, "patch": patch},
                 )
             else:
-                ask(
+                await ask(
                     db,
                     session,
                     "Формат: 12.10.2026 09:00–10:20"
@@ -788,7 +790,7 @@ async def handle(db, update, settings):
                     "lesson_" + field,
                 )
         elif session.step == "scope" and action in {"scope_once", "scope_recurring"}:
-            preview(
+            await preview(
                 db,
                 session,
                 domain.dumps(data["patch"])
@@ -802,7 +804,7 @@ async def handle(db, update, settings):
                 {**data, "action": "schedule_change", "scope": action[6:]},
             )
         elif action == "schedule_add":
-            ask(
+            await ask(
                 db,
                 session,
                 "Четыре строки: предмет; дата ДД.ММ.ГГГГ; время 09:00–10:20; аудитория, корпус и адрес.",
@@ -830,7 +832,7 @@ async def handle(db, update, settings):
             target = await db.get(Membership, uuid.UUID(data["members"][int(action[6:])]))
             if target.group_id != group.id or target.role != "student":
                 raise domain.StError("Роли старост и помощников меняет владелец через /admin.")
-            preview(
+            await preview(
                 db,
                 session,
                 "Отозвать доступ к приложению (не бан в Telegram)?"
@@ -840,7 +842,7 @@ async def handle(db, update, settings):
             )
         elif action == "invite":
             domain.headman_only(member)
-            ask(
+            await ask(
                 db,
                 session,
                 "Сколько одноразовых приглашений создать? От 1 до 10; действуют 24 часа.",
@@ -849,7 +851,7 @@ async def handle(db, update, settings):
             )
         elif action == "revoke_invites":
             domain.headman_only(member)
-            preview(
+            await preview(
                 db,
                 session,
                 "Отозвать все ещё не использованные приглашения группы?",
@@ -871,7 +873,7 @@ async def handle(db, update, settings):
                 .select_from(AIJob)
                 .where(AIJob.group_id == group.id, AIJob.state.in_(["pending", "retry", "running"]))
             )
-            screen(
+            await screen(
                 db,
                 session,
                 f"{group.name}\nАктуальных ДЗ и КТ: {len(active)}\nТребует проверки: {len(review)}\nПолучено последнее сообщение: {received or 'нет сообщений'}\nПоследнее успешно разобранное задание очереди создано: {finished or 'разборов пока нет'}\nОжидают разбора: {pending}\nРучные правки доступны независимо от ИИ.",
@@ -880,7 +882,7 @@ async def handle(db, update, settings):
         elif action == "settings":
             await settings_screen(db, session, group, member)
         elif session.step == "settings" and action == "toggle_questions":
-            preview(
+            await preview(
                 db,
                 session,
                 "Включить личные вопросы без пустых подборок?"
@@ -891,7 +893,7 @@ async def handle(db, update, settings):
         elif session.step == "settings" and action in {"digest_times", "timezone"}:
             if action == "timezone":
                 domain.headman_only(member)
-            ask(
+            await ask(
                 db,
                 session,
                 "Один или два времени через запятую: 09:00,18:00. Разрешено 07:00–22:00."
@@ -913,7 +915,7 @@ async def handle(db, update, settings):
                     .limit(20)
                 )
             ).all()
-            screen(
+            await screen(
                 db,
                 session,
                 "Последние правки. Откат возможен, только если данные не изменились после этой правки.",
@@ -926,7 +928,7 @@ async def handle(db, update, settings):
                 {"audits": [str(a.id) for a in audits]},
             )
         elif session.step == "journal" and action.startswith("undo"):
-            preview(
+            await preview(
                 db,
                 session,
                 "Откатить выбранную правку? Выполнение студентов не сбрасывается.",
@@ -940,7 +942,7 @@ async def handle(db, update, settings):
         else:
             raise domain.StError("Открой раздел заново через /st.")
     except (domain.StError, ValueError, IndexError, KeyError, ZoneInfoNotFoundError) as error:
-        say(
+        await say(
             db,
             sender.id,
             str(error)
@@ -966,12 +968,12 @@ async def typed(db, session, group, user, member, data, text, message):
                 message.forward_origin.date, UTC
             ).isoformat()
         if name == "subject":
-            ask(db, session, "Название задания?", data, "new_title")
+            await ask(db, session, "Название задания?", data, "new_title")
         elif name == "title":
             if data["values"].get("description"):
-                date_menu(db, session, data)
+                await date_menu(db, session, data)
             else:
-                ask(
+                await ask(
                     db,
                     session,
                     "Описание задачи? Можно переслать исходное текстовое сообщение: его дата сохранится.",
@@ -979,7 +981,7 @@ async def typed(db, session, group, user, member, data, text, message):
                     "new_description",
                 )
         else:
-            date_menu(db, session, data)
+            await date_menu(db, session, data)
     elif field.startswith("edit_"):
         kind, _row = await domain.entity(db, group, data["key"])
         name = field[5:]
@@ -992,7 +994,7 @@ async def typed(db, session, group, user, member, data, text, message):
         patch = {"subject_name" if kind == "h" and name == "subject" else name: text}
         if kind == "h" and name == "subject":
             patch["subject_id"] = str(uuid.uuid5(group.id, text.casefold()))
-        preview(
+        await preview(
             db,
             session,
             text,
@@ -1012,7 +1014,7 @@ async def typed(db, session, group, user, member, data, text, message):
         parts = text.splitlines()
         if len(parts) != 2 or len(parts[0]) > 255:
             raise domain.StError("Пришли две строки: название и HTTPS-ссылка.")
-        preview(
+        await preview(
             db,
             session,
             text,
@@ -1048,14 +1050,14 @@ async def typed(db, session, group, user, member, data, text, message):
         else:
             patch = {"location": "Онлайн", "online_url": domain.safe_url(text)}
         if field == "schedule_add":
-            preview(
+            await preview(
                 db,
                 session,
                 text,
                 {"action": "schedule_add", "subject": parts[0], "location": parts[3], **patch},
             )
         else:
-            screen(
+            await screen(
                 db,
                 session,
                 "Область изменения?",
@@ -1071,7 +1073,7 @@ async def typed(db, session, group, user, member, data, text, message):
         count = int(text)
         if not 1 <= count <= 10:
             raise domain.StError("От 1 до 10 приглашений.")
-        preview(
+        await preview(
             db,
             session,
             f"Создать {count} одноразовых приглашений на 24 часа?",
@@ -1084,7 +1086,7 @@ async def typed(db, session, group, user, member, data, text, message):
             for v in values
         ):
             raise domain.StError("Один или два разных времени в диапазоне 07:00–22:00.")
-        preview(
+        await preview(
             db,
             session,
             "Время вопросов: " + text,
@@ -1093,7 +1095,7 @@ async def typed(db, session, group, user, member, data, text, message):
     elif field == "timezone":
         domain.headman_only(member)
         ZoneInfo(text)
-        preview(
+        await preview(
             db,
             session,
             f"Часовой пояс всей группы: {group.timezone} → {text}. Изменится отображение дат и расписания.",
@@ -1206,7 +1208,7 @@ async def apply(db, session, group, user, member, data, settings):
         )
     elif action == "invite":
         codes = await domain.issue_invites(db, group, member, data["count"])
-        screen(
+        await screen(
             db,
             session,
             "Одноразовые коды (24 часа). Передай участникам: отправить боту /start invite_КОД.\n\n"
@@ -1262,7 +1264,7 @@ async def apply(db, session, group, user, member, data, settings):
     else:
         raise domain.StError("Неизвестное действие.")
     await db.flush()
-    screen(
+    await screen(
         db,
         session,
         "Сохранено для группы."

@@ -2,6 +2,21 @@
 
 Owner: Codex.
 
+## Private command panels
+
+`/admin` and `/st` each own a separate durable Telegram message. Navigation edits
+that message; callbacks select their own panel and subsequent typed inputs follow
+the selected mode, not whichever session happens to be awaiting text first.
+Repeating a root command removes only that mode's tracked previous command,
+inputs, panel and temporary controls, and supersedes its unsent screens. `/start`
+(including invitations), independent alerts and digests are never part of cleanup.
+Native user-picker reply keyboards use temporary tracked messages because Telegram
+cannot attach them through editMessageText. Apply migration 0014 before startup.
+If a tracked bot message cannot be deleted, its inline buttons are disabled.
+Messages from before tracking was deployed cannot be reconstructed from Bot API
+history and are not indiscriminately deleted. Deletion is subject to Telegram limits;
+delivery remains at-least-once across ambiguous network failures.
+
 ## Headman cabinet /st (contract 0.8.0)
 
 Private Telegram command `/st` lists only the caller's active pilot groups where

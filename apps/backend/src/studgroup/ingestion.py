@@ -91,15 +91,9 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
     except IntegrityError:
         return {"ok": True}
 
-    from studgroup.headman_bot import handle as handle_headman
+    from studgroup.bot_panels import dispatch
 
-    if await handle_headman(db, update, request.app.state.settings):
-        await db.commit()
-        return {"ok": True}
-
-    from studgroup.bot_admin import handle
-
-    if await handle(db, update, request.app.state.settings):
+    if await dispatch(db, update, request.app.state.settings):
         await db.commit()
         return {"ok": True}
     message = update.edited_message or update.message

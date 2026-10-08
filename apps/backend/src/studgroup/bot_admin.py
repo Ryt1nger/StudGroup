@@ -26,7 +26,11 @@ def enqueue(db, method, payload, dedup_key=None):
     )
 
 
-def say(db, chat, text, markup=None):
+async def say(db, chat, text, markup=None):
+    from studgroup.bot_panels import queue_frame
+
+    if await queue_frame(db, chat, text, markup):
+        return
     payload = {"chat_id": chat, "text": text, "link_preview_options": {"is_disabled": True}}
     if markup:
         payload["reply_markup"] = markup
@@ -56,7 +60,7 @@ async def handle(db, update, settings):
         enqueue(db, "answerCallbackQuery", {"callback_query_id": callback.id})
     text = message.text or ""
     if not callback and text.split("@")[0].strip() == "/start":
-        say(
+        await say(
             db,
             chat,
             "Открой StudGroup через кнопку ниже.",
@@ -69,7 +73,7 @@ async def handle(db, update, settings):
         return True
     if sender.id != settings.bot_admin_user_id or chat != sender.id:
         if text.startswith("/admin"):
-            say(db, chat, "Админ-панель недоступна для этого аккаунта.")
+            await say(db, chat, "Админ-панель недоступна для этого аккаунта.")
         return True
     now = datetime.now(UTC)
     session = await db.scalar(
@@ -93,7 +97,7 @@ async def handle(db, update, settings):
                 .limit(40)
             )
         ).all()
-        say(
+        await say(
             db,
             chat,
             "Выбери группу:" if groups else "Нет подключённых групп.",
@@ -105,7 +109,7 @@ async def handle(db, update, settings):
         expiry = expiry.replace(tzinfo=UTC)
     if not session or expiry <= now:
         if callback or message.users_shared:
-            say(db, chat, "Сессия истекла. Отправь /admin заново.")
+            await say(db, chat, "Сессия истекла. Отправь /admin заново.")
         return True
     if callback:
         parts = (callback.data or "").split(":", 2)
@@ -114,7 +118,7 @@ async def handle(db, update, settings):
             or parts[0] != "a"
             or not secrets.compare_digest(parts[1], session.nonce)
         ):
-            say(db, chat, "Кнопка устарела. Отправь /admin заново.")
+            await say(db, chat, "Кнопка устарела. Отправь /admin заново.")
             return True
         action = parts[2]
         if action.startswith("g") and session.step == "groups":
@@ -126,7 +130,7 @@ async def handle(db, update, settings):
                 return True
             session.group_id = group.id
             session.step = "method"
-            say(
+            await say(
                 db,
                 chat,
                 f"{group.name}\nКак выбрать участника?",
@@ -144,10 +148,10 @@ async def handle(db, update, settings):
             session.candidate_role = action if action in {"headman", "deputy"} else "student"
             session.step = "id" if action in {"headman", "deputy"} else action
             if action != "pick":
-                say(db, chat, "Отправь числовой Telegram ID участника. Для отмены — /cancel.")
+                await say(db, chat, "Отправь числовой Telegram ID участника. Для отмены — /cancel.")
             else:
                 session.request_id = secrets.randbelow(2**31 - 1) + 1
-                say(
+                await say(
                     db,
                     chat,
                     "Нажми кнопку ниже и выбери пользователя Telegram.",
@@ -212,7 +216,7 @@ async def handle(db, update, settings):
             )
             session.step = "done"
             session.nonce = secrets.token_hex(6)
-            say(
+            await say(
                 db,
                 chat,
                 f"ID {target} подключён к «{group.name}». Роль: {member.role}. Попроси участника заново открыть Mini App. Для старосты/помощника доступен /st.",
@@ -224,7 +228,7 @@ async def handle(db, update, settings):
         if text.isdecimal() and 0 < int(text) < 2**63:
             target = int(text)
         else:
-            say(db, chat, "Нужен положительный числовой ID. Пример: 123456789.")
+            await say(db, chat, "Нужен положительный числовой ID. Пример: 123456789.")
             return True
     elif session.step == "pick" and message.users_shared:
         shared = message.users_shared
@@ -237,13 +241,24 @@ async def handle(db, update, settings):
         session.nonce = secrets.token_hex(6)
         group = await db.get(Group, session.group_id)
         if group:
-            say(
+            await say(
                 db,
                 chat,
                 f"Подключить ID {target} к «{group.name}»? Роль: {session.candidate_role}. Назначение роли произойдёт только после подтверждения.",
                 buttons(session, [[("Подключить", "yes")]]),
             )
     return True
+
+
+async def telegram_request(settings, method, payload):
+    async with httpx.AsyncClient(timeout=10, trust_env=False, follow_redirects=False) as client:
+        response = await client.post(
+            f"https://api.telegram.org/bot{settings.telegram_bot_token}/{method}", json=payload
+        )
+        data = response.json()
+        if response.status_code != 200:
+            data["ok"] = False
+        return data
 
 
 async def deliver(engine, settings):
@@ -265,18 +280,22 @@ async def deliver(engine, settings):
         row.attempts += 1
         await db.commit()
         ok = False
-        if row.method in ["sendMessage", "answerCallbackQuery"]:
-            try:
-                async with httpx.AsyncClient(
-                    timeout=10, trust_env=False, follow_redirects=False
-                ) as client:
-                    response = await client.post(
-                        f"https://api.telegram.org/bot{settings.telegram_bot_token}/{row.method}",
-                        json=json.loads(row.payload),
-                    )
-                    ok = response.status_code == 200 and response.json().get("ok") is True
-            except (httpx.HTTPError, ValueError):
-                pass
+        try:
+            if row.panel_id:
+                from studgroup.bot_panels import execute
+
+                outcome = await execute(db, row, settings, telegram_request)
+                if outcome == "superseded":
+                    row.state = "superseded"
+                    row.lease_until = None
+                    await db.commit()
+                    return
+                ok = outcome == "sent"
+            elif row.method in ["sendMessage", "answerCallbackQuery"]:
+                result = await telegram_request(settings, row.method, json.loads(row.payload))
+                ok = result.get("ok") is True
+        except (httpx.HTTPError, ValueError):
+            pass
         row.state = "sent" if ok else "failed" if row.attempts >= 5 else "pending"
         row.lease_until = None
         row.available_at = now + timedelta(seconds=min(60, row.attempts * 10))
