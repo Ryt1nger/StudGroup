@@ -123,7 +123,7 @@ def test_students_cannot_open_st_or_impersonate_callback(client):
 
 def test_create_is_private_until_confirm_and_replay_cannot_duplicate(foreman):
     enter(foreman)
-    click(foreman, "ДЗ и КТ")
+    click(foreman, "Домашние задания")
     click(foreman, "Добавить ДЗ")
     for text in ["Математика", "Решить задачи", "Номера 1–3"]:
         deliver(foreman, text)
@@ -151,7 +151,7 @@ def test_create_is_private_until_confirm_and_replay_cannot_duplicate(foreman):
 
 def test_role_revocation_blocks_draft_save(foreman):
     enter(foreman)
-    click(foreman, "ДЗ и КТ")
+    click(foreman, "Домашние задания")
     click(foreman, "Добавить ДЗ")
 
     async def revoke(db):
@@ -447,6 +447,43 @@ def test_owner_role_assignment_is_explicit(client):
     s, _ = session(client)
     private(client, "", update=104, callback=f"a:{s.nonce}:yes")
     assert run(client, lambda db: db.scalar(select(Membership.role))) == "headman"
+
+
+def test_homework_and_control_points_have_separate_lists_search_and_archive(foreman):
+    async def seed(db):
+        user, member, group = await actor(db)
+        values = {
+            "subject": "Математика",
+            "title": "Общая задача",
+            "description": "Описание",
+            "deadline_at": datetime.now(UTC) + timedelta(days=3),
+        }
+        await domain.create_card(db, group, user, member, "h", values.copy())
+        await domain.create_card(db, group, user, member, "e", values.copy())
+        values["title"] = "АрхивКТ"
+        key, _ = await domain.create_card(db, group, user, member, "e", values)
+        await domain.mutate(db, group, user, member, key, 1, "cancel")
+
+    run(foreman, seed)
+    enter(foreman)
+    root = [b["text"] for r in last(foreman)["reply_markup"]["inline_keyboard"] for b in r]
+    assert "Домашние задания" in root and "КТ" in root and "ДЗ и КТ" not in root
+    click(foreman, "Домашние задания")
+    buttons = [b["text"] for r in last(foreman)["reply_markup"]["inline_keyboard"] for b in r]
+    assert "Добавить ДЗ" in buttons and "Добавить КТ" not in buttons
+    assert not any(label.startswith("КТ ·") for label in buttons)
+    click(foreman, "Главное меню")
+    click(foreman, "КТ")
+    buttons = [b["text"] for r in last(foreman)["reply_markup"]["inline_keyboard"] for b in r]
+    assert "Добавить КТ" in buttons and "Добавить ДЗ" not in buttons
+    assert not any(label.startswith("ДЗ ·") for label in buttons)
+    click(foreman, "Архив")
+    click(foreman, "Найти по")
+    deliver(foreman, "АрхивКТ")
+    assert "КТ · 1" in last(foreman)["text"]
+    assert any(
+        "АрхивКТ" in b["text"] for r in last(foreman)["reply_markup"]["inline_keyboard"] for b in r
+    )
 
 
 def test_expired_invite_never_activates_user(foreman):

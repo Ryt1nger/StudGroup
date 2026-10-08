@@ -107,7 +107,7 @@ def test_panels_edit_only_their_own_message_and_start_is_separate(transport):
     st_mid, _ = current(client, "st")
     assert st_mid != admin_mid
     press(client, "st", "Группа", 102)
-    press(client, "st", "ДЗ и КТ", 103)
+    press(client, "st", "Домашние задания", 103)
     assert [d["message_id"] for m, d in calls if m == "editMessageText"] == [st_mid, st_mid]
     input_message(client, 104, "/start")
     drain(client)
@@ -126,7 +126,7 @@ def test_latest_callback_controls_where_text_input_goes(transport):
     input_message(client, 200, "/st")
     drain(client)
     press(client, "st", "Группа", 201)
-    press(client, "st", "ДЗ и КТ", 202)
+    press(client, "st", "Домашние задания", 202)
     press(client, "st", "Добавить ДЗ", 203)  # ST awaits subject text.
     input_message(client, 204, "/admin")
     drain(client)
@@ -140,7 +140,7 @@ def test_latest_callback_controls_where_text_input_goes(transport):
     assert any(m == "editMessageText" and d["message_id"] == admin_mid for m, d in calls[before:])
     # Restore ST focus by clicking its still-active back button.
     press(client, "st", "Главное меню", 208)
-    press(client, "st", "ДЗ и КТ", 209)
+    press(client, "st", "Домашние задания", 209)
     press(client, "st", "Добавить ДЗ", 210)
     input_message(client, 211, "Математика")
     drain(client)

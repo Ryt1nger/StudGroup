@@ -65,7 +65,8 @@ async def menu(db, session, group):
         f"Староста · {group.name}\nВыбери раздел. Изменения сохраняются только после подтверждения.",
         [
             [(f"Требует проверки · {len(questions)}", "review")],
-            [("ДЗ и КТ", "cards")],
+            [("Домашние задания", "tasks")],
+            [("КТ", "control_points")],
             [("Расписание", "schedule")],
             [("Участники", "members")],
             [("Сводка группы", "summary")],
@@ -162,10 +163,12 @@ async def candidates(db, group, now=None):
     return result
 
 
-async def listing(db, session, group, mode, search="", page=0):
+async def listing(db, session, group, mode, search="", page=0, category=None):
     rows = await domain.cards(db, group, mode, search)
     if mode == "review":
         rows += await candidates(db, group)
+    if category in {"h", "e"}:
+        rows = [row for row in rows if row[1] == category]
     entries = rows[page * 8 : page * 8 + 8]
     keys = [key for key, _, _ in entries]
     buttons = [
@@ -186,8 +189,15 @@ async def listing(db, session, group, mode, search="", page=0):
         nav.append(("›", "page_next"))
     if nav:
         buttons.append(nav)
+    add_buttons = (
+        [("Добавить ДЗ", "new_h")]
+        if category == "h"
+        else [("Добавить КТ", "new_e")]
+        if category == "e"
+        else [("Добавить ДЗ", "new_h"), ("Добавить КТ", "new_e")]
+    )
     buttons += [
-        [("Добавить ДЗ", "new_h"), ("Добавить КТ", "new_e")],
+        add_buttons,
         [("Найти по предмету/названию", "search")],
         [("Актуальные", "active"), ("Архив", "archive")],
         back(),
@@ -195,11 +205,11 @@ async def listing(db, session, group, mode, search="", page=0):
     await screen(
         db,
         session,
-        f"{'Требует проверки' if mode == 'review' else 'Карточки'} · {len(rows)}\n"
+        f"{'Требует проверки' if mode == 'review' else 'Домашние задания' if category == 'h' else 'КТ' if category == 'e' else 'Карточки'} · {len(rows)}\n"
         + ("Выбери карточку." if entries else "Здесь пока нет карточек."),
         buttons,
         "list",
-        {"keys": keys, "mode": mode, "search": search, "page": page},
+        {"keys": keys, "mode": mode, "search": search, "page": page, "category": category},
     )
 
 
@@ -565,8 +575,18 @@ async def handle(db, update, settings):
         user, member, group = await domain.access(db, sender.id, session.group_id)
         if action == "menu":
             await menu(db, session, group)
-        elif action in {"cards", "active", "archive", "review"}:
-            await listing(db, session, group, "active" if action in {"cards", "active"} else action)
+        elif action in {"tasks", "cards", "control_points"}:
+            await listing(
+                db, session, group, "active", category="e" if action == "control_points" else "h"
+            )
+        elif action in {"active", "archive", "review"}:
+            await listing(
+                db,
+                session,
+                group,
+                action,
+                category=None if action == "review" else data.get("category"),
+            )
         elif session.step == "list" and action in {"page_prev", "page_next"}:
             await listing(
                 db,
@@ -575,11 +595,18 @@ async def handle(db, update, settings):
                 data["mode"],
                 data["search"],
                 max(0, data["page"] + (-1 if action == "page_prev" else 1)),
+                category=data.get("category"),
             )
         elif session.step == "list" and action.startswith("open"):
             await detail(db, session, group, data["keys"][int(action[4:])])
         elif action == "search":
-            await ask(db, session, "Введи предмет или часть названия.", {}, "search")
+            await ask(
+                db,
+                session,
+                "Введи предмет или часть названия.",
+                {"category": data.get("category"), "mode": data.get("mode", "active")},
+                "search",
+            )
         elif action in {"new_h", "new_e", "candidate_h", "candidate_e", "forward_h", "forward_e"}:
             draft = {"kind": action[-1], "values": {}, "source_date": datetime.now(UTC).isoformat()}
             if action.startswith("forward"):
@@ -957,7 +984,14 @@ async def typed(db, session, group, user, member, data, text, message):
     if not text or len(text) > 12000:
         raise domain.StError("Нужен текст до 12 000 символов.")
     if field == "search":
-        await listing(db, session, group, "active", text[:255])
+        await listing(
+            db,
+            session,
+            group,
+            data.get("mode", "active"),
+            text[:255],
+            category=data.get("category"),
+        )
     elif field.startswith("new_"):
         name = field[4:]
         if name in {"subject", "title"} and len(text) > 255:

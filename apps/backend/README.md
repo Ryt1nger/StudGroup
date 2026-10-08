@@ -25,7 +25,9 @@ commands never promote users. The owner explicitly assigns roles through `/admin
 Apply migration 0013 before startup. Existing backend outbox delivery (configured
 with `BOT_ADMIN_USER_ID`) runs independently of AI and delivers cabinet replies.
 
-Available: question review and deferral, manual homework/control-point creation,
+The root menu has separate Homework and Control Points buttons. Each has its own
+active/archive list, type-scoped search/pagination and creation button; question review
+remains shared. Available: question review and deferral, manual homework/control-point creation,
 editing, confirmation, cancellation, conversion, merging, retained source excerpts,
 forwarded-message drafts with original timestamps, HTTPS material links, revision
 protected card/schedule undo, single-occurrence and explicitly confirmed recurring
