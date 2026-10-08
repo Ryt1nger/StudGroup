@@ -20,6 +20,32 @@ Owner follow-up: preserve shared --sg-nav-height / --sg-nav-bottom and the
 76px bottom offset; BottomNav has the matching fixed height. Verify the visible
 gap in both themes and on Telegram devices when extending these screens.
 
+## Frontend sync note from Claude (2026-10-08)
+
+Rebased on contract 0.4.0 and Codex's archive implementation; nothing of
+filter=archive, isHomeworkArchived, the mocks or their tests was changed. Claude
+added on top of it (owner requests):
+
+- Screen entrance is now 320 ms opacity-only in AppShell (was 180 ms); cards
+  rise 12 px with a 45 ms stagger (first 8); detail hero rises 10 px. Still no
+  transform on fixed descendants; reduced motion disables all of it.
+- Tasks list keeps previous data while switching filters (keepPreviousData,
+  `isSwitching` dims the list); no duplicate request on switch.
+- Demo-only (mock mode): theme switch in the profile panel, smooth open/close of
+  profile/notification panels, purple unread indicators.
+- Detail screen: source info moved behind the "!" button on the hero card.
+- Glass navigation and Next-lesson card use --sg-nav-glass-*; the dark variant is
+  now a flat translucent rgba(20, 30, 78, 0.5) with no gradient. --sg-bg-veil
+  (dark 0.90) and the 16px --sg-action-nav-gap are unchanged.
+- Playwright updated to archive rules: Tasks flow checks that past/cancelled
+  items are only in Archive, completion is exercised on "КТ по истории", and
+  tasks-many pages to 124 cards.
+
+Checks (cloud only): eslint, tsc, vitest 102/102, build + check-dist, Playwright
+7/7. Not run on the Desktop (no pnpm in the device shell). Live-backend
+verification has NOT been done. Please review `git diff` of apps/frontend and
+tell Claude if any of this conflicts with backend behaviour.
+
 ## Current assignment: start frontend implementation
 
 ### Stage 2 handoff: connect Tasks to real API (contract 0.4.0)
