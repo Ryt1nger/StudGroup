@@ -13,6 +13,27 @@ from studgroup.models import OwnerIncident
 from studgroup.processing import process_next
 
 settings = Settings()
+
+INCIDENT_LABELS = {
+    "provider_unreachable": "Не удалось связаться с API DeepSeek.",
+    "provider_error": "API DeepSeek вернул ошибку.",
+    "rate_limited": "DeepSeek ограничил частоту запросов.",
+    "invalid_api_key": "DeepSeek отклонил API-ключ.",
+    "insufficient_balance": "DeepSeek сообщает о недостаточном балансе.",
+    "invalid_provider_output": "Ответ DeepSeek не прошёл проверку.",
+    "incomplete_output": "DeepSeek вернул незавершённый ответ.",
+    "ai_budget_limit": "Обработка приостановлена: достигнут лимит бюджета ИИ.",
+    "pipeline_error": "В обработчике ИИ произошла внутренняя ошибка.",
+}
+
+
+def incident_text(row):
+    if not row.active:
+        return f"StudGroup: обработка DeepSeek восстановлена.\nЗакрыт сбой: {row.code}."
+    reason = INCIDENT_LABELS.get(row.code, "При разборе DeepSeek произошла ошибка.")
+    return f"StudGroup: {reason}\nКод: {row.code}.\nПрогресс сохранён. Временные сбои повторяются автоматически; ошибки настроек и лимитов требуют проверки."
+
+
 app = Celery("studgroup", broker=settings.redis_url)
 app.conf.update(
     task_serializer="json",
@@ -30,24 +51,27 @@ app.conf.update(
 )
 
 
-async def flush_incidents(engine, config):
-    if not config.owner_telegram_user_id or not config.telegram_bot_token:
+async def flush_incidents(engine, config, transport=None):
+    # Never fall back to a group, headman, admin panel or broadcast recipient.
+    if (
+        not config.owner_telegram_user_id
+        or config.owner_telegram_user_id <= 0
+        or not config.telegram_bot_token
+    ):
         return
     async with AsyncSession(engine) as db:
         rows = (
             await db.scalars(
-                select(OwnerIncident).where(OwnerIncident.notification_pending.is_(True))
+                select(OwnerIncident)
+                .where(OwnerIncident.notification_pending.is_(True))
+                .with_for_update(skip_locked=True)
             )
         ).all()
         for row in rows:
-            text = (
-                "StudGroup: обработка AI приостановлена. "
-                if row.active
-                else "StudGroup: обработка AI восстановлена. "
-            ) + f"Код: {row.code}."
+            text = incident_text(row)
             try:
                 async with httpx.AsyncClient(
-                    timeout=10, trust_env=False, follow_redirects=False
+                    timeout=10, trust_env=False, follow_redirects=False, transport=transport
                 ) as client:
                     response = await client.post(
                         f"https://api.telegram.org/bot{config.telegram_bot_token}/sendMessage",

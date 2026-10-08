@@ -40,6 +40,23 @@ RECOVERABLE_FAILURES = {
     "rate_limited",
     "processing_window_closed",
 }
+PROVIDER_INCIDENT_CODES = {
+    "provider_unreachable",
+    "provider_error",
+    "rate_limited",
+    "invalid_api_key",
+    "insufficient_balance",
+    "provider_not_configured",
+    "invalid_provider_url",
+    "invalid_provider_output",
+    "incomplete_output",
+    "invalid_date_only",
+    "invalid_source_reference",
+    "invalid_target_reference",
+    "context_too_large",
+    "invalid_message_timestamp",
+    "pipeline_error",
+}
 
 
 def recovery_delay(attempts):
@@ -724,7 +741,7 @@ async def process_next(engine, settings, provider=None, now=None):
                 job.state = "done"
             else:
                 job.state = "superseded"
-            for code in ["provider_unreachable", "provider_error", "rate_limited"]:
+            for code in PROVIDER_INCIDENT_CODES:
                 await incident(db, code, now, recover=True)
         elif failure:
             job.last_error = failure.code

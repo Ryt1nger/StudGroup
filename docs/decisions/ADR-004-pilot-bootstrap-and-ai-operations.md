@@ -44,6 +44,17 @@ deep fragments; a restart after saving a response does not pay for it again; a
 completed report is idempotent; live recovery does not process newly arriving text
 before its regular slot or ignore budget/time constraints.
 
+## Owner update — 2026-10-08: private provider incident notifications
+
+Send live DeepSeek/API/processing incidents only to `OWNER_TELEGRAM_USER_ID`,
+explicitly configured separately from bot panel administration. Refuse group IDs;
+never fall back to group/headman delivery. Deduplicate an ongoing incident by code,
+keep pending delivery in SQL, and send a recovery notice after successful provider
+processing. Include only a safe reason/code and progress/retry information, not
+private chat contents, keys or remote exception bodies. Telegram delivery retries
+independently of provider availability. Acknowledgement loss can produce duplicate
+delivery; service/database downtime delays notifications.
+
 ## Owner update — 2026-10-06: provisional homework deadlines
 
 For homework whose deadline cannot be resolved, use the start of the next scheduled

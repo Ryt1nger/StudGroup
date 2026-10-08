@@ -48,6 +48,24 @@ lock, including superseded attempts. Daily totals derive from settled attempts.
 Both export probes use the same error metadata and preserve earlier actual costs.
 No historic reservations are refunded automatically and budgets are not increased.
 
+## Private owner incident alerts
+
+Set `OWNER_TELEGRAM_USER_ID` to the owner's positive personal Telegram user ID.
+`BOT_ADMIN_USER_ID` does not implicitly configure alerts. The owner must have
+started the bot and not blocked it. Provider/validation/configuration/budget errors
+create durable SQL incidents; an active code is notified once, then notified again
+on recovery or a new incident. Successful provider processing closes provider error
+codes, including credentials/output errors. Unexpected embedded-pipeline errors
+are reported as a safe generic code, never as source text or an exception body.
+
+Delivery targets only the configured personal owner, never the group or a headman
+broadcast. Negative/group IDs are refused. Pending rows are locked while sending;
+Telegram failures keep the alert pending for another delivery attempt. Delivery is
+at-least-once if Telegram accepts a send but its acknowledgement or DB commit is
+lost. A sleeping/down web process cannot deliver until it resumes; if PostgreSQL
+is unavailable, a new incident cannot be persisted until connectivity returns.
+The standalone local export probe is not the hosted incident sender.
+
 ## Activity-driven AI schedule
 
 With `AI_SCHEDULE_ENABLED=true`, the embedded/external processor consumes live text

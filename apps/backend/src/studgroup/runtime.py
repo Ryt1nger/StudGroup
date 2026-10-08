@@ -2,8 +2,11 @@
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 
-from studgroup.processing import process_next
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from studgroup.processing import incident, process_next
 
 
 async def processing_loop(engine, settings, pause=5):
@@ -26,4 +29,11 @@ async def processing_loop(engine, settings, pause=5):
             # Source data and reservations are in SQL. Never log exception text:
             # database/HTTP exceptions can contain credentials or private content.
             logging.getLogger(__name__).error("pipeline_iteration_failed: %s", type(error).__name__)
+            try:
+                async with AsyncSession(engine) as db:
+                    await incident(db, "pipeline_error", datetime.now(UTC))
+                    await db.commit()
+                await flush_incidents(engine, settings)
+            except Exception:  # noqa: BLE001 -- alert delivery cannot terminate recovery or leak data
+                logger.error("owner_alert_pending_or_database_unavailable")
         await asyncio.sleep(pause)
