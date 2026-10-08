@@ -54,11 +54,14 @@ When several assignments or an amendment to another message needs context, use n
 class ProviderFailure(Exception):
     """A safe error code only: no exception chaining, request URL, key or remote body."""
 
-    def __init__(self, code: str, retryable: bool, *, reservation_releasable: bool = False):
+    def __init__(
+        self, code: str, retryable: bool, *, reservation_releasable: bool = False, usage=None
+    ):
         self.code = code
         self.retryable = retryable
         # Default is conservative: an error name alone cannot prove zero provider usage.
         self.reservation_releasable = reservation_releasable
+        self.usage = usage
         super().__init__(code)
 
 
@@ -204,8 +207,13 @@ class DeepSeekProvider:
                 usage=TokenUsage.model_validate(body["usage"]),
                 model=body["model"],
             )
+        except ProviderFailure as error:
+            error.usage = TokenUsage.model_validate(body["usage"])
+            raise
         except (KeyError, IndexError, TypeError, ValueError, ValidationError):
-            raise ProviderFailure("invalid_provider_output", True) from None
+            raise ProviderFailure(
+                "invalid_provider_output", True, usage=TokenUsage.model_validate(body["usage"])
+            ) from None
 
     @staticmethod
     def _resolve_deadline(extraction, sources, timezone, schedule):
@@ -362,8 +370,13 @@ merely because no single due date is given. Preserve task content and topics.
             return BatchResult(
                 batch=batch, usage=TokenUsage.model_validate(body["usage"]), model=body["model"]
             )
+        except ProviderFailure as error:
+            error.usage = TokenUsage.model_validate(body["usage"])
+            raise
         except (KeyError, IndexError, TypeError, ValueError, ValidationError):
-            raise ProviderFailure("invalid_provider_output", True) from None
+            raise ProviderFailure(
+                "invalid_provider_output", True, usage=TokenUsage.model_validate(body["usage"])
+            ) from None
 
     async def _complete(self, payload):
         try:
@@ -388,12 +401,14 @@ merely because no single due date is given. Preserve task content and topics.
                 response.status_code == 429 or response.status_code >= 500,
                 reservation_releasable=response.status_code in {400, 401, 402, 422, 429},
             )
+        usage = None
         try:
             body = response.json()
+            usage = TokenUsage.model_validate(body["usage"])
             choice = body["choices"][0]
             if choice["finish_reason"] != "stop":
-                raise ProviderFailure("incomplete_output", True)
+                raise ProviderFailure("incomplete_output", True, usage=usage)
             TokenUsage.model_validate(body["usage"])
             return body
         except (KeyError, IndexError, TypeError, ValueError, ValidationError):
-            raise ProviderFailure("invalid_provider_output", True) from None
+            raise ProviderFailure("invalid_provider_output", True, usage=usage) from None

@@ -9,7 +9,7 @@ Date: 2026-10-04
 Release a request's reservation only when the adapter confirms rejection before
 processing (HTTP 400/401/402/422/429), a connect/pool failure before delivery, or
 a local preflight failure before any provider call. Ambiguous read/write failures,
-5xx errors, malformed/truncated successful responses and in-flight cancellation
+5xx errors, malformed/truncated successful responses without valid usage and in-flight cancellation
 retain reservations. Retryability is independent of billing certainty. Error
 bodies and credentials are never logged. A successful response settles to actual
 reported token usage. Live settlement updates the attempt and global ledger under
@@ -17,6 +17,11 @@ the singleton budget lock, independently of stale job fencing; daily aggregates
 then reflect the settled attempt. Explicit export probes follow the same evidence
 policy. Existing historical reservations require separate evidence-based review;
 this change does not reset ledgers, change live budgets, or replay paid requests.
+
+If a successful HTTP response includes valid usage but its model output fails
+validation or is truncated, settle to that returned usage rather than keeping an
+unknown-usage reservation. Preserve usage on the safe provider exception for
+operational reports; never expose response/error text or credentials.
 
 Acceptance: confirmed rejection frees capacity; timeout cannot erase possible
 spend; releasing a failed deep-pass reservation preserves the successful screen
@@ -65,6 +70,22 @@ the testing flag stops pending testing notices but preserves independent inciden
 alerts. Do not broadcast or enable student notifications. This feed concerns
 persisted academic changes, not local unpublished probes or other students'
 personal completion marks. Frontend/backend contracts stay unchanged.
+
+## Owner update — 2026-10-08: unrestricted testing run reports
+
+Send the owner private start/end reports for each live target-message attempt,
+including retries, and for local filtering of newly discarded irrelevant sources.
+Define counters explicitly: target and context messages are disjoint, one context
+window is one analyzed fragment, important source fragments are unique cited
+message IDs, and applied proposals/card mutations are not review candidates.
+Persist finish/outcome/numeric metrics in AI attempts (nullable migration 0016),
+queue messages transactionally with work, and aggregate known tokens/estimated
+cost/uncertain reservations across attempts of the same source-version job.
+Recover expired-attempt reports and reconcile late usage without applying stale
+results. No owner-report daily/hourly or count cap; existing execution budgets,
+AI schedule, Telegram constraints and at-least-once delivery semantics remain.
+This is live attempt telemetry, not a claim of a full group-wide two-pass model
+cascade or a hosted local-export runner. No API/contract changes are introduced.
 
 ## Owner update — 2026-10-06: provisional homework deadlines
 

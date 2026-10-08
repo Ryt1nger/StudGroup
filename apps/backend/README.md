@@ -40,7 +40,7 @@ live budget ledger and live processing policy are not modified by this probe.
 Each request reserves its maximum cost before sending. A confirmed pre-processing
 rejection (HTTP 400/401/402/422/429) or connection/pool failure before request
 delivery releases only that request's reservation. Read/write failures, HTTP 5xx,
-truncated/malformed successful responses and ambiguous cancellation retain their
+truncated/malformed successful responses without valid usage and ambiguous cancellation retain their
 reservation until usage can be reconciled. An error code alone never establishes
 zero usage; the provider adapter supplies explicit evidence of releasability.
 The live processor settles both attempt and global totals under the reservation
@@ -84,6 +84,36 @@ Disabling the flag supersedes pending testing notices and does not disable incid
 alerts, student inboxes or normal bot panels. Nothing is broadcast to students/groups.
 Mini-app links use only a configured HTTPS origin. This temporary feed does not
 change AI scheduling, budget limits or the normal product notification preferences.
+
+### Analysis lifecycle reports during testing
+
+Migration 0016 adds nullable finish/outcome/metrics fields to AI attempts without
+replaying history or changing the frontend contract. The same owner-only testing
+flag queues a start and an end report for every live target-message attempt. One
+attempt is one target message plus its context window, not a whole-chat scan or an
+unimplemented two-model cascade. Separate local-filter start/end reports cover
+new sources classified irrelevant without a provider request; idle polling never
+fabricates a run. Reports are independent of `/admin` and `/st` panels.
+
+Reports include group timezone timestamps, attempt duration and elapsed job time,
+target/context/submitted message counts, validated context-window count, distinct
+cited source-fragment count, extracted proposals, applied proposals/source counts,
+created/updated/unchanged cards, review proposals, and outcome/error. Card mutation
+counters are captured inside publication, not guessed from total database size.
+Every retry retains the same job identity and gets its own attempt report and
+job-wide known-token/cost/reservation totals. Expired leases generate interrupted
+attempt reports; late responses can reconcile previously uncertain spend.
+
+Use returned usage even when the model output is invalid/truncated. Dollar figures
+are estimates from the saved provider tariff, not a provider invoice. If usage is
+unknown, explicitly show unknown tokens/spend and the held reservation separately;
+confirmed pre-processing rejection shows zero spend. Successful screening/parse
+is not proof of successful publication: review candidates are not counted as used
+cards. There is no product cap on the owner's report count, no digest batching or
+working-hour restriction on delivery; Telegram rate/availability and queue order
+still apply. AI working hours and USD execution budgets remain unchanged. Local
+unpublished export probes are not live hosted jobs and do not generate these bot
+reports; their own private JSON reports preserve returned failure usage too.
 
 ## Activity-driven AI schedule
 

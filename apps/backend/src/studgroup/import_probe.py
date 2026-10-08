@@ -94,7 +94,13 @@ async def run(path: Path, output: Path, timezone: str, budget: float):
         try:
             result = await provider.extract_batch(batch, timezone)
         except ProviderFailure as error:
-            if error.reservation_releasable:
+            if error.usage is not None:
+                cost = (
+                    error.usage.prompt_tokens * 0.3 + error.usage.completion_tokens * 1.2
+                ) / 1_000_000
+                report["reserved_cost_usd"] += cost - bound
+                report["estimated_peak_cost_usd"] += cost
+            elif error.reservation_releasable:
                 report["reserved_cost_usd"] -= bound
             report["calls"].append({"batch": index, "error": error.code})
             report["stop_reason"] = error.code

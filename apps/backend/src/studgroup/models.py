@@ -249,6 +249,9 @@ class AIAttempt(Base):
     model: Mapped[str] = mapped_column(String(64))
     prompt_version: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str | None] = mapped_column(String(24))
+    metrics: Mapped[str | None] = mapped_column(Text)
 
 
 class OwnerIncident(Base):

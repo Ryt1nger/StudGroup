@@ -139,6 +139,8 @@ async def incident(db, code, now, recover=False):
 
 
 async def claim(engine, settings, now):
+    filter_started = monotonic()
+    filtered_sources = {}
     scheduled = settings.ai_schedule_enabled
     slot = None
     extended = False
@@ -238,6 +240,9 @@ async def claim(engine, settings, now):
         for raw in raws:
             if not await relevant(db, raw):
                 raw.processing_state = "completed"
+                filtered_sources.setdefault(raw.group_id, []).append(
+                    f"{raw.id}:{raw.revision}:{raw.telegram_message_id}"
+                )
                 continue
             job = await db.scalar(
                 select(AIJob)
@@ -257,6 +262,27 @@ async def claim(engine, settings, now):
                 (job.state == "retry" and job.last_error in RECOVERABLE_FAILURES)
                 or (job.state == "running" and job.lease_until and utc(job.lease_until) <= now)
             )
+            if job and job.state == "running" and job.lease_until and utc(job.lease_until) <= now:
+                from studgroup.run_reports import finish as finish_report
+
+                unfinished = (
+                    await db.scalars(
+                        select(AIAttempt).where(
+                            AIAttempt.job_id == job.id, AIAttempt.finished_at.is_(None)
+                        )
+                    )
+                ).all()
+                for unfinished_attempt in unfinished:
+                    await finish_report(
+                        db,
+                        settings,
+                        await db.get(Group, raw.group_id),
+                        job,
+                        unfinished_attempt,
+                        "interrupted",
+                        now,
+                        error="lease_expired",
+                    )
             if (
                 scheduled
                 and job
@@ -312,11 +338,19 @@ async def claim(engine, settings, now):
             )
             db.add(attempt)
             await db.flush()
+            from studgroup.run_reports import filtered as filtered_report
+            from studgroup.run_reports import start as start_report
+
+            await filtered_report(db, settings, filtered_sources, now, monotonic() - filter_started)
+            await start_report(db, settings, await db.get(Group, raw.group_id), job, attempt, raw)
             ids = job.id, attempt.id, raw.id, raw.revision, job.attempts
             await db.commit()
             return ids
+        from studgroup.run_reports import filtered as filtered_report
+
+        await filtered_report(db, settings, filtered_sources, now, monotonic() - filter_started)
         await db.commit()
-    return None
+        return None
 
 
 async def context_for(db, raw, group, now):
@@ -406,12 +440,22 @@ def cost(usage):
     ) / Decimal(1000000)
 
 
-async def publish(db, raw, extraction, now):
+async def publish(db, raw, extraction, now, statistics=None):
     state = extraction.publication_state
     if state not in {"published", "needs_clarification"}:
         return False
     if not all((extraction.subject, extraction.title, extraction.description)):
         return False
+
+    def track(created, changed):
+        if statistics is None:
+            return
+        field = "created_cards" if created else "updated_cards" if changed else "unchanged_cards"
+        statistics[field] = statistics.get(field, 0) + 1
+        if created or changed:
+            statistics["applied_fragments"] = statistics.get("applied_fragments", 0) + 1
+            statistics.setdefault("_used_source_ids", set()).update(extraction.source_message_ids)
+
     is_inferred = extraction._deadline_basis in {
         "next_subject_lesson",
         "provisional_next_subject_lesson",
@@ -486,6 +530,7 @@ async def publish(db, raw, extraction, now):
         existing = await db.scalar(
             select(Homework).where(Homework.raw_message_id == original.id).with_for_update()
         )
+        new_card = existing is None
         if existing and await ai_locked(db, raw.group_id, original.id):
             return False
         values = {
@@ -537,11 +582,20 @@ async def publish(db, raw, extraction, now):
         await db.flush()
         if changed:
             await record_change(db, raw, existing, "homework", now)
+        track(new_card, changed)
         other = await db.scalar(
             select(AcademicDeadline).where(AcademicDeadline.raw_message_id == original.id)
         )
         if other:
             # Classification correction: retained old event becomes inaccessible, no duplicate list entry.
+            if statistics is not None and utc(other.delete_at) > now:
+                statistics["updated_cards"] = statistics.get("updated_cards", 0) + 1
+                statistics["reclassified_cards"] = statistics.get("reclassified_cards", 0) + 1
+                if not (new_card or changed):
+                    statistics["applied_fragments"] = statistics.get("applied_fragments", 0) + 1
+                    statistics.setdefault("_used_source_ids", set()).update(
+                        extraction.source_message_ids
+                    )
             other.delete_at = now
     else:
         from studgroup.headman_domain import ai_locked
@@ -554,6 +608,7 @@ async def publish(db, raw, extraction, now):
             .where(AcademicDeadline.group_id == raw.group_id, AcademicDeadline.import_key == key)
             .with_for_update()
         )
+        new_card = row is None
         if row and await ai_locked(db, raw.group_id, original.id):
             return False
         if row is None:
@@ -594,6 +649,22 @@ async def publish(db, raw, extraction, now):
         row.source_message_ids = json.dumps(extraction.source_message_ids)
         old = await db.scalar(select(Homework).where(Homework.raw_message_id == original.id))
         if old:
+            if statistics is not None and old.status != "incomplete_hidden":
+                statistics["updated_cards"] = statistics.get("updated_cards", 0) + 1
+                statistics["reclassified_cards"] = statistics.get("reclassified_cards", 0) + 1
+                if not new_card and before == (
+                    row.kind,
+                    row.subject,
+                    row.title,
+                    row.description,
+                    row.deadline_at,
+                    row.window_start,
+                    row.window_end,
+                ):
+                    statistics["applied_fragments"] = statistics.get("applied_fragments", 0) + 1
+                    statistics.setdefault("_used_source_ids", set()).update(
+                        extraction.source_message_ids
+                    )
             old.status = "incomplete_hidden"
         await db.flush()
         if before != (
@@ -616,6 +687,19 @@ async def publish(db, raw, extraction, now):
             row.window_end,
         ):
             await record_change(db, raw, row, "deadline", now)
+        track(
+            new_card,
+            before
+            != (
+                row.kind,
+                row.subject,
+                row.title,
+                row.description,
+                row.deadline_at,
+                row.window_start,
+                row.window_end,
+            ),
+        )
     return True
 
 
@@ -654,6 +738,12 @@ async def process_next(engine, settings, provider=None, now=None):
         group = await db.get(Group, raw.group_id)
         context, schedule = await context_for(db, raw, group, now)
         timezone, message_id = group.timezone, raw.telegram_message_id
+        attempt = await db.get(AIAttempt, attempt_id)
+        initial_metrics = json.loads(attempt.metrics or "{}")
+        initial_metrics["context_messages"] = max(0, len(context) - 1)
+        initial_metrics["submitted_messages"] = len(context)
+        attempt.metrics = json.dumps(initial_metrics)
+        await db.commit()
     result = None
     failure = None
     try:
@@ -682,13 +772,15 @@ async def process_next(engine, settings, provider=None, now=None):
         job = await db.get(AIJob, job_id)
         raw = await db.get(RawMessage, raw_id)
         attempt = await db.get(AIAttempt, attempt_id)
-        if result:
-            actual = cost(result.usage)
+        reported_usage = result.usage if result else failure.usage if failure else None
+        if reported_usage is not None:
+            actual = cost(reported_usage)
             control.spent_usd += actual - attempt.charged_usd
             attempt.charged_usd = actual
-            attempt.prompt_tokens = result.usage.prompt_tokens
-            attempt.completion_tokens = result.usage.completion_tokens
-            attempt.prompt_version = result.prompt_version
+            attempt.prompt_tokens = reported_usage.prompt_tokens
+            attempt.completion_tokens = reported_usage.completion_tokens
+            if result:
+                attempt.prompt_version = result.prompt_version
         elif failure and failure.reservation_releasable:
             # Settle this attempt under the same singleton lock used to reserve funds.
             # This also adjusts daily sums; a superseded job still owns its own charge.
@@ -696,10 +788,39 @@ async def process_next(engine, settings, provider=None, now=None):
             attempt.charged_usd = Decimal(0)
         # A timed-out worker must not overwrite the result or lease of a newer attempt.
         if job.attempts != generation or job.state != "running":
+            from studgroup.run_reports import finish as finish_report
+
+            await finish_report(
+                db,
+                settings,
+                await db.get(Group, job.group_id),
+                job,
+                attempt,
+                "superseded",
+                clock(),
+                metrics={
+                    "context_messages": max(0, len(context) - 1),
+                    "submitted_messages": len(context),
+                    "analyzed_fragments": int(result is not None),
+                    "important_proposals": len(result.batch.assignments) if result else 0,
+                    "important_fragments": len(
+                        {
+                            mid
+                            for assignment in result.batch.assignments
+                            for mid in assignment.source_message_ids
+                        }
+                    )
+                    if result
+                    else 0,
+                },
+                error="newer_attempt_owns_job",
+            )
             await db.commit()
             return "superseded"
         job.lease_until = None
         outcome = "completed"
+        statistics = {}
+        candidates = []
         if result:
             # A stale reply never overwrites a concurrently edited Telegram message.
             if raw and raw.revision == revision:
@@ -734,7 +855,7 @@ async def process_next(engine, settings, provider=None, now=None):
                     for assignment, candidate in zip(
                         result.batch.assignments, candidates, strict=True
                     ):
-                        accepted = await publish(db, raw, assignment, now)
+                        accepted = await publish(db, raw, assignment, now, statistics=statistics)
                         candidate.state = "published" if accepted else "review"
                         published = accepted and published
                     raw.processing_state = "completed" if published else "needs_context"
@@ -761,5 +882,40 @@ async def process_next(engine, settings, provider=None, now=None):
                 raw.processing_state = "pending" if job.state == "retry" else "failed"
             await incident(db, failure.code, now)
             # Ambiguous usage (read/write timeout, HTTP 5xx, malformed 200) stays reserved.
+        from studgroup.run_reports import finish as finish_report
+
+        source_ids = (
+            {
+                mid
+                for assignment in result.batch.assignments
+                for mid in assignment.source_message_ids
+            }
+            if result
+            else set()
+        )
+        statistics["used_source_messages"] = len(statistics.pop("_used_source_ids", set()))
+        await finish_report(
+            db,
+            settings,
+            await db.get(Group, job.group_id),
+            job,
+            attempt,
+            "superseded" if job.state == "superseded" else outcome,
+            clock(),
+            metrics={
+                **statistics,
+                "context_messages": max(0, len(context) - 1),
+                "submitted_messages": len(context),
+                "analyzed_fragments": int(result is not None),
+                "important_proposals": len(result.batch.assignments) if result else 0,
+                "important_fragments": len(source_ids),
+                "review_proposals": sum(c.state == "review" for c in candidates),
+            },
+            error=failure.code
+            if failure
+            else job.last_error
+            if candidates and any(c.state == "review" for c in candidates)
+            else None,
+        )
         await db.commit()
     return outcome

@@ -307,7 +307,21 @@ async def _run(archive, output, as_of, budget, provider=None, resume=False):
         report.pop("next_retry_at", None)
         report["retryable"] = False
     except ProviderFailure as error:
-        if error.reservation_releasable and active_bound:
+        if error.usage is not None and active_bound:
+            cost = (
+                error.usage.prompt_tokens * 0.3 + error.usage.completion_tokens * 1.2
+            ) / 1_000_000
+            report["reserved_usd"] += cost - active_bound
+            report["actual_peak_usd"] += cost
+            report["calls"].append(
+                {
+                    "stage": "failed",
+                    "usage": error.usage.model_dump(),
+                    "peak_usd": cost,
+                    "error": error.code,
+                }
+            )
+        elif error.reservation_releasable and active_bound:
             report["reserved_usd"] -= active_bound
             report.setdefault("released_reservations", []).append(
                 {"code": error.code, "usd": active_bound}

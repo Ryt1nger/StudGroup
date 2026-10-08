@@ -194,6 +194,14 @@ def test_malformed_truncated_and_non_midnight_date_only_rejected(body):
         call(lambda request: httpx.Response(200, json=body))
 
 
+@pytest.mark.parametrize("body", [response("not JSON"), response(finish="length")])
+def test_failed_model_output_preserves_reported_usage(body):
+    with pytest.raises(ProviderFailure) as error:
+        call(lambda request: httpx.Response(200, json=body))
+    assert error.value.usage.prompt_tokens == 300
+    assert error.value.usage.completion_tokens == 100
+
+
 def test_large_message_never_reaches_provider():
     def forbidden(request):
         pytest.fail("should not make a paid request")
