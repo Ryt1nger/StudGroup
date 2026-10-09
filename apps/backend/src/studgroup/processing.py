@@ -956,11 +956,17 @@ async def process_next(engine, settings, provider=None, now=None):
                     "submitted_messages": len(context),
                     "analyzed_fragments": int(result is not None),
                     "incident_number": incident_number,
-                    "important_proposals": len(result.batch.assignments) if result else 0,
+                    "important_proposals": len(result.batch.assignments)
+                    + len(result.batch.online_lessons)
+                    if result
+                    else 0,
                     "important_fragments": len(
                         {
                             mid
-                            for assignment in result.batch.assignments
+                            for assignment in [
+                                *result.batch.assignments,
+                                *result.batch.online_lessons,
+                            ]
                             for mid in assignment.source_message_ids
                         }
                     )
@@ -1036,6 +1042,33 @@ async def process_next(engine, settings, provider=None, now=None):
                         candidate.state = "published" if accepted else "review"
                         published = accepted and published
                     raw.processing_state = "completed" if published else "needs_context"
+                if result.batch.online_lessons:
+                    from studgroup.online_lessons import discover
+
+                    for proposal in result.batch.online_lessons:
+                        cited = (
+                            await db.scalars(
+                                select(RawMessage).where(
+                                    RawMessage.group_id == raw.group_id,
+                                    RawMessage.telegram_message_id.in_(proposal.source_message_ids),
+                                )
+                            )
+                        ).all()
+                        link_source = next((r for r in cited if proposal.url in r.text), None)
+                        if link_source:
+                            bound = await discover(
+                                db,
+                                link_source,
+                                subject=proposal.subject,
+                                lesson_date=proposal.lesson_date,
+                                permanent=proposal.permanent,
+                                confidence=proposal.confidence,
+                                only_url=proposal.url,
+                                lesson_time=proposal.lesson_time,
+                            )
+                            statistics["online_links_bound"] = (
+                                statistics.get("online_links_bound", 0) + bound
+                            )
                 job.state = "done"
             else:
                 job.state = "superseded"
@@ -1076,7 +1109,7 @@ async def process_next(engine, settings, provider=None, now=None):
         source_ids = (
             {
                 mid
-                for assignment in result.batch.assignments
+                for assignment in [*result.batch.assignments, *result.batch.online_lessons]
                 for mid in assignment.source_message_ids
             }
             if result
@@ -1100,7 +1133,10 @@ async def process_next(engine, settings, provider=None, now=None):
                 "context_messages": max(0, len(context) - 1),
                 "submitted_messages": len(context),
                 "analyzed_fragments": int(response is not None),
-                "important_proposals": len(result.batch.assignments) if result else 0,
+                "important_proposals": len(result.batch.assignments)
+                + len(result.batch.online_lessons)
+                if result
+                else 0,
                 "important_fragments": len(source_ids),
                 "review_proposals": sum(c.state == "review" for c in candidates),
             },

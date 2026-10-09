@@ -7,6 +7,7 @@ import { TopBar } from '../../shell/TopBar';
 import { useBackButton } from '../../shell/useBackButton';
 import { Button } from '../../ui/Button';
 import { MaterialLinks } from '../../ui/MaterialLinks';
+import { JoinLessonLink } from '../../ui/JoinLessonLink';
 import { RequestError } from '../../ui/RequestError';
 import { Skeleton } from '../../ui/Skeleton';
 import { ChevronLeft } from '../../ui/icons';
@@ -41,7 +42,7 @@ export function LessonSubjectScreen() {
               {data.lesson.location ? <p className={styles.note}>{data.lesson.location}</p> : null}
               {data.lesson.teacher ? <p className={styles.note}>{data.lesson.teacher}</p> : null}
               {data.lesson.status === 'cancelled' ? <p>Пара отменена.</p> : null}
-              {data.lesson.online_url?.startsWith('https://') ? <a href={data.lesson.online_url} target="_blank" rel="noopener noreferrer">Подключиться к паре</a> : null}
+              {data.lesson.status !== 'cancelled' && Date.parse(data.lesson.ends_at) > nowMs ? <JoinLessonLink url={data.lesson.online_url} /> : null}
             </section>
             <section className={styles.section} aria-labelledby="subject-homework">
               <h2 id="subject-homework">Домашние задания</h2>

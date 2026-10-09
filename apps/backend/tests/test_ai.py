@@ -10,6 +10,54 @@ from studgroup.ai import DeepSeekProvider, Extraction, ProviderFailure
 from studgroup.main import Settings
 
 
+@pytest.mark.parametrize("invented", [False, True])
+def test_online_lesson_proposal_requires_literal_joining_url_in_supplied_sources(invented):
+    url = "https://my.mts-link.ru/j/Ranepa/12345"
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=response(
+                json.dumps(
+                    {
+                        "assignments": [],
+                        "online_lessons": [
+                            {
+                                "subject": "Математический анализ",
+                                "url": url + "6" if invented else url,
+                                "lesson_date": "2026-10-09",
+                                "permanent": False,
+                                "confidence": 95,
+                                "source_message_ids": [1],
+                            }
+                        ],
+                    }
+                )
+            ),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    call = provider.extract_batch(
+        [
+            {
+                "message_id": 1,
+                "message_date": "2026-10-09T08:55:00+03:00",
+                "text": "#матан сегодня " + url,
+                "is_target": True,
+            }
+        ],
+        "Europe/Moscow",
+        target_message_id=1,
+    )
+    if invented:
+        with pytest.raises(ProviderFailure, match="invalid_source_reference"):
+            asyncio.run(call)
+    else:
+        result = asyncio.run(call)
+        assert result.batch.assignments == []
+        assert result.batch.online_lessons[0].url == url
+
+
 @pytest.mark.parametrize("signal", [True, False])
 def test_semantic_screen_uses_context_without_keyword_gate(signal):
     def handler(request):

@@ -26,6 +26,7 @@ export interface ScheduleItemView {
   subtitle: string;
   state: TimelineState;
   cancelled?: boolean;
+  onlineUrl?: string | null;
   badges: ScheduleBadgeView[];
   onOpen?: () => void;
 }

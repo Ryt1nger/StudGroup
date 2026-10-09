@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError,
 from studgroup.deadlines import ScheduleDeadlineContext, canonical_subject, resolve_deadline
 
 PROMPT_VERSION = "academic-text-7"
-BATCH_PROMPT_VERSION = "academic-import-6"
+BATCH_PROMPT_VERSION = "academic-import-7"
 SCREEN_PROMPT_VERSION = "academic-live-screen-1"
 MAX_TEXT_CHARS = 12000
 MAX_OUTPUT_TOKENS = 1400
@@ -149,9 +149,21 @@ class SourcedExtraction(Extraction):
     source_message_ids: list[int] = Field(min_length=1, max_length=12)
 
 
+class OnlineLessonProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    subject: str | None = Field(max_length=255)
+    url: str = Field(max_length=2048)
+    lesson_date: date | None
+    lesson_time: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    permanent: bool
+    confidence: int = Field(ge=0, le=100)
+    source_message_ids: list[int] = Field(min_length=1, max_length=12)
+
+
 class BatchExtraction(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     assignments: list[SourcedExtraction] = Field(max_length=30)
+    online_lessons: list[OnlineLessonProposal] = Field(default_factory=list, max_length=10)
 
 
 class BatchResult(BaseModel):
@@ -364,7 +376,20 @@ class DeepSeekProvider:
                 "Extract distinct homework assignments from this chronological group conversation.",
             )
             + """
-For this batch, override the single-output example: return {"assignments": []}.
+For this batch, override the single-output example: return {"assignments": [], "online_lessons": []}.
+Also capture exact joining URLs for online scheduled classes from the target and
+its context. online_lessons entries have {"subject":null,"url":"https://...",
+"lesson_date":null,"lesson_time":null,"permanent":false,"confidence":90,"source_message_ids":[123]}.
+lesson_time is an explicitly stated class START time (HH:MM), not a submission
+deadline or a calendar date; otherwise null.
+Resolve an explicitly stated lesson date from original source time; otherwise use
+null. Subject can come from replies/context. Never invent URLs or strip room query
+parameters/passwords. permanent=true ONLY when sources explicitly say a permanent
+class link. Supported meeting hosts include mts-link.ru, webinar.ru, zoom.us,
+meet.google.com, teams.microsoft.com, telemost.yandex.ru and RANEPA BigBlueButton.
+PDFs, Moodle quizzes, attendance QR links, optional extracurricular webinars and
+course resource files are NOT scheduled-class joining links. Do not turn an online
+class link into homework. Ordinary timetable changes still are not assignments.
 Each assignment contains the SAME Extraction fields plus source_message_ids: [123].
 Use kind=control_point for КТ, kind=assessment for graded in-class work, kind=test for tests.
 They are important deadlines and are NOT homework, even when completed at home.
@@ -405,6 +430,21 @@ merely because no single due date is given. Preserve task content and topics.
             batch = BatchExtraction.model_validate_json(body["choices"][0]["message"]["content"])
             allowed = {message["message_id"] for message in messages}
             by_id = {message["message_id"]: message for message in messages}
+            from studgroup.online_lessons import urls as joining_urls
+
+            for proposal in batch.online_lessons:
+                if not set(proposal.source_message_ids) <= allowed or (
+                    target_message_id is not None
+                    and target_message_id not in proposal.source_message_ids
+                ):
+                    raise ProviderFailure("invalid_source_reference", True)
+                source_urls = {
+                    url
+                    for mid in proposal.source_message_ids
+                    for url in joining_urls(by_id[mid]["text"])
+                }
+                if proposal.url not in source_urls:
+                    raise ProviderFailure("invalid_source_reference", True)
             for extraction in batch.assignments:
                 if (
                     extraction.kind in {"irrelevant", "needs_context"}

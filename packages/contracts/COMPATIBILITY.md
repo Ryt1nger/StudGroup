@@ -1,5 +1,17 @@
 # Contract compatibility
 
+## Online lesson links from group messages (2026-10-09)
+
+No wire-format change: use the existing optional LessonOccurrence.online_url in
+Schedule, Today and lesson detail. Source-derived links are scoped to the group
+and lesson occurrence; recurring links require explicit permanent-link evidence
+and apply only to matching remote timetable patterns. Edited/expired sources revoke
+automatic links; manual schedule URLs take precedence. Only validated HTTPS joining
+URLs are returned, not course materials, quizzes or attendance QR links. Clients
+can render an external "Подключиться" action without changing Today section order.
+The learning platform may require its own university account; no credentials are
+copied or supplied by StudGroup.
+
 ## Headman bot and manual group data (0.8.0)
 
 Additive material-link arrays on detail/subject responses; academic-event revisions

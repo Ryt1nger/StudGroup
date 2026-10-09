@@ -25,6 +25,7 @@ interface TelegramWebApp {
   offEvent(event: string, cb: () => void): void;
   BackButton: TelegramWebAppBackButton;
   openTelegramLink(url: string): void;
+  openLink?(url: string, options?: { try_instant_view?: boolean }): void;
   safeAreaInset?: TelegramWebAppInset;
   contentSafeAreaInset?: TelegramWebAppInset;
   HapticFeedback?: {

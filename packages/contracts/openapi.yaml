@@ -757,7 +757,10 @@ components:
           type: [string, 'null']
           description: Display-ready location text, e.g. «Ауд. 320» or «Зал 2». Clients render it as supplied without adding a prefix.
         status: {type: string, enum: [scheduled, cancelled]}
-        online_url: {type: [string, 'null'], format: uri}
+        online_url:
+          type: [string, 'null']
+          format: uri
+          description: Optional HTTPS joining URL scoped to this group lesson; not a homework/material link. The external platform may require its own login.
     SessionBootstrapRequest:
       type: object
       additionalProperties: false

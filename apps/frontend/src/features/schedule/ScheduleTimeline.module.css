@@ -30,3 +30,4 @@ button.card { cursor: pointer; }
 .subtitle { font-size: 14px; line-height: 20px; color: var(--sg-color-text-secondary-strong); }
 .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .chevron { flex: none; align-self: center; color: var(--sg-color-text-secondary-strong); }
+.join { grid-column: 3; margin-top: 8px; }

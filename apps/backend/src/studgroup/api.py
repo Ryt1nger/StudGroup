@@ -242,6 +242,9 @@ async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):
             }
         )
     lessons.sort(key=lambda lesson: (lesson["starts_at"], lesson["id"]))
+    from studgroup.online_lessons import overlay
+
+    await overlay(db, group, lessons)
     return {
         "generated_at": datetime.now(UTC),
         "group_timezone": group.timezone,

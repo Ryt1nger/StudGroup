@@ -4,6 +4,7 @@ import { ScheduleBadge } from './ScheduleBadge';
 import type { ScheduleDayView, ScheduleItemView } from './viewModel';
 import styles from './ScheduleTimeline.module.css';
 import { dayAnchorId, lessonAnchorId } from './scheduleAnchor';
+import { JoinLessonLink } from '../../ui/JoinLessonLink';
 
 function SubjectTile() {
   // Subject icon/colour are not in the contract yet; a neutral book tile is used until they are.
@@ -39,6 +40,7 @@ function Row({ item }: { item: ScheduleItemView }) {
         </span>
         {item.onOpen ? <ChevronRight className={styles.chevron} size={20} /> : null}
       </Root>
+      {item.onlineUrl && !item.cancelled && item.state !== 'done' ? <div className={styles.join}><JoinLessonLink url={item.onlineUrl} /></div> : null}
     </li>
   );
 }

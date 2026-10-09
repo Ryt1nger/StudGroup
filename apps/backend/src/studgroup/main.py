@@ -97,6 +97,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             print("REVIEWED_PUBLICATION_FAILED " + type(error).__name__, flush=True)
             raise RuntimeError("reviewed_publication_failed") from None
         app.state.redis = Redis.from_url(settings.redis_url, socket_connect_timeout=2)
+        from studgroup.online_lessons import backfill as backfill_online_links
+
+        try:
+            async with asyncio.timeout(15):
+                await backfill_online_links(app.state.engine)
+        except Exception as error:  # noqa: BLE001 -- optional backfill must not log URLs or block service readiness
+            print("ONLINE_LESSON_LINK_BACKFILL_UNAVAILABLE " + type(error).__name__, flush=True)
         if settings.owner_update_notifications_enabled:
             from studgroup.processing_diagnostics import startup
 

@@ -116,6 +116,38 @@ homework posted 8 October at 12:34 with those exercise numbers resolves to the
 known next mathematics lesson, 9 October at 10:40; a separately stated 10–15 October
 submission window remains ambiguous, not a single inferred deadline.
 
+## Owner update — 2026-10-09: joining online lessons from the app
+
+Capture HTTPS joining URLs from group text/captions and explicit reply context,
+independently of the paid analysis budget. Store source/revision-scoped links in
+0020, never fetch destinations or log room passwords. Recognize supported meeting
+hosts and RANEPA BigBlueButton; do not confuse PDFs, quizzes or attendance QR links
+with joining URLs. Bind unambiguous subject/date/time evidence to one occurrence.
+An unlabeled URL can use a uniquely running remote lesson or one starting within
+30 minutes of the original message, not processing time. Explicit permanent-link
+wording applies only to matching remote timetable patterns, forward from its source.
+Distinct rooms in one post need semantic mapping rather than arbitrary selection.
+
+Deep analysis also returns separate private online_lesson proposals, with literal
+source URL validation and confidence gates. URLs are not homework. Preserve manual
+URLs and locked schedule decisions; compare original source/edit time rather than
+analysis completion time when selecting replacements. Edits/removed captions and
+source retention revoke automatic links. Telegram message deletions unavailable to
+the bot are not inferred. Backfill retained existing meeting posts without new model
+calls. Ambiguous links stay stored but do not generate guessed buttons.
+
+Use existing optional LessonOccurrence.online_url in Schedule/Today/detail; no new
+response fields. Add a conditional protected external joining action to schedule
+and lesson detail, through Telegram openLink on click when available, otherwise a
+normal HTTPS anchor. Do not change Today layout. Hide joining for ended/cancelled
+lessons. SDO authentication remains the student's own external-platform login.
+
+Acceptance: single-use URLs do not repeat next week; explicit permanent culture
+link appears only for its remote lectures; old processing cannot replace a newer
+source URL; edits/expiry/manual locks and group scope prevent stale leakage; source
+URL query tokens are preserved; the user can open it from the app without an
+automatic external navigation.
+
 ## Operator correction — 2026-10-09: publish saved evidence, not only code
 
 The saved export probe was not applied to the cloud, despite working live processing.

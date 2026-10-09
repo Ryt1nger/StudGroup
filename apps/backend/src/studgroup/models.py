@@ -450,6 +450,30 @@ class ScheduleException(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class LessonOnlineLink(Base):
+    __tablename__ = "lesson_online_links"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="CASCADE"), index=True
+    )
+    source_revision: Mapped[int] = mapped_column(Integer)
+    context_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="SET NULL")
+    )
+    context_revision: Mapped[int | None] = mapped_column(Integer)
+    pattern_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("schedule_patterns.id", ondelete="CASCADE"), index=True
+    )
+    occurrence_date: Mapped[date | None] = mapped_column(Date)
+    url: Mapped[str] = mapped_column(String(2048))
+    state: Mapped[str] = mapped_column(String(24))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class MaterialLink(Base):
     __tablename__ = "material_links"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

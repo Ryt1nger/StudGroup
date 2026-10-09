@@ -115,6 +115,15 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
     if message.text is None and message.caption:
         message.text = message.caption
 
+    if message.text is None and update.edited_message is not None:
+        previous = await db.scalar(
+            select(RawMessage.id).where(
+                RawMessage.group_id == group.id,
+                RawMessage.telegram_message_id == message.message_id,
+            )
+        )
+        if previous:
+            message.text = ""  # Removed attachment caption revokes its old joining URL.
     if message.text is None:
         from studgroup.ai_schedule import signal
 
@@ -123,6 +132,14 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
         return {"ok": True}
 
     await store_message(db, group, message)
+    from studgroup.online_lessons import discover
+
+    stored = await db.scalar(
+        select(RawMessage).where(
+            RawMessage.group_id == group.id, RawMessage.telegram_message_id == message.message_id
+        )
+    )
+    await discover(db, stored)
     try:
         await db.commit()
     except IntegrityError:

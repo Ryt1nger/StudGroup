@@ -17,6 +17,7 @@ function lessonItem(lesson: LessonOccurrence, nowMs: number, timeZone: string): 
     title: lesson.subject,
     subtitle,
     cancelled,
+    onlineUrl: !cancelled && !done ? lesson.online_url : null,
     state: current ? 'current' : done ? 'done' : 'upcoming',
     badges: cancelled ? [{ kind: 'cancelled', label: 'Отменено', tone: 'neutral' }] : current ? [{ kind: 'now', label: ru.schedule.now, tone: 'solid' }] : [],
   };
