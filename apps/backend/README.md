@@ -132,6 +132,13 @@ reports; their own private JSON reports preserve returned failure usage too.
 
 ## Activity-driven AI schedule
 
+When owner testing is enabled, startup logs an `AI_STARTUP_DIAGNOSTICS` snapshot
+with feature flags, key-presence only, usage/reservations, live/imported/pending
+message counts, activity timestamps, card/review counts and next-request budget
+gates. This performs no provider calls or database writes and exposes no message
+text, personal identities or credentials. It is best effort with a five-second
+timeout and must not prevent application startup.
+
 With `AI_SCHEDULE_ENABLED=true`, the embedded/external processor consumes live text
 at fixed half-hour cutoffs (07:00, 07:30, …, 22:30) in `AI_SCHEDULE_TIMEZONE`
 (Europe/Moscow). In the 23:00–24:00 extension, a group needs a signal within the

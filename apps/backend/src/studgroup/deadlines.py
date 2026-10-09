@@ -75,12 +75,27 @@ MONTHS = {
 }
 
 
+def deadline_evidence_text(text: str) -> str:
+    """Explicit decimal exercise labels are not calendar dates; keep actual date clauses."""
+    number = r"\d+(?:[.,]\d+)+"
+    return re.sub(
+        r"(?:\bномер[а-я]*|№|\bупражнен[а-я]*|\bзадач[а-я]*|\bпункт[а-я]*)\s*[№:]?\s*"
+        + number
+        + r"(?:\s*[-–—]\s*"
+        + number
+        + r")?",
+        " упражнение ",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+
 def contextual_deadline(text: str, sent_at: datetime, timezone: str) -> DeadlineResolution | None:
     """None means no recognized deadline. Unknown means explicit ambiguity: no fallback."""
     if sent_at.utcoffset() is None:
         raise ValueError("source_timestamp_requires_offset")
     local = sent_at.astimezone(ZoneInfo(timezone))
-    text = text.casefold().replace("ё", "е")
+    text = deadline_evidence_text(text).casefold().replace("ё", "е")
     if re.search(r"(?:это\s+)?не\s+(?:на\s+|к\s+|до\s+)?(?:завтра|послезавтра|сегодня)\b", text):
         return DeadlineResolution(None, False, "withdrawn_deadline")
 
@@ -207,7 +222,7 @@ def _resolve_source_deadline(
         "next_subject_lesson_reference",
     }:
         return evidence
-    source_text = "\n".join(text for text, _ in ordered)
+    source_text = "\n".join(deadline_evidence_text(text) for text, _ in ordered)
     date_evidence = re.search(
         r"\d{1,2}[.:]\d{2}|январ|феврал|март|апрел|мая|июн|июл|август|сентябр|октябр|ноябр|декабр|завтра|сегодня|через|понедельник|вторник|сред[аеуы]|четверг|пятниц|суббот|воскресень",
         source_text,

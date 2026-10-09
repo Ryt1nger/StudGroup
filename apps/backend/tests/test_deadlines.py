@@ -7,6 +7,35 @@ from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, re
 TZ = "Europe/Moscow"
 
 
+def test_decimal_exercise_range_is_not_a_date_and_uses_next_original_source_lesson():
+    sent = datetime.fromisoformat("2026-10-08T12:34:06+03:00")
+    schedule = ScheduleDeadlineContext(
+        [
+            {
+                "subject": "Математический анализ",
+                "starts_at": "2026-10-09T10:40:00+03:00",
+                "status": "scheduled",
+            }
+        ],
+        date(2026, 10, 5),
+        date(2026, 10, 11),
+    )
+    result = resolve_deadline(
+        [("#матан\nстр.69, вопросы 1-8\nрешать: стр.75 номер 5.1-5.4", sent)],
+        TZ,
+        "Математический анализ",
+        schedule=schedule,
+    )
+    assert result.at.isoformat() == "2026-10-09T10:40:00+03:00"
+    assert result.basis == "next_subject_lesson"
+
+
+def test_exercise_range_does_not_hide_a_real_submission_date_window():
+    sent = datetime.fromisoformat("2026-10-08T12:34:06+03:00")
+    result = contextual_deadline("Номера 5.1–5.4 сдаём 10.10–15.10", sent, TZ)
+    assert result.basis == "ambiguous_date_range"
+
+
 def test_missing_historical_schedule_never_rebases_to_current_time():
     result = resolve_deadline(
         [("Ст 46 N 10.1", datetime.fromisoformat("2026-09-30T12:00:00+03:00"))],

@@ -89,6 +89,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         app.state.engine = create_async_engine(settings.database_url, pool_pre_ping=True)
         app.state.redis = Redis.from_url(settings.redis_url, socket_connect_timeout=2)
+        if settings.owner_update_notifications_enabled:
+            from studgroup.processing_diagnostics import startup
+
+            await startup(app.state.engine, settings)
         processor = None
         if settings.processing_mode == "embedded":
             from studgroup.runtime import processing_loop

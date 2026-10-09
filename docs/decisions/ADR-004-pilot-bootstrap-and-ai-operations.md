@@ -105,6 +105,17 @@ and per-episode lock reacquisition. This internal notification failure is distin
 from DeepSeek outages, output validation failures and budget exhaustion. Budgets,
 owner-only recipients, front-end contracts and at-least-once delivery stay intact.
 
+## Implementation correction — 2026-10-09: exercise numbers versus dates
+
+An explicit decimal exercise label (e.g. `номер 5.1–5.4`) is not a date interval.
+Mask only these exercise-reference spans in deterministic deadline evidence, not
+the original source sent to the model. Preserve independently stated date clauses
+and date windows. This fixes blocked next-lesson fallback for otherwise undated
+homework without changing the original-message-time policy. Regression acceptance:
+homework posted 8 October at 12:34 with those exercise numbers resolves to the
+known next mathematics lesson, 9 October at 10:40; a separately stated 10–15 October
+submission window remains ambiguous, not a single inferred deadline.
+
 ## Owner update — 2026-10-06: provisional homework deadlines
 
 For homework whose deadline cannot be resolved, use the start of the next scheduled
