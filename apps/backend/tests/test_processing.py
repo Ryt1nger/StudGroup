@@ -22,6 +22,7 @@ from studgroup.models import (
     AIJob,
     Group,
     Homework,
+    OwnerIncident,
     RawMessage,
 )
 from studgroup.processing import process_next, retain_until
@@ -118,6 +119,141 @@ def test_budget_prevents_call_and_keeps_message_pending(client):
     assert run(client, provider, ai_daily_group_budget_usd=0.001) == "idle"
     assert provider.calls == 0
     assert count(client, AIAttempt) == 0
+
+
+def test_hourly_safety_limit_pauses_only_until_rolling_spend_expires(client):
+    source(client)
+    assert run(client, Provider(), ai_hourly_group_budget_usd=0.012) == "completed"
+    source(client, mid=32)
+    provider = Provider()
+    assert run(client, provider, ai_hourly_group_budget_usd=0.012) == "idle"
+    assert provider.calls == 0
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.get(OwnerIncident, "ai_hourly_safety_limit")
+            assert row.active
+
+    asyncio.run(inspect())
+
+
+def test_three_consecutive_spend_risk_failures_open_auto_circuit(client):
+    for mid in range(31, 35):
+        source(client, mid=mid)
+    provider = Provider(failure="provider_unreachable")
+    config = {
+        "ai_circuit_failure_threshold": 3,
+        "ai_circuit_cooldown_seconds": 900,
+        "ai_hourly_group_budget_usd": 1,
+    }
+    assert run(client, provider, **config) == "retry"
+    assert run(client, provider, **config) == "retry"
+    assert run(client, provider, **config) == "retry"
+    assert run(client, provider, **config) == "idle"
+    assert provider.calls == 3
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            control = await db.get(AIControl, 1)
+            incident = await db.get(OwnerIncident, "ai_circuit_open")
+            assert control.provider_failure_streak == 3
+            assert control.provider_circuit_open_until is not None
+            assert control.provider_circuit_reason == "provider_unreachable"
+            assert incident.active
+
+    asyncio.run(inspect())
+
+
+def test_circuit_cooldown_allows_probe_and_valid_response_closes_it(client):
+    source(client)
+    now = datetime.now(UTC)
+
+    async def seed():
+        async with AsyncSession(client.app.state.engine) as db:
+            control = await db.get(AIControl, 1)
+            if control is None:
+                control = AIControl(id=1, spent_usd=Decimal(0), provider_failure_streak=0)
+                db.add(control)
+            control.provider_failure_streak = 3
+            control.provider_circuit_open_until = now - timedelta(seconds=1)
+            control.provider_circuit_reason = "provider_error"
+            from studgroup.processing import incident
+
+            await incident(db, "ai_circuit_open", now - timedelta(minutes=20))
+            await db.commit()
+
+    asyncio.run(seed())
+    provider = Provider()
+    result = asyncio.run(
+        process_next(
+            client.app.state.engine,
+            Settings(ai_enabled=True, ai_hourly_group_budget_usd=1),
+            provider,
+            now=now,
+        )
+    )
+    assert result == "completed"
+    assert provider.calls == 1
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            control = await db.get(AIControl, 1)
+            incident = await db.get(OwnerIncident, "ai_circuit_open")
+            assert control.provider_failure_streak == 0
+            assert control.provider_circuit_open_until is None
+            assert control.provider_circuit_reason is None
+            assert not incident.active
+
+    asyncio.run(inspect())
+
+
+def test_one_source_cannot_retry_a_spend_risk_stage_forever(client):
+    source(client)
+    start = datetime.now(UTC)
+    provider = Provider(failure="provider_unreachable")
+    settings = Settings(
+        ai_enabled=True,
+        ai_hourly_group_budget_usd=10,
+        ai_daily_group_budget_usd=10,
+        ai_total_budget_usd=10,
+        ai_circuit_failure_threshold=100,
+        ai_max_recoverable_attempts_per_stage=3,
+    )
+    for step in range(3):
+        assert (
+            asyncio.run(
+                process_next(
+                    client.app.state.engine,
+                    settings,
+                    provider,
+                    now=start + timedelta(minutes=6 * step),
+                )
+            )
+            == "retry"
+        )
+    assert (
+        asyncio.run(
+            process_next(
+                client.app.state.engine,
+                settings,
+                provider,
+                now=start + timedelta(minutes=18),
+            )
+        )
+        == "idle"
+    )
+    assert provider.calls == 3
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            job = await db.scalar(select(AIJob))
+            raw = await db.scalar(select(RawMessage))
+            incident = await db.get(OwnerIncident, "processing_exhausted")
+            assert job.state == "failed"
+            assert raw.processing_state == "failed"
+            assert incident.active
+
+    asyncio.run(inspect())
 
 
 def test_outage_is_durable_delayed_and_conservatively_charged(client):

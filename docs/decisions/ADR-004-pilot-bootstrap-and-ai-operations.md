@@ -4,6 +4,32 @@ Status: accepted
 
 Date: 2026-10-04
 
+## Owner update — 2026-10-09: seven-day cost measurement with runaway protection
+
+Measure the full-quality two-pass live pipeline for seven normal study days before
+optimizing it. Raise the live group/day ceiling to USD 1 and the experiment-wide
+ceiling to USD 15. Keep screening every retained live text/caption and deep analysis
+for signals; cost measurement must not obtain a cheaper result by silently reducing
+quality. Separate the existing backlog from steady-state daily cohorts in the final
+analysis. Report known provider usage separately from conservative unknown-use
+reservations.
+
+Budget increases do not mean unbounded execution. A rolling USD 0.25 per-group/hour
+safety ceiling limits spend velocity while allowing ordinary half-hour packages to
+finish. Three consecutive provider/paid-output failures open one persistent global
+circuit for five minutes. Its cooldown expires automatically, permits a probe, and
+a valid response closes the incident and continues the durable queue. Isolated
+failures do not open the circuit. One source stage may make at most eight spend-risk
+recovery attempts; exhausting it isolates that source rather than blocking other
+messages. Existing unique source-version jobs, SQL leases, stage checkpoints,
+request reservations, daily/total ceilings and owner-only incident delivery remain.
+
+Acceptance: duplicate sweeps cannot create paid duplicates; one failure does not
+pause a planned run; three consecutive spend-risk failures prevent a fourth call
+during cooldown; processing resumes without manual action after cooldown; a valid
+probe clears the circuit; the hourly ceiling rolls forward automatically; and one
+poisoned source cannot retry forever or consume the whole experiment budget.
+
 ## Owner update — 2026-10-08: request reservation settlement
 
 Release a request's reservation only when the adapter confirms rejection before

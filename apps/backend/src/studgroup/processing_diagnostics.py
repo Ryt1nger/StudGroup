@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -34,6 +34,12 @@ async def snapshot(db, settings, now):
         "spent_or_reserved_usd": str(spent),
         "total_limit_usd": settings.ai_total_budget_usd,
         "daily_limit_usd": settings.ai_daily_group_budget_usd,
+        "hourly_limit_usd": settings.ai_hourly_group_budget_usd,
+        "circuit_failure_streak": control.provider_failure_streak if control else 0,
+        "circuit_open_until": control.provider_circuit_open_until.isoformat()
+        if control and control.provider_circuit_open_until
+        else None,
+        "circuit_reason": control.provider_circuit_reason if control else None,
         "groups": [],
     }
     for group in (
@@ -53,6 +59,12 @@ async def snapshot(db, settings, now):
             select(func.coalesce(func.sum(AIAttempt.charged_usd), 0)).where(
                 AIAttempt.group_id == group.id,
                 AIAttempt.created_at >= now.replace(hour=0, minute=0, second=0, microsecond=0),
+            )
+        )
+        hourly = await db.scalar(
+            select(func.coalesce(func.sum(AIAttempt.charged_usd), 0)).where(
+                AIAttempt.group_id == group.id,
+                AIAttempt.created_at >= now - timedelta(hours=1),
             )
         )
         latest = await db.scalar(
@@ -95,9 +107,12 @@ async def snapshot(db, settings, now):
                 "last_activity_signal": activity.last_signal_at.isoformat() if activity else None,
                 "activity_signals": activity.signal_count if activity else 0,
                 "daily_spent_or_reserved_usd": str(daily),
+                "hourly_spent_or_reserved_usd": str(hourly),
                 "budget_blocks_next_request": spent + RESERVATION
                 > Decimal(str(settings.ai_total_budget_usd))
-                or Decimal(daily) + RESERVATION > Decimal(str(settings.ai_daily_group_budget_usd)),
+                or Decimal(daily) + RESERVATION > Decimal(str(settings.ai_daily_group_budget_usd))
+                or Decimal(hourly) + RESERVATION
+                > Decimal(str(settings.ai_hourly_group_budget_usd)),
             }
         )
     return result

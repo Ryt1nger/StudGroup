@@ -87,6 +87,14 @@ not production authorization.
 
 ## AI safety and outstanding acceptance
 
+The seven-day cost measurement uses three independent live safeguards: USD 1 per
+group/day, USD 0.25 per group in a rolling hour, and USD 15 across the experiment
+ledger. Three consecutive spend-risk failures open a five-minute automatic circuit;
+one source stage is isolated after eight such recovery attempts. These controls
+bound an error loop without requiring manual restart after an ordinary provider
+recovery. Startup diagnostics expose limits, rolling spend and circuit state without
+message text or credentials.
+
 AI calls are disabled by default. Once explicitly enabled, SQL reserves budget
 before each request, records usage and caps each source revision at two attempts.
 Timeouts with unknown usage retain their full reservation. Initial caps: $0.05 per

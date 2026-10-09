@@ -36,7 +36,11 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     ai_daily_group_budget_usd: float = 0.05
+    ai_hourly_group_budget_usd: float = 0.25
     ai_total_budget_usd: float = 1.70
+    ai_circuit_failure_threshold: int = 3
+    ai_circuit_cooldown_seconds: int = 300
+    ai_max_recoverable_attempts_per_stage: int = 8
     ai_enabled: bool = False
     ai_enabled_until: datetime | None = None
     ai_import_chat_id: int | None = None
@@ -66,6 +70,20 @@ class Settings(BaseSettings):
     @classmethod
     def valid_schedule_timezone(cls, value):
         ZoneInfo(value)
+        return value
+
+    @field_validator(
+        "ai_daily_group_budget_usd",
+        "ai_hourly_group_budget_usd",
+        "ai_total_budget_usd",
+        "ai_circuit_failure_threshold",
+        "ai_circuit_cooldown_seconds",
+        "ai_max_recoverable_attempts_per_stage",
+    )
+    @classmethod
+    def positive_ai_guardrail(cls, value):
+        if value <= 0:
+            raise ValueError("AI guardrails must be positive")
         return value
 
     @field_validator("ai_enabled_until", "owner_update_notifications_since")

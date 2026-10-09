@@ -188,6 +188,9 @@ class AIControl(Base):
     __tablename__ = "ai_control"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     spent_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=Decimal(0))
+    provider_failure_streak: Mapped[int] = mapped_column(Integer, default=0)
+    provider_circuit_open_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    provider_circuit_reason: Mapped[str | None] = mapped_column(String(64))
 
 
 class AIRun(Base):

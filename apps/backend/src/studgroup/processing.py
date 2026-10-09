@@ -47,6 +47,16 @@ RECOVERABLE_FAILURES = {
     "rate_limited",
     "processing_window_closed",
 }
+SPEND_RISK_FAILURES = {
+    "provider_unreachable",
+    "provider_error",
+    "rate_limited",
+    "invalid_provider_output",
+    "incomplete_output",
+    "invalid_date_only",
+    "invalid_source_reference",
+    "invalid_target_reference",
+}
 PROVIDER_INCIDENT_CODES = {
     "provider_unreachable",
     "provider_error",
@@ -210,6 +220,14 @@ async def incident(db, code, now, recover=False, detail=None):
     return episode.id
 
 
+async def incident_once(db, code, now, detail=None):
+    """Open a guardrail incident once without inflating it on every idle sweep."""
+    row = await db.get(OwnerIncident, code)
+    if row is not None and row.active:
+        return row.current_episode_id
+    return await incident(db, code, now, detail=detail)
+
+
 async def claim(engine, settings, now):
     filter_started = monotonic()
     filtered_sources = {}
@@ -228,9 +246,17 @@ async def claim(engine, settings, now):
         control = await db.scalar(select(AIControl).where(AIControl.id == 1).with_for_update())
         if control is None:
             # create_all tests/local previews; production migration seeds it.
-            control = AIControl(id=1, spent_usd=Decimal(0))
+            control = AIControl(id=1, spent_usd=Decimal(0), provider_failure_streak=0)
             db.add(control)
             await db.flush()
+        if control.provider_circuit_open_until is not None:
+            if utc(control.provider_circuit_open_until) > now:
+                await db.commit()
+                return None
+            # Cooldown expiry permits a fresh probe automatically. The incident
+            # remains active until a valid response proves provider recovery.
+            control.provider_circuit_open_until = None
+            control.provider_failure_streak = 0
         if settings.ai_live_two_pass:
             # Old and new instances may overlap during deploy. Restore unpaid local
             # discards under the same singleton lock used by both worker generations.
@@ -390,10 +416,20 @@ async def claim(engine, settings, now):
                 if job and job.screen_checkpoint
                 else 0
             )
-            if job and job.attempts - screened_generation >= MAX_ATTEMPTS and not recovering:
+            stage_attempts = job.attempts - screened_generation if job else 0
+            if (
+                job
+                and stage_attempts >= settings.ai_max_recoverable_attempts_per_stage
+                and job.last_error in SPEND_RISK_FAILURES
+            ):
                 job.state = "failed"
                 raw.processing_state = "failed"
-                await incident(db, "processing_exhausted", now)
+                await incident_once(db, "processing_exhausted", now, detail=job.last_error)
+                continue
+            if job and stage_attempts >= MAX_ATTEMPTS and not recovering:
+                job.state = "failed"
+                raw.processing_state = "failed"
+                await incident_once(db, "processing_exhausted", now)
                 continue
             day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             daily = await db.scalar(
@@ -402,13 +438,28 @@ async def claim(engine, settings, now):
                     AIAttempt.created_at >= day_start,
                 )
             )
-            if control.spent_usd + RESERVATION > Decimal(
+            hourly = await db.scalar(
+                select(func.coalesce(func.sum(AIAttempt.charged_usd), 0)).where(
+                    AIAttempt.group_id == raw.group_id,
+                    AIAttempt.created_at >= now - timedelta(hours=1),
+                )
+            )
+            total_blocked = control.spent_usd + RESERVATION > Decimal(
                 str(settings.ai_total_budget_usd)
-            ) or Decimal(daily) + RESERVATION > Decimal(str(settings.ai_daily_group_budget_usd)):
-                await incident(
+            )
+            daily_blocked = Decimal(daily) + RESERVATION > Decimal(
+                str(settings.ai_daily_group_budget_usd)
+            )
+            if total_blocked or daily_blocked:
+                await incident_once(
                     db, "ai_budget_limit", now + timedelta(seconds=monotonic() - filter_started)
                 )
                 continue
+            await incident(db, "ai_budget_limit", now, recover=True)
+            if Decimal(hourly) + RESERVATION > Decimal(str(settings.ai_hourly_group_budget_usd)):
+                await incident_once(db, "ai_hourly_safety_limit", now)
+                continue
+            await incident(db, "ai_hourly_safety_limit", now, recover=True)
             if job is None:
                 job = AIJob(
                     raw_message_id=raw.id,
@@ -933,6 +984,19 @@ async def process_next(engine, settings, provider=None, now=None):
             # This also adjusts daily sums; a superseded job still owns its own charge.
             control.spent_usd -= attempt.charged_usd
             attempt.charged_usd = Decimal(0)
+        if response is not None:
+            control.provider_failure_streak = 0
+            control.provider_circuit_open_until = None
+            control.provider_circuit_reason = None
+            await incident(db, "ai_circuit_open", response_at, recover=True)
+        elif failure and failure.code in SPEND_RISK_FAILURES:
+            control.provider_failure_streak += 1
+            control.provider_circuit_reason = failure.code
+            if control.provider_failure_streak >= settings.ai_circuit_failure_threshold:
+                control.provider_circuit_open_until = failure_at + timedelta(
+                    seconds=settings.ai_circuit_cooldown_seconds
+                )
+                await incident_once(db, "ai_circuit_open", failure_at, detail=failure.code)
         # A timed-out worker must not overwrite the result or lease of a newer attempt.
         if job.attempts != generation or job.state != "running":
             from studgroup.run_reports import finish as finish_report
