@@ -12,7 +12,10 @@ def test_health_and_readiness_failure():
         app.state.engine = Mock()
         app.state.engine.connect.side_effect = OSError("secret database url")
         app.state.redis.ping = AsyncMock(side_effect=OSError("secret redis url"))
-        assert client.get("/health").json() == {"status": "ok"}
+        assert client.get("/health").json() == {
+            "status": "ok",
+            "ai_processing": "emergency_stopped",
+        }
         response = client.get("/ready")
         assert response.status_code == 503
         assert "secret" not in response.text

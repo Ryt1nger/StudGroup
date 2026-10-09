@@ -41,6 +41,7 @@ from studgroup.models import (
 from studgroup.notifications import record_change
 
 MAX_ATTEMPTS = 2
+HOSTED_AI_EMERGENCY_STOP = True
 RECOVERABLE_FAILURES = {
     "provider_unreachable",
     "provider_error",
@@ -918,7 +919,7 @@ async def process_next(engine, settings, provider=None, now=None):
 
     # Emergency production kill switch requested by the product owner. Tests and
     # explicit offline probes inject a provider; hosted workers never do.
-    if provider is None:
+    if HOSTED_AI_EMERGENCY_STOP and provider is None:
         return "emergency_stopped"
     if not settings.ai_enabled:
         return "disabled"

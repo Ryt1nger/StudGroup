@@ -190,7 +190,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health", include_in_schema=False)
     async def health():
-        return {"status": "ok"}
+        from studgroup.processing import HOSTED_AI_EMERGENCY_STOP
+
+        return {
+            "status": "ok",
+            "ai_processing": "emergency_stopped" if HOSTED_AI_EMERGENCY_STOP else "configured",
+        }
 
     @app.get("/ready", include_in_schema=False)
     async def ready():
