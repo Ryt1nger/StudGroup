@@ -90,7 +90,8 @@ def test_new_messages_belong_to_next_slot_and_silence_produces_no_report(client)
     seed(client, at("07:05:00"), mid=2)
     assert run(client, provider, "07:20:00") == "idle"
     assert len(notices(client)) == 2
-    assert run(client, provider, "07:30:00") == "completed"
+    assert run(client, provider, "07:30:00") == "idle"
+    assert run(client, provider, "08:00:00") == "completed"
     assert len(notices(client)) == 4
 
     async def check():

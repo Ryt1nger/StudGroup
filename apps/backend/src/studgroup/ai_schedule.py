@@ -1,4 +1,4 @@
-"""Cheap database activity signals; fixed Moscow half-hour batches, no provider timers."""
+"""Cheap database activity signals; fixed Moscow hourly batches, no provider timers."""
 
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -12,7 +12,7 @@ def window(now, timezone):
     local = now.astimezone(ZoneInfo(timezone))
     if local.hour < 7:
         return None
-    slot = local.replace(minute=local.minute // 30 * 30, second=0, microsecond=0)
+    slot = local.replace(minute=0, second=0, microsecond=0)
     cutoff = local.replace(hour=23, minute=0, second=0, microsecond=0)
     extended = local.hour == 23
     if extended:

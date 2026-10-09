@@ -4,6 +4,18 @@ Status: accepted
 
 Date: 2026-10-04
 
+## Owner update — 2026-10-09: hourly scheduled runs
+
+Change new-target scheduling from half-hour packages to hourly packages at 07:00,
+08:00, …, 23:00 Moscow time. New text arriving after a cutoff waits for the next
+hour. The final 23:00 run still requires group activity within the preceding 30
+minutes; later text waits until 07:00. Durable recovery of an already-started job
+may continue inside its original slot after backoff. This cadence change does not
+reenable the emergency-stopped hosted AI processor.
+
+Acceptance: 07:05 text is ineligible at 07:30 and eligible at 08:00; quiet groups
+make no calls; imported history does not wake the schedule; there is no 23:30 run.
+
 ## Owner update — 2026-10-09: seven-day cost measurement with runaway protection
 
 Measure the full-quality two-pass live pipeline for seven normal study days before
@@ -15,7 +27,7 @@ analysis. Report known provider usage separately from conservative unknown-use
 reservations.
 
 Budget increases do not mean unbounded execution. A rolling USD 0.25 per-group/hour
-safety ceiling limits spend velocity while allowing ordinary half-hour packages to
+safety ceiling limits spend velocity while allowing ordinary hourly packages to
 finish. Three consecutive provider/paid-output failures open one persistent global
 circuit for five minutes. Its cooldown expires automatically, permits a probe, and
 a valid response closes the incident and continues the durable queue. Isolated
@@ -58,7 +70,7 @@ charge; compatibility error codes and retry rules remain stable.
 Temporary transport/API availability errors remain durable retries, not permanent
 failure after two attempts. Reuse the existing SQL job/version and lease fencing;
 retry only unfinished work with 30-second exponential backoff capped at five
-minutes. Recovery may retry in the same half-hour slot, but does not bypass live
+minutes. Recovery may retry in the same hourly slot, but does not bypass live
 hours, activity gates, total/daily budgets or retention. Reopen old exhausted
 transport failures only for current retained revisions; do not reopen completed,
 superseded or permanently rejected work.
@@ -200,7 +212,7 @@ counts/card IDs/deadlines only, never chat bodies or secrets. Contracts unchange
 
 ## Owner update — 2026-10-09: one report pair per scheduled run
 
-A planned run is a fixed group/half-hour package, not an individual source or model
+A planned run is a fixed group/hourly package, not an individual source or model
 stage. Migration 0019 adds a durable run envelope with all eligible source-revision
 keys (including beyond the worker's 50-source claim page). Attach attempts to this
 run in their internal metrics. Emit one start and one aggregate finish; stage
@@ -238,7 +250,7 @@ target or full-history replay. Binary OCR/file-content parsing is not added here
 Each stage is a separately reserved/settled/reported attempt. Migration 0018 adds
 the nullable SQL screening checkpoint per source revision. A successful screen
 commits before the deep call. Deep recovery reuses it and may continue in the same
-half-hour slot; new targets still wait for their own slot. Each stage retains its
+hourly slot; new targets still wait for their own slot. Each stage retains its
 own validation retry allowance without reusing lease generations. An edited source
 gets a new version job and screening. Published cards commit per deep result under
 the existing confidence/manual-lock/multiple-task rules. No UI contract changes.

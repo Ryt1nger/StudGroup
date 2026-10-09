@@ -143,9 +143,9 @@ text, personal identities or credentials. It is best effort with a five-second
 timeout and must not prevent application startup.
 
 With `AI_SCHEDULE_ENABLED=true`, the embedded/external processor consumes live text
-at fixed half-hour cutoffs (07:00, 07:30, …, 22:30) in `AI_SCHEDULE_TIMEZONE`
-(Europe/Moscow). In the 23:00–24:00 extension, a group needs a signal within the
-last 30 minutes; cutoff runs at 23:00/23:30. Text arriving after the last cutoff
+at fixed hourly cutoffs (07:00, 08:00, …, 22:00) in `AI_SCHEDULE_TIMEZONE`
+(Europe/Moscow). The final 23:00 extension requires a group signal within the
+last 30 minutes. Text arriving after the last cutoff
 waits for 07:00. Webhook receipt timestamps and activity are committed with inbox
 changes. Service/media activity can signal the group, but does not itself invoke
 the text provider. Duplicate deliveries/no-op edits do not trigger fresh work.

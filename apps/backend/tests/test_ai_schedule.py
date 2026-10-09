@@ -71,7 +71,7 @@ def test_daily_windows(time, allowed, extended):
     assert (result is not None) is allowed
     if result:
         assert result[2] is extended
-        assert result[0].astimezone(stamp(time).tzinfo).minute in {0, 30}
+        assert result[0].astimezone(stamp(time).tzinfo).minute == 0
 
 
 def test_silence_never_calls_provider_and_import_does_not_wake_schedule(client):
@@ -82,7 +82,7 @@ def test_silence_never_calls_provider_and_import_does_not_wake_schedule(client):
     assert provider.calls == 0
 
 
-def test_live_messages_wait_for_half_hour_and_are_not_repeated(client):
+def test_live_messages_wait_for_hour_and_are_not_repeated(client):
     provider = Provider()
     seed(client, stamp("06:55:00"))
     assert run(client, stamp("06:59:00"), provider) == "outside_hours"
@@ -90,7 +90,8 @@ def test_live_messages_wait_for_half_hour_and_are_not_repeated(client):
     assert run(client, stamp("07:15:00"), provider) == "idle"
     seed(client, stamp("07:05:00"), mid=2)
     assert run(client, stamp("07:20:00"), provider) == "idle"
-    assert run(client, stamp("07:30:00"), provider) == "completed"
+    assert run(client, stamp("07:30:00"), provider) == "idle"
+    assert run(client, stamp("08:00:00"), provider) == "completed"
     assert provider.calls == 2
 
 
@@ -99,20 +100,20 @@ def test_late_extension_requires_recent_group_signal(client):
     seed(client, stamp("22:00:00"))
     assert run(client, stamp("23:00:00"), provider) == "idle"
     assert provider.calls == 0
-    seed(client, stamp("23:10:00"), mid=2)
-    assert run(client, stamp("23:15:00"), provider) == "completed"  # catch up older pending text
-    assert run(client, stamp("23:30:00"), provider) == "completed"
+    seed(client, stamp("22:50:00"), mid=2)
+    assert run(client, stamp("23:00:00"), provider) == "completed"
+    assert run(client, stamp("23:00:05"), provider) == "completed"
     assert provider.calls == 2
     assert run(client, stamp("00:00:00"), provider) == "outside_hours"
 
 
-def test_failed_request_is_not_retried_in_same_half_hour(client):
+def test_failed_request_is_not_retried_before_next_hour(client):
     provider = Provider(failure="provider_unavailable")
     seed(client, stamp("07:00:00"))
     run(client, stamp("07:00:00"), provider)
     assert provider.calls == 1
     assert run(client, stamp("07:10:00"), provider) == "idle"
-    run(client, stamp("07:30:00"), provider)
+    run(client, stamp("08:00:00"), provider)
     assert provider.calls == 2
 
 
@@ -127,7 +128,7 @@ def test_connection_recovery_retries_only_unfinished_job_in_same_slot(client):
     assert run(client, stamp("07:01:30"), provider) == "completed"
     assert run(client, stamp("07:02:00"), provider) == "idle"
     assert provider.calls == 3
-    assert run(client, stamp("07:30:00"), provider) == "completed"
+    assert run(client, stamp("08:00:00"), provider) == "completed"
     assert provider.calls == 4
 
 

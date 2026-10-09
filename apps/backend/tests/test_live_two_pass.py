@@ -102,14 +102,17 @@ def test_deep_outage_keeps_screen_checkpoint_and_resumes_only_deep_stage(client)
     asyncio.run(inspect())
 
 
-def test_screen_and_deep_continue_in_same_half_hour_slot_but_new_text_waits(client):
+def test_screen_and_deep_continue_in_same_hourly_slot_but_new_text_waits(client):
     seed(client, stamp("06:55:00"))
     provider = CascadeProvider()
     assert run(client, provider, stamp("07:00:00"), ai_schedule_enabled=True) == "screened"
     assert run(client, provider, stamp("07:00:05"), ai_schedule_enabled=True) == "completed"
     seed(client, stamp("07:05:00"), mid=2)
     assert run(client, provider, stamp("07:20:00"), ai_schedule_enabled=True) == "idle"
+    assert run(client, provider, stamp("07:30:00"), ai_schedule_enabled=True) == "idle"
     assert provider.screen_calls == provider.calls == 1
+    assert run(client, provider, stamp("08:00:00"), ai_schedule_enabled=True) == "screened"
+    assert provider.screen_calls == 2 and provider.calls == 1
 
 
 def test_edit_invalidates_old_screen_checkpoint(client):
