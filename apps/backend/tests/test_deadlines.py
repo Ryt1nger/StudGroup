@@ -7,6 +7,16 @@ from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, re
 TZ = "Europe/Moscow"
 
 
+def test_attendance_clause_cannot_override_explicit_same_day_submission_hour():
+    result = contextual_deadline(
+        "Для всех, кто не был на паре сегодня, в СДО найти задание 01, сделать и скинуть строго до 17",
+        datetime.fromisoformat("2026-10-08T13:47:25+03:00"),
+        TZ,
+    )
+    assert result.at.isoformat() == "2026-10-08T17:00:00+03:00"
+    assert result.date_only is False
+
+
 @pytest.mark.parametrize(
     "text,hour,minute,inferred",
     [

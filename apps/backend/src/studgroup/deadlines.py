@@ -197,8 +197,6 @@ def contextual_deadline(text: str, sent_at: datetime, timezone: str) -> Deadline
             clock is None,
             "explicit_source_date_inferred_clock" if inferred_clock else "explicit_source_date",
         )
-    if re.search(r"(?:к|на|до)\s+(?:след(?:ующ\w*)?\.?\s+)?пар[еу]", text):
-        return DeadlineResolution(None, False, "next_subject_lesson_reference")
     if re.search(r"(?:до|к)\s+конц[ау]\s+(?:этой\s+|текущей\s+)?недели", text):
         return calendar(6 - local.weekday())
     if re.search(r"\bпослезавтра\b", text):
@@ -226,6 +224,8 @@ def contextual_deadline(text: str, sent_at: datetime, timezone: str) -> Deadline
                 return DeadlineResolution(None, False, "ambiguous_weekday")
             offset = (weekday - local.weekday()) % 7
             return calendar(offset or (7 if "след" in weekday_match[0] else 0))
+    if re.search(r"(?:к|на|до)\s+(?:след(?:ующ\w*)?\.?\s+)?пар[еу]", text):
+        return DeadlineResolution(None, False, "next_subject_lesson_reference")
     if clock and re.search(r"\bдо\s+\d", text):
         # No named date: same source day, never the processing day or tomorrow.
         result = calendar(0)
