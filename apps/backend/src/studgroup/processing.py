@@ -449,14 +449,10 @@ async def claim(engine, settings, now):
             total_blocked = control.spent_usd + RESERVATION > total_limit
             daily_blocked = Decimal(daily) + RESERVATION > daily_limit
             if total_blocked or daily_blocked:
-                code = (
-                    "ai_total_budget_limit" if total_blocked else "ai_daily_group_budget_limit"
-                )
+                code = "ai_total_budget_limit" if total_blocked else "ai_daily_group_budget_limit"
                 await incident(
                     db,
-                    "ai_daily_group_budget_limit"
-                    if total_blocked
-                    else "ai_total_budget_limit",
+                    "ai_daily_group_budget_limit" if total_blocked else "ai_total_budget_limit",
                     now,
                     recover=True,
                 )
