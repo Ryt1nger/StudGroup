@@ -45,6 +45,7 @@ async def transfer(path, target_url):
                     "ai_attempts",
                     "ai_candidates",
                     "owner_incidents",
+                    "owner_incident_episodes",
                     "received_updates",
                 }:
                     continue

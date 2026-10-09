@@ -87,6 +87,24 @@ AI schedule, Telegram constraints and at-least-once delivery semantics remain.
 This is live attempt telemetry, not a claim of a full group-wide two-pass model
 cascade or a hosted local-export runner. No API/contract changes are introduced.
 
+## Owner update — 2026-10-09: identifiable incident history
+
+Assign a persistent sequential number per incident episode. Distinguish detection,
+last manifestation, recovery and notification-send timestamps to the second in
+Moscow time; failures use catch time, not provider-request start time. Repeated
+manifestations of an active code share one episode/count, with a new number after
+recovery. Preserve opened/recovered notifications independently and link attempt
+reports to the episode number. Migration 0017 adopts existing last-known records
+without inventing missing historical repetitions or replaying delivered alerts.
+Clearly label backlog/legacy records; older per-code history was overwritten and
+cannot be reconstructed. Keep safe codes/HTTP status/exception type only.
+
+Fix the sender's multi-alert commit-expiration failure (MissingGreenlet, confirmed
+in logs at 2026-10-08 20:34:49 and 20:34:55 Moscow time) using non-expiring sessions
+and per-episode lock reacquisition. This internal notification failure is distinct
+from DeepSeek outages, output validation failures and budget exhaustion. Budgets,
+owner-only recipients, front-end contracts and at-least-once delivery stay intact.
+
 ## Owner update — 2026-10-06: provisional homework deadlines
 
 For homework whose deadline cannot be resolved, use the start of the next scheduled

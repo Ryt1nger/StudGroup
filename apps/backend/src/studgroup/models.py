@@ -261,6 +261,26 @@ class OwnerIncident(Base):
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     recovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     notification_pending: Mapped[bool] = mapped_column(Boolean, default=True)
+    current_episode_id: Mapped[int | None] = mapped_column(Integer)
+
+
+class OwnerIncidentEpisode(Base):
+    __tablename__ = "owner_incident_episodes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(
+        ForeignKey("owner_incidents.code", ondelete="CASCADE"), index=True
+    )
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    recovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    occurrences: Mapped[int] = mapped_column(Integer, default=1)
+    first_detail: Mapped[str | None] = mapped_column(String(64))
+    last_detail: Mapped[str | None] = mapped_column(String(64))
+    opening_pending: Mapped[bool] = mapped_column(Boolean, default=True)
+    recovery_pending: Mapped[bool] = mapped_column(Boolean, default=False)
+    opening_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    recovery_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    legacy: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Notification(Base):

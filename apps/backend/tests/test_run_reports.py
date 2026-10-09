@@ -185,3 +185,31 @@ def test_no_change_to_existing_card_is_not_reported_as_creation_or_update(client
     assert data.get("updated_cards", 0) == 0
     assert data["unchanged_cards"] == 1
     assert data.get("applied_fragments", 0) == 0
+
+
+def test_error_timestamp_is_detection_time_not_request_start(client):
+    from studgroup.models import OwnerIncidentEpisode
+
+    source(client)
+    at = datetime.now(UTC)
+
+    class DelayedFailure:
+        async def extract_batch(self, *args, **kwargs):
+            await asyncio.sleep(1.05)
+            raise ProviderFailure("provider_unreachable", True)
+
+    assert process(client, DelayedFailure(), at) == "retry"
+
+    async def check():
+        async with AsyncSession(client.app.state.engine) as db:
+            episode = await db.scalar(select(OwnerIncidentEpisode))
+            opened = (
+                episode.opened_at.replace(tzinfo=UTC)
+                if episode.opened_at.tzinfo is None
+                else episode.opened_at
+            )
+            assert (opened - at).total_seconds() >= 1
+            attempt = await db.scalar(select(AIAttempt))
+            assert json.loads(attempt.metrics)["incident_number"] == episode.id
+
+    asyncio.run(check())

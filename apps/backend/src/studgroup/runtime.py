@@ -31,7 +31,9 @@ async def processing_loop(engine, settings, pause=5):
             logging.getLogger(__name__).error("pipeline_iteration_failed: %s", type(error).__name__)
             try:
                 async with AsyncSession(engine) as db:
-                    await incident(db, "pipeline_error", datetime.now(UTC))
+                    await incident(
+                        db, "pipeline_error", datetime.now(UTC), detail=type(error).__name__
+                    )
                     await db.commit()
                 await flush_incidents(engine, settings)
             except Exception:  # noqa: BLE001 -- alert delivery cannot terminate recovery or leak data

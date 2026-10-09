@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.academic_context import build_context, has_date_cue
@@ -28,6 +29,7 @@ from studgroup.models import (
     GroupAIActivity,
     Homework,
     OwnerIncident,
+    OwnerIncidentEpisode,
     RawMessage,
     SchedulePattern,
 )
@@ -122,20 +124,85 @@ def retain_until(created, *event_dates):
     )
 
 
-async def incident(db, code, now, recover=False):
-    row = await db.get(OwnerIncident, code)
+async def adopt_incident_episode(db, row):
+    episode = (
+        await db.get(OwnerIncidentEpisode, row.current_episode_id)
+        if row.current_episode_id
+        else None
+    )
+    if episode is None or (row.active and utc(row.opened_at) > utc(episode.opened_at)):
+        episode = OwnerIncidentEpisode(
+            code=row.code,
+            opened_at=row.opened_at,
+            last_seen_at=row.opened_at,
+            recovered_at=row.recovered_at,
+            occurrences=1,
+            opening_pending=row.active and row.notification_pending,
+            recovery_pending=not row.active and row.notification_pending,
+            legacy=True,
+        )
+        db.add(episode)
+        await db.flush()
+        row.current_episode_id = episode.id
+    elif not row.active and row.recovered_at and episode.recovered_at is None:
+        episode.recovered_at = row.recovered_at
+        episode.recovery_pending = row.notification_pending
+    return episode
+
+
+async def incident(db, code, now, recover=False, detail=None):
+    inserted = None
+    if not recover:
+        inserted = (
+            await db.execute(
+                insert(OwnerIncident)
+                .values(code=code, active=True, opened_at=now, notification_pending=True)
+                .on_conflict_do_nothing(index_elements=[OwnerIncident.code])
+                .returning(OwnerIncident.code)
+            )
+        ).scalar_one_or_none()
+    row = await db.scalar(select(OwnerIncident).where(OwnerIncident.code == code).with_for_update())
+    if row is None:
+        return None
+    episode = await adopt_incident_episode(db, row)
+    if inserted is not None:
+        episode.legacy = False
+        episode.first_detail = detail
+        episode.last_detail = detail
     if recover:
         if row and row.active:
+            if utc(now) < utc(episode.last_seen_at):
+                return episode.id
             row.active = False
-            row.recovered_at = now
+            row.recovered_at = max(utc(now), utc(episode.last_seen_at))
             row.notification_pending = True
-    elif row is None:
-        db.add(OwnerIncident(code=code, active=True, opened_at=now, notification_pending=True))
+            episode.recovered_at = row.recovered_at
+            episode.recovery_pending = True
     elif not row.active:
         row.active = True
         row.opened_at = now
         row.recovered_at = None
         row.notification_pending = True
+        episode = OwnerIncidentEpisode(
+            code=code,
+            opened_at=now,
+            last_seen_at=now,
+            occurrences=1,
+            first_detail=detail,
+            last_detail=detail,
+            opening_pending=True,
+            recovery_pending=False,
+            legacy=False,
+        )
+        db.add(episode)
+        await db.flush()
+        row.current_episode_id = episode.id
+    elif inserted is None:
+        episode.occurrences += 1
+        episode.last_seen_at = max(utc(now), utc(episode.last_seen_at))
+        if detail:
+            episode.last_detail = detail
+    return episode.id
 
 
 async def claim(engine, settings, now):
@@ -306,7 +373,9 @@ async def claim(engine, settings, now):
             if control.spent_usd + RESERVATION > Decimal(
                 str(settings.ai_total_budget_usd)
             ) or Decimal(daily) + RESERVATION > Decimal(str(settings.ai_daily_group_budget_usd)):
-                await incident(db, "ai_budget_limit", now)
+                await incident(
+                    db, "ai_budget_limit", now + timedelta(seconds=monotonic() - filter_started)
+                )
                 continue
             if job is None:
                 job = AIJob(
@@ -746,6 +815,7 @@ async def process_next(engine, settings, provider=None, now=None):
         await db.commit()
     result = None
     failure = None
+    failure_at = None
     try:
         provider = provider or DeepSeekProvider(
             settings.deepseek_api_key.get_secret_value(),
@@ -765,8 +835,12 @@ async def process_next(engine, settings, provider=None, now=None):
                 )
     except TimeoutError:
         failure = ProviderFailure("processing_window_closed", True)
+        failure_at = clock()
     except ProviderFailure as error:
         failure = error
+        failure_at = clock()
+    response_at = clock()
+    failure_at = failure_at or response_at
     async with AsyncSession(engine) as db:
         control = await db.scalar(select(AIControl).where(AIControl.id == 1).with_for_update())
         job = await db.get(AIJob, job_id)
@@ -790,6 +864,12 @@ async def process_next(engine, settings, provider=None, now=None):
         if job.attempts != generation or job.state != "running":
             from studgroup.run_reports import finish as finish_report
 
+            incident_number = (
+                await incident(db, failure.code, failure_at, detail=failure.detail)
+                if failure
+                else None
+            )
+
             await finish_report(
                 db,
                 settings,
@@ -802,6 +882,7 @@ async def process_next(engine, settings, provider=None, now=None):
                     "context_messages": max(0, len(context) - 1),
                     "submitted_messages": len(context),
                     "analyzed_fragments": int(result is not None),
+                    "incident_number": incident_number,
                     "important_proposals": len(result.batch.assignments) if result else 0,
                     "important_fragments": len(
                         {
@@ -813,7 +894,7 @@ async def process_next(engine, settings, provider=None, now=None):
                     if result
                     else 0,
                 },
-                error="newer_attempt_owns_job",
+                error=failure.code if failure else "newer_attempt_owns_job",
             )
             await db.commit()
             return "superseded"
@@ -863,7 +944,7 @@ async def process_next(engine, settings, provider=None, now=None):
             else:
                 job.state = "superseded"
             for code in PROVIDER_INCIDENT_CODES:
-                await incident(db, code, now, recover=True)
+                await incident(db, code, response_at, recover=True)
         elif failure:
             job.last_error = failure.code
             recoverable = failure.retryable and failure.code in RECOVERABLE_FAILURES
@@ -880,7 +961,9 @@ async def process_next(engine, settings, provider=None, now=None):
             )
             if raw and raw.revision == revision:
                 raw.processing_state = "pending" if job.state == "retry" else "failed"
-            await incident(db, failure.code, now)
+            statistics["incident_number"] = await incident(
+                db, failure.code, failure_at, detail=failure.detail
+            )
             # Ambiguous usage (read/write timeout, HTTP 5xx, malformed 200) stays reserved.
         from studgroup.run_reports import finish as finish_report
 

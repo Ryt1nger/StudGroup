@@ -80,7 +80,8 @@ async def finish(db, settings, group, job, attempt, outcome, now, metrics=None, 
     context_count = context_count if context_count is not None else "неизвестно"
     text = f"■ Итог прогона {str(job.id)[:8]} · попытка {values.get('attempt_number', '?')}\n{OUTCOMES.get(outcome, outcome)}\nЗавершение: {ended:%d.%m %H:%M:%S} · {group.timezone}\nДлительность: {values['duration_seconds']:.1f} с\nСообщения: целевых {values.get('target_messages', 1)}, контекстных {context_count}; подготовлено для запроса {values.get('submitted_messages', 'неизвестно')}\nПодтверждённо разобрано контекстных окон: {values.get('analyzed_fragments', 0)}\nВажных предложений: {values.get('important_proposals', 0)}; фрагментов-источников: {values.get('important_fragments', 0)}\nПрименено предложений: {values.get('applied_fragments', 0)}; использовано сообщений-источников: {values.get('used_source_messages', 0)}\nКарточек создано: {values.get('created_cards', 0)}, обновлено: {values.get('updated_cards', 0)}, без изменений: {values.get('unchanged_cards', 0)}\nНа проверку: {values.get('review_proposals', 0)}\n{billing}"
     if error:
-        text += f"\nКод ошибки: {error}."
+        number = values.get("incident_number")
+        text += f"\nОшибка №{number:06d}: {error}." if number else f"\nКод ошибки: {error}."
     attempts = (await db.scalars(select(AIAttempt).where(AIAttempt.job_id == job.id))).all()
     known_attempts = [
         a for a in attempts if a.prompt_tokens is not None and a.completion_tokens is not None

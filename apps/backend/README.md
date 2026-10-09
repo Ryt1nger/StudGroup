@@ -58,6 +58,19 @@ on recovery or a new incident. Successful provider processing closes provider er
 codes, including credentials/output errors. Unexpected embedded-pipeline errors
 are reported as a safe generic code, never as source text or an exception body.
 
+Migration 0017 preserves numbered incident episodes rather than overwriting the
+history of each error code. Alerts include the episode number, original detection
+time and last manifestation, recurrence count, recovery time and notification-send
+time, formatted to seconds in Moscow time. Repeats of an ongoing incident retain
+its number; a recurrence after recovery receives a new number. API failures,
+model-output validation failures and budget limits are distinguished explicitly.
+Old records retain their saved timestamps and are labelled historical (their
+earlier repeat count is unknown); delayed first delivery is labelled backlog.
+Already delivered legacy alerts are not resent just to assign numbers. Start and
+recovery have separate durable pending flags so fast recovery cannot erase the
+original error. Run reports refer to the same incident number. Safe HTTP status or
+exception class may be included; never raw exception/provider text.
+
 Delivery targets only the configured personal owner, never the group or a headman
 broadcast. Negative/group IDs are refused. Pending rows are locked while sending;
 Telegram failures keep the alert pending for another delivery attempt. Delivery is
@@ -65,6 +78,8 @@ at-least-once if Telegram accepts a send but its acknowledgement or DB commit is
 lost. A sleeping/down web process cannot deliver until it resumes; if PostgreSQL
 is unavailable, a new incident cannot be persisted until connectivity returns.
 The standalone local export probe is not the hosted incident sender.
+Each alert delivery reacquires its own locked episode in a non-expiring session;
+committing one alert cannot invalidate the next alert and cause MissingGreenlet.
 
 ## Owner-only testing update feed
 

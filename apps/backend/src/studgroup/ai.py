@@ -55,13 +55,20 @@ class ProviderFailure(Exception):
     """A safe error code only: no exception chaining, request URL, key or remote body."""
 
     def __init__(
-        self, code: str, retryable: bool, *, reservation_releasable: bool = False, usage=None
+        self,
+        code: str,
+        retryable: bool,
+        *,
+        reservation_releasable: bool = False,
+        usage=None,
+        detail=None,
     ):
         self.code = code
         self.retryable = retryable
         # Default is conservative: an error name alone cannot prove zero provider usage.
         self.reservation_releasable = reservation_releasable
         self.usage = usage
+        self.detail = detail
         super().__init__(code)
 
 
@@ -388,18 +395,24 @@ merely because no single due date is given. Preserve task content and topics.
                     json=payload,
                     headers={"Authorization": f"Bearer {self._key}"},
                 )
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as error:
             raise ProviderFailure(
-                "provider_unreachable", True, reservation_releasable=True
+                "provider_unreachable",
+                True,
+                reservation_releasable=True,
+                detail=type(error).__name__,
             ) from None
-        except httpx.HTTPError:
-            raise ProviderFailure("provider_unreachable", True) from None
+        except httpx.HTTPError as error:
+            raise ProviderFailure(
+                "provider_unreachable", True, detail=type(error).__name__
+            ) from None
         if response.status_code != 200:
             code = {401: "invalid_api_key", 402: "insufficient_balance", 429: "rate_limited"}
             raise ProviderFailure(
                 code.get(response.status_code, "provider_error"),
                 response.status_code == 429 or response.status_code >= 500,
                 reservation_releasable=response.status_code in {400, 401, 402, 422, 429},
+                detail=f"HTTP {response.status_code}",
             )
         usage = None
         try:
