@@ -528,6 +528,9 @@ async def publish(db, raw, extraction, now, statistics=None):
     is_inferred = extraction._deadline_basis in {
         "next_subject_lesson",
         "provisional_next_subject_lesson",
+        "relative_message_date_inferred_clock",
+        "explicit_source_date_inferred_clock",
+        "source_day_inferred_clock",
     }
     deadline = utc(extraction.deadline_at) if extraction.deadline_at else None
     # An explicit reply/amendment updates the referenced task, not a duplicate task.

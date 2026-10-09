@@ -116,6 +116,24 @@ homework posted 8 October at 12:34 with those exercise numbers resolves to the
 known next mathematics lesson, 9 October at 10:40; a separately stated 10–15 October
 submission window remains ambiguous, not a single inferred deadline.
 
+## Owner update — 2026-10-09: submission clock interpretation
+
+Extract the submission hour independently of the calendar day. In the academic
+submission context, `до 12.00 в четверг` means Thursday noon with a timed deadline,
+not date-only. A plain named weekday on the source weekday means that same day,
+even after expiry; explicit next-week wording retains its separate policy.
+Bare academic `до 4` defaults to 16:00 and is marked inferred. Explicit morning,
+night, afternoon/evening qualifiers and full 24-hour colon clocks take precedence.
+Calendar dates, exercise references and quantity limits are not clocks. A bare
+submission hour without a named day uses the original source day, marked inferred,
+never processing time. Explicit clocks are not rebound to the end of a lesson.
+
+Acceptance: a Wednesday message naming Thursday 12.00 resolves to Thursday noon;
+Thursday's same-day wording does not roll forward a week; 04:00 and `4 утра`
+remain 04:00; elapsed timed homework is selected into the archive by the existing
+timestamp filter. This parser/prompt change applies on extraction/re-extraction;
+it does not silently overwrite previously stored or manually confirmed cards.
+
 ## Owner update — 2026-10-06: provisional homework deadlines
 
 For homework whose deadline cannot be resolved, use the start of the next scheduled

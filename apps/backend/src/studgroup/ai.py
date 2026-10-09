@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError,
 
 from studgroup.deadlines import ScheduleDeadlineContext, canonical_subject, resolve_deadline
 
-PROMPT_VERSION = "academic-text-6"
-BATCH_PROMPT_VERSION = "academic-import-5"
+PROMPT_VERSION = "academic-text-7"
+BATCH_PROMPT_VERSION = "academic-import-6"
 MAX_TEXT_CHARS = 12000
 MAX_OUTPUT_TOKENS = 1400
 
@@ -31,6 +31,13 @@ If no deadline is stated, leave it null: backend assigns the next lesson of this
 after the ORIGINAL source timestamp from a valid timetable, never after processing time
 or today's date. An ambiguous stated date is NOT missing.
 Dates without a time use midnight in the group timezone and deadline_date_only=true.
+Extract submission time as well as date. 'До 12.00 в четверг' means Thursday at
+12:00 noon, deadline_date_only=false, not midnight or end of day. Clock notation
+can use ':' or '.'. In academic submission context a bare 'до 4' means 16:00,
+not 04:00; use surrounding messages to identify the day. Explicit 'утра', 'ночи',
+'дня', 'вечера', midnight and full 24-hour clocks override colloquial assumptions.
+Never turn page/exercise numbers into times. Plain 'в четверг' on Thursday refers
+to that source day even if its submission hour has passed; do not roll it forward.
 An ambiguous date range is NOT a single deadline: leave deadline_at null unless the
 message explicitly identifies its submission deadline. Never pick the first date.
 Use an explicit UTC offset for deadline_at. Urgency is normal unless explicit evidence

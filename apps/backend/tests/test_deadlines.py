@@ -7,6 +7,81 @@ from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, re
 TZ = "Europe/Moscow"
 
 
+@pytest.mark.parametrize(
+    "text,hour,minute,inferred",
+    [
+        ("До 12.00 в четверг предоставить файлы со списками тем и групп по ПИРу", 12, 0, False),
+        ("ДЗ до 4 в четверг", 16, 0, True),
+        ("ДЗ до 4 утра в четверг", 4, 0, False),
+        ("ДЗ до 12 ночи в четверг", 0, 0, False),
+        ("ДЗ до 04:00 в четверг", 4, 0, False),
+        ("ДЗ до 16.30 в четверг", 16, 30, False),
+        ("ДЗ до 23:59 в четверг", 23, 59, False),
+    ],
+)
+def test_submission_time_on_source_weekday_never_moves_to_next_week(text, hour, minute, inferred):
+    result = contextual_deadline(text, datetime.fromisoformat("2026-10-08T09:00:00+03:00"), TZ)
+    assert result.at.isoformat() == f"2026-10-08T{hour:02}:{minute:02}:00+03:00"
+    assert result.date_only is False
+    assert result.basis.endswith("inferred_clock") is inferred
+
+
+def test_dotted_noon_overrides_wrong_model_end_of_day_even_after_expiry():
+    result = resolve_deadline(
+        [
+            (
+                "До 12.00 в четверг предоставить файлы",
+                datetime.fromisoformat("2026-10-07T15:00:00+03:00"),
+            )
+        ],
+        TZ,
+        "Русский язык",
+        datetime.fromisoformat("2026-10-08T23:59:00+03:00"),
+        False,
+    )
+    assert result.at.isoformat() == "2026-10-08T12:00:00+03:00"
+
+
+def test_real_pir_export_deadline_is_october_first_not_next_thursday():
+    result = resolve_deadline(
+        [
+            (
+                "Мне нужно от Вас до 12.00 в четверг файлы со списками тем и групп (кто с кем) по ПИРу",
+                datetime.fromisoformat("2026-10-01T10:57:16+03:00"),
+            )
+        ],
+        TZ,
+        "Русский язык",
+        datetime.fromisoformat("2026-10-08T00:00:00+03:00"),
+        True,
+    )
+    assert result.at.isoformat() == "2026-10-01T12:00:00+03:00"
+    assert result.date_only is False
+
+
+def test_explicit_day_and_colloquial_time_can_be_in_either_order():
+    result = contextual_deadline(
+        "Сдать до 4, срок до 10 октября", datetime.fromisoformat("2026-10-08T09:00:00+03:00"), TZ
+    )
+    assert result.at.isoformat() == "2026-10-10T16:00:00+03:00"
+    assert result.basis == "explicit_source_date_inferred_clock"
+
+
+def test_bare_submission_clock_uses_original_day_and_marks_inference():
+    result = contextual_deadline(
+        "Сделать домашку до 4", datetime.fromisoformat("2026-10-08T10:00:00+03:00"), TZ
+    )
+    assert result.at.isoformat() == "2026-10-08T16:00:00+03:00"
+    assert result.basis == "source_day_inferred_clock"
+
+
+def test_dotted_calendar_date_not_interpreted_as_time():
+    result = contextual_deadline(
+        "Сдать до 10.10", datetime.fromisoformat("2026-10-08T09:00:00+03:00"), TZ
+    )
+    assert result.at is None
+
+
 def test_decimal_exercise_range_is_not_a_date_and_uses_next_original_source_lesson():
     sent = datetime.fromisoformat("2026-10-08T12:34:06+03:00")
     schedule = ScheduleDeadlineContext(
