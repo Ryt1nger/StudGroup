@@ -916,6 +916,10 @@ async def process_next(engine, settings, provider=None, now=None):
     def clock():
         return now + timedelta(seconds=monotonic() - started)
 
+    # Emergency production kill switch requested by the product owner. Tests and
+    # explicit offline probes inject a provider; hosted workers never do.
+    if provider is None:
+        return "emergency_stopped"
     if not settings.ai_enabled:
         return "disabled"
     if settings.ai_enabled_until is not None and utc(settings.ai_enabled_until) <= clock():
