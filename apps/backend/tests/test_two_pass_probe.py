@@ -33,6 +33,107 @@ def test_signal_schema_does_not_accept_strings():
         Signals.model_validate({"message_ids": ["123"]})
 
 
+@pytest.mark.parametrize("fail_delivery", [False, True])
+def test_ready_fragment_delivered_before_failed_tail_and_resume_never_repeats_paid_work(
+    monkeypatch, tmp_path, fail_delivery
+):
+    import asyncio
+    import json
+    from datetime import UTC, datetime
+
+    from studgroup import two_pass_probe as probe
+    from studgroup.ai import (
+        BatchExtraction,
+        BatchResult,
+        ProviderFailure,
+        SourcedExtraction,
+        TokenUsage,
+    )
+    from studgroup.chat_export import ExportMessage
+    from studgroup.main import Settings
+
+    stamp = datetime.now(UTC)
+    monkeypatch.setattr(probe, "Settings", lambda: Settings(_env_file=None))
+    monkeypatch.setattr(
+        probe,
+        "read_html_export",
+        lambda *a, **k: [
+            ExportMessage(1, stamp, "ДЗ сегодня до 16:00", None, False),
+            ExportMessage(2, stamp, "КТ завтра", None, False),
+        ],
+    )
+    monkeypatch.setattr(probe, "contexts", lambda rows, signals: ([rows[0]], [rows[1]]))
+    archive, output = tmp_path / "export.zip", tmp_path / "report.json"
+    archive.write_bytes(b"fixture")
+    usage = TokenUsage(prompt_tokens=20, completion_tokens=10)
+    delivered = []
+
+    class Provider:
+        model = "deepseek-flash"
+
+        def __init__(self):
+            self.calls = []
+            self.fail_tail = True
+
+        async def _complete(self, payload):
+            self.calls.append("screen")
+            return {
+                "choices": [{"message": {"content": '{"message_ids":[1,2]}'}}],
+                "usage": usage.model_dump(),
+            }
+
+        async def extract_batch(self, messages, timezone):
+            mid = messages[0]["message_id"]
+            self.calls.append(mid)
+            if mid == 2 and self.fail_tail:
+                self.fail_tail = False
+                raise ProviderFailure("provider_unreachable", True, reservation_releasable=True)
+            item = SourcedExtraction(
+                kind="homework",
+                subject="Математика",
+                title="Задачи",
+                description="Решить задачи",
+                deadline_at=stamp,
+                deadline_date_only=False,
+                urgency="normal",
+                confidence=95,
+                source_message_ids=[mid],
+            )
+            return BatchResult(
+                batch=BatchExtraction(assignments=[item]), usage=usage, model=self.model
+            )
+
+    failed = False
+
+    async def sink(key, fragment):
+        nonlocal failed
+        saved = json.loads(output.read_text())
+        assert not saved["complete"]
+        if fail_delivery and not failed:
+            failed = True
+            raise RuntimeError("storage unavailable")
+        delivered.append(fragment["assignments"][0]["source_message_ids"][0])
+        return {"published": 1}
+
+    provider = Provider()
+    result = asyncio.run(probe.run(archive, output, stamp, 0.08, provider, on_fragment=sink))
+    assert not result["complete"]
+    assert result["retryable"]
+    if fail_delivery:
+        assert result["stop_reason"] == "fragment_delivery_failed"
+        assert delivered == []
+        result = asyncio.run(
+            probe.run(archive, output, stamp, 0.08, provider, resume=True, on_fragment=sink)
+        )
+    assert delivered == [1]  # Card committed while second fragment is still unfinished.
+    result = asyncio.run(
+        probe.run(archive, output, stamp, 0.08, provider, resume=True, on_fragment=sink)
+    )
+    assert result["complete"]
+    assert delivered == [1, 2]
+    assert provider.calls == ["screen", 1, 2, 2]
+
+
 def test_probe_runs_two_passes_and_preserves_source_dates(monkeypatch, tmp_path):
     import asyncio
     import json

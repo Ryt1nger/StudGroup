@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import tempfile
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -21,6 +22,13 @@ from studgroup.processing import RECOVERABLE_FAILURES, recovery_delay
 class Signals(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     message_ids: list[int] = Field(max_length=80)
+
+
+class FragmentDeliveryFailure(Exception):
+    """Successful analysis is checkpointed; only its database delivery needs retry."""
+
+    def __init__(self, retryable=True):
+        self.retryable = retryable
 
 
 def chunks(rows, limit=12500):
@@ -67,7 +75,7 @@ def contexts(rows, signals):
             yield batch
 
 
-async def run(archive, output, as_of, budget, provider=None, resume=False):
+async def run(archive, output, as_of, budget, provider=None, resume=False, *, on_fragment=None):
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.with_suffix(output.suffix + ".lock").open("a") as lock:
         os.chmod(lock.name, 0o600)
@@ -75,10 +83,10 @@ async def run(archive, output, as_of, budget, provider=None, resume=False):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError("analysis_already_running") from None
-        return await _run(archive, output, as_of, budget, provider, resume)
+        return await _run(archive, output, as_of, budget, provider, resume, on_fragment)
 
 
-async def _run(archive, output, as_of, budget, provider=None, resume=False):
+async def _run(archive, output, as_of, budget, provider=None, resume=False, on_fragment=None):
     if as_of.utcoffset() is None or not 0 < budget <= 0.08:
         raise ValueError("explicit_timezone_and_budget_up_to_eight_cents_required")
     if output.exists() and not resume:
@@ -127,8 +135,6 @@ async def _run(archive, output, as_of, budget, provider=None, resume=False):
             or previous["until"] != report["until"]
         ):
             raise ValueError("resume_scope_changed_or_complete")
-        if previous["complete"]:
-            return previous
         report = previous
         if "screen_batches" not in report:
             if report.get("stop_reason") != "invalid_signal_reference":
@@ -151,6 +157,23 @@ async def _run(archive, output, as_of, budget, provider=None, resume=False):
     if report.get("screen_plan", screen_plan) != screen_plan:
         raise ValueError("screen_fragment_plan_changed")
     report["screen_plan"] = screen_plan
+    if on_fragment and "ready_fragments" not in report and report.get("assignments"):
+        # Previously saved test reports can be delivered without repeating paid analysis.
+        cited = {mid for item in report["assignments"] for mid in item["source_message_ids"]}
+        sources = [row for row in rows if row["message_id"] in cited]
+        if {row["message_id"] for row in sources} != cited:
+            raise ValueError("saved_assignment_source_missing")
+        report["ready_fragments"] = [
+            {
+                "key": "saved-results-"
+                + hashlib.sha256(
+                    json.dumps(report["assignments"], sort_keys=True).encode()
+                ).hexdigest(),
+                "sources": sources,
+                "assignments": report["assignments"],
+                "delivered": False,
+            }
+        ]
     output.parent.mkdir(parents=True, exist_ok=True)
     active_bound = 0.0
 
@@ -175,6 +198,24 @@ async def _run(archive, output, as_of, budget, provider=None, resume=False):
         active_bound = bound
         save()
         return bound
+
+    async def deliver_ready():
+        if on_fragment is None:
+            return
+        for fragment in report.get("ready_fragments", []):
+            if fragment.get("delivered"):
+                continue
+            # Sink must commit idempotently before acknowledging. If acknowledgement
+            # is lost, replay this fragment, never the successful paid provider call.
+            key = f"{report['archive_sha256']}:{report['until']}:{fragment['key']}"
+            try:
+                fragment["delivery_result"] = await on_fragment(key, fragment)
+            except ValueError:
+                raise FragmentDeliveryFailure(retryable=False) from None
+            except Exception:  # noqa: BLE001 -- checkpoint delivery, never log private database errors
+                raise FragmentDeliveryFailure() from None
+            fragment["delivered"] = True
+            save()
 
     def charge(stage, usage, bound):
         nonlocal active_bound
@@ -207,6 +248,9 @@ async def _run(archive, output, as_of, budget, provider=None, resume=False):
         return payload, bound
 
     try:
+        await deliver_ready()
+        if report["complete"]:
+            return report
         for index, batch in enumerate(chunks(rows)):
             if index < report.get("screen_batches", 0):
                 continue
@@ -268,8 +312,8 @@ async def _run(archive, output, as_of, budget, provider=None, resume=False):
             payload, bound = await request(
                 "deep", index, json.dumps(batch, ensure_ascii=False), 3000, extract
             )
-            result = BatchResult.model_validate(
-                {k: v for k, v in payload.items() if k != "deadline_metadata"}
+            result = BatchResult.model_validate_json(
+                json.dumps({k: v for k, v in payload.items() if k != "deadline_metadata"})
             )
             for item, metadata in zip(
                 result.batch.assignments, payload["deadline_metadata"], strict=True
@@ -282,6 +326,7 @@ async def _run(archive, output, as_of, budget, provider=None, resume=False):
                     datetime.fromisoformat(metadata["end"]) if metadata["end"] else None
                 )
             charge("deep", result.usage, bound)
+            fragment_assignments = []
             for item in result.batch.assignments:
                 data = item.model_dump(mode="json")
                 data["deadline_basis"] = item._deadline_basis
@@ -296,16 +341,32 @@ async def _run(archive, output, as_of, budget, provider=None, resume=False):
                 }
                 if data not in report["assignments"]:
                     report["assignments"].append(data)
+                fragment_assignments.append(data)
+            report.setdefault("ready_fragments", []).append(
+                {
+                    "key": deep_plan[index],
+                    "sources": batch,
+                    "assignments": fragment_assignments,
+                    "delivered": False,
+                }
+            )
             report["deep_batches"] = index + 1
             report.pop("pending_response", None)
             report["consecutive_failures"] = 0
             save()
+            await deliver_ready()
             print(
                 "Deep context", len(batch), "candidates", len(result.batch.assignments), flush=True
             )
         report["complete"] = True
         report.pop("next_retry_at", None)
         report["retryable"] = False
+    except FragmentDeliveryFailure as error:
+        report["stop_reason"] = "fragment_delivery_failed"
+        report["retryable"] = error.retryable
+        report["next_retry_at"] = (
+            (datetime.now(UTC) + timedelta(seconds=30)).isoformat() if error.retryable else None
+        )
     except ProviderFailure as error:
         if error.usage is not None and active_bound:
             cost = (
@@ -357,13 +418,13 @@ async def _run(archive, output, as_of, budget, provider=None, resume=False):
     return report
 
 
-async def run_until_complete(archive, output, as_of, budget, provider=None, wait=asyncio.sleep):
+async def run_until_complete(
+    archive, output, as_of, budget, provider=None, wait=asyncio.sleep, *, on_fragment=None
+):
     """Keep only retryable unfinished fragments pending; never bypass budget/errors."""
     while True:
         if output.exists():
             previous = json.loads(output.read_text(encoding="utf-8"))
-            if previous.get("complete"):
-                return await run(archive, output, as_of, budget, provider, resume=True)
             if previous.get("next_retry_at"):
                 delay = max(
                     0,
@@ -372,8 +433,16 @@ async def run_until_complete(archive, output, as_of, budget, provider=None, wait
                     ).total_seconds(),
                 )
                 await wait(delay)
-        report = await run(archive, output, as_of, budget, provider, resume=output.exists())
-        if report["complete"] or not report.get("retryable"):
+        report = await run(
+            archive,
+            output,
+            as_of,
+            budget,
+            provider,
+            resume=output.exists(),
+            on_fragment=on_fragment,
+        )
+        if not report.get("retryable"):
             return report
 
 
@@ -385,10 +454,38 @@ if __name__ == "__main__":
     parser.add_argument("--budget", type=float, default=0.08)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
+        "--publish-group",
+        type=uuid.UUID,
+        help="Explicit authorized database group UUID; commit every ready fragment",
+    )
+    parser.add_argument(
         "--once", action="store_true", help="Stop at a retryable failure for diagnostics"
     )
     args = parser.parse_args()
-    if args.once:
-        asyncio.run(run(args.archive, args.output, args.as_of, args.budget, resume=args.resume))
-    else:
-        asyncio.run(run_until_complete(args.archive, args.output, args.as_of, args.budget))
+
+    async def main():
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from studgroup.export_publication import fragment_sink
+
+        engine = create_async_engine(Settings().database_url) if args.publish_group else None
+        sink = fragment_sink(engine, args.publish_group) if engine else None
+        try:
+            if args.once:
+                await run(
+                    args.archive,
+                    args.output,
+                    args.as_of,
+                    args.budget,
+                    resume=args.resume,
+                    on_fragment=sink,
+                )
+            else:
+                await run_until_complete(
+                    args.archive, args.output, args.as_of, args.budget, on_fragment=sink
+                )
+        finally:
+            if engine:
+                await engine.dispose()
+
+    asyncio.run(main())

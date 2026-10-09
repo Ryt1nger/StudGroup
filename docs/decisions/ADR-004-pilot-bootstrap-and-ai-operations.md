@@ -116,6 +116,30 @@ homework posted 8 October at 12:34 with those exercise numbers resolves to the
 known next mathematics lesson, 9 October at 10:40; a separately stated 10–15 October
 submission window remains ambiguous, not a single inferred deadline.
 
+## Owner update — 2026-10-09: incremental export publication
+
+Do not wait for the end of an export to apply successful analysis. The explicit
+two-pass export runner checkpoints every validated deep fragment before delivery.
+With `--publish-group GROUP_UUID`, deliver each ready fragment into the configured
+database through the normal publication policy, in a separate committed transaction.
+The source messages must already exist in that authorized active group and match
+the original text/timestamps and retention. This option never creates memberships
+or silently chooses a group. Without it the runner remains a non-publishing probe.
+
+Use deterministic fragment job IDs and database transactions so delivery retry
+does not duplicate cards or candidates. A database failure queues saved delivery,
+not another paid analysis call. Provider failure leaves only unfinished deep work
+pending. Existing saved reports can be explicitly delivered without paying to
+reanalyze them. Preserve confidence gates, manual locks, owner change notifications
+and one-task-per-source safeguards: review is distinct from unfinished analysis.
+This is the export runner's private checkpoint/supervisor, not a new hosted export
+upload endpoint or background queue; current live message processing already commits
+per target. No contracts/schema change and no historical proposal auto-approval.
+
+Acceptance: first fragment is delivered while the second fails; retry reuses the
+first response; lost database acknowledgement is idempotent; stale/missing source
+rolls back the entire fragment; no provider call is needed to deliver saved results.
+
 ## Owner update — 2026-10-09: submission clock interpretation
 
 Extract the submission hour independently of the calendar day. In the academic
