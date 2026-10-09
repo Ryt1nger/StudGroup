@@ -116,6 +116,30 @@ homework posted 8 October at 12:34 with those exercise numbers resolves to the
 known next mathematics lesson, 9 October at 10:40; a separately stated 10–15 October
 submission window remains ambiguous, not a single inferred deadline.
 
+## Operator correction — 2026-10-09: publish saved evidence, not only code
+
+The saved export probe was not applied to the cloud, despite working live processing.
+Provide a private, explicitly invoked reviewed-publication CLI (no public endpoint,
+provider call, new user identity, enrollment or automatic proposal approval). Bind
+the payload to the configured owner and an existing active authorized membership;
+verify its hash/size and original source text/timestamps against live edits. Insert
+missing retained export sources through the common inbox and publish via existing
+manual-lock and notification rules. Record outcomes in deterministic jobs/candidates
+so restarting the one-time invocation cannot duplicate cards. Only individually
+evidence-reviewed entries can override a low model confidence; ambiguous discussions
+stay in review. Past deadlines remain past, visible through archive policy.
+
+For this owner-approved pilot, repeat only the existing all-week patterns of
+5–11 October through 18 October, as previously requested; do not create invented
+lessons. Re-resolve undated homework after the original source time and normalize
+the linear-algebra subject against its longer timetable name. Reuse a unique
+source-linked baseline event when its reviewed import key differs, rather than
+duplicate it. Verify active homework with the same SQL predicate as the API, not
+by claiming success from total rows. Use temporary Render private variables for
+the operation, clear them afterwards. Normal startup optionally consumes only an
+explicit private payload; without it this operation is a no-op. Logs contain
+counts/card IDs/deadlines only, never chat bodies or secrets. Contracts unchanged.
+
 ## Owner update — 2026-10-09: one report pair per scheduled run
 
 A planned run is a fixed group/half-hour package, not an individual source or model

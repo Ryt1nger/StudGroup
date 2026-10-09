@@ -89,6 +89,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+        from studgroup.reviewed_publication import startup as apply_reviewed_payload
+
+        try:
+            await apply_reviewed_payload(app.state.engine, settings)
+        except Exception as error:  # noqa: BLE001 -- startup must not expose private SQL payloads
+            print("REVIEWED_PUBLICATION_FAILED " + type(error).__name__, flush=True)
+            raise RuntimeError("reviewed_publication_failed") from None
         app.state.redis = Redis.from_url(settings.redis_url, socket_connect_timeout=2)
         if settings.owner_update_notifications_enabled:
             from studgroup.processing_diagnostics import startup

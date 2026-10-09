@@ -723,6 +723,24 @@ async def publish(db, raw, extraction, now, statistics=None):
             .where(AcademicDeadline.group_id == raw.group_id, AcademicDeadline.import_key == key)
             .with_for_update()
         )
+        if row is None:
+            # A reviewed baseline may use a non-Telegram import key. Reuse its
+            # unique source-linked event instead of duplicating it during replay.
+            legacy = (
+                await db.scalars(
+                    select(AcademicDeadline)
+                    .where(
+                        AcademicDeadline.group_id == raw.group_id,
+                        AcademicDeadline.raw_message_id == original.id,
+                        AcademicDeadline.delete_at > now,
+                    )
+                    .with_for_update()
+                )
+            ).all()
+            if len(legacy) > 1:
+                return False
+            if legacy:
+                row = legacy[0]
         new_card = row is None
         if row and await ai_locked(db, raw.group_id, original.id):
             return False
