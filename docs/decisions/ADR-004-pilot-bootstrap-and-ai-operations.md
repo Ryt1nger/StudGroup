@@ -116,6 +116,32 @@ homework posted 8 October at 12:34 with those exercise numbers resolves to the
 known next mathematics lesson, 9 October at 10:40; a separately stated 10–15 October
 submission window remains ambiguous, not a single inferred deadline.
 
+## Owner update — 2026-10-09: one report pair per scheduled run
+
+A planned run is a fixed group/half-hour package, not an individual source or model
+stage. Migration 0019 adds a durable run envelope with all eligible source-revision
+keys (including beyond the worker's 50-source claim page). Attach attempts to this
+run in their internal metrics. Emit one start and one aggregate finish; stage
+completion, deep continuation and transport retries must not emit new report pairs.
+Replies arriving beyond the package cutoff belong to the next run. Silence emits
+no run. A retry reuses its original open run across slots/restarts; the final is
+queued only after all package targets finish, fail permanently or become obsolete.
+Budget-paused/unavailable targets stay pending; existing incident notices explain
+the interruption instead of fabricating a completed package. Queued card changes,
+review findings and provider incident alerts remain independent and owner-only.
+
+Aggregate known tokens/cost over all attached attempts, keep unknown reserves
+separate, count successful screen/deep targets distinctly from request attempts,
+and deduplicate important/used source IDs. Preserve internal per-attempt history.
+Suppress only undelivered legacy run/filter stage notices in the outbox and at
+delivery (to handle deployment overlap); do not delete sent Telegram messages,
+incident alerts, card notifications or analysis data. Non-scheduled diagnostic
+attempts keep their existing individual reports. No frontend contract change.
+
+Acceptance: two targets and four successful stages produce exactly two run notices;
+retry/restart does not produce a second start; pending tail delays the final;
+51 targets still produce one pair; fresh arrivals wait for their next slot.
+
 ## Owner update — 2026-10-09: semantic two-pass live processing
 
 Enable `AI_LIVE_TWO_PASS=true` in the live pilot. Every new/edited retained text

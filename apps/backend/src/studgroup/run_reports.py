@@ -48,6 +48,11 @@ async def start(db, settings, group, job, attempt, raw):
             else "deep",
         }
     )
+    if settings.ai_schedule_enabled:
+        from studgroup.batch_reports import attach
+
+        await attach(db, settings, group, job, raw, attempt)
+        return
     if not enabled(settings, attempt):
         return
     at = utc(attempt.created_at).astimezone(ZoneInfo(group.timezone))
@@ -69,6 +74,11 @@ async def finish(db, settings, group, job, attempt, outcome, now, metrics=None, 
     attempt.finished_at = now
     attempt.outcome = outcome
     attempt.metrics = json.dumps(values)
+    if settings.ai_schedule_enabled:
+        from studgroup.batch_reports import finish_ready
+
+        await finish_ready(db, settings, now)
+        return
     if not enabled(settings, attempt):
         return
     known = attempt.prompt_tokens is not None and attempt.completion_tokens is not None
@@ -109,7 +119,11 @@ async def finish(db, settings, group, job, attempt, outcome, now, metrics=None, 
 
 async def filtered(db, settings, sources_by_group, now, duration):
     """Report actual newly discarded sources, not every idle poll or waiting retry."""
-    if not sources_by_group or not enabled(settings, SimpleNamespace(created_at=now)):
+    if (
+        settings.ai_schedule_enabled
+        or not sources_by_group
+        or not enabled(settings, SimpleNamespace(created_at=now))
+    ):
         return
     for group_id, sources in sources_by_group.items():
         group = await db.get(Group, group_id)

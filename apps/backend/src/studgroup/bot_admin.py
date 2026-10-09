@@ -277,6 +277,24 @@ async def deliver(engine, settings):
         if not row:
             return
         testing_update = (row.dedup_key or "").startswith("owner-test:")
+        if (
+            testing_update
+            and settings.ai_schedule_enabled
+            and any(
+                f":{prefix}:" in row.dedup_key
+                for prefix in (
+                    "run-start",
+                    "run-finish",
+                    "run-reconciled",
+                    "filter-start",
+                    "filter-finish",
+                )
+            )
+        ):
+            # Also catches legacy notices queued by an overlapping old deployment.
+            row.state = "superseded"
+            await db.commit()
+            return
         if testing_update and (
             not settings.owner_update_notifications_enabled
             or json.loads(row.payload).get("chat_id") != settings.owner_telegram_user_id

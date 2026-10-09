@@ -452,6 +452,10 @@ async def claim(engine, settings, now):
         from studgroup.run_reports import filtered as filtered_report
 
         await filtered_report(db, settings, filtered_sources, now, monotonic() - filter_started)
+        if settings.ai_schedule_enabled:
+            from studgroup.batch_reports import finish_ready
+
+            await finish_ready(db, settings, now)
         await db.commit()
         return None
 
@@ -1060,7 +1064,10 @@ async def process_next(engine, settings, provider=None, now=None):
             if result
             else set()
         )
-        statistics["used_source_messages"] = len(statistics.pop("_used_source_ids", set()))
+        used_source_ids = statistics.pop("_used_source_ids", set())
+        statistics["used_source_messages"] = len(used_source_ids)
+        statistics["used_source_ids"] = sorted(used_source_ids)
+        statistics["important_source_ids"] = sorted(source_ids)
         await finish_report(
             db,
             settings,

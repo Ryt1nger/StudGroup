@@ -190,6 +190,20 @@ class AIControl(Base):
     spent_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=Decimal(0))
 
 
+class AIRun(Base):
+    __tablename__ = "ai_runs"
+    __table_args__ = (UniqueConstraint("group_id", "slot"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    slot: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    targets: Mapped[str] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str | None] = mapped_column(String(24))
+
+
 class AIJob(Base):
     __tablename__ = "ai_jobs"
     __table_args__ = (UniqueConstraint("raw_message_id", "source_revision"),)
