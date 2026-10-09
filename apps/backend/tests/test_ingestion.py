@@ -48,6 +48,15 @@ def test_delivery_is_durable_and_idempotent(client):
     assert saved[0].revision == 1
 
 
+def test_attachment_caption_is_saved_for_semantic_analysis(client):
+    payload = delivery(text=None)
+    payload["message"]["caption"] = "матан 16, это из сборника"
+    payload["message"]["document"] = {"file_id": "opaque"}
+    assert send(client, payload).status_code == 200
+    assert rows(client)[0].text == "матан 16, это из сборника"
+    assert rows(client)[0].processing_state == "pending"
+
+
 def test_edit_updates_same_message_and_late_original_cannot_overwrite(client):
     send(client, delivery())
     send(client, delivery(update_id=2, text="Исправленное ДЗ", edited=1791200100))

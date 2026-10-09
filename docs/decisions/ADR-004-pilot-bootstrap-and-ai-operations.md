@@ -116,6 +116,37 @@ homework posted 8 October at 12:34 with those exercise numbers resolves to the
 known next mathematics lesson, 9 October at 10:40; a separately stated 10–15 October
 submission window remains ambiguous, not a single inferred deadline.
 
+## Owner update — 2026-10-09: semantic two-pass live processing
+
+Enable `AI_LIVE_TWO_PASS=true` in the live pilot. Every new/edited retained text
+message (including an attachment caption) enters DeepSeek's high-recall semantic
+screen with bounded neighboring messages and reply/subject evidence. Do not use
+the legacy keyword relevance gate in this mode. Weak signals and uncertainty
+escalate to deep extraction; only the model can decide that a target is chatter.
+The neighborhood includes up to eight messages on either side, constrained by the
+existing byte/message bounds; selected historical context is evidence, not a new
+target or full-history replay. Binary OCR/file-content parsing is not added here.
+
+Each stage is a separately reserved/settled/reported attempt. Migration 0018 adds
+the nullable SQL screening checkpoint per source revision. A successful screen
+commits before the deep call. Deep recovery reuses it and may continue in the same
+half-hour slot; new targets still wait for their own slot. Each stage retains its
+own validation retry allowance without reusing lease generations. An edited source
+gets a new version job and screening. Published cards commit per deep result under
+the existing confidence/manual-lock/multiple-task rules. No UI contract changes.
+
+Migration requeues only seven-day retained live messages marked completed without
+any AI job in an authorized group. It does not replay successful/failed provider
+jobs or imports. This corrects old local-filter loss without a semester-history run.
+Owner reports explicitly label screen/deep stages and signals; same approved hours,
+daily/total spend limits, reservation rules and owner-only delivery continue. A
+budget block leaves targets pending; this change does not promise unlimited throughput.
+
+Acceptance: keyword-free `матан 16` is screened with surrounding evidence; chatter
+also consumes a real light call, not a fabricated zero-cost report; deep transport
+failure resumes without another screen; stage continuation does not wait for the
+next slot; edits invalidate checkpoints; captions enter the same durable inbox.
+
 ## Owner update — 2026-10-09: incremental export publication
 
 Do not wait for the end of an export to apply successful analysis. The explicit

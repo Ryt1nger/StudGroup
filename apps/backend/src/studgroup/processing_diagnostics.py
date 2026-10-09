@@ -22,11 +22,13 @@ from studgroup.models import (
 
 async def snapshot(db, settings, now):
     from studgroup.processing import RESERVATION
+
     control = await db.get(AIControl, 1)
     spent = control.spent_usd if control else Decimal(0)
     result = {
         "ai_enabled": settings.ai_enabled,
         "schedule_enabled": settings.ai_schedule_enabled,
+        "live_two_pass": settings.ai_live_two_pass,
         "mode": settings.processing_mode,
         "key_configured": bool(settings.deepseek_api_key.get_secret_value()),
         "spent_or_reserved_usd": str(spent),
@@ -95,8 +97,7 @@ async def snapshot(db, settings, now):
                 "daily_spent_or_reserved_usd": str(daily),
                 "budget_blocks_next_request": spent + RESERVATION
                 > Decimal(str(settings.ai_total_budget_usd))
-                or Decimal(daily) + RESERVATION
-                > Decimal(str(settings.ai_daily_group_budget_usd)),
+                or Decimal(daily) + RESERVATION > Decimal(str(settings.ai_daily_group_budget_usd)),
             }
         )
     return result

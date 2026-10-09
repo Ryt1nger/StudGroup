@@ -18,6 +18,7 @@ OUTCOMES = {
     "failed": "Неуспех — требуется проверка",
     "superseded": "Результат устарел — не применён",
     "interrupted": "Попытка прервана — продолжение с этой точки",
+    "screened": "Лёгкий проход успешен — глубокий разбор в очереди",
 }
 
 
@@ -42,6 +43,9 @@ async def start(db, settings, group, job, attempt, raw):
             "context_messages": None,
             "attempt_number": job.attempts,
             "telegram_message_id": raw.telegram_message_id,
+            "stage": "screen"
+            if settings.ai_live_two_pass and not job.screen_checkpoint
+            else "deep",
         }
     )
     if not enabled(settings, attempt):
@@ -52,7 +56,7 @@ async def start(db, settings, group, job, attempt, raw):
         settings,
         f"run-start:{attempt.id}",
         group,
-        f"▶ Начало прогона {str(job.id)[:8]} · попытка {job.attempts}\n{at:%d.%m %H:%M:%S} · {group.timezone}\nОдно новое/изменённое сообщение #{raw.telegram_message_id} с контекстом. Не повторный проход по всему чату.",
+        f"▶ Начало прогона {str(job.id)[:8]} · попытка {job.attempts}\nЭтап: {'лёгкий анализ ИИ' if settings.ai_live_two_pass and not job.screen_checkpoint else 'глубокий анализ'}\n{at:%d.%m %H:%M:%S} · {group.timezone}\nОдно новое/изменённое сообщение #{raw.telegram_message_id} с контекстом. Не повторный проход по всему чату.",
     )
 
 
@@ -82,6 +86,8 @@ async def finish(db, settings, group, job, attempt, outcome, now, metrics=None, 
     if error:
         number = values.get("incident_number")
         text += f"\nОшибка №{number:06d}: {error}." if number else f"\nКод ошибки: {error}."
+    if settings.ai_live_two_pass:
+        text += f"\nЭтап: {'лёгкий анализ ИИ' if values.get('stage') == 'screen' else 'глубокий анализ'}. Слабых сигналов: {values.get('screen_signals', 'не применимо')}."
     attempts = (await db.scalars(select(AIAttempt).where(AIAttempt.job_id == job.id))).all()
     known_attempts = [
         a for a in attempts if a.prompt_tokens is not None and a.completion_tokens is not None

@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     ai_enabled_until: datetime | None = None
     ai_import_chat_id: int | None = None
     ai_schedule_enabled: bool = False
+    ai_live_two_pass: bool = False
     ai_schedule_timezone: str = "Europe/Moscow"
     processing_mode: Literal["external", "embedded"] = "external"
     owner_telegram_user_id: int | None = None

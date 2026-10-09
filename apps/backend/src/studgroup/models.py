@@ -208,6 +208,7 @@ class AIJob(Base):
     last_error: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     schedule_slot: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    screen_checkpoint: Mapped[str | None] = mapped_column(Text)
 
 
 class GroupAIActivity(Base):

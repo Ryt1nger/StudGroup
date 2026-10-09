@@ -10,6 +10,37 @@ from studgroup.ai import DeepSeekProvider, Extraction, ProviderFailure
 from studgroup.main import Settings
 
 
+@pytest.mark.parametrize("signal", [True, False])
+def test_semantic_screen_uses_context_without_keyword_gate(signal):
+    def handler(request):
+        payload = json.loads(request.content)
+        assert payload["max_tokens"] == 250
+        assert "матан 16" in payload["messages"][1]["content"]
+        return httpx.Response(
+            200,
+            json=response(
+                json.dumps({"signal": signal, "source_message_ids": [1] if signal else []})
+            ),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.screen_batch(
+            [
+                {"message_id": 1, "message_date": "2026-10-09T09:00:00+03:00", "text": "матан 16"},
+                {
+                    "message_id": 2,
+                    "message_date": "2026-10-09T09:01:00+03:00",
+                    "text": "Из сборника",
+                },
+            ],
+            "Europe/Moscow",
+            1,
+        )
+    )
+    assert result.decision.signal is signal
+
+
 def facts(**patch):
     return {
         "kind": "homework",

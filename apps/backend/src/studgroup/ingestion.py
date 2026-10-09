@@ -48,6 +48,7 @@ class Message(BaseModel):
     date: int = Field(ge=0)
     chat: Chat
     text: str | None = Field(default=None, max_length=65536)
+    caption: str | None = Field(default=None, max_length=65536)
     edit_date: int | None = Field(default=None, ge=0)
     sender: Sender | None = Field(default=None, alias="from")
     reply_to_message: ReplyReference | None = None
@@ -110,6 +111,9 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
     if group is None:
         await db.commit()
         return {"ok": True}
+
+    if message.text is None and message.caption:
+        message.text = message.caption
 
     if message.text is None:
         from studgroup.ai_schedule import signal

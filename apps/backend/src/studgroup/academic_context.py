@@ -40,10 +40,16 @@ def has_date_cue(text):
     )
 
 
-def build_context(messages, target_id, max_bytes=13000):
+def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
     by_id = {message.message_id: message for message in messages}
     target = by_id[target_id]
     selected = {target_id}
+    chronological = sorted(messages, key=lambda m: (m.message_date, m.message_id))
+    position = next(i for i, m in enumerate(chronological) if m.message_id == target_id)
+    surrounding = {
+        m.message_id
+        for m in chronological[max(0, position - neighborhood) : position + neighborhood + 1]
+    }
     # Generic pinned topic IDs are absent from the export. Never fabricate their contents.
     parent = by_id.get(target.reply_to_message_id)
     if parent and parent.text:
@@ -68,7 +74,13 @@ def build_context(messages, target_id, max_bytes=13000):
         date_fragment = abs(message.message_date - target.message_date) <= timedelta(
             minutes=3
         ) and (has_date_cue(target.text) or has_date_cue(message.text))
-        if direct or correction or date_fragment or (same_subject and nearby):
+        if (
+            direct
+            or correction
+            or date_fragment
+            or (same_subject and nearby)
+            or message.message_id in surrounding
+        ):
             ranked.append((not direct, abs(message.message_date - target.message_date), message))
     used = len(target.text.encode()) + 300
     chosen = [target]

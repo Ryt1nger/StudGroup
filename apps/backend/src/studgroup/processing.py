@@ -15,7 +15,12 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.academic_context import build_context, has_date_cue
-from studgroup.ai import BATCH_PROMPT_VERSION, DeepSeekProvider, ProviderFailure
+from studgroup.ai import (
+    BATCH_PROMPT_VERSION,
+    SCREEN_PROMPT_VERSION,
+    DeepSeekProvider,
+    ProviderFailure,
+)
 from studgroup.api import schedule_data
 from studgroup.deadlines import ScheduleDeadlineContext
 from studgroup.homework_timing import lesson_deadline
@@ -305,7 +310,7 @@ async def claim(engine, settings, now):
             )
         ).all()
         for raw in raws:
-            if not await relevant(db, raw):
+            if not settings.ai_live_two_pass and not await relevant(db, raw):
                 raw.processing_state = "completed"
                 filtered_sources.setdefault(raw.group_id, []).append(
                     f"{raw.id}:{raw.revision}:{raw.telegram_message_id}"
@@ -328,6 +333,7 @@ async def claim(engine, settings, now):
             recovering = job and (
                 (job.state == "retry" and job.last_error in RECOVERABLE_FAILURES)
                 or (job.state == "running" and job.lease_until and utc(job.lease_until) <= now)
+                or (settings.ai_live_two_pass and job.screen_checkpoint and job.state == "queued")
             )
             if job and job.state == "running" and job.lease_until and utc(job.lease_until) <= now:
                 from studgroup.run_reports import finish as finish_report
@@ -358,7 +364,12 @@ async def claim(engine, settings, now):
                 and not recovering
             ):
                 continue
-            if job and job.attempts >= MAX_ATTEMPTS and not recovering:
+            screened_generation = (
+                json.loads(job.screen_checkpoint).get("generation", 0)
+                if job and job.screen_checkpoint
+                else 0
+            )
+            if job and job.attempts - screened_generation >= MAX_ATTEMPTS and not recovering:
                 job.state = "failed"
                 raw.processing_state = "failed"
                 await incident(db, "processing_exhausted", now)
@@ -402,7 +413,9 @@ async def claim(engine, settings, now):
                 group_id=raw.group_id,
                 charged_usd=RESERVATION,
                 model=settings.deepseek_model,
-                prompt_version=BATCH_PROMPT_VERSION,
+                prompt_version=SCREEN_PROMPT_VERSION
+                if settings.ai_live_two_pass and not job.screen_checkpoint
+                else BATCH_PROMPT_VERSION,
                 created_at=now,
             )
             db.add(attempt)
@@ -422,7 +435,7 @@ async def claim(engine, settings, now):
         return None
 
 
-async def context_for(db, raw, group, now):
+async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
     base = select(RawMessage).where(
         RawMessage.group_id == raw.group_id,
         or_(
@@ -471,7 +484,12 @@ async def context_for(db, raw, group, now):
         )
         for row in indexed.values()
     ]
-    context = build_context(messages, raw.telegram_message_id, max_bytes=12500)
+    context = build_context(
+        messages,
+        raw.telegram_message_id,
+        max_bytes=12500,
+        neighborhood=8 if semantic_neighborhood else 0,
+    )
     patterns = (
         await db.scalars(select(SchedulePattern).where(SchedulePattern.group_id == group.id))
     ).all()
@@ -808,7 +826,11 @@ async def process_next(engine, settings, provider=None, now=None):
     async with AsyncSession(engine) as db:
         raw = await db.get(RawMessage, raw_id)
         group = await db.get(Group, raw.group_id)
-        context, schedule = await context_for(db, raw, group, now)
+        job = await db.get(AIJob, job_id)
+        screening = settings.ai_live_two_pass and not job.screen_checkpoint
+        context, schedule = await context_for(
+            db, raw, group, now, semantic_neighborhood=settings.ai_live_two_pass
+        )
         timezone, message_id = group.timezone, raw.telegram_message_id
         attempt = await db.get(AIAttempt, attempt_id)
         initial_metrics = json.loads(attempt.metrics or "{}")
@@ -817,6 +839,7 @@ async def process_next(engine, settings, provider=None, now=None):
         attempt.metrics = json.dumps(initial_metrics)
         await db.commit()
     result = None
+    screen_result = None
     failure = None
     failure_at = None
     try:
@@ -833,9 +856,12 @@ async def process_next(engine, settings, provider=None, now=None):
             failure = ProviderFailure("processing_window_closed", True, reservation_releasable=True)
         else:
             async with asyncio.timeout(remaining):
-                result = await provider.extract_batch(
-                    context, timezone, schedule, target_message_id=message_id
-                )
+                if screening:
+                    screen_result = await provider.screen_batch(context, timezone, message_id)
+                else:
+                    result = await provider.extract_batch(
+                        context, timezone, schedule, target_message_id=message_id
+                    )
     except TimeoutError:
         failure = ProviderFailure("processing_window_closed", True)
         failure_at = clock()
@@ -849,15 +875,16 @@ async def process_next(engine, settings, provider=None, now=None):
         job = await db.get(AIJob, job_id)
         raw = await db.get(RawMessage, raw_id)
         attempt = await db.get(AIAttempt, attempt_id)
-        reported_usage = result.usage if result else failure.usage if failure else None
+        response = screen_result or result
+        reported_usage = response.usage if response else failure.usage if failure else None
         if reported_usage is not None:
             actual = cost(reported_usage)
             control.spent_usd += actual - attempt.charged_usd
             attempt.charged_usd = actual
             attempt.prompt_tokens = reported_usage.prompt_tokens
             attempt.completion_tokens = reported_usage.completion_tokens
-            if result:
-                attempt.prompt_version = result.prompt_version
+            if response:
+                attempt.prompt_version = response.prompt_version
         elif failure and failure.reservation_releasable:
             # Settle this attempt under the same singleton lock used to reserve funds.
             # This also adjusts daily sums; a superseded job still owns its own charge.
@@ -905,7 +932,30 @@ async def process_next(engine, settings, provider=None, now=None):
         outcome = "completed"
         statistics = {}
         candidates = []
-        if result:
+        if screen_result:
+            if raw and raw.revision == revision:
+                job.screen_checkpoint = json.dumps(
+                    {
+                        "generation": generation,
+                        "decision": screen_result.decision.model_dump(),
+                    }
+                )
+                if screen_result.decision.signal:
+                    job.state = "queued"
+                    job.available_at = response_at
+                    raw.processing_state = "pending"
+                    outcome = "screened"
+                else:
+                    job.state = "done"
+                    raw.processing_state = "completed"
+                job.last_error = None
+                statistics["screened_messages"] = 1
+                statistics["screen_signals"] = int(screen_result.decision.signal)
+                for code in PROVIDER_INCIDENT_CODES:
+                    await incident(db, code, response_at, recover=True)
+            else:
+                job.state = "superseded"
+        elif result:
             # A stale reply never overwrites a concurrently edited Telegram message.
             if raw and raw.revision == revision:
                 candidates = []
@@ -953,7 +1003,17 @@ async def process_next(engine, settings, provider=None, now=None):
             recoverable = failure.retryable and failure.code in RECOVERABLE_FAILURES
             job.state = (
                 "retry"
-                if failure.retryable and (recoverable or job.attempts < MAX_ATTEMPTS)
+                if failure.retryable
+                and (
+                    recoverable
+                    or job.attempts
+                    - (
+                        json.loads(job.screen_checkpoint).get("generation", 0)
+                        if job.screen_checkpoint
+                        else 0
+                    )
+                    < MAX_ATTEMPTS
+                )
                 else "failed"
             )
             outcome = job.state
@@ -990,9 +1050,10 @@ async def process_next(engine, settings, provider=None, now=None):
             clock(),
             metrics={
                 **statistics,
+                "stage": "screen" if screening else "deep",
                 "context_messages": max(0, len(context) - 1),
                 "submitted_messages": len(context),
-                "analyzed_fragments": int(result is not None),
+                "analyzed_fragments": int(response is not None),
                 "important_proposals": len(result.batch.assignments) if result else 0,
                 "important_fragments": len(source_ids),
                 "review_proposals": sum(c.state == "review" for c in candidates),
