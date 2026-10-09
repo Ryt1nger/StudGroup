@@ -120,6 +120,27 @@ def test_budget_prevents_call_and_keeps_message_pending(client):
     assert provider.calls == 0
     assert count(client, AIAttempt) == 0
 
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.get(OwnerIncident, "ai_daily_group_budget_limit")
+            assert row.active
+
+    asyncio.run(inspect())
+
+
+def test_total_budget_limit_has_distinct_owner_incident(client):
+    source(client)
+    provider = Provider()
+    assert run(client, provider, ai_total_budget_usd=0.001) == "idle"
+    assert provider.calls == 0
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.get(OwnerIncident, "ai_total_budget_limit")
+            assert row.active
+
+    asyncio.run(inspect())
+
 
 def test_hourly_safety_limit_pauses_only_until_rolling_spend_expires(client):
     source(client)

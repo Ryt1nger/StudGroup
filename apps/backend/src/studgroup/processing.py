@@ -444,20 +444,46 @@ async def claim(engine, settings, now):
                     AIAttempt.created_at >= now - timedelta(hours=1),
                 )
             )
-            total_blocked = control.spent_usd + RESERVATION > Decimal(
-                str(settings.ai_total_budget_usd)
-            )
-            daily_blocked = Decimal(daily) + RESERVATION > Decimal(
-                str(settings.ai_daily_group_budget_usd)
-            )
+            total_limit = Decimal(str(settings.ai_total_budget_usd))
+            daily_limit = Decimal(str(settings.ai_daily_group_budget_usd))
+            total_blocked = control.spent_usd + RESERVATION > total_limit
+            daily_blocked = Decimal(daily) + RESERVATION > daily_limit
             if total_blocked or daily_blocked:
+                code = (
+                    "ai_total_budget_limit" if total_blocked else "ai_daily_group_budget_limit"
+                )
+                await incident(
+                    db,
+                    "ai_daily_group_budget_limit"
+                    if total_blocked
+                    else "ai_total_budget_limit",
+                    now,
+                    recover=True,
+                )
+                spent = control.spent_usd if total_blocked else Decimal(daily)
+                limit = total_limit if total_blocked else daily_limit
                 await incident_once(
-                    db, "ai_budget_limit", now + timedelta(seconds=monotonic() - filter_started)
+                    db,
+                    code,
+                    now + timedelta(seconds=monotonic() - filter_started),
+                    detail=f"group={str(raw.group_id)[:8]} spent={spent:.8f} limit={limit:.8f}",
                 )
                 continue
+            # Close legacy combined alerts as well as the two precise alerts.
             await incident(db, "ai_budget_limit", now, recover=True)
-            if Decimal(hourly) + RESERVATION > Decimal(str(settings.ai_hourly_group_budget_usd)):
-                await incident_once(db, "ai_hourly_safety_limit", now)
+            await incident(db, "ai_daily_group_budget_limit", now, recover=True)
+            await incident(db, "ai_total_budget_limit", now, recover=True)
+            hourly_limit = Decimal(str(settings.ai_hourly_group_budget_usd))
+            if Decimal(hourly) + RESERVATION > hourly_limit:
+                await incident_once(
+                    db,
+                    "ai_hourly_safety_limit",
+                    now,
+                    detail=(
+                        f"group={str(raw.group_id)[:8]} "
+                        f"spent={Decimal(hourly):.8f} limit={hourly_limit:.8f}"
+                    ),
+                )
                 continue
             await incident(db, "ai_hourly_safety_limit", now, recover=True)
             if job is None:

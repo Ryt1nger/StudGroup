@@ -28,6 +28,8 @@ INCIDENT_LABELS = {
     "invalid_provider_output": "Ответ DeepSeek не прошёл проверку.",
     "incomplete_output": "DeepSeek вернул незавершённый ответ.",
     "ai_budget_limit": "Обработка приостановлена: достигнут лимит бюджета ИИ.",
+    "ai_daily_group_budget_limit": "Следующий запрос превысил бы дневной лимит расходов ИИ для группы; необработанная очередь сохранена до следующего дня.",
+    "ai_total_budget_limit": "Следующий запрос превысил бы общий лимит расходов ИИ; необработанная очередь сохранена до изменения лимита.",
     "ai_hourly_safety_limit": "Сработал часовой предохранитель расходов ИИ; очередь продолжится автоматически.",
     "ai_circuit_open": "Серия ошибок открыла временный предохранитель DeepSeek; будет автоматическая проба после охлаждения.",
     "processing_exhausted": "Один этап исчерпал безопасное число повторов и изолирован от остальной очереди.",
@@ -45,11 +47,17 @@ def incident_text(row, event="opened", sent_at=None):
         return value.astimezone(ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M:%S МСК")
 
     now = sent_at or datetime.now(UTC)
+    budget_codes = {
+        "ai_budget_limit",
+        "ai_daily_group_budget_limit",
+        "ai_total_budget_limit",
+        "ai_hourly_safety_limit",
+    }
     title = (
         "восстановлена обработка"
         if event == "recovered"
         else "лимит"
-        if row.code == "ai_budget_limit"
+        if row.code in budget_codes
         else "ошибка проверки ответа ИИ"
         if row.code
         in {
@@ -69,7 +77,8 @@ def incident_text(row, event="opened", sent_at=None):
     else:
         header += "\n" + INCIDENT_LABELS.get(row.code, "Ошибка разбора/обработчика ИИ.")
         if row.first_detail:
-            header += f"\nТехнический тип: {row.first_detail}"
+            label = "Параметры лимита" if row.code in budget_codes else "Технический тип"
+            header += f"\n{label}: {row.first_detail}"
     last_seen = (
         "до обновления не сохранялось"
         if row.legacy and row.occurrences == 1

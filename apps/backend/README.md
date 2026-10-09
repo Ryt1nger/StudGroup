@@ -54,7 +54,10 @@ Set `OWNER_TELEGRAM_USER_ID` to the owner's positive personal Telegram user ID.
 `BOT_ADMIN_USER_ID` does not implicitly configure alerts. The owner must have
 started the bot and not blocked it. Provider/validation/configuration/budget errors
 create durable SQL incidents; an active code is notified once, then notified again
-on recovery or a new incident. Successful provider processing closes provider error
+on recovery or a new incident. Hourly, per-group daily and experiment-wide budget
+limits have distinct alerts. Their first alert includes the group key, measured spend
+and configured limit; repeated five-second queue checks do not create notification
+spam. Successful provider processing closes provider error
 codes, including credentials/output errors. Unexpected embedded-pipeline errors
 are reported as a safe generic code, never as source text or an exception body.
 

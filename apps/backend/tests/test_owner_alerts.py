@@ -134,6 +134,29 @@ def test_seconds_occurrence_time_and_delayed_delivery_are_distinct(client):
     assert "HTTP 503" in text
 
 
+def test_budget_alert_names_limit_and_includes_parameters():
+    from datetime import UTC, datetime
+
+    row = OwnerIncidentEpisode(
+        id=12,
+        code="ai_daily_group_budget_limit",
+        opened_at=datetime(2026, 10, 9, 8, 0, tzinfo=UTC),
+        last_seen_at=datetime(2026, 10, 9, 8, 0, tzinfo=UTC),
+        occurrences=1,
+        first_detail="group=12345678 spent=1.00000000 limit=1.00000000",
+        opening_pending=True,
+        recovery_pending=False,
+        legacy=False,
+    )
+
+    from studgroup.worker import incident_text
+
+    text = incident_text(row, sent_at=datetime(2026, 10, 9, 8, 1, tzinfo=UTC))
+    assert "StudGroup: лимит №000012" in text
+    assert "дневной лимит" in text
+    assert "Параметры лимита: group=12345678" in text
+
+
 def test_repeated_error_shares_episode_but_new_error_after_recovery_has_new_number(client):
     from datetime import UTC, datetime, timedelta
 
