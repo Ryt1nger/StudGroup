@@ -49,6 +49,25 @@ def test_every_message_reaches_model_and_only_model_discards_chatter(client):
     assert run(client, provider) == "idle"
 
 
+def test_rolling_deploy_restores_unpaid_local_discard_without_replaying_ai(client):
+    source(client, text="матан 16")
+    now = datetime.now(UTC)
+
+    async def discard():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage))
+            raw.processing_state = "completed"
+            raw.live_received_at = now
+            await db.commit()
+
+    asyncio.run(discard())
+    provider = CascadeProvider(signal=False)
+    assert run(client, provider) == "completed"
+    assert provider.screen_calls == 1
+    assert run(client, provider) == "idle"
+    assert provider.screen_calls == 1
+
+
 def test_keyword_free_task_gets_surrounding_context_and_publishes_without_tail(client):
     source(client, text="матан 16")
     source(client, mid=32, text="Это из сборника, страница 75")

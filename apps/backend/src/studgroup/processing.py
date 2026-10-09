@@ -10,7 +10,7 @@ from time import monotonic
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -231,6 +231,27 @@ async def claim(engine, settings, now):
             control = AIControl(id=1, spent_usd=Decimal(0))
             db.add(control)
             await db.flush()
+        if settings.ai_live_two_pass:
+            # Old and new instances may overlap during deploy. Restore unpaid local
+            # discards under the same singleton lock used by both worker generations.
+            # Once a model job exists this never reopens the source again.
+            await db.execute(
+                update(RawMessage)
+                .where(
+                    RawMessage.imported.is_(False),
+                    RawMessage.processing_state == "completed",
+                    RawMessage.live_received_at.is_not(None),
+                    RawMessage.message_date >= now - timedelta(days=7),
+                    RawMessage.delete_at > now,
+                    RawMessage.group_id.in_(
+                        select(Group.id).where(
+                            Group.pilot_authorized.is_(True), Group.status == "active"
+                        )
+                    ),
+                    ~exists(select(AIJob.id).where(AIJob.raw_message_id == RawMessage.id)),
+                )
+                .values(processing_state="pending")
+            )
         # Recover transport jobs abandoned by the previous two-attempt policy.
         # Do not reopen invalid-output/rejected requests or obsolete source revisions.
         abandoned = (
@@ -1064,5 +1085,20 @@ async def process_next(engine, settings, provider=None, now=None):
             if candidates and any(c.state == "review" for c in candidates)
             else None,
         )
+        telemetry = {
+            "job": str(job_id),
+            "attempt": str(attempt_id),
+            "stage": "screen" if screening else "deep",
+            "outcome": outcome,
+            "signals": statistics.get("screen_signals"),
+            "created_cards": statistics.get("created_cards", 0),
+            "updated_cards": statistics.get("updated_cards", 0),
+            "review": sum(c.state == "review" for c in candidates),
+            "prompt_tokens": attempt.prompt_tokens,
+            "completion_tokens": attempt.completion_tokens,
+            "charged_usd": str(attempt.charged_usd),
+        }
         await db.commit()
+        if settings.ai_live_two_pass and settings.owner_update_notifications_enabled:
+            print("AI_STAGE_RESULT " + json.dumps(telemetry), flush=True)
     return outcome

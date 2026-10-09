@@ -138,6 +138,9 @@ the existing confidence/manual-lock/multiple-task rules. No UI contract changes.
 Migration requeues only seven-day retained live messages marked completed without
 any AI job in an authorized group. It does not replay successful/failed provider
 jobs or imports. This corrects old local-filter loss without a semester-history run.
+The same bounded repair runs under the claim budget lock in the new processor, so
+an overlapping old instance cannot permanently discard the migration's backlog.
+Once any model job exists, successful or failed, this repair will not reopen it.
 Owner reports explicitly label screen/deep stages and signals; same approved hours,
 daily/total spend limits, reservation rules and owner-only delivery continue. A
 budget block leaves targets pending; this change does not promise unlimited throughput.
