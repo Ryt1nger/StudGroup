@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent, ReactNode } from "react";
 import {
-  CONNECT_URL, GROUPS_COUNT, GROUP_PRICE, appPoints, faq, features, footerLinks, nav, plans, reviews, steps, universities,
+  CONNECT_URL, GROUPS_COUNT, faqAllHref, GROUP_PRICE, appPoints, faq, features, footerLinks, nav, plans, reviews, steps, universities,
 } from "./content";
 import logoDark from "./assets/brand/logo-lockup.dark.png";
 import logoLight from "./assets/brand/logo-lockup.light.png";
@@ -23,6 +23,9 @@ function useReveal() {
     return () => io.disconnect();
   }, []);
 }
+
+/** Ссылки на бота открываем в новой вкладке (Telegram перехватит t.me), якоря остаются на странице. */
+const ext = (href: string) => (href.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {});
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -61,9 +64,9 @@ function TelegramIcon() {
   );
 }
 
-function ConnectButton({ children = "Подключить группу", arrow = false, className = "" }: { children?: ReactNode; arrow?: boolean; className?: string }) {
+function ConnectButton({ children = "Подключить группу", arrow = false, className = "", href = CONNECT_URL }: { children?: ReactNode; arrow?: boolean; className?: string; href?: string }) {
   return (
-    <a className={`btn btn-primary ${className}`} href={CONNECT_URL}>
+    <a className={`btn btn-primary ${className}`} href={href} {...ext(href)}>
       <TelegramIcon />
       <span>{children}</span>
       {arrow && <span aria-hidden="true">→</span>}
@@ -197,8 +200,8 @@ function Pricing() {
               <p className="plan-caption">{p.caption}</p>
               <ul>{p.items.map((i) => (<li key={i}><Check />{i}</li>))}</ul>
               {p.featured
-                ? <ConnectButton className="btn-block">{p.cta}</ConnectButton>
-                : <a className="btn btn-ghost btn-block" href={CONNECT_URL}>{p.cta}</a>}
+                ? <ConnectButton className="btn-block" href={p.href}>{p.cta}</ConnectButton>
+                : <a className="btn btn-ghost btn-block" href={p.href} {...ext(p.href)}>{p.cta}</a>}
             </article>
           ))}
         </div>
@@ -276,7 +279,7 @@ function Faq() {
   return (
     <section className="section tight" id="faq">
       <div className="container">
-        <div className="faq-head" {...rv()}><h2>Частые вопросы</h2><a href="#faq">Все вопросы →</a></div>
+        <div className="faq-head" {...rv()}><h2>Частые вопросы</h2><a href={faqAllHref} {...ext(faqAllHref)}>Все вопросы →</a></div>
         <div className="faq">
           {faq.map((f, i) => (
             <details key={f.q} {...rv(i % 2)}>
@@ -310,7 +313,7 @@ function Footer() {
     <footer className="footer">
       <div className="container footer-row">
         <img className="logo" src={logoLight} alt="StudGroup" width="140" height="32" />
-        <nav aria-label="Нижняя навигация">{footerLinks.map((l) => (<a key={l.label} href={l.href}>{l.label}</a>))}</nav>
+        <nav aria-label="Нижняя навигация">{footerLinks.map((l) => (<a key={l.label} href={l.href} {...ext(l.href)}>{l.label}</a>))}</nav>
         <small>© {new Date().getFullYear()} StudGroup. Учёба под контролем.</small>
       </div>
     </footer>

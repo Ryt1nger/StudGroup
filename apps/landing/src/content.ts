@@ -3,8 +3,14 @@
 // утверждает 599 ₽ / 30 дней за группу). Решение владельца 2026-10-10: оставить как в макете,
 // заменить перед публикацией.
 
-// TODO(owner): ссылка на Telegram-бота. Пока заглушка.
-export const CONNECT_URL = "#";
+// Бот. Username можно переопределить переменной VITE_BOT_USERNAME при сборке (Render → Environment).
+export const BOT_USERNAME = (import.meta.env.VITE_BOT_USERNAME as string | undefined)?.replace(/^@/, "") || "studgroup_rf_bot";
+
+/** Глубокая ссылка: открывает бота и сразу выполняет команду. Темы описаны в apps/backend/src/studgroup/bot_info.py. */
+export type BotTopic = "tariffs" | "howto" | "connect" | "faq" | "support";
+export const botLink = (topic: BotTopic) => `https://t.me/${BOT_USERNAME}?start=${topic}`;
+
+export const CONNECT_URL = botLink("connect");
 
 export const nav = [
   { label: "Возможности", href: "#features" },
@@ -44,6 +50,7 @@ export const plans = [
     caption: "Базовый доступ",
     items: ["Просмотр заданий группы", "Актуальное расписание", "Ограниченный архив"],
     cta: "Попробовать бесплатно",
+    href: botLink("faq"),
     featured: false,
   },
   {
@@ -55,6 +62,7 @@ export const plans = [
     caption: "Вся учебная группа",
     items: ["Полный функционал", "Неограниченный архив", "Уведомления для всех участников", "Техническая поддержка"],
     cta: "Подключить группу",
+    href: botLink("connect"),
     featured: true,
   },
   {
@@ -67,6 +75,7 @@ export const plans = [
     caption: "Расширенные возможности",
     items: ["Приоритетная поддержка", "Дополнительные интеграции", "Индивидуальные настройки"],
     cta: "Обсудить",
+    href: botLink("support"),
     featured: false,
   },
 ] as const;
@@ -106,8 +115,11 @@ export const faq = [
 
 export const footerLinks = [
   { label: "Возможности", href: "#features" },
-  { label: "Тарифы", href: "#pricing" },
-  { label: "FAQ", href: "#faq" },
-  // TODO(owner): ссылка на поддержку.
-  { label: "Поддержка", href: "#" },
+  { label: "Тарифы", href: botLink("tariffs") },
+  { label: "Инструкция", href: botLink("howto") },
+  { label: "Подключение", href: botLink("connect") },
+  { label: "FAQ", href: botLink("faq") },
+  { label: "Поддержка", href: botLink("support") },
 ];
+
+export const faqAllHref = botLink("faq");
