@@ -1,14 +1,15 @@
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_ai_schedule import seed
 from test_live_two_pass import CascadeProvider
 
+from studgroup.ai import BatchExtraction, BatchResult, TokenUsage
 from studgroup.main import Settings
-from studgroup.models import AIRun, BotOutbox
+from studgroup.models import AIControl, AIRun, BotOutbox
 from studgroup.processing import process_next
 
 pytest_plugins = ["test_schedule_api"]
@@ -50,9 +51,9 @@ def test_two_messages_and_four_stages_emit_only_one_start_and_one_aggregate_fini
     provider = CascadeProvider()
     assert run(client, provider, "07:00:00") == "screened"
     assert len(notices(client)) == 1
-    assert run(client, provider, "07:00:05") == "completed"
-    assert len(notices(client)) == 1  # Second target still pending, not an ended run.
-    assert run(client, provider, "07:00:10") == "screened"
+    assert run(client, provider, "07:00:05") == "screened"
+    assert len(notices(client)) == 1  # All light passes finish before deep analysis.
+    assert run(client, provider, "07:00:10") == "completed"
     assert len(notices(client)) == 1
     assert run(client, provider, "07:00:15") == "completed"
     texts = notices(client)
@@ -79,6 +80,88 @@ def test_retry_and_restart_keep_same_run_and_preserve_unknown_reservation(client
     assert "Неуточнённый резерв: $0.012000" in texts[-1]
     assert "Запросов/попыток: 3" in texts[-1]
     assert recovered.screen_calls == 0
+
+
+def test_retry_freezes_group_and_new_hour_until_unfinished_stage_recovers(client):
+    seed(client, at("06:55:00"), mid=1)
+    seed(client, at("06:56:00"), mid=2)
+    broken = CascadeProvider(failure="provider_unreachable")
+    assert run(client, broken, "07:00:00") == "screened"
+    assert run(client, broken, "07:00:05") == "screened"
+    assert run(client, broken, "07:59:30") == "retry"
+    seed(client, at("07:05:00"), mid=3)
+    waiting = CascadeProvider()
+    assert run(client, waiting, "08:00:00") == "idle"
+    assert waiting.screen_calls == waiting.calls == 0
+    assert run(client, waiting, "08:00:31") == "completed"
+    assert waiting.screen_calls == 0 and waiting.calls == 1
+    assert run(client, waiting, "08:00:36") == "completed"
+    assert waiting.calls == 2  # The old run finishes before message #3 can start.
+    assert run(client, waiting, "08:00:41") == "screened"
+    assert waiting.screen_calls == 1
+
+
+def test_repeated_quality_failures_pause_remaining_deep_work_until_next_hour(client):
+    for mid in range(1, 5):
+        seed(client, at("06:55:00") + timedelta(seconds=mid), mid=mid)
+    provider = CascadeProvider(failure="invalid_source_reference")
+    for second in range(4):
+        assert run(client, provider, f"07:00:0{second}") == "screened"
+    for second in range(4, 7):
+        assert run(client, provider, f"07:00:0{second}") == "failed"
+    assert run(client, provider, "07:00:07") == "idle"
+    assert provider.calls == 3
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            control = await db.get(AIControl, 1)
+            assert control.provider_failure_streak == 3
+            assert control.provider_circuit_reason == "invalid_source_reference"
+            assert control.provider_circuit_open_until.replace(tzinfo=None) == at(
+                "08:00:00"
+            ).astimezone(UTC).replace(tzinfo=None)
+
+    asyncio.run(inspect())
+
+    recovered = CascadeProvider()
+    assert run(client, recovered, "08:00:00") == "completed"
+    assert recovered.screen_calls == 0
+    assert recovered.calls == 1
+
+
+def test_repeated_empty_deep_results_pause_run_instead_of_burning_remaining_targets(client):
+    class EmptyDeep(CascadeProvider):
+        async def extract_batch(self, *args, **kwargs):
+            self.calls += 1
+            return BatchResult(
+                batch=BatchExtraction(assignments=[], online_lessons=[]),
+                usage=TokenUsage(prompt_tokens=100, completion_tokens=20),
+                model="deepseek-flash",
+                prompt_version="test-empty",
+            )
+
+    for mid in range(1, 5):
+        seed(client, at("06:55:00") + timedelta(seconds=mid), mid=mid)
+    provider = EmptyDeep()
+    for second in range(4):
+        assert run(client, provider, f"07:00:0{second}") == "screened"
+    for second in range(4, 7):
+        assert run(client, provider, f"07:00:0{second}") == "completed"
+    assert run(client, provider, "07:00:07") == "idle"
+    assert provider.calls == 3
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            control = await db.get(AIControl, 1)
+            assert control.provider_failure_streak == 3
+            assert control.provider_circuit_reason == "zero_yield"
+
+    asyncio.run(inspect())
+
+    recovered = CascadeProvider()
+    assert run(client, recovered, "08:00:00") == "completed"
+    assert recovered.screen_calls == 0
+    assert recovered.calls == 1
 
 
 def test_new_messages_belong_to_next_slot_and_silence_produces_no_report(client):

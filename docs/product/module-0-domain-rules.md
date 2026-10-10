@@ -206,6 +206,8 @@ The core lifecycle is:
 - Owner's recovery policy (2026-10-08): transient connection failures leave unfinished analysis pending. Resume from the failed source version/fragment after capped backoff, without replaying completed work; recovery need not wait for a new hourly slot. Budget limits, working hours and the late-activity gate remain in force. A saved successful response is reused locally after restart; an ambiguous request with no saved response may require retrying with its earlier reservation retained.
 - Activity within the last 30 minutes permits the final 23:00 cutoff. Later text waits until 07:00; duplicate/no-op deliveries do not create fresh work.
 - Webhook activity is persisted independently of the provider. Quiet groups cause no AI requests. Missed windows after server sleep collapse into one current catch-up window.
+- A group has at most one active AI package. All messages in its fixed snapshot receive the light pass first; only signalled targets then receive deep analysis. A temporary provider failure freezes the package and resumes its unfinished stage after backoff. New messages cannot overtake it and wait for the next package.
+- Across groups, only one DeepSeek request may be in flight. Three consecutive invalid or empty deep outcomes pause the remainder until the next hourly boundary. Invalid evidence references and other quality-validation failures are not paid twice and appear only in the aggregate run result.
 - Manual headman operations remain immediate and require no AI. Files/media may signal activity, but file extraction is not implemented in the text-only slice. The existing reasoning cascade is a target design, not permission to bypass this schedule or budget caps.
 
 ### DeepSeek reasoning cascade

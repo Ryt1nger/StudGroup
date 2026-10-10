@@ -160,7 +160,7 @@ def test_known_usage_of_failed_output_is_charged_and_reported_not_kept_as_reserv
                 usage=TokenUsage(prompt_tokens=100, completion_tokens=100),
             )
 
-    assert process(client, InvalidOutput()) == "retry"
+    assert process(client, InvalidOutput()) == "failed"
     attempts, notices = read(client)
     assert attempts[0].charged_usd == Decimal("0.00015")
     assert attempts[0].prompt_tokens == 100

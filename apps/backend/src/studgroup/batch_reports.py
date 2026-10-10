@@ -165,6 +165,12 @@ async def emit(db, settings, run, pairs, failed, skipped, now):
     def total(field):
         return sum(m.get(field, 0) or 0 for _, m in pairs)
 
+    error_counts = {}
+    for _, metrics in pairs:
+        if code := metrics.get("error"):
+            error_counts[code] = error_counts.get(code, 0) + 1
+    errors = ", ".join(f"{code}: {count}" for code, count in sorted(error_counts.items())) or "нет"
+
     screen_jobs = {
         a.job_id
         for a, m in pairs
@@ -180,5 +186,5 @@ async def emit(db, settings, run, pairs, failed, skipped, now):
     ended = utc(now).astimezone(zone)
     began = utc(run.started_at).astimezone(zone)
     duration = max(0, (utc(now) - utc(run.started_at)).total_seconds())
-    text = f"■ Итог прогона {str(run.id)[:8]}\n{'Завершён с ошибками' if failed else 'Успех'}\nНачало: {began:%d.%m.%Y %H:%M:%S} МСК\nЗавершение: {ended:%d.%m.%Y %H:%M:%S} МСК\nДлительность с ожиданием: {duration:.1f} с\nСообщений в пакете: {len(json.loads(run.targets))}; ошибок: {failed}; устаревших: {skipped}\nЛёгкий анализ: {len(screen_jobs)} сообщений; слабых сигналов: {len(signals)}\nГлубоко разобрано фрагментов: {len(deep_jobs)}\nВажных предложений: {total('important_proposals')}; уникальных сообщений-источников: {len(important_ids)}\nПрименено предложений: {total('applied_fragments')}; использовано сообщений-источников: {len(used_ids)}\nКарточек создано: {total('created_cards')}, обновлено: {total('updated_cards')}; на проверку: {total('review_proposals')}\nЗапросов/попыток: {len(pairs)}\nТокены: вход {prompt}, выход {completion}, всего {prompt + completion}\nРасчётная стоимость: ${spent:.6f}\nНеуточнённый резерв: ${reserved:.6f}."
+    text = f"■ Итог прогона {str(run.id)[:8]}\n{'Завершён с ошибками' if failed else 'Успех'}\nНачало: {began:%d.%m.%Y %H:%M:%S} МСК\nЗавершение: {ended:%d.%m.%Y %H:%M:%S} МСК\nДлительность с ожиданием: {duration:.1f} с\nСообщений в пакете: {len(json.loads(run.targets))}; ошибок: {failed}; устаревших: {skipped}\nЛёгкий анализ: {len(screen_jobs)} сообщений; слабых сигналов: {len(signals)}\nГлубоко разобрано фрагментов: {len(deep_jobs)}\nВажных предложений: {total('important_proposals')}; уникальных сообщений-источников: {len(important_ids)}\nПрименено предложений: {total('applied_fragments')}; использовано сообщений-источников: {len(used_ids)}\nКарточек создано: {total('created_cards')}, обновлено: {total('updated_cards')}; на проверку: {total('review_proposals')}\nОшибки одним итогом: {errors}\nЗапросов/попыток: {len(pairs)}\nТокены: вход {prompt}, выход {completion}, всего {prompt + completion}\nРасчётная стоимость: ${spent:.6f}\nНеуточнённый резерв: ${reserved:.6f}."
     await queue(db, settings, f"batch-finish:{run.id}", group, text)

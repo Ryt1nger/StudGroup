@@ -89,6 +89,31 @@ def test_semantic_screen_uses_context_without_keyword_gate(signal):
     assert result.decision.signal is signal
 
 
+@pytest.mark.parametrize(
+    "signal,citations,expected",
+    [(True, [999], [1]), (True, [2, 999], [1, 2]), (False, [999], [])],
+)
+def test_semantic_screen_normalizes_citations_without_paid_retry(signal, citations, expected):
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"signal": signal, "source_message_ids": citations})),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.screen_batch(
+            [
+                {"message_id": 1, "message_date": "2026-10-09T09:00:00+03:00", "text": "матан 16"},
+                {"message_id": 2, "message_date": "2026-10-09T09:01:00+03:00", "text": "сдать"},
+            ],
+            "Europe/Moscow",
+            1,
+        )
+    )
+    assert result.decision.source_message_ids == expected
+
+
 def facts(**patch):
     return {
         "kind": "homework",

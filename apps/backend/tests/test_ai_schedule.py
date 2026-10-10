@@ -95,6 +95,45 @@ def test_live_messages_wait_for_hour_and_are_not_repeated(client):
     assert provider.calls == 2
 
 
+def test_new_hour_requires_activity_newer_than_the_previous_package(client):
+    provider = Provider()
+    seed(client, stamp("06:55:00"))
+    assert run(client, stamp("07:00:00"), provider) == "completed"
+
+    async def add_pending_without_signal():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            received = stamp("07:05:00").astimezone(UTC)
+            db.add(
+                RawMessage(
+                    id=uuid.uuid4(),
+                    group_id=group.id,
+                    telegram_message_id=2,
+                    text="ДЗ: решить задачи",
+                    message_date=received,
+                    version_date=received,
+                    live_received_at=received,
+                    processing_state="pending",
+                    delete_at=received + timedelta(days=30),
+                )
+            )
+            await db.commit()
+
+    asyncio.run(add_pending_without_signal())
+    assert run(client, stamp("08:00:00"), provider) == "idle"
+    assert provider.calls == 1
+
+    async def wake_with_activity():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            await signal(db, group.id, stamp("07:06:00").astimezone(UTC))
+            await db.commit()
+
+    asyncio.run(wake_with_activity())
+    assert run(client, stamp("08:00:01"), provider) == "completed"
+    assert provider.calls == 2
+
+
 def test_late_extension_requires_recent_group_signal(client):
     provider = Provider()
     seed(client, stamp("22:00:00"))

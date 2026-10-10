@@ -30,6 +30,7 @@ from studgroup.models import (
     AICandidate,
     AIControl,
     AIJob,
+    AIRun,
     Group,
     GroupAIActivity,
     Homework,
@@ -42,6 +43,7 @@ from studgroup.notifications import record_change
 
 MAX_ATTEMPTS = 2
 HOSTED_AI_EMERGENCY_STOP = True
+MIN_REQUEST_WINDOW_SECONDS = 50
 RECOVERABLE_FAILURES = {
     "provider_unreachable",
     "provider_error",
@@ -52,11 +54,21 @@ SPEND_RISK_FAILURES = {
     "provider_unreachable",
     "provider_error",
     "rate_limited",
+}
+QUALITY_FAILURES = {
     "invalid_provider_output",
     "incomplete_output",
     "invalid_date_only",
     "invalid_source_reference",
     "invalid_target_reference",
+    "context_too_large",
+    "invalid_message_timestamp",
+}
+PAUSE_FAILURES = {
+    "invalid_api_key",
+    "insufficient_balance",
+    "provider_not_configured",
+    "invalid_provider_url",
 }
 PROVIDER_INCIDENT_CODES = {
     "provider_unreachable",
@@ -66,11 +78,6 @@ PROVIDER_INCIDENT_CODES = {
     "insufficient_balance",
     "provider_not_configured",
     "invalid_provider_url",
-    "invalid_provider_output",
-    "incomplete_output",
-    "invalid_date_only",
-    "invalid_source_reference",
-    "invalid_target_reference",
     "context_too_large",
     "invalid_message_timestamp",
     "pipeline_error",
@@ -307,6 +314,70 @@ async def claim(engine, settings, now):
             abandoned_raw.processing_state = "pending"
         if abandoned:
             await db.flush()
+        # Provider calls are globally single-flight. A rolling deploy or second
+        # worker may poll, but cannot create a parallel paid request.
+        running = await db.scalar(
+            select(
+                exists().where(
+                    AIJob.state == "running",
+                    AIJob.lease_until.is_not(None),
+                    AIJob.lease_until > now,
+                )
+            )
+        )
+        if running:
+            await db.commit()
+            return None
+        active_runs = (
+            await db.scalars(
+                select(AIRun)
+                .where(AIRun.finished_at.is_(None))
+                .order_by(AIRun.group_id, AIRun.started_at)
+                .with_for_update()
+            )
+        ).all()
+        # One group owns exactly one runnable package. Older packages created by a
+        # previous deployment drain first; later packages and fresh text stay asleep.
+        active_by_group = {}
+        for run in active_runs:
+            active_by_group.setdefault(run.group_id, run)
+        active_targets = {
+            group_id: set(json.loads(run.targets)) for group_id, run in active_by_group.items()
+        }
+        active_raw_ids = {
+            uuid.UUID(key.split(":", 1)[0])
+            for targets in active_targets.values()
+            for key in targets
+        }
+        active_jobs = (
+            (await db.scalars(select(AIJob).where(AIJob.raw_message_id.in_(active_raw_ids)))).all()
+            if active_raw_ids
+            else []
+        )
+        jobs_by_key = {f"{job.raw_message_id}:{job.source_revision}": job for job in active_jobs}
+        run_policy = {}
+        terminal = {"done", "failed", "superseded"}
+        for group_id, targets in active_targets.items():
+            blockers = [
+                key
+                for key in targets
+                if (job := jobs_by_key.get(key)) is not None and job.state in {"running", "retry"}
+            ]
+            unscreened = {
+                key
+                for key in targets
+                if (job := jobs_by_key.get(key)) is None
+                or (job.screen_checkpoint is None and job.state not in terminal)
+            }
+            run_policy[group_id] = {
+                "targets": targets,
+                "blocker": min(
+                    blockers,
+                    key=lambda key: jobs_by_key[key].created_at,
+                    default=None,
+                ),
+                "unscreened": unscreened,
+            }
         import_scope = (
             and_(
                 RawMessage.imported.is_(True), Group.telegram_chat_id == settings.ai_import_chat_id
@@ -339,25 +410,39 @@ async def claim(engine, settings, now):
                             RawMessage.imported.is_(False),
                             RawMessage.live_received_at.is_not(None),
                             RawMessage.live_received_at <= slot,
-                            exists(
-                                select(GroupAIActivity.group_id).where(
-                                    GroupAIActivity.group_id == RawMessage.group_id,
-                                    GroupAIActivity.last_signal_at >= slot - timedelta(minutes=30),
-                                )
-                            )
-                            if extended
-                            else True,
                         ]
                         if scheduled
                         else []
                     ),
                 )
-                .order_by(RawMessage.version_date)
+                .order_by(RawMessage.id.in_(active_raw_ids).desc(), RawMessage.version_date)
                 .limit(50)
                 .with_for_update(skip_locked=True)
             )
         ).all()
         for raw in raws:
+            key = f"{raw.id}:{raw.revision}"
+            policy = run_policy.get(raw.group_id)
+            if policy:
+                if key not in policy["targets"]:
+                    continue
+                if policy["blocker"] and key != policy["blocker"]:
+                    continue
+                if (
+                    not policy["blocker"]
+                    and policy["unscreened"]
+                    and key not in policy["unscreened"]
+                ):
+                    continue
+            elif scheduled:
+                activity = await db.get(GroupAIActivity, raw.group_id)
+                if activity is None or (
+                    activity.last_batch_slot is not None
+                    and utc(activity.last_signal_at) <= utc(activity.last_batch_slot)
+                ):
+                    continue
+                if extended and utc(activity.last_signal_at) < slot - timedelta(minutes=30):
+                    continue
             if not settings.ai_live_two_pass and not await relevant(db, raw):
                 raw.processing_state = "completed"
                 filtered_sources.setdefault(raw.group_id, []).append(
@@ -495,8 +580,9 @@ async def claim(engine, settings, now):
                 db.add(job)
                 await db.flush()
             job.state = "running"
-            if scheduled:
-                job.schedule_slot = slot
+            if scheduled and job.schedule_slot is None:
+                job.schedule_slot = active_by_group[raw.group_id].slot if policy else slot
+            if scheduled and policy is None:
                 activity = await db.get(GroupAIActivity, raw.group_id)
                 if activity:
                     activity.last_batch_slot = slot
@@ -933,6 +1019,11 @@ async def process_next(engine, settings, provider=None, now=None):
         if timing is None:
             return "outside_hours"
         _slot, daily_close, _extended = timing
+    cutoffs = [
+        utc(value) for value in [settings.ai_enabled_until, daily_close] if value is not None
+    ]
+    if cutoffs and (min(cutoffs) - clock()).total_seconds() < MIN_REQUEST_WINDOW_SECONDS:
+        return "window_closing"
     if settings.deepseek_model != "deepseek-flash":
         return "model_budget_not_reviewed"
     if not settings.deepseek_api_key.get_secret_value() and provider is None:
@@ -969,9 +1060,6 @@ async def process_next(engine, settings, provider=None, now=None):
             model=settings.deepseek_model,
             base_url=settings.deepseek_base_url,
         )
-        cutoffs = [
-            utc(value) for value in [settings.ai_enabled_until, daily_close] if value is not None
-        ]
         remaining = (min(cutoffs) - clock()).total_seconds() if cutoffs else None
         if remaining is not None and remaining <= 0:
             failure = ProviderFailure("processing_window_closed", True, reservation_releasable=True)
@@ -996,6 +1084,7 @@ async def process_next(engine, settings, provider=None, now=None):
         job = await db.get(AIJob, job_id)
         raw = await db.get(RawMessage, raw_id)
         attempt = await db.get(AIAttempt, attempt_id)
+        previous_error = job.last_error
         response = screen_result or result
         reported_usage = response.usage if response else failure.usage if failure else None
         if reported_usage is not None:
@@ -1011,26 +1100,40 @@ async def process_next(engine, settings, provider=None, now=None):
             # This also adjusts daily sums; a superseded job still owns its own charge.
             control.spent_usd -= attempt.charged_usd
             attempt.charged_usd = Decimal(0)
-        if response is not None:
+        zero_yield = result is not None and not (
+            result.batch.assignments or result.batch.online_lessons
+        )
+        if response is not None and not zero_yield:
             control.provider_failure_streak = 0
             control.provider_circuit_open_until = None
             control.provider_circuit_reason = None
             await incident(db, "ai_circuit_open", response_at, recover=True)
-        elif failure and failure.code in SPEND_RISK_FAILURES:
+        elif zero_yield or (
+            failure is not None and failure.code in SPEND_RISK_FAILURES | QUALITY_FAILURES
+        ):
+            circuit_reason = "zero_yield" if zero_yield else failure.code
             control.provider_failure_streak += 1
-            control.provider_circuit_reason = failure.code
+            control.provider_circuit_reason = circuit_reason
             if control.provider_failure_streak >= settings.ai_circuit_failure_threshold:
-                control.provider_circuit_open_until = failure_at + timedelta(
-                    seconds=settings.ai_circuit_cooldown_seconds
-                )
-                await incident_once(db, "ai_circuit_open", failure_at, detail=failure.code)
+                if zero_yield or circuit_reason in QUALITY_FAILURES:
+                    local = response_at.astimezone(ZoneInfo(settings.ai_schedule_timezone))
+                    control.provider_circuit_open_until = (
+                        (local + timedelta(hours=1))
+                        .replace(minute=0, second=0, microsecond=0)
+                        .astimezone(UTC)
+                    )
+                else:
+                    control.provider_circuit_open_until = failure_at + timedelta(
+                        seconds=settings.ai_circuit_cooldown_seconds
+                    )
+                await incident_once(db, "ai_circuit_open", response_at, detail=circuit_reason)
         # A timed-out worker must not overwrite the result or lease of a newer attempt.
         if job.attempts != generation or job.state != "running":
             from studgroup.run_reports import finish as finish_report
 
             incident_number = (
                 await incident(db, failure.code, failure_at, detail=failure.detail)
-                if failure
+                if failure and failure.code not in QUALITY_FAILURES
                 else None
             )
 
@@ -1091,8 +1194,8 @@ async def process_next(engine, settings, provider=None, now=None):
                 job.last_error = None
                 statistics["screened_messages"] = 1
                 statistics["screen_signals"] = int(screen_result.decision.signal)
-                for code in PROVIDER_INCIDENT_CODES:
-                    await incident(db, code, response_at, recover=True)
+                if previous_error in PROVIDER_INCIDENT_CODES:
+                    await incident(db, previous_error, response_at, recover=True)
             else:
                 job.state = "superseded"
         elif result:
@@ -1163,14 +1266,21 @@ async def process_next(engine, settings, provider=None, now=None):
                 job.state = "done"
             else:
                 job.state = "superseded"
-            for code in PROVIDER_INCIDENT_CODES:
-                await incident(db, code, response_at, recover=True)
+            if previous_error in PROVIDER_INCIDENT_CODES:
+                await incident(db, previous_error, response_at, recover=True)
+            if job.last_error == previous_error:
+                job.last_error = None
         elif failure:
             job.last_error = failure.code
-            recoverable = failure.retryable and failure.code in RECOVERABLE_FAILURES
+            retryable = (
+                failure.code in PAUSE_FAILURES
+                or failure.retryable
+                and failure.code not in QUALITY_FAILURES
+            )
+            recoverable = retryable and failure.code in RECOVERABLE_FAILURES | PAUSE_FAILURES
             job.state = (
                 "retry"
-                if failure.retryable
+                if retryable
                 and (
                     recoverable
                     or job.attempts
@@ -1185,15 +1295,20 @@ async def process_next(engine, settings, provider=None, now=None):
             )
             outcome = job.state
             job.available_at = (
-                now + timedelta(seconds=recovery_delay(job.attempts))
+                (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+                if failure.code in PAUSE_FAILURES
+                else now + timedelta(seconds=recovery_delay(job.attempts))
                 if recoverable
                 else now + timedelta(minutes=5)
             )
             if raw and raw.revision == revision:
                 raw.processing_state = "pending" if job.state == "retry" else "failed"
-            statistics["incident_number"] = await incident(
-                db, failure.code, failure_at, detail=failure.detail
-            )
+            if failure.code in QUALITY_FAILURES:
+                statistics["quality_failure"] = failure.code
+            else:
+                statistics["incident_number"] = await incident(
+                    db, failure.code, failure_at, detail=failure.detail
+                )
             # Ambiguous usage (read/write timeout, HTTP 5xx, malformed 200) stays reserved.
         from studgroup.run_reports import finish as finish_report
 

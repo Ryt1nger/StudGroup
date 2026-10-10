@@ -152,16 +152,21 @@ the text provider. Duplicate deliveries/no-op edits do not trigger fresh work.
 
 Only retained, unprocessed live versions are eligible; imported history never
 wakes this schedule. Catch-up after a sleeping free Render instance is one current
-cutoff, not a replay of every missed slot. Quiet groups produce no AI calls. A cycle
-may process several relevant messages using the existing target-message extraction;
-it is not a guarantee of one provider request for the entire group. Transport
-recovery resumes only unfinished source versions, even in the same slot, after
+cutoff, not a replay of every missed slot. Quiet groups produce no AI calls. One
+active package per group completes all light screens before any deep extraction;
+new arrivals cannot overtake it. Provider calls are globally single-flight across
+groups and rolling deployments. Transport recovery freezes the active group and
+resumes only its unfinished source stage, even in the same slot, after
 30/60/120/240/300-second backoff. Transient outages do not exhaust a two-attempt
-ceiling; invalid-output retries retain their limit. Expired SQL leases can be
-reclaimed after restart. Historical transport jobs abandoned by the old two-attempt
-policy are reopened only for current retained source revisions in active pilot
-groups, not completed tasks or permanent errors. Budgets, working hours and the
-late-activity gate still apply. Requests stop at the daily cutoff.
+ceiling. Authentication, balance and configuration failures sleep to the next hour.
+Schema/evidence/date validation failures are terminal for that target and are never
+paid twice with the same prompt. Three consecutive quality failures or valid deep
+responses with no proposal pause the remaining package until the next hour. Expired
+SQL leases can be reclaimed after restart. Historical transport jobs abandoned by
+the old two-attempt policy are reopened only for current retained source revisions
+in active pilot groups, not completed tasks or permanent errors. Budgets, working
+hours and the late-activity gate still apply. A request cannot start within 50
+seconds of a configured or daily cutoff.
 The existing daily/global USD limits and usage ledger remain unchanged. Production
 also needs `AI_ENABLED=true`, and any old absolute `AI_ENABLED_UNTIL` must be cleared
 explicitly when replacing a one-time test window with this recurring policy.

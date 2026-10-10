@@ -4,6 +4,39 @@ Status: accepted
 
 Date: 2026-10-04
 
+## Owner update — 2026-10-10: serialized resumable AI runs
+
+Keep hosted AI emergency-stopped while replacing the polling cascade with one
+durable state machine. A fresh group run requires both an hourly cutoff and an
+activity signal newer than the previous package. A group may have only one runnable
+package: all targets in its fixed snapshot complete the light screen before any
+signalled target enters deep extraction. New arrivals wait for the next package.
+Across all groups and rolling deployments, at most one provider request may be in
+flight. Do not start a request with less than 50 seconds left in its processing
+window.
+
+A transient transport/API failure freezes that package, preserves completed light
+and deep checkpoints, sleeps with capped backoff, and resumes only the unfinished
+stage. Authentication, balance and provider-configuration failures sleep until the
+next hourly boundary. A provider response whose schema, date or evidence references
+fail validation is terminal for that target and is never repeated with the same
+prompt. Light-screen citation formatting is normalized locally because screening
+cannot publish facts. Such quality failures are aggregated in the one run summary,
+not emitted as alternating error/recovery alerts.
+
+Three consecutive quality failures or three valid deep responses with zero useful
+proposals pause the remaining package until the next hourly boundary. Transport
+failures retain the shorter configured circuit cooldown. A valid response after a
+real provider failure closes only that failure's incident, not every historical
+error code. Budgets, per-stage retry caps, leases, source-version idempotency and
+the emergency production kill switch remain independent final safeguards.
+
+Acceptance: two targets screen-screen-deep-deep; a retrying target blocks the rest
+of its group and any later package; restart resumes its saved stage; three invalid
+or empty deep results prevent a fourth call until the next hour; quality failures
+make one paid attempt and no standalone incident; concurrent workers produce one
+global provider call; and near-cutoff work remains pending without a reservation.
+
 ## Owner update — 2026-10-09: hourly scheduled runs
 
 Change new-target scheduling from half-hour packages to hourly packages at 07:00,
@@ -36,9 +69,10 @@ recovery attempts; exhausting it isolates that source rather than blocking other
 messages. Existing unique source-version jobs, SQL leases, stage checkpoints,
 request reservations, daily/total ceilings and owner-only incident delivery remain.
 
-Acceptance: duplicate sweeps cannot create paid duplicates; one failure does not
-pause a planned run; three consecutive spend-risk failures prevent a fourth call
-during cooldown; processing resumes without manual action after cooldown; a valid
+Acceptance: duplicate sweeps cannot create paid duplicates; one transient failure
+pauses its active group package without losing checkpoints; three consecutive
+spend-risk failures prevent a fourth call during cooldown; processing resumes
+without manual action after cooldown; a valid
 probe clears the circuit; the hourly ceiling rolls forward automatically; and one
 poisoned source cannot retry forever or consume the whole experiment budget.
 
@@ -241,17 +275,20 @@ retry/restart does not produce a second start; pending tail delays the final;
 Enable `AI_LIVE_TWO_PASS=true` in the live pilot. Every new/edited retained text
 message (including an attachment caption) enters DeepSeek's high-recall semantic
 screen with bounded neighboring messages and reply/subject evidence. Do not use
-the legacy keyword relevance gate in this mode. Weak signals and uncertainty
-escalate to deep extraction; only the model can decide that a target is chatter.
+the legacy keyword relevance gate in this mode. Weak signals with identifiable
+academic evidence escalate to deep extraction; uncertainty by itself is not a
+signal, and only the model decides that a target is chatter.
 The neighborhood includes up to eight messages on either side, constrained by the
 existing byte/message bounds; selected historical context is evidence, not a new
 target or full-history replay. Binary OCR/file-content parsing is not added here.
 
 Each stage is a separately reserved/settled/reported attempt. Migration 0018 adds
 the nullable SQL screening checkpoint per source revision. A successful screen
-commits before the deep call. Deep recovery reuses it and may continue in the same
-hourly slot; new targets still wait for their own slot. Each stage retains its
-own validation retry allowance without reusing lease generations. An edited source
+commits before deep work. Every target in a scheduled package finishes screening
+before any deep call. Deep recovery reuses the checkpoint and may continue in the
+same hourly slot; new targets still wait for their own slot. Transport stages retain
+bounded recovery without reusing lease generations; validated quality failures are
+not repeated with the same prompt. An edited source
 gets a new version job and screening. Published cards commit per deep result under
 the existing confidence/manual-lock/multiple-task rules. No UI contract changes.
 

@@ -292,6 +292,35 @@ def test_outage_is_durable_delayed_and_conservatively_charged(client):
     asyncio.run(inspect())
 
 
+def test_quality_failure_is_terminal_without_paid_retry_or_owner_incident(client):
+    source(client)
+
+    class InvalidCitation:
+        def __init__(self):
+            self.calls = 0
+
+        async def extract_batch(self, *args, **kwargs):
+            self.calls += 1
+            raise ProviderFailure(
+                "invalid_source_reference",
+                True,
+                usage=TokenUsage(prompt_tokens=100, completion_tokens=100),
+            )
+
+    provider = InvalidCitation()
+    assert run(client, provider) == "failed"
+    assert run(client, provider) == "idle"
+    assert provider.calls == 1
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            job = await db.scalar(select(AIJob))
+            assert job.state == "failed"
+            assert await db.get(OwnerIncident, "invalid_source_reference") is None
+
+    asyncio.run(inspect())
+
+
 def test_confirmed_rejection_releases_attempt_and_global_budget(client):
     source(client)
 
@@ -310,6 +339,114 @@ def test_confirmed_rejection_releases_attempt_and_global_budget(client):
     # A different message can consume the otherwise blocked daily budget.
     source(client, mid=32)
     assert run(client, Provider(), ai_daily_group_budget_usd=0.012) == "completed"
+
+
+def test_configuration_failure_sleeps_job_until_next_hour_without_spend(client):
+    source(client)
+    start = datetime.now(UTC).replace(minute=5, second=0, microsecond=0)
+
+    class BadKey:
+        def __init__(self):
+            self.calls = 0
+
+        async def extract_batch(self, *args, **kwargs):
+            self.calls += 1
+            raise ProviderFailure("invalid_api_key", False, reservation_releasable=True)
+
+    provider = BadKey()
+    settings = Settings(ai_enabled=True)
+    assert (
+        asyncio.run(process_next(client.app.state.engine, settings, provider, now=start)) == "retry"
+    )
+    assert (
+        asyncio.run(
+            process_next(
+                client.app.state.engine,
+                settings,
+                provider,
+                now=start + timedelta(minutes=30),
+            )
+        )
+        == "idle"
+    )
+    assert provider.calls == 1
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            job = await db.scalar(select(AIJob))
+            attempt = await db.scalar(select(AIAttempt))
+            assert job.state == "retry"
+            assert job.available_at.replace(tzinfo=UTC) == (start + timedelta(hours=1)).replace(
+                minute=0
+            )
+            assert attempt.charged_usd == 0
+
+    asyncio.run(inspect())
+
+    recovered = Provider()
+    assert (
+        asyncio.run(
+            process_next(
+                client.app.state.engine,
+                settings,
+                recovered,
+                now=(start + timedelta(hours=1)).replace(minute=0),
+            )
+        )
+        == "completed"
+    )
+    assert recovered.calls == 1
+
+
+def test_running_provider_call_blocks_a_second_group_globally(client):
+    source(client)
+
+    async def add_second_group():
+        async with AsyncSession(client.app.state.engine) as db:
+            now = datetime.now(UTC)
+            group = Group(
+                telegram_chat_id=-2002,
+                name="Second group",
+                timezone="Europe/Moscow",
+                status="active",
+                pilot_authorized=True,
+            )
+            db.add(group)
+            await db.flush()
+            db.add(
+                RawMessage(
+                    group_id=group.id,
+                    telegram_message_id=31,
+                    text="ДЗ: решить задачи",
+                    message_date=now,
+                    version_date=now,
+                    revision=1,
+                    processing_state="pending",
+                    delete_at=now + timedelta(days=30),
+                )
+            )
+            await db.commit()
+
+    asyncio.run(add_second_group())
+    settings = Settings(ai_enabled=True)
+    nested = Provider()
+
+    class ReentrantProvider(Provider):
+        async def extract_batch(self, *args, **kwargs):
+            self.nested_outcome = await process_next(
+                client.app.state.engine,
+                settings,
+                nested,
+                now=datetime.now(UTC),
+            )
+            return await super().extract_batch(*args, **kwargs)
+
+    first = ReentrantProvider()
+    assert asyncio.run(process_next(client.app.state.engine, settings, first)) == "completed"
+    assert first.nested_outcome == "idle"
+    assert nested.calls == 0
+    assert asyncio.run(process_next(client.app.state.engine, settings, nested)) == "completed"
+    assert nested.calls == 1
 
 
 def test_control_point_is_never_published_as_homework(client):
@@ -385,22 +522,18 @@ def test_cutoff_stops_calls_at_and_after_midnight(client):
     assert count(client, AIAttempt) == 0
 
 
-def test_active_request_is_cancelled_at_cutoff_without_publishing(client):
+def test_request_does_not_start_when_processing_window_is_about_to_close(client):
     source(client)
     now = datetime.now(UTC)
 
-    class SlowProvider(Provider):
-        async def extract_batch(self, *args, **kwargs):
-            self.calls += 1
-            await asyncio.sleep(2)
-            return await super().extract_batch(*args, **kwargs)
-
-    provider = SlowProvider()
+    provider = Provider()
     settings = Settings(ai_enabled=True, ai_enabled_until=now + timedelta(seconds=1))
     assert (
-        asyncio.run(process_next(client.app.state.engine, settings, provider, now=now)) == "retry"
+        asyncio.run(process_next(client.app.state.engine, settings, provider, now=now))
+        == "window_closing"
     )
-    assert provider.calls == 1
+    assert provider.calls == 0
+    assert count(client, AIAttempt) == 0
     assert count(client, Homework) == 0
 
 
