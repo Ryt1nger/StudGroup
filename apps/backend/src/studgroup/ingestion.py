@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, database
-from studgroup.models import Group, RawMessage, ReceivedUpdate
+from studgroup.models import Group, GroupAIProfile, GroupTopic, RawMessage, ReceivedUpdate
 
 router = APIRouter(prefix="/v1/telegram", include_in_schema=False)
 
@@ -43,6 +43,14 @@ class ForwardOrigin(BaseModel):
     date: int = Field(ge=0)
 
 
+class ForumTopicCreated(BaseModel):
+    name: str = Field(max_length=255)
+
+
+class ForumTopicEdited(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+
+
 class Message(BaseModel):
     message_id: int
     date: int = Field(ge=0)
@@ -52,6 +60,10 @@ class Message(BaseModel):
     edit_date: int | None = Field(default=None, ge=0)
     sender: Sender | None = Field(default=None, alias="from")
     reply_to_message: ReplyReference | None = None
+    message_thread_id: int | None = None
+    is_topic_message: bool = False
+    forum_topic_created: ForumTopicCreated | None = None
+    forum_topic_edited: ForumTopicEdited | None = None
     users_shared: UsersShared | None = None
     forward_origin: ForwardOrigin | None = None
 
@@ -112,6 +124,12 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
         await db.commit()
         return {"ok": True}
 
+    from studgroup.group_structure import ensure_profile
+
+    await ensure_profile(db, group.id, datetime.now(UTC))
+    if message.message_thread_id is not None:
+        await store_topic(db, group.id, message, datetime.now(UTC))
+
     if message.text is None and message.caption:
         message.text = message.caption
 
@@ -155,6 +173,8 @@ async def store_message(db, group, message, *, imported=False):
     The caller commits before acknowledgement. History never overwrites a newer
     live edit; every timestamp represents the original source, not import time.
     """
+    profile = await db.get(GroupAIProfile, group.id)
+    generation = profile.generation if profile is not None else 1
     version = datetime.fromtimestamp(message.edit_date or message.date, UTC)
     row = await db.scalar(
         select(RawMessage)
@@ -173,10 +193,12 @@ async def store_message(db, group, message, *, imported=False):
             reply_to_message_id=message.reply_to_message.message_id
             if message.reply_to_message
             else None,
+            message_thread_id=message.message_thread_id,
             text=message.text,
             message_date=original_date,
             version_date=version,
             revision=1,
+            analysis_generation=generation,
             processing_state="pending",
             imported=imported,
             delete_at=original_date + timedelta(days=30),
@@ -194,15 +216,21 @@ async def store_message(db, group, message, *, imported=False):
             saved_version = saved_version.replace(tzinfo=UTC)
         if version > saved_version:
             reply_id = message.reply_to_message.message_id if message.reply_to_message else None
-            if row.text == message.text and row.reply_to_message_id == reply_id:
+            if (
+                row.text == message.text
+                and row.reply_to_message_id == reply_id
+                and row.message_thread_id == message.message_thread_id
+            ):
                 row.version_date = version
                 return "unchanged"
             row.text = message.text
             row.reply_to_message_id = (
                 message.reply_to_message.message_id if message.reply_to_message else None
             )
+            row.message_thread_id = message.message_thread_id
             row.version_date = version
             row.revision += 1
+            row.analysis_generation = generation
             row.processing_state = "pending"
             if not imported:
                 from studgroup.ai_schedule import signal
@@ -212,3 +240,38 @@ async def store_message(db, group, message, *, imported=False):
                 await signal(db, group.id, row.live_received_at)
             return "updated"
     return "unchanged"
+
+
+async def store_topic(db, group_id, message, now):
+    thread_id = message.message_thread_id
+    row = await db.scalar(
+        select(GroupTopic)
+        .where(
+            GroupTopic.group_id == group_id,
+            GroupTopic.telegram_thread_id == thread_id,
+        )
+        .with_for_update()
+    )
+    supplied_name = None
+    if message.forum_topic_created:
+        supplied_name = message.forum_topic_created.name
+    elif message.forum_topic_edited:
+        supplied_name = message.forum_topic_edited.name
+    changed = row is None or (supplied_name is not None and row.name != supplied_name)
+    if row is None:
+        row = GroupTopic(
+            group_id=group_id,
+            telegram_thread_id=thread_id,
+            name=supplied_name,
+            first_seen_at=now,
+            updated_at=now,
+        )
+        db.add(row)
+    else:
+        if supplied_name is not None:
+            row.name = supplied_name
+        row.updated_at = now
+    if changed:
+        from studgroup.group_structure import invalidate_map
+
+        await invalidate_map(db, group_id, now)

@@ -4,14 +4,46 @@ Status: accepted
 
 Date: 2026-10-04
 
+## Owner update — 2026-10-10: structure-first group bootstrap
+
+Every authorized group follows the durable states `mapping -> backfill -> live`.
+Before the first paid request, build and persist a local map from known Telegram
+topic IDs/names, message-to-topic membership, reply edges, schedule subjects and
+hashtags. If none form a reliable hierarchy, persist `unstructured` and continue
+with chronology, replies and text. Topic names and the map may guide routing and subject interpretation,
+but are not evidence for a task, date or deadline. A newly observed or renamed
+topic refreshes the map before later provider work without replaying completed
+history.
+
+After the initial map, re-analyse every retained source message from the bot's
+available history under a new analysis generation. Old terminal jobs remain as an
+audit trail but cannot suppress the new generation. The backfill uses the same
+light-then-deep order, global single-flight lock, checkpoints, retry/circuit rules,
+hourly working window and budget ceilings as live processing. Failures leave the
+unfinished source/stage pending; they do not restart completed work. Only after no
+generation target remains pending does the group enter `live` and return to the
+normal activity-triggered hourly cadence.
+
+The existing Telegram HTML import did not contain topic service metadata, so exact
+historic topic IDs cannot be reconstructed for those rows. The map records that
+limitation and uses replies, hashtags and schedule subjects for old history; all
+future Bot API messages persist `message_thread_id` and observed topic names.
+
+Acceptance: mapping makes no provider call; a generation-1 terminal job does not
+block generation 2; imported/expired retained sources join the bootstrap snapshot;
+topic metadata and the compact map reach both passes as non-evidentiary context;
+restart resumes the same generation; and a topic rename refreshes the map without
+starting another full-history replay.
+
 ## Owner update — 2026-10-10: begin protected cost measurement
 
 Re-enable hosted DeepSeek processing for the cost measurement. Keep the hourly
 activity gate, global single-flight execution, resumable checkpoints, validation,
 automatic circuit breaker, USD ceilings and owner budget notifications active.
 The health endpoint must distinguish enabled, disabled, expired and emergency-stop
-states without exposing credentials. Do not replay imported history or bypass the
-fixed-package rules when activation occurs.
+states without exposing credentials. Outside the explicitly approved
+structure-first bootstrap, activation does not replay imported history or bypass
+the fixed-package rules.
 
 ## Owner update — 2026-10-10: serialized resumable AI runs
 
@@ -35,19 +67,22 @@ unusable top-level response is terminal and is never repeated with the same prom
 Light-screen citation formatting is normalized locally because screening cannot
 publish facts.
 
-Three consecutive quality failures or three valid deep responses with zero useful
-proposals pause the remaining package until the next hourly boundary. Transport
-failures retain the shorter configured circuit cooldown. A valid response after a
+Three consecutive unusable quality failures pause the remaining package until the
+next hourly boundary. A schema-valid empty deep result is a normal correction of a
+high-recall screen false positive: record its tokens and zero output, complete that
+target, and continue. Hourly/daily/total ceilings still bound false-positive spend.
+Transport failures retain the shorter configured circuit cooldown. A valid response after a
 real provider failure closes only that failure's incident, not every historical
 error code. Budgets, per-stage retry caps, leases, source-version idempotency and
 the emergency production kill switch remain independent final safeguards.
 
 Acceptance: two targets screen-screen-deep-deep; a retrying target blocks the rest
 of its group and any later package; restart resumes its saved stage; three invalid
-or empty deep results prevent a fourth call until the next hour; a malformed sibling
-cannot discard a valid proposal; diagnostics remain owner-visible without alert
-flapping; quality failures make one paid attempt; concurrent workers produce one
-global provider call; and near-cutoff work remains pending without a reservation.
+deep results prevent a fourth call until the next hour; a malformed sibling cannot
+discard a valid proposal; diagnostics remain owner-visible without alert flapping;
+quality failures make one paid attempt; concurrent workers produce one global
+provider call; valid empty results do not open an error incident; and
+near-cutoff work remains pending without a reservation.
 
 ## Owner update — 2026-10-09: hourly scheduled runs
 

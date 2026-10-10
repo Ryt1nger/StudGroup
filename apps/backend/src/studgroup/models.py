@@ -103,10 +103,12 @@ class RawMessage(Base):
     telegram_message_id: Mapped[int] = mapped_column(BigInteger)
     sender_id: Mapped[int | None] = mapped_column(BigInteger)
     reply_to_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    message_thread_id: Mapped[int | None] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
     message_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     version_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    analysis_generation: Mapped[int] = mapped_column(Integer, default=1)
     imported: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     processing_state: Mapped[str] = mapped_column(String(16), default="pending")
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -195,12 +197,13 @@ class AIControl(Base):
 
 class AIRun(Base):
     __tablename__ = "ai_runs"
-    __table_args__ = (UniqueConstraint("group_id", "slot"),)
+    __table_args__ = (UniqueConstraint("group_id", "slot", "analysis_generation"),)
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     group_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("groups.id", ondelete="CASCADE"), index=True
     )
     slot: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    analysis_generation: Mapped[int] = mapped_column(Integer, default=1)
     targets: Mapped[str] = mapped_column(Text)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -209,7 +212,9 @@ class AIRun(Base):
 
 class AIJob(Base):
     __tablename__ = "ai_jobs"
-    __table_args__ = (UniqueConstraint("raw_message_id", "source_revision"),)
+    __table_args__ = (
+        UniqueConstraint("raw_message_id", "source_revision", "analysis_generation"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     raw_message_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("raw_messages.id", ondelete="SET NULL")
@@ -218,6 +223,7 @@ class AIJob(Base):
         ForeignKey("groups.id", ondelete="CASCADE"), index=True
     )
     source_revision: Mapped[int] = mapped_column(Integer)
+    analysis_generation: Mapped[int] = mapped_column(Integer, default=1)
     state: Mapped[str] = mapped_column(String(20), default="queued")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -236,6 +242,34 @@ class GroupAIActivity(Base):
     last_signal_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     signal_count: Mapped[int] = mapped_column(Integer, default=1)
     last_batch_slot: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GroupTopic(Base):
+    __tablename__ = "group_topics"
+    __table_args__ = (UniqueConstraint("group_id", "telegram_thread_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    telegram_thread_id: Mapped[int] = mapped_column(BigInteger)
+    name: Mapped[str | None] = mapped_column(String(255))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GroupAIProfile(Base):
+    __tablename__ = "group_ai_profiles"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    state: Mapped[str] = mapped_column(String(24), default="mapping")
+    backfill_requested: Mapped[bool] = mapped_column(Boolean, default=True)
+    structure_json: Mapped[str | None] = mapped_column(Text)
+    source_count: Mapped[int] = mapped_column(Integer, default=0)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    mapped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AICandidate(Base):

@@ -145,7 +145,7 @@ def test_repeated_quality_failures_pause_remaining_deep_work_until_next_hour(cli
     assert recovered.calls == 1
 
 
-def test_repeated_empty_deep_results_pause_run_instead_of_burning_remaining_targets(client):
+def test_repeated_empty_deep_results_complete_without_false_failure_circuit(client):
     class EmptyDeep(CascadeProvider):
         async def extract_batch(self, *args, **kwargs):
             self.calls += 1
@@ -161,23 +161,20 @@ def test_repeated_empty_deep_results_pause_run_instead_of_burning_remaining_targ
     provider = EmptyDeep()
     for second in range(4):
         assert run(client, provider, f"07:00:0{second}") == "screened"
-    for second in range(4, 7):
+    for second in range(4, 8):
         assert run(client, provider, f"07:00:0{second}") == "completed"
-    assert run(client, provider, "07:00:07") == "idle"
-    assert provider.calls == 3
+    assert run(client, provider, "07:00:08") == "idle"
+    assert provider.calls == 4
 
     async def inspect():
         async with AsyncSession(client.app.state.engine) as db:
             control = await db.get(AIControl, 1)
-            assert control.provider_failure_streak == 3
-            assert control.provider_circuit_reason == "zero_yield"
+            assert control.provider_failure_streak == 0
+            assert control.provider_circuit_reason is None
+            assert control.provider_circuit_open_until is None
 
     asyncio.run(inspect())
 
-    recovered = CascadeProvider()
-    assert run(client, recovered, "08:00:00") == "completed"
-    assert recovered.screen_calls == 0
-    assert recovered.calls == 1
 
 
 def test_new_messages_belong_to_next_slot_and_silence_produces_no_report(client):

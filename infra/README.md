@@ -47,7 +47,8 @@ The approved private import committed 3,065 text messages, 14 reviewed homework
 records, 15 academic events and 40 schedule records. Only the explicitly supplied
 Telegram account was given an active student membership; local preview users and
 session tokens were not copied. Reviewed personal completion state was preserved.
-Other history is retained for review, not falsely marked as fully AI-analyzed.
+Other history is retained for the generation-scoped structure-first backfill and is
+not marked fully AI-analyzed until that durable generation completes.
 AI was initially disabled. On 2026-10-07 the owner approved a one-time history
 analysis window ending at 2026-10-08 00:00 Europe/Moscow, under the existing daily
 and total budget caps. Cloud runtime logs confirm completed model processing.
@@ -109,6 +110,9 @@ The cutoff survives process sleep/restart; it is not a daily automatic re-enable
 `AI_IMPORT_CHAT_ID` opts exactly one authorized group's imported review queue into
 analysis (including expired raw history retained for required extraction). Existing
 reviewed/completed records and terminal jobs are not repeatedly sent to the model.
+The permanent group bootstrap is separate: it persists a structure/topic map first,
+then assigns all available sources to a new analysis generation. Earlier terminal
+jobs remain auditable but do not block that explicitly requested generation.
 Past/future context is bounded around the original source timestamp, not around the
 latest end of a large imported history. Calendar-known subject aliases are normalized
 before next-lesson fallback. Render sleeping still pauses execution; it does not erase

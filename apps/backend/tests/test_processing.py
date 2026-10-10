@@ -21,9 +21,12 @@ from studgroup.models import (
     AIControl,
     AIJob,
     Group,
+    GroupAIProfile,
+    GroupTopic,
     Homework,
     OwnerIncident,
     RawMessage,
+    SchedulePattern,
 )
 from studgroup.processing import process_next, retain_until
 
@@ -111,6 +114,106 @@ def test_worker_publishes_once_and_records_actual_cost(client):
             assert (await db.get(AIControl, 1)).spent_usd == attempt.charged_usd
 
     asyncio.run(billing())
+
+
+def test_structure_map_precedes_generation_scoped_full_history_reanalysis(client):
+    source(client, text="#матан ДЗ: решить задачи")
+    requested = datetime.now(UTC)
+
+    async def seed_bootstrap():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage))
+            db.add(
+                AIJob(
+                    raw_message_id=raw.id,
+                    group_id=raw.group_id,
+                    source_revision=raw.revision,
+                    analysis_generation=1,
+                    state="done",
+                    attempts=1,
+                    available_at=requested,
+                    created_at=requested,
+                )
+            )
+            db.add(
+                GroupTopic(
+                    group_id=raw.group_id,
+                    telegram_thread_id=77,
+                    name="Математика",
+                    first_seen_at=requested,
+                    updated_at=requested,
+                )
+            )
+            db.add(
+                GroupAIProfile(
+                    group_id=raw.group_id,
+                    generation=2,
+                    state="mapping",
+                    backfill_requested=True,
+                    source_count=0,
+                    requested_at=requested,
+                )
+            )
+            await db.commit()
+
+    asyncio.run(seed_bootstrap())
+
+    class CapturingProvider(Provider):
+        async def extract_batch(self, context, *args, **kwargs):
+            self.context = context
+            return await super().extract_batch(context, *args, **kwargs)
+
+    provider = CapturingProvider()
+    assert run(client, provider) == "structure_mapped"
+    assert provider.calls == 0
+    assert run(client, provider) == "completed"
+    assert provider.calls == 1
+    target = next(item for item in provider.context if item["is_target"])
+    assert target["group_structure"]["topics"][0]["name"] == "Математика"
+    assert target["group_structure"]["hashtags"] == ["#матан"]
+    assert run(client, provider) == "backfill_completed"
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            jobs = (await db.scalars(select(AIJob).order_by(AIJob.analysis_generation))).all()
+            profile = await db.scalar(select(GroupAIProfile))
+            assert [job.analysis_generation for job in jobs] == [1, 2]
+            assert profile.state == "live"
+
+    asyncio.run(inspect())
+
+
+def test_group_without_topics_gets_valid_unstructured_map(client):
+    source(client, text="Всем привет")
+    requested = datetime.now(UTC)
+
+    async def seed_profile():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage))
+            for pattern in (await db.scalars(select(SchedulePattern))).all():
+                await db.delete(pattern)
+            db.add(
+                GroupAIProfile(
+                    group_id=raw.group_id,
+                    generation=1,
+                    state="mapping",
+                    backfill_requested=True,
+                    source_count=0,
+                    requested_at=requested,
+                )
+            )
+            await db.commit()
+
+    asyncio.run(seed_profile())
+    assert run(client, Provider()) == "structure_mapped"
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            profile = await db.scalar(select(GroupAIProfile))
+            assert json.loads(profile.structure_json)["mode"] == "unstructured"
+            assert profile.state == "backfill"
+
+    asyncio.run(inspect())
 
 
 def test_budget_prevents_call_and_keeps_message_pending(client):
@@ -724,6 +827,7 @@ def test_webhook_to_worker_to_authenticated_api(client):
     payload = delivery()
     payload["message"]["date"] = int(datetime.now(UTC).timestamp())
     assert send(client, payload).status_code == 200
+    assert run(client, Provider()) == "structure_mapped"
     assert run(client, Provider()) == "completed"
     response = client.get("/v1/homework?filter=all", headers={"Authorization": "Bearer valid"})
     assert response.status_code == 200

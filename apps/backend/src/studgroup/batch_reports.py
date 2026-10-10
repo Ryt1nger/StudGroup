@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import exists, select
 
-from studgroup.models import AIAttempt, AIJob, AIRun, Group, RawMessage
+from studgroup.models import AIAttempt, AIJob, AIRun, Group, GroupAIProfile, RawMessage
 from studgroup.owner_updates import queue
 
 
@@ -17,8 +17,8 @@ def utc(value):
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def target_key(raw_id, revision):
-    return f"{raw_id}:{revision}"
+def target_key(raw_id, revision, generation=1):
+    return f"{raw_id}:{revision}:{generation}"
 
 
 async def attach(db, settings, group, job, raw, attempt):
@@ -29,11 +29,15 @@ async def attach(db, settings, group, job, raw, attempt):
     if not timing:
         return
     slot = timing[0]
-    key = target_key(raw.id, job.source_revision)
+    key = target_key(raw.id, job.source_revision, job.analysis_generation)
     active = (
         await db.scalars(
             select(AIRun)
-            .where(AIRun.group_id == group.id, AIRun.finished_at.is_(None))
+            .where(
+                AIRun.group_id == group.id,
+                AIRun.analysis_generation == job.analysis_generation,
+                AIRun.finished_at.is_(None),
+            )
             .order_by(AIRun.started_at)
             .with_for_update()
         )
@@ -41,37 +45,66 @@ async def attach(db, settings, group, job, raw, attempt):
     run = next((r for r in active if key in json.loads(r.targets)), None)
     if run is None:
         run = await db.scalar(
-            select(AIRun).where(AIRun.group_id == group.id, AIRun.slot == slot).with_for_update()
+            select(AIRun)
+            .where(
+                AIRun.group_id == group.id,
+                AIRun.slot == slot,
+                AIRun.analysis_generation == job.analysis_generation,
+            )
+            .with_for_update()
         )
     if run is None:
         # Snapshot ALL eligible targets, not the worker's first 50-item claim page.
         previous_keys = {k for r in active for k in json.loads(r.targets)}
-        sources = (
-            await db.execute(
-                select(RawMessage.id, RawMessage.revision).where(
-                    RawMessage.group_id == group.id,
+        profile = await db.get(GroupAIProfile, group.id)
+        backfill = bool(
+            profile
+            and profile.state == "backfill"
+            and profile.generation == job.analysis_generation
+        )
+        conditions = [
+            RawMessage.group_id == group.id,
+            RawMessage.analysis_generation == job.analysis_generation,
+            RawMessage.processing_state == "pending",
+            ~exists(
+                select(AIJob.id).where(
+                    AIJob.raw_message_id == RawMessage.id,
+                    AIJob.source_revision == RawMessage.revision,
+                    AIJob.analysis_generation == RawMessage.analysis_generation,
+                    AIJob.state.in_(["done", "failed", "superseded"]),
+                )
+            ),
+        ]
+        if not backfill:
+            conditions.extend(
+                [
                     RawMessage.imported.is_(False),
-                    RawMessage.processing_state == "pending",
                     RawMessage.delete_at > attempt.created_at,
                     RawMessage.live_received_at.is_not(None),
                     RawMessage.live_received_at <= slot,
-                    ~exists(
-                        select(AIJob.id).where(
-                            AIJob.raw_message_id == RawMessage.id,
-                            AIJob.source_revision == RawMessage.revision,
-                            AIJob.state.in_(["done", "failed", "superseded"]),
-                        )
-                    ),
-                )
+                ]
+            )
+        sources = (
+            await db.execute(
+                select(
+                    RawMessage.id,
+                    RawMessage.revision,
+                    RawMessage.analysis_generation,
+                ).where(*conditions)
             )
         ).all()
         keys = sorted(
-            {target_key(mid, revision) for mid, revision in sources} - previous_keys | {key}
+            {target_key(mid, revision, generation) for mid, revision, generation in sources}
+            - previous_keys
+            | {key}
         )
         run = AIRun(
-            id=uuid.uuid5(group.id, "planned-run:" + slot.isoformat()),
+            id=uuid.uuid5(
+                group.id, f"planned-run:{slot.isoformat()}:{job.analysis_generation}"
+            ),
             group_id=group.id,
             slot=slot,
+            analysis_generation=job.analysis_generation,
             targets=json.dumps(keys),
             started_at=attempt.created_at,
         )
@@ -103,6 +136,12 @@ async def finish_ready(db, settings, now):
     ).all()
     for run in runs:
         keys = set(json.loads(run.targets))
+        profile = await db.get(GroupAIProfile, run.group_id)
+        backfill = bool(
+            profile
+            and profile.state == "backfill"
+            and profile.generation == run.analysis_generation
+        )
         raw_ids = {uuid.UUID(k.split(":")[0]) for k in keys}
         jobs = (
             await db.scalars(
@@ -111,7 +150,10 @@ async def finish_ready(db, settings, now):
                 )
             )
         ).all()
-        indexed = {target_key(j.raw_message_id, j.source_revision): j for j in jobs}
+        indexed = {
+            target_key(j.raw_message_id, j.source_revision, j.analysis_generation): j
+            for j in jobs
+        }
         raws = {
             r.id: r
             for r in (await db.scalars(select(RawMessage).where(RawMessage.id.in_(raw_ids)))).all()
@@ -124,10 +166,13 @@ async def finish_ready(db, settings, now):
                 failed += job.state == "failed"
                 skipped += job.state == "superseded"
             else:
-                raw_id, revision = key.split(":")
+                raw_id, revision, generation = key.split(":")
                 raw = raws.get(uuid.UUID(raw_id))
                 obsolete = (
-                    raw is None or raw.revision != int(revision) or utc(raw.delete_at) <= utc(now)
+                    raw is None
+                    or raw.revision != int(revision)
+                    or raw.analysis_generation != int(generation)
+                    or (utc(raw.delete_at) <= utc(now) and not backfill)
                 )
                 pending += not obsolete
                 skipped += obsolete

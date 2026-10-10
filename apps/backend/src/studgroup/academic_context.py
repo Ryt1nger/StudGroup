@@ -95,6 +95,8 @@ def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
             "message_id": m.message_id,
             "message_date": m.message_date.isoformat(),
             "reply_to": m.reply_to_message_id,
+            "topic_id": getattr(m, "message_thread_id", None),
+            "topic_name": getattr(m, "topic_name", None),
             "text": m.text,
             "is_target": m.message_id == target_id,
         }

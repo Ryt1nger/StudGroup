@@ -3,7 +3,7 @@ import asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.models import RawMessage
+from studgroup.models import GroupAIProfile, GroupTopic, RawMessage
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -92,3 +92,23 @@ def test_reply_reference_is_validated_and_saved(client):
     assert rows(client)[0].reply_to_message_id == 41
     payload["message"]["reply_to_message"]["message_id"] = "invalid"
     assert send(client, payload).status_code == 422
+
+
+def test_topic_identity_and_name_are_persisted_before_analysis(client):
+    payload = delivery()
+    payload["message"]["message_thread_id"] = 77
+    payload["message"]["is_topic_message"] = True
+    payload["message"]["forum_topic_created"] = {"name": "Математика"}
+    assert send(client, payload).status_code == 200
+    assert rows(client)[0].message_thread_id == 77
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            topic = await db.scalar(select(GroupTopic))
+            profile = await db.scalar(select(GroupAIProfile))
+            assert topic.telegram_thread_id == 77
+            assert topic.name == "Математика"
+            assert profile.state == "mapping"
+            assert profile.backfill_requested
+
+    asyncio.run(inspect())

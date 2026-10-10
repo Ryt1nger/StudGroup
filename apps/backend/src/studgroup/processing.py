@@ -33,6 +33,8 @@ from studgroup.models import (
     AIRun,
     Group,
     GroupAIActivity,
+    GroupAIProfile,
+    GroupTopic,
     Homework,
     OwnerIncident,
     OwnerIncidentEpisode,
@@ -299,8 +301,18 @@ async def claim(engine, settings, now):
                         ["provider_unreachable", "rate_limited", "processing_window_closed"]
                     ),
                     AIJob.source_revision == RawMessage.revision,
+                    AIJob.analysis_generation == RawMessage.analysis_generation,
                     RawMessage.processing_state == "failed",
-                    RawMessage.delete_at > now,
+                    or_(
+                        RawMessage.delete_at > now,
+                        exists(
+                            select(GroupAIProfile.group_id).where(
+                                GroupAIProfile.group_id == RawMessage.group_id,
+                                GroupAIProfile.state == "backfill",
+                                GroupAIProfile.generation == RawMessage.analysis_generation,
+                            )
+                        ),
+                    ),
                     Group.status == "active",
                     Group.pilot_authorized.is_(True),
                 )
@@ -354,7 +366,10 @@ async def claim(engine, settings, now):
             if active_raw_ids
             else []
         )
-        jobs_by_key = {f"{job.raw_message_id}:{job.source_revision}": job for job in active_jobs}
+        jobs_by_key = {
+            f"{job.raw_message_id}:{job.source_revision}:{job.analysis_generation}": job
+            for job in active_jobs
+        }
         run_policy = {}
         terminal = {"done", "failed", "superseded"}
         for group_id, targets in active_targets.items():
@@ -385,10 +400,18 @@ async def claim(engine, settings, now):
             if settings.ai_import_chat_id is not None and not scheduled
             else False
         )
+        backfill_scope = exists(
+            select(GroupAIProfile.group_id).where(
+                GroupAIProfile.group_id == RawMessage.group_id,
+                GroupAIProfile.state == "backfill",
+                GroupAIProfile.generation == RawMessage.analysis_generation,
+            )
+        )
         already_processed = exists(
             select(AIJob.id).where(
                 AIJob.raw_message_id == RawMessage.id,
                 AIJob.source_revision == RawMessage.revision,
+                AIJob.analysis_generation == RawMessage.analysis_generation,
                 AIJob.state.in_(["done", "failed", "superseded"]),
             )
         )
@@ -401,15 +424,20 @@ async def claim(engine, settings, now):
                         RawMessage.processing_state == "pending",
                         and_(import_scope, RawMessage.processing_state == "needs_context"),
                     ),
-                    or_(RawMessage.delete_at > now, import_scope),
+                    or_(RawMessage.delete_at > now, import_scope, backfill_scope),
                     Group.pilot_authorized.is_(True),
                     Group.status == "active",
                     ~already_processed,
                     *(
                         [
-                            RawMessage.imported.is_(False),
-                            RawMessage.live_received_at.is_not(None),
-                            RawMessage.live_received_at <= slot,
+                            or_(
+                                backfill_scope,
+                                and_(
+                                    RawMessage.imported.is_(False),
+                                    RawMessage.live_received_at.is_not(None),
+                                    RawMessage.live_received_at <= slot,
+                                ),
+                            ),
                         ]
                         if scheduled
                         else []
@@ -421,7 +449,7 @@ async def claim(engine, settings, now):
             )
         ).all()
         for raw in raws:
-            key = f"{raw.id}:{raw.revision}"
+            key = f"{raw.id}:{raw.revision}:{raw.analysis_generation}"
             policy = run_policy.get(raw.group_id)
             if policy:
                 if key not in policy["targets"]:
@@ -434,7 +462,15 @@ async def claim(engine, settings, now):
                     and key not in policy["unscreened"]
                 ):
                     continue
-            elif scheduled:
+            elif scheduled and not await db.scalar(
+                select(
+                    exists().where(
+                        GroupAIProfile.group_id == raw.group_id,
+                        GroupAIProfile.state == "backfill",
+                        GroupAIProfile.generation == raw.analysis_generation,
+                    )
+                )
+            ):
                 activity = await db.get(GroupAIActivity, raw.group_id)
                 if activity is None or (
                     activity.last_batch_slot is not None
@@ -454,6 +490,7 @@ async def claim(engine, settings, now):
                 .where(
                     AIJob.raw_message_id == raw.id,
                     AIJob.source_revision == raw.revision,
+                    AIJob.analysis_generation == raw.analysis_generation,
                 )
                 .with_for_update()
             )
@@ -573,6 +610,7 @@ async def claim(engine, settings, now):
                     raw_message_id=raw.id,
                     group_id=raw.group_id,
                     source_revision=raw.revision,
+                    analysis_generation=raw.analysis_generation,
                     available_at=now,
                     created_at=now,
                     attempts=0,
@@ -621,12 +659,18 @@ async def claim(engine, settings, now):
 
 
 async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
+    profile = await db.get(GroupAIProfile, raw.group_id)
+    include_history = bool(
+        raw.imported
+        or (
+            profile
+            and profile.state == "backfill"
+            and profile.generation == raw.analysis_generation
+        )
+    )
     base = select(RawMessage).where(
         RawMessage.group_id == raw.group_id,
-        or_(
-            RawMessage.delete_at > now,
-            RawMessage.imported.is_(True) if raw.imported else False,
-        ),
+        or_(RawMessage.delete_at > now, include_history),
         RawMessage.message_date >= utc(raw.message_date) - timedelta(days=7),
         RawMessage.message_date <= utc(raw.message_date) + timedelta(days=7),
     )
@@ -650,22 +694,27 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
             select(RawMessage).where(
                 RawMessage.group_id == raw.group_id,
                 RawMessage.telegram_message_id == raw.reply_to_message_id,
-                or_(
-                    RawMessage.delete_at > now,
-                    RawMessage.imported.is_(True) if raw.imported else False,
-                ),
+                or_(RawMessage.delete_at > now, include_history),
             )
         )
         if parent:
             rows.append(parent)
     indexed = {row.id: row for row in rows}
     indexed[raw.id] = raw
+    topic_names = {
+        row.telegram_thread_id: row.name
+        for row in (
+            await db.scalars(select(GroupTopic).where(GroupTopic.group_id == group.id))
+        ).all()
+    }
     messages = [
         SimpleNamespace(
             message_id=row.telegram_message_id,
             reply_to_message_id=row.reply_to_message_id,
             message_date=utc(row.message_date),
             text=row.text,
+            message_thread_id=row.message_thread_id,
+            topic_name=topic_names.get(row.message_thread_id),
         )
         for row in indexed.values()
     ]
@@ -675,6 +724,11 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
         max_bytes=12500,
         neighborhood=8 if semantic_neighborhood else 0,
     )
+    if profile and profile.structure_json:
+        for item in context:
+            if item["is_target"]:
+                item["group_structure"] = json.loads(profile.structure_json)
+                break
     patterns = (
         await db.scalars(select(SchedulePattern).where(SchedulePattern.group_id == group.id))
     ).all()
@@ -1011,6 +1065,15 @@ async def process_next(engine, settings, provider=None, now=None):
         return "disabled"
     if settings.ai_enabled_until is not None and utc(settings.ai_enabled_until) <= clock():
         return "scheduled_off"
+    # Mapping is local and free. It is a hard barrier: no provider request for a
+    # group can start before the current map has been persisted.
+    async with AsyncSession(engine) as db:
+        from studgroup.group_structure import map_next
+
+        mapped = await map_next(db, clock())
+        if mapped is not None:
+            await db.commit()
+            return "structure_mapped"
     daily_close = None
     if settings.ai_schedule_enabled:
         from studgroup.ai_schedule import window
@@ -1033,6 +1096,13 @@ async def process_next(engine, settings, provider=None, now=None):
         return "not_configured"
     claimed = await claim(engine, settings, now)
     if claimed is None:
+        async with AsyncSession(engine) as db:
+            from studgroup.group_structure import complete_ready_backfills
+
+            completed = await complete_ready_backfills(db, clock())
+            await db.commit()
+            if completed:
+                return "backfill_completed"
         return "idle"
     job_id, attempt_id, raw_id, revision, generation = claimed
     async with AsyncSession(engine) as db:
@@ -1100,22 +1170,20 @@ async def process_next(engine, settings, provider=None, now=None):
             # This also adjusts daily sums; a superseded job still owns its own charge.
             control.spent_usd -= attempt.charged_usd
             attempt.charged_usd = Decimal(0)
-        zero_yield = result is not None and not (
-            result.batch.assignments or result.batch.online_lessons
-        )
-        if response is not None and not zero_yield:
+        # An empty, schema-valid deep result is a legitimate correction of a
+        # high-recall screen false positive. It completes this target and is
+        # measured, but is not a provider failure and must not stall the batch.
+        if response is not None:
             control.provider_failure_streak = 0
             control.provider_circuit_open_until = None
             control.provider_circuit_reason = None
             await incident(db, "ai_circuit_open", response_at, recover=True)
-        elif zero_yield or (
-            failure is not None and failure.code in SPEND_RISK_FAILURES | QUALITY_FAILURES
-        ):
-            circuit_reason = "zero_yield" if zero_yield else failure.code
+        elif failure is not None and failure.code in SPEND_RISK_FAILURES | QUALITY_FAILURES:
+            circuit_reason = failure.code
             control.provider_failure_streak += 1
             control.provider_circuit_reason = circuit_reason
             if control.provider_failure_streak >= settings.ai_circuit_failure_threshold:
-                if zero_yield or circuit_reason in QUALITY_FAILURES:
+                if circuit_reason in QUALITY_FAILURES:
                     local = response_at.astimezone(ZoneInfo(settings.ai_schedule_timezone))
                     control.provider_circuit_open_until = (
                         (local + timedelta(hours=1))
