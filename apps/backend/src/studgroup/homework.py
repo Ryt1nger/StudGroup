@@ -16,6 +16,7 @@ from studgroup.materials import links
 from studgroup.models import (
     Group,
     Homework,
+    Membership,
     PersonalCompletion,
     RawMessage,
     ScheduleException,
@@ -60,6 +61,18 @@ async def representation(db, row, user, now):
         "reason": None if url else "retention_expired" if not available else "no_deep_link",
     }
     imported = bool(raw and raw.imported)
+    membership = await db.scalar(
+        select(Membership).where(
+            Membership.user_id == user,
+            Membership.group_id == row.group_id,
+            Membership.status == "active",
+        )
+    )
+    verification_state = row.verification_state
+    if verification_state == "needs_clarification" and (
+        membership is None or membership.role not in {"headman", "deputy"}
+    ):
+        verification_state = "from_group_message"
     source = {
         "kind": "manual_entry"
         if row.raw_message_id is None
@@ -85,7 +98,7 @@ async def representation(db, row, user, now):
         "status": row.status,
         "urgency": row.urgency,
         "visibility": "group",
-        "verification_state": row.verification_state,
+        "verification_state": verification_state,
         "revision": row.revision,
         "source": source,
         "source_detail": {

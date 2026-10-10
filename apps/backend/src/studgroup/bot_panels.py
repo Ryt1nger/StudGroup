@@ -243,7 +243,7 @@ async def execute(db, row, settings, request):
 
 
 async def dispatch(db, update_value, settings):
-    from studgroup import bot_admin, headman_bot
+    from studgroup import bot_admin, bot_info, headman_bot
 
     callback = update_value.callback_query
     message = callback.message if callback else update_value.message
@@ -253,6 +253,11 @@ async def dispatch(db, update_value, settings):
     chat = sender.id
     text = (message.text or "").strip()
     command = text.split()[0].split("@")[0] if text else ""
+    topic = None if callback else bot_info.topic_for(text)
+    if topic:
+        # Public info commands and /start <topic> deep links (landing page). Read-only.
+        await bot_info.reply(db, chat, topic, settings)
+        return True
     route = await db.get(BotDialogRoute, chat)
     mode = None
     start = not callback and command == "/start"
@@ -310,7 +315,7 @@ async def dispatch(db, update_value, settings):
             await track(db, owner, message.message_id, "command")
             update_value = update_value.model_copy(deep=True)
             update_value.message.text = command
-        elif command == "/resetrun":
+        elif command in {"/resetrun", "/explain"}:
             # Owner-only reset lives in the admin panel; never let a headman dialog
             # (or the last used /st route) swallow it.
             mode = "admin"

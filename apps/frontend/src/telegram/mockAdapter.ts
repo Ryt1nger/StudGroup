@@ -47,6 +47,10 @@ export function createMockAdapter(options: MockOptions): TelegramAdapter {
       console.info('[mock telegram] openTelegramLink', url);
       (globalThis as Record<string, unknown>).__lastTelegramLink = url;
     },
+    openExternalLink(url) {
+      console.info('[mock telegram] openExternalLink', url);
+      (globalThis as Record<string, unknown>).__lastExternalLink = url;
+    },
     haptic() {},
   };
 }

@@ -243,6 +243,8 @@ async def detail(db, session, group, key):
     text = f"{title(kind, row)}\n\n{row.description or ''}\n\nСрок: {stamp} ({group.timezone})\n"
     if kind == "h" and row.verification_state == "inferred":
         text += "Срок предположительный: рассчитан по расписанию.\n"
+    if kind == "h" and row.verification_state == "needs_clarification":
+        text += "Требует проверки: ИИ не уверен в распознавании.\n"
     if kind == "e" and row.window_end:
         text += f"Период до {utc(row.window_end).astimezone(ZoneInfo(group.timezone)).strftime('%d.%m.%Y %H:%M')}\n"
     text += f"\nИсточник: {raw.text[:1500] if raw and utc(raw.delete_at) > datetime.now(UTC) else 'вручную или срок хранения истёк'}"

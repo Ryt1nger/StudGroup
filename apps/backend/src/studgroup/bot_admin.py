@@ -104,6 +104,18 @@ async def handle(db, update, settings):
             buttons(session, [[(g.name[:50], "g" + g.id.hex)] for g in groups]),
         )
         return True
+    if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/explain":
+        from studgroup import explain
+
+        parts = text.split()
+        group = await db.scalar(
+            select(Group).where(Group.pilot_authorized.is_(True), Group.status == "active")
+        )
+        if len(parts) != 2 or not parts[1].isdigit() or group is None:
+            await say(db, chat, "Формат: /explain 4029 (номер сообщения из группы).")
+            return True
+        await say(db, chat, await explain.explain(db, settings, group, int(parts[1])))
+        return True
     if not callback and text.strip().split("@")[0] == "/resetrun":
         from studgroup import first_run
 

@@ -228,20 +228,54 @@ def parsed(**patch):
 
 
 @pytest.mark.parametrize(
-    "confidence,state", [(95, "published"), (84, "needs_context"), (64, "needs_context")]
+    "confidence,state", [(95, "published"), (84, "published"), (64, "published")]
 )
-def test_confidence_gates(confidence, state):
+def test_confidence_does_not_hide_complete_assignment(confidence, state):
     assert parsed(confidence=confidence).publication_state == state
 
 
-def test_unknown_deadline_is_not_invented_or_published():
+def test_unknown_deadline_is_not_invented_and_remains_visible_for_clarification():
     result = parsed(deadline_at=None, deadline_date_only=False)
     assert result.deadline_at is None
-    assert result.publication_state == "incomplete_hidden"
-    assert (
-        parsed(deadline_at=None, deadline_date_only=False, urgency="urgent").publication_state
-        == "needs_clarification"
+    assert result.publication_state == "needs_clarification"
+
+
+def test_batch_retains_unexpected_needs_context_for_owner_review():
+    item = {
+        "kind": "needs_context",
+        "subject": None,
+        "title": None,
+        "description": None,
+        "deadline_at": None,
+        "deadline_date_only": False,
+        "urgency": "normal",
+        "confidence": 40,
+        "source_message_ids": [1],
+    }
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"assignments": [item], "online_lessons": []})),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.extract_batch(
+            [
+                {
+                    "message_id": 1,
+                    "message_date": "2026-10-09T08:55:00+03:00",
+                    "text": "это тоже",
+                    "is_target": True,
+                }
+            ],
+            "Europe/Moscow",
+            target_message_id=1,
+        )
     )
+    assert result.batch.assignments[0].kind == "needs_context"
+    assert result.diagnostics == {}
 
 
 def test_control_point_is_not_homework_and_has_no_next_lesson_fallback():

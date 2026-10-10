@@ -24,6 +24,7 @@ function realTelegramAdapter(initialScheme: ColorScheme) {
     onViewportChange: () => () => undefined,
     showBackButton: () => null,
     openTelegramLink: vi.fn(),
+    openExternalLink: vi.fn(),
     haptic: vi.fn(),
   };
 

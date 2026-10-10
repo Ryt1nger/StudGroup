@@ -122,7 +122,7 @@ def test_turning_off_testing_mode_supersedes_pending_test_notifications(client):
     assert asyncio.run(outbox(engine))[0].state == "superseded"
 
 
-def test_new_review_proposal_is_labelled_unpublished_and_not_repeated(client):
+def test_uncertain_published_card_is_labelled_for_review_and_not_repeated(client):
     from test_processing import Provider, run, source
 
     class Uncertain(Provider):

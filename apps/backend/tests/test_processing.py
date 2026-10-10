@@ -771,7 +771,7 @@ def test_old_transport_exhaustion_is_recovered_after_processor_restart(client):
     assert recovered.calls == 1
 
 
-def test_uncertain_candidate_is_retained_for_review(client):
+def test_uncertain_complete_assignment_is_published_and_marked_for_review(client):
     source(client)
 
     class UncertainProvider(Provider):
@@ -781,16 +781,73 @@ def test_uncertain_candidate_is_retained_for_review(client):
             return result
 
     assert run(client, UncertainProvider()) == "completed"
-    assert count(client, Homework) == 0
+    assert count(client, Homework) == 1
     assert count(client, AICandidate) == 1
     assert run(client, UncertainProvider()) == "idle"
 
     async def inspect():
         async with AsyncSession(client.app.state.engine) as db:
-            assert (await db.scalar(select(RawMessage))).processing_state == "needs_context"
+            assert (await db.scalar(select(RawMessage))).processing_state == "completed"
+            candidate = await db.scalar(select(AICandidate))
+            assert candidate.state == "published"
+            assert json.loads(candidate.payload)["confidence"] == 50
+            card = await db.scalar(select(Homework))
+            assert card.status == "published"
+            assert card.verification_state == "needs_clarification"
+
+    asyncio.run(inspect())
+
+
+def test_unexpected_needs_context_response_is_retained_as_private_candidate(client):
+    source(client)
+
+    class NeedsContextProvider(Provider):
+        async def extract_batch(self, *args, **kwargs):
+            item = SourcedExtraction(
+                kind="needs_context",
+                subject=None,
+                title=None,
+                description=None,
+                deadline_at=None,
+                deadline_date_only=False,
+                urgency="normal",
+                confidence=30,
+                source_message_ids=[31],
+            )
+            return BatchResult(
+                batch=BatchExtraction(assignments=[item]),
+                usage=TokenUsage(prompt_tokens=100, completion_tokens=30),
+                model="deepseek-flash",
+                prompt_version="test",
+            )
+
+    assert run(client, NeedsContextProvider()) == "completed"
+    assert count(client, Homework) == 0
+    assert count(client, AICandidate) == 1
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
             candidate = await db.scalar(select(AICandidate))
             assert candidate.state == "review"
-            assert json.loads(candidate.payload)["confidence"] == 50
+            assert json.loads(candidate.payload)["kind"] == "needs_context"
+
+    asyncio.run(inspect())
+
+
+def test_overlapping_source_cluster_updates_one_card_instead_of_duplicating(client):
+    source(client, mid=4063, text="#русский")
+    source(client, mid=4067, text="#русский\nДз по ПИР: Актуальность, Предмет, Задача")
+    provider = Provider(ids=[4063, 4067])
+
+    assert run(client, provider) == "completed"
+    assert run(client, provider) == "completed"
+    assert count(client, Homework) == 1
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            card = await db.scalar(select(Homework))
+            anchor = await db.get(RawMessage, card.raw_message_id)
+            assert anchor.telegram_message_id == 4063
 
     asyncio.run(inspect())
 

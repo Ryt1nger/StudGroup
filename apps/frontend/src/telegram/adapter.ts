@@ -34,5 +34,7 @@ export interface TelegramAdapter {
   showBackButton(onClick: () => void): (() => void) | null;
   /** Opens a t.me link through Telegram. Caller must have validated the URL. */
   openTelegramLink(url: string): void;
+  /** Opens a validated external HTTPS link through Telegram or the browser fallback. */
+  openExternalLink(url: string): void;
   haptic(kind: 'success' | 'error' | 'light'): void;
 }

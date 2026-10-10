@@ -1171,6 +1171,7 @@ components:
       enum: [group, personal]
     VerificationState:
       type: string
+      description: Verification metadata for the current viewer. The needs_clarification value is returned only to an active headman or deputy; students receive from_group_message for the same published AI card. This field does not control group visibility.
       enum:
         - manual_confirmed
         - from_group_message

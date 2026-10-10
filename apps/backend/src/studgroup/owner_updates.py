@@ -9,7 +9,7 @@ from sqlalchemy import String, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.models import AICandidate, BotOutbox, Group, HeadmanAudit, Notification
+from studgroup.models import AICandidate, BotOutbox, Group, HeadmanAudit, Homework, Notification
 
 LABELS = {"homework": "ДЗ", "deadline": "КТ / событие", "schedule": "Расписание"}
 OPERATIONS = {
@@ -123,12 +123,17 @@ async def tick(engine, settings):
             )
         ).all()
         for event in events:
+            review_note = ""
+            if event.entity_type == "homework":
+                card = await db.get(Homework, event.entity_id)
+                if card and card.verification_state == "needs_clarification":
+                    review_note = "\nКарточка требует проверки: опубликована, ИИ не уверен."
             await queue(
                 db,
                 settings,
                 f"notice:{event.id}",
                 groups[event.group_id],
-                f"{LABELS.get(event.entity_type, 'Обновление')} · новая или изменённая карточка\n{event.title}\n{event.body}",
+                f"{LABELS.get(event.entity_type, 'Обновление')} · новая или изменённая карточка\n{event.title}\n{event.body}{review_note}",
                 event.entity_type,
                 event.entity_id,
             )

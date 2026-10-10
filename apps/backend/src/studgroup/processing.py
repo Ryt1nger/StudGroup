@@ -827,8 +827,36 @@ async def publish(db, raw, extraction, now, statistics=None):
         "source_day_inferred_clock",
     }
     deadline = utc(extraction.deadline_at) if extraction.deadline_at else None
-    # An explicit reply/amendment updates the referenced task, not a duplicate task.
+    # If repeated target messages cite the same short source cluster, anchor both
+    # results to one raw message. This keeps a hashtag/header and its continuation
+    # from becoming duplicate cards when each is processed as a target.
     original = raw
+    cited = (
+        await db.scalars(
+            select(RawMessage).where(
+                RawMessage.group_id == raw.group_id,
+                RawMessage.telegram_message_id.in_(extraction.source_message_ids),
+            )
+        )
+    ).all()
+    cited.sort(key=lambda row: (utc(row.message_date), row.telegram_message_id))
+    for source in cited:
+        existing_homework = await db.scalar(
+            select(Homework.id).where(Homework.raw_message_id == source.id)
+        )
+        existing_deadline = await db.scalar(
+            select(AcademicDeadline.id).where(AcademicDeadline.raw_message_id == source.id)
+        )
+        if existing_homework or existing_deadline:
+            original = source
+            break
+    else:
+        if cited and utc(cited[-1].message_date) - utc(cited[0].message_date) <= timedelta(
+            minutes=10
+        ):
+            original = cited[0]
+
+    # An explicit reply/amendment updates the referenced task, not a duplicate task.
     if (
         has_date_cue(raw.text)
         and not ACADEMIC_CUE.search(raw.text)
@@ -908,7 +936,11 @@ async def publish(db, raw, extraction, now, statistics=None):
             "deadline_date_only": date_only,
             "status": state,
             "urgency": extraction.urgency,
-            "verification_state": "inferred" if is_inferred else "from_group_message",
+            "verification_state": "needs_clarification"
+            if extraction.confidence < 85 or state == "needs_clarification"
+            else "inferred"
+            if is_inferred
+            else "from_group_message",
             "source_message_at": utc(original.message_date),
         }
         if existing:
@@ -1026,7 +1058,9 @@ async def publish(db, raw, extraction, now, statistics=None):
             row.date_only = extraction.deadline_date_only
             row.window_start = utc(extraction._window_start) if extraction._window_start else None
             row.window_end = utc(extraction._window_end) if extraction._window_end else None
-        row.needs_clarification = row.deadline_at is None and row.window_start is None
+        row.needs_clarification = (
+            extraction.confidence < 85 or row.deadline_at is None and row.window_start is None
+        )
         row.delete_at = max(
             utc(row.delete_at), retain_until(row.created_at, row.deadline_at, row.window_end)
         )
@@ -1467,6 +1501,25 @@ async def process_next(engine, settings, provider=None, now=None):
             "created_cards": statistics.get("created_cards", 0),
             "updated_cards": statistics.get("updated_cards", 0),
             "review": sum(c.state == "review" for c in candidates),
+            "unchanged_cards": statistics.get("unchanged_cards", 0),
+            "message_id": message_id,
+            "text": " ".join(
+                str(
+                    next((m.get("text") for m in context if m.get("message_id") == message_id), "")
+                ).split()
+            )[:90],
+            "assignments": [
+                {
+                    "kind": a.kind,
+                    "confidence": a.confidence,
+                    "subject": a.subject,
+                    "title": a.title,
+                    "deadline": bool(a.deadline_at),
+                    "state": a.publication_state,
+                }
+                for a in (result.batch.assignments if result else [])
+            ],
+            "online_lessons": len(result.batch.online_lessons) if result else 0,
             "provider_diagnostics": statistics.get("provider_diagnostics", {}),
             "prompt_tokens": attempt.prompt_tokens,
             "completion_tokens": attempt.completion_tokens,
