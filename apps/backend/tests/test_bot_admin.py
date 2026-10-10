@@ -160,3 +160,39 @@ def test_resetrun_needs_confirmation_and_clears_only_ai_artefacts(client):
     assert asyncio.run(state()) == ("pending", "mapping")
     private(client, "", update=102, callback=f"a:{s.nonce}:reset")  # stale button: no effect
     assert asyncio.run(counts())[:3] == (0, 0, 0)
+
+
+def test_explain_shows_context_and_model_answers(client, monkeypatch):
+    from test_ai_schedule import seed
+    from test_batch_reports import at
+
+    from studgroup import explain as explain_module
+
+    seed(client, at("06:55:00"), mid=7)
+
+    async def fake_complete(self, payload):
+        screening = payload["max_tokens"] == 250
+        content = (
+            '{"signal":true,"source_message_ids":[7]}'
+            if screening
+            else '{"assignments":[],"online_lessons":[]}'
+        )
+        return {
+            "model": "fake",
+            "choices": [{"message": {"content": content}, "finish_reason": "stop"}],
+            "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 1,
+                "total_tokens": 2,
+                "prompt_cache_hit_tokens": 0,
+                "prompt_cache_miss_tokens": 1,
+            },
+        }
+
+    monkeypatch.setattr(explain_module.DeepSeekProvider, "_complete", fake_complete, raising=True)
+    private(client, "/explain 7")
+    _, msg = session(client)
+    text = msg[-1]["text"]
+    assert "ИИ получил" in text and "Глубокий проход ответил" in text
+    private(client, "/explain abc", update=103)
+    assert "Формат" in session(client)[1][-1]["text"]
