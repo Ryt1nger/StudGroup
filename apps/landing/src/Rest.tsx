@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { faq, footerLinks, ladder, plans, rules, CONNECT_URL, BOT_USERNAME, botLink } from "./content";
 import { reducedMotion } from "./hooks";
 import { Mark, TgIcon } from "./ui";
+import folder from "./assets/folder.dark.png";
+import calendar from "./assets/calendar.dark.png";
 import logoDark from "./assets/brand/logo-lockup.dark.png";
 import logoLight from "./assets/brand/logo-lockup.light.png";
 
@@ -121,6 +123,8 @@ export function Faq() {
 export function Cta() {
   return (
     <section className="cta night">
+      <img className="cta-ill l" src={folder} alt="" width={220} />
+      <img className="cta-ill r" src={calendar} alt="" width={200} />
       <div className="wrap">
         <h2 className="cta-h">Хватит <Mark>листать чат.</Mark></h2>
         <p className="lead">Подключите группу за пару минут — дальше бот работает сам.</p>

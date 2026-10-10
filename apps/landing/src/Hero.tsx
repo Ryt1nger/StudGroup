@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { chat, CONNECT_URL } from "./content";
 import { reducedMotion } from "./hooks";
 import { Mark, TgIcon } from "./ui";
+import calendar from "./assets/calendar.dark.png";
+import orbs from "./assets/orbs.dark.png";
 
 const TICK = 1500;
 const HOLD = 4; // тиков паузы после последнего сообщения
@@ -52,6 +54,8 @@ export function Hero() {
         </div>
 
         <div className="hero-stage" aria-label="Пример: как StudGroup разбирает чат группы">
+          <img className="hero-ill ill-cal" src={calendar} alt="" width={120} />
+          <img className="hero-ill ill-orbs" src={orbs} alt="" width={110} />
           <div className="tg">
             <div className="tg-head">
               <span className="tg-ava" aria-hidden="true">21</span>
