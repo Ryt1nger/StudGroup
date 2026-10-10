@@ -310,6 +310,13 @@ async def dispatch(db, update_value, settings):
             await track(db, owner, message.message_id, "command")
             update_value = update_value.model_copy(deep=True)
             update_value.message.text = command
+        elif command == "/resetrun":
+            # Owner-only reset lives in the admin panel; never let a headman dialog
+            # (or the last used /st route) swallow it.
+            mode = "admin"
+            owner = await panel(db, chat, mode)
+            await reset(db, owner)
+            await track(db, owner, message.message_id, "command")
         elif command == "/st_cancel":
             mode = "st"
         elif command == "/cancel" or text == "Отмена":

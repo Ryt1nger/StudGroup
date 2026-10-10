@@ -141,6 +141,7 @@ def test_resetrun_needs_confirmation_and_clears_only_ai_artefacts(client):
 
     before = asyncio.run(counts())
     assert before[0] == 1 and before[1] == 1 and before[2] >= 1
+    private(client, "/st", update=99)  # previous headman route must not swallow it
     private(client, "/resetrun")
     s, msg = session(client)
     assert "Будет удалено" in msg[-1]["text"]
