@@ -146,6 +146,8 @@ but never invent facts absent from the text/context.
 
 Include the target ID and every contextual message whose facts were used in source_message_ids.
 Use only supplied IDs. Match subject and task before inheriting a deadline.
+If the target text alone supports every non-null fact in the result, cite only the target.
+Never cite a semantically similar neighbor unless one of its facts was actually used.
 Questions, guesses and jokes cannot override an explicit fact. Do not confuse a topic date with
 an assignment date."""
 
@@ -622,6 +624,17 @@ merely because no single due date is given. Preserve task content and topics.
                 ):
                     mark("rejected_missing_target_reference")
                     continue
+                if target_message_id is not None and extraction.kind != "homework":
+                    target_text = " ".join(by_id[target_message_id]["text"].lower().split())
+                    description = " ".join((extraction.description or "").lower().split())
+                    if (
+                        extraction.subject is None
+                        and description
+                        and (description in target_text or target_text in description)
+                        and extraction.source_message_ids != [target_message_id]
+                    ):
+                        extraction.source_message_ids = [target_message_id]
+                        mark("normalized_redundant_source_reference")
                 try:
                     self._validate_date_only(extraction, timezone)
                 except ProviderFailure:

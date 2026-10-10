@@ -205,12 +205,12 @@ def contextual_deadline(text: str, sent_at: datetime, timezone: str) -> Deadline
         return calendar(1)
     if re.search(r"\bсегодня\b", text):
         return calendar(0)
-    match = re.search(r"через\s+(полчаса|\d+\s*(?:минут\w*|час\w*|дн\w*))", text)
+    match = re.search(r"через\s+(полчаса|час(?:ик)?|\d+\s*(?:минут\w*|час\w*|дн\w*))", text)
     if match:
         value = match[1]
         if value == "полчаса":
             return DeadlineResolution(local + timedelta(minutes=30), False, "relative_message_date")
-        count = int(re.search(r"\d+", value)[0])
+        count = 1 if value.startswith("час") else int(re.search(r"\d+", value)[0])
         if "дн" in value:
             return calendar(count)
         delta = timedelta(minutes=count) if "минут" in value else timedelta(hours=count)

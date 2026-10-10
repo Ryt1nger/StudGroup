@@ -361,6 +361,65 @@ def test_batch_prompt_keeps_concrete_events_with_unknown_subject_for_review():
     assert result.batch.assignments[0].publication_state == "needs_context"
 
 
+def test_target_complete_test_prunes_unused_neighbors_and_resolves_colloquial_hour():
+    item = {
+        "kind": "test",
+        "subject": None,
+        "title": "Тест в СДО",
+        "description": "Группа преподавателя, тестик через часик в СДО закроется",
+        "deadline_at": None,
+        "deadline_date_only": False,
+        "urgency": "normal",
+        "confidence": 55,
+        "source_message_ids": [3981, 4004, 4017, 4034],
+    }
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"assignments": [item], "online_lessons": []})),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.extract_batch(
+            [
+                {
+                    "message_id": 3981,
+                    "message_date": "2026-10-10T18:48:00+03:00",
+                    "text": "Группа преподавателя, тестик через часик в СДО закроется",
+                    "is_target": True,
+                },
+                {
+                    "message_id": 4004,
+                    "message_date": "2026-10-10T19:10:00+03:00",
+                    "text": "там 38 вопросов",
+                    "is_target": False,
+                },
+                {
+                    "message_id": 4017,
+                    "message_date": "2026-10-10T19:20:00+03:00",
+                    "text": "я его сделал",
+                    "is_target": False,
+                },
+                {
+                    "message_id": 4034,
+                    "message_date": "2026-10-10T19:30:00+03:00",
+                    "text": "пох тогда?",
+                    "is_target": False,
+                },
+            ],
+            "Europe/Moscow",
+            target_message_id=3981,
+        )
+    )
+
+    extraction = result.batch.assignments[0]
+    assert extraction.source_message_ids == [3981]
+    assert extraction.deadline_at.isoformat() == "2026-10-10T19:48:00+03:00"
+    assert result.diagnostics == {"normalized_redundant_source_reference": 1}
+
+
 def test_control_point_is_not_homework_and_has_no_next_lesson_fallback():
     result = call(
         lambda request: httpx.Response(
