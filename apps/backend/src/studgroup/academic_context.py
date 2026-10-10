@@ -45,10 +45,24 @@ def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
     target = by_id[target_id]
     selected = {target_id}
     chronological = sorted(messages, key=lambda m: (m.message_date, m.message_id))
-    position = next(i for i, m in enumerate(chronological) if m.message_id == target_id)
+    target_topic = getattr(target, "message_thread_id", None)
+    # Forum topics are a useful local boundary, but not a prison. When the target has a
+    # topic, its ordinary chronological neighborhood comes from that topic only. Explicit
+    # replies, matching subject hashtags and correction/deadline evidence can still cross
+    # topic boundaries. Groups without topics retain the original global neighborhood.
+    neighborhood_scope = (
+        [
+            message
+            for message in chronological
+            if getattr(message, "message_thread_id", None) == target_topic
+        ]
+        if target_topic is not None
+        else chronological
+    )
+    position = next(i for i, m in enumerate(neighborhood_scope) if m.message_id == target_id)
     surrounding = {
         m.message_id
-        for m in chronological[max(0, position - neighborhood) : position + neighborhood + 1]
+        for m in neighborhood_scope[max(0, position - neighborhood) : position + neighborhood + 1]
     }
     # Generic pinned topic IDs are absent from the export. Never fabricate their contents.
     parent = by_id.get(target.reply_to_message_id)
@@ -64,6 +78,9 @@ def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
         if not message.text or message.message_id == target_id:
             continue
         direct = message.message_id in selected
+        same_topic = (
+            target_topic is not None and getattr(message, "message_thread_id", None) == target_topic
+        )
         same_subject = bool(subject_tags & tags(message.text))
         nearby = abs(message.message_date - target.message_date) <= timedelta(days=7)
         correction = abs(message.message_date - target.message_date) <= timedelta(
@@ -81,7 +98,8 @@ def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
             or (same_subject and nearby)
             or message.message_id in surrounding
         ):
-            ranked.append((not direct, abs(message.message_date - target.message_date), message))
+            priority = 0 if direct else 1 if same_topic else 2 if same_subject else 3
+            ranked.append((priority, abs(message.message_date - target.message_date), message))
     used = len(target.text.encode()) + 300
     chosen = [target]
     for _, _, message in sorted(ranked, key=lambda row: (row[0], row[1], row[2].message_id)):
