@@ -176,7 +176,6 @@ def test_repeated_empty_deep_results_complete_without_false_failure_circuit(clie
     asyncio.run(inspect())
 
 
-
 def test_new_messages_belong_to_next_slot_and_silence_produces_no_report(client):
     provider = CascadeProvider(signal=False)
     assert run(client, provider, "07:00:00") == "idle"

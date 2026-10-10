@@ -99,9 +99,7 @@ async def attach(db, settings, group, job, raw, attempt):
             | {key}
         )
         run = AIRun(
-            id=uuid.uuid5(
-                group.id, f"planned-run:{slot.isoformat()}:{job.analysis_generation}"
-            ),
+            id=uuid.uuid5(group.id, f"planned-run:{slot.isoformat()}:{job.analysis_generation}"),
             group_id=group.id,
             slot=slot,
             analysis_generation=job.analysis_generation,
@@ -151,8 +149,7 @@ async def finish_ready(db, settings, now):
             )
         ).all()
         indexed = {
-            target_key(j.raw_message_id, j.source_revision, j.analysis_generation): j
-            for j in jobs
+            target_key(j.raw_message_id, j.source_revision, j.analysis_generation): j for j in jobs
         }
         raws = {
             r.id: r

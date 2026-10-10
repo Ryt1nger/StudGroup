@@ -81,9 +81,7 @@ async def map_next(db, now):
     )
     topic_counts = Counter(row.message_thread_id for row in messages if row.message_thread_id)
     hashtags = Counter(
-        tag.casefold()
-        for row in messages
-        for tag in re.findall(r"#[\w]+", row.text or "")
+        tag.casefold() for row in messages for tag in re.findall(r"#[\w]+", row.text or "")
     )
     structure = {
         "version": 1,

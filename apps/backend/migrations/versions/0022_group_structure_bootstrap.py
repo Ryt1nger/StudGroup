@@ -99,6 +99,7 @@ def upgrade():
             SELECT group_id FROM group_ai_profiles WHERE generation = 2
         )
         """)
+    )
 
 
 def downgrade():
@@ -112,9 +113,7 @@ def downgrade():
     )
     op.drop_column("ai_jobs", "analysis_generation")
     op.drop_constraint("uq_ai_runs_group_slot_generation", "ai_runs", type_="unique")
-    op.create_unique_constraint(
-        "ai_runs_group_id_slot_key", "ai_runs", ["group_id", "slot"]
-    )
+    op.create_unique_constraint("ai_runs_group_id_slot_key", "ai_runs", ["group_id", "slot"])
     op.drop_column("ai_runs", "analysis_generation")
     op.drop_column("raw_messages", "analysis_generation")
     op.drop_column("raw_messages", "message_thread_id")

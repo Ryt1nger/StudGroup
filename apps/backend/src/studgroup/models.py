@@ -212,9 +212,7 @@ class AIRun(Base):
 
 class AIJob(Base):
     __tablename__ = "ai_jobs"
-    __table_args__ = (
-        UniqueConstraint("raw_message_id", "source_revision", "analysis_generation"),
-    )
+    __table_args__ = (UniqueConstraint("raw_message_id", "source_revision", "analysis_generation"),)
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     raw_message_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("raw_messages.id", ondelete="SET NULL")
