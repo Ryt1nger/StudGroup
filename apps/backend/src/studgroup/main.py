@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     owner_update_notifications_enabled: bool = False
     owner_update_notifications_since: datetime | None = None
     bot_admin_user_id: int | None = None
+    support_contact: str = ""
 
     @field_validator("database_url", mode="before")
     @classmethod

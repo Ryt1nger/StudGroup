@@ -189,6 +189,26 @@ Messages from before tracking was deployed cannot be reconstructed from Bot API
 history and are not indiscriminately deleted. Deletion is subject to Telegram limits;
 delivery remains at-least-once across ambiguous network failures.
 
+## Public info commands and landing deep links
+
+`studgroup.bot_info` answers read-only info topics in any private chat, for any user,
+before panel routing. No state, no authorization decisions.
+
+| Topic | Command | Deep link (landing) |
+| --- | --- | --- |
+| Tariffs ("coming soon", no prices yet) | `/tariffs` | `https://t.me/studgroup_rf_bot?start=tariffs` |
+| How to use | `/help`, `/howto` | `?start=howto` (or `help`) |
+| Connect a group | `/connect` | `?start=connect` |
+| FAQ | `/faq` | `?start=faq` |
+| Support | `/support` | `?start=support` |
+
+`/start invite_<code>`, bare `/start`, `/st`, `/admin` and all other commands are unchanged;
+an unknown `/start <payload>` falls through to the previous behaviour. `/connect` here is a
+private-chat info text only; the headman group `/connect` from the domain rules is not
+implemented by it. Optional `SUPPORT_CONTACT` (for example `@name`) is shown by `/support`
+and `/connect`; when unset the bot says contacts will appear soon. Update the topic texts in
+`bot_info.render` when tariffs are approved.
+
 ## Headman cabinet /st (contract 0.8.0)
 
 Private Telegram command `/st` lists only the caller's active pilot groups where
