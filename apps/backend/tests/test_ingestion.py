@@ -1,9 +1,10 @@
 import asyncio
+from datetime import UTC
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.models import GroupAIProfile, GroupTopic, RawMessage
+from studgroup.models import Group, GroupAIProfile, GroupTopic, RawMessage
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -110,5 +111,22 @@ def test_topic_identity_and_name_are_persisted_before_analysis(client):
             assert topic.name == "Математика"
             assert profile.state == "mapping"
             assert profile.backfill_requested
+
+    asyncio.run(inspect())
+
+
+def test_own_join_service_event_sets_exact_history_boundary(client):
+    client.app.state.settings.telegram_bot_token = "777:secret"
+    payload = delivery(text=None)
+    payload["message"]["new_chat_members"] = [{"id": 777, "is_bot": True}]
+    assert send(client, payload).status_code == 200
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            assert (
+                int(group.bot_added_at.replace(tzinfo=UTC).timestamp())
+                == payload["message"]["date"]
+            )
 
     asyncio.run(inspect())

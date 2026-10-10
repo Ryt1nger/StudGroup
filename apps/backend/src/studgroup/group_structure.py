@@ -6,7 +6,7 @@ from collections import Counter
 
 from sqlalchemy import func, select, update
 
-from studgroup.models import GroupAIProfile, GroupTopic, RawMessage, SchedulePattern
+from studgroup.models import Group, GroupAIProfile, GroupTopic, RawMessage, SchedulePattern
 
 
 async def ensure_profile(db, group_id, now):
@@ -53,6 +53,7 @@ async def map_next(db, now):
     )
     if profile is None:
         return None
+    group = await db.get(Group, profile.group_id)
     messages = (
         await db.scalars(
             select(RawMessage)
@@ -108,15 +109,40 @@ async def map_next(db, now):
             row.imported and row.message_thread_id is None for row in messages
         ),
     }
+    eligible = [
+        row
+        for row in messages
+        if group.bot_added_at is not None and row.message_date >= group.bot_added_at
+    ]
+    structure["analysis_scope"] = "since_bot_added"
+    structure["analysis_start_at"] = (
+        group.bot_added_at.isoformat() if group.bot_added_at is not None else None
+    )
+    structure["analysis_message_count"] = len(eligible)
     profile.structure_json = json.dumps(structure, ensure_ascii=False, separators=(",", ":"))
-    profile.source_count = len(messages)
+    profile.source_count = len(eligible)
     profile.mapped_at = now
     if profile.backfill_requested:
         await db.execute(
             update(RawMessage)
-            .where(RawMessage.group_id == profile.group_id)
-            .values(analysis_generation=profile.generation, processing_state="pending")
+            .where(
+                RawMessage.group_id == profile.group_id,
+                RawMessage.processing_state.in_(["pending", "processing", "failed"]),
+                RawMessage.message_date < group.bot_added_at
+                if group.bot_added_at is not None
+                else True,
+            )
+            .values(processing_state="completed")
         )
+        if group.bot_added_at is not None:
+            await db.execute(
+                update(RawMessage)
+                .where(
+                    RawMessage.group_id == profile.group_id,
+                    RawMessage.message_date >= group.bot_added_at,
+                )
+                .values(analysis_generation=profile.generation, processing_state="pending")
+            )
         profile.state = "backfill"
     else:
         profile.state = "live"
@@ -135,9 +161,13 @@ async def complete_ready_backfills(db, now):
     completed = 0
     for profile in profiles:
         remaining = await db.scalar(
-            select(func.count(RawMessage.id)).where(
+            select(func.count(RawMessage.id))
+            .join(Group, Group.id == RawMessage.group_id)
+            .where(
                 RawMessage.group_id == profile.group_id,
                 RawMessage.analysis_generation == profile.generation,
+                Group.bot_added_at.is_not(None),
+                RawMessage.message_date >= Group.bot_added_at,
                 RawMessage.processing_state.in_(["pending", "processing"]),
             )
         )

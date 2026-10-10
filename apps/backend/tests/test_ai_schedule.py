@@ -30,6 +30,8 @@ def seed(client, received, mid=1, imported=False, activity=None):
     async def insert():
         async with AsyncSession(client.app.state.engine) as db:
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            if not imported and group.bot_added_at is None:
+                group.bot_added_at = received
             db.add(
                 RawMessage(
                     id=uuid.uuid4(),

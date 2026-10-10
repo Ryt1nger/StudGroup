@@ -25,6 +25,11 @@ class Sender(BaseModel):
     id: int
 
 
+class ChatMember(BaseModel):
+    id: int
+    is_bot: bool = False
+
+
 class ReplyReference(BaseModel):
     message_id: int
 
@@ -64,6 +69,7 @@ class Message(BaseModel):
     is_topic_message: bool = False
     forum_topic_created: ForumTopicCreated | None = None
     forum_topic_edited: ForumTopicEdited | None = None
+    new_chat_members: list[ChatMember] = Field(default_factory=list, max_length=100)
     users_shared: UsersShared | None = None
     forward_origin: ForwardOrigin | None = None
 
@@ -123,6 +129,23 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
     if group is None:
         await db.commit()
         return {"ok": True}
+
+    # Persist the exact paid-history boundary when Telegram tells this bot that it
+    # joined. Older installations are backfilled by migration from the first live
+    # message the bot actually received.
+    try:
+        own_bot_id = int(request.app.state.settings.telegram_bot_token.split(":", 1)[0])
+    except (TypeError, ValueError):
+        own_bot_id = None
+    if own_bot_id is not None and any(
+        member.is_bot and member.id == own_bot_id for member in message.new_chat_members
+    ):
+        joined_at = datetime.fromtimestamp(message.date, UTC)
+        saved_joined_at = group.bot_added_at
+        if saved_joined_at is not None and saved_joined_at.tzinfo is None:
+            saved_joined_at = saved_joined_at.replace(tzinfo=UTC)
+        if saved_joined_at is None or joined_at < saved_joined_at:
+            group.bot_added_at = joined_at
 
     from studgroup.group_structure import ensure_profile
 
@@ -186,6 +209,10 @@ async def store_message(db, group, message, *, imported=False):
     if row is None:
         original_date = datetime.fromtimestamp(message.date, UTC)
         received = datetime.now(UTC) if not imported else None
+        if not imported and group.bot_added_at is None:
+            # Safe fallback for an installation where the join service update was
+            # missed: never infer the boundary from an uploaded archive.
+            group.bot_added_at = original_date
         row = RawMessage(
             group_id=group.id,
             telegram_message_id=message.message_id,

@@ -26,6 +26,8 @@ def test_snapshot_reads_counters_without_claiming_work_or_reserving_budget(clien
             result = await snapshot(db, Settings(_env_file=None), datetime.now(UTC))
             group = result["groups"][0]
             assert group["raw"] == 2 and group["imported"] == 1 and group["live"] == 1
+            assert group["bootstrap_scope"] == 2
+            assert group["bot_added_at"] is not None
             assert group["pending_live"] == 1
             assert await db.get(AIControl, 1) is None
             assert "text" not in result

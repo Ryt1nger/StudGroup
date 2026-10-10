@@ -35,6 +35,7 @@ class Group(Base):
     first_week_anchor: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(32), default="active")
     pilot_authorized: Mapped[bool] = mapped_column(Boolean, default=False)
+    bot_added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SchedulePattern(Base):

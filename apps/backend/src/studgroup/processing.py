@@ -409,6 +409,11 @@ async def claim(engine, settings, now):
                 GroupAIProfile.generation == RawMessage.analysis_generation,
             )
         )
+        backfill_scope = and_(
+            backfill_scope,
+            Group.bot_added_at.is_not(None),
+            RawMessage.message_date >= Group.bot_added_at,
+        )
         already_processed = exists(
             select(AIJob.id).where(
                 AIJob.raw_message_id == RawMessage.id,
@@ -673,6 +678,9 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
     base = select(RawMessage).where(
         RawMessage.group_id == raw.group_id,
         or_(RawMessage.delete_at > now, include_history),
+        RawMessage.message_date >= group.bot_added_at
+        if group.bot_added_at is not None
+        else RawMessage.id == raw.id,
         RawMessage.message_date >= utc(raw.message_date) - timedelta(days=7),
         RawMessage.message_date <= utc(raw.message_date) + timedelta(days=7),
     )
@@ -697,6 +705,9 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
                 RawMessage.group_id == raw.group_id,
                 RawMessage.telegram_message_id == raw.reply_to_message_id,
                 or_(RawMessage.delete_at > now, include_history),
+                RawMessage.message_date >= group.bot_added_at
+                if group.bot_added_at is not None
+                else RawMessage.id == raw.id,
             )
         )
         if parent:

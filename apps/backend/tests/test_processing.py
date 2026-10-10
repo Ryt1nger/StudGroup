@@ -33,11 +33,13 @@ from studgroup.processing import process_next, retain_until
 pytest_plugins = ["test_schedule_api"]
 
 
-def source(client, mid=31, reply=None, text="ДЗ: решить задачи"):
+def source(client, mid=31, reply=None, text="ДЗ: решить задачи", *, when=None, imported=False):
     async def run():
         async with AsyncSession(client.app.state.engine) as db:
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
-            now = datetime.now(UTC)
+            now = when or datetime.now(UTC)
+            if not imported and group.bot_added_at is None:
+                group.bot_added_at = now
             raw = RawMessage(
                 group_id=group.id,
                 telegram_message_id=mid,
@@ -46,7 +48,9 @@ def source(client, mid=31, reply=None, text="ДЗ: решить задачи"):
                 message_date=now,
                 version_date=now,
                 revision=1,
+                imported=imported,
                 delete_at=now + timedelta(days=30),
+                live_received_at=None if imported else now,
             )
             db.add(raw)
             await db.commit()
@@ -116,8 +120,15 @@ def test_worker_publishes_once_and_records_actual_cost(client):
     asyncio.run(billing())
 
 
-def test_structure_map_precedes_generation_scoped_full_history_reanalysis(client):
+def test_structure_map_precedes_generation_scoped_post_install_analysis(client):
     source(client, text="#матан ДЗ: решить задачи")
+    source(
+        client,
+        mid=30,
+        text="Старое сообщение до появления бота",
+        when=datetime.now(UTC) - timedelta(days=2),
+        imported=True,
+    )
     requested = datetime.now(UTC)
 
     async def seed_bootstrap():
@@ -179,6 +190,9 @@ def test_structure_map_precedes_generation_scoped_full_history_reanalysis(client
             profile = await db.scalar(select(GroupAIProfile))
             assert [job.analysis_generation for job in jobs] == [1, 2]
             assert profile.state == "live"
+            assert profile.source_count == 1
+            old = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 30))
+            assert old.processing_state == "completed"
 
     asyncio.run(inspect())
 

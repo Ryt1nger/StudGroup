@@ -83,6 +83,13 @@ async def snapshot(db, settings, now):
                 "raw": await count(RawMessage),
                 "imported": await count(RawMessage, RawMessage.imported.is_(True)),
                 "live": await count(RawMessage, RawMessage.imported.is_(False)),
+                "bot_added_at": group.bot_added_at.isoformat() if group.bot_added_at else None,
+                "bootstrap_scope": await count(
+                    RawMessage,
+                    RawMessage.message_date >= group.bot_added_at
+                    if group.bot_added_at is not None
+                    else False,
+                ),
                 "pending_live": await count(
                     RawMessage,
                     RawMessage.imported.is_(False),

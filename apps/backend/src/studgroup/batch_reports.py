@@ -95,6 +95,14 @@ async def attach(db, settings, group, job, raw, attempt):
                     RawMessage.live_received_at <= slot,
                 ]
             )
+        else:
+            conditions.extend(
+                [
+                    RawMessage.message_date >= group.bot_added_at
+                    if group.bot_added_at is not None
+                    else False,
+                ]
+            )
         sources = (
             await db.execute(
                 select(
@@ -144,6 +152,7 @@ async def finish_ready(db, settings, now):
         await db.scalars(select(AIRun).where(AIRun.finished_at.is_(None)).with_for_update())
     ).all()
     for run in runs:
+        group = await db.get(Group, run.group_id)
         keys = set(json.loads(run.targets))
         profile = await db.get(GroupAIProfile, run.group_id)
         backfill = bool(
@@ -191,6 +200,13 @@ async def finish_ready(db, settings, now):
                     raw is None
                     or raw.revision != int(revision)
                     or raw.analysis_generation != generation
+                    or (
+                        backfill
+                        and (
+                            group.bot_added_at is None
+                            or utc(raw.message_date) < utc(group.bot_added_at)
+                        )
+                    )
                     or (utc(raw.delete_at) <= utc(now) and not backfill)
                 )
                 pending += not obsolete

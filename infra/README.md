@@ -111,7 +111,8 @@ The cutoff survives process sleep/restart; it is not a daily automatic re-enable
 analysis (including expired raw history retained for required extraction). Existing
 reviewed/completed records and terminal jobs are not repeatedly sent to the model.
 The permanent group bootstrap is separate: it persists a structure/topic map first,
-then assigns all available sources to a new analysis generation. Earlier terminal
+then assigns only sources at or after the persisted bot-installation boundary to a
+new analysis generation. Pre-installation archive rows never enter paid context. Earlier terminal
 jobs remain auditable but do not block that explicitly requested generation.
 Past/future context is bounded around the original source timestamp, not around the
 latest end of a large imported history. Calendar-known subject aliases are normalized

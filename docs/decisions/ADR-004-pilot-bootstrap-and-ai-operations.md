@@ -15,9 +15,13 @@ but are not evidence for a task, date or deadline. A newly observed or renamed
 topic refreshes the map before later provider work without replaying completed
 history.
 
-After the initial map, re-analyse every retained source message from the bot's
-available history under a new analysis generation. Old terminal jobs remain as an
-audit trail but cannot suppress the new generation. The backfill uses the same
+After the initial map, analyse only messages at or after the persisted moment when
+the bot joined the group, under a new analysis generation. Uploaded archive rows
+from before that boundary may inform the free deterministic structure map, but are
+excluded from paid targets and model context. The Telegram join service event is
+authoritative; for an older installation that did not retain it, the first message
+actually received by the bot is the conservative boundary. Old terminal jobs remain
+as an audit trail but cannot suppress the new generation. The backfill uses the same
 light-then-deep order, global single-flight lock, checkpoints, retry/circuit rules,
 hourly working window and budget ceilings as live processing. Failures leave the
 unfinished source/stage pending; they do not restart completed work. Only after no
@@ -30,7 +34,8 @@ limitation and uses replies, hashtags and schedule subjects for old history; all
 future Bot API messages persist `message_thread_id` and observed topic names.
 
 Acceptance: mapping makes no provider call; a generation-1 terminal job does not
-block generation 2; imported/expired retained sources join the bootstrap snapshot;
+block generation 2; sources before `bot_added_at` never join a paid snapshot or
+model context; imported/expired sources at or after that boundary may join it;
 topic metadata and the compact map reach both passes as non-evidentiary context;
 restart resumes the same generation; and a topic rename refreshes the map without
 starting another full-history replay.
