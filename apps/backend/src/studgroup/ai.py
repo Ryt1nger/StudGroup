@@ -56,6 +56,20 @@ Keep its task facts and leave the withdrawn date unknown; do not discard the tas
 For irrelevant/needs_context use null
 for subject/title/description/deadline_at, false for deadline_date_only, normal urgency.
 When several assignments or an amendment to another message needs context, use needs_context.
+How students actually post (decisive for recall). Homework is usually a SHORT message:
+a subject hashtag (#матан, #русский, #англ) or subject name followed by the topic or
+task text, page/exercise numbers, a link to materials, or 'на завтра/к четвергу'.
+Such a message IS homework even without a verb like 'сделать' and even without a
+deadline: set kind=homework, subject from the hashtag/context, title = the topic or
+task text, description = the message text, deadline null when absent (the backend
+sets it from the timetable). Lower confidence only for genuinely missing facts, but
+still return it: a possible homework with doubt is far better than silence.
+Return irrelevant ONLY for clear chatter, jokes, complaints, grades discussion,
+questions without task content, or an empty template (field names with no content).
+If a message announces a test, КТ, самостоятельная or retake without details, still
+return it (kind test/assessment/control_point) with low confidence and whatever facts
+exist. Subject and topic names, hashtags and a topic named like ДЗ/домашка are STRONG
+evidence that a message in them is a task announcement.
 """
 
 
@@ -424,7 +438,7 @@ merely because no single due date is given. Preserve task content and topics.
                 raise ProviderFailure(
                     "invalid_source_reference", False, reservation_releasable=True
                 )
-            instructions += "\nExtract ONLY the task(s) in message marked is_target=true. Others are context, not new tasks. Topic IDs, topic names and group_structure are optional routing hints and never factual evidence by themselves. If structure mode is unstructured, rely on chronology, replies and supplied text; never invent a hierarchy. Include the target ID and ONLY messages actually supporting its facts in source_message_ids. Match exercise numbers/pages and subject before inheriting a deadline. Questions, guesses and jokes cannot override an explicit deadline. Do not confuse the date of a topic/thread with the target's assignment date."
+            instructions += "\nExtract ONLY the task(s) in message marked is_target=true. Others are context, not new tasks. Topic names, hashtags and group_structure show where homework is posted: use them as strong evidence of subject and of a task announcement, but never invent facts that are absent. If structure mode is unstructured, rely on chronology, replies and supplied text; never invent a hierarchy. Include the target ID and ONLY messages actually supporting its facts in source_message_ids. Match exercise numbers/pages and subject before inheriting a deadline. Questions, guesses and jokes cannot override an explicit deadline. Do not confuse the date of a topic/thread with the target's assignment date."
         body = await self._complete(
             {
                 "model": self.model,
