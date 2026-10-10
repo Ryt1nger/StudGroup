@@ -1467,6 +1467,25 @@ async def process_next(engine, settings, provider=None, now=None):
             "created_cards": statistics.get("created_cards", 0),
             "updated_cards": statistics.get("updated_cards", 0),
             "review": sum(c.state == "review" for c in candidates),
+            "unchanged_cards": statistics.get("unchanged_cards", 0),
+            "message_id": message_id,
+            "text": " ".join(
+                str(
+                    next((m.get("text") for m in context if m.get("message_id") == message_id), "")
+                ).split()
+            )[:90],
+            "assignments": [
+                {
+                    "kind": a.kind,
+                    "confidence": a.confidence,
+                    "subject": a.subject,
+                    "title": a.title,
+                    "deadline": bool(a.deadline_at),
+                    "state": a.publication_state,
+                }
+                for a in (result.batch.assignments if result else [])
+            ],
+            "online_lessons": len(result.batch.online_lessons) if result else 0,
             "provider_diagnostics": statistics.get("provider_diagnostics", {}),
             "prompt_tokens": attempt.prompt_tokens,
             "completion_tokens": attempt.completion_tokens,
