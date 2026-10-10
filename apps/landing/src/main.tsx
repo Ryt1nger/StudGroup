@@ -4,6 +4,7 @@ import "@fontsource-variable/inter";
 import "./styles.css";
 import { App } from "./App";
 
+document.documentElement.classList.add("js");
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

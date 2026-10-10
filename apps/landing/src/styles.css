@@ -43,14 +43,16 @@ h2 { font-size: clamp(26px, 3.4vw, 34px); line-height: 1.15; letter-spacing: -0.
 
 /* Header + Hero */
 .hero-wrap, body { --_: 0; }
-.header { position: absolute; inset: 0 0 auto 0; z-index: 5; color: #fff; }
+.header { position: fixed; inset: 0 0 auto 0; z-index: 20; color: #fff; transition: background .3s, backdrop-filter .3s, box-shadow .3s; }
+.header.scrolled { background: rgba(5, 10, 46, 0.78); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 1px 0 rgba(140, 150, 255, 0.18); }
 .header-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; height: 76px; }
 .logo { height: 36px; width: auto; }
 .nav { display: none; gap: 32px; font-size: 14px; font-weight: 500; color: #d6dafc; }
 .nav a:hover { color: #fff; }
 @media (min-width: 960px) { .nav { display: flex; } }
 
-.hero { position: relative; overflow: hidden; color: #fff; background: var(--navy) url("./assets/bg-waves.webp") center / cover no-repeat; padding: 116px 0 56px; }
+.hero { position: relative; isolation: isolate; overflow: hidden; color: #fff; background: var(--navy); padding: 116px 0 56px; }
+.hero::before, .cta-band::before { content: ""; position: absolute; inset: -6%; z-index: -1; background: url("./assets/bg-waves.webp") center / cover no-repeat; }
 .hero::after { content: ""; position: absolute; inset: auto 0 0; height: 80px; background: linear-gradient(transparent, var(--bg)); opacity: .0; pointer-events: none; }
 .hero-grid { display: grid; gap: 32px; align-items: center; }
 .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border-radius: 999px; background: rgba(60, 90, 255, 0.28); border: 1px solid rgba(130, 150, 255, 0.4); font-size: 13px; font-weight: 600; }
@@ -64,7 +66,7 @@ h1 { margin-top: 20px; font-size: clamp(38px, 6vw, 60px); line-height: 1.06; let
 .avatars { display: flex; }
 .avatars img { width: 38px; height: 38px; border-radius: 50%; margin-left: -10px; border: 2px solid var(--navy); object-fit: cover; }
 .avatars img:first-child { margin-left: 0; }
-.hero-art { justify-self: center; max-width: 520px; }
+.hero-art { position: relative; justify-self: center; width: 100%; max-width: 520px; }
 @media (min-width: 900px) {
   .hero { padding: 132px 0 72px; }
   .hero-grid { grid-template-columns: 1.05fr 1fr; }
@@ -148,7 +150,7 @@ h1 { margin-top: 20px; font-size: clamp(38px, 6vw, 60px); line-height: 1.06; let
 @media (min-width: 800px) { .faq { grid-template-columns: repeat(2, 1fr); } }
 
 /* CTA band + footer */
-.cta-band { margin-top: 64px; padding: 36px 0; color: #fff; background: var(--navy) url("./assets/bg-waves.webp") center / cover no-repeat; }
+.cta-band { position: relative; isolation: isolate; overflow: hidden; margin-top: 64px; padding: 36px 0; color: #fff; background: var(--navy); }
 .cta-row { display: grid; gap: 20px; align-items: center; justify-items: start; }
 .cta-row img { width: 96px; height: 96px; }
 .cta-row h2 { font-size: clamp(22px, 3vw, 28px); }
@@ -169,3 +171,62 @@ h1 { margin-top: 20px; font-size: clamp(38px, 6vw, 60px); line-height: 1.06; let
   .btn-sm { padding: 0 14px; font-size: 13px; }
 }
 @media (max-width: 899px) { .step:last-child:nth-child(odd) { grid-column: 1 / -1; } }
+
+/* ---------- Hero art: floating elements (replace the old baked-in glass cube) ---------- */
+.layer { display: block; }
+.art-float { position: absolute; pointer-events: none; }
+.art-float img { width: 100%; height: auto; filter: drop-shadow(0 18px 30px rgba(40, 40, 200, 0.45)); }
+.f-calendar { right: -7%; bottom: 3%; width: 36%; }
+.f-megaphone { right: -6%; top: 1%; width: 22%; }
+.f-materials { left: -14%; top: 3%; width: 36%; }
+.art-main img { width: 100%; height: auto; }
+
+/* ---------- Motion ---------- */
+@keyframes rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+@keyframes pop { from { opacity: 0; transform: translateY(40px) scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes bob-a { from { transform: translateY(0) rotate(-2deg); } to { transform: translateY(-16px) rotate(2deg); } }
+@keyframes bob-b { from { transform: translateY(-8px) rotate(3deg); } to { transform: translateY(10px) rotate(-3deg); } }
+@keyframes bob-main { from { transform: translateY(0); } to { transform: translateY(-8px); } }
+@keyframes drift { from { transform: translate3d(-1.5%, 0, 0) scale(1.04); } to { transform: translate3d(1.5%, -1.2%, 0) scale(1.1); } }
+@keyframes shine { from { transform: translateX(-120%) skewX(-18deg); } to { transform: translateX(260%) skewX(-18deg); } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+.in-up { animation: rise .8s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--s, 0) * 110ms + 80ms); }
+.hero-art { animation: pop 1s cubic-bezier(.2, .7, .2, 1) .25s both; }
+.art-main img { animation: bob-main 7s ease-in-out 1.2s infinite alternate; }
+.f-calendar img { animation: bob-a 6s ease-in-out infinite alternate; }
+.f-megaphone img { animation: bob-b 5s ease-in-out -1.5s infinite alternate; }
+.f-materials img { animation: bob-a 7.5s ease-in-out -3s infinite alternate; }
+.hero::before, .cta-band::before { animation: drift 26s ease-in-out infinite alternate; }
+
+/* Parallax follows the mouse (pointer: fine only) */
+@media (hover: hover) and (pointer: fine) {
+  .layer { transform: translate3d(calc(var(--px, 0) * var(--d, 10) * -1px), calc(var(--py, 0) * var(--d, 10) * -1px), 0); transition: transform .35s ease-out; will-change: transform; }
+}
+
+/* Scroll reveal (only when JS is on, otherwise everything stays visible) */
+.js [data-reveal] { opacity: 0; translate: 0 26px; transition: opacity .7s ease, translate .7s cubic-bezier(.2, .7, .2, 1); transition-delay: calc(var(--i, 0) * 80ms); }
+.js [data-reveal].in { opacity: 1; translate: 0 0; }
+
+/* Hover / press feedback */
+.btn-primary { position: relative; overflow: hidden; }
+.btn-primary::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 40%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .35), transparent); transform: translateX(-120%) skewX(-18deg); pointer-events: none; }
+.btn-primary:hover::after { animation: shine .9s ease; }
+.btn:active { transform: translateY(1px) scale(.98); }
+.feature img, .step img, .plan-head img, .cta-cap { transition: transform .35s cubic-bezier(.2, .7, .2, 1); }
+.feature:hover img { transform: translateY(-6px) rotate(-4deg) scale(1.06); }
+.step, .plan, .uni, .review, .faq details { transition: transform .3s ease, box-shadow .3s ease, border-color .3s ease; }
+.step:hover, .uni:hover, .review:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
+.step:hover img { transform: translateY(-3px) scale(1.08); }
+.plan:hover { transform: translateY(-6px); box-shadow: 0 18px 54px rgba(60, 70, 180, .18); }
+@media (min-width: 900px) { .plan.featured:hover { transform: translateY(-14px); } }
+.faq details:hover { border-color: #c9cdf7; }
+.faq details[open] { border-color: #b9bdf5; box-shadow: var(--shadow); }
+.faq details[open] p { animation: fade .35s ease; }
+.cta-band:hover .cta-cap { transform: translateY(-6px) rotate(-6deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .js [data-reveal] { opacity: 1; translate: none; }
+  .layer { transform: none !important; }
+}
