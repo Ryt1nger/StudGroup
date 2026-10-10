@@ -3,11 +3,10 @@ import { ru } from '../../i18n/ru';
 import { dayKey, formatDayKey, formatTime } from '../../lib/format';
 import type { ScheduleDayView, ScheduleItemView, ScheduleScreenView } from './viewModel';
 
-function lessonItem(lesson: LessonOccurrence, nowMs: number, timeZone: string): ScheduleItemView {
+function lessonItem(lesson: LessonOccurrence, nowMs: number, timeZone: string, onOpen?: (lesson: LessonOccurrence) => void): ScheduleItemView {
   const start = Date.parse(lesson.starts_at);
   const end = Date.parse(lesson.ends_at);
-  const cancelled = lesson.status === 'cancelled';
-  const current = !cancelled && start <= nowMs && nowMs < end;
+  const current = start <= nowMs && nowMs < end;
   const done = end <= nowMs;
   // Only fields present in the contract are shown: no lesson type, no confirmed/moved badges.
   const subtitle = [lesson.location, lesson.teacher].filter((part): part is string => Boolean(part)).join(' · ');
@@ -16,10 +15,9 @@ function lessonItem(lesson: LessonOccurrence, nowMs: number, timeZone: string): 
     time: formatTime(lesson.starts_at, timeZone),
     title: lesson.subject,
     subtitle,
-    cancelled,
-    onlineUrl: !cancelled && !done ? lesson.online_url : null,
     state: current ? 'current' : done ? 'done' : 'upcoming',
-    badges: cancelled ? [{ kind: 'cancelled', label: 'Отменено', tone: 'neutral' }] : current ? [{ kind: 'now', label: ru.schedule.now, tone: 'solid' }] : [],
+    badges: current ? [{ kind: 'now', label: ru.schedule.now, tone: 'solid' }] : [],
+    onOpen: onOpen ? () => onOpen(lesson) : undefined,
   };
 }
 
@@ -33,22 +31,19 @@ function dayHeading(key: string, nowMs: number, timeZone: string): string {
 }
 
 /**
- * Groups contract lessons by the group's calendar day, preserving backend lesson order.
- * An empty current-day section is inserted chronologically as an entry-scroll anchor;
- * it does not invent lessons or lesson metadata.
+ * Maps the generated `ScheduleResponse` to display-ready props. Lessons are grouped by the
+ * group's calendar day in the order the backend returned them (starts_at, id); the client does
+ * not re-sort, filter or infer anything the contract does not state.
  */
-export function mapSchedule(data: ScheduleResponse, nowMs: number): ScheduleScreenView {
+export function mapSchedule(data: ScheduleResponse, nowMs: number, onOpen?: (lesson: LessonOccurrence) => void): ScheduleScreenView {
   const groups = new Map<string, ScheduleItemView[]>();
   for (const lesson of data.lessons) {
     const key = dayKey(lesson.starts_at, data.group_timezone);
     const items = groups.get(key) ?? [];
-    items.push(lessonItem(lesson, nowMs, data.group_timezone));
+    items.push(lessonItem(lesson, nowMs, data.group_timezone, onOpen));
     groups.set(key, items);
   }
-  const today = dayKey(nowMs, data.group_timezone);
-  if (today >= data.start && today <= data.end && !groups.has(today)) groups.set(today, []);
-  const days: ScheduleDayView[] = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, items]) => ({
-    date: key,
+  const days: ScheduleDayView[] = [...groups.entries()].map(([key, items]) => ({
     heading: dayHeading(key, nowMs, data.group_timezone),
     items,
   }));

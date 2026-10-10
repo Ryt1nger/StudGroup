@@ -6,9 +6,9 @@
   z-index: 20;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  width: min(calc(100% - 16px), 464px);
+  width: min(calc(100% - 16px), 340px);
   transform: translateX(-50%);
-  padding: 8px 6px;
+  padding: 8px 10px;
   background: var(--sg-nav-glass-bg);
   border: 1px solid var(--sg-nav-glass-border);
   border-radius: 28px;

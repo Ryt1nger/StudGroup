@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useScheduleQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
 import { formatDayKey, formatTime, weekRange } from '../../lib/format';
@@ -14,7 +15,6 @@ import { emptyIllustrations } from '../../ui/entityIcons';
 import { ThemedImage } from '../../ui/ThemedImage';
 import { Clock, Lock } from '../../ui/icons';
 import { mapSchedule } from './mapSchedule';
-import { scheduleAnchor } from './scheduleAnchor';
 import { ScheduleScreenView } from './ScheduleScreenView';
 import styles from './ScheduleScreenView.module.css';
 
@@ -32,6 +32,7 @@ function Loading() {
 /** Production `/schedule`: GET /v1/schedule for the current week in the group timezone. */
 export function ScheduleScreen() {
   const timeZone = useGroupTimeZone();
+  const navigate = useNavigate();
   const { state } = useSession();
   const permissions = state.status === 'ready' ? state.session.permissions : [];
   const allowed = permissions.includes('schedule.read');
@@ -48,15 +49,35 @@ export function ScheduleScreen() {
         <TopBar />
         <div className={styles.page}>
           <h1 className={styles.title}>{ru.nav.schedule}</h1>
-          <StateView role="alert" icon={<Lock />} title={ru.schedule.forbiddenTitle} body={ru.schedule.forbiddenBody} />
+          <StateView
+            role="alert"
+            icon={<Lock />}
+            title={ru.schedule.forbiddenTitle}
+            body={ru.schedule.forbiddenBody}
+          />
         </div>
       </>
     );
   }
 
-  const view = data ? mapSchedule(data, nowMs) : { days: [] };
-  const rangeLabel = ru.schedule.weekRange(formatDayKey(range.start).split(', ')[1] ?? range.start, formatDayKey(range.end).split(', ')[1] ?? range.end);
-  const withWeek = { ...view, weekLabel: view.weekLabel ? `${view.weekLabel} · ${rangeLabel}` : data ? rangeLabel : undefined };
+  const view = data
+    ? mapSchedule(
+        data,
+        nowMs,
+        (lesson) =>
+          void navigate(`/schedule/lesson/${encodeURIComponent(lesson.id)}`, {
+            state: { lesson, timeZone: data.group_timezone },
+          }),
+      )
+    : { days: [] };
+  const rangeLabel = ru.schedule.weekRange(
+    formatDayKey(range.start).split(', ')[1] ?? range.start,
+    formatDayKey(range.end).split(', ')[1] ?? range.end,
+  );
+  const withWeek = {
+    ...view,
+    weekLabel: view.weekLabel ? `${view.weekLabel} · ${rangeLabel}` : data ? rangeLabel : undefined,
+  };
 
   const clarify =
     data?.week_state === 'needs_clarification' ? (
@@ -69,18 +90,27 @@ export function ScheduleScreen() {
   return (
     <ScheduleScreenView
       view={withWeek}
-      initialAnchorId={data ? scheduleAnchor(data, nowMs) : undefined}
       notice={
         <>
           {clarify}
-          {stale ? <Banner tone="warning" icon={<Clock />}>{ru.freshness.stale(formatTime(data.generated_at, data.group_timezone))}</Banner> : null}
+          {stale ? (
+            <Banner tone="warning" icon={<Clock />}>
+              {ru.freshness.stale(formatTime(data.generated_at, data.group_timezone))}
+            </Banner>
+          ) : null}
         </>
       }
     >
       {query.isPending ? <Loading /> : null}
-      {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
+      {query.isError && !data ? (
+        <RequestError error={query.error} onRetry={() => void query.refetch()} />
+      ) : null}
       {data && data.lessons.length === 0 ? (
-        <StateView illustration={<ThemedImage asset={emptyIllustrations.noLessons} />} title={ru.schedule.emptyTitle} body={ru.schedule.emptyBody} />
+        <StateView
+          illustration={<ThemedImage asset={emptyIllustrations.noLessons} />}
+          title={ru.schedule.emptyTitle}
+          body={ru.schedule.emptyBody}
+        />
       ) : null}
     </ScheduleScreenView>
   );

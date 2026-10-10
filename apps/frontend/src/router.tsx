@@ -7,9 +7,7 @@ import { homeworkIdFromStartParam } from './lib/deeplink';
 import { AppShell } from './shell/AppShell';
 import { TasksScreen } from './features/tasks/TasksScreen';
 import { ScheduleScreen } from './features/schedule/ScheduleScreen';
-import { LessonSubjectScreen } from './features/subjects/LessonSubjectScreen';
-import { DeadlinesScreen } from './features/deadlines/DeadlinesScreen';
-import { AcademicDeadlineScreen } from './features/deadlines/AcademicDeadlineScreen';
+import { LessonScreen } from './features/schedule/LessonScreen';
 import { PreparedSection } from './shell/PreparedSection';
 import { StateView } from './ui/StateView';
 import { Button } from './ui/Button';
@@ -51,10 +49,8 @@ export function appRoutes(startParam: string | null) {
         { path: 'homework/:homeworkId', Component: HomeworkScreen },
         { path: 'tasks', Component: TasksScreen },
         { path: 'schedule', Component: ScheduleScreen },
+        { path: 'schedule/lesson/:lessonId', Component: LessonScreen },
         { path: 'subjects', element: <PreparedSection title={ru.nav.subjects} /> },
-        { path: 'subjects/lessons/:lessonId', Component: LessonSubjectScreen },
-        { path: 'deadlines', Component: DeadlinesScreen },
-        { path: 'deadlines/:deadlineId', Component: AcademicDeadlineScreen },
         ...devRoutes,
         { path: '*', Component: NotFound },
       ],
@@ -63,9 +59,7 @@ export function appRoutes(startParam: string | null) {
 }
 
 export function createAppRouter(startParam: string | null) {
-  return createBrowserRouter(appRoutes(startParam), {
-    basename: import.meta.env.MODE === 'demo' ? import.meta.env.BASE_URL : undefined,
-  });
+  return createBrowserRouter(appRoutes(startParam));
 }
 
 export function createTestRouter(startParam: string | null, initialEntries: string[]) {

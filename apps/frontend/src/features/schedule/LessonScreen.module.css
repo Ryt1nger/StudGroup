@@ -1,0 +1,37 @@
+.page { padding: calc(var(--sg-safe-top) + 6px) 16px 0; }
+.header { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; min-height: 48px; }
+.headerTitle {
+  margin: 0; text-align: center;
+  font-size: 17px; line-height: 22px; font-weight: 700;
+}
+.back {
+  display: grid; place-items: center; width: 44px; height: 44px;
+  border: 0; background: transparent; border-radius: 12px; cursor: pointer;
+}
+.backSpacer { width: 44px; height: 44px; }
+.stack { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.hero {
+  display: flex; gap: 14px; padding: 14px;
+  border-radius: var(--sg-radius-lg); background: var(--sg-color-surface); box-shadow: var(--sg-shadow-card);
+  animation: lesson-rise 380ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.heroText { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.heroTitle { margin: 0; font-size: 20px; line-height: 26px; font-weight: 700; }
+.heroTime { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; color: var(--sg-color-text-secondary-strong); }
+.heroBadges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.card { padding: 16px; border-radius: var(--sg-radius-lg); background: var(--sg-color-surface); box-shadow: var(--sg-shadow-card); animation: lesson-rise 380ms 60ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.cardTitle { margin: 0 0 8px; font-size: 16px; line-height: 22px; font-weight: 700; }
+.rows { margin: 0; display: flex; flex-direction: column; }
+.row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid var(--sg-chip-border); font-size: 15px; line-height: 21px; }
+.row:first-child { border-top: 0; }
+.row dt { color: var(--sg-color-text-secondary-strong); flex: none; }
+.row dd { margin: 0; text-align: right; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+@keyframes lesson-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .hero, .card { animation: none; } }
+.dateTile {
+  flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 72px; height: 72px; border-radius: 18px; background: var(--sg-tint-primary); color: var(--sg-color-primary-text);
+}
+.dateDay { font-size: 26px; line-height: 28px; font-weight: 700; }
+.dateMonth { font-size: 12px; line-height: 14px; font-weight: 700; letter-spacing: 0.04em; }
+.dateTileNow { background: var(--sg-tint-success, var(--sg-tint-primary)); color: var(--sg-color-success-text, var(--sg-color-primary-text)); }

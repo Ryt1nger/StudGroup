@@ -15,7 +15,10 @@ const HOUR = 3_600_000;
 function served(filter: ListFilter, now = NOW) {
   const world = buildWorld(now);
   const items = selectHomework([...world.summaries.values()], filter, now);
-  return groupTaskSections(items, now, TZ).map((s) => ({ kind: s.kind, titles: s.items.map((i) => i.title) }));
+  return groupTaskSections(items, now, TZ).map((s) => ({
+    kind: s.kind,
+    titles: s.items.map((i) => i.title),
+  }));
 }
 
 describe('grouping (client) – the server filter is authoritative', () => {
@@ -27,7 +30,9 @@ describe('grouping (client) – the server filter is authoritative', () => {
     expect(sections.map((s) => s.kind)).toEqual(['upcoming', 'unknown', 'done', 'overdue', 'cancelled']);
     const titles = sections.flatMap((s) => s.items.map((i) => i.title));
     expect(titles).toHaveLength(all.length);
-    expect(sections.find((s) => s.kind === 'upcoming')!.items.map((i) => i.title)).toEqual(expect.arrayContaining(['ДЗ №12–140', 'КТ по истории']));
+    expect(sections.find((s) => s.kind === 'upcoming')!.items.map((i) => i.title)).toEqual(
+      expect.arrayContaining(['ДЗ №12–140', 'КТ по истории']),
+    );
   });
 
   it('keeps cancelled cards in archive regardless of cancellation age and preserves details', () => {
@@ -65,7 +70,8 @@ describe('grouping (client) – the server filter is authoritative', () => {
 
   it('sections without items are never returned', () => {
     expect(groupTaskSections([], NOW, TZ)).toEqual([]);
-    for (const f of ['all', 'today', 'week', 'mine'] as const) for (const s of served(f)) expect(s.titles.length).toBeGreaterThan(0);
+    for (const f of ['all', 'today', 'week', 'mine'] as const)
+      for (const s of served(f)) expect(s.titles.length).toBeGreaterThan(0);
   });
 });
 
@@ -81,8 +87,14 @@ describe('mock server follows the contract', () => {
 
   it('«week» is Monday–Sunday of the group; «mine» is completed excluding cancelled', () => {
     expect(served('week').flatMap((s) => s.titles)).not.toContain('Реферат по социологии'); // previous week
-    expect(served('week').flatMap((s) => s.titles)).toEqual(expect.arrayContaining(['ДЗ №12–140', 'КТ по истории']));
-    expect(served('mine').flatMap((s) => s.titles).sort()).toEqual(['Эссе по маркетингу']);
+    expect(served('week').flatMap((s) => s.titles)).toEqual(
+      expect.arrayContaining(['ДЗ №12–140', 'КТ по истории']),
+    );
+    expect(
+      served('mine')
+        .flatMap((s) => s.titles)
+        .sort(),
+    ).toEqual(['Эссе по маркетингу']);
     expect(served('archive').flatMap((s) => s.titles)).toContain('Конспект по философии');
   });
 
@@ -123,17 +135,25 @@ describe('Tasks screen', () => {
     renderApp({ route: '/tasks' });
     expect(await screen.findByRole('heading', { name: 'Задания', level: 1 })).toBeInTheDocument();
     const group = screen.getByRole('group', { name: 'Фильтр заданий' });
-    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual(['Все', 'Сегодня', 'На неделе', 'Выполнено мной', 'Архив']);
+    expect(
+      within(group)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Все', 'Сегодня', 'На неделе', 'Выполнено мной', 'Архив']);
     expect(await screen.findByText('ДЗ №12–140')).toBeInTheDocument();
-    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(['Ближайшие', 'Срок уточняется', 'Выполнено']);
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Ближайшие',
+      'Срок уточняется',
+      'Выполнено',
+    ]);
     expect(screen.queryByText('Реферат по социологии')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Архив' }));
     expect(await screen.findByText('Реферат по социологии')).toBeInTheDocument();
     expect(screen.getByText('Доклад по экологии')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Отменено' })).toBeInTheDocument();
-    expect(within(screen.getByRole('link', { name: /Открыть задание: Доклад по экологии/ })).queryByText('Отменено')).not.toBeInTheDocument();
-    expect(screen.queryByText('Срочно')).not.toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Выполнено мной' })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('link', { name: /Открыть задание: Доклад по экологии/ })).getByText('Отменено'),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Срок сегодня' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Загрузить ещё' })).not.toBeInTheDocument();
   });
@@ -151,7 +171,8 @@ describe('Tasks screen', () => {
     expect(await screen.findByText('ДЗ №12–140')).toBeInTheDocument();
     expect(screen.queryByText('Лабораторная работа №3')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'На неделе' }));
-    await screen.findByText('КТ по истории');
+    // The week filter must reach the server; which cards fall into it depends on the weekday.
+    await waitFor(() => expect(urls).toHaveLength(4));
     expect(urls.map((u) => u.searchParams.get('filter'))).toEqual(['all', 'mine', 'today', 'week']);
     for (const u of urls) {
       expect(u.searchParams.get('limit')).toBe('50');
@@ -205,7 +226,9 @@ describe('Tasks screen', () => {
 
   it('a card opens the existing detail screen', async () => {
     renderApp({ route: '/tasks?filter=archive' });
-    await userEvent.click(await screen.findByRole('link', { name: /Открыть задание: Конспект по философии/ }));
+    await userEvent.click(
+      await screen.findByRole('link', { name: /Открыть задание: Конспект по философии/ }),
+    );
     expect(await screen.findByRole('heading', { name: 'Конспект по философии' })).toBeInTheDocument();
   });
 });
@@ -224,8 +247,14 @@ describe('Tasks pagination', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Загрузить ещё' }));
     await waitFor(() => expect(cards()).toHaveLength(124));
     expect(screen.queryByRole('button', { name: 'Загрузить ещё' })).not.toBeInTheDocument();
-    expect(urls.map((u) => (u.searchParams.get('cursor') ? 'cursor' : 'first'))).toEqual(['first', 'cursor', 'cursor']);
-    expect(urls.every((u) => u.searchParams.get('limit') === '50' && u.searchParams.get('filter') === 'all')).toBe(true);
+    expect(urls.map((u) => (u.searchParams.get('cursor') ? 'cursor' : 'first'))).toEqual([
+      'first',
+      'cursor',
+      'cursor',
+    ]);
+    expect(
+      urls.every((u) => u.searchParams.get('limit') === '50' && u.searchParams.get('filter') === 'all'),
+    ).toBe(true);
   });
 
   it('merges duplicated ids from the next page without duplicate cards', async () => {
@@ -244,16 +273,22 @@ describe('Tasks pagination', () => {
     expect(screen.queryByRole('heading', { name: 'Заданий пока нет' })).not.toBeInTheDocument();
   });
 
-  it('a failed «Загрузить ещё» keeps the loaded cards, offers a retry and then continues', { timeout: 15000 }, async () => {
-    useScenario('tasks-more-fails');
-    renderApp({ route: '/tasks' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Загрузить ещё' }));
-    expect(await screen.findByText(/Не удалось загрузить следующие задания/, {}, { timeout: 8000 })).toBeInTheDocument();
-    expect(cards()).toHaveLength(50);
-    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }));
-    await waitFor(() => expect(cards()).toHaveLength(100));
-    expect(screen.queryByText(/Не удалось загрузить следующие задания/)).not.toBeInTheDocument();
-  });
+  it(
+    'a failed «Загрузить ещё» keeps the loaded cards, offers a retry and then continues',
+    { timeout: 15000 },
+    async () => {
+      useScenario('tasks-more-fails');
+      renderApp({ route: '/tasks' });
+      await userEvent.click(await screen.findByRole('button', { name: 'Загрузить ещё' }));
+      expect(
+        await screen.findByText(/Не удалось загрузить следующие задания/, {}, { timeout: 8000 }),
+      ).toBeInTheDocument();
+      expect(cards()).toHaveLength(50);
+      await userEvent.click(screen.getByRole('button', { name: 'Повторить' }));
+      await waitFor(() => expect(cards()).toHaveLength(100));
+      expect(screen.queryByText(/Не удалось загрузить следующие задания/)).not.toBeInTheDocument();
+    },
+  );
 
   it('an expired cursor (422 invalid_request) restarts the list once, without looping', async () => {
     useScenario('tasks-cursor-expired');
@@ -301,24 +336,22 @@ describe('completion sync', () => {
     await waitFor(() => expect(screen.queryByText('КТ по истории')).not.toBeInTheDocument());
     await router.navigate('/tasks');
     await screen.findByText('ДЗ №12–140');
-    expect(within(screen.getByRole('region', { name: 'Ближайшие' })).getByText('КТ по истории')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'Ближайшие' })).getByText('КТ по истории'),
+    ).toBeInTheDocument();
     // Every list request after a mutation starts again from the first page.
     expect(urls.every((u) => !u.searchParams.get('cursor'))).toBe(true);
   });
 
-  it('completing a Today card keeps its active deadline visible with a completion mark', async () => {
+  it('completing a Today card removes it from Today and lists it in Tasks', async () => {
     const { router } = renderApp({ route: '/today' });
     await userEvent.click(await screen.findByRole('link', { name: /Открыть задание: ДЗ №12–140/ }));
     await userEvent.click(await screen.findByRole('button', { name: 'Выполнено мной' }));
     await screen.findByRole('button', { name: /Снять отметку/ });
     await router.navigate('/today');
-    const card = await screen.findByRole('link', { name: /Открыть задание: ДЗ №12–140/ });
-    await waitFor(() => expect(within(card).getByText('Выполнено мной')).toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('ДЗ №12–140')).not.toBeInTheDocument());
     await router.navigate('/tasks?filter=mine');
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Задания', level: 1 })).toBeInTheDocument();
-      expect(screen.getByText('ДЗ №12–140')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('ДЗ №12–140')).toBeInTheDocument();
   });
 
   it('a revision conflict also restarts the list', async () => {
