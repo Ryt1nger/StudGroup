@@ -249,6 +249,63 @@ def test_new_messages_belong_to_next_slot_and_silence_produces_no_report(client)
     asyncio.run(check())
 
 
+def test_idle_worker_closes_run_with_unclaimable_targets_and_reports_them(client):
+    seed(client, at("06:55:00"), mid=1)
+    seed(client, at("06:56:00"), mid=2)
+    provider = CascadeProvider(signal=False)
+    assert run(client, provider, "07:00:00") == "completed"
+    assert len([t for t in notices(client) if "Итог прогона" in t]) == 0
+
+    async def strand_second_message():
+        async with AsyncSession(client.app.state.engine) as db:
+            pending = (
+                await db.scalars(select(RawMessage).where(RawMessage.processing_state == "pending"))
+            ).all()
+            assert len(pending) == 1
+            pending[0].live_received_at = pending[0].live_received_at + timedelta(hours=3)
+            await db.commit()
+
+    asyncio.run(strand_second_message())
+    assert run(client, provider, "07:00:10") == "idle"
+    final = [t for t in notices(client) if "Итог прогона" in t]
+    assert len(final) == 1
+    assert "Завершён не полностью" in final[0]
+    assert "не обработано в этом окне: 1" in final[0]
+    assert run(client, provider, "07:00:20") == "idle"
+    assert len([t for t in notices(client) if "Итог прогона" in t]) == 1
+
+
+def test_stale_package_with_pre_install_history_does_not_block_deep_stage_or_report(client):
+    seed(client, at("06:55:00"), mid=1)
+    provider = CascadeProvider()
+    assert run(client, provider, "07:00:00") == "screened"
+
+    async def inject_history():
+        async with AsyncSession(client.app.state.engine) as db:
+            old = at("06:00:00") - timedelta(days=3)
+            raw = RawMessage(
+                id=uuid.uuid4(),
+                group_id=(await db.scalar(select(AIRun))).group_id,
+                telegram_message_id=900,
+                text="старое ДЗ",
+                message_date=old,
+                version_date=old,
+                imported=True,
+                processing_state="pending",
+                delete_at=old + timedelta(days=30),
+            )
+            db.add(raw)
+            package = await db.scalar(select(AIRun))
+            package.targets = json.dumps([*json.loads(package.targets), f"{raw.id}:1:1"])
+            await db.commit()
+
+    asyncio.run(inject_history())
+    assert run(client, provider, "07:00:10") == "completed"
+    finals = [t for t in notices(client) if "Итог прогона" in t]
+    assert len(finals) == 1
+    assert "Сообщений в пакете: 1" in finals[0]
+
+
 def test_snapshot_spans_more_than_worker_claim_page(client):
     for mid in range(1, 52):
         seed(client, at("06:55:00"), mid=mid)

@@ -145,7 +145,48 @@ async def attach(db, settings, group, job, raw, attempt):
     attempt.metrics = json.dumps(values)
 
 
-async def finish_ready(db, settings, now):
+async def prune_pre_install_targets(db, runs):
+    """Drop never-started targets older than the bot installation from open runs.
+
+    A package snapshotted before the bootstrap bound existed may list the whole
+    imported history. Those sources have no job and will never be claimed, yet
+    they keep the group's light/deep gate closed and the run silent forever.
+    Sources that already own a job are kept untouched.
+    """
+    for run in runs:
+        group = await db.get(Group, run.group_id)
+        if group is None or group.bot_added_at is None:
+            continue
+        keys = json.loads(run.targets)
+        parsed = {}
+        for key in keys:
+            try:
+                raw_id, _revision, _generation = parse_target_key(key, run.analysis_generation)
+                parsed[key] = uuid.UUID(raw_id)
+            except (TypeError, ValueError):
+                continue
+        if not parsed:
+            continue
+        ids = set(parsed.values())
+        old = {
+            row.id
+            for row in (
+                await db.execute(
+                    select(RawMessage.id).where(
+                        RawMessage.id.in_(ids),
+                        RawMessage.message_date < group.bot_added_at,
+                        ~exists(select(AIJob.id).where(AIJob.raw_message_id == RawMessage.id)),
+                    )
+                )
+            ).all()
+        }
+        if not old:
+            continue
+        kept = [key for key in keys if parsed.get(key) not in old]
+        run.targets = json.dumps(kept)
+
+
+async def finish_ready(db, settings, now, idle=False):
     from studgroup.run_reports import enabled
 
     runs = (
@@ -182,10 +223,13 @@ async def finish_ready(db, settings, now):
             for r in (await db.scalars(select(RawMessage).where(RawMessage.id.in_(raw_ids)))).all()
         }
         pending, failed, skipped = 0, 0, 0
+        waiting, unclaimed = 0, 0
         for key in keys:
             job = indexed.get(key)
             if job:
-                pending += job.state not in {"done", "failed", "superseded"}
+                is_open = job.state not in {"done", "failed", "superseded"}
+                pending += is_open
+                waiting += is_open
                 failed += job.state == "failed"
                 skipped += job.state == "superseded"
             else:
@@ -210,6 +254,7 @@ async def finish_ready(db, settings, now):
                     or (utc(raw.delete_at) <= utc(now) and not backfill)
                 )
                 pending += not obsolete
+                unclaimed += not obsolete
                 skipped += obsolete
         attempts = (
             await db.scalars(
@@ -220,16 +265,23 @@ async def finish_ready(db, settings, now):
         ).all()
         pairs = [(a, json.loads(a.metrics or "{}")) for a in attempts]
         pairs = [(a, m) for a, m in pairs if m.get("run_id") == str(run.id)]
-        if pending or any(a.finished_at is None for a, _ in pairs):
+        if any(a.finished_at is None for a, _ in pairs):
+            continue
+        # The worker is idle inside the window and no job is queued, retrying or
+        # running: the targets that never got a job cannot progress in this slot.
+        # Close the run honestly instead of keeping its report silent forever;
+        # those sources stay pending and join the next slot's snapshot.
+        abandoned = unclaimed if idle and pending and not waiting else 0
+        if pending and not abandoned:
             continue
         run.finished_at = now
-        run.outcome = "failed" if failed else "completed"
+        run.outcome = "failed" if failed else "incomplete" if abandoned else "completed"
         if not enabled(settings, SimpleNamespace(created_at=run.started_at)):
             continue
-        await emit(db, settings, run, pairs, failed, skipped, now)
+        await emit(db, settings, run, pairs, failed, skipped, now, abandoned)
 
 
-async def emit(db, settings, run, pairs, failed, skipped, now):
+async def emit(db, settings, run, pairs, failed, skipped, now, abandoned=0):
     group = await db.get(Group, run.group_id)
     known = [
         (a, m) for a, m in pairs if a.prompt_tokens is not None and a.completion_tokens is not None
@@ -273,11 +325,21 @@ async def emit(db, settings, run, pairs, failed, skipped, now):
     began = utc(run.started_at).astimezone(zone)
     duration = max(0, (utc(now) - utc(run.started_at)).total_seconds())
     status = (
-        "Завершён с ошибками"
+        "Завершён не полностью"
+        if abandoned
+        else "Завершён с ошибками"
         if failed
         else "Завершён с предупреждениями"
         if diagnostic_counts
         else "Успех"
     )
-    text = f"■ Итог прогона {str(run.id)[:8]}\n{status}\nНачало: {began:%d.%m.%Y %H:%M:%S} МСК\nЗавершение: {ended:%d.%m.%Y %H:%M:%S} МСК\nДлительность с ожиданием: {duration:.1f} с\nСообщений в пакете: {len(json.loads(run.targets))}; ошибок: {failed}; устаревших: {skipped}\nЛёгкий анализ: {len(screen_jobs)} сообщений; слабых сигналов: {len(signals)}\nГлубоко разобрано фрагментов: {len(deep_jobs)}\nВажных предложений: {total('important_proposals')}; уникальных сообщений-источников: {len(important_ids)}\nПрименено предложений: {total('applied_fragments')}; использовано сообщений-источников: {len(used_ids)}\nКарточек создано: {total('created_cards')}, обновлено: {total('updated_cards')}; на проверку: {total('review_proposals')}\nОшибки одним итогом: {errors}\nИсправлено/отклонено в ответах модели: {diagnostics}\nЗапросов/попыток: {len(pairs)}\nТокены: вход {prompt}, выход {completion}, всего {prompt + completion}\nРасчётная стоимость: ${spent:.6f}\nНеуточнённый резерв: ${reserved:.6f}."
+    text = (
+        f"■ Итог прогона {str(run.id)[:8]}\n{status}\nНачало: {began:%d.%m.%Y %H:%M:%S} МСК\nЗавершение: {ended:%d.%m.%Y %H:%M:%S} МСК\nДлительность с ожиданием: {duration:.1f} с\nСообщений в пакете: {len(json.loads(run.targets))}; ошибок: {failed}; устаревших: {skipped}"
+        + (
+            f"; не обработано в этом окне: {abandoned} (останутся на следующий прогон)"
+            if abandoned
+            else ""
+        )
+        + f"\nЛёгкий анализ: {len(screen_jobs)} сообщений; слабых сигналов: {len(signals)}\nГлубоко разобрано фрагментов: {len(deep_jobs)}\nВажных предложений: {total('important_proposals')}; уникальных сообщений-источников: {len(important_ids)}\nПрименено предложений: {total('applied_fragments')}; использовано сообщений-источников: {len(used_ids)}\nКарточек создано: {total('created_cards')}, обновлено: {total('updated_cards')}; на проверку: {total('review_proposals')}\nОшибки одним итогом: {errors}\nИсправлено/отклонено в ответах модели: {diagnostics}\nЗапросов/попыток: {len(pairs)}\nТокены: вход {prompt}, выход {completion}, всего {prompt + completion}\nРасчётная стоимость: ${spent:.6f}\nНеуточнённый резерв: ${reserved:.6f}."
+    )
     await queue(db, settings, f"batch-finish:{run.id}", group, text)

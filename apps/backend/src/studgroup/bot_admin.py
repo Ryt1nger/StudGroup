@@ -104,6 +104,40 @@ async def handle(db, update, settings):
             buttons(session, [[(g.name[:50], "g" + g.id.hex)] for g in groups]),
         )
         return True
+    if not callback and text.strip().split("@")[0] == "/resetrun":
+        from studgroup import first_run
+
+        groups = (
+            await db.scalars(
+                select(Group).where(Group.pilot_authorized.is_(True), Group.status == "active")
+            )
+        ).all()
+        if len(groups) != 1:
+            await say(db, chat, "Сброс первого прогона: нужна ровно одна подключённая группа.")
+            return True
+        group = groups[0]
+        if session is None:
+            session = BotAdminSession(owner_id=sender.id, nonce="", step="groups", expires_at=now)
+            db.add(session)
+        session.nonce = secrets.token_hex(6)
+        session.step = "reset"
+        session.group_id = group.id
+        session.expires_at = now + timedelta(minutes=15)
+        info = await first_run.summary(db, group.id)
+        since = (
+            info["since"].astimezone(UTC).strftime("%d.%m.%Y %H:%M UTC") if info["since"] else "—"
+        )
+        await say(
+            db,
+            chat,
+            f"Сброс первого прогона для «{group.name}».\n"
+            f"Будет удалено: прогонов {info['runs']}, задач {info['jobs']}, "
+            f"попыток {info['attempts']}, кандидатов {info['candidates']}.\n"
+            "Не удаляется: карточки (архив), сообщения, счётчик расходов.\n"
+            f"Анализ начнётся с {since}; к разбору будет подготовлено сообщений: {info['to_analyze']}.",
+            buttons(session, [[("Подтвердить сброс", "reset")]]),
+        )
+        return True
     expiry = session.expires_at if session else now
     if expiry.tzinfo is None:
         expiry = expiry.replace(tzinfo=UTC)
@@ -121,6 +155,24 @@ async def handle(db, update, settings):
             await say(db, chat, "Кнопка устарела. Отправь /admin заново.")
             return True
         action = parts[2]
+        if action == "reset" and session.step == "reset" and session.group_id:
+            from studgroup import first_run
+
+            done = await first_run.reset_first_run(db, session.group_id, now)
+            session.step = "done"
+            session.nonce = secrets.token_hex(6)
+            if done is None:
+                await say(db, chat, "Сброс невозможен: у группы нет даты установки бота.")
+            else:
+                await say(
+                    db,
+                    chat,
+                    "Готово. Старый прогон удалён: "
+                    f"прогонов {done['runs']}, задач {done['jobs']}, "
+                    f"попыток {done['attempts']}, кандидатов {done['candidates']}. "
+                    "Первый прогон начнётся после включения ИИ.",
+                )
+            return True
         if action.startswith("g") and session.step == "groups":
             try:
                 group = await db.get(Group, uuid.UUID(hex=action[1:]))

@@ -348,6 +348,9 @@ async def claim(engine, settings, now):
                 .with_for_update()
             )
         ).all()
+        from studgroup.batch_reports import prune_pre_install_targets
+
+        await prune_pre_install_targets(db, active_runs)
         # One group owns exactly one runnable package. Older packages created by a
         # previous deployment drain first; later packages and fresh text stay asleep.
         active_by_group = {}
@@ -660,7 +663,7 @@ async def claim(engine, settings, now):
         if settings.ai_schedule_enabled:
             from studgroup.batch_reports import finish_ready
 
-            await finish_ready(db, settings, now)
+            await finish_ready(db, settings, now, idle=True)
         await db.commit()
         return None
 

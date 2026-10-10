@@ -115,3 +115,47 @@ def test_native_picker_is_bound_to_its_request(client):
         client, "", update=104, shared={"request_id": s.request_id, "users": [{"user_id": 123}]}
     )
     assert session(client)[0].step == "confirm"
+
+
+def test_resetrun_needs_confirmation_and_clears_only_ai_artefacts(client):
+    from test_ai_schedule import seed
+    from test_batch_reports import at, config
+    from test_live_two_pass import CascadeProvider
+
+    from studgroup.models import AIAttempt, AIJob, AIRun, GroupAIProfile, RawMessage
+    from studgroup.processing import process_next
+
+    seed(client, at("06:55:00"), mid=1)
+    asyncio.run(
+        process_next(client.app.state.engine, config(), CascadeProvider(), now=at("07:00:00"))
+    )
+
+    async def counts():
+        async with AsyncSession(client.app.state.engine) as db:
+            return tuple(
+                [
+                    await db.scalar(select(func.count()).select_from(m))
+                    for m in (AIRun, AIJob, AIAttempt, RawMessage)
+                ]
+            )
+
+    before = asyncio.run(counts())
+    assert before[0] == 1 and before[1] == 1 and before[2] >= 1
+    private(client, "/resetrun")
+    s, msg = session(client)
+    assert "Будет удалено" in msg[-1]["text"]
+    assert asyncio.run(counts()) == before  # nothing deleted before confirmation
+    private(client, "", update=101, callback=f"a:{s.nonce}:reset")
+    runs, jobs, attempts, raws = asyncio.run(counts())
+    assert (runs, jobs, attempts) == (0, 0, 0)
+    assert raws == before[3]
+
+    async def state():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage))
+            profile = await db.scalar(select(GroupAIProfile))
+            return raw.processing_state, profile.state
+
+    assert asyncio.run(state()) == ("pending", "mapping")
+    private(client, "", update=102, callback=f"a:{s.nonce}:reset")  # stale button: no effect
+    assert asyncio.run(counts())[:3] == (0, 0, 0)
