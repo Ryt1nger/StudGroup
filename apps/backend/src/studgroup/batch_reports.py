@@ -9,7 +9,15 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import exists, select
 
-from studgroup.models import AIAttempt, AIJob, AIRun, Group, GroupAIProfile, RawMessage
+from studgroup.models import (
+    AIAttempt,
+    AICandidate,
+    AIJob,
+    AIRun,
+    Group,
+    GroupAIProfile,
+    RawMessage,
+)
 from studgroup.owner_updates import queue
 
 
@@ -281,6 +289,60 @@ async def finish_ready(db, settings, now, idle=False):
         await emit(db, settings, run, pairs, failed, skipped, now, abandoned)
 
 
+def review_reason(payload):
+    """Plain-language reason a proposal was not published, from its stored facts."""
+    reasons = []
+    kind = payload.get("kind")
+    confidence = payload.get("confidence")
+    if kind == "needs_context":
+        reasons.append("модель просит контекст")
+    if isinstance(confidence, int) and confidence < 85:
+        reasons.append(f"уверенность {confidence} (нужно от 85)")
+    missing = [
+        label
+        for field, label in (
+            ("subject", "предмет"),
+            ("title", "название"),
+            ("description", "описание"),
+            ("deadline_at", "срок"),
+        )
+        if not payload.get(field)
+    ]
+    if missing:
+        reasons.append("не хватило: " + ", ".join(missing))
+    if not reasons:
+        reasons.append("не прошло проверку публикации")
+    return "; ".join(reasons)
+
+
+async def review_section(db, job_ids, limit=12):
+    if not job_ids:
+        return ""
+    rows = (
+        await db.execute(
+            select(AICandidate, RawMessage)
+            .join(AIJob, AIJob.id == AICandidate.job_id)
+            .join(RawMessage, RawMessage.id == AIJob.raw_message_id, isouter=True)
+            .where(AICandidate.job_id.in_(job_ids), AICandidate.state == "review")
+            .order_by(AICandidate.created_at)
+        )
+    ).all()
+    if not rows:
+        return ""
+    lines = [f"\nНа проверку ({len(rows)}):"]
+    for candidate, raw in rows[:limit]:
+        try:
+            payload = json.loads(candidate.payload)
+        except (TypeError, ValueError):
+            payload = {}
+        number = f"#{raw.telegram_message_id}" if raw is not None else "#?"
+        text = " ".join((raw.text or "").split())[:70] if raw is not None else ""
+        lines.append(f"• {number} «{text}» — {review_reason(payload)}")
+    if len(rows) > limit:
+        lines.append(f"… и ещё {len(rows) - limit}")
+    return "\n".join(lines)
+
+
 async def emit(db, settings, run, pairs, failed, skipped, now, abandoned=0):
     group = await db.get(Group, run.group_id)
     known = [
@@ -342,4 +404,5 @@ async def emit(db, settings, run, pairs, failed, skipped, now, abandoned=0):
         )
         + f"\nЛёгкий анализ: {len(screen_jobs)} сообщений; слабых сигналов: {len(signals)}\nГлубоко разобрано фрагментов: {len(deep_jobs)}\nВажных предложений: {total('important_proposals')}; уникальных сообщений-источников: {len(important_ids)}\nПрименено предложений: {total('applied_fragments')}; использовано сообщений-источников: {len(used_ids)}\nКарточек создано: {total('created_cards')}, обновлено: {total('updated_cards')}; на проверку: {total('review_proposals')}\nОшибки одним итогом: {errors}\nИсправлено/отклонено в ответах модели: {diagnostics}\nЗапросов/попыток: {len(pairs)}\nТокены: вход {prompt}, выход {completion}, всего {prompt + completion}\nРасчётная стоимость: ${spent:.6f}\nНеуточнённый резерв: ${reserved:.6f}."
     )
-    await queue(db, settings, f"batch-finish:{run.id}", group, text)
+    text += await review_section(db, {a.job_id for a, _ in pairs})
+    await queue(db, settings, f"batch-finish:{run.id}", group, text[:3900])

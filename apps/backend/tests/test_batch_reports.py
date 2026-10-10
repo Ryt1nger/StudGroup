@@ -9,9 +9,17 @@ from test_ai_schedule import seed
 from test_live_two_pass import CascadeProvider
 
 from studgroup.ai import BatchExtraction, BatchResult, TokenUsage
-from studgroup.batch_reports import parse_target_key
+from studgroup.batch_reports import parse_target_key, review_reason, review_section
 from studgroup.main import Settings
-from studgroup.models import AIControl, AIRun, BotOutbox, GroupAIProfile, RawMessage
+from studgroup.models import (
+    AICandidate,
+    AIControl,
+    AIJob,
+    AIRun,
+    BotOutbox,
+    GroupAIProfile,
+    RawMessage,
+)
 from studgroup.processing import process_next
 
 pytest_plugins = ["test_schedule_api"]
@@ -365,3 +373,41 @@ def test_sender_suppresses_legacy_stage_notice_but_delivers_card_updates(client,
             }
 
     asyncio.run(check())
+
+
+def test_review_reason_explains_why_a_fragment_was_not_published():
+    assert "уверенность 60" in review_reason({"kind": "homework", "confidence": 60})
+    assert "модель просит контекст" in review_reason({"kind": "needs_context", "confidence": 90})
+    text = review_reason(
+        {"kind": "homework", "confidence": 90, "subject": "Физика", "title": "Задачи"}
+    )
+    assert "описание" in text and "срок" in text and "предмет" not in text
+
+
+def test_review_section_lists_message_fragment_and_reason(client):
+    seed(client, at("06:55:00"), mid=7)
+    provider = CascadeProvider(signal=False)
+    assert run(client, provider, "07:00:00") == "completed"
+
+    async def add_candidate():
+        async with AsyncSession(client.app.state.engine) as db:
+            job = await db.scalar(select(AIJob))
+            job_id, group_id = job.id, job.group_id
+            db.add(
+                AICandidate(
+                    job_id=job_id,
+                    group_id=group_id,
+                    ordinal=0,
+                    payload=json.dumps({"kind": "homework", "confidence": 60, "subject": "Физика"}),
+                    state="review",
+                    created_at=at("07:00:00"),
+                    delete_at=at("07:00:00") + timedelta(days=30),
+                )
+            )
+            await db.commit()
+            return await review_section(db, {job_id})
+
+    text = asyncio.run(add_candidate())
+    assert "На проверку (1)" in text
+    assert "#7" in text and "ДЗ: решить задачи" in text
+    assert "уверенность 60" in text and "не хватило: название, описание, срок" in text
