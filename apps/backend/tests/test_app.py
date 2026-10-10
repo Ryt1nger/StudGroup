@@ -14,12 +14,20 @@ def test_health_and_readiness_failure():
         app.state.redis.ping = AsyncMock(side_effect=OSError("secret redis url"))
         assert client.get("/health").json() == {
             "status": "ok",
-            "ai_processing": "emergency_stopped",
+            "ai_processing": "disabled",
         }
         response = client.get("/ready")
         assert response.status_code == 503
         assert "secret" not in response.text
         app.state.engine = original_engine
+
+
+def test_health_reports_enabled_ai_without_exposing_configuration():
+    with TestClient(create_app(Settings(ai_enabled=True))) as client:
+        assert client.get("/health").json() == {
+            "status": "ok",
+            "ai_processing": "enabled",
+        }
 
 
 def test_cors_allows_only_frontend_origin():

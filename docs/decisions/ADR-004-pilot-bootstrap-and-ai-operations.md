@@ -4,6 +4,15 @@ Status: accepted
 
 Date: 2026-10-04
 
+## Owner update — 2026-10-10: begin protected cost measurement
+
+Re-enable hosted DeepSeek processing for the cost measurement. Keep the hourly
+activity gate, global single-flight execution, resumable checkpoints, validation,
+automatic circuit breaker, USD ceilings and owner budget notifications active.
+The health endpoint must distinguish enabled, disabled, expired and emergency-stop
+states without exposing credentials. Do not replay imported history or bypass the
+fixed-package rules when activation occurs.
+
 ## Owner update — 2026-10-10: serialized resumable AI runs
 
 Keep hosted AI emergency-stopped while replacing the polling cascade with one

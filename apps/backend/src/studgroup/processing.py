@@ -42,7 +42,7 @@ from studgroup.models import (
 from studgroup.notifications import record_change
 
 MAX_ATTEMPTS = 2
-HOSTED_AI_EMERGENCY_STOP = True
+HOSTED_AI_EMERGENCY_STOP = False
 MIN_REQUEST_WINDOW_SECONDS = 50
 RECOVERABLE_FAILURES = {
     "provider_unreachable",

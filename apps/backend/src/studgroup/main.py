@@ -192,9 +192,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def health():
         from studgroup.processing import HOSTED_AI_EMERGENCY_STOP
 
+        ai_processing = "enabled" if settings.ai_enabled else "disabled"
+        if HOSTED_AI_EMERGENCY_STOP:
+            ai_processing = "emergency_stopped"
+        elif settings.ai_enabled_until is not None and settings.ai_enabled_until <= datetime.now(
+            settings.ai_enabled_until.tzinfo
+        ):
+            ai_processing = "scheduled_off"
         return {
             "status": "ok",
-            "ai_processing": "emergency_stopped" if HOSTED_AI_EMERGENCY_STOP else "configured",
+            "ai_processing": ai_processing,
         }
 
     @app.get("/ready", include_in_schema=False)
