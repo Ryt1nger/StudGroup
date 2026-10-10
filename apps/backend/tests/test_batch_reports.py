@@ -314,6 +314,24 @@ def test_stale_package_with_pre_install_history_does_not_block_deep_stage_or_rep
     assert "Сообщений в пакете: 1" in finals[0]
 
 
+def test_light_pass_continues_past_fifty_screened_signals(client):
+    total = 55
+    for mid in range(1, total + 1):
+        seed(client, at("06:55:00"), mid=mid)
+    provider = CascadeProvider(signal=True)
+    for index in range(total):
+        outcome = asyncio.run(
+            process_next(
+                client.app.state.engine,
+                config(),
+                provider,
+                now=at("07:00:00") + timedelta(seconds=index * 2),
+            )
+        )
+        assert outcome == "screened", (index, outcome)
+    assert provider.screen_calls == total
+
+
 def test_snapshot_spans_more_than_worker_claim_page(client):
     for mid in range(1, 52):
         seed(client, at("06:55:00"), mid=mid)

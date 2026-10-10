@@ -425,11 +425,32 @@ async def claim(engine, settings, now):
                 AIJob.state.in_(["done", "failed", "superseded"]),
             )
         )
+        # The claim page holds only 50 rows. Sources this run's gate would skip anyway
+        # (already screened while light passes remain, or not the retry blocker) must
+        # not fill that page, or the rest of the package is never even looked at.
+        gate_filters = []
+        for group_id, policy in run_policy.items():
+            if policy["blocker"]:
+                allowed_keys = {policy["blocker"]}
+            elif policy["unscreened"]:
+                allowed_keys = policy["unscreened"]
+            else:
+                allowed_keys = policy["targets"]
+            allowed_ids = set()
+            for key in allowed_keys:
+                try:
+                    allowed_ids.add(uuid.UUID(key.split(":", 1)[0]))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+            gate_filters.append(
+                or_(RawMessage.group_id != group_id, RawMessage.id.in_(allowed_ids))
+            )
         raws = (
             await db.scalars(
                 select(RawMessage)
                 .join(Group)
                 .where(
+                    *gate_filters,
                     or_(
                         RawMessage.processing_state == "pending",
                         and_(import_scope, RawMessage.processing_state == "needs_context"),
