@@ -185,6 +185,44 @@ def test_semantic_screen_uses_context_without_keyword_gate(signal):
     assert result.decision.signal is signal
 
 
+def test_screen_prompt_rejects_chatter_that_only_neighbors_an_academic_event():
+    captured = {}
+
+    def handler(request):
+        captured.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"signal": False, "source_message_ids": []})),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.screen_batch(
+            [
+                {
+                    "message_id": 3921,
+                    "message_date": "2026-10-09T09:00:00+03:00",
+                    "text": "Слушаю",
+                    "is_target": True,
+                },
+                {
+                    "message_id": 3924,
+                    "message_date": "2026-10-09T09:01:00+03:00",
+                    "text": "Пересдача самостоятельной по математике в четверг",
+                    "is_target": False,
+                },
+            ],
+            "Europe/Moscow",
+            3921,
+        )
+    )
+
+    prompt = captured["messages"][0]["content"]
+    assert "Proximity alone is not a link" in prompt
+    assert "must never make a conversational target positive" in prompt
+    assert result.decision.signal is False
+
+
 @pytest.mark.parametrize(
     "signal,citations,expected",
     [(True, [999], [1]), (True, [2, 999], [1, 2]), (False, [999], [])],
