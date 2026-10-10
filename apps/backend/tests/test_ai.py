@@ -49,13 +49,109 @@ def test_online_lesson_proposal_requires_literal_joining_url_in_supplied_sources
         "Europe/Moscow",
         target_message_id=1,
     )
+    result = asyncio.run(call)
     if invented:
-        with pytest.raises(ProviderFailure, match="invalid_source_reference"):
-            asyncio.run(call)
+        assert result.batch.online_lessons == []
+        assert result.diagnostics == {"rejected_unverified_url": 1}
     else:
-        result = asyncio.run(call)
         assert result.batch.assignments == []
         assert result.batch.online_lessons[0].url == url
+        assert result.diagnostics == {}
+
+
+def test_deep_batch_repairs_unknown_citation_without_discarding_valid_evidence():
+    assignment = facts(source_message_ids=[1, 999])
+
+    def handler(request):
+        request_body = json.loads(request.content)
+        submitted = json.loads(request_body["messages"][1]["content"])
+        assert submitted["target_message_id"] == 1
+        assert submitted["allowed_source_message_ids"] == [1]
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"assignments": [assignment], "online_lessons": []})),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.extract_batch(
+            [
+                {
+                    "message_id": 1,
+                    "message_date": "2026-10-09T08:55:00+03:00",
+                    "text": "ДЗ: номера 1–3",
+                    "is_target": True,
+                }
+            ],
+            "Europe/Moscow",
+            target_message_id=1,
+        )
+    )
+    assert result.batch.assignments[0].source_message_ids == [1]
+    assert result.diagnostics == {"normalized_source_reference": 1}
+
+
+def test_deep_batch_isolates_bad_proposal_and_keeps_valid_one():
+    valid = facts(source_message_ids=[1])
+    malformed = facts(source_message_ids=[1], confidence=101)
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"assignments": [malformed, valid], "online_lessons": []})),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.extract_batch(
+            [
+                {
+                    "message_id": 1,
+                    "message_date": "2026-10-09T08:55:00+03:00",
+                    "text": "ДЗ: номера 1–3",
+                    "is_target": True,
+                }
+            ],
+            "Europe/Moscow",
+            target_message_id=1,
+        )
+    )
+    assert len(result.batch.assignments) == 1
+    assert result.diagnostics == {"rejected_assignment_schema": 1}
+
+
+def test_deep_batch_reports_missing_target_instead_of_failing_entire_response():
+    assignment = facts(source_message_ids=[2])
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"assignments": [assignment], "online_lessons": []})),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.extract_batch(
+            [
+                {
+                    "message_id": 1,
+                    "message_date": "2026-10-09T08:55:00+03:00",
+                    "text": "это тоже",
+                    "is_target": True,
+                },
+                {
+                    "message_id": 2,
+                    "message_date": "2026-10-09T08:54:00+03:00",
+                    "text": "ДЗ: номера 1–3",
+                    "is_target": False,
+                },
+            ],
+            "Europe/Moscow",
+            target_message_id=1,
+        )
+    )
+    assert result.batch.assignments == []
+    assert result.diagnostics == {"rejected_missing_target_reference": 1}
 
 
 @pytest.mark.parametrize("signal", [True, False])

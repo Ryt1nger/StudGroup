@@ -1201,6 +1201,7 @@ async def process_next(engine, settings, provider=None, now=None):
         elif result:
             # A stale reply never overwrites a concurrently edited Telegram message.
             if raw and raw.revision == revision:
+                statistics["provider_diagnostics"] = result.diagnostics
                 candidates = []
                 for ordinal, assignment in enumerate(result.batch.assignments):
                     payload = assignment.model_dump(mode="json") | {
@@ -1361,6 +1362,7 @@ async def process_next(engine, settings, provider=None, now=None):
             "created_cards": statistics.get("created_cards", 0),
             "updated_cards": statistics.get("updated_cards", 0),
             "review": sum(c.state == "review" for c in candidates),
+            "provider_diagnostics": statistics.get("provider_diagnostics", {}),
             "prompt_tokens": attempt.prompt_tokens,
             "completion_tokens": attempt.completion_tokens,
             "charged_usd": str(attempt.charged_usd),

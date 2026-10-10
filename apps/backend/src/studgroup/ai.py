@@ -171,6 +171,7 @@ class BatchResult(BaseModel):
     usage: TokenUsage
     model: str
     prompt_version: str = BATCH_PROMPT_VERSION
+    diagnostics: dict[str, int] = Field(default_factory=dict)
 
 
 class ScreenDecision(BaseModel):
@@ -214,6 +215,7 @@ class DeepSeekProvider:
             {
                 "group_timezone": timezone,
                 "target_message_id": target_message_id,
+                "allowed_source_message_ids": sorted(allowed),
                 "messages": messages,
             },
             ensure_ascii=False,
@@ -367,7 +369,16 @@ class DeepSeekProvider:
     ) -> BatchResult:
         """Explicit import-preview call, not an automatic production publication path."""
         ZoneInfo(timezone)
-        content = json.dumps({"group_timezone": timezone, "messages": messages}, ensure_ascii=False)
+        allowed_ids = [message["message_id"] for message in messages]
+        content = json.dumps(
+            {
+                "group_timezone": timezone,
+                "target_message_id": target_message_id,
+                "allowed_source_message_ids": allowed_ids,
+                "messages": messages,
+            },
+            ensure_ascii=False,
+        )
         if len(content.encode("utf-8")) > 18000 or len(messages) > 80:
             raise ProviderFailure("context_too_large", False, reservation_releasable=True)
         instructions = (
@@ -393,7 +404,8 @@ class link into homework. Ordinary timetable changes still are not assignments.
 Each assignment contains the SAME Extraction fields plus source_message_ids: [123].
 Use kind=control_point for КТ, kind=assessment for graded in-class work, kind=test for tests.
 They are important deadlines and are NOT homework, even when completed at home.
-Reference only supplied message IDs. Ignore chatter; do not output irrelevant entries.
+Copy source_message_ids only from allowed_source_message_ids. Never generate, infer,
+renumber or copy any other number as a message ID. Ignore chatter; do not output irrelevant entries.
 Use hashtags and replies as subject/context evidence, never author names as subjects.
 Merge successive clarifications of one assignment; the latest explicit deadline wins.
 Use each ORIGINAL message timestamp to resolve relative dates. A message may mention
@@ -427,36 +439,96 @@ merely because no single due date is given. Preserve task content and topics.
             }
         )
         try:
-            batch = BatchExtraction.model_validate_json(body["choices"][0]["message"]["content"])
-            allowed = {message["message_id"] for message in messages}
+            raw_content = body["choices"][0]["message"]["content"].strip()
+            diagnostics: dict[str, int] = {}
+            if raw_content.startswith("```json") and raw_content.endswith("```"):
+                raw_content = raw_content[7:-3].strip()
+                diagnostics["normalized_json_envelope"] = 1
+            payload = json.loads(raw_content)
+            if not isinstance(payload, dict):
+                raise TypeError("batch_not_object")
+            raw_assignments = payload.get("assignments")
+            raw_online_lessons = payload.get("online_lessons", [])
+            if not isinstance(raw_assignments, list) or not isinstance(raw_online_lessons, list):
+                raise TypeError("batch_lists_required")
+
+            def mark(code, amount=1):
+                diagnostics[code] = diagnostics.get(code, 0) + amount
+
+            if extra_fields := set(payload) - {"assignments", "online_lessons"}:
+                mark("ignored_batch_field", len(extra_fields))
+            if len(raw_assignments) > 30:
+                mark("rejected_assignment_overflow", len(raw_assignments) - 30)
+            if len(raw_online_lessons) > 10:
+                mark("rejected_online_lesson_overflow", len(raw_online_lessons) - 10)
+            assignments = []
+            for item in raw_assignments[:30]:
+                try:
+                    assignments.append(SourcedExtraction.model_validate_json(json.dumps(item)))
+                except (TypeError, ValueError, ValidationError):
+                    mark("rejected_assignment_schema")
+            online_lessons = []
+            for item in raw_online_lessons[:10]:
+                try:
+                    online_lessons.append(
+                        OnlineLessonProposal.model_validate_json(json.dumps(item))
+                    )
+                except (TypeError, ValueError, ValidationError):
+                    mark("rejected_online_lesson_schema")
+
+            allowed = set(allowed_ids)
             by_id = {message["message_id"]: message for message in messages}
             from studgroup.online_lessons import urls as joining_urls
 
-            for proposal in batch.online_lessons:
-                if not set(proposal.source_message_ids) <= allowed or (
-                    target_message_id is not None
-                    and target_message_id not in proposal.source_message_ids
-                ):
-                    raise ProviderFailure("invalid_source_reference", False)
-                source_urls = {
-                    url
-                    for mid in proposal.source_message_ids
-                    for url in joining_urls(by_id[mid]["text"])
-                }
-                if proposal.url not in source_urls:
-                    raise ProviderFailure("invalid_source_reference", False)
-            for extraction in batch.assignments:
-                if (
-                    extraction.kind in {"irrelevant", "needs_context"}
-                    or not set(extraction.source_message_ids) <= allowed
-                ):
-                    raise ProviderFailure("invalid_source_reference", False)
-                self._validate_date_only(extraction, timezone)
+            accepted_online_lessons = []
+            for proposal in online_lessons:
+                original_ids = proposal.source_message_ids
+                cited = list(dict.fromkeys(mid for mid in original_ids if mid in allowed))
+                if cited != original_ids:
+                    mark("normalized_source_reference")
+                if target_message_id is not None and target_message_id not in cited:
+                    mark("rejected_missing_target_reference")
+                    continue
+                url_sources = [
+                    message["message_id"]
+                    for message in messages
+                    if proposal.url in joining_urls(message["text"])
+                ]
+                if not url_sources:
+                    mark("rejected_unverified_url")
+                    continue
+                required = [target_message_id] if target_message_id is not None else []
+                repaired = list(dict.fromkeys([*required, *url_sources, *cited]))
+                if repaired != cited:
+                    mark("normalized_url_reference")
+                proposal.source_message_ids = repaired[:12]
+                accepted_online_lessons.append(proposal)
+
+            accepted_assignments = []
+            for extraction in assignments:
+                if extraction.kind in {"irrelevant", "needs_context"}:
+                    mark("rejected_non_proposal_assignment")
+                    continue
+                original_ids = extraction.source_message_ids
+                extraction.source_message_ids = list(
+                    dict.fromkeys(mid for mid in original_ids if mid in allowed)
+                )
+                if extraction.source_message_ids != original_ids:
+                    mark("normalized_source_reference")
+                if not extraction.source_message_ids:
+                    mark("rejected_missing_source_reference")
+                    continue
                 if (
                     target_message_id is not None
                     and target_message_id not in extraction.source_message_ids
                 ):
-                    raise ProviderFailure("invalid_target_reference", False)
+                    mark("rejected_missing_target_reference")
+                    continue
+                try:
+                    self._validate_date_only(extraction, timezone)
+                except ProviderFailure:
+                    mark("rejected_invalid_date_only")
+                    continue
                 if target_message_id is not None and extraction.kind == "homework":
                     from studgroup.academic_context import homework_range_applies
 
@@ -480,8 +552,16 @@ merely because no single due date is given. Preserve task content and topics.
                     timezone,
                     schedule,
                 )
+                accepted_assignments.append(extraction)
+            batch = BatchExtraction(
+                assignments=accepted_assignments,
+                online_lessons=accepted_online_lessons,
+            )
             return BatchResult(
-                batch=batch, usage=TokenUsage.model_validate(body["usage"]), model=body["model"]
+                batch=batch,
+                usage=TokenUsage.model_validate(body["usage"]),
+                model=body["model"],
+                diagnostics=diagnostics,
             )
         except ProviderFailure as error:
             error.usage = TokenUsage.model_validate(body["usage"])

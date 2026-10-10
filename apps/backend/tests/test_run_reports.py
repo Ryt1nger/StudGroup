@@ -58,6 +58,25 @@ def test_started_and_finished_reports_have_actual_tokens_and_creation_metrics(cl
     assert attempts[0].finished_at is not None
 
 
+def test_model_response_repairs_remain_visible_in_metrics_and_owner_report(client):
+    from test_processing import Provider
+
+    source(client)
+
+    class Repaired(Provider):
+        async def extract_batch(self, *args, **kwargs):
+            result = await super().extract_batch(*args, **kwargs)
+            result.diagnostics = {"normalized_source_reference": 1}
+            return result
+
+    assert process(client, Repaired()) == "completed"
+    attempts, notices = read(client)
+    metrics = json.loads(attempts[0].metrics)
+    assert metrics["provider_diagnostics"] == {"normalized_source_reference": 1}
+    final = next(n["text"] for n in notices if "Итог прогона" in n["text"])
+    assert "Исправлено/отклонено в ответе модели: normalized_source_reference: 1" in final
+
+
 def test_new_information_reports_updated_card_not_a_new_card(client):
     source(client)
     assert process(client, Provider()) == "completed"

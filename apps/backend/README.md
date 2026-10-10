@@ -159,9 +159,12 @@ groups and rolling deployments. Transport recovery freezes the active group and
 resumes only its unfinished source stage, even in the same slot, after
 30/60/120/240/300-second backoff. Transient outages do not exhaust a two-attempt
 ceiling. Authentication, balance and configuration failures sleep to the next hour.
-Schema/evidence/date validation failures are terminal for that target and are never
-paid twice with the same prompt. Three consecutive quality failures or valid deep
-responses with no proposal pause the remaining package until the next hour. Expired
+Unknown citation IDs are removed only when verified evidence remains; malformed,
+uncited or unverified proposals are rejected individually without discarding valid
+siblings. Every repair/rejection remains visible in attempt telemetry and the final
+run report. An unusable top-level response is terminal and is never paid twice with
+the same prompt. Three consecutive unusable or empty deep responses pause the
+remaining package until the next hour. Expired
 SQL leases can be reclaimed after restart. Historical transport jobs abandoned by
 the old two-attempt policy are reopened only for current retained source revisions
 in active pilot groups, not completed tasks or permanent errors. Budgets, working

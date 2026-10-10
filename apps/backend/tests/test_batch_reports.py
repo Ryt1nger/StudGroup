@@ -67,6 +67,22 @@ def test_two_messages_and_four_stages_emit_only_one_start_and_one_aggregate_fini
     assert len(notices(client)) == 2
 
 
+def test_aggregate_finish_exposes_model_repairs_as_warnings(client):
+    class Repaired(CascadeProvider):
+        async def extract_batch(self, *args, **kwargs):
+            result = await super().extract_batch(*args, **kwargs)
+            result.diagnostics = {"normalized_source_reference": 1}
+            return result
+
+    seed(client, at("06:55:00"))
+    provider = Repaired()
+    assert run(client, provider, "07:00:00") == "screened"
+    assert run(client, provider, "07:00:05") == "completed"
+    final = next(text for text in notices(client) if "Итог прогона" in text)
+    assert "Завершён с предупреждениями" in final
+    assert "Исправлено/отклонено в ответах модели: normalized_source_reference: 1" in final
+
+
 def test_retry_and_restart_keep_same_run_and_preserve_unknown_reservation(client):
     seed(client, at("06:55:00"))
     broken = CascadeProvider(failure="provider_unreachable")

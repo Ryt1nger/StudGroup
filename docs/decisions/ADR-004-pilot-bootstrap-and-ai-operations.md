@@ -18,11 +18,13 @@ window.
 A transient transport/API failure freezes that package, preserves completed light
 and deep checkpoints, sleeps with capped backoff, and resumes only the unfinished
 stage. Authentication, balance and provider-configuration failures sleep until the
-next hourly boundary. A provider response whose schema, date or evidence references
-fail validation is terminal for that target and is never repeated with the same
-prompt. Light-screen citation formatting is normalized locally because screening
-cannot publish facts. Such quality failures are aggregated in the one run summary,
-not emitted as alternating error/recovery alerts.
+next hourly boundary. Validate deep proposals independently: remove unknown citation
+IDs only when verified evidence remains, reject an uncited/malformed proposal without
+discarding valid siblings, and never manufacture target evidence. Every normalization
+and rejection remains visible in attempt telemetry and the aggregate run report. An
+unusable top-level response is terminal and is never repeated with the same prompt.
+Light-screen citation formatting is normalized locally because screening cannot
+publish facts.
 
 Three consecutive quality failures or three valid deep responses with zero useful
 proposals pause the remaining package until the next hourly boundary. Transport
@@ -33,8 +35,9 @@ the emergency production kill switch remain independent final safeguards.
 
 Acceptance: two targets screen-screen-deep-deep; a retrying target blocks the rest
 of its group and any later package; restart resumes its saved stage; three invalid
-or empty deep results prevent a fourth call until the next hour; quality failures
-make one paid attempt and no standalone incident; concurrent workers produce one
+or empty deep results prevent a fourth call until the next hour; a malformed sibling
+cannot discard a valid proposal; diagnostics remain owner-visible without alert
+flapping; quality failures make one paid attempt; concurrent workers produce one
 global provider call; and near-cutoff work remains pending without a reservation.
 
 ## Owner update — 2026-10-09: hourly scheduled runs

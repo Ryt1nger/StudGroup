@@ -207,7 +207,7 @@ The core lifecycle is:
 - Activity within the last 30 minutes permits the final 23:00 cutoff. Later text waits until 07:00; duplicate/no-op deliveries do not create fresh work.
 - Webhook activity is persisted independently of the provider. Quiet groups cause no AI requests. Missed windows after server sleep collapse into one current catch-up window.
 - A group has at most one active AI package. All messages in its fixed snapshot receive the light pass first; only signalled targets then receive deep analysis. A temporary provider failure freezes the package and resumes its unfinished stage after backoff. New messages cannot overtake it and wait for the next package.
-- Across groups, only one DeepSeek request may be in flight. Three consecutive invalid or empty deep outcomes pause the remainder until the next hourly boundary. Invalid evidence references and other quality-validation failures are not paid twice and appear only in the aggregate run result.
+- Across groups, only one DeepSeek request may be in flight. Three consecutive unusable or empty deep outcomes pause the remainder until the next hourly boundary. Unknown citations are removed only when verified evidence remains; malformed or uncited proposals are rejected independently so they cannot discard valid siblings. Repairs and rejections remain visible in per-attempt telemetry and the aggregate run result, while unusable top-level responses are not paid twice.
 - Manual headman operations remain immediate and require no AI. Files/media may signal activity, but file extraction is not implemented in the text-only slice. The existing reasoning cascade is a target design, not permission to bypass this schedule or budget caps.
 
 ### DeepSeek reasoning cascade
