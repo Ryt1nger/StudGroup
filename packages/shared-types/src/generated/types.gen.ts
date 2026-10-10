@@ -40,6 +40,9 @@ export type LessonOccurrence = {
      */
     location: string | null;
     status: 'scheduled' | 'cancelled';
+    /**
+     * Optional HTTPS joining URL scoped to this group lesson; not a homework/material link. The external platform may require its own login.
+     */
     online_url?: string | null;
 };
 
@@ -271,6 +274,9 @@ export type Urgency = 'normal' | 'urgent' | 'super_urgent';
 
 export type Visibility = 'group' | 'personal';
 
+/**
+ * Verification metadata for the current viewer. The needs_clarification value is returned only to an active headman or deputy; students receive from_group_message for the same published AI card. This field does not control group visibility.
+ */
 export type VerificationState = 'manual_confirmed' | 'from_group_message' | 'inferred' | 'needs_clarification' | 'imported';
 
 export type SourceSummary = {

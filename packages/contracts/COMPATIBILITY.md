@@ -1,5 +1,15 @@
 # Contract compatibility
 
+## AI uncertainty visibility (2026-10-10)
+
+No new response field is added. A complete AI proposal is published even when its
+confidence is below the automatic-confidence threshold. The stored homework
+`verification_state` is `needs_clarification`, but that value is returned only to
+an active headman or deputy; students receive the backward-compatible
+`from_group_message` value for the same visible card. Missing task facts still stay
+in the private review flow. This is a role-filtered presentation rule, not a change
+to group card visibility or personal completion.
+
 ## Online lesson links from group messages (2026-10-09)
 
 No wire-format change: use the existing optional LessonOccurrence.online_url in

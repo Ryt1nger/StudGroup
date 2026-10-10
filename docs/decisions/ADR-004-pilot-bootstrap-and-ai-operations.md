@@ -296,6 +296,22 @@ the operation, clear them afterwards. Normal startup optionally consumes only an
 explicit private payload; without it this operation is a no-op. Logs contain
 counts/card IDs/deadlines only, never chat bodies or secrets. Contracts unchanged.
 
+## Owner update — 2026-10-10: uncertain complete proposals remain useful
+
+For the live pipeline, a concrete assignment with subject, title and description is
+published even when model confidence is below 85. Preserve the model facts and mark
+the stored homework as `verification_state=needs_clarification`; only an active
+headman or deputy sees that review marker. A student sees the same group card with
+the ordinary `from_group_message` verification value. A response that contains no
+publishable facts remains a private review candidate and never becomes an empty card.
+
+The batch prompt must not request `kind=needs_context`: uncertain proposals use a
+concrete kind and lower confidence, while non-tasks are omitted. The adapter still
+retains an unexpected legacy `needs_context` response as a review candidate instead
+of silently discarding it. Repeated target analysis with an overlapping, tightly
+clustered set of cited source-message IDs anchors to the same source card so a
+hashtag/header and its continuation do not create duplicates.
+
 ## Owner update — 2026-10-09: one report pair per scheduled run
 
 A planned run is a fixed group/hourly package, not an individual source or model

@@ -146,7 +146,7 @@ def test_restart_finishes_interrupted_attempt_and_reports_recovery(client):
     assert any("2 попыток" in n["text"] for n in notices)
 
 
-def test_review_proposals_are_not_counted_as_applied_cards(client):
+def test_uncertain_complete_proposal_is_published_and_counted_as_applied(client):
     source(client)
 
     class Uncertain(Provider):
@@ -158,10 +158,10 @@ def test_review_proposals_are_not_counted_as_applied_cards(client):
     assert process(client, Uncertain()) == "completed"
     attempts, _ = read(client)
     data = json.loads(attempts[0].metrics)
-    assert data["review_proposals"] == 1
+    assert data["review_proposals"] == 0
     assert data["important_proposals"] == 1
-    assert data.get("applied_fragments", 0) == 0
-    assert data.get("created_cards", 0) == 0
+    assert data["applied_fragments"] == 1
+    assert data["created_cards"] == 1
 
 
 def test_known_usage_of_failed_output_is_charged_and_reported_not_kept_as_reservation(client):

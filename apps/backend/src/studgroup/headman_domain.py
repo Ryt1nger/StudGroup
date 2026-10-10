@@ -338,6 +338,7 @@ async def cards(db, group, mode="active", search="", now=None):
                 kind == "h"
                 and row.status != "needs_clarification"
                 and row.verification_state != "inferred"
+                and row.verification_state != "needs_clarification"
                 and row.deadline_at is not None
             ):
                 continue

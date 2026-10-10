@@ -3,19 +3,28 @@ import { ru } from '../../i18n/ru';
 import { dayKey, formatDayKey, formatTime } from '../../lib/format';
 import type { ScheduleDayView, ScheduleItemView, ScheduleScreenView } from './viewModel';
 
-function lessonItem(lesson: LessonOccurrence, nowMs: number, timeZone: string, onOpen?: (lesson: LessonOccurrence) => void): ScheduleItemView {
+function lessonItem(
+  lesson: LessonOccurrence,
+  nowMs: number,
+  timeZone: string,
+  onOpen?: (lesson: LessonOccurrence) => void,
+): ScheduleItemView {
   const start = Date.parse(lesson.starts_at);
   const end = Date.parse(lesson.ends_at);
   const current = start <= nowMs && nowMs < end;
   const done = end <= nowMs;
   // Only fields present in the contract are shown: no lesson type, no confirmed/moved badges.
-  const subtitle = [lesson.location, lesson.teacher].filter((part): part is string => Boolean(part)).join(' · ');
+  const subtitle = [lesson.location, lesson.teacher]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ');
   return {
     id: lesson.id,
     time: formatTime(lesson.starts_at, timeZone),
     title: lesson.subject,
     subtitle,
     state: current ? 'current' : done ? 'done' : 'upcoming',
+    cancelled: lesson.status === 'cancelled',
+    onlineUrl: lesson.status !== 'cancelled' && end > nowMs ? (lesson.online_url ?? null) : null,
     badges: current ? [{ kind: 'now', label: ru.schedule.now, tone: 'solid' }] : [],
     onOpen: onOpen ? () => onOpen(lesson) : undefined,
   };
@@ -35,7 +44,11 @@ function dayHeading(key: string, nowMs: number, timeZone: string): string {
  * group's calendar day in the order the backend returned them (starts_at, id); the client does
  * not re-sort, filter or infer anything the contract does not state.
  */
-export function mapSchedule(data: ScheduleResponse, nowMs: number, onOpen?: (lesson: LessonOccurrence) => void): ScheduleScreenView {
+export function mapSchedule(
+  data: ScheduleResponse,
+  nowMs: number,
+  onOpen?: (lesson: LessonOccurrence) => void,
+): ScheduleScreenView {
   const groups = new Map<string, ScheduleItemView[]>();
   for (const lesson of data.lessons) {
     const key = dayKey(lesson.starts_at, data.group_timezone);
@@ -48,6 +61,10 @@ export function mapSchedule(data: ScheduleResponse, nowMs: number, onOpen?: (les
     items,
   }));
   const weekLabel =
-    data.selected_week === 'first' ? ru.schedule.weekFirst : data.selected_week === 'second' ? ru.schedule.weekSecond : undefined;
+    data.selected_week === 'first'
+      ? ru.schedule.weekFirst
+      : data.selected_week === 'second'
+        ? ru.schedule.weekSecond
+        : undefined;
   return { weekLabel, days };
 }

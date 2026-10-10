@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.models import Group, Homework, PersonalCompletion, User, WebSession
+from studgroup.models import Group, Homework, Membership, PersonalCompletion, User, WebSession
 from studgroup.security import token_hash
 
 pytest_plugins = ["test_schedule_api"]
@@ -96,6 +96,29 @@ def cards(client, monkeypatch):
 def titles(response):
     assert response.status_code == 200, response.text
     return {item["title"] for item in response.json()["items"]}
+
+
+def test_ai_review_marker_is_visible_only_to_headman_or_deputy(client, cards):
+    async def set_state(role):
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(Homework).where(Homework.title == "today"))
+            row.verification_state = "needs_clarification"
+            session = await db.get(WebSession, token_hash("valid"))
+            membership = await db.get(Membership, session.membership_id)
+            membership.role = role
+            await db.commit()
+
+    asyncio.run(set_state("student"))
+    student = client.get("/v1/homework", headers=HEADERS).json()["items"]
+    assert next(item for item in student if item["title"] == "today")["verification_state"] == (
+        "from_group_message"
+    )
+
+    asyncio.run(set_state("headman"))
+    headman = client.get("/v1/homework", headers=HEADERS).json()["items"]
+    assert next(item for item in headman if item["title"] == "today")["verification_state"] == (
+        "needs_clarification"
+    )
 
 
 def test_active_and_archive_lists_preserve_details(client, cards):

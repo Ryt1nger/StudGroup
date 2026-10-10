@@ -15,7 +15,9 @@ import { RouterProvider } from 'react-router';
 export const API = 'https://api.studgroup.example/v1';
 export const server = setupServer();
 
-export function makeAdapter(overrides: Partial<TelegramAdapter> = {}): TelegramAdapter & { openTelegramLink: ReturnType<typeof vi.fn> } {
+export function makeAdapter(
+  overrides: Partial<TelegramAdapter> = {},
+): TelegramAdapter & { openTelegramLink: ReturnType<typeof vi.fn> } {
   return {
     isTelegram: false,
     isMock: true,
@@ -30,6 +32,7 @@ export function makeAdapter(overrides: Partial<TelegramAdapter> = {}): TelegramA
     onViewportChange: () => () => undefined,
     showBackButton: () => null,
     openTelegramLink: vi.fn(),
+    openExternalLink: vi.fn(),
     haptic: vi.fn(),
     ...overrides,
   } as TelegramAdapter & { openTelegramLink: ReturnType<typeof vi.fn> };

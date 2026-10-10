@@ -54,6 +54,10 @@ export function createRealAdapter(): TelegramAdapter | null {
     openTelegramLink(url) {
       app.openTelegramLink(url);
     },
+    openExternalLink(url) {
+      if (app.openLink) app.openLink(url, { try_instant_view: false });
+      else window.open(url, '_blank', 'noopener,noreferrer');
+    },
     haptic(kind) {
       if (!app.isVersionAtLeast('6.1') || !app.HapticFeedback) return;
       if (kind === 'light') app.HapticFeedback.impactOccurred('light');
