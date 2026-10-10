@@ -21,6 +21,17 @@ def target_key(raw_id, revision, generation=1):
     return f"{raw_id}:{revision}:{generation}"
 
 
+def parse_target_key(key, default_generation=1):
+    parts = key.split(":")
+    if len(parts) == 2:
+        raw_id, revision = parts
+        return raw_id, revision, default_generation
+    if len(parts) == 3:
+        raw_id, revision, generation = parts
+        return raw_id, revision, int(generation)
+    raise ValueError("invalid_run_target_key")
+
+
 async def attach(db, settings, group, job, raw, attempt):
     from studgroup.ai_schedule import window
     from studgroup.run_reports import enabled
@@ -140,7 +151,13 @@ async def finish_ready(db, settings, now):
             and profile.state == "backfill"
             and profile.generation == run.analysis_generation
         )
-        raw_ids = {uuid.UUID(k.split(":")[0]) for k in keys}
+        raw_ids = set()
+        for key in keys:
+            try:
+                raw_id, _revision, _generation = parse_target_key(key, run.analysis_generation)
+                raw_ids.add(uuid.UUID(raw_id))
+            except (TypeError, ValueError):
+                continue
         jobs = (
             await db.scalars(
                 select(AIJob).where(
@@ -163,12 +180,17 @@ async def finish_ready(db, settings, now):
                 failed += job.state == "failed"
                 skipped += job.state == "superseded"
             else:
-                raw_id, revision, generation = key.split(":")
-                raw = raws.get(uuid.UUID(raw_id))
+                try:
+                    raw_id, revision, generation = parse_target_key(key, run.analysis_generation)
+                    parsed_raw_id = uuid.UUID(raw_id)
+                except (TypeError, ValueError):
+                    skipped += 1
+                    continue
+                raw = raws.get(parsed_raw_id)
                 obsolete = (
                     raw is None
                     or raw.revision != int(revision)
-                    or raw.analysis_generation != int(generation)
+                    or raw.analysis_generation != generation
                     or (utc(raw.delete_at) <= utc(now) and not backfill)
                 )
                 pending += not obsolete

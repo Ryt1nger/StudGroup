@@ -1,5 +1,6 @@
 import asyncio
 import json
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
@@ -8,11 +9,61 @@ from test_ai_schedule import seed
 from test_live_two_pass import CascadeProvider
 
 from studgroup.ai import BatchExtraction, BatchResult, TokenUsage
+from studgroup.batch_reports import parse_target_key
 from studgroup.main import Settings
-from studgroup.models import AIControl, AIRun, BotOutbox
+from studgroup.models import AIControl, AIRun, BotOutbox, GroupAIProfile, RawMessage
 from studgroup.processing import process_next
 
 pytest_plugins = ["test_schedule_api"]
+
+
+def test_legacy_two_part_run_target_is_generation_one():
+    raw_id = "78ac2474-b6f1-4207-b80e-66f4bfab16cd"
+    assert parse_target_key(f"{raw_id}:3", 1) == (raw_id, "3", 1)
+    assert parse_target_key(f"{raw_id}:3:2", 1) == (raw_id, "3", 2)
+
+
+def test_rolling_deploy_closes_legacy_run_before_generation_two(client):
+    seed(client, at("06:55:00"), mid=1)
+
+    async def seed_legacy_run():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage))
+            raw.analysis_generation = 2
+            db.add(
+                GroupAIProfile(
+                    group_id=raw.group_id,
+                    generation=2,
+                    state="backfill",
+                    backfill_requested=True,
+                    structure_json='{"version":1,"mode":"unstructured"}',
+                    source_count=1,
+                    requested_at=at("06:59:00"),
+                    mapped_at=at("06:59:01"),
+                )
+            )
+            db.add(
+                AIRun(
+                    id=uuid.uuid4(),
+                    group_id=raw.group_id,
+                    slot=at("07:00:00"),
+                    analysis_generation=1,
+                    targets=json.dumps([f"{raw.id}:{raw.revision}"]),
+                    started_at=at("07:00:00"),
+                )
+            )
+            await db.commit()
+
+    asyncio.run(seed_legacy_run())
+    assert run(client, CascadeProvider(), "07:00:05") == "idle"
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            legacy = await db.scalar(select(AIRun))
+            assert legacy.finished_at is not None
+            assert legacy.outcome == "completed"
+
+    asyncio.run(inspect())
 
 
 def at(value):

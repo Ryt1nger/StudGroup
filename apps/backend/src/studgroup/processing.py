@@ -356,11 +356,13 @@ async def claim(engine, settings, now):
         active_targets = {
             group_id: set(json.loads(run.targets)) for group_id, run in active_by_group.items()
         }
-        active_raw_ids = {
-            uuid.UUID(key.split(":", 1)[0])
-            for targets in active_targets.values()
-            for key in targets
-        }
+        active_raw_ids = set()
+        for targets in active_targets.values():
+            for key in targets:
+                try:
+                    active_raw_ids.add(uuid.UUID(key.split(":", 1)[0]))
+                except (AttributeError, TypeError, ValueError):
+                    continue
         active_jobs = (
             (await db.scalars(select(AIJob).where(AIJob.raw_message_id.in_(active_raw_ids)))).all()
             if active_raw_ids
