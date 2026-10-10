@@ -278,6 +278,51 @@ def test_batch_retains_unexpected_needs_context_for_owner_review():
     assert result.diagnostics == {}
 
 
+def test_batch_prompt_keeps_concrete_events_with_unknown_subject_for_review():
+    captured = {}
+    item = {
+        "kind": "test",
+        "subject": None,
+        "title": "Тест закрывается через час",
+        "description": "В СДО тест закроется через час.",
+        "deadline_at": "2026-10-10T19:00:00+03:00",
+        "deadline_date_only": False,
+        "urgency": "normal",
+        "confidence": 70,
+        "source_message_ids": [3981],
+    }
+
+    def handler(request):
+        captured.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"assignments": [item], "online_lessons": []})),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.extract_batch(
+            [
+                {
+                    "message_id": 3981,
+                    "message_date": "2026-10-10T18:00:00+03:00",
+                    "text": "У нас тест в СДО закроется через час.",
+                    "is_target": True,
+                }
+            ],
+            "Europe/Moscow",
+            target_message_id=3981,
+        )
+    )
+
+    prompt = captured["messages"][0]["content"]
+    assert "Never omit a plausible task, test, assessment or control point" in prompt
+    assert "announcement that a test opens or\ncloses soon is kind=test" in prompt
+    assert result.batch.assignments[0].kind == "test"
+    assert result.batch.assignments[0].subject is None
+    assert result.batch.assignments[0].publication_state == "needs_context"
+
+
 def test_control_point_is_not_homework_and_has_no_next_lesson_fallback():
     result = call(
         lambda request: httpx.Response(

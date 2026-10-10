@@ -834,6 +834,44 @@ def test_unexpected_needs_context_response_is_retained_as_private_candidate(clie
     asyncio.run(inspect())
 
 
+def test_concrete_test_with_unknown_subject_is_retained_for_review(client):
+    source(client, mid=3981, text="У нас тест в СДО закроется через час")
+
+    class IncompleteTestProvider(Provider):
+        async def extract_batch(self, *args, **kwargs):
+            item = SourcedExtraction(
+                kind="test",
+                subject=None,
+                title="Тест в СДО",
+                description="Тест в СДО закроется через час",
+                deadline_at=None,
+                deadline_date_only=False,
+                urgency="normal",
+                confidence=70,
+                source_message_ids=[3981],
+            )
+            return BatchResult(
+                batch=BatchExtraction(assignments=[item]),
+                usage=TokenUsage(prompt_tokens=100, completion_tokens=30),
+                model="deepseek-flash",
+                prompt_version="test",
+            )
+
+    assert run(client, IncompleteTestProvider()) == "completed"
+    assert count(client, Homework) == 0
+    assert count(client, AICandidate) == 1
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage))
+            candidate = await db.scalar(select(AICandidate))
+            assert raw.processing_state == "needs_context"
+            assert candidate.state == "review"
+            assert json.loads(candidate.payload)["kind"] == "test"
+
+    asyncio.run(inspect())
+
+
 def test_overlapping_source_cluster_updates_one_card_instead_of_duplicating(client):
     source(client, mid=4063, text="#русский")
     source(client, mid=4067, text="#русский\nДз по ПИР: Актуальность, Предмет, Задача")

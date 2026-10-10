@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError,
 from studgroup.deadlines import ScheduleDeadlineContext, canonical_subject, resolve_deadline
 
 PROMPT_VERSION = "academic-text-8"
-BATCH_PROMPT_VERSION = "academic-import-8"
+BATCH_PROMPT_VERSION = "academic-import-9"
 SCREEN_PROMPT_VERSION = "academic-live-screen-2"
 MAX_TEXT_CHARS = 12000
 MAX_OUTPUT_TOKENS = 1400
@@ -485,8 +485,11 @@ class link into homework. Ordinary timetable changes still are not assignments.
 Each assignment contains the SAME Extraction fields plus source_message_ids: [123].
 For batch output, never emit an assignment with kind=needs_context. If there is a plausible
 task with uncertain facts, choose its concrete kind, preserve known facts and lower confidence.
-If there are not enough facts to name a subject, title and description, omit that assignment;
-the backend still retains legacy/unexpected needs_context responses for owner review.
+Never omit a plausible task, test, assessment or control point merely because its subject,
+title, description or deadline is unknown: keep unknown fields null so the backend can route
+the concrete proposal to owner review. In particular, an announcement that a test opens or
+closes soon is kind=test even when the subject is not stated. The backend also retains
+legacy/unexpected needs_context responses for owner review.
 Use kind=control_point for КТ, kind=assessment for graded in-class work, kind=test for tests.
 They are important deadlines and are NOT homework, even when completed at home.
 Copy source_message_ids only from allowed_source_message_ids. Never generate, infer,
