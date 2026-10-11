@@ -646,6 +646,28 @@ merely because no single due date is given. Preserve task content and topics.
                     new_fact_tokens = {
                         token for token in fact_tokens - target_tokens if len(token) > 2
                     }
+                    new_numeric_tokens = {
+                        token for token in fact_tokens - target_tokens if token.isdigit()
+                    }
+
+                    # The provider sometimes borrows a useful fact from context but forgets
+                    # to cite that message. Repair only strong evidence: an emitted number,
+                    # or at least two non-trivial emitted tokens absent from the target.
+                    # This keeps provenance complete without attaching generic chatter.
+                    for message in messages:
+                        message_id = message["message_id"]
+                        if (
+                            message_id == target_message_id
+                            or message_id in extraction.source_message_ids
+                            or len(extraction.source_message_ids) >= 12
+                        ):
+                            continue
+                        message_tokens = set(token_pattern.findall(message["text"].lower()))
+                        word_overlap = new_fact_tokens & message_tokens
+                        numeric_overlap = new_numeric_tokens & message_tokens
+                        if numeric_overlap or len(word_overlap) >= 2:
+                            extraction.source_message_ids.append(message_id)
+                            mark("repaired_fact_source_reference")
                     extra_source_tokens = {
                         token
                         for mid in extraction.source_message_ids

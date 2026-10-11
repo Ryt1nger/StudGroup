@@ -52,10 +52,12 @@ async def explain(db, settings, group, telegram_message_id):
         )
         await provider.screen_batch(context, group.timezone, telegram_message_id)
         lines.append(f"Лёгкий проход ответил: {provider.answers[-1][:300]}")
-        await provider.extract_batch(
+        result = await provider.extract_batch(
             context, group.timezone, schedule, target_message_id=telegram_message_id
         )
-        lines.append(f"Глубокий проход ответил: {provider.answers[-1][:900]}")
+        lines.append(f"Итог backend: {result.batch.model_dump_json()[:1200]}")
+        lines.append(f"Исправления backend: {result.diagnostics or 'нет'}")
+        lines.append(f"Глубокий проход (сырой): {provider.answers[-1][:600]}")
     except ProviderFailure as error:
         lines.append(f"Ошибка ИИ: {error.args[0] if error.args else error.__class__.__name__}")
     return "\n".join(lines)[:3900]

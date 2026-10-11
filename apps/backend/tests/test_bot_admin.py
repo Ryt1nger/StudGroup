@@ -195,7 +195,8 @@ def test_explain_shows_context_and_model_answers(client, monkeypatch):
     private(client, "/explain 7")
     _, msg = session(client)
     text = msg[-1]["text"]
-    assert "ИИ получил" in text and "Глубокий проход ответил" in text
+    assert "ИИ получил" in text and "Глубокий проход (сырой)" in text
+    assert "Итог backend" in text and "Исправления backend" in text
     private(client, "/explain abc", update=103)
     assert "Формат" in session(client)[1][-1]["text"]
 
