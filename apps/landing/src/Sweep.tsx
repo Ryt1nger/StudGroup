@@ -103,7 +103,7 @@ export function Sweep() {
       if (counter.current) counter.current.textContent = String(Math.round(items.length - (items.length - acad.length) * done));
     };
     // Анимация идёт сама по времени, как только блок виден; при уходе с экрана сбрасывается и сыграет снова.
-    const DURATION = 6500, HOLD = 900;
+    const DURATION = 3200, HOLD = 350;
     let loop = 0, playing = false;
     const stop = () => { cancelAnimationFrame(loop); playing = false; };
     const play = () => {
