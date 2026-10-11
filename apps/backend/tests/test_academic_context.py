@@ -65,3 +65,17 @@ def test_group_without_topics_keeps_global_neighborhood_fallback():
     )
 
     assert ids(context) == [20, 21, 22]
+
+
+def test_target_date_does_not_pull_unrelated_cross_topic_messages():
+    context = build_context(
+        [
+            message(30, "тест закроется через час", topic=10),
+            message(31, "там 38 вопросов", minutes=1, topic=20),
+            message(32, "дедлайн завтра", minutes=2, topic=20),
+        ],
+        30,
+        neighborhood=8,
+    )
+
+    assert ids(context) == [30, 32]

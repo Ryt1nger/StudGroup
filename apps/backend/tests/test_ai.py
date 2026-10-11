@@ -364,7 +364,7 @@ def test_batch_prompt_keeps_concrete_events_with_unknown_subject_for_review():
 def test_target_complete_test_prunes_unused_neighbors_and_resolves_colloquial_hour():
     item = {
         "kind": "test",
-        "subject": None,
+        "subject": "Основы информатики",
         "title": "Тест в СДО",
         "description": "Группа преподавателя, тестик через часик в СДО закроется",
         "deadline_at": None,

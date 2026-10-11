@@ -90,7 +90,7 @@ def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
         # The provider must cite supporting IDs and match the task/subject before using them.
         date_fragment = abs(message.message_date - target.message_date) <= timedelta(
             minutes=3
-        ) and (has_date_cue(target.text) or has_date_cue(message.text))
+        ) and has_date_cue(message.text)
         if (
             direct
             or correction

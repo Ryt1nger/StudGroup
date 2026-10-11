@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, model_validator
 
+from studgroup.academic_context import has_date_cue
 from studgroup.deadlines import ScheduleDeadlineContext, canonical_subject, resolve_deadline
 
 PROMPT_VERSION = "academic-text-8"
@@ -627,10 +628,41 @@ merely because no single due date is given. Preserve task content and topics.
                 if target_message_id is not None and extraction.kind != "homework":
                     target_text = " ".join(by_id[target_message_id]["text"].lower().split())
                     description = " ".join((extraction.description or "").lower().split())
+                    token_pattern = re.compile(r"[a-zа-яё0-9]+", re.IGNORECASE)
+                    target_tokens = set(token_pattern.findall(target_text))
+                    fact_tokens = set(
+                        token_pattern.findall(
+                            " ".join(
+                                value
+                                for value in (
+                                    extraction.subject,
+                                    extraction.title,
+                                    extraction.description,
+                                )
+                                if value
+                            ).lower()
+                        )
+                    )
+                    new_fact_tokens = {
+                        token for token in fact_tokens - target_tokens if len(token) > 2
+                    }
+                    extra_source_tokens = {
+                        token
+                        for mid in extraction.source_message_ids
+                        if mid != target_message_id
+                        for token in token_pattern.findall(by_id[mid]["text"].lower())
+                    }
+                    extra_supports_fact = bool(new_fact_tokens & extra_source_tokens)
+                    target_has_date = has_date_cue(target_text)
+                    extra_supplies_date = any(
+                        has_date_cue(by_id[mid]["text"])
+                        for mid in extraction.source_message_ids
+                        if mid != target_message_id
+                    )
                     if (
-                        extraction.subject is None
-                        and description
-                        and (description in target_text or target_text in description)
+                        description
+                        and not extra_supports_fact
+                        and (target_has_date or not extra_supplies_date)
                         and extraction.source_message_ids != [target_message_id]
                     ):
                         extraction.source_message_ids = [target_message_id]
