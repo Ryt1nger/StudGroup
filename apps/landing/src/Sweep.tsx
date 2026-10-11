@@ -119,10 +119,10 @@ export function Sweep() {
     };
     const io = new IntersectionObserver(
       ([e]) => {
-        if (e.intersectionRatio >= 0.5) play();
+        if (e.isIntersecting && (e.intersectionRatio >= 0.2 || e.intersectionRect.height >= window.innerHeight * 0.4)) play();
         else if (!e.isIntersecting) { stop(); pRef.current = 0; draw(); }
       },
-      { threshold: [0, 0.5] },
+      { threshold: [0, 0.1, 0.2, 0.35, 0.5] },
     );
     io.observe(s);
     const onResize = () => { if (!raf) raf = requestAnimationFrame(draw); };

@@ -17,7 +17,7 @@ function Header() {
   return (
     <header className={`top ${solid ? "solid" : ""}`}>
       <div className="wrap top-in">
-        <a href="#top" aria-label="StudGroup, наверх"><img src={logoDark} alt="StudGroup" height={30} /></a>
+        <a href="#top" aria-label="StudGroup, наверх"><img src={logoDark} alt="StudGroup" height={46} /></a>
         <nav aria-label="Разделы">
           {nav.map((n) => <a key={n.href} href={n.href}>{n.label}</a>)}
         </nav>

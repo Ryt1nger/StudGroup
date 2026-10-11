@@ -17,7 +17,7 @@
   --ease: cubic-bezier(0.22, 0.8, 0.24, 1);
 }
 *, *::before, *::after { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+html { scroll-behavior: smooth; scroll-padding-top: 92px; }
 body { margin: 0; font: 400 1.0625rem/1.6 var(--text); color: var(--ink); background: var(--night); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
 img { max-width: 100%; display: block; }
 a { color: inherit; }
@@ -66,13 +66,14 @@ section { padding: clamp(64px, 9vw, 120px) 0; }
 /* ——— Шапка */
 .top { position: fixed; inset: 0 0 auto; z-index: 50; transition: background 0.3s, backdrop-filter 0.3s; color: #eef0ff; }
 .top.solid { background: rgba(12, 15, 44, 0.82); backdrop-filter: blur(12px); }
-.top-in { display: flex; align-items: center; justify-content: space-between; gap: 24px; height: 68px; }
+.top-in { display: flex; align-items: center; justify-content: space-between; gap: 24px; height: 84px; }
 .top nav { display: flex; gap: 28px; font-size: 0.95rem; }
 .top nav a { text-decoration: none; opacity: 0.8; } .top nav a:hover { opacity: 1; }
-.top img { height: 30px; width: auto; }
+.top img { height: 46px; width: auto; }
+@media (max-width: 560px) { .top-in { height: 72px; } .top img { height: 38px; } }
 
 /* ——— Hero */
-.hero { padding: 132px 0 clamp(72px, 9vw, 120px); overflow: hidden; }
+.hero { padding: 150px 0 clamp(72px, 9vw, 120px); overflow: hidden; }
 .hero::before { content: ""; position: absolute; z-index: -1; width: 70vmax; height: 70vmax; right: -25vmax; top: -30vmax; border-radius: 50%;
   background: radial-gradient(closest-side, rgba(85, 72, 255, 0.55), transparent); }
 .hero-grid { display: grid; grid-template-columns: 1.02fr 0.98fr; gap: clamp(32px, 5vw, 72px); align-items: center; }
@@ -195,7 +196,7 @@ section { padding: clamp(64px, 9vw, 120px) 0; }
 .cta .lead { margin: 0; }
 .foot { padding: 36px 0 44px; border-top: 1px solid rgba(255, 255, 255, 0.1); }
 .foot-in { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px 32px; }
-.foot img { height: 28px; width: auto; }
+.foot img { height: 40px; width: auto; }
 .foot nav { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 0.95rem; }
 .foot nav a, .foot-bot { text-decoration: none; opacity: 0.75; } .foot nav a:hover, .foot-bot:hover { opacity: 1; }
 
