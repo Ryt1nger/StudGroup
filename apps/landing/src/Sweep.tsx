@@ -32,6 +32,7 @@ export function Sweep() {
   const counter = useRef<HTMLSpanElement>(null);
   const colEls = useRef<(HTMLElement | null)[]>([]);
   const nat = useRef<number[]>([]);
+  const pRef = useRef(0);
   const foot = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,9 +43,7 @@ export function Sweep() {
 
     const draw = () => {
       raf = 0;
-      const r = s.getBoundingClientRect();
-      const vh = window.innerHeight;
-      const p = still ? 1 : clamp(-r.top / Math.max(1, r.height - vh));
+      const p = still ? 1 : pRef.current;
       const W = st.clientWidth, H = st.clientHeight;
       const mobile = W < 640;
       const ncols = mobile ? 2 : 4;
@@ -103,11 +102,33 @@ export function Sweep() {
       if (head.current) head.current.dataset.state = p > 0.5 ? "after" : "before";
       if (counter.current) counter.current.textContent = String(Math.round(items.length - (items.length - acad.length) * done));
     };
-    const onScroll = () => { if (!raf) raf = requestAnimationFrame(draw); };
+    // Анимация идёт сама по времени, как только блок виден; при уходе с экрана сбрасывается и сыграет снова.
+    const DURATION = 6500, HOLD = 900;
+    let loop = 0, playing = false;
+    const stop = () => { cancelAnimationFrame(loop); playing = false; };
+    const play = () => {
+      if (playing || still) return;
+      playing = true;
+      const t0 = performance.now();
+      const tick = (now: number) => {
+        pRef.current = clamp((now - t0 - HOLD) / DURATION);
+        draw();
+        if (pRef.current < 1) loop = requestAnimationFrame(tick);
+      };
+      loop = requestAnimationFrame(tick);
+    };
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (e.intersectionRatio >= 0.5) play();
+        else if (!e.isIntersecting) { stop(); pRef.current = 0; draw(); }
+      },
+      { threshold: [0, 0.5] },
+    );
+    io.observe(s);
+    const onResize = () => { if (!raf) raf = requestAnimationFrame(draw); };
     draw();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); cancelAnimationFrame(raf); };
+    window.addEventListener("resize", onResize);
+    return () => { io.disconnect(); stop(); window.removeEventListener("resize", onResize); cancelAnimationFrame(raf); };
   }, []);
 
   return (

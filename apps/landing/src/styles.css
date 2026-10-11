@@ -239,8 +239,8 @@ section { padding: clamp(64px, 9vw, 120px) 0; }
 .cta-ill.r { right: 5%; bottom: 8%; width: clamp(90px, 12vw, 170px); animation: bob 10s ease-in-out -4s infinite; }
 
 /* ——— Sweep: хаос → порядок по скроллу */
-.sweep { padding: 0; height: 280vh; }
-.sweep-stage { position: sticky; top: 0; height: 100vh; overflow: hidden; }
+.sweep { padding: 0; }
+.sweep-stage { position: relative; height: max(100vh, 680px); overflow: hidden; }
 .sweep-top { position: relative; z-index: 3; padding-top: 96px; display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; pointer-events: none; }
 .sweep-h { position: relative; max-width: 18ch; min-height: 2.5em; }
 .sweep-h span { display: block; transition: opacity 0.4s, transform 0.5s var(--ease); }
