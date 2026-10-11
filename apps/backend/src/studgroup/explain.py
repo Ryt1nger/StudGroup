@@ -44,12 +44,12 @@ async def explain(db, settings, group, telegram_message_id):
         lines.append(f"{mark}{item['message_id']}: {(item['text'] or '')[:70]}")
     structured = any(item.get("group_structure") for item in context)
     lines.append(f"Карта группы передана: {'да' if structured else 'нет'}")
-    provider = RecordingProvider(
-        settings.deepseek_api_key.get_secret_value(),
-        model=settings.deepseek_model,
-        base_url=settings.deepseek_base_url,
-    )
     try:
+        provider = RecordingProvider(
+            settings.deepseek_api_key.get_secret_value(),
+            model=settings.deepseek_model,
+            base_url=settings.deepseek_base_url,
+        )
         await provider.screen_batch(context, group.timezone, telegram_message_id)
         lines.append(f"Лёгкий проход ответил: {provider.answers[-1][:300]}")
         await provider.extract_batch(
