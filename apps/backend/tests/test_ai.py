@@ -1,12 +1,13 @@
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 import pytest
 from pydantic import ValidationError
 
 from studgroup.ai import DeepSeekProvider, Extraction, ProviderFailure
+from studgroup.deadlines import ScheduleDeadlineContext
 from studgroup.main import Settings
 
 
@@ -471,6 +472,108 @@ def test_target_test_repairs_source_for_fact_borrowed_from_context():
     assert extraction.source_message_ids == [3981, 4004]
     assert extraction.deadline_at.isoformat() == "2026-10-10T19:48:00+03:00"
     assert result.diagnostics == {"repaired_fact_source_reference": 1}
+
+
+def test_target_test_infers_missing_subject_from_known_academic_topic():
+    item = {
+        "kind": "test",
+        "subject": None,
+        "title": "Тест в СДО",
+        "description": "Тестик через часик в СДО закроется",
+        "deadline_at": None,
+        "deadline_date_only": False,
+        "urgency": "urgent",
+        "confidence": 60,
+        "source_message_ids": [3981],
+    }
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"assignments": [item], "online_lessons": []})),
+        )
+
+    schedule = ScheduleDeadlineContext(
+        lessons=[
+            {
+                "subject": "Основы информатики",
+                "starts_at": "2026-10-12T09:00:00+03:00",
+            }
+        ],
+        covered_from=date(2026, 10, 1),
+        covered_until=date(2026, 10, 31),
+    )
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.extract_batch(
+            [
+                {
+                    "message_id": 3981,
+                    "message_date": "2026-10-09T11:13:41+03:00",
+                    "text": "Группа Божидаевой, тестик через часик в СДО закроется",
+                    "topic_name": "Основы информатики 💻",
+                    "group_structure": {
+                        "schedule_subjects": ["Основы информатики"]
+                    },
+                    "is_target": True,
+                }
+            ],
+            "Europe/Moscow",
+            schedule,
+            target_message_id=3981,
+        )
+    )
+
+    extraction = result.batch.assignments[0]
+    assert extraction.subject == "Основы информатики"
+    assert extraction.publication_state == "published"
+    assert extraction.deadline_at.isoformat() == "2026-10-09T12:13:41+03:00"
+    assert result.diagnostics == {"normalized_subject_from_topic": 1}
+
+
+def test_target_test_does_not_infer_subject_from_generic_topic():
+    item = {
+        "kind": "test",
+        "subject": None,
+        "title": "Тест в СДО",
+        "description": "Тест в СДО",
+        "deadline_at": None,
+        "deadline_date_only": False,
+        "urgency": "normal",
+        "confidence": 60,
+        "source_message_ids": [1],
+    }
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"assignments": [item], "online_lessons": []})),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.extract_batch(
+            [
+                {
+                    "message_id": 1,
+                    "message_date": "2026-10-09T11:13:41+03:00",
+                    "text": "Тест в СДО",
+                    "topic_name": "Общее",
+                    "group_structure": {
+                        "schedule_subjects": ["Основы информатики"]
+                    },
+                    "is_target": True,
+                }
+            ],
+            "Europe/Moscow",
+            target_message_id=1,
+        )
+    )
+
+    extraction = result.batch.assignments[0]
+    assert extraction.subject is None
+    assert extraction.publication_state == "needs_context"
+    assert result.diagnostics == {}
 
 
 def test_control_point_is_not_homework_and_has_no_next_lesson_fallback():

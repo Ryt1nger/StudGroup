@@ -581,6 +581,37 @@ merely because no single due date is given. Preserve task content and topics.
             by_id = {message["message_id"]: message for message in messages}
             from studgroup.online_lessons import urls as joining_urls
 
+            def subject_from_target_topic(message):
+                topic_name = message.get("topic_name")
+                if not topic_name:
+                    return None
+                structure = message.get("group_structure") or {}
+                known = list(structure.get("schedule_subjects") or [])
+                if schedule and schedule.ready:
+                    known.extend(
+                        lesson["subject"] for lesson in schedule.lessons if lesson.get("subject")
+                    )
+                known = list(dict.fromkeys(known))
+                if not known:
+                    return None
+
+                def normalized(value):
+                    value = re.sub(r"[^\w# ]+", " ", value.casefold().replace("ё", "е"))
+                    return " ".join(value.lstrip("#").split())
+
+                topic_key = normalized(topic_name)
+                canonical = normalized(canonical_subject(topic_name, schedule))
+                matches = [
+                    subject
+                    for subject in known
+                    if normalized(subject) in {topic_key, canonical}
+                    or (
+                        len(normalized(subject)) >= 4
+                        and normalized(subject) in topic_key
+                    )
+                ]
+                return matches[0] if len(set(matches)) == 1 else None
+
             accepted_online_lessons = []
             for proposal in online_lessons:
                 original_ids = proposal.source_message_ids
@@ -625,6 +656,11 @@ merely because no single due date is given. Preserve task content and topics.
                 ):
                     mark("rejected_missing_target_reference")
                     continue
+                if target_message_id is not None and extraction.subject is None:
+                    inferred_subject = subject_from_target_topic(by_id[target_message_id])
+                    if inferred_subject:
+                        extraction.subject = inferred_subject
+                        mark("normalized_subject_from_topic")
                 if target_message_id is not None and extraction.kind != "homework":
                     target_text = " ".join(by_id[target_message_id]["text"].lower().split())
                     description = " ".join((extraction.description or "").lower().split())

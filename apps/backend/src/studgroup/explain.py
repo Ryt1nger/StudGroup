@@ -41,7 +41,8 @@ async def explain(db, settings, group, telegram_message_id):
     lines.append(f"ИИ получил {len(context)} сообщ. (цель отмечена *):")
     for item in context:
         mark = "*" if item["is_target"] else " "
-        lines.append(f"{mark}{item['message_id']}: {(item['text'] or '')[:70]}")
+        topic = f" [топик: {item['topic_name']}]" if item.get("topic_name") else ""
+        lines.append(f"{mark}{item['message_id']}{topic}: {(item['text'] or '')[:60]}")
     structured = any(item.get("group_structure") for item in context)
     lines.append(f"Карта группы передана: {'да' if structured else 'нет'}")
     try:
