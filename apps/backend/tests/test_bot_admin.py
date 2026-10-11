@@ -163,11 +163,13 @@ def test_resetrun_needs_confirmation_and_clears_only_ai_artefacts(client):
 
 
 def test_explain_shows_context_and_model_answers(client, monkeypatch):
+    from pydantic import SecretStr
     from test_ai_schedule import seed
     from test_batch_reports import at
 
     from studgroup import explain as explain_module
 
+    client.app.state.settings.deepseek_api_key = SecretStr("test-key-not-a-secret")
     seed(client, at("06:55:00"), mid=7)
 
     async def fake_complete(self, payload):
@@ -196,3 +198,21 @@ def test_explain_shows_context_and_model_answers(client, monkeypatch):
     assert "ИИ получил" in text and "Глубокий проход ответил" in text
     private(client, "/explain abc", update=103)
     assert "Формат" in session(client)[1][-1]["text"]
+
+
+def test_explain_without_key_reports_configuration_error_without_calling_api(client, monkeypatch):
+    from pydantic import SecretStr
+    from test_ai_schedule import seed
+    from test_batch_reports import at
+
+    from studgroup import explain as explain_module
+
+    client.app.state.settings.deepseek_api_key = SecretStr("")
+    seed(client, at("06:55:00"), mid=7)
+
+    async def unexpected_request(*args, **kwargs):
+        raise AssertionError("An unconfigured provider must not call the API")
+
+    monkeypatch.setattr(explain_module.DeepSeekProvider, "_complete", unexpected_request)
+    private(client, "/explain 7")
+    assert "Ошибка ИИ: provider_not_configured" in session(client)[1][-1]["text"]
