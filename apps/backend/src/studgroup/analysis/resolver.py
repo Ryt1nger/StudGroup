@@ -22,10 +22,15 @@ async def resolve_proposal(
     proposal,
     edited_card,
     now,
-    action="upsert",
+    action=None,
     existing_item_id=None,
     expected_item_revision=None,
 ):
+    action = action or proposal.action
+    if existing_item_id is None:
+        existing_item_id = proposal.existing_item_id
+    if expected_item_revision is None:
+        expected_item_revision = proposal.expected_item_revision
     sources = await resolve_evidence(db, group_id, proposal)
     item = None
     if existing_item_id is not None:

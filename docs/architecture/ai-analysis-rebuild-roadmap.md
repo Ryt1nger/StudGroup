@@ -703,16 +703,39 @@ architecture alone.
 - A disposable SQLite migration rehearsal reaches the historical PostgreSQL-specific
   constraint migration and cannot replace the required PostgreSQL rehearsal.
 
-### PR-1 in progress
+### PR-1 through PR-8
 
-- Migration 0024 and `AnalysisApplicationOutcome` are implemented.
-- Deep parsing exposes raw count, explicit empty, accepted original ordinals and per-proposal
-  rejection reason codes while preserving valid siblings.
-- `deep_empty_valid` and `all_items_rejected` are durable distinct outcomes; all-rejected
-  sources remain `needs_context` rather than becoming unexplained success.
-- Full provider response retention is flag-controlled, absent from ordinary logs and expires
-  with the 30-day outcome record.
-- Screen, deep, stale and provider-failure summaries are durable.
-- Ordinary stage telemetry no longer includes source text, subject or generated title.
-- Focused AI/processing tests pass. The bounded one-shot repair policy, report presentation
-  updates and PostgreSQL migration/concurrency evidence remain before Gate G1.
+- Durable technical/academic/application outcomes distinguish valid empty, rejected sibling,
+  stale, retry and failed processing; a single repair is restricted to malformed/truncated JSON.
+- Versioned C+ contracts, replay, attachments, batches, discussion segments, structured memory,
+  evidence validation, intelligent card editing, canonical items and guarded compatibility
+  projections are implemented.
+- One Telegram message can project several tasks/deadlines. Explicit subgroup cards remain
+  separate and labelled; personal/unknown audience is blocked from group publication.
+- Schedule-inferred and minor-attention states are visible to headman/deputy but mapped to the
+  neutral existing state for students. Manual locks and expected revisions block AI overwrite.
+
+### PR-9
+
+- Per-group `legacy|shadow|new` settings default safely to legacy and enforce exactly one writer.
+- Shadow sampling and daily budget authorization are separate from legacy spend.
+- Strict Context Understanding output, evidence checks, two-pass shadow execution, 30-day
+  operational summaries and entity/display/cost/latency evaluation helpers are implemented.
+- No production shadow run or paid provider call has been performed; Gate G4 remains open.
+- The existing worker does not yet dispatch through the per-group router. Until that integration
+  is implemented and tested, the settings and shadow executor are offline/staged components.
+
+### PR-10 implementation and rehearsal status
+
+- Mutation proposals now carry explicit `create|update|reschedule|cancel`, canonical item ID and
+  expected revision; accepted proposal ordinals survive partial rejection without collisions.
+- The canonical writer emits one outcome for every accepted or rejected proposal and projects
+  through the compatibility boundary.
+- Audited mode transitions prohibit `legacy -> new`; `shadow -> new` requires an explicit G4
+  switch. Emergency rollback preserves product rows and history.
+- Ruff passes and the complete local backend suite reports **422 passed, 1 skipped**. The skip is
+  the PostgreSQL-only test because no disposable `POSTGRES_TEST_URL` is available.
+- PostgreSQL SQL generation for migrations 0029–0031 succeeds. A real PostgreSQL migration,
+  concurrency run, held-out gold evaluation, paid shadow observation and production pilot are
+  still required. Runtime/Celery dispatch into the new router is also still required. Therefore
+  the result is **not approved for production `shadow` or `new` mode**.

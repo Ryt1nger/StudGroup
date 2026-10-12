@@ -21,7 +21,9 @@ may use a separately marked schedule_inferred deadline supplied by trusted conte
 Each material field must cite supplied message IDs and exact revisions. Mark minor uncertainty
 as an attention reason. Use material_conflict or model_material_doubt only for a serious unresolved
 problem. Personal instructions are audience=personal. Explicit subgroup work is audience=subgroup
-with its label and remains a separate proposal. Return the requested versioned JSON object only."""
+with its label and remains a separate proposal. Use action=create for a new item. Use update,
+reschedule or cancel only with an existing_item_id and expected_item_revision supplied in trusted
+context; never guess an identity. Return the requested versioned JSON object only."""
 
 
 def prepare_extraction_request(analysis_input: AnalysisInput, understood_context):

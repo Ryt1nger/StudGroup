@@ -36,6 +36,7 @@ def validate_provider_content(
         raise TypeError("proposal_list_required")
 
     accepted = []
+    accepted_ordinals = []
     rejected = []
     for ordinal, item in enumerate(raw[:40]):
         try:
@@ -55,6 +56,7 @@ def validate_provider_content(
             )
             continue
         accepted.append(proposal)
+        accepted_ordinals.append(ordinal)
     rejected.extend(
         RejectedItem(proposal_ordinal=ordinal, reason_code="proposal_overflow")
         for ordinal in range(40, len(raw))
@@ -65,6 +67,7 @@ def validate_provider_content(
     return ValidationResult(
         source_revision=source_revision,
         accepted=accepted,
+        accepted_ordinals=accepted_ordinals,
         rejected=rejected,
         raw_proposal_count=len(raw),
         explicit_empty=explicit_empty,

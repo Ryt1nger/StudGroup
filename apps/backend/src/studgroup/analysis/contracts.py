@@ -124,6 +124,9 @@ class Audience(StrictDTO):
 
 
 class ProposedAcademicItem(StrictDTO):
+    action: Literal["create", "update", "reschedule", "cancel"] = "create"
+    existing_item_id: UUID | None = None
+    expected_item_revision: int | None = Field(default=None, ge=1)
     destination: Literal["task", "deadline"]
     semantic_kind: Literal[
         "homework",
@@ -152,6 +155,14 @@ class ProposedAcademicItem(StrictDTO):
             value = getattr(self, field)
             if value is not None and not value.strip():
                 raise ValueError("blank_display_field")
+        if self.action == "create" and (
+            self.existing_item_id is not None or self.expected_item_revision is not None
+        ):
+            raise ValueError("create_cannot_target_existing_item")
+        if self.action != "create" and (
+            self.existing_item_id is None or self.expected_item_revision is None
+        ):
+            raise ValueError("mutation_requires_item_identity_and_revision")
         return self
 
 
@@ -177,9 +188,18 @@ class AnalysisOutput(StrictDTO):
 class ValidationResult(StrictDTO):
     source_revision: int = Field(ge=1)
     accepted: list[ProposedAcademicItem] = Field(default_factory=list)
+    accepted_ordinals: list[int] = Field(default_factory=list)
     rejected: list[RejectedItem] = Field(default_factory=list)
     raw_proposal_count: int = Field(ge=0)
     explicit_empty: bool
+
+    @model_validator(mode="after")
+    def validate_accepted_ordinals(self):
+        if len(self.accepted) != len(self.accepted_ordinals):
+            raise ValueError("accepted_ordinal_count_mismatch")
+        if len(set(self.accepted_ordinals)) != len(self.accepted_ordinals):
+            raise ValueError("duplicate_accepted_ordinal")
+        return self
 
 
 class ApplicationOutcome(StrictDTO):

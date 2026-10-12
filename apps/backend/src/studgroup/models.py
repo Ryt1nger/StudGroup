@@ -582,6 +582,19 @@ class ShadowEvaluationRun(Base):
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class GroupAnalysisModeHistory(Base):
+    __tablename__ = "group_analysis_mode_history"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    previous_mode: Mapped[str] = mapped_column(String(16))
+    new_mode: Mapped[str] = mapped_column(String(16))
+    actor: Mapped[str] = mapped_column(String(64))
+    reason: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class OwnerIncident(Base):
     __tablename__ = "owner_incidents"
     code: Mapped[str] = mapped_column(String(64), primary_key=True)
