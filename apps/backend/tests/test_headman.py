@@ -145,8 +145,11 @@ def test_create_is_private_until_confirm_and_replay_cannot_duplicate(foreman):
         assert "устарела" in json.loads(row.payload)["text"]
 
     run(foreman, ack)
-    data = foreman.get("/v1/homework", headers={"Authorization": "Bearer valid"}).json()
-    assert data["items"][0]["verification_state"] == "manual_confirmed"
+    homework_id = run(foreman, lambda db: db.scalar(select(Homework.id)))
+    data = foreman.get(
+        f"/v1/homework/{homework_id}", headers={"Authorization": "Bearer valid"}
+    ).json()
+    assert data["verification_state"] == "manual_confirmed"
 
 
 def test_role_revocation_blocks_draft_save(foreman):

@@ -1,13 +1,16 @@
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from test_processing import Provider as LegacyProvider
+from test_processing import source
 
+from studgroup.ai import ProviderFailure
 from studgroup.analysis.context_strategy import validate_context
 from studgroup.analysis.contracts import (
     ANALYSIS_ENGINE_VERSION,
@@ -16,6 +19,7 @@ from studgroup.analysis.contracts import (
     ProposedAcademicItem,
     SourceMessage,
 )
+from studgroup.analysis.dispatch import dispatch_next
 from studgroup.analysis.evaluation import (
     aggregate_display_reviews,
     aggregate_operations,
@@ -28,10 +32,12 @@ from studgroup.analysis.routing import (
     get_route,
 )
 from studgroup.analysis.shadow import persist_shadow_summary, run_shadow
+from studgroup.main import Settings
 from studgroup.models import (
     AcademicDeadline,
     BotOutbox,
     Group,
+    GroupAnalysisSettings,
     Homework,
     Notification,
     ShadowEvaluationRun,
@@ -128,6 +134,86 @@ class FakeProvider:
         )
 
 
+class HybridProvider(LegacyProvider, FakeProvider):
+    def __init__(self, *, shadow_failure=None):
+        LegacyProvider.__init__(self)
+        self.requests = []
+        self.shadow_failure = shadow_failure
+
+    async def complete(self, request):
+        if self.shadow_failure and not self.requests:
+            self.requests.append(request)
+            raise ProviderFailure(self.shadow_failure, True)
+        self.requests.append(request)
+        revision = request.user_payload["source_revision"]
+        message = request.user_payload["messages"][-1]
+        message_id = message["telegram_message_id"]
+        if request.prompt_version == "cplus-context-1":
+            payload = context_payload(
+                source_revision=revision,
+                relevant_source_ids=[message_id],
+                discussion_facts=[],
+            )
+        else:
+            item = proposal(source_id=message_id).model_dump(mode="json")
+            item["evidence"][0]["revision"] = message["revision"]
+            payload = {
+                "schema_version": ANALYSIS_SCHEMA_VERSION,
+                "engine_version": ANALYSIS_ENGINE_VERSION,
+                "source_revision": revision,
+                "proposals": [item],
+                "explicit_empty": False,
+            }
+        return ProviderResponse(
+            content=json.dumps(payload),
+            usage=ProviderUsage(prompt_tokens=10, completion_tokens=5),
+            model="fake",
+            finish_reason="stop",
+            payload_sha256=str(len(self.requests)) * 64,
+        )
+
+
+def product_snapshot(client):
+    async def read():
+        async with AsyncSession(client.app.state.engine) as db:
+            result = {}
+            for model in (Homework, AcademicDeadline, Notification, BotOutbox):
+                result[model.__tablename__] = await db.scalar(
+                    select(func.count()).select_from(model)
+                )
+            return result
+
+    return asyncio.run(read())
+
+
+def enable_shadow(client, budget="0.20"):
+    async def configure():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            await configure_group_mode(
+                db,
+                group.id,
+                "shadow",
+                datetime.now(UTC),
+                shadow_daily_budget_usd=Decimal(budget),
+                shadow_sample_percent=100,
+            )
+            await db.commit()
+
+    asyncio.run(configure())
+
+
+def dispatch(client, provider, now=None):
+    return asyncio.run(
+        dispatch_next(
+            client.app.state.engine,
+            Settings(ai_enabled=True),
+            provider=provider,
+            now=now,
+        )
+    )
+
+
 def test_context_output_requires_current_in_envelope_evidence():
     valid = validate_context(json.dumps(context_payload()), analysis_input())
     assert valid.relevant_source_ids == [10]
@@ -203,6 +289,124 @@ def test_shadow_two_pass_has_no_product_side_effects_and_persists_summary(client
             assert await db.scalar(select(func.count()).select_from(ShadowEvaluationRun)) == 1
 
     asyncio.run(run())
+
+
+def test_dispatch_runs_durable_shadow_once_without_product_mutation(client):
+    enable_shadow(client)
+    source(client, text="ДЗ: решить задачи 1–3")
+    provider = HybridProvider()
+    assert dispatch(client, provider) == "completed"
+    before = product_snapshot(client)
+    assert before["homework"] == 1
+    assert dispatch(client, provider) == "shadow_completed"
+    assert product_snapshot(client) == before
+    assert dispatch(client, provider) == "idle"
+    assert product_snapshot(client) == before
+    assert len(provider.requests) == 2
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(ShadowEvaluationRun))
+            assert row.state == "completed"
+            assert row.attempts == 1
+            assert row.validation_result_json
+            assert row.context_result_json
+            assert row.reserved_usd == 0
+
+    asyncio.run(inspect())
+
+
+def test_shadow_failure_is_retryable_and_cannot_mutate_products(client):
+    enable_shadow(client)
+    source(client)
+    provider = HybridProvider(shadow_failure="provider_unreachable")
+    assert dispatch(client, provider) == "completed"
+    before = product_snapshot(client)
+    first = datetime.now(UTC)
+    assert dispatch(client, provider, first) == "shadow_retry"
+    assert product_snapshot(client) == before
+    provider.shadow_failure = None
+    assert dispatch(client, provider, first + timedelta(minutes=1)) == "shadow_completed"
+    assert product_snapshot(client) == before
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(ShadowEvaluationRun))
+            assert row.state == "completed"
+            assert row.attempts == 2
+            assert row.charged_usd >= Decimal("0.04")
+
+    asyncio.run(inspect())
+
+
+def test_shadow_extraction_pass_failure_is_durable_and_read_only(client):
+    class ExtractionFailureProvider(HybridProvider):
+        async def complete(self, request):
+            if request.prompt_version == "cplus-extraction-1":
+                raise ProviderFailure("provider_unreachable", True)
+            return await super().complete(request)
+
+    enable_shadow(client)
+    source(client)
+    provider = ExtractionFailureProvider()
+    assert dispatch(client, provider) == "completed"
+    before = product_snapshot(client)
+    assert dispatch(client, provider) == "shadow_retry"
+    assert product_snapshot(client) == before
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(ShadowEvaluationRun))
+            assert row.last_error == "extraction_provider_unreachable"
+            assert row.context_result_json
+            assert row.prompt_tokens == 10
+            assert row.charged_usd == Decimal("0.04")
+            assert row.reserved_usd == 0
+
+    asyncio.run(inspect())
+
+
+def test_shadow_budget_is_reserved_before_provider_call(client):
+    enable_shadow(client, budget="0.01")
+    source(client)
+    provider = HybridProvider()
+    assert dispatch(client, provider) == "completed"
+    before = product_snapshot(client)
+    assert dispatch(client, provider) == "shadow_budget_deferred"
+    assert provider.requests == []
+    assert product_snapshot(client) == before
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(ShadowEvaluationRun))
+            assert row.state == "budget_deferred"
+            assert row.reserved_usd == 0
+            settings = await db.get(GroupAnalysisSettings, row.group_id)
+            settings.analysis_mode = "legacy"
+            await db.commit()
+
+    asyncio.run(inspect())
+    assert dispatch(client, provider, datetime.now(UTC) + timedelta(days=1)) == "idle"
+    assert provider.requests == []
+
+
+def test_shadow_captures_source_even_when_legacy_relevance_filters_it(client):
+    enable_shadow(client)
+    source(client, text="К следующей встрече прочитать введение и выписать определения")
+    provider = HybridProvider()
+    assert dispatch(client, provider) == "shadow_queued"
+    assert product_snapshot(client)["homework"] == 0
+    assert dispatch(client, provider) == "shadow_completed"
+    assert product_snapshot(client)["homework"] == 0
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(ShadowEvaluationRun))
+            assert row.raw_message_id is not None
+            assert row.source_revision == 1
+            assert row.state == "completed"
+
+    asyncio.run(inspect())
 
 
 def test_evaluation_matches_entities_not_raw_proposal_counts():
