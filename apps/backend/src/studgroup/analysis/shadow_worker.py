@@ -1,0 +1,347 @@
+"""Durable C+ shadow queue. This module has no product publication dependency."""
+
+import json
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+from sqlalchemy import exists, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from studgroup.ai import ProviderFailure
+from studgroup.analysis.context import assemble_memory_context
+from studgroup.analysis.contracts import AnalysisInput, SourceMessage
+from studgroup.analysis.routing import get_route, sampled
+from studgroup.analysis.shadow import ShadowPassFailure, run_shadow, source_snapshot_sha256
+from studgroup.models import (
+    Group,
+    GroupAnalysisSettings,
+    GroupKnowledgeFact,
+    RawMessage,
+    ShadowEvaluationRun,
+)
+
+SHADOW_RESERVATION_USD = Decimal("0.04000000")
+SHADOW_MAX_ATTEMPTS = 3
+SHADOW_LEASE = timedelta(minutes=3)
+
+
+def _utc(value):
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _cost(usage):
+    hit = min(usage.prompt_cache_hit_tokens, usage.prompt_tokens)
+    miss = usage.prompt_tokens - hit
+    return (
+        Decimal(miss) * Decimal("0.30")
+        + Decimal(hit) * Decimal("0.006")
+        + Decimal(usage.completion_tokens) * Decimal("1.20")
+    ) / Decimal(1000000)
+
+
+async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
+    """Persist the exact legacy context as a replayable C+ input, at most once per job."""
+    route = await get_route(db, group.id)
+    sample_key = str(job.id) if job is not None else f"{raw.id}:{raw.revision}"
+    if screening or not route.shadow_runs:
+        return None
+    existing = await db.scalar(
+        select(ShadowEvaluationRun).where(
+            ShadowEvaluationRun.raw_message_id == raw.id,
+            ShadowEvaluationRun.source_revision == raw.revision,
+            ShadowEvaluationRun.analysis_generation == raw.analysis_generation,
+        )
+    )
+    if existing is not None:
+        return existing
+    source_ids = [row["message_id"] for row in context]
+    raws = (
+        await db.scalars(
+            select(RawMessage).where(
+                RawMessage.group_id == group.id,
+                RawMessage.telegram_message_id.in_(source_ids),
+            )
+        )
+    ).all()
+    revisions = {row.telegram_message_id: row.revision for row in raws}
+    messages = [
+        SourceMessage(
+            telegram_message_id=row["message_id"],
+            revision=revisions[row["message_id"]],
+            message_date=datetime.fromisoformat(row["message_date"]),
+            text=row["text"],
+            reply_to_message_id=row.get("reply_to"),
+            topic_id=row.get("topic_id"),
+            topic_name=row.get("topic_name"),
+            attachments=row.get("attachments", []),
+        )
+        for row in context
+    ]
+    analysis_input = AnalysisInput(
+        group_id=group.id,
+        group_timezone=group.timezone,
+        source_revision=raw.revision,
+        target_message_ids=[raw.telegram_message_id],
+        messages=messages,
+    )
+    facts = (
+        await db.scalars(
+            select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id)
+        )
+    ).all()
+    memory = assemble_memory_context(
+        group.id, " ".join(row.text for row in messages), facts
+    )
+    selected = sampled(group.id, sample_key, route.shadow_sample_percent)
+    row = ShadowEvaluationRun(
+        group_id=group.id,
+        batch_id=None,
+        job_id=job.id if job is not None else None,
+        raw_message_id=raw.id,
+        source_revision=raw.revision,
+        analysis_generation=raw.analysis_generation,
+        source_snapshot_sha256=source_snapshot_sha256(analysis_input),
+        engine_version=route.engine_version,
+        state="queued" if selected else "sample_skipped",
+        input_json=json.dumps(
+            analysis_input.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
+        ),
+        memory_json=json.dumps(memory, ensure_ascii=False, sort_keys=True),
+        attempts=0,
+        available_at=now,
+        prompt_tokens=0,
+        completion_tokens=0,
+        prompt_cache_hit_tokens=0,
+        reserved_usd=Decimal(0),
+        charged_usd=Decimal(0),
+        created_at=now,
+        completed_at=None if selected else now,
+        delete_at=now + timedelta(days=30),
+    )
+    db.add(row)
+    await db.flush()
+    return row
+
+
+async def enqueue_next_shadow(engine, now=None):
+    """Capture one new/edited Telegram source even if legacy relevance rejects it."""
+    now = _utc(now or datetime.now(UTC))
+    async with AsyncSession(engine) as db:
+        raw = await db.scalar(
+            select(RawMessage)
+            .join(Group, Group.id == RawMessage.group_id)
+            .join(
+                GroupAnalysisSettings,
+                GroupAnalysisSettings.group_id == RawMessage.group_id,
+            )
+            .where(
+                GroupAnalysisSettings.analysis_mode == "shadow",
+                GroupAnalysisSettings.shadow_sample_percent > 0,
+                Group.status == "active",
+                Group.pilot_authorized.is_(True),
+                RawMessage.delete_at > now,
+                or_(
+                    RawMessage.live_received_at >= GroupAnalysisSettings.updated_at,
+                    (
+                        RawMessage.imported.is_(True)
+                        & (RawMessage.version_date >= GroupAnalysisSettings.updated_at)
+                    ),
+                ),
+                ~exists().where(
+                    ShadowEvaluationRun.raw_message_id == RawMessage.id,
+                    ShadowEvaluationRun.source_revision == RawMessage.revision,
+                    ShadowEvaluationRun.analysis_generation == RawMessage.analysis_generation,
+                ),
+            )
+            .order_by(RawMessage.version_date, RawMessage.id)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        if raw is None:
+            return False
+        group = await db.get(Group, raw.group_id)
+        from studgroup.processing import context_for
+
+        context, _schedule = await context_for(
+            db, raw, group, now, semantic_neighborhood=True
+        )
+        row = await enqueue_shadow(
+            db,
+            group=group,
+            job=None,
+            raw=raw,
+            context=context,
+            now=now,
+        )
+        state = row.state if row is not None else None
+        await db.commit()
+        return state
+
+
+async def _claim(engine, now):
+    async with AsyncSession(engine) as db:
+        row = await db.scalar(
+            select(ShadowEvaluationRun)
+            .join(
+                GroupAnalysisSettings,
+                GroupAnalysisSettings.group_id == ShadowEvaluationRun.group_id,
+            )
+            .where(
+                GroupAnalysisSettings.analysis_mode == "shadow",
+                ShadowEvaluationRun.delete_at > now,
+                or_(
+                    (
+                        ShadowEvaluationRun.state.in_(["queued", "retry", "budget_deferred"])
+                        & (ShadowEvaluationRun.available_at <= now)
+                    ),
+                    (
+                        ShadowEvaluationRun.state == "running"
+                    )
+                    & (ShadowEvaluationRun.lease_until <= now),
+                ),
+            )
+            .order_by(ShadowEvaluationRun.created_at, ShadowEvaluationRun.id)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        if row is None:
+            return None
+        route_row = await db.scalar(
+            select(GroupAnalysisSettings)
+            .where(GroupAnalysisSettings.group_id == row.group_id)
+            .with_for_update()
+        )
+        # The settings-row lock serializes reserve decisions for this group's cap.
+        day = _utc(now)
+        day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
+        charged = await db.scalar(
+            select(func.coalesce(func.sum(ShadowEvaluationRun.charged_usd), 0)).where(
+                ShadowEvaluationRun.group_id == row.group_id,
+                ShadowEvaluationRun.created_at >= day_start,
+            )
+        )
+        reserved_elsewhere = await db.scalar(
+            select(func.coalesce(func.sum(ShadowEvaluationRun.reserved_usd), 0)).where(
+                ShadowEvaluationRun.group_id == row.group_id,
+                ShadowEvaluationRun.created_at >= day_start,
+                ShadowEvaluationRun.id != row.id,
+            )
+        )
+        committed = Decimal(charged or 0) + Decimal(reserved_elsewhere or 0)
+        if committed + SHADOW_RESERVATION_USD > Decimal(
+            route_row.shadow_daily_budget_usd
+        ):
+            row.state = "budget_deferred"
+            row.last_error = "shadow_budget_exhausted"
+            row.available_at = day_start + timedelta(days=1)
+            row.lease_until = None
+            row.reserved_usd = Decimal(0)
+            await db.commit()
+            return "budget_deferred"
+        row.state = "running"
+        row.attempts += 1
+        row.available_at = now
+        row.lease_until = now + SHADOW_LEASE
+        row.last_error = None
+        row.reserved_usd = SHADOW_RESERVATION_USD
+        identity = row.id, row.attempts
+        await db.commit()
+        return identity
+
+
+async def process_shadow_next(engine, settings, provider=None, now=None):
+    """Execute one reserved shadow item and persist diagnostics, never product data."""
+    now = _utc(now or datetime.now(UTC))
+    if not settings.ai_enabled:
+        return "disabled"
+    claimed = await _claim(engine, now)
+    if claimed is None or isinstance(claimed, str):
+        return claimed or "idle"
+    run_id, generation = claimed
+    async with AsyncSession(engine) as db:
+        row = await db.get(ShadowEvaluationRun, run_id)
+        input_json, memory_json = row.input_json, row.memory_json
+    failure = None
+    result = None
+    try:
+        analysis_input = AnalysisInput.model_validate_json(input_json)
+        memory = json.loads(memory_json or "[]")
+        if provider is None:
+            from studgroup.ai import DeepSeekProvider
+
+            provider = DeepSeekProvider(
+                settings.deepseek_api_key.get_secret_value(),
+                model=settings.deepseek_model,
+                base_url=settings.deepseek_base_url,
+                allow_technical_repair=settings.ai_technical_repair_enabled,
+            )
+        result = await run_shadow(provider, analysis_input, memory)
+    except ShadowPassFailure as error:
+        failure = error
+    except ProviderFailure as error:
+        failure = ShadowPassFailure(
+            error.code,
+            error.retryable,
+            usage=error.usage,
+            usage_complete=error.usage is not None or error.reservation_releasable,
+            reservation_releasable=error.reservation_releasable,
+        )
+    except Exception:  # noqa: BLE001 - durable boundary must recover unknown worker faults
+        # No exception text is persisted because provider errors may contain private data.
+        failure = ShadowPassFailure("shadow_pipeline_error", True)
+    async with AsyncSession(engine) as db:
+        row = await db.scalar(
+            select(ShadowEvaluationRun)
+            .where(ShadowEvaluationRun.id == run_id)
+            .with_for_update()
+        )
+        if row.state != "running" or row.attempts != generation:
+            return "superseded"
+        usage = result if result is not None else failure.usage
+        actual = _cost(usage)
+        row.prompt_tokens += usage.prompt_tokens
+        row.completion_tokens += usage.completion_tokens
+        row.prompt_cache_hit_tokens += usage.prompt_cache_hit_tokens
+        row.reserved_usd = Decimal(0)
+        row.lease_until = None
+        if result is not None:
+            row.charged_usd += actual
+            row.context_result_json = result.context.model_dump_json()
+            row.validation_result_json = result.validation.model_dump_json()
+            row.provider_payload_hashes = json.dumps(result.provider_payload_hashes)
+            row.metrics_json = json.dumps(
+                {
+                    "accepted_items": len(result.validation.accepted),
+                    "rejected_items": len(result.validation.rejected),
+                    "raw_proposal_count": result.validation.raw_proposal_count,
+                },
+                sort_keys=True,
+            )
+            row.latency_ms = result.latency_ms
+            row.state = "completed"
+            row.completed_at = now
+            await db.commit()
+            return "completed"
+        # If the provider did not report usage, keep the full reservation as a
+        # conservative charge unless it explicitly proved that no request ran.
+        row.charged_usd += (
+            actual
+            if failure.usage_complete
+            else max(actual, SHADOW_RESERVATION_USD)
+        )
+        row.provider_payload_hashes = json.dumps(failure.hashes)
+        if failure.raw_results:
+            row.context_result_json = failure.raw_results[0]
+        if len(failure.raw_results) > 1:
+            row.validation_result_json = failure.raw_results[1]
+        row.last_error = failure.code
+        if failure.retryable and row.attempts < SHADOW_MAX_ATTEMPTS:
+            row.state = "retry"
+            row.available_at = now + timedelta(seconds=15 * 2 ** (row.attempts - 1))
+            outcome = "retry"
+        else:
+            row.state = "failed"
+            row.completed_at = now
+            outcome = "failed"
+        await db.commit()
+        return outcome

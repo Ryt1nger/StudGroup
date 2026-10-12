@@ -562,6 +562,10 @@ class GroupAnalysisSettings(Base):
 
 class ShadowEvaluationRun(Base):
     __tablename__ = "shadow_evaluation_runs"
+    __table_args__ = (
+        UniqueConstraint("job_id"),
+        UniqueConstraint("raw_message_id", "source_revision", "analysis_generation"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     group_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("groups.id", ondelete="CASCADE"), index=True
@@ -569,12 +573,31 @@ class ShadowEvaluationRun(Base):
     batch_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("analysis_batches.id", ondelete="SET NULL"), index=True
     )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ai_jobs.id", ondelete="SET NULL"), index=True
+    )
+    raw_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="SET NULL"), index=True
+    )
+    source_revision: Mapped[int | None] = mapped_column(Integer)
+    analysis_generation: Mapped[int | None] = mapped_column(Integer)
     source_snapshot_sha256: Mapped[str] = mapped_column(String(64))
     engine_version: Mapped[str] = mapped_column(String(64))
     state: Mapped[str] = mapped_column(String(24))
+    input_json: Mapped[str | None] = mapped_column(Text)
+    memory_json: Mapped[str | None] = mapped_column(Text)
+    context_result_json: Mapped[str | None] = mapped_column(Text)
+    validation_result_json: Mapped[str | None] = mapped_column(Text)
+    provider_payload_hashes: Mapped[str | None] = mapped_column(Text)
     metrics_json: Mapped[str | None] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(64))
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    prompt_cache_hit_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    reserved_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=Decimal(0))
     charged_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=Decimal(0))
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
