@@ -21,7 +21,7 @@ def lesson_id(client):
 
 
 def test_subject_page_has_related_homework_and_explicit_unconnected_sections(client):
-    card = seed_card(client)
+    card = seed_card(client, source_time=datetime(2026, 10, 11, 12, tzinfo=UTC))
     response = client.get(
         f"/v1/lessons/{lesson_id(client)}/subject", headers={"Authorization": "Bearer valid"}
     )
@@ -37,7 +37,7 @@ def test_subject_page_has_related_homework_and_explicit_unconnected_sections(cli
 
 
 def test_subject_page_excludes_future_deadline_beyond_selected_lesson(client):
-    card_id = seed_card(client)
+    card_id = seed_card(client, source_time=datetime(2026, 10, 11, 12, tzinfo=UTC))
 
     async def update():
         async with AsyncSession(client.app.state.engine) as db:
@@ -147,11 +147,11 @@ def test_past_deadline_is_archived_immediately(client, monkeypatch, elapsed_seco
     assert client.get(f"/v1/homework/{card_id}", headers=headers).status_code == 200
 
 
-def seed_card(client):
+def seed_card(client, *, source_time: datetime | None = None):
     async def seed():
         async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
-            now = datetime.now(UTC)
+            now = source_time or datetime.now(UTC)
             raw = RawMessage(
                 group_id=group.id,
                 telegram_message_id=3,
