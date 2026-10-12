@@ -11,6 +11,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, model_validator
 
 from studgroup.academic_context import has_date_cue
+from studgroup.analysis.provider import PreparedRequest, ProviderResponse, ProviderUsage
 from studgroup.deadlines import ScheduleDeadlineContext, canonical_subject, resolve_deadline
 
 PROMPT_VERSION = "academic-text-8"
@@ -322,6 +323,38 @@ class DeepSeekProvider:
         self._base_url = base_url.rstrip("/")
         self._transport = transport
         self._allow_technical_repair = allow_technical_repair
+
+    async def complete(self, request: PreparedRequest) -> ProviderResponse:
+        """Implement the C+ transport port without exposing publication behaviour."""
+        body = await self._complete(
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": request.system_prompt},
+                    {
+                        "role": "user",
+                        "content": json.dumps(request.user_payload, ensure_ascii=False),
+                    },
+                ],
+                "response_format": {"type": "json_object"},
+                "thinking": {"type": "disabled"},
+                "max_tokens": request.max_output_tokens,
+                "stream": False,
+            }
+        )
+        content = body["choices"][0]["message"]["content"]
+        usage = TokenUsage.model_validate(body["usage"])
+        return ProviderResponse(
+            content=content,
+            usage=ProviderUsage(
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                prompt_cache_hit_tokens=usage.prompt_cache_hit_tokens,
+            ),
+            model=body["model"],
+            finish_reason=body["choices"][0]["finish_reason"],
+            payload_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        )
 
     async def screen_batch(self, messages, timezone, target_message_id):
         """High-recall semantic screening of every new target, not keyword filtering."""
