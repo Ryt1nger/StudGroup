@@ -10,7 +10,7 @@ from time import monotonic
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,7 @@ from studgroup.models import (
     AIControl,
     AIJob,
     AIRun,
+    AnalysisApplicationOutcome,
     Group,
     GroupAIActivity,
     GroupAIProfile,
@@ -85,15 +86,81 @@ PROVIDER_INCIDENT_CODES = {
     "pipeline_error",
 }
 
+OUTCOME_RETENTION = timedelta(days=30)
+
+
+def record_analysis_outcome(
+    db,
+    *,
+    attempt,
+    job,
+    source_revision,
+    stage,
+    technical_status,
+    reason_code,
+    now,
+    proposal_kind="summary",
+    proposal_ordinal=-1,
+    academic_status=None,
+    application_status=None,
+    source_message_ids=None,
+    diagnostics=None,
+    provider_payload_sha256=None,
+    raw_provider_response=None,
+    model=None,
+    prompt_version=None,
+):
+    db.add(
+        AnalysisApplicationOutcome(
+            attempt_id=attempt.id,
+            job_id=job.id,
+            group_id=job.group_id,
+            source_revision=source_revision,
+            analysis_generation=job.analysis_generation,
+            stage=stage,
+            proposal_kind=proposal_kind,
+            proposal_ordinal=proposal_ordinal,
+            technical_status=technical_status,
+            academic_status=academic_status,
+            application_status=application_status,
+            reason_code=reason_code,
+            source_message_ids=json.dumps(source_message_ids)
+            if source_message_ids is not None
+            else None,
+            diagnostics=json.dumps(diagnostics, sort_keys=True) if diagnostics else None,
+            provider_payload_sha256=provider_payload_sha256,
+            raw_provider_response=raw_provider_response,
+            model=model,
+            prompt_version=prompt_version,
+            schema_version="outcome-1",
+            created_at=now,
+            delete_at=now + OUTCOME_RETENTION,
+        )
+    )
+
 
 def recovery_delay(attempts):
     """Back off transport recovery without abandoning the durable source version."""
     return min(30 * 2 ** min(max(attempts - 1, 0), 4), 300)
 
 
+async def purge_expired_analysis_outcomes(engine, now=None):
+    """Remove diagnostic outcomes at their explicit TTL, independent of AI enablement."""
+    cutoff = utc(now or datetime.now(UTC))
+    async with AsyncSession(engine) as db:
+        result = await db.execute(
+            delete(AnalysisApplicationOutcome).where(
+                AnalysisApplicationOutcome.delete_at <= cutoff
+            )
+        )
+        await db.commit()
+        return result.rowcount or 0
+
+
 # Upper bound for the byte-bounded request + system instructions and 3,000 output tokens.
 # Flash peak prices; a model change requires explicit budget/pricing review.
 RESERVATION = Decimal("0.012")
+REPAIR_RESERVATION = Decimal("0.020")
 ACADEMIC_CUE = re.compile(
     r"\b(?:дз|кт)\b|домашн|контрольн|самостоят|срок|дедлайн|сдать|задан|тест|стр\.?\s*\d|номер|конспект|презентац|#[\w]+",
     re.IGNORECASE,
@@ -598,10 +665,15 @@ async def claim(engine, settings, now):
                     AIAttempt.created_at >= now - timedelta(hours=1),
                 )
             )
+            reservation = (
+                REPAIR_RESERVATION
+                if settings.ai_technical_repair_enabled
+                else RESERVATION
+            )
             total_limit = Decimal(str(settings.ai_total_budget_usd))
             daily_limit = Decimal(str(settings.ai_daily_group_budget_usd))
-            total_blocked = control.spent_usd + RESERVATION > total_limit
-            daily_blocked = Decimal(daily) + RESERVATION > daily_limit
+            total_blocked = control.spent_usd + reservation > total_limit
+            daily_blocked = Decimal(daily) + reservation > daily_limit
             if total_blocked or daily_blocked:
                 code = "ai_total_budget_limit" if total_blocked else "ai_daily_group_budget_limit"
                 await incident(
@@ -624,7 +696,7 @@ async def claim(engine, settings, now):
             await incident(db, "ai_daily_group_budget_limit", now, recover=True)
             await incident(db, "ai_total_budget_limit", now, recover=True)
             hourly_limit = Decimal(str(settings.ai_hourly_group_budget_usd))
-            if Decimal(hourly) + RESERVATION > hourly_limit:
+            if Decimal(hourly) + reservation > hourly_limit:
                 await incident_once(
                     db,
                     "ai_hourly_safety_limit",
@@ -657,11 +729,11 @@ async def claim(engine, settings, now):
                     activity.last_batch_slot = slot
             job.attempts += 1
             job.lease_until = now + timedelta(minutes=3)
-            control.spent_usd += RESERVATION
+            control.spent_usd += reservation
             attempt = AIAttempt(
                 job_id=job.id,
                 group_id=raw.group_id,
-                charged_usd=RESERVATION,
+                charged_usd=reservation,
                 model=settings.deepseek_model,
                 prompt_version=SCREEN_PROMPT_VERSION
                 if settings.ai_live_two_pass and not job.screen_checkpoint
@@ -1200,6 +1272,7 @@ async def process_next(engine, settings, provider=None, now=None):
             settings.deepseek_api_key.get_secret_value(),
             model=settings.deepseek_model,
             base_url=settings.deepseek_base_url,
+            allow_technical_repair=settings.ai_technical_repair_enabled,
         )
         remaining = (min(cutoffs) - clock()).total_seconds() if cutoffs else None
         if remaining is not None and remaining <= 0:
@@ -1335,8 +1408,46 @@ async def process_next(engine, settings, provider=None, now=None):
                 statistics["screen_signals"] = int(screen_result.decision.signal)
                 if previous_error in PROVIDER_INCIDENT_CODES:
                     await incident(db, previous_error, response_at, recover=True)
+                record_analysis_outcome(
+                    db,
+                    attempt=attempt,
+                    job=job,
+                    source_revision=revision,
+                    stage="screen",
+                    technical_status="parsed",
+                    academic_status="signal" if screen_result.decision.signal else "no_signal",
+                    application_status="deep_queued"
+                    if screen_result.decision.signal
+                    else "none",
+                    reason_code="screen_signal"
+                    if screen_result.decision.signal
+                    else "screen_no_signal",
+                    now=response_at,
+                    source_message_ids=screen_result.decision.source_message_ids,
+                    provider_payload_sha256=screen_result.provider_payload_sha256,
+                    raw_provider_response=screen_result.raw_provider_response
+                    if settings.ai_store_raw_provider_responses
+                    else None,
+                    model=screen_result.model,
+                    prompt_version=screen_result.prompt_version,
+                )
             else:
                 job.state = "superseded"
+                record_analysis_outcome(
+                    db,
+                    attempt=attempt,
+                    job=job,
+                    source_revision=revision,
+                    stage="screen",
+                    technical_status="stale",
+                    academic_status=None,
+                    application_status="stale",
+                    reason_code="stale_revision",
+                    now=response_at,
+                    provider_payload_sha256=screen_result.provider_payload_sha256,
+                    model=screen_result.model,
+                    prompt_version=screen_result.prompt_version,
+                )
         elif result:
             # A stale reply never overwrites a concurrently edited Telegram message.
             if raw and raw.revision == revision:
@@ -1363,7 +1474,14 @@ async def process_next(engine, settings, provider=None, now=None):
                     )
                     db.add(candidate)
                     candidates.append(candidate)
-                if len(result.batch.assignments) > 1:
+                accepted_total = len(result.batch.assignments) + len(
+                    result.batch.online_lessons
+                )
+                all_items_rejected = result.raw_proposal_count > 0 and accepted_total == 0
+                if all_items_rejected:
+                    raw.processing_state = "needs_context"
+                    job.last_error = "all_items_rejected"
+                elif len(result.batch.assignments) > 1:
                     # One raw-to-homework row cannot silently discard a second task.
                     raw.processing_state = "needs_context"
                     job.last_error = "multiple_tasks_require_review"
@@ -1403,9 +1521,130 @@ async def process_next(engine, settings, provider=None, now=None):
                             statistics["online_links_bound"] = (
                                 statistics.get("online_links_bound", 0) + bound
                             )
+                for rejected in result.rejected_proposals:
+                    record_analysis_outcome(
+                        db,
+                        attempt=attempt,
+                        job=job,
+                        source_revision=revision,
+                        stage="deep",
+                        proposal_kind=rejected.proposal_kind,
+                        proposal_ordinal=rejected.proposal_ordinal,
+                        technical_status="parsed",
+                        academic_status="rejected",
+                        application_status="not_applied",
+                        reason_code=rejected.reason_code,
+                        now=response_at,
+                        provider_payload_sha256=result.provider_payload_sha256,
+                        model=result.model,
+                        prompt_version=result.prompt_version,
+                    )
+                assignment_ordinals = result.accepted_assignment_ordinals or list(
+                    range(len(result.batch.assignments))
+                )
+                for ordinal, assignment, candidate in zip(
+                    assignment_ordinals,
+                    result.batch.assignments,
+                    candidates,
+                    strict=True,
+                ):
+                    record_analysis_outcome(
+                        db,
+                        attempt=attempt,
+                        job=job,
+                        source_revision=revision,
+                        stage="deep",
+                        proposal_kind="assignment",
+                        proposal_ordinal=ordinal,
+                        technical_status="parsed",
+                        academic_status="accepted",
+                        application_status=candidate.state,
+                        reason_code=f"assignment_{candidate.state}",
+                        now=response_at,
+                        source_message_ids=assignment.source_message_ids,
+                        provider_payload_sha256=result.provider_payload_sha256,
+                        model=result.model,
+                        prompt_version=result.prompt_version,
+                    )
+                online_ordinals = result.accepted_online_lesson_ordinals or list(
+                    range(len(result.batch.online_lessons))
+                )
+                for ordinal, proposal in zip(
+                    online_ordinals, result.batch.online_lessons, strict=True
+                ):
+                    record_analysis_outcome(
+                        db,
+                        attempt=attempt,
+                        job=job,
+                        source_revision=revision,
+                        stage="deep",
+                        proposal_kind="online_lesson",
+                        proposal_ordinal=ordinal,
+                        technical_status="parsed",
+                        academic_status="accepted",
+                        application_status="processed",
+                        reason_code="online_lesson_processed",
+                        now=response_at,
+                        source_message_ids=proposal.source_message_ids,
+                        provider_payload_sha256=result.provider_payload_sha256,
+                        model=result.model,
+                        prompt_version=result.prompt_version,
+                    )
+                academic_status = (
+                    "all_items_rejected"
+                    if all_items_rejected
+                    else "deep_empty_valid"
+                    if accepted_total == 0
+                    else "proposals_found"
+                )
+                record_analysis_outcome(
+                    db,
+                    attempt=attempt,
+                    job=job,
+                    source_revision=revision,
+                    stage="deep",
+                    technical_status="parsed",
+                    academic_status=academic_status,
+                    application_status=(
+                        "review_required"
+                        if raw.processing_state == "needs_context"
+                        else "applied"
+                        if accepted_total
+                        else "none"
+                    ),
+                    reason_code=academic_status,
+                    now=response_at,
+                    diagnostics={
+                        "raw_proposal_count": result.raw_proposal_count,
+                        "accepted_proposal_count": accepted_total,
+                        "rejected_proposal_count": len(result.rejected_proposals),
+                        **result.diagnostics,
+                    },
+                    provider_payload_sha256=result.provider_payload_sha256,
+                    raw_provider_response=result.raw_provider_response
+                    if settings.ai_store_raw_provider_responses
+                    else None,
+                    model=result.model,
+                    prompt_version=result.prompt_version,
+                )
                 job.state = "done"
             else:
                 job.state = "superseded"
+                record_analysis_outcome(
+                    db,
+                    attempt=attempt,
+                    job=job,
+                    source_revision=revision,
+                    stage="deep",
+                    technical_status="stale",
+                    academic_status=None,
+                    application_status="stale",
+                    reason_code="stale_revision",
+                    now=response_at,
+                    provider_payload_sha256=result.provider_payload_sha256,
+                    model=result.model,
+                    prompt_version=result.prompt_version,
+                )
             if previous_error in PROVIDER_INCIDENT_CODES:
                 await incident(db, previous_error, response_at, recover=True)
             if job.last_error == previous_error:
@@ -1443,6 +1682,24 @@ async def process_next(engine, settings, provider=None, now=None):
             )
             if raw and raw.revision == revision:
                 raw.processing_state = "pending" if job.state == "retry" else "failed"
+            record_analysis_outcome(
+                db,
+                attempt=attempt,
+                job=job,
+                source_revision=revision,
+                stage="screen" if screening else "deep",
+                technical_status="failed",
+                academic_status=None,
+                application_status="retry" if job.state == "retry" else "failed",
+                reason_code=failure.code,
+                now=response_at,
+                provider_payload_sha256=failure.provider_payload_sha256,
+                raw_provider_response=failure.raw_provider_response
+                if settings.ai_store_raw_provider_responses
+                else None,
+                model=attempt.model,
+                prompt_version=attempt.prompt_version,
+            )
             if failure.code in QUALITY_FAILURES:
                 statistics["quality_failure"] = failure.code
             else:
@@ -1503,17 +1760,10 @@ async def process_next(engine, settings, provider=None, now=None):
             "review": sum(c.state == "review" for c in candidates),
             "unchanged_cards": statistics.get("unchanged_cards", 0),
             "message_id": message_id,
-            "text": " ".join(
-                str(
-                    next((m.get("text") for m in context if m.get("message_id") == message_id), "")
-                ).split()
-            )[:90],
             "assignments": [
                 {
                     "kind": a.kind,
                     "confidence": a.confidence,
-                    "subject": a.subject,
-                    "title": a.title,
                     "deadline": bool(a.deadline_at),
                     "state": a.publication_state,
                 }

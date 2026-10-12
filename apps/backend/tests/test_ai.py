@@ -119,6 +119,130 @@ def test_deep_batch_isolates_bad_proposal_and_keeps_valid_one():
     )
     assert len(result.batch.assignments) == 1
     assert result.diagnostics == {"rejected_assignment_schema": 1}
+    assert result.raw_proposal_count == 2
+    assert result.accepted_assignment_ordinals == [1]
+    assert [row.model_dump() for row in result.rejected_proposals] == [
+        {
+            "proposal_kind": "assignment",
+            "proposal_ordinal": 0,
+            "reason_code": "rejected_assignment_schema",
+        }
+    ]
+    assert result.provider_payload_sha256
+    assert result.raw_provider_response
+
+
+def test_deep_batch_repairs_malformed_json_once_and_accounts_for_both_calls():
+    repaired = json.dumps(
+        {"assignments": [facts(source_message_ids=[1])], "online_lessons": []}
+    )
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content))
+        if len(requests) == 1:
+            return httpx.Response(200, json=response('{"assignments": ['))
+        assert "damaged_provider_response" in requests[-1]["messages"][1]["content"]
+        return httpx.Response(200, json=response(repaired))
+
+    provider = DeepSeekProvider(
+        "test-key",
+        transport=httpx.MockTransport(handler),
+        allow_technical_repair=True,
+    )
+    result = asyncio.run(
+        provider.extract_batch(
+            [
+                {
+                    "message_id": 1,
+                    "message_date": "2026-10-09T08:55:00+03:00",
+                    "text": "ДЗ: номера 1–3",
+                    "is_target": True,
+                }
+            ],
+            "Europe/Moscow",
+            target_message_id=1,
+        )
+    )
+
+    assert len(requests) == 2
+    assert result.batch.assignments[0].title == "Задачи"
+    assert result.usage.prompt_tokens == 600
+    assert result.usage.completion_tokens == 200
+    assert result.diagnostics == {
+        "technical_repair_attempted": 1,
+        "technical_repair_succeeded": 1,
+    }
+    stored = json.loads(result.raw_provider_response)
+    assert stored["initial_provider_response"] == '{"assignments": ['
+    assert stored["repair_provider_response"] == repaired
+
+
+def test_deep_batch_repairs_truncated_response_at_most_once():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=response('{"assignments": [', finish="length"))
+
+    provider = DeepSeekProvider(
+        "test-key",
+        transport=httpx.MockTransport(handler),
+        allow_technical_repair=True,
+    )
+    with pytest.raises(ProviderFailure) as error:
+        asyncio.run(
+            provider.extract_batch(
+                [
+                    {
+                        "message_id": 1,
+                        "message_date": "2026-10-09T08:55:00+03:00",
+                        "text": "ДЗ: номера 1–3",
+                        "is_target": True,
+                    }
+                ],
+                "Europe/Moscow",
+                target_message_id=1,
+            )
+        )
+
+    assert error.value.code == "incomplete_output"
+    assert error.value.usage.prompt_tokens == 600
+    assert len(requests) == 2
+
+
+def test_deep_batch_does_not_repair_semantically_invalid_proposal():
+    requests = []
+    malformed = facts(source_message_ids=[1], confidence=101)
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json=response(json.dumps({"assignments": [malformed], "online_lessons": []})),
+        )
+
+    provider = DeepSeekProvider("test-key", transport=httpx.MockTransport(handler))
+    result = asyncio.run(
+        provider.extract_batch(
+            [
+                {
+                    "message_id": 1,
+                    "message_date": "2026-10-09T08:55:00+03:00",
+                    "text": "ДЗ: номера 1–3",
+                    "is_target": True,
+                }
+            ],
+            "Europe/Moscow",
+            target_message_id=1,
+        )
+    )
+
+    assert len(requests) == 1
+    assert result.batch.assignments == []
+    assert result.rejected_proposals[0].reason_code == "rejected_assignment_schema"
+    assert result.diagnostics == {"rejected_assignment_schema": 1}
+    assert result.raw_proposal_count == 1
 
 
 def test_deep_batch_reports_missing_target_instead_of_failing_entire_response():

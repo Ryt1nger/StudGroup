@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.main import Settings
 from studgroup.models import OwnerIncident, OwnerIncidentEpisode
-from studgroup.processing import adopt_incident_episode, process_next
+from studgroup.processing import (
+    adopt_incident_episode,
+    process_next,
+    purge_expired_analysis_outcomes,
+)
 
 settings = Settings()
 
@@ -208,6 +212,7 @@ async def sweep_once(config=None, provider=None):
     config = config or settings
     engine = create_async_engine(config.database_url, pool_pre_ping=True)
     try:
+        await purge_expired_analysis_outcomes(engine)
         status = await process_next(engine, config, provider)
         await flush_incidents(engine, config)
         return {"status": status, "checked_at": datetime.now(UTC).isoformat()}

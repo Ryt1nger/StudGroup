@@ -305,6 +305,41 @@ class AIAttempt(Base):
     metrics: Mapped[str | None] = mapped_column(Text)
 
 
+class AnalysisApplicationOutcome(Base):
+    __tablename__ = "analysis_application_outcomes"
+    __table_args__ = (
+        UniqueConstraint("attempt_id", "stage", "proposal_kind", "proposal_ordinal"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    attempt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ai_attempts.id", ondelete="CASCADE"), index=True
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ai_jobs.id", ondelete="CASCADE"), index=True
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    source_revision: Mapped[int] = mapped_column(Integer)
+    analysis_generation: Mapped[int] = mapped_column(Integer)
+    stage: Mapped[str] = mapped_column(String(24))
+    proposal_kind: Mapped[str] = mapped_column(String(24), default="summary")
+    proposal_ordinal: Mapped[int] = mapped_column(Integer, default=-1)
+    technical_status: Mapped[str] = mapped_column(String(32))
+    academic_status: Mapped[str | None] = mapped_column(String(32))
+    application_status: Mapped[str | None] = mapped_column(String(32))
+    reason_code: Mapped[str] = mapped_column(String(64))
+    source_message_ids: Mapped[str | None] = mapped_column(Text)
+    diagnostics: Mapped[str | None] = mapped_column(Text)
+    provider_payload_sha256: Mapped[str | None] = mapped_column(String(64))
+    raw_provider_response: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String(64))
+    prompt_version: Mapped[str | None] = mapped_column(String(64))
+    schema_version: Mapped[str] = mapped_column(String(32), default="outcome-1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class OwnerIncident(Base):
     __tablename__ = "owner_incidents"
     code: Mapped[str] = mapped_column(String(64), primary_key=True)

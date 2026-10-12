@@ -10,6 +10,7 @@ from studgroup.ai import (
     BatchExtraction,
     BatchResult,
     ProviderFailure,
+    RejectedProposal,
     SourcedExtraction,
     TokenUsage,
 )
@@ -20,6 +21,7 @@ from studgroup.models import (
     AICandidate,
     AIControl,
     AIJob,
+    AnalysisApplicationOutcome,
     Group,
     GroupAIProfile,
     GroupTopic,
@@ -28,7 +30,7 @@ from studgroup.models import (
     RawMessage,
     SchedulePattern,
 )
-from studgroup.processing import process_next, retain_until
+from studgroup.processing import process_next, purge_expired_analysis_outcomes, retain_until
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -118,6 +120,23 @@ def test_worker_publishes_once_and_records_actual_cost(client):
             assert (await db.get(AIControl, 1)).spent_usd == attempt.charged_usd
 
     asyncio.run(billing())
+
+
+def test_expired_analysis_outcomes_are_purged_independently(client):
+    source(client)
+    assert run(client, Provider()) == "completed"
+
+    async def expire_and_purge():
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (await db.scalars(select(AnalysisApplicationOutcome))).all()
+            assert rows
+            for row in rows:
+                row.delete_at = datetime.now(UTC) - timedelta(seconds=1)
+            await db.commit()
+        assert await purge_expired_analysis_outcomes(client.app.state.engine) == len(rows)
+
+    asyncio.run(expire_and_purge())
+    assert count(client, AnalysisApplicationOutcome) == 0
 
 
 def test_structure_map_precedes_generation_scoped_post_install_analysis(client):
@@ -905,6 +924,90 @@ def test_multiple_tasks_are_saved_without_silently_dropping_one(client):
     assert count(client, Homework) == 0
     assert count(client, AICandidate) == 2
     assert run(client, MultipleProvider()) == "idle"
+
+
+def test_all_rejected_is_durable_and_not_a_clean_empty_success(client):
+    source(client)
+
+    class RejectedProvider(Provider):
+        async def extract_batch(self, *args, **kwargs):
+            return BatchResult(
+                batch=BatchExtraction(assignments=[]),
+                usage=TokenUsage(prompt_tokens=100, completion_tokens=30),
+                model="deepseek-flash",
+                prompt_version="test",
+                diagnostics={"rejected_assignment_schema": 1},
+                raw_proposal_count=1,
+                rejected_proposals=[
+                    RejectedProposal(
+                        proposal_kind="assignment",
+                        proposal_ordinal=0,
+                        reason_code="rejected_assignment_schema",
+                    )
+                ],
+                provider_payload_sha256="a" * 64,
+                raw_provider_response='{"assignments":[{"broken":true}]}',
+            )
+
+    assert (
+        run(client, RejectedProvider(), ai_store_raw_provider_responses=True) == "completed"
+    )
+    assert count(client, Homework) == 0
+    assert count(client, AICandidate) == 0
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage))
+            job = await db.scalar(select(AIJob))
+            outcomes = (
+                await db.scalars(
+                    select(AnalysisApplicationOutcome).order_by(
+                        AnalysisApplicationOutcome.proposal_kind
+                    )
+                )
+            ).all()
+            assert raw.processing_state == "needs_context"
+            assert job.state == "done"
+            assert job.last_error == "all_items_rejected"
+            assert len(outcomes) == 2
+            summary = next(row for row in outcomes if row.proposal_kind == "summary")
+            rejected = next(row for row in outcomes if row.proposal_kind == "assignment")
+            assert summary.academic_status == "all_items_rejected"
+            assert summary.application_status == "review_required"
+            assert summary.raw_provider_response == '{"assignments":[{"broken":true}]}'
+            assert rejected.reason_code == "rejected_assignment_schema"
+            assert rejected.raw_provider_response is None
+
+    asyncio.run(inspect())
+
+
+def test_valid_deep_empty_has_distinct_outcome_and_no_raw_trace_by_default(client):
+    source(client)
+
+    class EmptyProvider(Provider):
+        async def extract_batch(self, *args, **kwargs):
+            return BatchResult(
+                batch=BatchExtraction(assignments=[]),
+                usage=TokenUsage(prompt_tokens=100, completion_tokens=10),
+                model="deepseek-flash",
+                prompt_version="test",
+                explicit_empty=True,
+                provider_payload_sha256="b" * 64,
+                raw_provider_response='{"assignments":[]}',
+            )
+
+    assert run(client, EmptyProvider()) == "completed"
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage))
+            outcome = await db.scalar(select(AnalysisApplicationOutcome))
+            assert raw.processing_state == "completed"
+            assert outcome.academic_status == "deep_empty_valid"
+            assert outcome.application_status == "none"
+            assert outcome.raw_provider_response is None
+
+    asyncio.run(inspect())
 
 
 def test_inferred_date_is_not_shifted_by_repeated_missing_deadline(client):
