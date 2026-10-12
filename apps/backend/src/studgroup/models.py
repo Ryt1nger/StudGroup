@@ -157,7 +157,7 @@ class Homework(Base):
         ForeignKey("groups.id", ondelete="CASCADE"), index=True
     )
     raw_message_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("raw_messages.id", ondelete="SET NULL"), unique=True
+        ForeignKey("raw_messages.id", ondelete="SET NULL"), index=True
     )
     subject_id: Mapped[uuid.UUID] = mapped_column(Uuid)
     subject_name: Mapped[str] = mapped_column(String(255))
@@ -523,6 +523,19 @@ class CanonicalItemRevision(Base):
     actor: Mapped[str] = mapped_column(String(24))
     snapshot_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CanonicalProjectionLink(Base):
+    __tablename__ = "canonical_projection_links"
+    __table_args__ = (UniqueConstraint("entity_type", "entity_id"),)
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("canonical_academic_items.id", ondelete="CASCADE"), primary_key=True
+    )
+    entity_type: Mapped[str] = mapped_column(String(16))
+    entity_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    projected_revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class OwnerIncident(Base):

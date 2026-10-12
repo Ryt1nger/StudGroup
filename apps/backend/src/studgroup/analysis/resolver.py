@@ -40,6 +40,8 @@ async def resolve_proposal(
         return Resolution("review", item, "proposal_requires_review")
     if action in {"cancel", "reschedule", "update"} and item is None:
         return Resolution("review", None, "explicit_item_identity_required")
+    if item is not None and proposal.destination != item.destination:
+        return Resolution("review", item, "destination_change_requires_new_item")
     if item is None:
         item = CanonicalAcademicItem(
             group_id=group_id,

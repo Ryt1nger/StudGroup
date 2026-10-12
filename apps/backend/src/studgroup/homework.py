@@ -69,7 +69,7 @@ async def representation(db, row, user, now):
         )
     )
     verification_state = row.verification_state
-    if verification_state == "needs_clarification" and (
+    if verification_state in {"needs_clarification", "inferred"} and (
         membership is None or membership.role not in {"headman", "deputy"}
     ):
         verification_state = "from_group_message"

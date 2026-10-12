@@ -220,3 +220,36 @@ def test_schedule_inferred_deadline_remains_distinguishable(client):
             assert result.item.deadline_basis == "schedule_inferred"
 
     asyncio.run(run())
+
+
+def test_destination_change_requires_a_new_explicit_item(client):
+    async def run():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            await seed_source(db, group)
+            original = proposal()
+            created = await resolve_proposal(
+                db,
+                group_id=group.id,
+                proposal=original,
+                edited_card=edited(original),
+                now=NOW,
+            )
+            changed = proposal()
+            changed.destination = "deadline"
+            changed.semantic_kind = "test"
+            result = await resolve_proposal(
+                db,
+                group_id=group.id,
+                proposal=changed,
+                edited_card=edited(changed),
+                now=NOW,
+                action="update",
+                existing_item_id=created.item.id,
+                expected_item_revision=1,
+            )
+            assert result.action == "review"
+            assert result.reason_code == "destination_change_requires_new_item"
+            assert created.item.destination == "task"
+
+    asyncio.run(run())
