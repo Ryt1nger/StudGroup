@@ -470,6 +470,61 @@ class GroupKnowledgeHistory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class CanonicalAcademicItem(Base):
+    __tablename__ = "canonical_academic_items"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    destination: Mapped[str] = mapped_column(String(16))
+    semantic_kind: Mapped[str] = mapped_column(String(32))
+    subject: Mapped[str | None] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deadline_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    deadline_basis: Mapped[str] = mapped_column(String(32), default="unknown")
+    audience_scope: Mapped[str] = mapped_column(String(24), default="group")
+    audience_label: Mapped[str | None] = mapped_column(String(255))
+    state: Mapped[str] = mapped_column(String(24), default="active")
+    attention_reasons: Mapped[str] = mapped_column(Text, default="[]")
+    manual_lock: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CanonicalItemEvidence(Base):
+    __tablename__ = "canonical_item_evidence"
+    __table_args__ = (
+        UniqueConstraint("item_id", "item_revision", "raw_message_id", "source_revision", "fact_path"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("canonical_academic_items.id", ondelete="CASCADE"), index=True
+    )
+    item_revision: Mapped[int] = mapped_column(Integer)
+    raw_message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="CASCADE"), index=True
+    )
+    source_revision: Mapped[int] = mapped_column(Integer)
+    fact_path: Mapped[str] = mapped_column(String(64))
+
+
+class CanonicalItemRevision(Base):
+    __tablename__ = "canonical_item_revisions"
+    __table_args__ = (UniqueConstraint("item_id", "item_revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("canonical_academic_items.id", ondelete="CASCADE"), index=True
+    )
+    item_revision: Mapped[int] = mapped_column(Integer)
+    action: Mapped[str] = mapped_column(String(24))
+    actor: Mapped[str] = mapped_column(String(24))
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class OwnerIncident(Base):
     __tablename__ = "owner_incidents"
     code: Mapped[str] = mapped_column(String(64), primary_key=True)

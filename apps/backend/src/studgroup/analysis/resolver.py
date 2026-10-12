@@ -1,0 +1,101 @@
+"""Transactional create/update/cancel resolver with explicit identity and locks."""
+
+import json
+from dataclasses import dataclass
+
+from studgroup.analysis.entities import item_snapshot
+from studgroup.analysis.evidence import add_item_evidence, resolve_evidence
+from studgroup.models import CanonicalAcademicItem, CanonicalItemRevision
+
+
+@dataclass(frozen=True)
+class Resolution:
+    action: str
+    item: CanonicalAcademicItem | None
+    reason_code: str
+
+
+async def resolve_proposal(
+    db,
+    *,
+    group_id,
+    proposal,
+    edited_card,
+    now,
+    action="upsert",
+    existing_item_id=None,
+    expected_item_revision=None,
+):
+    sources = await resolve_evidence(db, group_id, proposal)
+    item = None
+    if existing_item_id is not None:
+        item = await db.get(CanonicalAcademicItem, existing_item_id, with_for_update=True)
+        if item is None or item.group_id != group_id:
+            return Resolution("review", None, "related_item_unavailable")
+        if expected_item_revision is None or item.revision != expected_item_revision:
+            return Resolution("stale", item, "stale_item_revision")
+        if item.manual_lock:
+            return Resolution("blocked_by_lock", item, "manual_lock")
+    if edited_card.visibility == "held" or action == "review":
+        return Resolution("review", item, "proposal_requires_review")
+    if action in {"cancel", "reschedule", "update"} and item is None:
+        return Resolution("review", None, "explicit_item_identity_required")
+    if item is None:
+        item = CanonicalAcademicItem(
+            group_id=group_id,
+            destination=proposal.destination,
+            semantic_kind=proposal.semantic_kind,
+            subject=proposal.subject,
+            title=edited_card.title,
+            description=edited_card.description,
+            deadline_at=proposal.deadline.at,
+            deadline_date_only=proposal.deadline.date_only,
+            deadline_basis=proposal.deadline.basis,
+            audience_scope=proposal.audience.scope,
+            audience_label=proposal.audience.label,
+            state="active",
+            attention_reasons=json.dumps(edited_card.attention_reasons, ensure_ascii=False),
+            manual_lock=False,
+            revision=1,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(item)
+        await db.flush()
+        resolved_action = "create"
+    else:
+        before = item_snapshot(item)
+        if action == "cancel":
+            item.state = "cancelled"
+        else:
+            item.destination = proposal.destination
+            item.semantic_kind = proposal.semantic_kind
+            item.subject = proposal.subject
+            item.title = edited_card.title
+            item.description = edited_card.description
+            item.deadline_at = proposal.deadline.at
+            item.deadline_date_only = proposal.deadline.date_only
+            item.deadline_basis = proposal.deadline.basis
+            item.audience_scope = proposal.audience.scope
+            item.audience_label = proposal.audience.label
+            item.attention_reasons = json.dumps(
+                edited_card.attention_reasons, ensure_ascii=False
+            )
+        item.updated_at = now
+        after_without_revision = item_snapshot(item)
+        if before == after_without_revision:
+            return Resolution("no_change", item, "canonical_item_unchanged")
+        item.revision += 1
+        resolved_action = "cancel" if action == "cancel" else "update"
+    add_item_evidence(db, item, proposal, sources)
+    db.add(
+        CanonicalItemRevision(
+            item_id=item.id,
+            item_revision=item.revision,
+            action=resolved_action,
+            actor="ai_shadow",
+            snapshot_json=item_snapshot(item),
+            created_at=now,
+        )
+    )
+    return Resolution(resolved_action, item, f"canonical_{resolved_action}")
