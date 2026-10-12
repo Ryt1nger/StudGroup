@@ -422,6 +422,54 @@ class SegmentSourceLink(Base):
     strength: Mapped[int] = mapped_column(Integer)
 
 
+class GroupKnowledgeFact(Base):
+    __tablename__ = "group_knowledge_facts"
+    __table_args__ = (UniqueConstraint("group_id", "fact_type", "normalized_key", "revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    fact_type: Mapped[str] = mapped_column(String(32))
+    normalized_key: Mapped[str] = mapped_column(String(255))
+    value_json: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="proposed")
+    confidence: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    verification_source: Mapped[str | None] = mapped_column(String(32))
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GroupKnowledgeEvidence(Base):
+    __tablename__ = "group_knowledge_evidence"
+    __table_args__ = (UniqueConstraint("fact_id", "raw_message_id", "source_revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    fact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("group_knowledge_facts.id", ondelete="CASCADE"), index=True
+    )
+    raw_message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="CASCADE"), index=True
+    )
+    source_revision: Mapped[int] = mapped_column(Integer)
+    evidence_role: Mapped[str] = mapped_column(String(32))
+
+
+class GroupKnowledgeHistory(Base):
+    __tablename__ = "group_knowledge_history"
+    __table_args__ = (UniqueConstraint("fact_id", "fact_revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    fact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("group_knowledge_facts.id", ondelete="CASCADE"), index=True
+    )
+    fact_revision: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(24))
+    value_json: Mapped[str] = mapped_column(Text)
+    reason_code: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class OwnerIncident(Base):
     __tablename__ = "owner_incidents"
     code: Mapped[str] = mapped_column(String(64), primary_key=True)
