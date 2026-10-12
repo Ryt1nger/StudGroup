@@ -368,6 +368,60 @@ class AnalysisApplicationOutcome(Base):
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class AnalysisCursor(Base):
+    __tablename__ = "analysis_cursors"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    next_sequence: Mapped[int] = mapped_column(Integer, default=1)
+    last_completed_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AnalysisBatch(Base):
+    __tablename__ = "analysis_batches"
+    __table_args__ = (UniqueConstraint("group_id", "sequence"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(24), default="pending")
+    source_versions: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ConversationSegment(Base):
+    __tablename__ = "conversation_segments"
+    __table_args__ = (UniqueConstraint("group_id", "stable_key", "version"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    stable_key: Mapped[str] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(24), default="open")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SegmentSourceLink(Base):
+    __tablename__ = "segment_source_links"
+    __table_args__ = (UniqueConstraint("segment_id", "raw_message_id", "source_revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    segment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conversation_segments.id", ondelete="CASCADE"), index=True
+    )
+    raw_message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="CASCADE"), index=True
+    )
+    source_revision: Mapped[int] = mapped_column(Integer)
+    link_reason: Mapped[str] = mapped_column(String(32))
+    strength: Mapped[int] = mapped_column(Integer)
+
+
 class OwnerIncident(Base):
     __tablename__ = "owner_incidents"
     code: Mapped[str] = mapped_column(String(64), primary_key=True)
