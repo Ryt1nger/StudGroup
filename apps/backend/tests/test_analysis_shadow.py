@@ -32,6 +32,7 @@ from studgroup.analysis.routing import (
     get_route,
 )
 from studgroup.analysis.shadow import persist_shadow_summary, run_shadow
+from studgroup.analysis.shadow_worker import purge_expired_shadow_runs
 from studgroup.main import Settings
 from studgroup.models import (
     AcademicDeadline,
@@ -407,6 +408,30 @@ def test_shadow_captures_source_even_when_legacy_relevance_filters_it(client):
             assert row.state == "completed"
 
     asyncio.run(inspect())
+
+
+def test_expired_shadow_diagnostics_are_physically_purged(client):
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            data = analysis_input(group.id)
+            result = await run_shadow(FakeProvider(), data, [])
+            persist_shadow_summary(
+                db,
+                group_id=group.id,
+                batch_id=None,
+                analysis_input=data,
+                result=result,
+                metrics={},
+                charged_usd=0,
+                now=NOW - timedelta(days=31),
+            )
+            await db.commit()
+        assert await purge_expired_shadow_runs(client.app.state.engine, NOW) == 1
+        async with AsyncSession(client.app.state.engine) as db:
+            assert await db.scalar(select(func.count()).select_from(ShadowEvaluationRun)) == 0
+
+    asyncio.run(run())
 
 
 def test_evaluation_matches_entities_not_raw_proposal_counts():

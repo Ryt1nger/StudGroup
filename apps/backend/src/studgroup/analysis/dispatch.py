@@ -1,6 +1,10 @@
 """Worker dispatch boundary; legacy is default and new groups never reach legacy."""
 
-from studgroup.analysis.shadow_worker import enqueue_next_shadow, process_shadow_next
+from studgroup.analysis.shadow_worker import (
+    enqueue_next_shadow,
+    process_shadow_next,
+    purge_expired_shadow_runs,
+)
 from studgroup.processing import process_next
 
 
@@ -12,6 +16,7 @@ async def dispatch_next(engine, settings, provider=None, now=None):
     mistakenly configured new group is safely left queued instead of being published by
     both engines.
     """
+    await purge_expired_shadow_runs(engine, now=now)
     shadow_status = await process_shadow_next(
         engine, settings, provider=provider, now=now
     )

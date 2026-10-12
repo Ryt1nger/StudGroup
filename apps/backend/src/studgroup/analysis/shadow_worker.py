@@ -4,7 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.ai import ProviderFailure
@@ -37,6 +37,16 @@ def _cost(usage):
         + Decimal(hit) * Decimal("0.006")
         + Decimal(usage.completion_tokens) * Decimal("1.20")
     ) / Decimal(1000000)
+
+
+async def purge_expired_shadow_runs(engine, now=None):
+    now = _utc(now or datetime.now(UTC))
+    async with AsyncSession(engine) as db:
+        result = await db.execute(
+            delete(ShadowEvaluationRun).where(ShadowEvaluationRun.delete_at <= now)
+        )
+        await db.commit()
+        return result.rowcount or 0
 
 
 async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
