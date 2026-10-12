@@ -35,6 +35,7 @@ from studgroup.models import (
     Group,
     GroupAIActivity,
     GroupAIProfile,
+    GroupAnalysisSettings,
     GroupTopic,
     Homework,
     MessageAttachment,
@@ -306,7 +307,7 @@ async def incident_once(db, code, now, detail=None):
     return await incident(db, code, now, detail=detail)
 
 
-async def claim(engine, settings, now):
+async def claim(engine, settings, now, *, writer="legacy"):
     filter_started = monotonic()
     filtered_sources = {}
     scheduled = settings.ai_schedule_enabled
@@ -513,6 +514,13 @@ async def claim(engine, settings, now):
             gate_filters.append(
                 or_(RawMessage.group_id != group_id, RawMessage.id.in_(allowed_ids))
             )
+        configured_new = exists(
+            select(GroupAnalysisSettings.group_id).where(
+                GroupAnalysisSettings.group_id == RawMessage.group_id,
+                GroupAnalysisSettings.analysis_mode == "new",
+            )
+        )
+        writer_scope = configured_new if writer == "new" else ~configured_new
         raws = (
             await db.scalars(
                 select(RawMessage)
@@ -526,6 +534,7 @@ async def claim(engine, settings, now):
                     or_(RawMessage.delete_at > now, import_scope, backfill_scope),
                     Group.pilot_authorized.is_(True),
                     Group.status == "active",
+                    writer_scope,
                     ~already_processed,
                     *(
                         [
@@ -1266,7 +1275,7 @@ async def process_next(engine, settings, provider=None, now=None):
             await incident(db, "invalid_api_key", now)
             await db.commit()
         return "not_configured"
-    claimed = await claim(engine, settings, now)
+    claimed = await claim(engine, settings, now, writer="legacy")
     if claimed is None:
         async with AsyncSession(engine) as db:
             from studgroup.group_structure import complete_ready_backfills

@@ -9,11 +9,11 @@ from celery import Celery
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from studgroup.analysis.dispatch import dispatch_next
 from studgroup.main import Settings
 from studgroup.models import OwnerIncident, OwnerIncidentEpisode
 from studgroup.processing import (
     adopt_incident_episode,
-    process_next,
     purge_expired_analysis_outcomes,
 )
 
@@ -213,7 +213,7 @@ async def sweep_once(config=None, provider=None):
     engine = create_async_engine(config.database_url, pool_pre_ping=True)
     try:
         await purge_expired_analysis_outcomes(engine)
-        status = await process_next(engine, config, provider)
+        status = await dispatch_next(engine, config, provider)
         await flush_incidents(engine, config)
         return {"status": status, "checked_at": datetime.now(UTC).isoformat()}
     finally:

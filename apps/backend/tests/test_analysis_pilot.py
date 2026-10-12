@@ -12,9 +12,11 @@ from studgroup.analysis.contracts import (
     ANALYSIS_SCHEMA_VERSION,
     SourceMessage,
 )
+from studgroup.analysis.dispatch import dispatch_next
 from studgroup.analysis.pilot import emergency_rollback, transition_mode
 from studgroup.analysis.validation import validate_provider_content
 from studgroup.analysis.writer import apply_validated_batch
+from studgroup.main import Settings
 from studgroup.models import (
     Group,
     GroupAnalysisModeHistory,
@@ -186,5 +188,50 @@ def test_pilot_transition_and_rollback_preserve_product_rows(client):
             assert await db.scalar(
                 select(func.count()).select_from(GroupAnalysisModeHistory)
             ) == 3
+
+    asyncio.run(run())
+
+
+def test_new_mode_cannot_fall_through_to_legacy_worker(client):
+    class ForbiddenProvider:
+        calls = 0
+
+        async def extract_batch(self, *args, **kwargs):
+            self.calls += 1
+            raise AssertionError("legacy provider must not run for new mode")
+
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            await seed_source(db, group)
+            await transition_mode(
+                db,
+                group_id=group.id,
+                target_mode="shadow",
+                actor="test",
+                reason="route rehearsal",
+                now=NOW,
+            )
+            await transition_mode(
+                db,
+                group_id=group.id,
+                target_mode="new",
+                actor="test",
+                reason="route isolation",
+                now=NOW,
+                gate_approved=True,
+            )
+            await db.commit()
+        provider = ForbiddenProvider()
+        status = await dispatch_next(
+            client.app.state.engine,
+            Settings(ai_enabled=True, ai_total_budget_usd=100, ai_daily_group_budget_usd=1),
+            provider,
+            now=NOW,
+        )
+        assert status == "idle"
+        assert provider.calls == 0
+        async with AsyncSession(client.app.state.engine) as db:
+            assert await db.scalar(select(func.count()).select_from(Homework)) == 0
 
     asyncio.run(run())

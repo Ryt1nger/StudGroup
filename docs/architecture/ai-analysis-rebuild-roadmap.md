@@ -739,3 +739,12 @@ architecture alone.
   concurrency run, held-out gold evaluation, paid shadow observation and production pilot are
   still required. Runtime/Celery dispatch into the new router is also still required. Therefore
   the result is **not approved for production `shadow` or `new` mode**.
+
+### Integration follow-up
+
+- Celery and embedded runtime enter through the analysis dispatch boundary. Legacy claiming
+  excludes groups marked `new`, preventing dual publication while the new worker path is absent.
+- A disposable PostgreSQL 16.15 server completed upgrade/downgrade/re-upgrade through 0031.
+  The complete suite passed with **423 passed, 0 skipped** including the concurrent claim test.
+- C+ shadow execution is not yet connected to worker dispatch, and `new` groups are intentionally
+  left queued. Current verdict remains **offline-ready**, not shadow-ready.

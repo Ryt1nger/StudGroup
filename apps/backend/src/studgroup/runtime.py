@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.processing import incident, process_next
+from studgroup.analysis.dispatch import dispatch_next
+from studgroup.processing import incident
 
 
 async def processing_loop(engine, settings, pause=5):
@@ -20,7 +21,7 @@ async def processing_loop(engine, settings, pause=5):
     previous = None
     while True:
         try:
-            status = await process_next(engine, settings)
+            status = await dispatch_next(engine, settings)
             if status != previous:
                 logger.info("AI_PROCESSING_STATUS %s", status)
                 previous = status
