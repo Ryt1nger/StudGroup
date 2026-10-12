@@ -23,7 +23,8 @@ class LegacyStrategy:
                 "topic_id": row.topic_id,
                 "topic_name": row.topic_name,
                 "text": row.text,
-                "attachment_kinds": row.attachment_kinds,
+                "attachments": [attachment.model_dump() for attachment in row.attachments],
+                "attachment_kinds": [attachment.kind for attachment in row.attachments],
             }
             for row in analysis_input.messages
         ]

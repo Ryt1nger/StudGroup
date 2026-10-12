@@ -38,6 +38,28 @@ def test_topic_target_uses_same_topic_for_ordinary_neighborhood():
     assert context[0]["topic_name"] == "Топик 10"
 
 
+def test_context_exposes_only_pseudonym_and_attachment_kinds():
+    messages = [
+        SimpleNamespace(
+            message_id=1,
+            reply_to_message_id=None,
+            message_date=datetime(2026, 10, 12, 9, tzinfo=UTC),
+            text="",
+            message_thread_id=None,
+            topic_name=None,
+            author_alias="member-deadbeef",
+            attachment_kinds=["photo"],
+            attachments=[{"kind": "photo", "processing_state": "metadata_only"}],
+        )
+    ]
+    context = build_context(messages, 1)
+    assert context[0]["author_alias"] == "member-deadbeef"
+    assert context[0]["attachment_kinds"] == ["photo"]
+    assert context[0]["attachments"] == [
+        {"kind": "photo", "processing_state": "metadata_only"}
+    ]
+
+
 def test_topic_target_can_use_explicit_cross_topic_subject_or_reply():
     context = build_context(
         [

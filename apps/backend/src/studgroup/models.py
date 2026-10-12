@@ -116,6 +116,34 @@ class RawMessage(Base):
     live_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class MessageAttachment(Base):
+    __tablename__ = "message_attachments"
+    __table_args__ = (
+        UniqueConstraint("raw_message_id", "source_revision", "kind", "stable_file_id"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    raw_message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="CASCADE"), index=True
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    source_revision: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(24))
+    stable_file_id: Mapped[str] = mapped_column(String(255))
+    telegram_file_id: Mapped[str] = mapped_column(String(512))
+    file_name: Mapped[str | None] = mapped_column(String(512))
+    mime_type: Mapped[str | None] = mapped_column(String(255))
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    width: Mapped[int | None] = mapped_column(Integer)
+    height: Mapped[int | None] = mapped_column(Integer)
+    media_group_id: Mapped[str | None] = mapped_column(String(255))
+    processing_state: Mapped[str] = mapped_column(String(24), default="metadata_only")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class ReceivedUpdate(Base):
     __tablename__ = "received_updates"
     update_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

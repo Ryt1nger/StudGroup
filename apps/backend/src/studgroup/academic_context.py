@@ -115,6 +115,9 @@ def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
             "reply_to": m.reply_to_message_id,
             "topic_id": getattr(m, "message_thread_id", None),
             "topic_name": getattr(m, "topic_name", None),
+            "author_alias": getattr(m, "author_alias", None),
+            "attachment_kinds": getattr(m, "attachment_kinds", []),
+            "attachments": getattr(m, "attachments", []),
             "text": m.text,
             "is_target": m.message_id == target_id,
         }

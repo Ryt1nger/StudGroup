@@ -1,5 +1,6 @@
-"""Durable text inbox; acknowledgement follows commit, with no queue-only data."""
+"""Durable source inbox; acknowledgement follows commit, with no queue-only data."""
 
+import hashlib
 import hmac
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -11,7 +12,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, database
-from studgroup.models import Group, GroupAIProfile, GroupTopic, RawMessage, ReceivedUpdate
+from studgroup.models import (
+    Group,
+    GroupAIProfile,
+    GroupTopic,
+    MessageAttachment,
+    RawMessage,
+    ReceivedUpdate,
+)
 
 router = APIRouter(prefix="/v1/telegram", include_in_schema=False)
 
@@ -56,6 +64,16 @@ class ForumTopicEdited(BaseModel):
     name: str | None = Field(default=None, max_length=255)
 
 
+class TelegramFile(BaseModel):
+    file_id: str = Field(max_length=512)
+    file_unique_id: str | None = Field(default=None, max_length=255)
+    file_name: str | None = Field(default=None, max_length=512)
+    mime_type: str | None = Field(default=None, max_length=255)
+    file_size: int | None = Field(default=None, ge=0)
+    width: int | None = Field(default=None, ge=0)
+    height: int | None = Field(default=None, ge=0)
+
+
 class Message(BaseModel):
     message_id: int
     date: int = Field(ge=0)
@@ -72,6 +90,13 @@ class Message(BaseModel):
     new_chat_members: list[ChatMember] = Field(default_factory=list, max_length=100)
     users_shared: UsersShared | None = None
     forward_origin: ForwardOrigin | None = None
+    media_group_id: str | None = Field(default=None, max_length=255)
+    photo: list[TelegramFile] = Field(default_factory=list, max_length=20)
+    document: TelegramFile | None = None
+    video: TelegramFile | None = None
+    audio: TelegramFile | None = None
+    voice: TelegramFile | None = None
+    animation: TelegramFile | None = None
 
 
 class CallbackQuery(BaseModel):
@@ -156,6 +181,7 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
     if message.text is None and message.caption:
         message.text = message.caption
 
+    attachments = attachment_metadata(message)
     if message.text is None and update.edited_message is not None:
         previous = await db.scalar(
             select(RawMessage.id).where(
@@ -165,6 +191,9 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
         )
         if previous:
             message.text = ""  # Removed attachment caption revokes its old joining URL.
+    if message.text is None and attachments:
+        # Persist media-only sources without pretending their contents were understood.
+        message.text = ""
     if message.text is None:
         from studgroup.ai_schedule import signal
 
@@ -232,6 +261,8 @@ async def store_message(db, group, message, *, imported=False):
             live_received_at=received,
         )
         db.add(row)
+        await db.flush()
+        await sync_attachments(db, row, attachment_metadata(message), received or original_date)
         if received:
             from studgroup.ai_schedule import signal
 
@@ -243,10 +274,15 @@ async def store_message(db, group, message, *, imported=False):
             saved_version = saved_version.replace(tzinfo=UTC)
         if version > saved_version:
             reply_id = message.reply_to_message.message_id if message.reply_to_message else None
+            supplied_attachments = attachment_metadata(message)
+            attachment_changed = await attachments_differ(
+                db, row.id, supplied_attachments
+            )
             if (
                 row.text == message.text
                 and row.reply_to_message_id == reply_id
                 and row.message_thread_id == message.message_thread_id
+                and not attachment_changed
             ):
                 row.version_date = version
                 return "unchanged"
@@ -257,6 +293,8 @@ async def store_message(db, group, message, *, imported=False):
             row.message_thread_id = message.message_thread_id
             row.version_date = version
             row.revision += 1
+            if attachment_changed:
+                await sync_attachments(db, row, supplied_attachments, datetime.now(UTC))
             row.analysis_generation = generation
             row.processing_state = "pending"
             if not imported:
@@ -267,6 +305,107 @@ async def store_message(db, group, message, *, imported=False):
                 await signal(db, group.id, row.live_received_at)
             return "updated"
     return "unchanged"
+
+
+def attachment_metadata(message):
+    files = []
+    if message.photo:
+        photo = max(
+            message.photo,
+            key=lambda item: (item.file_size or 0, (item.width or 0) * (item.height or 0)),
+        )
+        files.append(("photo", photo))
+    files.extend(
+        (kind, item)
+        for kind in ("document", "video", "audio", "voice", "animation")
+        if (item := getattr(message, kind)) is not None
+    )
+    return [
+        {
+            "kind": kind,
+            "stable_file_id": item.file_unique_id
+            or hashlib.sha256(item.file_id.encode("utf-8")).hexdigest(),
+            "telegram_file_id": item.file_id,
+            "file_name": item.file_name,
+            "mime_type": item.mime_type,
+            "size_bytes": item.file_size,
+            "width": item.width,
+            "height": item.height,
+            "media_group_id": message.media_group_id,
+        }
+        for kind, item in files
+    ]
+
+
+def attachment_signature(item):
+    return tuple(
+        item[key]
+        for key in (
+            "kind",
+            "stable_file_id",
+            "telegram_file_id",
+            "file_name",
+            "mime_type",
+            "size_bytes",
+            "width",
+            "height",
+            "media_group_id",
+        )
+    )
+
+
+async def active_attachments(db, raw_message_id):
+    return (
+        await db.scalars(
+            select(MessageAttachment).where(
+                MessageAttachment.raw_message_id == raw_message_id,
+                MessageAttachment.active.is_(True),
+            )
+        )
+    ).all()
+
+
+async def attachments_differ(db, raw_message_id, supplied):
+    existing = await active_attachments(db, raw_message_id)
+    existing_signatures = {
+        attachment_signature(
+            {
+                "kind": row.kind,
+                "stable_file_id": row.stable_file_id,
+                "telegram_file_id": row.telegram_file_id,
+                "file_name": row.file_name,
+                "mime_type": row.mime_type,
+                "size_bytes": row.size_bytes,
+                "width": row.width,
+                "height": row.height,
+                "media_group_id": row.media_group_id,
+            }
+        )
+        for row in existing
+    }
+    return existing_signatures != {attachment_signature(item) for item in supplied}
+
+
+async def sync_attachments(db, raw, supplied, now):
+    existing = await active_attachments(db, raw.id)
+    if not await attachments_differ(db, raw.id, supplied):
+        return False
+    for row in existing:
+        row.active = False
+    for item in supplied:
+        db.add(
+            MessageAttachment(
+                raw_message_id=raw.id,
+                group_id=raw.group_id,
+                source_revision=raw.revision,
+                processing_state="metadata_only",
+                active=True,
+                created_at=now,
+                delete_at=raw.delete_at,
+                **item,
+            )
+        )
+    return True
 
 
 async def store_topic(db, group_id, message, now):

@@ -4,7 +4,7 @@ from datetime import UTC
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.models import Group, GroupAIProfile, GroupTopic, RawMessage
+from studgroup.models import Group, GroupAIProfile, GroupTopic, MessageAttachment, RawMessage
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -26,6 +26,14 @@ def rows(client):
     async def read():
         async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
             return list((await db.scalars(select(RawMessage))).all())
+
+    return asyncio.run(read())
+
+
+def attachments(client):
+    async def read():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            return list((await db.scalars(select(MessageAttachment))).all())
 
     return asyncio.run(read())
 
@@ -52,10 +60,72 @@ def test_delivery_is_durable_and_idempotent(client):
 def test_attachment_caption_is_saved_for_semantic_analysis(client):
     payload = delivery(text=None)
     payload["message"]["caption"] = "матан 16, это из сборника"
-    payload["message"]["document"] = {"file_id": "opaque"}
+    payload["message"]["document"] = {
+        "file_id": "opaque",
+        "file_unique_id": "stable-document",
+        "file_name": "task.pdf",
+        "mime_type": "application/pdf",
+        "file_size": 1234,
+    }
     assert send(client, payload).status_code == 200
     assert rows(client)[0].text == "матан 16, это из сборника"
     assert rows(client)[0].processing_state == "pending"
+    saved = attachments(client)
+    assert len(saved) == 1
+    assert saved[0].kind == "document"
+    assert saved[0].stable_file_id == "stable-document"
+    assert saved[0].processing_state == "metadata_only"
+
+
+def test_no_caption_photo_is_persisted_as_metadata_only_source(client):
+    payload = delivery(text=None)
+    payload["message"]["media_group_id"] = "album-1"
+    payload["message"]["photo"] = [
+        {
+            "file_id": "small",
+            "file_unique_id": "small-unique",
+            "width": 90,
+            "height": 90,
+            "file_size": 100,
+        },
+        {
+            "file_id": "large",
+            "file_unique_id": "large-unique",
+            "width": 1280,
+            "height": 720,
+            "file_size": 5000,
+        },
+    ]
+    assert send(client, payload).status_code == 200
+    saved_source = rows(client)[0]
+    saved_attachment = attachments(client)[0]
+    assert saved_source.text == ""
+    assert saved_source.processing_state == "pending"
+    assert saved_attachment.telegram_file_id == "large"
+    assert saved_attachment.media_group_id == "album-1"
+    assert saved_attachment.source_revision == 1
+
+
+def test_attachment_edit_revisions_metadata_without_duplicate_active_rows(client):
+    original = delivery(text=None)
+    original["message"]["document"] = {
+        "file_id": "old",
+        "file_unique_id": "old-unique",
+    }
+    assert send(client, original).status_code == 200
+    edited = delivery(update_id=2, text=None, edited=1791200100)
+    edited["edited_message"]["document"] = {
+        "file_id": "new",
+        "file_unique_id": "new-unique",
+    }
+    assert send(client, edited).status_code == 200
+    assert rows(client)[0].revision == 2
+    saved = attachments(client)
+    assert len(saved) == 2
+    assert [(row.telegram_file_id, row.active) for row in saved] == [
+        ("old", False),
+        ("new", True),
+    ]
 
 
 def test_edit_updates_same_message_and_late_original_cannot_overwrite(client):

@@ -15,6 +15,14 @@ class StrictDTO(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
+class SourceAttachment(StrictDTO):
+    kind: Literal["photo", "document", "video", "audio", "voice", "animation"]
+    mime_type: str | None = Field(default=None, max_length=255)
+    size_bytes: int | None = Field(default=None, ge=0)
+    media_group_id: str | None = Field(default=None, max_length=255)
+    processing_state: Literal["metadata_only", "ready", "failed"] = "metadata_only"
+
+
 class SourceMessage(StrictDTO):
     telegram_message_id: int
     revision: int = Field(ge=1)
@@ -23,13 +31,13 @@ class SourceMessage(StrictDTO):
     reply_to_message_id: int | None = None
     topic_id: int | None = None
     topic_name: str | None = Field(default=None, max_length=255)
-    attachment_kinds: list[str] = Field(default_factory=list, max_length=20)
+    attachments: list[SourceAttachment] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
     def require_aware_timestamp(self):
         if self.message_date.utcoffset() is None:
             raise ValueError("source_timestamp_requires_offset")
-        if not self.text and not self.attachment_kinds:
+        if not self.text and not self.attachments:
             raise ValueError("source_requires_text_or_attachment")
         return self
 

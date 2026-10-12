@@ -37,6 +37,7 @@ from studgroup.models import (
     GroupAIProfile,
     GroupTopic,
     Homework,
+    MessageAttachment,
     OwnerIncident,
     OwnerIncidentEpisode,
     RawMessage,
@@ -816,6 +817,27 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
             await db.scalars(select(GroupTopic).where(GroupTopic.group_id == group.id))
         ).all()
     }
+    attachments = (
+        await db.scalars(
+            select(MessageAttachment).where(
+                MessageAttachment.raw_message_id.in_(indexed),
+                MessageAttachment.active.is_(True),
+            )
+        )
+    ).all()
+    attachment_kinds = {}
+    attachment_metadata = {}
+    for attachment in attachments:
+        attachment_kinds.setdefault(attachment.raw_message_id, []).append(attachment.kind)
+        attachment_metadata.setdefault(attachment.raw_message_id, []).append(
+            {
+                "kind": attachment.kind,
+                "mime_type": attachment.mime_type,
+                "size_bytes": attachment.size_bytes,
+                "media_group_id": attachment.media_group_id,
+                "processing_state": attachment.processing_state,
+            }
+        )
     messages = [
         SimpleNamespace(
             message_id=row.telegram_message_id,
@@ -824,6 +846,13 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
             text=row.text,
             message_thread_id=row.message_thread_id,
             topic_name=topic_names.get(row.message_thread_id),
+            author_alias=(
+                f"member-{uuid.uuid5(row.group_id, str(row.sender_id)).hex[:12]}"
+                if row.sender_id is not None
+                else None
+            ),
+            attachment_kinds=sorted(set(attachment_kinds.get(row.id, []))),
+            attachments=attachment_metadata.get(row.id, []),
         )
         for row in indexed.values()
     ]

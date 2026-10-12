@@ -17,6 +17,7 @@ from studgroup.analysis.contracts import (
     ANALYSIS_ENGINE_VERSION,
     ANALYSIS_SCHEMA_VERSION,
     AnalysisInput,
+    SourceAttachment,
     SourceMessage,
 )
 from studgroup.analysis.legacy_strategy import LegacyStrategy
@@ -80,6 +81,18 @@ def test_contract_rejects_target_outside_versioned_source_envelope():
     payload["target_message_ids"] = [999]
     with pytest.raises(ValueError, match="target_outside_source_envelope"):
         AnalysisInput.model_validate(payload)
+
+
+def test_contract_accepts_media_only_source_without_invented_text():
+    source = SourceMessage(
+        telegram_message_id=11,
+        revision=1,
+        message_date=datetime(2026, 10, 12, 9, tzinfo=UTC),
+        text="",
+        attachments=[SourceAttachment(kind="photo")],
+    )
+    assert source.text == ""
+    assert source.attachments[0].processing_state == "metadata_only"
 
 
 def test_validation_preserves_valid_sibling_and_rejects_bad_evidence():
