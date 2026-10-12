@@ -538,6 +538,50 @@ class CanonicalProjectionLink(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class GroupAnalysisSettings(Base):
+    __tablename__ = "group_analysis_settings"
+    __table_args__ = (
+        CheckConstraint(
+            "analysis_mode IN ('legacy', 'shadow', 'new')",
+            name="group_analysis_mode",
+        ),
+        CheckConstraint(
+            "shadow_sample_percent >= 0 AND shadow_sample_percent <= 100",
+            name="shadow_sample_percent_range",
+        ),
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    analysis_mode: Mapped[str] = mapped_column(String(16), default="legacy")
+    engine_version: Mapped[str] = mapped_column(String(64), default="cplus-shadow-1")
+    shadow_daily_budget_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8))
+    shadow_sample_percent: Mapped[int] = mapped_column(Integer, default=100)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ShadowEvaluationRun(Base):
+    __tablename__ = "shadow_evaluation_runs"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("analysis_batches.id", ondelete="SET NULL"), index=True
+    )
+    source_snapshot_sha256: Mapped[str] = mapped_column(String(64))
+    engine_version: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(24))
+    metrics_json: Mapped[str | None] = mapped_column(Text)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    charged_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=Decimal(0))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class OwnerIncident(Base):
     __tablename__ = "owner_incidents"
     code: Mapped[str] = mapped_column(String(64), primary_key=True)

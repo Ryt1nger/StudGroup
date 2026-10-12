@@ -68,6 +68,29 @@ class EvidenceRef(StrictDTO):
     fact_paths: list[str] = Field(min_length=1, max_length=20)
 
 
+class ContextFact(StrictDTO):
+    fact: str = Field(min_length=1, max_length=1000)
+    evidence: list[EvidenceRef] = Field(min_length=1, max_length=24)
+
+
+class MemoryProposal(StrictDTO):
+    fact_type: Literal["subject_alias", "teacher_alias", "subject_teacher"]
+    normalized_key: str = Field(min_length=1, max_length=255)
+    value: dict[str, str]
+    confidence: int = Field(ge=0, le=100)
+    evidence: list[EvidenceRef] = Field(min_length=1, max_length=24)
+
+
+class ContextUnderstandingOutput(StrictDTO):
+    schema_version: Literal[ANALYSIS_SCHEMA_VERSION] = ANALYSIS_SCHEMA_VERSION
+    engine_version: Literal[ANALYSIS_ENGINE_VERSION] = ANALYSIS_ENGINE_VERSION
+    source_revision: int = Field(ge=1)
+    relevant_source_ids: list[int] = Field(default_factory=list, max_length=80)
+    discussion_facts: list[ContextFact] = Field(default_factory=list, max_length=80)
+    conflicts: list[ContextFact] = Field(default_factory=list, max_length=40)
+    memory_proposals: list[MemoryProposal] = Field(default_factory=list, max_length=40)
+
+
 class DeadlineValue(StrictDTO):
     at: datetime | None = None
     date_only: bool = False
