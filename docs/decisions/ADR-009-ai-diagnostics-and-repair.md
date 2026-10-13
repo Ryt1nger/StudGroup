@@ -1,6 +1,6 @@
 # ADR-009: AI diagnostics, bounded repair and retention
 
-Status: accepted
+Status: accepted (provider-output normalization and repair scope amended by ADR-010)
 
 Date: 2026-10-12
 

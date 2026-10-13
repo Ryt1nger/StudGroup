@@ -75,6 +75,42 @@ python -m studgroup.analysis_admin \
   --reason "pilot rollback"
 ```
 
+## Hybrid adapter canary and backfill from a chosen date (ADR-010)
+
+Pipeline: RawMessage -> context -> Pass 1 -> Pass 2 (`cplus-extraction-2`) -> Python adapter ->
+strict validation -> optional single AI Repair -> shadow row. Shadow rows are the only product of
+these steps; students see cards only after `promote --apply`.
+
+Settings (all default off): `AI_ENABLED=false`, `AI_SHADOW_ENABLED=true` with an absolute
+`AI_SHADOW_ENABLED_UNTIL`, `AI_SHADOW_CANARY_ONLY=true` for the first run, and
+`AI_OUTPUT_REPAIR_ENABLED=false` until paid repair is separately approved. A single package
+(both passes plus repair) is capped at USD 0.04 (`SHADOW_PACKAGE_CAP_USD`); repair is skipped,
+not truncated, when the remaining cap cannot cover its conservative worst case.
+
+Order of work, each step reversible and each paid step needing owner approval:
+
+1. `plan` (read-only) reports eligible stored messages, run states, measured cost per run and an
+   estimate with a 1.5x margin. Only messages stored since `bot_added_at` (and not expired) can
+   be processed; Telegram history is never fetched.
+2. Canary: the existing one-package canary (`AI_SHADOW_PREPARE_ONCE_KEY`), cap USD 0.04.
+3. `requeue --apply` re-runs runs lost to the old defect (failed, or completed with only
+   rejections) from their stored input snapshot; `enqueue --apply --limit N` adds missing runs
+   oldest first. Both are idempotent; the worker's daily shadow budget limits spend and speed.
+4. `review` prints accepted cards with their source messages for the owner (private text, never
+   commit or paste it).
+5. `promote` (dry-run) then `promote --apply --limit N` writes through the canonical writer.
+   Manual locks and audience rules apply, expired items are skipped, no notifications are sent,
+   and every run is marked promoted exactly once.
+
+```bash
+python -m studgroup.analysis_backfill plan --group-id GROUP_UUID --since 2026-10-08
+python -m studgroup.analysis_backfill promote --group-id GROUP_UUID --since 2026-10-08 --limit 10
+```
+
+Known limit: cancellation, reschedule and amendment of an earlier item need its identity. Backfill
+runs cannot supply one before promotion, so those proposals are rejected as
+`mutation_identity_missing`; review such source messages manually.
+
 ## Shadow acceptance package
 
 Report entity precision/recall, deadline/audience/kind/action accuracy, overmerge and
