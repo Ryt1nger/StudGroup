@@ -130,6 +130,51 @@ def test_valid_empty_is_distinct_from_all_rejected():
     assert rejected.rejected[0].reason_code == "proposal_schema_invalid"
 
 
+def test_schema_rejection_persists_only_bounded_structural_diagnostics():
+    invalid = proposal()
+    invalid.pop("destination")
+    invalid["subject"] = 123
+    invalid["audience"]["scope"] = "PRIVATE ENUM VALUE"
+    invalid["evidence"][0].pop("fact_paths")
+    invalid["PRIVATE EXTRA KEY"] = "PRIVATE EXTRA VALUE"
+
+    result = validate_provider_content(
+        json.dumps(output_payload([invalid])),
+        allowed_sources={10: 3},
+        source_revision=3,
+    )
+
+    rejected = result.rejected[0]
+    issues = {(issue.path, issue.error_type): issue for issue in rejected.schema_issues}
+    assert issues[("proposals[0].destination", "missing")].expected == "required_field"
+    assert issues[("proposals[0].subject", "string_type")].received_type == "integer"
+    assert issues[("proposals[0].audience.scope", "literal_error")].expected == (
+        "allowed_literal"
+    )
+    assert issues[("proposals[0].evidence[0].fact_paths", "missing")].received_type == (
+        "missing"
+    )
+    assert issues[("proposals[0].<extra>", "extra_forbidden")].expected == (
+        "field_not_allowed"
+    )
+    serialized = result.model_dump_json()
+    assert "PRIVATE" not in serialized
+    assert '"input"' not in serialized and '"ctx"' not in serialized
+
+
+def test_schema_diagnostics_are_limited_and_marked_truncated():
+    invalid = proposal() | {f"unsafe field {index}": index for index in range(20)}
+    result = validate_provider_content(
+        json.dumps(output_payload([invalid])),
+        allowed_sources={10: 3},
+        source_revision=3,
+    )
+    rejected = result.rejected[0]
+    assert len(rejected.schema_issues) == 12
+    assert rejected.schema_issues_truncated is True
+    assert all(issue.path == "proposals[0].<extra>" for issue in rejected.schema_issues)
+
+
 def test_replay_is_deterministic_and_has_no_side_effect_capability():
     envelope = ReplayEnvelope(
         analysis_input=analysis_input(),

@@ -514,6 +514,74 @@ def test_shadow_only_kill_switch_runs_cplus_while_legacy_stays_disabled(client):
     assert len(provider.requests) == 2
 
 
+def test_shadow_e2e_persists_safe_proposal_schema_diagnostics(client):
+    class InvalidExtractionProvider(HybridProvider):
+        async def complete(self, request):
+            if request.prompt_version != "cplus-extraction-1":
+                return await super().complete(request)
+            self.requests.append(request)
+            message = request.user_payload["messages"][-1]
+            item = proposal(source_id=message["telegram_message_id"]).model_dump(mode="json")
+            item["evidence"][0]["revision"] = message["revision"]
+            item["evidence"][0]["fact_paths"] = "PRIVATE FACT PATH"
+            item["PRIVATE EXTRA KEY"] = "PRIVATE EXTRA VALUE"
+            payload = {
+                "schema_version": ANALYSIS_SCHEMA_VERSION,
+                "engine_version": ANALYSIS_ENGINE_VERSION,
+                "source_revision": request.user_payload["source_revision"],
+                "proposals": [item],
+                "explicit_empty": False,
+            }
+            return ProviderResponse(
+                content=json.dumps(payload),
+                usage=ProviderUsage(prompt_tokens=10, completion_tokens=5),
+                model="fake",
+                finish_reason="stop",
+                payload_sha256="3" * 64,
+            )
+
+    enable_shadow(client)
+    source(client, text="ДЗ: решить задачи 1–3")
+    provider = InvalidExtractionProvider()
+    settings = Settings(ai_enabled=False, ai_shadow_enabled=True)
+    before = product_snapshot(client)
+
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW))
+        == "shadow_queued"
+    )
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW))
+        == "shadow_completed"
+    )
+    assert product_snapshot(client) == before
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(ShadowEvaluationRun))
+            validation = json.loads(row.validation_result_json)
+            assert validation["accepted"] == []
+            rejected = validation["rejected"][0]
+            assert rejected["reason_code"] == "proposal_schema_invalid"
+            assert rejected["schema_issues"] == [
+                {
+                    "path": "proposals[0].evidence[0].fact_paths",
+                    "error_type": "list_type",
+                    "expected": "array",
+                    "received_type": "string",
+                },
+                {
+                    "path": "proposals[0].<extra>",
+                    "error_type": "extra_forbidden",
+                    "expected": "field_not_allowed",
+                    "received_type": "string",
+                },
+            ]
+            assert "PRIVATE" not in row.validation_result_json
+
+    asyncio.run(inspect())
+
+
 def test_shadow_only_kill_switch_honors_absolute_cutoff(client):
     enable_shadow(client)
     source(client)

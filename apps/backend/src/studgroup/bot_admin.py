@@ -150,6 +150,19 @@ async def handle(db, update, settings):
                 f"{code}: {count}"
                 for code, count in sorted(latest["rejection_reasons"].items())
             ) or "нет"
+            if latest["schema_diagnostics"]:
+                issue_lines = []
+                for issue in latest["schema_diagnostics"]:
+                    expected = issue["expected"] or "не указано"
+                    received = issue["received_type"] or "не указано"
+                    issue_lines.append(
+                        f"#{issue['proposal_ordinal']} {issue['path']}: "
+                        f"{issue['error_type']}; ожидалось={expected}; получено={received}"
+                    )
+                suffix = " (список ограничен)" if latest["schema_diagnostics_truncated"] else ""
+                schema_diagnostics = "\n".join(issue_lines) + suffix
+            else:
+                schema_diagnostics = "не сохранены"
             latest_text = (
                 "Последний shadow_completed:\n"
                 f"Сообщений: {display(latest['processed_messages'])}; "
@@ -157,6 +170,7 @@ async def handle(db, update, settings):
                 f"Принято: {display(latest['accepted_items'])}; "
                 f"отклонено: {display(latest['rejected_items'])}.\n"
                 f"Причины отклонений: {rejection_reasons}.\n"
+                f"Структурные ошибки:\n{schema_diagnostics}.\n"
                 f"AI-проход 1: {latest['context_pass']}; "
                 f"AI-проход 2: {latest['extraction_pass']}.\n"
                 f"Токены canary: вход {latest['prompt_tokens']}, "

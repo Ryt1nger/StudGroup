@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 
+from studgroup.analysis.contracts import ProposalSchemaIssue
 from studgroup.analysis.pilot import transition_mode
 from studgroup.analysis.routing import AnalysisMode, get_route
 from studgroup.analysis.shadow import failure_stage
@@ -59,17 +60,45 @@ def _latest_completed_summary(row):
     messages = (input_data or {}).get("messages")
     rejected = (validation or {}).get("rejected")
     rejection_reasons = Counter()
+    schema_diagnostics = []
+    schema_diagnostics_truncated = False
     if isinstance(rejected, list):
         for item in rejected:
             code = item.get("reason_code") if isinstance(item, dict) else None
             if isinstance(code, str) and code:
                 rejection_reasons[code] += 1
+            if not isinstance(item, dict) or code != "proposal_schema_invalid":
+                continue
+            ordinal = item.get("proposal_ordinal")
+            raw_issues = item.get("schema_issues")
+            if item.get("schema_issues_truncated") is True:
+                schema_diagnostics_truncated = True
+            if not isinstance(ordinal, int) or not 0 <= ordinal < 40:
+                continue
+            if not isinstance(raw_issues, list):
+                continue
+            for raw_issue in raw_issues:
+                if len(schema_diagnostics) >= 8:
+                    schema_diagnostics_truncated = True
+                    break
+                try:
+                    issue = ProposalSchemaIssue.model_validate(raw_issue)
+                except (TypeError, ValueError):
+                    continue
+                schema_diagnostics.append(
+                    {
+                        "proposal_ordinal": ordinal,
+                        **issue.model_dump(mode="json"),
+                    }
+                )
     return {
         "processed_messages": len(messages) if isinstance(messages, list) else None,
         "found_entities": _metric(metrics, validation, "raw_proposal_count"),
         "accepted_items": _metric(metrics, validation, "accepted_items"),
         "rejected_items": _metric(metrics, validation, "rejected_items"),
         "rejection_reasons": dict(rejection_reasons),
+        "schema_diagnostics": schema_diagnostics,
+        "schema_diagnostics_truncated": schema_diagnostics_truncated,
         "prompt_tokens": row.prompt_tokens,
         "completion_tokens": row.completion_tokens,
         "charged_usd": row.charged_usd,

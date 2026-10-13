@@ -249,7 +249,18 @@ def test_shadowstatus_reports_latest_completed_aggregates_without_private_conten
                         {
                             "accepted": [{"title": "PRIVATE TITLE"}],
                             "rejected": [
-                                {"proposal_ordinal": 2, "reason_code": "missing_evidence"},
+                                {
+                                    "proposal_ordinal": 2,
+                                    "reason_code": "proposal_schema_invalid",
+                                    "schema_issues": [
+                                        {
+                                            "path": "proposals[2].evidence[0].fact_paths",
+                                            "error_type": "missing",
+                                            "expected": "required_field",
+                                            "received_type": "missing",
+                                        }
+                                    ],
+                                },
                                 {"proposal_ordinal": 3, "reason_code": "missing_evidence"},
                             ],
                             "raw_proposal_count": 4,
@@ -282,7 +293,10 @@ def test_shadowstatus_reports_latest_completed_aggregates_without_private_conten
     assert "Последний shadow_completed:" in text
     assert "Сообщений: 2; найдено AI-сущностей: 4" in text
     assert "Принято: 2; отклонено: 2" in text
-    assert "Причины отклонений: missing_evidence: 2" in text
+    assert "Причины отклонений: missing_evidence: 1, proposal_schema_invalid: 1" in text
+    assert "Структурные ошибки:" in text
+    assert "#2 proposals[2].evidence[0].fact_paths: missing" in text
+    assert "ожидалось=required_field; получено=missing" in text
     assert "AI-проход 1: completed; AI-проход 2: completed" in text
     assert "Токены canary: вход 321, выход 123; расход: $0.00248550" in text
     assert "PRIVATE" not in text
