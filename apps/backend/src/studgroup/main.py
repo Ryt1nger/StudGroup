@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     ai_shadow_enabled: bool = False
     ai_shadow_enabled_until: datetime | None = None
     ai_shadow_canary_only: bool = False
+    ai_shadow_prepare_once_key: str | None = None
     ai_import_chat_id: int | None = None
     ai_schedule_enabled: bool = False
     ai_live_two_pass: bool = False
@@ -108,6 +109,20 @@ class Settings(BaseSettings):
     def empty_owner(cls, value):
         return None if value == "" else value
 
+    @field_validator("ai_shadow_prepare_once_key", mode="before")
+    @classmethod
+    def valid_shadow_preparation_key(cls, value):
+        if value in (None, ""):
+            return None
+        allowed = "abcdefghijklmnopqrstuvwxyz0123456789-"
+        if (
+            not isinstance(value, str)
+            or not 1 <= len(value) <= 64
+            or any(character not in allowed for character in value)
+        ):
+            raise ValueError("invalid shadow preparation key")
+        return value
+
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
@@ -130,6 +145,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await backfill_online_links(app.state.engine)
         except Exception as error:  # noqa: BLE001 -- optional backfill must not log URLs or block service readiness
             print("ONLINE_LESSON_LINK_BACKFILL_UNAVAILABLE " + type(error).__name__, flush=True)
+        if settings.ai_shadow_prepare_once_key:
+            from studgroup.analysis.shadow_worker import prepare_shadow_canary
+
+            preparation = await prepare_shadow_canary(app.state.engine, settings)
+            print(f"SHADOW_CANARY_PREPARATION {preparation}", flush=True)
         if settings.owner_update_notifications_enabled:
             from studgroup.processing_diagnostics import startup
 

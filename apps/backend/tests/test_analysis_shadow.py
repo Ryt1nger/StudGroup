@@ -36,7 +36,10 @@ from studgroup.analysis.routing import (
     get_route,
 )
 from studgroup.analysis.shadow import persist_shadow_summary, run_shadow
-from studgroup.analysis.shadow_worker import purge_expired_shadow_runs
+from studgroup.analysis.shadow_worker import (
+    prepare_shadow_canary,
+    purge_expired_shadow_runs,
+)
 from studgroup.main import Settings
 from studgroup.models import (
     AcademicDeadline,
@@ -598,6 +601,107 @@ def test_shadow_only_kill_switch_honors_absolute_cutoff(client):
     )
     assert provider.requests == []
     assert product_snapshot(client)["homework"] == 0
+
+
+def test_one_time_canary_preparation_is_idempotent_and_leaves_one_queued_run(client):
+    enable_shadow(client)
+    source(client, mid=71, text="Первое сохранённое сообщение")
+    source(client, mid=72, text="Второе сохранённое сообщение")
+    settings = Settings(
+        _env_file=None,
+        ai_enabled=False,
+        ai_shadow_enabled=False,
+        ai_shadow_canary_only=True,
+        ai_shadow_prepare_once_key="canary-test",
+    )
+    before = product_snapshot(client)
+
+    assert (
+        asyncio.run(prepare_shadow_canary(client.app.state.engine, settings))
+        == "prepared_queued"
+    )
+    assert (
+        asyncio.run(prepare_shadow_canary(client.app.state.engine, settings))
+        == "prepared_existing"
+    )
+    assert product_snapshot(client) == before
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (await db.scalars(select(ShadowEvaluationRun))).all()
+            assert len(rows) == 1
+            assert rows[0].state == "queued"
+            assert rows[0].attempts == 0
+            assert rows[0].lease_until is None
+            assert rows[0].reserved_usd == 0
+            assert json.loads(rows[0].metrics_json) == {
+                "preparation_key": "canary-test"
+            }
+
+    asyncio.run(inspect())
+
+
+def test_one_time_canary_preparation_refuses_enabled_ai(client):
+    enable_shadow(client)
+    source(client, mid=73)
+    settings = Settings(
+        _env_file=None,
+        ai_enabled=False,
+        ai_shadow_enabled=True,
+        ai_shadow_prepare_once_key="canary-test",
+    )
+
+    assert (
+        asyncio.run(prepare_shadow_canary(client.app.state.engine, settings))
+        == "blocked_ai_enabled"
+    )
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            assert await db.scalar(select(func.count()).select_from(ShadowEvaluationRun)) == 0
+
+    asyncio.run(inspect())
+
+
+def test_canary_only_claims_the_single_prepared_run_without_enqueuing_another(client):
+    enable_shadow(client)
+    source(client, mid=74, text="ДЗ: решить задачи 1–3")
+    source(client, mid=75, text="Ещё одно необработанное сообщение")
+    disabled = Settings(
+        _env_file=None,
+        ai_enabled=False,
+        ai_shadow_enabled=False,
+        ai_shadow_canary_only=True,
+        ai_shadow_prepare_once_key="canary-test",
+    )
+    enabled = Settings(
+        _env_file=None,
+        ai_enabled=False,
+        ai_shadow_enabled=True,
+        ai_shadow_canary_only=True,
+    )
+    provider = HybridProvider()
+
+    assert (
+        asyncio.run(prepare_shadow_canary(client.app.state.engine, disabled))
+        == "prepared_queued"
+    )
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, enabled, provider, datetime.now(UTC)))
+        == "shadow_completed"
+    )
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, enabled, provider, datetime.now(UTC)))
+        == "disabled"
+    )
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (await db.scalars(select(ShadowEvaluationRun))).all()
+            assert len(rows) == 1
+            assert rows[0].state == "completed"
+
+    asyncio.run(inspect())
 
 
 def test_shadow_canary_recovers_only_one_stranded_run_and_does_not_enqueue(client):

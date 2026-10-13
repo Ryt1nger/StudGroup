@@ -133,10 +133,42 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
     return row
 
 
-async def enqueue_next_shadow(engine, now=None):
+async def enqueue_next_shadow(engine, now=None, *, preparation_key=None):
     """Capture one new/edited Telegram source even if legacy relevance rejects it."""
     now = _utc(now or datetime.now(UTC))
     async with AsyncSession(engine) as db:
+        preparation_marker = None
+        preparation_group_id = None
+        if preparation_key is not None:
+            preparation_marker = json.dumps(
+                {"preparation_key": preparation_key},
+                sort_keys=True,
+            )
+            route_row = await db.scalar(
+                select(GroupAnalysisSettings)
+                .join(Group, Group.id == GroupAnalysisSettings.group_id)
+                .where(
+                    GroupAnalysisSettings.analysis_mode == "shadow",
+                    Group.status == "active",
+                    Group.pilot_authorized.is_(True),
+                    Group.bot_added_at.is_not(None),
+                )
+                .order_by(GroupAnalysisSettings.group_id)
+                .with_for_update()
+                .limit(1)
+            )
+            if route_row is None:
+                return "preparation_group_unavailable"
+            preparation_group_id = route_row.group_id
+            existing_preparation = await db.scalar(
+                select(ShadowEvaluationRun).where(
+                    ShadowEvaluationRun.group_id == preparation_group_id,
+                    ShadowEvaluationRun.metrics_json == preparation_marker,
+                    ShadowEvaluationRun.delete_at > now,
+                )
+            )
+            if existing_preparation is not None:
+                return "prepared_existing"
         raw = await db.scalar(
             select(RawMessage)
             .join(Group, Group.id == RawMessage.group_id)
@@ -152,6 +184,11 @@ async def enqueue_next_shadow(engine, now=None):
                 Group.bot_added_at.is_not(None),
                 RawMessage.message_date >= Group.bot_added_at,
                 RawMessage.delete_at > now,
+                (
+                    RawMessage.group_id == preparation_group_id
+                    if preparation_group_id is not None
+                    else True
+                ),
                 or_(
                     RawMessage.live_received_at >= GroupAnalysisSettings.updated_at,
                     (
@@ -170,7 +207,7 @@ async def enqueue_next_shadow(engine, now=None):
             .limit(1)
         )
         if raw is None:
-            return False
+            return "preparation_empty" if preparation_key is not None else False
         group = await db.get(Group, raw.group_id)
         from studgroup.processing import context_for
 
@@ -185,17 +222,38 @@ async def enqueue_next_shadow(engine, now=None):
             context=context,
             now=now,
         )
+        if row is not None and preparation_marker is not None:
+            row.metrics_json = preparation_marker
         state = row.state if row is not None else None
         await db.commit()
-        return state
+        return f"prepared_{state}" if preparation_marker is not None else state
+
+
+async def prepare_shadow_canary(engine, settings, now=None):
+    """Enqueue one marked canary candidate without enabling either AI processor."""
+    if not settings.ai_shadow_prepare_once_key:
+        return "disabled"
+    if settings.ai_enabled or settings.ai_shadow_enabled:
+        return "blocked_ai_enabled"
+    return await enqueue_next_shadow(
+        engine,
+        now=now,
+        preparation_key=settings.ai_shadow_prepare_once_key,
+    )
 
 
 async def _claim(engine, now, *, canary_only=False):
     async with AsyncSession(engine) as db:
         eligible_state = (
-            (
-                (ShadowEvaluationRun.state == "running")
-                & (ShadowEvaluationRun.lease_until <= now)
+            or_(
+                (
+                    (ShadowEvaluationRun.state == "running")
+                    & (ShadowEvaluationRun.lease_until <= now)
+                ),
+                (
+                    (ShadowEvaluationRun.state == "queued")
+                    & ShadowEvaluationRun.metrics_json.contains('"preparation_key"')
+                ),
             )
             if canary_only
             else or_(

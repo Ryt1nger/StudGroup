@@ -134,6 +134,26 @@ async def _shadow_canary_preflight(db, group, settings, now):
             .order_by(ShadowEvaluationRun.created_at, ShadowEvaluationRun.id)
         )
     ).all()
+    queued_with_metrics = (
+        await db.scalars(
+            select(ShadowEvaluationRun)
+            .where(
+                ShadowEvaluationRun.group_id == group.id,
+                ShadowEvaluationRun.state == "queued",
+                ShadowEvaluationRun.metrics_json.is_not(None),
+                ShadowEvaluationRun.delete_at > now,
+            )
+            .order_by(ShadowEvaluationRun.created_at, ShadowEvaluationRun.id)
+        )
+    ).all()
+    prepared = []
+    for row in queued_with_metrics:
+        try:
+            marker = json.loads(row.metrics_json)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(marker, dict) and isinstance(marker.get("preparation_key"), str):
+            prepared.append(row)
     active_shadow = await db.scalar(
         select(func.count())
         .select_from(ShadowEvaluationRun)
@@ -180,7 +200,8 @@ async def _shadow_canary_preflight(db, group, settings, now):
         )
         or 0
     )
-    selected = recoverable[0] if len(recoverable) == 1 else None
+    candidates = [*recoverable, *prepared]
+    selected = candidates[0] if len(candidates) == 1 else None
     selected_reservation = Decimal(selected.reserved_usd or 0) if selected else Decimal(0)
     reserved_elsewhere = max(Decimal(0), reserved_today - selected_reservation)
     budget = Decimal(route.shadow_daily_budget_usd) if route else Decimal(0)
@@ -202,8 +223,8 @@ async def _shadow_canary_preflight(db, group, settings, now):
         blockers.append("canary_only_disabled")
     if route is None or route.analysis_mode != "shadow":
         blockers.append("route_not_shadow")
-    if len(recoverable) != 1:
-        blockers.append("recoverable_canary_count_mismatch")
+    if len(candidates) != 1:
+        blockers.append("canary_candidate_count_mismatch")
     if active_shadow or active_legacy:
         blockers.append("active_ai_lease_present")
     if envelope_error:
@@ -216,18 +237,28 @@ async def _shadow_canary_preflight(db, group, settings, now):
         blockers.append("owner_canary_cap_exceeded")
 
     launch_requirements = []
+    if selected is not None and selected.state == "queued":
+        launch_requirements.append("reserve_prepared_canary")
     if not settings.ai_shadow_enabled:
         launch_requirements.append("enable_shadow_for_bounded_window")
     if settings.ai_shadow_enabled_until is None or settings.ai_shadow_enabled_until <= now:
         launch_requirements.append("set_future_shadow_cutoff")
 
     return {
-        "status": "ready_for_controlled_activation" if not blockers else "blocked",
+        "status": (
+            "ready_for_controlled_reservation"
+            if not blockers and selected is not None and selected.state == "queued"
+            else "ready_for_controlled_activation"
+            if not blockers
+            else "blocked"
+        ),
         "blocking_codes": blockers,
         "launch_requirements": launch_requirements,
         "analysis_mode": route.analysis_mode if route else "unconfigured",
         "engine_version": route.engine_version if route else None,
         "recoverable_canary_count": len(recoverable),
+        "prepared_canary_count": len(prepared),
+        "selected_state": selected.state if selected else None,
         "active_shadow_lease_count": int(active_shadow or 0),
         "active_legacy_lease_count": int(active_legacy or 0),
         "dormant_shadow_backlog_count": int(dormant_backlog or 0),

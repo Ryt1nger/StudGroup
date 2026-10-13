@@ -67,3 +67,14 @@ def test_ai_cutoff_rejects_unspecified_timezone():
 
     with pytest.raises(ValueError):
         Settings(ai_enabled_until="2026-10-08T00:00:00")
+
+
+def test_shadow_preparation_key_accepts_only_bounded_safe_identifiers():
+    import pytest
+
+    assert Settings(ai_shadow_prepare_once_key="canary-2").ai_shadow_prepare_once_key == (
+        "canary-2"
+    )
+    assert Settings(ai_shadow_prepare_once_key="").ai_shadow_prepare_once_key is None
+    with pytest.raises(ValueError, match="invalid shadow preparation key"):
+        Settings(ai_shadow_prepare_once_key="CANARY/private")
