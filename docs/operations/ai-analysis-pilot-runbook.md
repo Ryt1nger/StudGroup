@@ -1,10 +1,9 @@
 # AI analysis shadow and pilot runbook
 
-**Current status:** implementation is safe for offline validation; production migration,
-paid DeepSeek shadow traffic and the `new` writer are not authorized by this document.
-The current production worker still follows the legacy processing path and is not yet wired
-to the per-group router. Therefore the transition command below is a staged operator control,
-not a runnable rollout instruction, until worker dispatch and PostgreSQL tests are completed.
+**Current status:** the C+ worker path is `shadow-ready`: dispatch, durable budget reservation,
+retry recovery and product-write isolation have passed the complete PostgreSQL suite. A production
+deployment and a paid replay still require an explicit owner action. The `new` writer remains
+disabled and is not authorized by this document.
 
 ## Invariants
 
@@ -19,7 +18,7 @@ not a runnable rollout instruction, until worker dispatch and PostgreSQL tests a
 
 ## Gates before shadow
 
-1. Apply migrations through `0031` to a disposable PostgreSQL database and rehearse
+1. Apply migrations through `0032` to a disposable PostgreSQL database and rehearse
    upgrade/downgrade. SQLite is not evidence for lock or concurrency behaviour.
 2. Run the complete backend suite with `POSTGRES_TEST_URL` so the PostgreSQL-only checks run.
 3. Validate and adjudicate the private held-out corpus.
@@ -30,8 +29,18 @@ not a runnable rollout instruction, until worker dispatch and PostgreSQL tests a
 
 All changes require the group UUID, named actor and reason and are appended to
 `group_analysis_mode_history`. Run from `apps/backend` with the production environment loaded.
-Do not run any transition against production while the current status above says the worker
-is not wired to the router.
+For the single owner-controlled pilot group, the private Telegram command below prepares a
+historical replay from the persisted `bot_added_at` boundary. It requires a confirmation button,
+does not delete legacy results and does not itself enable provider calls:
+
+```text
+/shadowrun 0.25 100
+```
+
+The arguments are the hard daily shadow budget in USD (`0.04`–`1.00`) and the deterministic
+sample percentage (`1`–`100`). Use `/shadowstatus` for aggregate queue state, tokens and charged
+cost; it never prints source message text. `AI_ENABLED` and an absolute `AI_ENABLED_UNTIL` remain
+the independent deployment kill switch and cutoff.
 
 ```bash
 python -m studgroup.analysis_admin \

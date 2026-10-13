@@ -149,6 +149,8 @@ async def enqueue_next_shadow(engine, now=None):
                 GroupAnalysisSettings.shadow_sample_percent > 0,
                 Group.status == "active",
                 Group.pilot_authorized.is_(True),
+                Group.bot_added_at.is_not(None),
+                RawMessage.message_date >= Group.bot_added_at,
                 RawMessage.delete_at > now,
                 or_(
                     RawMessage.live_received_at >= GroupAnalysisSettings.updated_at,

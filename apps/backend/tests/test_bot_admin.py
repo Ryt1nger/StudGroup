@@ -1,6 +1,7 @@
 import asyncio
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -160,6 +161,50 @@ def test_resetrun_needs_confirmation_and_clears_only_ai_artefacts(client):
     assert asyncio.run(state()) == ("pending", "mapping")
     private(client, "", update=102, callback=f"a:{s.nonce}:reset")  # stale button: no effect
     assert asyncio.run(counts())[:3] == (0, 0, 0)
+
+
+def test_shadowrun_requires_confirmation_and_only_opens_read_only_replay(client):
+    from test_ai_schedule import seed
+    from test_batch_reports import at
+
+    from studgroup.models import (
+        Group,
+        GroupAnalysisModeHistory,
+        GroupAnalysisSettings,
+        Homework,
+        ShadowEvaluationRun,
+    )
+
+    seed(client, at("06:55:00"), mid=1)
+
+    async def state():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.pilot_authorized.is_(True)))
+            settings = await db.get(GroupAnalysisSettings, group.id)
+            return (
+                settings,
+                await db.scalar(select(func.count(Homework.id))),
+                await db.scalar(select(func.count(ShadowEvaluationRun.id))),
+                await db.scalar(select(func.count(GroupAnalysisModeHistory.id))),
+                group.bot_added_at,
+            )
+
+    before = asyncio.run(state())
+    private(client, "/shadowrun 0.25 100")
+    s, msg = session(client)
+    assert "C+ не создаёт" in msg[-1]["text"]
+    assert asyncio.run(state())[:4] == before[:4]
+
+    private(client, "", update=101, callback=f"a:{s.nonce}:shadow:0.25:100")
+    configured, homework, runs, history, bot_added_at = asyncio.run(state())
+    assert configured.analysis_mode == "shadow"
+    assert configured.shadow_daily_budget_usd == Decimal("0.25")
+    assert configured.shadow_sample_percent == 100
+    assert configured.updated_at == bot_added_at
+    assert (homework, runs, history) == (before[1], 0, 1)
+
+    private(client, "/shadowstatus", update=102)
+    assert "Режим: shadow" in session(client)[1][-1]["text"]
 
 
 def test_explain_shows_context_and_model_answers(client, monkeypatch):

@@ -6,6 +6,7 @@ import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 import httpx
 from sqlalchemy import select
@@ -116,6 +117,80 @@ async def handle(db, update, settings):
             return True
         await say(db, chat, await explain.explain(db, settings, group, int(parts[1])))
         return True
+    if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/shadowstatus":
+        from studgroup.analysis.shadow_replay import status
+
+        groups = (
+            await db.scalars(
+                select(Group).where(Group.pilot_authorized.is_(True), Group.status == "active")
+            )
+        ).all()
+        if len(groups) != 1:
+            await say(db, chat, "Статус shadow: нужна ровно одна подключённая группа.")
+            return True
+        report = await status(db, groups[0].id)
+        counts = ", ".join(
+            f"{state}: {count}" for state, count in sorted(report["counts"].items())
+        ) or "пока нет"
+        await say(
+            db,
+            chat,
+            f"Shadow для «{groups[0].name}»\n"
+            f"Режим: {report['mode']}; выборка: {report['sample']}%; "
+            f"дневной лимит: ${report['budget']}.\n"
+            f"Результаты: {counts}.\n"
+            f"Токены: вход {report['prompt_tokens']}, выход {report['completion_tokens']}; "
+            f"учтено: ${report['charged_usd']}.",
+        )
+        return True
+    if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/shadowrun":
+        from studgroup.analysis.shadow_replay import replay_summary
+
+        parts = text.split()
+        try:
+            budget = Decimal(parts[1])
+            sample = int(parts[2])
+        except (IndexError, InvalidOperation, ValueError):
+            await say(db, chat, "Формат: /shadowrun 0.25 100 — дневной лимит USD и выборка %.")
+            return True
+        if budget < Decimal("0.04") or budget > Decimal(1) or not 1 <= sample <= 100:
+            await say(db, chat, "Лимит должен быть от $0.04 до $1, выборка — от 1 до 100%.")
+            return True
+        groups = (
+            await db.scalars(
+                select(Group).where(Group.pilot_authorized.is_(True), Group.status == "active")
+            )
+        ).all()
+        if len(groups) != 1:
+            await say(db, chat, "Запуск shadow: нужна ровно одна подключённая группа.")
+            return True
+        group = groups[0]
+        info = await replay_summary(db, group.id, now)
+        if info is None:
+            await say(db, chat, "Запуск невозможен: у группы нет даты установки бота.")
+            return True
+        if info["existing"]:
+            await say(db, chat, "Shadow-прогон уже запускался. Используй /shadowstatus.")
+            return True
+        if session is None:
+            session = BotAdminSession(owner_id=sender.id, nonce="", step="groups", expires_at=now)
+            db.add(session)
+        session.nonce = secrets.token_hex(6)
+        session.step = "shadow"
+        session.group_id = group.id
+        session.expires_at = now + timedelta(minutes=15)
+        since = info["since"].astimezone(UTC).strftime("%d.%m.%Y %H:%M UTC")
+        await say(
+            db,
+            chat,
+            f"Shadow-прогон для «{group.name}» с {since}.\n"
+            f"Доступно сообщений: {info['eligible']}; выборка: {sample}%; "
+            f"жёсткий дневной лимит: ${budget}.\n"
+            "C+ не создаёт и не изменяет карточки и уведомления. Legacy остаётся единственным writer. "
+            "Платные запросы начнутся только когда AI_ENABLED включён в окружении.",
+            buttons(session, [[("Подтвердить shadow", f"shadow:{budget}:{sample}")]]),
+        )
+        return True
     if not callback and text.strip().split("@")[0] == "/resetrun":
         from studgroup import first_run
 
@@ -167,6 +242,37 @@ async def handle(db, update, settings):
             await say(db, chat, "Кнопка устарела. Отправь /admin заново.")
             return True
         action = parts[2]
+        if action.startswith("shadow:") and session.step == "shadow" and session.group_id:
+            from studgroup.analysis.shadow_replay import begin_replay
+
+            try:
+                _, budget_text, sample_text = action.split(":", 2)
+                done = await begin_replay(
+                    db,
+                    group_id=session.group_id,
+                    now=now,
+                    actor=f"telegram:{sender.id}",
+                    daily_budget_usd=Decimal(budget_text),
+                    sample_percent=int(sample_text),
+                )
+            except (InvalidOperation, ValueError) as error:
+                code = str(error)
+                message = (
+                    "Shadow-прогон уже был запущен. Используй /shadowstatus."
+                    if code == "shadow_replay_already_started"
+                    else "Запуск shadow отклонён безопасной проверкой."
+                )
+                await say(db, chat, message)
+            else:
+                session.step = "done"
+                session.nonce = secrets.token_hex(6)
+                await say(
+                    db,
+                    chat,
+                    f"Shadow подготовлен: {done['eligible']} сообщений доступно очереди. "
+                    "Карточки и уведомления не затрагиваются. Статус: /shadowstatus.",
+                )
+            return True
         if action == "reset" and session.step == "reset" and session.group_id:
             from studgroup import first_run
 
