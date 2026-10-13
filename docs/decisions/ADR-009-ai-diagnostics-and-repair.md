@@ -21,6 +21,16 @@ without permanently retaining private chat-derived payloads.
   technical administrators. It expires after 30 days and is disabled after diagnostics
   stabilize unless separately re-approved.
 - Ordinary logs and structural outcomes exclude raw chat/provider content.
+- Every provider pass receives a literal, versioned JSON contract in its cacheable system
+  prompt. Strict validation continues to reject invented wrapper fields, aliases such as
+  `source_id`/`message_id`, missing evidence paths and mismatched source revisions; the parser
+  does not silently coerce an improvised provider schema.
+- Shadow failures are reported by stable reason code and pipeline stage. Retained development
+  responses may be inspected only through value-free structural aggregates (missing/extra
+  fields, types and validation locations).
+- Recovery after a systemic provider-contract failure starts with a one-package canary. Canary
+  mode may reclaim one already-running expired lease but neither claims ordinary queued work nor
+  enqueues additional sources. Paid shadow remains separately disabled until owner approval.
 - A read-only production diagnostic may inspect the two disputed historical messages'
   statuses, attempts, rejection reasons and projection links. It cannot mutate, replay, lock
   or block processing.
@@ -29,4 +39,5 @@ without permanently retaining private chat-derived payloads.
 
 Silent loss becomes observable and replayable. The diagnostic trace adds storage and privacy
 responsibility but does not consume additional provider tokens. Production rollout of trace
-retention remains disabled by default.
+retention remains disabled by default. Literal contracts add cacheable input tokens but avoid
+the larger cost and ambiguity of retrying model-invented schemas.
