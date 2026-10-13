@@ -1,5 +1,6 @@
 """Owner-controlled historical shadow replay without product side effects."""
 
+import json
 from collections import Counter
 from datetime import UTC
 from decimal import Decimal
@@ -14,6 +15,67 @@ from studgroup.models import Group, GroupAnalysisSettings, RawMessage, ShadowEva
 
 def _utc(value):
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _json_object(value):
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _non_negative_int(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _metric(metrics, validation, name):
+    value = _non_negative_int((metrics or {}).get(name))
+    if value is not None:
+        return value
+    if not validation:
+        return None
+    if name == "raw_proposal_count":
+        return _non_negative_int(validation.get(name))
+    collection = validation.get("accepted" if name == "accepted_items" else "rejected")
+    return len(collection) if isinstance(collection, list) else None
+
+
+def _saved_pass_status(raw_value, parsed_value):
+    if not raw_value:
+        return "not_recorded"
+    return "completed" if parsed_value is not None else "invalid_saved_result"
+
+
+def _latest_completed_summary(row):
+    if row is None:
+        return None
+    input_data = _json_object(row.input_json)
+    context = _json_object(row.context_result_json)
+    validation = _json_object(row.validation_result_json)
+    metrics = _json_object(row.metrics_json)
+    messages = (input_data or {}).get("messages")
+    rejected = (validation or {}).get("rejected")
+    rejection_reasons = Counter()
+    if isinstance(rejected, list):
+        for item in rejected:
+            code = item.get("reason_code") if isinstance(item, dict) else None
+            if isinstance(code, str) and code:
+                rejection_reasons[code] += 1
+    return {
+        "processed_messages": len(messages) if isinstance(messages, list) else None,
+        "found_entities": _metric(metrics, validation, "raw_proposal_count"),
+        "accepted_items": _metric(metrics, validation, "accepted_items"),
+        "rejected_items": _metric(metrics, validation, "rejected_items"),
+        "rejection_reasons": dict(rejection_reasons),
+        "prompt_tokens": row.prompt_tokens,
+        "completion_tokens": row.completion_tokens,
+        "charged_usd": row.charged_usd,
+        "context_pass": _saved_pass_status(row.context_result_json, context),
+        "extraction_pass": _saved_pass_status(row.validation_result_json, validation),
+    }
 
 
 async def replay_summary(db, group_id, now):
@@ -124,6 +186,18 @@ async def status(db, group_id):
     errors_by_stage = Counter()
     for code, count in errors.items():
         errors_by_stage[failure_stage(code)] += int(count)
+    latest_completed = await db.scalar(
+        select(ShadowEvaluationRun)
+        .where(
+            ShadowEvaluationRun.group_id == group_id,
+            ShadowEvaluationRun.state == "completed",
+        )
+        .order_by(
+            ShadowEvaluationRun.completed_at.desc(),
+            ShadowEvaluationRun.created_at.desc(),
+        )
+        .limit(1)
+    )
     return {
         "mode": route.mode.value,
         "budget": route.shadow_daily_budget_usd,
@@ -134,4 +208,5 @@ async def status(db, group_id):
         "prompt_tokens": sum(int(row[2]) for row in rows),
         "completion_tokens": sum(int(row[3]) for row in rows),
         "charged_usd": sum((Decimal(row[4]) for row in rows), Decimal(0)),
+        "latest_completed": _latest_completed_summary(latest_completed),
     }

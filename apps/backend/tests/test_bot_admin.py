@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -93,6 +93,13 @@ def test_nonowner_has_no_admin_session_or_group_list(client):
     assert s is None
     assert "недоступна" in msg[-1]["text"]
     assert msg[-1].get("reply_markup", {}).get("inline_keyboard", []) == []
+
+
+def test_nonowner_cannot_read_shadow_status(client):
+    private(client, "/shadowstatus", uid=2)
+    s, messages = session(client)
+    assert s is None
+    assert messages == []
 
 
 def test_native_picker_is_bound_to_its_request(client):
@@ -208,6 +215,77 @@ def test_shadowrun_requires_confirmation_and_only_opens_read_only_replay(client)
     assert "Режим: shadow" in status_text
     assert "Ошибки по этапам:" in status_text
     assert "Коды причин:" in status_text
+
+
+def test_shadowstatus_reports_latest_completed_aggregates_without_private_content(client):
+    from studgroup.models import Group, ShadowEvaluationRun
+
+    async def seed_completed():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.pilot_authorized.is_(True)))
+            now = datetime.now(UTC)
+            db.add(
+                ShadowEvaluationRun(
+                    group_id=group.id,
+                    batch_id=None,
+                    job_id=None,
+                    raw_message_id=None,
+                    source_revision=7,
+                    analysis_generation=None,
+                    source_snapshot_sha256="a" * 64,
+                    engine_version="cplus-shadow-1",
+                    state="completed",
+                    input_json=json.dumps(
+                        {
+                            "messages": [
+                                {"text": "PRIVATE MESSAGE ONE"},
+                                {"text": "PRIVATE MESSAGE TWO"},
+                            ]
+                        }
+                    ),
+                    memory_json="[]",
+                    context_result_json='{"discussion_facts": []}',
+                    validation_result_json=json.dumps(
+                        {
+                            "accepted": [{"title": "PRIVATE TITLE"}],
+                            "rejected": [
+                                {"proposal_ordinal": 2, "reason_code": "missing_evidence"},
+                                {"proposal_ordinal": 3, "reason_code": "missing_evidence"},
+                            ],
+                            "raw_proposal_count": 4,
+                        }
+                    ),
+                    provider_payload_hashes="[]",
+                    metrics_json=json.dumps(
+                        {"accepted_items": 2, "rejected_items": 2, "raw_proposal_count": 4}
+                    ),
+                    attempts=1,
+                    available_at=now,
+                    lease_until=None,
+                    last_error=None,
+                    prompt_tokens=321,
+                    completion_tokens=123,
+                    prompt_cache_hit_tokens=0,
+                    reserved_usd=Decimal(0),
+                    charged_usd=Decimal("0.00248550"),
+                    latency_ms=100,
+                    created_at=now,
+                    completed_at=now,
+                    delete_at=now + timedelta(days=30),
+                )
+            )
+            await db.commit()
+
+    asyncio.run(seed_completed())
+    private(client, "/shadowstatus", update=102)
+    text = session(client)[1][-1]["text"]
+    assert "Последний shadow_completed:" in text
+    assert "Сообщений: 2; найдено AI-сущностей: 4" in text
+    assert "Принято: 2; отклонено: 2" in text
+    assert "Причины отклонений: missing_evidence: 2" in text
+    assert "AI-проход 1: completed; AI-проход 2: completed" in text
+    assert "Токены canary: вход 321, выход 123; расход: $0.00248550" in text
+    assert "PRIVATE" not in text
 
 
 def test_explain_shows_context_and_model_answers(client, monkeypatch):

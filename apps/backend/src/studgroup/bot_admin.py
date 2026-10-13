@@ -139,6 +139,30 @@ async def handle(db, update, settings):
             f"{stage}: {count}"
             for stage, count in sorted(report["errors_by_stage"].items())
         ) or "нет"
+        latest = report["latest_completed"]
+        if latest is None:
+            latest_text = "Последний shadow_completed: пока нет."
+        else:
+            def display(value):
+                return "нет данных" if value is None else str(value)
+
+            rejection_reasons = ", ".join(
+                f"{code}: {count}"
+                for code, count in sorted(latest["rejection_reasons"].items())
+            ) or "нет"
+            latest_text = (
+                "Последний shadow_completed:\n"
+                f"Сообщений: {display(latest['processed_messages'])}; "
+                f"найдено AI-сущностей: {display(latest['found_entities'])}.\n"
+                f"Принято: {display(latest['accepted_items'])}; "
+                f"отклонено: {display(latest['rejected_items'])}.\n"
+                f"Причины отклонений: {rejection_reasons}.\n"
+                f"AI-проход 1: {latest['context_pass']}; "
+                f"AI-проход 2: {latest['extraction_pass']}.\n"
+                f"Токены canary: вход {latest['prompt_tokens']}, "
+                f"выход {latest['completion_tokens']}; "
+                f"расход: ${latest['charged_usd']}."
+            )
         await say(
             db,
             chat,
@@ -149,7 +173,8 @@ async def handle(db, update, settings):
             f"Ошибки по этапам: {stages}.\n"
             f"Коды причин: {errors}.\n"
             f"Токены: вход {report['prompt_tokens']}, выход {report['completion_tokens']}; "
-            f"учтено: ${report['charged_usd']}.",
+            f"учтено: ${report['charged_usd']}.\n"
+            f"{latest_text}",
         )
         return True
     if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/shadowrun":
