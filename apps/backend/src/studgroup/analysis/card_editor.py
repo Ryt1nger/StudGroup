@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from studgroup.academic_context import has_date_cue
 from studgroup.analysis.contracts import ProposedAcademicItem, SourceMessage
+from studgroup.analysis.output_adapter import explicit_source_dates
 
 NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 GENERIC_TITLES = {
@@ -16,7 +17,12 @@ GENERIC_TITLES = {
     "дедлайн",
     "учебное событие",
 }
-SERIOUS_REASONS = {"material_conflict", "model_material_doubt", "conflicting_deadlines"}
+SERIOUS_REASONS = {
+    "material_conflict",
+    "model_material_doubt",
+    "conflicting_deadlines",
+    "deadline_before_source",
+}
 DEADLINE_LABELS = {
     "test": "Тест",
     "control_point": "Контрольная точка",
@@ -104,7 +110,7 @@ def primary_display_valid(proposal, sources, verified_subjects):
     ):
         return False, "unsupported_subject"
     if proposal.deadline.basis == "explicit" and not any(
-        has_date_cue(source.text) for source in sources
+        has_date_cue(source.text) or explicit_source_dates(source.text) for source in sources
     ):
         return False, "unsupported_explicit_deadline"
     return True, None

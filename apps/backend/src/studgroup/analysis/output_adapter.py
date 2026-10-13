@@ -35,7 +35,6 @@ FACT_PATH_ROOTS = frozenset(
     {"subject", "title", "description", "deadline", "audience", "semantic_kind", "destination",
      "action"}
 )
-_DEFAULTABLE_ROOTS = {"subject", "title", "description"}
 
 ACTIONS = frozenset(get_args(ProposedAcademicItem.model_fields["action"].annotation))
 DESTINATIONS = frozenset(get_args(ProposedAcademicItem.model_fields["destination"].annotation))
@@ -279,11 +278,21 @@ class _Normalizer:
         """Flag, never rewrite, a model date that contradicts a deterministic source rule."""
         if deadline["at"] is None or deadline["basis"] != "explicit":
             return
+        ordered = sorted((self.messages[i] for i in base if i in self.messages),
+                         key=lambda row: row.message_date)
+        local = deadline["at"].astimezone(self.tz)
+        literal = set()
+        for source in ordered:
+            literal |= explicit_source_dates(source.text)
+        if literal:
+            # A calendar date written in the cited text outranks relative-date heuristics. A
+            # proposal that ignores every written date is held for review, not published.
+            if (local.day, local.month) not in literal:
+                self.extra_reasons.append(SERIOUS_CONFLICT_REASON)
+            return
         from studgroup.deadlines import contextual_deadline
 
         resolved = None
-        ordered = sorted((self.messages[i] for i in base if i in self.messages),
-                         key=lambda row: row.message_date)
         for source in ordered:
             try:
                 candidate = contextual_deadline(source.text, source.message_date, str(self.tz))
@@ -291,21 +300,11 @@ class _Normalizer:
                 continue
             if candidate is not None and candidate.at is not None:
                 resolved = candidate
-        local = deadline["at"].astimezone(self.tz)
-        if resolved is not None:
-            if resolved.at.astimezone(self.tz).date() != local.date():
-                self.extra_reasons.append(SERIOUS_CONFLICT_REASON)
-            return
-        literal = set()
-        for source in ordered:
-            literal |= explicit_source_dates(source.text)
-        # A literal calendar date in the cited text that the proposal ignores is a conflict:
-        # hold for review instead of publishing a possibly invented date.
-        if literal and (local.day, local.month) not in literal:
+        if resolved is not None and resolved.at.astimezone(self.tz).date() != local.date():
             self.extra_reasons.append(SERIOUS_CONFLICT_REASON)
 
     # -- evidence -------------------------------------------------------------------------
-    def fact_paths(self, value, populated, path):
+    def fact_paths(self, value, path):
         if isinstance(value, str):
             value = [value]
             self.note("single_fact_path_to_list")
@@ -317,7 +316,7 @@ class _Normalizer:
                 _reject("evidence_fact_path_invalid", path, item, expected="string")
             text = item.strip()
             root = text.split(".", 1)[0]
-            if root not in FACT_PATH_ROOTS or root not in populated:
+            if root not in FACT_PATH_ROOTS:
                 self.note("unsupported_fact_path_dropped")
                 continue
             if text not in kept:
@@ -444,18 +443,14 @@ class _Normalizer:
             _reject("attention_reasons_invalid", "attention_reasons", reasons, expected="array")
         reasons = [item.strip() for item in reasons if item.strip()]
 
-        populated = {"semantic_kind", "destination", "action", "audience"}
-        populated |= {name for name in _DEFAULTABLE_ROOTS if value[name] is not None}
         refs = self.evidence_refs(raw.get("evidence"))
         evidence_ids = [message_id for _paths, message_id, _revision in refs]
         value["deadline"] = self.deadline(raw.get("deadline"), evidence_ids)
-        if value["deadline"]["at"] is not None:
-            populated.add("deadline")
         value["evidence"] = [
             {
                 "telegram_message_id": message_id,
                 "revision": revision,
-                "fact_paths": self.fact_paths(paths, populated, "evidence.fact_paths"),
+                "fact_paths": self.fact_paths(paths, "evidence.fact_paths"),
             }
             for paths, message_id, revision in refs
         ]

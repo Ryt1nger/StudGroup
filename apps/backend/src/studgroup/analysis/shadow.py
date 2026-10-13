@@ -214,9 +214,10 @@ async def run_shadow(
                 cost_fn=usage_cost_usd,
                 existing_items=_trusted(existing_items),
             )
-        except Exception:  # noqa: BLE001 - repair is optional; pass-2 results must survive
+        except Exception as error:  # noqa: BLE001 - repair is optional; pass-2 results survive
             repair = None
             repair_summary["error"] = "repair_internal_error"
+            repair_summary["error_type"] = type(error).__name__
         if repair is not None:
             validation = apply_repair(validation, repair)
             repair_summary.update(
