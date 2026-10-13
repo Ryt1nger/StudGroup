@@ -18,7 +18,7 @@ disabled and is not authorized by this document.
 
 ## Gates before shadow
 
-1. Apply migrations through `0032` to a disposable PostgreSQL database and rehearse
+1. Apply migrations through `0033` to a disposable PostgreSQL database and rehearse
    upgrade/downgrade. SQLite is not evidence for lock or concurrency behaviour.
 2. Run the complete backend suite with `POSTGRES_TEST_URL` so the PostgreSQL-only checks run.
 3. Validate and adjudicate the private held-out corpus.

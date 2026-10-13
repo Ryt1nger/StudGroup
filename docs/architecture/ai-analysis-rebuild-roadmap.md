@@ -126,7 +126,7 @@ publication, stale and locked paths are distinct.
 - tests in `test_ai.py`, `test_processing.py`, `test_run_reports.py`,
   `test_batch_reports.py`, `test_processing_diagnostics.py` and
   `test_postgres_pipeline.py`;
-- migration `0024_analysis_application_outcomes.py`.
+- migration `0025_analysis_application_outcomes.py`.
 
 ### Database and migration
 
@@ -288,7 +288,7 @@ unprocessed media content is known. Provide group-local author pseudonyms to lat
 - `ingestion.py`, `models.py`, `chat_export.py`, `export_replay.py`;
 - new source/attachment DTO in `studgroup/analysis/contracts.py`;
 - Telegram ingestion and retention tests;
-- migration `0025_message_attachments.py`.
+- migration `0026_message_attachments.py`.
 
 ### Database
 
@@ -329,7 +329,7 @@ and reopenable discussion segments, while leaving legacy publication active.
 
 - new `studgroup/analysis/batching.py` and `context_linker.py`;
 - adapt `processing.py`, `academic_context.py`, `group_structure.py`;
-- migration `0026_analysis_batches_and_segments.py`;
+- migration `0027_analysis_batches_and_segments.py`;
 - unit and PostgreSQL transaction/concurrency tests.
 
 ### Database
@@ -371,7 +371,7 @@ relevant memory, active segments and existing item candidates.
 
 - new `studgroup/analysis/memory.py`, `context.py`, `knowledge_policy.py`;
 - adapt schedule/group-structure readers;
-- migration `0027_group_knowledge.py`;
+- migration `0028_group_knowledge.py`;
 - retention, isolation and context snapshot tests.
 
 ### Database
@@ -473,7 +473,7 @@ reschedule/cancel/no-change/review actions without yet changing the public API.
 - new `studgroup/analysis/entities.py`, `resolver.py`, `evidence.py`;
 - adapters for current homework/deadline candidates;
 - `headman_domain.py` lock integration;
-- migration `0028_canonical_academic_items.py`.
+- migration `0029_canonical_academic_items.py`.
 
 ### Database
 
@@ -565,7 +565,7 @@ latency comparisons.
 
 - new `studgroup/analysis/routing.py`, `shadow.py`, `evaluation.py`;
 - worker/runtime configuration and reports;
-- migration `0029_group_analysis_settings.py`;
+- migration `0031_group_analysis_shadow.py`;
 - operational and privacy tests.
 
 ### Database
@@ -735,7 +735,7 @@ architecture alone.
   switch. Emergency rollback preserves product rows and history.
 - Ruff passes and the complete local backend suite reports **422 passed, 1 skipped**. The skip is
   the PostgreSQL-only test because no disposable `POSTGRES_TEST_URL` is available.
-- PostgreSQL SQL generation for migrations 0029–0031 succeeds. A real PostgreSQL migration,
+- PostgreSQL SQL generation for migrations 0029–0033 succeeds. A real PostgreSQL migration,
   concurrency run, held-out gold evaluation, paid shadow observation and production pilot are
   still required. Runtime/Celery dispatch into the new router is also still required. Therefore
   the result is **not approved for production `shadow` or `new` mode**.
