@@ -11,7 +11,11 @@ from test_processing import Provider as LegacyProvider
 from test_processing import source
 
 from studgroup.ai import ProviderFailure
-from studgroup.analysis.context_strategy import diagnose_context_output, validate_context
+from studgroup.analysis.context_strategy import (
+    diagnose_context_output,
+    prepare_context_request,
+    validate_context,
+)
 from studgroup.analysis.contracts import (
     ANALYSIS_ENGINE_VERSION,
     ANALYSIS_SCHEMA_VERSION,
@@ -252,6 +256,82 @@ def test_context_diagnostics_report_structure_without_values():
 
 
 @pytest.mark.parametrize(
+    "retained_structure",
+    [
+        {
+            "schema_version": ANALYSIS_SCHEMA_VERSION,
+            "engine_version": ANALYSIS_ENGINE_VERSION,
+            "source_revision": 1,
+            "type": "discussion_context",
+            "relevant_source_ids": [10],
+            "discussion_facts": [
+                {
+                    "summary": "anonymized fact",
+                    "evidence": [
+                        {"source_id": 10, "revision": 1, "quote": "anonymized"}
+                    ],
+                }
+            ],
+            "conflicts": [],
+            "memory_proposals": [],
+        },
+        {
+            "schema_version": ANALYSIS_SCHEMA_VERSION,
+            "engine_version": ANALYSIS_ENGINE_VERSION,
+            "source_revision": 1,
+            "relevant_source_ids": [10],
+            "discussion_facts": [
+                {
+                    "fact": "anonymized fact",
+                    "evidence": [{"message_id": 10, "revision": 1}],
+                }
+            ],
+            "conflicts": [],
+            "memory_proposals": [],
+        },
+        {
+            "schema_version": ANALYSIS_SCHEMA_VERSION,
+            "engine_version": ANALYSIS_ENGINE_VERSION,
+            "relevant_source_ids": [],
+            "discussion_facts": [],
+            "conflicts": [],
+            "memory_proposals": [],
+        },
+    ],
+)
+def test_retained_anonymized_provider_shapes_remain_strictly_rejected(retained_structure):
+    diagnostic = diagnose_context_output(json.dumps(retained_structure), analysis_input())
+    assert diagnostic["reason"] == "context_schema_invalid"
+    with pytest.raises(ValueError, match="context_schema_invalid"):
+        validate_context(json.dumps(retained_structure), analysis_input())
+
+
+def test_context_prompt_pins_exact_evidence_contract_and_preserves_multiple_facts():
+    request = prepare_context_request(analysis_input(), [])
+    assert '"telegram_message_id": 123' in request.system_prompt
+    assert '"fact_paths": ["fact"]' in request.system_prompt
+    assert "use source_id, message_id or quote" in request.system_prompt
+    payload = context_payload()
+    payload["discussion_facts"].append(
+        {
+            "fact": "Second independent fact",
+            "evidence": [
+                {
+                    "telegram_message_id": 10,
+                    "revision": 1,
+                    "fact_paths": ["fact"],
+                }
+            ],
+        }
+    )
+    validated = validate_context(json.dumps(payload), analysis_input())
+    assert [fact.fact for fact in validated.discussion_facts] == [
+        "Задание относится к математике",
+        "Second independent fact",
+    ]
+
+
+@pytest.mark.parametrize(
     ("content", "reason"),
     [
         ("not-json", "context_invalid_json"),
@@ -328,6 +408,68 @@ def test_shadow_two_pass_has_no_product_side_effects_and_persists_summary(client
     asyncio.run(run())
 
 
+def test_shadow_postgres_e2e_preserves_multiple_proposals_without_product_writes(client):
+    class MultiProposalProvider(FakeProvider):
+        async def complete(self, request):
+            self.requests.append(request)
+            if len(self.requests) == 1:
+                payload = context_payload(
+                    discussion_facts=[
+                        {
+                            "fact": "Two independent assignments are present",
+                            "evidence": [
+                                {
+                                    "telegram_message_id": 10,
+                                    "revision": 1,
+                                    "fact_paths": ["fact"],
+                                }
+                            ],
+                        }
+                    ]
+                )
+            else:
+                first = proposal().model_dump(mode="json")
+                second = proposal().model_copy(
+                    update={
+                        "title": "Подготовить определение",
+                        "description": "Подготовить определение функции.",
+                    }
+                ).model_dump(mode="json")
+                payload = extraction_payload() | {"proposals": [first, second]}
+            return ProviderResponse(
+                content=json.dumps(payload),
+                usage=ProviderUsage(prompt_tokens=10, completion_tokens=5),
+                model="fake",
+                finish_reason="stop",
+                payload_sha256=str(len(self.requests)) * 64,
+            )
+
+    before = product_snapshot(client)
+
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            data = analysis_input(group.id)
+            provider = MultiProposalProvider()
+            result = await run_shadow(provider, data, [])
+            persist_shadow_summary(
+                db,
+                group_id=group.id,
+                batch_id=None,
+                analysis_input=data,
+                result=result,
+                metrics={"raw_proposal_count": 2},
+                charged_usd=Decimal("0.001"),
+                now=NOW,
+            )
+            await db.commit()
+            assert result.validation.raw_proposal_count == 2
+            assert len(result.validation.accepted) == 2
+
+    asyncio.run(run())
+    assert product_snapshot(client) == before
+
+
 def test_dispatch_runs_durable_shadow_once_without_product_mutation(client):
     enable_shadow(client)
     source(client, text="ДЗ: решить задачи 1–3")
@@ -388,6 +530,52 @@ def test_shadow_only_kill_switch_honors_absolute_cutoff(client):
     )
     assert provider.requests == []
     assert product_snapshot(client)["homework"] == 0
+
+
+def test_shadow_canary_recovers_only_one_stranded_run_and_does_not_enqueue(client):
+    enable_shadow(client)
+    source(client, text="ДЗ: решить задачи 1–3")
+    provider = HybridProvider()
+    regular = Settings(ai_enabled=False, ai_shadow_enabled=True)
+    canary = Settings(
+        ai_enabled=False,
+        ai_shadow_enabled=True,
+        ai_shadow_canary_only=True,
+    )
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, regular, provider, NOW))
+        == "shadow_queued"
+    )
+
+    async def strand():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(ShadowEvaluationRun).with_for_update())
+            row.state = "running"
+            row.attempts = 1
+            row.lease_until = NOW - timedelta(seconds=1)
+            await db.commit()
+
+    asyncio.run(strand())
+    before = product_snapshot(client)
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, canary, provider, NOW))
+        == "shadow_completed"
+    )
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, canary, provider, NOW))
+        == "disabled"
+    )
+    assert product_snapshot(client) == before
+    assert len(provider.requests) == 2
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (await db.scalars(select(ShadowEvaluationRun))).all()
+            assert len(rows) == 1
+            assert rows[0].state == "completed"
+            assert rows[0].attempts == 2
+
+    asyncio.run(inspect())
 
 
 def test_shadow_failure_is_retryable_and_cannot_mutate_products(client):

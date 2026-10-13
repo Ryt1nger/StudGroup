@@ -139,6 +139,14 @@ def test_two_pass_requests_keep_untrusted_messages_out_of_system_prompt():
     assert untrusted in json.dumps(extraction.user_payload)
 
 
+def test_extraction_prompt_pins_exact_output_and_evidence_contract():
+    request = prepare_extraction_request(analysis_input(), {"facts": []})
+    assert '"explicit_empty": false' in request.system_prompt
+    assert '"telegram_message_id": 123' in request.system_prompt
+    assert '"fact_paths": ["subject", "title", "description"]' in request.system_prompt
+    assert "Do not add\nquotes, source_id, message_id, type" in request.system_prompt
+
+
 def test_extraction_validation_keeps_valid_sibling_from_long_message():
     data = analysis_input()
     valid = proposal().model_dump(mode="json")
@@ -153,3 +161,22 @@ def test_extraction_validation_keeps_valid_sibling_from_long_message():
     result = validate_extraction(json.dumps(payload), data)
     assert len(result.accepted) == 1
     assert result.rejected[0].proposal_ordinal == 0
+
+
+def test_extraction_validation_preserves_multiple_valid_proposals():
+    data = analysis_input()
+    first = proposal().model_dump(mode="json")
+    second = proposal(
+        title="Подготовить определение",
+        description="Подготовить определение функции.",
+    ).model_dump(mode="json")
+    payload = {
+        "schema_version": data.schema_version,
+        "engine_version": data.engine_version,
+        "source_revision": 1,
+        "proposals": [first, second],
+        "explicit_empty": False,
+    }
+    result = validate_extraction(json.dumps(payload), data)
+    assert len(result.accepted) == 2
+    assert result.accepted_ordinals == [0, 1]

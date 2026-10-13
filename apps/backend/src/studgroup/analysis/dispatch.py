@@ -23,7 +23,11 @@ async def dispatch_next(engine, settings, provider=None, now=None):
     if shadow_status != "idle":
         return f"shadow_{shadow_status}"
     legacy_status = await process_next(engine, settings, provider=provider, now=now)
-    enqueued = await enqueue_next_shadow(engine, now=now)
+    enqueued = (
+        None
+        if settings.ai_shadow_canary_only
+        else await enqueue_next_shadow(engine, now=now)
+    )
     if legacy_status in {"idle", "disabled"} and enqueued == "queued":
         return "shadow_queued"
     return legacy_status

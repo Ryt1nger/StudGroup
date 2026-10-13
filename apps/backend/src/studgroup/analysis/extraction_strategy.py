@@ -23,7 +23,45 @@ as an attention reason. Use material_conflict or model_material_doubt only for a
 problem. Personal instructions are audience=personal. Explicit subgroup work is audience=subgroup
 with its label and remains a separate proposal. Use action=create for a new item. Use update,
 reschedule or cancel only with an existing_item_id and expected_item_revision supplied in trusted
-context; never guess an identity. Return the requested versioned JSON object only."""
+context; never guess an identity.
+
+Return JSON only, using exactly this contract and no other keys:
+{
+  "schema_version": "analysis-contract-1",
+  "engine_version": "cplus-shadow-1",
+  "source_revision": 1,
+  "proposals": [
+    {
+      "action": "create",
+      "existing_item_id": null,
+      "expected_item_revision": null,
+      "destination": "task",
+      "semantic_kind": "homework",
+      "subject": "Subject or null",
+      "title": "Short specific title or null",
+      "description": "Clear evidenced actions or null",
+      "deadline": {"at": null, "date_only": false, "basis": "unknown"},
+      "audience": {"scope": "group", "label": null},
+      "confidence": 90,
+      "attention_reasons": [],
+      "evidence": [
+        {
+          "telegram_message_id": 123,
+          "revision": 1,
+          "fact_paths": ["subject", "title", "description"]
+        }
+      ]
+    }
+  ],
+  "explicit_empty": false
+}
+Copy schema_version, engine_version and source_revision exactly from the request. When there are no
+academic items, proposals must be [] and explicit_empty must be true. Otherwise explicit_empty must
+be false. Use only supplied message IDs and exact revisions. Evidence keys are exactly
+telegram_message_id, revision and fact_paths. deadline.basis is explicit, schedule_inferred,
+ambiguous_range or unknown. audience.scope is group, subgroup, personal or unknown. semantic_kind
+is homework, test, control_point, assessment, credit, exam or other_academic_deadline. Do not add
+quotes, source_id, message_id, type or explanatory wrapper fields."""
 
 
 def prepare_extraction_request(analysis_input: AnalysisInput, understood_context):

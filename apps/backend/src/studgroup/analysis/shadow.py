@@ -151,9 +151,20 @@ async def run_shadow(provider, analysis_input, memory_context):
         ) from None
     try:
         validation = validate_extraction(extraction_response.content, analysis_input)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as error:
+        code = str(error)
+        if code not in {
+            "unparseable_provider_json",
+            "provider_output_not_object",
+            "schema_version_mismatch",
+            "engine_version_mismatch",
+            "source_revision_mismatch",
+            "proposal_list_required",
+            "explicit_empty_mismatch",
+        }:
+            code = "invalid"
         raise ShadowPassFailure(
-            "invalid_shadow_extraction",
+            f"extraction_validation_{code}",
             False,
             usage=_sum_usage(context_response.usage, extraction_response.usage),
             hashes=(context_response.payload_sha256, extraction_response.payload_sha256),

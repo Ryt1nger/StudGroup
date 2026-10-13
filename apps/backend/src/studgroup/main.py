@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     ai_enabled_until: datetime | None = None
     ai_shadow_enabled: bool = False
     ai_shadow_enabled_until: datetime | None = None
+    ai_shadow_canary_only: bool = False
     ai_import_chat_id: int | None = None
     ai_schedule_enabled: bool = False
     ai_live_two_pass: bool = False

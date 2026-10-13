@@ -190,8 +190,25 @@ async def enqueue_next_shadow(engine, now=None):
         return state
 
 
-async def _claim(engine, now):
+async def _claim(engine, now, *, canary_only=False):
     async with AsyncSession(engine) as db:
+        eligible_state = (
+            (
+                (ShadowEvaluationRun.state == "running")
+                & (ShadowEvaluationRun.lease_until <= now)
+            )
+            if canary_only
+            else or_(
+                (
+                    ShadowEvaluationRun.state.in_(["queued", "retry", "budget_deferred"])
+                    & (ShadowEvaluationRun.available_at <= now)
+                ),
+                (
+                    ShadowEvaluationRun.state == "running"
+                )
+                & (ShadowEvaluationRun.lease_until <= now),
+            )
+        )
         row = await db.scalar(
             select(ShadowEvaluationRun)
             .join(
@@ -201,16 +218,7 @@ async def _claim(engine, now):
             .where(
                 GroupAnalysisSettings.analysis_mode == "shadow",
                 ShadowEvaluationRun.delete_at > now,
-                or_(
-                    (
-                        ShadowEvaluationRun.state.in_(["queued", "retry", "budget_deferred"])
-                        & (ShadowEvaluationRun.available_at <= now)
-                    ),
-                    (
-                        ShadowEvaluationRun.state == "running"
-                    )
-                    & (ShadowEvaluationRun.lease_until <= now),
-                ),
+                eligible_state,
             )
             .order_by(ShadowEvaluationRun.created_at, ShadowEvaluationRun.id)
             .with_for_update(skip_locked=True)
@@ -271,7 +279,11 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
         and _utc(settings.ai_shadow_enabled_until) <= now
     ):
         return "disabled"
-    claimed = await _claim(engine, now)
+    claimed = await _claim(
+        engine,
+        now,
+        canary_only=settings.ai_shadow_canary_only,
+    )
     if claimed is None or isinstance(claimed, str):
         return claimed or "idle"
     run_id, generation = claimed
