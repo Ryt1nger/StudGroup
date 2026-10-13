@@ -2,12 +2,13 @@
 
 import asyncio
 import json
+import math
 import re
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.models import (
@@ -15,12 +16,238 @@ from studgroup.models import (
     AIAttempt,
     AICandidate,
     AIControl,
+    AIJob,
+    BotOutbox,
+    BotPanel,
+    CanonicalAcademicItem,
     Group,
     GroupAIActivity,
+    GroupAnalysisSettings,
     Homework,
+    Notification,
     RawMessage,
     ShadowEvaluationRun,
 )
+
+CANARY_INCREMENTAL_CAP_USD = Decimal("0.04000000")
+CONTEXT_OUTPUT_REENCODING_FACTOR = 8
+
+
+def _request_size(request):
+    payload = json.dumps(request.user_payload, ensure_ascii=False)
+    return len(request.system_prompt.encode("utf-8")) + len(payload.encode("utf-8"))
+
+
+async def _group_bot_outbox_count(db, telegram_chat_id):
+    """Resolve outbox ownership internally without returning payloads or chat identifiers."""
+    rows = (
+        await db.execute(
+            select(BotOutbox.id, BotOutbox.payload, BotPanel.chat_id).outerjoin(
+                BotPanel, BotPanel.id == BotOutbox.panel_id
+            )
+        )
+    ).all()
+    matched = set()
+    for row_id, payload_json, panel_chat_id in rows:
+        if panel_chat_id == telegram_chat_id:
+            matched.add(row_id)
+            continue
+        try:
+            payload = json.loads(payload_json)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(payload, dict) and payload.get("chat_id") == telegram_chat_id:
+            matched.add(row_id)
+    return len(matched)
+
+
+def _canary_envelope(row):
+    """Return value-free request sizing for one retained shadow run."""
+    from studgroup.analysis.context_strategy import prepare_context_request
+    from studgroup.analysis.contracts import AnalysisInput
+    from studgroup.analysis.extraction_strategy import prepare_extraction_request
+
+    analysis_input = AnalysisInput.model_validate_json(row.input_json)
+    memory = json.loads(row.memory_json or "[]")
+    context_request = prepare_context_request(analysis_input, memory)
+    extraction_request = prepare_extraction_request(analysis_input, {})
+    context_bytes = _request_size(context_request)
+    extraction_base_bytes = _request_size(extraction_request)
+    context_output_cap = context_request.max_output_tokens
+    completion_cap = context_output_cap + extraction_request.max_output_tokens
+
+    # bytes/3 is a practical estimate for this mixed Russian/JSON payload. The
+    # separate upper bound treats every prepared byte as one token and permits
+    # bounded expansion when pass-one JSON is parsed and embedded in pass two.
+    estimated_prompt_tokens = (
+        math.ceil(context_bytes / 3)
+        + math.ceil(extraction_base_bytes / 3)
+        + context_output_cap
+    )
+    prompt_token_upper_bound = (
+        context_bytes
+        + extraction_base_bytes
+        + context_output_cap * CONTEXT_OUTPUT_REENCODING_FACTOR
+    )
+    estimated_cost = (
+        Decimal(estimated_prompt_tokens) * Decimal("0.30")
+        + Decimal(completion_cap) * Decimal("1.20")
+    ) / Decimal(1_000_000)
+    cost_upper_bound = (
+        Decimal(prompt_token_upper_bound) * Decimal("0.30")
+        + Decimal(completion_cap) * Decimal("1.20")
+    ) / Decimal(1_000_000)
+    return {
+        "message_count": len(analysis_input.messages),
+        "attachment_count": sum(len(message.attachments) for message in analysis_input.messages),
+        "source_text_utf8_bytes": sum(
+            len(message.text.encode("utf-8")) for message in analysis_input.messages
+        ),
+        "analysis_input_json_bytes": len(row.input_json.encode("utf-8")),
+        "memory_json_bytes": len((row.memory_json or "[]").encode("utf-8")),
+        "context_request_bytes": context_bytes,
+        "extraction_request_base_bytes": extraction_base_bytes,
+        "estimated_prompt_tokens": estimated_prompt_tokens,
+        "prompt_token_upper_bound": prompt_token_upper_bound,
+        "completion_token_cap": completion_cap,
+        "estimated_cost_usd": str(estimated_cost.quantize(Decimal("0.00000001"))),
+        "cost_upper_bound_usd": str(cost_upper_bound.quantize(Decimal("0.00000001"))),
+    }
+
+
+async def _shadow_canary_preflight(db, group, settings, now):
+    """Read-only canary eligibility snapshot using the application's DB session."""
+    from studgroup.analysis.shadow_worker import SHADOW_RESERVATION_USD
+
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    route = await db.get(GroupAnalysisSettings, group.id)
+    recoverable = (
+        await db.scalars(
+            select(ShadowEvaluationRun)
+            .where(
+                ShadowEvaluationRun.group_id == group.id,
+                ShadowEvaluationRun.state == "running",
+                ShadowEvaluationRun.lease_until.is_not(None),
+                ShadowEvaluationRun.lease_until <= now,
+                ShadowEvaluationRun.delete_at > now,
+            )
+            .order_by(ShadowEvaluationRun.created_at, ShadowEvaluationRun.id)
+        )
+    ).all()
+    active_shadow = await db.scalar(
+        select(func.count())
+        .select_from(ShadowEvaluationRun)
+        .where(
+            ShadowEvaluationRun.state == "running",
+            or_(
+                ShadowEvaluationRun.lease_until.is_(None),
+                ShadowEvaluationRun.lease_until > now,
+            ),
+        )
+    )
+    active_legacy = await db.scalar(
+        select(func.count())
+        .select_from(AIJob)
+        .where(
+            AIJob.state == "running",
+            or_(AIJob.lease_until.is_(None), AIJob.lease_until > now),
+        )
+    )
+    dormant_backlog = await db.scalar(
+        select(func.count())
+        .select_from(ShadowEvaluationRun)
+        .where(
+            ShadowEvaluationRun.group_id == group.id,
+            ShadowEvaluationRun.state.in_(["queued", "retry", "budget_deferred"]),
+            ShadowEvaluationRun.delete_at > now,
+        )
+    )
+    charged_today = Decimal(
+        await db.scalar(
+            select(func.coalesce(func.sum(ShadowEvaluationRun.charged_usd), 0)).where(
+                ShadowEvaluationRun.group_id == group.id,
+                ShadowEvaluationRun.created_at >= day_start,
+            )
+        )
+        or 0
+    )
+    reserved_today = Decimal(
+        await db.scalar(
+            select(func.coalesce(func.sum(ShadowEvaluationRun.reserved_usd), 0)).where(
+                ShadowEvaluationRun.group_id == group.id,
+                ShadowEvaluationRun.created_at >= day_start,
+            )
+        )
+        or 0
+    )
+    selected = recoverable[0] if len(recoverable) == 1 else None
+    selected_reservation = Decimal(selected.reserved_usd or 0) if selected else Decimal(0)
+    reserved_elsewhere = max(Decimal(0), reserved_today - selected_reservation)
+    budget = Decimal(route.shadow_daily_budget_usd) if route else Decimal(0)
+    budget_available = max(Decimal(0), budget - charged_today - reserved_elsewhere)
+    envelope = None
+    envelope_error = None
+    if selected is not None:
+        try:
+            envelope = _canary_envelope(selected)
+        except Exception:  # noqa: BLE001 - emit a stable code, never retained values
+            envelope_error = "canary_input_invalid"
+
+    blockers = []
+    if settings.ai_enabled:
+        blockers.append("legacy_ai_not_disabled")
+    if settings.ai_shadow_enabled:
+        blockers.append("shadow_not_disabled_during_preflight")
+    if not settings.ai_shadow_canary_only:
+        blockers.append("canary_only_disabled")
+    if route is None or route.analysis_mode != "shadow":
+        blockers.append("route_not_shadow")
+    if len(recoverable) != 1:
+        blockers.append("recoverable_canary_count_mismatch")
+    if active_shadow or active_legacy:
+        blockers.append("active_ai_lease_present")
+    if envelope_error:
+        blockers.append(envelope_error)
+    if budget_available < SHADOW_RESERVATION_USD:
+        blockers.append("shadow_route_budget_insufficient")
+    if envelope is not None and Decimal(envelope["cost_upper_bound_usd"]) > (
+        CANARY_INCREMENTAL_CAP_USD
+    ):
+        blockers.append("owner_canary_cap_exceeded")
+
+    launch_requirements = []
+    if not settings.ai_shadow_enabled:
+        launch_requirements.append("enable_shadow_for_bounded_window")
+    if settings.ai_shadow_enabled_until is None or settings.ai_shadow_enabled_until <= now:
+        launch_requirements.append("set_future_shadow_cutoff")
+
+    return {
+        "status": "ready_for_controlled_activation" if not blockers else "blocked",
+        "blocking_codes": blockers,
+        "launch_requirements": launch_requirements,
+        "analysis_mode": route.analysis_mode if route else "unconfigured",
+        "engine_version": route.engine_version if route else None,
+        "recoverable_canary_count": len(recoverable),
+        "active_shadow_lease_count": int(active_shadow or 0),
+        "active_legacy_lease_count": int(active_legacy or 0),
+        "dormant_shadow_backlog_count": int(dormant_backlog or 0),
+        "selected_run_attempts": selected.attempts if selected else None,
+        "selected_run_existing_prompt_tokens": selected.prompt_tokens if selected else None,
+        "selected_run_existing_completion_tokens": selected.completion_tokens if selected else None,
+        "selected_run_existing_charged_usd": str(selected.charged_usd) if selected else None,
+        "selected_run_existing_reserved_usd": str(selected_reservation) if selected else None,
+        "envelope": envelope,
+        "budget": {
+            "route_daily_limit_usd": str(budget),
+            "charged_today_usd": str(charged_today),
+            "reserved_today_usd": str(reserved_today),
+            "reserved_elsewhere_usd": str(reserved_elsewhere),
+            "available_for_canary_usd": str(budget_available),
+            "worker_reservation_usd": str(SHADOW_RESERVATION_USD),
+            "owner_incremental_cap_usd": str(CANARY_INCREMENTAL_CAP_USD),
+        },
+        "automatic_paid_retry_count": 0,
+    }
 
 
 async def _shadow_context_diagnostics(db, group_id):
@@ -180,6 +407,7 @@ async def snapshot(db, settings, now):
             )
         )
         shadow_context_diagnostics = await _shadow_context_diagnostics(db, group.id)
+        canary_preflight = await _shadow_canary_preflight(db, group, settings, now)
         result["groups"].append(
             {
                 "id": str(group.id),
@@ -212,10 +440,14 @@ async def snapshot(db, settings, now):
                 ),
                 "homework": await count(Homework),
                 "deadlines": await count(AcademicDeadline),
+                "notifications": await count(Notification),
+                "bot_outbox": await _group_bot_outbox_count(db, group.telegram_chat_id),
+                "canonical_items": await count(CanonicalAcademicItem),
                 "review": await count(AICandidate, AICandidate.state == "review"),
                 "shadow_states": shadow_states,
                 "shadow_errors": shadow_errors,
                 "shadow_context_diagnostics": shadow_context_diagnostics,
+                "shadow_canary_preflight": canary_preflight,
                 "shadow_charged_usd": str(shadow_cost),
                 "last_source_at": latest.isoformat() if latest else None,
                 "last_live_receipt": live_latest.isoformat() if live_latest else None,
