@@ -105,11 +105,27 @@ async def status(db, group_id):
         )
     ).all()
     counts = Counter({row[0]: int(row[1]) for row in rows})
+    errors = dict(
+        (
+            await db.execute(
+                select(
+                    ShadowEvaluationRun.last_error,
+                    func.count(ShadowEvaluationRun.id),
+                )
+                .where(
+                    ShadowEvaluationRun.group_id == group_id,
+                    ShadowEvaluationRun.last_error.is_not(None),
+                )
+                .group_by(ShadowEvaluationRun.last_error)
+            )
+        ).all()
+    )
     return {
         "mode": route.mode.value,
         "budget": route.shadow_daily_budget_usd,
         "sample": route.shadow_sample_percent,
         "counts": counts,
+        "errors": errors,
         "prompt_tokens": sum(int(row[2]) for row in rows),
         "completion_tokens": sum(int(row[3]) for row in rows),
         "charged_usd": sum((Decimal(row[4]) for row in rows), Decimal(0)),

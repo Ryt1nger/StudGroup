@@ -17,6 +17,7 @@ from studgroup.models import (
     GroupAIActivity,
     Homework,
     RawMessage,
+    ShadowEvaluationRun,
 )
 
 
@@ -80,6 +81,38 @@ async def snapshot(db, settings, now):
             )
         )
         activity = await db.get(GroupAIActivity, group.id)
+        shadow_states = dict(
+            (
+                await db.execute(
+                    select(
+                        ShadowEvaluationRun.state,
+                        func.count(ShadowEvaluationRun.id),
+                    )
+                    .where(ShadowEvaluationRun.group_id == group.id)
+                    .group_by(ShadowEvaluationRun.state)
+                )
+            ).all()
+        )
+        shadow_errors = dict(
+            (
+                await db.execute(
+                    select(
+                        ShadowEvaluationRun.last_error,
+                        func.count(ShadowEvaluationRun.id),
+                    )
+                    .where(
+                        ShadowEvaluationRun.group_id == group.id,
+                        ShadowEvaluationRun.last_error.is_not(None),
+                    )
+                    .group_by(ShadowEvaluationRun.last_error)
+                )
+            ).all()
+        )
+        shadow_cost = await db.scalar(
+            select(func.coalesce(func.sum(ShadowEvaluationRun.charged_usd), 0)).where(
+                ShadowEvaluationRun.group_id == group.id
+            )
+        )
         result["groups"].append(
             {
                 "id": str(group.id),
@@ -113,6 +146,9 @@ async def snapshot(db, settings, now):
                 "homework": await count(Homework),
                 "deadlines": await count(AcademicDeadline),
                 "review": await count(AICandidate, AICandidate.state == "review"),
+                "shadow_states": shadow_states,
+                "shadow_errors": shadow_errors,
+                "shadow_charged_usd": str(shadow_cost),
                 "last_source_at": latest.isoformat() if latest else None,
                 "last_live_receipt": live_latest.isoformat() if live_latest else None,
                 "last_activity_signal": activity.last_signal_at.isoformat() if activity else None,
