@@ -264,7 +264,12 @@ async def _claim(engine, now):
 async def process_shadow_next(engine, settings, provider=None, now=None):
     """Execute one reserved shadow item and persist diagnostics, never product data."""
     now = _utc(now or datetime.now(UTC))
-    if not settings.ai_enabled:
+    if not settings.ai_enabled and not settings.ai_shadow_enabled:
+        return "disabled"
+    if (
+        settings.ai_shadow_enabled_until is not None
+        and _utc(settings.ai_shadow_enabled_until) <= now
+    ):
         return "disabled"
     claimed = await _claim(engine, now)
     if claimed is None or isinstance(claimed, str):

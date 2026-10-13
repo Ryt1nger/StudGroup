@@ -27,6 +27,10 @@ async def snapshot(db, settings, now):
     spent = control.spent_usd if control else Decimal(0)
     result = {
         "ai_enabled": settings.ai_enabled,
+        "ai_shadow_enabled": settings.ai_shadow_enabled,
+        "ai_shadow_enabled_until": settings.ai_shadow_enabled_until.isoformat()
+        if settings.ai_shadow_enabled_until
+        else None,
         "schedule_enabled": settings.ai_schedule_enabled,
         "live_two_pass": settings.ai_live_two_pass,
         "mode": settings.processing_mode,

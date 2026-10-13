@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     ai_max_recoverable_attempts_per_stage: int = 8
     ai_enabled: bool = False
     ai_enabled_until: datetime | None = None
+    ai_shadow_enabled: bool = False
+    ai_shadow_enabled_until: datetime | None = None
     ai_import_chat_id: int | None = None
     ai_schedule_enabled: bool = False
     ai_live_two_pass: bool = False
@@ -64,7 +66,7 @@ class Settings(BaseSettings):
                 return "postgresql+asyncpg://" + value[len(prefix) :]
         return value
 
-    @field_validator("ai_enabled_until", mode="before")
+    @field_validator("ai_enabled_until", "ai_shadow_enabled_until", mode="before")
     @classmethod
     def empty_cutoff(cls, value):
         return None if value == "" else value
@@ -89,7 +91,9 @@ class Settings(BaseSettings):
             raise ValueError("AI guardrails must be positive")
         return value
 
-    @field_validator("ai_enabled_until", "owner_update_notifications_since")
+    @field_validator(
+        "ai_enabled_until", "ai_shadow_enabled_until", "owner_update_notifications_since"
+    )
     @classmethod
     def deadline_requires_timezone(cls, value):
         if value is not None and value.utcoffset() is None:

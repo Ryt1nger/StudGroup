@@ -24,6 +24,6 @@ async def dispatch_next(engine, settings, provider=None, now=None):
         return f"shadow_{shadow_status}"
     legacy_status = await process_next(engine, settings, provider=provider, now=now)
     enqueued = await enqueue_next_shadow(engine, now=now)
-    if legacy_status == "idle" and enqueued == "queued":
+    if legacy_status in {"idle", "disabled"} and enqueued == "queued":
         return "shadow_queued"
     return legacy_status

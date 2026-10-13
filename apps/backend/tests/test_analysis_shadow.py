@@ -317,6 +317,43 @@ def test_dispatch_runs_durable_shadow_once_without_product_mutation(client):
     asyncio.run(inspect())
 
 
+def test_shadow_only_kill_switch_runs_cplus_while_legacy_stays_disabled(client):
+    enable_shadow(client)
+    source(client, text="ДЗ: решить задачи 1–3")
+    provider = HybridProvider()
+    settings = Settings(ai_enabled=False, ai_shadow_enabled=True)
+
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW))
+        == "shadow_queued"
+    )
+    assert product_snapshot(client)["homework"] == 0
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW))
+        == "shadow_completed"
+    )
+    assert product_snapshot(client)["homework"] == 0
+    assert len(provider.requests) == 2
+
+
+def test_shadow_only_kill_switch_honors_absolute_cutoff(client):
+    enable_shadow(client)
+    source(client)
+    provider = HybridProvider()
+    settings = Settings(
+        ai_enabled=False,
+        ai_shadow_enabled=True,
+        ai_shadow_enabled_until=NOW,
+    )
+
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW))
+        == "shadow_disabled"
+    )
+    assert provider.requests == []
+    assert product_snapshot(client)["homework"] == 0
+
+
 def test_shadow_failure_is_retryable_and_cannot_mutate_products(client):
     enable_shadow(client)
     source(client)

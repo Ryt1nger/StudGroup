@@ -39,8 +39,10 @@ does not delete legacy results and does not itself enable provider calls:
 
 The arguments are the hard daily shadow budget in USD (`0.04`–`1.00`) and the deterministic
 sample percentage (`1`–`100`). Use `/shadowstatus` for aggregate queue state, tokens and charged
-cost; it never prints source message text. `AI_ENABLED` and an absolute `AI_ENABLED_UNTIL` remain
-the independent deployment kill switch and cutoff.
+cost; it never prints source message text. For a replay that must not run the legacy writer, keep
+`AI_ENABLED=false` and use `AI_SHADOW_ENABLED=true` with an absolute
+`AI_SHADOW_ENABLED_UNTIL`. Ordinary live shadow may still use the global AI switch; both paths
+remain subject to the per-group shadow budget.
 
 ```bash
 python -m studgroup.analysis_admin \
