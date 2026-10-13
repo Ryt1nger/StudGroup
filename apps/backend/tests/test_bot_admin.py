@@ -204,7 +204,10 @@ def test_shadowrun_requires_confirmation_and_only_opens_read_only_replay(client)
     assert (homework, runs, history) == (before[1], 0, 1)
 
     private(client, "/shadowstatus", update=102)
-    assert "Режим: shadow" in session(client)[1][-1]["text"]
+    status_text = session(client)[1][-1]["text"]
+    assert "Режим: shadow" in status_text
+    assert "Ошибки по этапам:" in status_text
+    assert "Коды причин:" in status_text
 
 
 def test_explain_shows_context_and_model_answers(client, monkeypatch):

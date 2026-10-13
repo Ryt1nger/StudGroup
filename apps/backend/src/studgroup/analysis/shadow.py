@@ -55,6 +55,31 @@ class ShadowPassFailure(Exception):
         super().__init__(code)
 
 
+def failure_stage(code):
+    """Map stable reason codes to the owner-facing pipeline stage."""
+    if code.startswith("preparation_") or code == "shadow_pipeline_error":
+        return "context_preparation"
+    if code.startswith("context_validation_") or code in {
+        "invalid_shadow_context",
+        "context_invalid_json",
+        "context_output_not_object",
+        "context_schema_invalid",
+        "context_source_revision_mismatch",
+        "context_source_outside_envelope",
+        "context_evidence_outside_envelope",
+    }:
+        return "validation"
+    if code.startswith("extraction_validation_") or code == "invalid_shadow_extraction":
+        return "validation"
+    if code.startswith("context_"):
+        return "first_ai_pass"
+    if code.startswith("extraction_"):
+        return "second_ai_pass"
+    if code.startswith("persistence_"):
+        return "result_persistence"
+    return "unknown"
+
+
 def _sum_usage(*rows):
     return ProviderUsage(
         prompt_tokens=sum(row.prompt_tokens for row in rows if row is not None),
@@ -88,9 +113,19 @@ async def run_shadow(provider, analysis_input, memory_context):
         ) from None
     try:
         context = validate_context(context_response.content, analysis_input)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as error:
+        code = str(error)
+        if code not in {
+            "context_invalid_json",
+            "context_output_not_object",
+            "context_schema_invalid",
+            "context_source_revision_mismatch",
+            "context_source_outside_envelope",
+            "context_evidence_outside_envelope",
+        }:
+            code = "context_validation_invalid"
         raise ShadowPassFailure(
-            "invalid_shadow_context",
+            code,
             False,
             usage=context_response.usage,
             hashes=(context_response.payload_sha256,),

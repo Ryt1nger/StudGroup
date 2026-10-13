@@ -135,6 +135,10 @@ async def handle(db, update, settings):
         errors = ", ".join(
             f"{code}: {count}" for code, count in sorted(report["errors"].items())
         ) or "нет"
+        stages = ", ".join(
+            f"{stage}: {count}"
+            for stage, count in sorted(report["errors_by_stage"].items())
+        ) or "нет"
         await say(
             db,
             chat,
@@ -142,7 +146,8 @@ async def handle(db, update, settings):
             f"Режим: {report['mode']}; выборка: {report['sample']}%; "
             f"дневной лимит: ${report['budget']}.\n"
             f"Результаты: {counts}.\n"
-            f"Ошибки: {errors}.\n"
+            f"Ошибки по этапам: {stages}.\n"
+            f"Коды причин: {errors}.\n"
             f"Токены: вход {report['prompt_tokens']}, выход {report['completion_tokens']}; "
             f"учтено: ${report['charged_usd']}.",
         )

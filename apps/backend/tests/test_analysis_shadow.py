@@ -11,7 +11,7 @@ from test_processing import Provider as LegacyProvider
 from test_processing import source
 
 from studgroup.ai import ProviderFailure
-from studgroup.analysis.context_strategy import validate_context
+from studgroup.analysis.context_strategy import diagnose_context_output, validate_context
 from studgroup.analysis.contracts import (
     ANALYSIS_ENGINE_VERSION,
     ANALYSIS_SCHEMA_VERSION,
@@ -225,6 +225,42 @@ def test_context_output_requires_current_in_envelope_evidence():
     stale["discussion_facts"][0]["evidence"][0]["revision"] = 2
     with pytest.raises(ValueError, match="context_evidence_outside_envelope"):
         validate_context(json.dumps(stale), analysis_input())
+
+
+def test_context_diagnostics_report_structure_without_values():
+    retained_structure = {
+        "relevant_source_ids": [10],
+        "discussion_facts": [],
+        "conflicts": [],
+        "memory_proposals": [],
+        "summary": "redacted provider value",
+    }
+    diagnostic = diagnose_context_output(
+        json.dumps(retained_structure),
+        analysis_input(),
+    )
+    assert diagnostic == {
+        "reason": "context_schema_invalid",
+        "missing_top_level": ["engine_version", "schema_version", "source_revision"],
+        "additional_top_level": ["summary"],
+        "validation_errors": {
+            "source_revision:missing": 1,
+            "summary:extra_forbidden": 1,
+        },
+    }
+    assert "redacted provider value" not in json.dumps(diagnostic)
+
+
+@pytest.mark.parametrize(
+    ("content", "reason"),
+    [
+        ("not-json", "context_invalid_json"),
+        ("[]", "context_output_not_object"),
+    ],
+)
+def test_context_validation_exposes_stable_technical_reason(content, reason):
+    with pytest.raises((TypeError, ValueError), match=reason):
+        validate_context(content, analysis_input())
 
 
 def test_group_routing_defaults_legacy_and_new_requires_gate(client):

@@ -21,6 +21,54 @@ from studgroup.models import (
 )
 
 
+async def _shadow_context_diagnostics(db, group_id):
+    """Aggregate retained invalid outputs without emitting source or result values."""
+    from studgroup.analysis.context_strategy import diagnose_context_output
+    from studgroup.analysis.contracts import AnalysisInput
+
+    rows = (
+        await db.execute(
+            select(
+                ShadowEvaluationRun.created_at,
+                ShadowEvaluationRun.input_json,
+                ShadowEvaluationRun.context_result_json,
+            )
+            .where(
+                ShadowEvaluationRun.group_id == group_id,
+                ShadowEvaluationRun.last_error.in_(
+                    ["invalid_shadow_context", "context_schema_invalid"]
+                ),
+            )
+            .order_by(ShadowEvaluationRun.created_at.desc())
+        )
+    ).all()
+    signatures = {}
+    latest = []
+    for created_at, input_json, output_json in rows:
+        try:
+            analysis_input = AnalysisInput.model_validate_json(input_json)
+            diagnostic = diagnose_context_output(output_json, analysis_input)
+        except Exception:  # noqa: BLE001 - diagnostic must remain non-blocking and value-free
+            diagnostic = {"reason": "diagnostic_input_unavailable"}
+        signature = json.dumps(diagnostic, ensure_ascii=True, sort_keys=True)
+        signatures[signature] = signatures.get(signature, 0) + 1
+        if len(latest) < 3:
+            latest.append(
+                {
+                    "created_at": created_at.isoformat(),
+                    "diagnostic": diagnostic,
+                }
+            )
+    return {
+        "total": len(rows),
+        "signatures": [
+            {"count": count, "diagnostic": json.loads(signature)}
+            for signature, count in sorted(signatures.items())
+        ],
+        "latest_three": latest,
+    }
+
+
 async def snapshot(db, settings, now):
     from studgroup.processing import RESERVATION
 
@@ -113,6 +161,7 @@ async def snapshot(db, settings, now):
                 ShadowEvaluationRun.group_id == group.id
             )
         )
+        shadow_context_diagnostics = await _shadow_context_diagnostics(db, group.id)
         result["groups"].append(
             {
                 "id": str(group.id),
@@ -148,6 +197,7 @@ async def snapshot(db, settings, now):
                 "review": await count(AICandidate, AICandidate.state == "review"),
                 "shadow_states": shadow_states,
                 "shadow_errors": shadow_errors,
+                "shadow_context_diagnostics": shadow_context_diagnostics,
                 "shadow_charged_usd": str(shadow_cost),
                 "last_source_at": latest.isoformat() if latest else None,
                 "last_live_receipt": live_latest.isoformat() if live_latest else None,

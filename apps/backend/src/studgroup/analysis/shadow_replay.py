@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from studgroup.analysis.pilot import transition_mode
 from studgroup.analysis.routing import AnalysisMode, get_route
+from studgroup.analysis.shadow import failure_stage
 from studgroup.models import Group, GroupAnalysisSettings, RawMessage, ShadowEvaluationRun
 
 
@@ -120,12 +121,16 @@ async def status(db, group_id):
             )
         ).all()
     )
+    errors_by_stage = Counter()
+    for code, count in errors.items():
+        errors_by_stage[failure_stage(code)] += int(count)
     return {
         "mode": route.mode.value,
         "budget": route.shadow_daily_budget_usd,
         "sample": route.shadow_sample_percent,
         "counts": counts,
         "errors": errors,
+        "errors_by_stage": errors_by_stage,
         "prompt_tokens": sum(int(row[2]) for row in rows),
         "completion_tokens": sum(int(row[3]) for row in rows),
         "charged_usd": sum((Decimal(row[4]) for row in rows), Decimal(0)),
