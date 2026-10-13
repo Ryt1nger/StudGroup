@@ -141,10 +141,10 @@ def test_two_pass_requests_keep_untrusted_messages_out_of_system_prompt():
 
 def test_extraction_prompt_pins_exact_output_and_evidence_contract():
     request = prepare_extraction_request(analysis_input(), {"facts": []})
-    assert '"explicit_empty": false' in request.system_prompt
-    assert '"telegram_message_id": 123' in request.system_prompt
-    assert '"fact_paths": ["subject", "title", "description"]' in request.system_prompt
-    assert "Do not add\nquotes, source_id, message_id, type" in request.system_prompt
+    assert '"explicit_empty":false' in request.system_prompt
+    assert '"telegram_message_id":101' in request.system_prompt
+    assert '"fact_paths":["subject","description"]' in request.system_prompt
+    assert "Never add quotes, source_id, message_id, type" in request.system_prompt
 
 
 def test_extraction_validation_keeps_valid_sibling_from_long_message():

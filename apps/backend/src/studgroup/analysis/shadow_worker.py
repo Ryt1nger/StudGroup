@@ -11,7 +11,13 @@ from studgroup.ai import ProviderFailure
 from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
 from studgroup.analysis.routing import get_route, sampled
-from studgroup.analysis.shadow import ShadowPassFailure, run_shadow, source_snapshot_sha256
+from studgroup.analysis.shadow import (
+    SHADOW_PACKAGE_CAP_USD,
+    ShadowPassFailure,
+    run_shadow,
+    source_snapshot_sha256,
+    usage_cost_usd,
+)
 from studgroup.models import (
     Group,
     GroupAnalysisSettings,
@@ -20,7 +26,7 @@ from studgroup.models import (
     ShadowEvaluationRun,
 )
 
-SHADOW_RESERVATION_USD = Decimal("0.04000000")
+SHADOW_RESERVATION_USD = SHADOW_PACKAGE_CAP_USD
 SHADOW_MAX_ATTEMPTS = 3
 SHADOW_LEASE = timedelta(minutes=3)
 
@@ -29,14 +35,7 @@ def _utc(value):
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def _cost(usage):
-    hit = min(usage.prompt_cache_hit_tokens, usage.prompt_tokens)
-    miss = usage.prompt_tokens - hit
-    return (
-        Decimal(miss) * Decimal("0.30")
-        + Decimal(hit) * Decimal("0.006")
-        + Decimal(usage.completion_tokens) * Decimal("1.20")
-    ) / Decimal(1000000)
+_cost = usage_cost_usd
 
 
 async def purge_expired_shadow_runs(engine, now=None):
@@ -362,7 +361,12 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
                 base_url=settings.deepseek_base_url,
                 allow_technical_repair=settings.ai_technical_repair_enabled,
             )
-        result = await run_shadow(provider, analysis_input, memory)
+        result = await run_shadow(
+            provider,
+            analysis_input,
+            memory,
+            repair_enabled=getattr(settings, "ai_output_repair_enabled", False),
+        )
     except ShadowPassFailure as error:
         failure = error
     except ProviderFailure as error:
@@ -385,7 +389,7 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
         if row.state != "running" or row.attempts != generation:
             return "superseded"
         usage = result if result is not None else failure.usage
-        actual = _cost(usage)
+        actual = _cost(usage) + (result.extra_charge_usd if result is not None else 0)
         row.prompt_tokens += usage.prompt_tokens
         row.completion_tokens += usage.completion_tokens
         row.prompt_cache_hit_tokens += usage.prompt_cache_hit_tokens
@@ -401,6 +405,8 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
                     "accepted_items": len(result.validation.accepted),
                     "rejected_items": len(result.validation.rejected),
                     "raw_proposal_count": result.validation.raw_proposal_count,
+                    "adapter_actions": result.validation.adapter_actions,
+                    "repair": result.repair,
                 },
                 sort_keys=True,
             )

@@ -2,7 +2,8 @@
 
 import hashlib
 import json
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from datetime import timedelta
 from decimal import Decimal
 from time import monotonic
@@ -14,10 +15,24 @@ from studgroup.analysis.context_strategy import (
 )
 from studgroup.analysis.extraction_strategy import (
     prepare_extraction_request,
-    validate_extraction,
+    validate_extraction_adapted,
 )
 from studgroup.analysis.provider import ProviderUsage
+from studgroup.analysis.repair import apply_repair, repair_rejected
 from studgroup.models import ShadowEvaluationRun
+
+# One shadow package (both passes plus an optional repair) never exceeds this shared cap.
+SHADOW_PACKAGE_CAP_USD = Decimal("0.04000000")
+
+
+def usage_cost_usd(usage):
+    hit = min(usage.prompt_cache_hit_tokens, usage.prompt_tokens)
+    miss = usage.prompt_tokens - hit
+    return (
+        Decimal(miss) * Decimal("0.30")
+        + Decimal(hit) * Decimal("0.006")
+        + Decimal(usage.completion_tokens) * Decimal("1.20")
+    ) / Decimal(1000000)
 
 
 @dataclass(frozen=True)
@@ -28,7 +43,10 @@ class ShadowResult:
     completion_tokens: int
     prompt_cache_hit_tokens: int
     latency_ms: int
-    provider_payload_hashes: tuple[str, str]
+    provider_payload_hashes: tuple[str, ...]
+    repair: dict = field(default_factory=dict)
+    # Conservative charge for a repair call whose usage the provider did not report.
+    extra_charge_usd: Decimal = Decimal(0)
 
 
 class ShadowPassFailure(Exception):
@@ -97,7 +115,14 @@ def source_snapshot_sha256(analysis_input):
     ).hexdigest()
 
 
-async def run_shadow(provider, analysis_input, memory_context):
+async def run_shadow(
+    provider,
+    analysis_input,
+    memory_context,
+    *,
+    repair_enabled=False,
+    existing_items=None,
+):
     started = monotonic()
     try:
         context_response = await provider.complete(
@@ -137,6 +162,7 @@ async def run_shadow(provider, analysis_input, memory_context):
             prepare_extraction_request(
                 analysis_input,
                 context.model_dump(mode="json"),
+                existing_items,
             )
         )
     except ProviderFailure as error:
@@ -150,7 +176,10 @@ async def run_shadow(provider, analysis_input, memory_context):
             reservation_releasable=error.reservation_releasable,
         ) from None
     try:
-        validation = validate_extraction(extraction_response.content, analysis_input)
+        adapted = validate_extraction_adapted(
+            extraction_response.content, analysis_input, existing_items=existing_items
+        )
+        validation = adapted.result
     except (ValueError, TypeError) as error:
         code = str(error)
         if code not in {
@@ -171,27 +200,61 @@ async def run_shadow(provider, analysis_input, memory_context):
             raw_results=(context_response.content, extraction_response.content),
             usage_complete=True,
         ) from None
+    usage = _sum_usage(context_response.usage, extraction_response.usage)
+    hashes = [context_response.payload_sha256, extraction_response.payload_sha256]
+    repair_summary = {"enabled": bool(repair_enabled), "candidates": len(adapted.candidates)}
+    extra_charge = Decimal(0)
+    if repair_enabled and adapted.candidates:
+        try:
+            repair = await repair_rejected(
+                provider,
+                analysis_input,
+                adapted.candidates,
+                budget_remaining_usd=SHADOW_PACKAGE_CAP_USD - usage_cost_usd(usage),
+                cost_fn=usage_cost_usd,
+                existing_items=_trusted(existing_items),
+            )
+        except Exception:  # noqa: BLE001 - repair is optional; pass-2 results must survive
+            repair = None
+            repair_summary["error"] = "repair_internal_error"
+        if repair is not None:
+            validation = apply_repair(validation, repair)
+            repair_summary.update(
+                attempted=repair.attempted,
+                applied=len(repair.repaired),
+                outcomes=dict(sorted(Counter(repair.outcomes.values()).items())),
+            )
+            if repair.skipped_reason:
+                repair_summary["skipped"] = repair.skipped_reason
+            if repair.error_code:
+                repair_summary["error"] = repair.error_code
+            if repair.usage is not None:
+                usage = _sum_usage(usage, repair.usage)
+                repair_summary["prompt_tokens"] = repair.usage.prompt_tokens
+                repair_summary["completion_tokens"] = repair.usage.completion_tokens
+            elif repair.unreported_usage:
+                extra_charge = repair.estimated_cost_usd
+            if repair.payload_sha256:
+                hashes.append(repair.payload_sha256)
     return ShadowResult(
         context=context,
         validation=validation,
-        prompt_tokens=(
-            context_response.usage.prompt_tokens
-            + extraction_response.usage.prompt_tokens
-        ),
-        completion_tokens=(
-            context_response.usage.completion_tokens
-            + extraction_response.usage.completion_tokens
-        ),
-        prompt_cache_hit_tokens=(
-            context_response.usage.prompt_cache_hit_tokens
-            + extraction_response.usage.prompt_cache_hit_tokens
-        ),
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        prompt_cache_hit_tokens=usage.prompt_cache_hit_tokens,
         latency_ms=round((monotonic() - started) * 1000),
-        provider_payload_hashes=(
-            context_response.payload_sha256,
-            extraction_response.payload_sha256,
-        ),
+        provider_payload_hashes=tuple(hashes),
+        repair=repair_summary,
+        extra_charge_usd=extra_charge,
     )
+
+
+def _trusted(existing_items):
+    if existing_items is None:
+        return None
+    from uuid import UUID
+
+    return {UUID(str(item["id"])): int(item["revision"]) for item in existing_items}
 
 
 def persist_shadow_summary(

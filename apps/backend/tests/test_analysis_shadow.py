@@ -29,6 +29,7 @@ from studgroup.analysis.evaluation import (
     aggregate_operations,
     compare_entities,
 )
+from studgroup.analysis.extraction_strategy import EXTRACTION_PROMPT_VERSION
 from studgroup.analysis.provider import ProviderResponse, ProviderUsage
 from studgroup.analysis.routing import (
     authorize_shadow_run,
@@ -520,7 +521,7 @@ def test_shadow_only_kill_switch_runs_cplus_while_legacy_stays_disabled(client):
 def test_shadow_e2e_persists_safe_proposal_schema_diagnostics(client):
     class InvalidExtractionProvider(HybridProvider):
         async def complete(self, request):
-            if request.prompt_version != "cplus-extraction-1":
+            if request.prompt_version != EXTRACTION_PROMPT_VERSION:
                 return await super().complete(request)
             self.requests.append(request)
             message = request.user_payload["messages"][-1]
@@ -568,16 +569,10 @@ def test_shadow_e2e_persists_safe_proposal_schema_diagnostics(client):
             assert rejected["reason_code"] == "proposal_schema_invalid"
             assert rejected["schema_issues"] == [
                 {
-                    "path": "proposals[0].evidence[0].fact_paths",
-                    "error_type": "list_type",
-                    "expected": "array",
-                    "received_type": "string",
-                },
-                {
-                    "path": "proposals[0].<extra>",
-                    "error_type": "extra_forbidden",
+                    "path": "proposals[0]",
+                    "error_type": "proposal_field_not_allowed",
                     "expected": "field_not_allowed",
-                    "received_type": "string",
+                    "received_type": "object",
                 },
             ]
             assert "PRIVATE" not in row.validation_result_json
@@ -776,7 +771,7 @@ def test_shadow_failure_is_retryable_and_cannot_mutate_products(client):
 def test_shadow_extraction_pass_failure_is_durable_and_read_only(client):
     class ExtractionFailureProvider(HybridProvider):
         async def complete(self, request):
-            if request.prompt_version == "cplus-extraction-1":
+            if request.prompt_version == EXTRACTION_PROMPT_VERSION:
                 raise ProviderFailure("provider_unreachable", True)
             return await super().complete(request)
 

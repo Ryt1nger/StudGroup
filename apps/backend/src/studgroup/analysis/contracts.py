@@ -11,6 +11,36 @@ ANALYSIS_SCHEMA_VERSION = "analysis-contract-1"
 ANALYSIS_ENGINE_VERSION = "cplus-shadow-1"
 
 
+# Stable codes raised by our own model validators. They are fixed constants (never derived from
+# provider text), so they are safe to persist as value-free diagnostics for `value_error` issues.
+CONTRACT_RULE_CODES = frozenset(
+    {
+        "source_timestamp_requires_offset",
+        "source_requires_text_or_attachment",
+        "duplicate_source_message_id",
+        "target_outside_source_envelope",
+        "deadline_requires_offset",
+        "unknown_deadline_cannot_be_date_only",
+        "deadline_basis_requires_value",
+        "subgroup_requires_label",
+        "destination_kind_mismatch",
+        "blank_display_field",
+        "create_cannot_target_existing_item",
+        "mutation_requires_item_identity_and_revision",
+        "explicit_empty_mismatch",
+    }
+)
+# Rules whose repair would require choosing a business meaning or an item identity.
+NON_REPAIRABLE_RULE_CODES = frozenset(
+    {
+        "destination_kind_mismatch",
+        "create_cannot_target_existing_item",
+        "mutation_requires_item_identity_and_revision",
+        "subgroup_requires_label",
+    }
+)
+
+
 class StrictDTO(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -203,6 +233,7 @@ class RejectedItem(StrictDTO):
     reason_code: str = Field(max_length=64)
     schema_issues: list[ProposalSchemaIssue] = Field(default_factory=list, max_length=12)
     schema_issues_truncated: bool = False
+    repair_outcome: str | None = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
 
 
 class AnalysisOutput(StrictDTO):
@@ -226,6 +257,8 @@ class ValidationResult(StrictDTO):
     rejected: list[RejectedItem] = Field(default_factory=list)
     raw_proposal_count: int = Field(ge=0)
     explicit_empty: bool
+    # Value-free counters of deterministic normalizations applied before strict validation.
+    adapter_actions: dict[str, int] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_accepted_ordinals(self):

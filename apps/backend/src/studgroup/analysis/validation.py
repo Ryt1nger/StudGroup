@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from studgroup.analysis.contracts import (
     ANALYSIS_ENGINE_VERSION,
     ANALYSIS_SCHEMA_VERSION,
+    CONTRACT_RULE_CODES,
     ProposalSchemaIssue,
     ProposedAcademicItem,
     RejectedItem,
@@ -100,11 +101,19 @@ def _safe_path(proposal_ordinal, location):
     return path
 
 
+def _rule_code(detail):
+    """Return our own fixed validator rule code for a `value_error`, never provider text."""
+    if detail.get("type") != "value_error":
+        return None
+    message = str(detail.get("msg", "")).removeprefix("Value error, ")
+    return message if message in CONTRACT_RULE_CODES else None
+
+
 def _safe_schema_issues(error, proposal_ordinal):
     details = error.errors(include_url=False, include_context=False)
     issues = []
     for detail in details[:MAX_SCHEMA_ISSUES]:
-        error_type = _safe_error_type(detail.get("type"))
+        error_type = _rule_code(detail) or _safe_error_type(detail.get("type"))
         issues.append(
             ProposalSchemaIssue(
                 path=_safe_path(proposal_ordinal, detail.get("loc", ())),

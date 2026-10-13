@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     ai_live_two_pass: bool = False
     ai_store_raw_provider_responses: bool = False
     ai_technical_repair_enabled: bool = False
+    # Paid structural repair of rejected C+ proposals; off until separately approved.
+    ai_output_repair_enabled: bool = False
     ai_schedule_timezone: str = "Europe/Moscow"
     processing_mode: Literal["external", "embedded"] = "external"
     owner_telegram_user_id: int | None = None
