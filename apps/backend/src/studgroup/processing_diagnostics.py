@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import re
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -42,7 +44,11 @@ async def _shadow_context_diagnostics(db, group_id):
             .order_by(ShadowEvaluationRun.created_at.desc())
         )
     ).all()
-    signatures = {}
+    reasons = Counter()
+    missing_fields = Counter()
+    additional_fields = Counter()
+    error_cases = Counter()
+    error_occurrences = Counter()
     latest = []
     for created_at, input_json, output_json in rows:
         try:
@@ -50,21 +56,32 @@ async def _shadow_context_diagnostics(db, group_id):
             diagnostic = diagnose_context_output(output_json, analysis_input)
         except Exception:  # noqa: BLE001 - diagnostic must remain non-blocking and value-free
             diagnostic = {"reason": "diagnostic_input_unavailable"}
-        signature = json.dumps(diagnostic, ensure_ascii=True, sort_keys=True)
-        signatures[signature] = signatures.get(signature, 0) + 1
+        reasons[diagnostic["reason"]] += 1
+        missing_fields.update(diagnostic.get("missing_top_level", []))
+        additional_fields.update(diagnostic.get("additional_top_level", []))
+        compact_errors = Counter()
+        for error, occurrences in diagnostic.get("validation_errors", {}).items():
+            compact = re.sub(r"\.\d+(?=\.|:)", "[]", error)
+            compact_errors[compact] += occurrences
+        error_cases.update(compact_errors.keys())
+        error_occurrences.update(compact_errors)
         if len(latest) < 3:
             latest.append(
                 {
                     "created_at": created_at.isoformat(),
-                    "diagnostic": diagnostic,
+                    "reason": diagnostic["reason"],
+                    "missing_top_level": diagnostic.get("missing_top_level", []),
+                    "additional_top_level": diagnostic.get("additional_top_level", []),
+                    "validation_errors": dict(sorted(compact_errors.items())),
                 }
             )
     return {
         "total": len(rows),
-        "signatures": [
-            {"count": count, "diagnostic": json.loads(signature)}
-            for signature, count in sorted(signatures.items())
-        ],
+        "reason_cases": dict(sorted(reasons.items())),
+        "missing_top_level_cases": dict(sorted(missing_fields.items())),
+        "additional_top_level_cases": dict(sorted(additional_fields.items())),
+        "validation_error_cases": dict(sorted(error_cases.items())),
+        "validation_error_occurrences": dict(sorted(error_occurrences.items())),
         "latest_three": latest,
     }
 
