@@ -58,6 +58,18 @@ This is a compatibility proposal, not an implemented API contract. `packages/con
 
 Only cards returned by the existing student-facing endpoints are rendered. The frontend does not call extraction, shadow, review, backfill or promotion endpoints and does not implement a publication path.
 
+## Minimal API handoff matrix
+
+| Existing API | Already usable by the Mini App | Minimal missing C+ projection |
+| --- | --- | --- |
+| `GET /today`, `GET /homework` | `title`, `subject`, `summary`, `deadline`, `status`, `urgency`, `verification_state`, `significant_update`, `my_state` | `card_kind`; deadline `certainty` if certainty must be visible in lists |
+| `GET /homework/{id}` | all summary fields plus `description`, `materials`, `source_detail`, `permissions` | `card_kind`, deadline `certainty`, ordered `sources[]`, typed material `kind`, ordered student-safe `updates[]` |
+| completion mutation for `/homework/{id}` | set/undo personal completion with optimistic UI and revision conflict recovery | no change required |
+| `GET /lessons/{id}/subject` | related homework and subject materials for a selected lesson | the same optional summary extensions as the homework list |
+| no current subject-list API | `/subjects` remains an explicit prepared state | subject list/overview endpoint with stable subject ID, name, task/material counts and nearest meaningful event |
+
+The backend projection must expose only promoted student-safe data. Shadow candidates and review-only evidence remain outside these APIs.
+
 ## Covered states
 
 - no deadline and confirmed deadline;
