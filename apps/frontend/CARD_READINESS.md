@@ -1,6 +1,6 @@
 # Readiness of the Mini App for published learning cards
 
-Status: current frontend audit and compatibility boundary
+Status: implemented student API integration
 
 Date: 2026-10-14
 
@@ -8,27 +8,30 @@ Scope: published cards only; shadow output is not a frontend data source
 
 ## Screen audit
 
-| Screen          | Current API                                                       | Supported now                                                                                                                                             | Still requires a backend contract                                                                                       |
-| --------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Today           | `GET /today`                                                      | generated title, subject, deadline or an explicit unknown deadline, cancellation/update/clarification/completion labels, loading/empty/error/stale states | learning-card kind other than `homework`; typed material/source counts in summaries                                     |
-| Tasks           | `GET /homework`                                                   | the same summary card, filters, cursor pagination, archive presentation, empty and partial-page error states                                              | no additional fields are required for the current summary; richer list metadata is optional                             |
-| Homework detail | `GET /homework/{id}`                                              | title, description, subject, deadline, publication/cancellation/verification state, personal completion, one Telegram source, HTTPS material links        | card kind, deadline certainty/provenance, multiple sources, typed photo/document metadata, additions and change history |
-| Subjects        | no subject-list endpoint; `/subjects` is an honest prepared state | a lesson context from `GET /lessons/{id}/subject` already shows related homework and materials                                                            | subject list/overview endpoint with stable subject identity, counts and nearest meaningful item                         |
+| Screen          | Current API                             | Supported now                                                                                                                                                                     | Deliberately deferred                                                  |
+| --------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Today           | `GET /today`                            | generated title, confirmed subject or no subject, deadline or explicit absence, publication/cancellation/update/clarification/completion labels, loading/empty/error/stale states | material/source counts in summaries                                    |
+| Tasks           | `GET /homework`                         | the same summary card, filters, cursor pagination, archive presentation, empty and partial-page error states                                                                      | no blocker for published homework                                      |
+| Homework detail | `GET /homework/{id}`                    | structured description, public card kind, deadline certainty and origin, multiple sources, typed materials, latest published change, status and personal completion               | authorized inline file preview/download; full public revision timeline |
+| Deadlines       | `GET /deadlines`, `GET /deadlines/{id}` | test/control point/assessment/credit/exam/other type, confirmed subject, certainty, sources, materials and latest published change                                                | personal completion, because it is homework-only by product rule       |
+| Subjects        | `GET /subjects`                         | group-scoped subject names and published homework/deadline counts with loading/empty/error states                                                                                 | subject detail route independent of a lesson; nearest meaningful item  |
 
 The detail screen opens Telegram only through a backend-built `https://t.me/...` URL. The client rejects a different scheme, hostname, credentials or port. An unavailable, deleted or inaccessible source remains a normal readable card state.
 
-## Frontend compatibility boundary
+## Compatibility boundary
 
-`src/features/homework/cardViewModel.ts` keeps the generated OpenAPI type as the source of truth. It maps the current response without changing it and can render the optional proposal below when those fields are later approved and generated from OpenAPI. Unknown values are ignored and never printed as technical codes.
+`src/features/homework/cardViewModel.ts` keeps the generated OpenAPI type as the source of truth. New fields are optional, so the deployed frontend can still read the preceding response shape. New responses retain legacy `type`, `subject` and `source_detail` fields during the compatibility window.
 
 ```json
 {
-  "card_kind": "homework | control_work | test | credit | exam | project | presentation | other",
+  "card_kind": "homework | test | control_point | assessment | credit | exam | other_academic_deadline",
+  "confirmed_subject": "SubjectRef or null",
   "deadline": {
     "state": "known | unknown",
     "at": "ISO timestamp or null",
     "date_only": true,
-    "certainty": "confirmed | from_source | inferred | needs_clarification"
+    "certainty": "confirmed | from_source | inferred | needs_clarification | unknown",
+    "origin": "explicit_message | schedule_inferred | ambiguous_message | manual | imported | unknown"
   },
   "materials": [
     { "id": "stable id", "title": "visible title", "url": "https URL", "kind": "photo | document | link" }
@@ -39,34 +42,33 @@ The detail screen opens Telegram only through a backend-built `https://t.me/...`
       "id": "stable id",
       "kind": "supplement | change | cancellation",
       "text": "clean visible text",
-      "created_at": "ISO timestamp or null"
+      "created_at": "ISO timestamp"
     }
   ]
 }
 ```
 
-This is a compatibility proposal, not an implemented API contract. `packages/contracts` and generated types were deliberately not changed in this branch. Before the backend emits these fields, names and semantics must be agreed and added to OpenAPI with compatibility notes.
+These fields are implemented in OpenAPI 0.9.0 and generated shared types. Enrichment is read-only and requires an existing `CanonicalProjectionLink`; it cannot publish a card. Evidence is read only for the projected revision. A shadow-only canonical item therefore remains unreachable from every student endpoint.
 
-## Backend agreements needed
+## Remaining backend agreements
 
-1. Define one card-kind field and its exhaustive public enum. The existing `type` is fixed to `homework` and must not be silently repurposed.
-2. Separate deadline certainty/provenance from whole-card verification. A missing date must remain `state: unknown` with `at: null`; the backend must never manufacture a display date.
-3. Return an ordered `sources` collection while retaining `source_detail` during a compatibility window. Every Telegram action remains backend-built and access-scoped.
-4. Add material kind and, if inline previews are wanted, a short-lived authorized preview/download URL plus MIME type and safe display name. Telegram file identifiers alone are not usable by the browser.
-5. Return ordered, student-safe additions/changes with stable IDs, timestamps and sanitized text. Do not expose shadow traces, prompts, evidence scores or internal statuses.
-6. Add a subject list/overview response before replacing the prepared `/subjects` state.
+1. Decide whether the public change history should contain only the latest projected revision (implemented) or an ordered sanitized timeline. No shadow or unpublished revision may enter that timeline.
+2. If inline attachment previews are wanted, add a short-lived authorized file endpoint. The current API intentionally links attachment metadata to its Telegram source and never returns Telegram file identifiers.
+3. Decide whether `/subjects` needs a dedicated detail endpoint and nearest-event/material counts. The overview is sufficient for the current list screen.
+4. Decide when the legacy `type`, `subject` and `source_detail` fields can be deprecated. They must remain until older clients are outside the supported window.
 
 Only cards returned by the existing student-facing endpoints are rendered. The frontend does not call extraction, shadow, review, backfill or promotion endpoints and does not implement a publication path.
 
 ## Minimal API handoff matrix
 
-| Existing API | Already usable by the Mini App | Minimal missing C+ projection |
-| --- | --- | --- |
-| `GET /today`, `GET /homework` | `title`, `subject`, `summary`, `deadline`, `status`, `urgency`, `verification_state`, `significant_update`, `my_state` | `card_kind`; deadline `certainty` if certainty must be visible in lists |
-| `GET /homework/{id}` | all summary fields plus `description`, `materials`, `source_detail`, `permissions` | `card_kind`, deadline `certainty`, ordered `sources[]`, typed material `kind`, ordered student-safe `updates[]` |
-| completion mutation for `/homework/{id}` | set/undo personal completion with optimistic UI and revision conflict recovery | no change required |
-| `GET /lessons/{id}/subject` | related homework and subject materials for a selected lesson | the same optional summary extensions as the homework list |
-| no current subject-list API | `/subjects` remains an explicit prepared state | subject list/overview endpoint with stable subject ID, name, task/material counts and nearest meaningful event |
+| Student API                              | Implemented projection                                                                                        | Remaining optional work                                   |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `GET /today`, `GET /homework`            | title, `card_kind`, confirmed subject/null, deadline certainty/origin, status and personal state              | optional material/source counts                           |
+| `GET /homework/{id}`                     | structured description, ordered sources, typed material metadata and latest student-safe update               | authorized inline attachment URL; full sanitized timeline |
+| completion mutation for `/homework/{id}` | unchanged set/undo behavior with revision conflict recovery                                                   | none                                                      |
+| `GET /deadlines[/{id}]`                  | actual C+ semantic type, confirmed subject/null, certainty/origin, sources, typed materials and latest update | none for the current detail UI                            |
+| `GET /lessons/{id}/subject`              | related homework and deadlines inherit the same enriched representations                                      | none                                                      |
+| `GET /subjects`                          | active-group subject identity plus published homework/deadline counts                                         | optional subject-detail endpoint                          |
 
 The backend projection must expose only promoted student-safe data. Shadow candidates and review-only evidence remain outside these APIs.
 
@@ -74,10 +76,10 @@ The backend projection must expose only promoted student-safe data. Shadow candi
 
 - no deadline and confirmed deadline;
 - date requiring clarification (when the viewer is allowed to receive that state);
-- one current source and a compatibility fixture with multiple sources;
-- multiple photos/documents/links through typed compatibility fixtures;
+- one or multiple current sources backed by projected evidence;
+- multiple photos/documents/links without exposing Telegram file identifiers;
 - significant update, structured additions/changes, cancellation and personal completion undo;
 - unavailable Telegram source and absent materials;
 - list/detail loading, empty, not-found, gone, forbidden, service error and retry.
 
-The extended-card fixtures exist only in tests and are not presented as production data.
+Local MSW data remains explicitly mock data. Backend E2E tests create isolated published projections and assert that shadow-only and foreign-group records are absent.

@@ -1,5 +1,16 @@
 # Contract changelog
 
+## 0.9.0 — 2026-10-14
+
+- Added student-safe published-card metadata to homework: canonical `card_kind`, nullable
+  `confirmed_subject`, deadline `certainty`/`origin`, current-revision `sources[]`, typed
+  materials and sanitized `updates[]`.
+- Kept `type`, legacy `subject` and `source_detail` unchanged for older Mini App clients.
+- Expanded academic-deadline kinds to the canonical backend enum; only `homework` is projected
+  to the homework endpoints and supports personal completion.
+- Added `GET /subjects`, derived from active-group published rows and the timetable. It never
+  reads shadow or review tables.
+
 ## 0.2.2 — 2026-10-05
 
 - Owner-approved Today behavior: due_today precedes overdue; expired deadlines remain visible for strictly less than 24 hours after the deadline, then disappear from all Today sections.

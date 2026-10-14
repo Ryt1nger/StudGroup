@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses } from './types.gen';
+import type { BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -74,6 +74,17 @@ export const getToday = <ThrowOnError extends boolean = false>(options?: Options
 export const getLessonSubject = <ThrowOnError extends boolean = false>(options: Options<GetLessonSubjectData, ThrowOnError>): RequestResult<GetLessonSubjectResponses, GetLessonSubjectErrors, ThrowOnError> => (options.client ?? client).get<GetLessonSubjectResponses, GetLessonSubjectErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/lessons/{lesson_id}/subject',
+    ...options
+});
+
+/**
+ * Active-group subject overview from published learning data and the timetable
+ *
+ * Uses only the active group's retained schedule, published homework and published academic deadlines. Shadow and review-only analysis rows are never queried.
+ */
+export const listSubjects = <ThrowOnError extends boolean = false>(options?: Options<ListSubjectsData, ThrowOnError>): RequestResult<ListSubjectsResponses, ListSubjectsErrors, ThrowOnError> => (options?.client ?? client).get<ListSubjectsResponses, ListSubjectsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/subjects',
     ...options
 });
 

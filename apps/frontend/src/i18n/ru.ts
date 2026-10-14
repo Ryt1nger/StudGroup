@@ -60,13 +60,12 @@ export const ru = {
     homeworkChip: 'ДЗ', // detail only; not shown on list cards
     kind: {
       homework: 'ДЗ',
-      control_work: 'Контрольная',
+      control_point: 'Контрольная точка',
+      assessment: 'Контрольная работа',
       test: 'Тест',
       credit: 'Зачёт',
       exam: 'Экзамен',
-      project: 'Проект',
-      presentation: 'Презентация',
-      other: 'Задание',
+      other_academic_deadline: 'Учебное событие',
     },
     deadlineCertainty: {
       confirmed: 'Срок подтверждён',

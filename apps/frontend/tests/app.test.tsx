@@ -171,11 +171,13 @@ describe('Today', () => {
   });
 });
 
-describe('prepared sections', () => {
-  it.each(['/subjects'])('%s says «Раздел готовится»', async (route) => {
+describe('subjects', () => {
+  it('shows the published subject overview', async () => {
     useScenario();
-    renderApp({ route });
-    expect(await screen.findByText('Раздел готовится')).toBeInTheDocument();
+    renderApp({ route: '/subjects' });
+    expect(await screen.findByRole('heading', { name: 'Предметы' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Математический анализ' })).toBeInTheDocument();
+    expect(screen.queryByText('Раздел готовится')).not.toBeInTheDocument();
   });
 });
 
