@@ -254,3 +254,122 @@ def test_postgres_preview_merges_supplements_and_materials_without_writing():
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_postgres_preview_supplement_from_its_own_later_run_is_not_a_second_card():
+    url = os.environ["POSTGRES_TEST_URL"]
+    now = datetime.now(UTC).replace(microsecond=0)
+    rows = [
+        (9301, 0, "Каждый делает доклад-презентацию о выдающихся героях РФ",
+         HEADMAN_TELEGRAM_ID, None, []),
+        (9302, 240, "Темы: 1) Исторические деятели 2) Творцы 3) Учёные",
+         HEADMAN_TELEGRAM_ID, 9301, []),
+        (9303, 241, "", HEADMAN_TELEGRAM_ID, 9301, [("document", "Критерии.pdf", "application/pdf", None)]),
+        (9304, 250, "Физика: решить задачи 1–3 до пятницы", STUDENT_TELEGRAM_ID, None, []),
+    ]
+    script = defaultdict(list)
+    script[9301] = [card(None, "Подготовить доклад-презентацию о героях РФ",
+                         "Каждый готовит доклад-презентацию о выдающихся героях РФ.", [9301])]
+    # the later run only saw its own message: it would have become a duplicate card
+    script[9302] = [card(None, "Темы доклада", "Темы: 1) Исторические деятели 2) Творцы 3) Учёные",
+                         [9302])]
+    script[9304] = [card("Физика", "Решить задачи 1–3", "Решить задачи 1–3.", [9304],
+                         at=(now.astimezone(MSK) + timedelta(days=2)).replace(
+                             hour=23, minute=59, second=0, microsecond=0).isoformat())]
+
+    async def scenario():
+        engine = create_async_engine(url, poolclass=NullPool)
+        group_id = uuid.uuid4()
+        settings = Settings(database_url=url, ai_enabled=False, ai_shadow_enabled=True)
+        try:
+            async with AsyncSession(engine) as db:
+                await db.execute(delete(Group).where(Group.name.like("Disposable %")))
+                await db.execute(delete(User).where(User.telegram_user_id.in_(
+                    [HEADMAN_TELEGRAM_ID, STUDENT_TELEGRAM_ID])))
+                db.add(Group(id=group_id,
+                             telegram_chat_id=-1004400000000 - int(uuid.uuid4().int % 10**6),
+                             name="Disposable supplement E2E", timezone="Europe/Moscow",
+                             pilot_authorized=True, bot_added_at=now - timedelta(days=2)))
+                headman = User(telegram_user_id=HEADMAN_TELEGRAM_ID, display_name="Староста")
+                student = User(telegram_user_id=STUDENT_TELEGRAM_ID, display_name="Студент")
+                db.add_all([headman, student])
+                await db.flush()
+                db.add_all([
+                    Membership(user_id=headman.id, group_id=group_id, role="headman", status="active"),
+                    Membership(user_id=student.id, group_id=group_id, role="student", status="active"),
+                ])
+                await db.flush()
+                await configure_group_mode(db, group_id, "shadow", now - timedelta(days=1),
+                                           shadow_daily_budget_usd=Decimal("0.50"),
+                                           shadow_sample_percent=100)
+                await db.commit()
+            start = now - timedelta(hours=8)
+
+            async def seed(selected):
+                async with AsyncSession(engine) as db:
+                    for mid, minutes, text, sender, reply, attachments in selected:
+                        stamp = start + timedelta(minutes=minutes)
+                        row = RawMessage(group_id=group_id, telegram_message_id=mid, text=text,
+                                         sender_id=sender, reply_to_message_id=reply,
+                                         message_thread_id=591, message_date=stamp,
+                                         version_date=stamp, revision=1, imported=False,
+                                         live_received_at=stamp, delete_at=now + timedelta(days=30))
+                        db.add(row)
+                        await db.flush()
+                        for index, (kind, name, mime, album) in enumerate(attachments):
+                            db.add(MessageAttachment(
+                                raw_message_id=row.id, group_id=group_id, source_revision=1,
+                                kind=kind, stable_file_id=f"{mid}-{index}",
+                                telegram_file_id=f"tg-{mid}-{index}", file_name=name,
+                                mime_type=mime, media_group_id=album, created_at=stamp,
+                                delete_at=now + timedelta(days=30)))
+                    await db.commit()
+
+            common = {"group_id": group_id, "since": now - timedelta(days=1), "now": now}
+            provider = ScriptedProvider(script)
+            # The host run is frozen before the supplement exists, as in live operation.
+            await seed([rows[0], rows[3]])
+            async with AsyncSession(engine) as db:
+                await backfill.enqueue_window(db, **common, limit=20, apply=True)
+                await db.commit()
+            for _ in range(4):
+                await process_shadow_next(engine, settings, provider, now)
+            await seed(rows[1:3])
+            async with AsyncSession(engine) as db:
+                await backfill.enqueue_window(db, **common, limit=20, apply=True)
+                await db.commit()
+            for _ in range(6):
+                await process_shadow_next(engine, settings, provider, now)
+
+            async def homework_count():
+                async with AsyncSession(engine) as db:
+                    return await db.scalar(
+                        select(func.count()).select_from(Homework).where(Homework.group_id == group_id))
+
+            assert await homework_count() == 0
+            async with AsyncSession(engine) as db:
+                preview = await build_preview(db, **common)
+                await db.rollback()
+            assert await homework_count() == 0
+            cards = preview["cards"]
+            assert len(cards) == 2  # report (with its supplement) + physics, no third card
+            report = next(c for c in cards if 9301 in {s["telegram_message_id"] for s in c["sources"]})
+            assert {s["telegram_message_id"] for s in report["sources"]} == {9301, 9302}
+            assert sorted(s["telegram_message_id"] for s in report["sources"]) == [9301, 9302]
+            assert "Дополнение: Темы: 1) Исторические деятели" in report["description"]
+            assert report["title"] == "Подготовить доклад-презентацию о героях РФ"
+            assert [m["title"] for m in report["materials"] if m["group"] == "file"] == ["Критерии.pdf"]
+            assert len(report["revisions"]) == 2 and report["status"] == "будет показана"
+            async with AsyncSession(engine) as db:
+                again = await build_preview(db, **common)
+                await db.rollback()
+            assert [(c["title"], c["description"]) for c in again["cards"]] == [
+                (c["title"], c["description"]) for c in cards]
+            async with AsyncSession(engine) as db:
+                group = await db.get(Group, group_id)
+                group.pilot_authorized = False
+                await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

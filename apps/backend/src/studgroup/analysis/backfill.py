@@ -14,6 +14,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 
 from studgroup.analysis.contracts import AnalysisInput, ValidationResult
+from studgroup.analysis.linking import reconcile_validation
 from studgroup.analysis.routing import get_route
 from studgroup.analysis.writer import apply_validated_batch
 from studgroup.models import (
@@ -284,6 +285,7 @@ async def review(db, *, group_id, since, now, limit=50):
         if not validation.accepted:
             continue
         data = AnalysisInput.model_validate_json(run.input_json)
+        validation = reconcile_validation(validation, data.messages)
         by_id = {row.telegram_message_id: row for row in data.messages}
         for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted,
                                      strict=True):
@@ -333,6 +335,113 @@ def _same_subject(left, right):
     if not left or not right:
         return True
     return " ".join(left.casefold().split()) == " ".join(right.casefold().split())
+
+
+async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
+    """A card that only clarifies an existing item (provable reply) becomes an update of it.
+
+    Runs after the cross-run state is visible (earlier runs applied first), so a supplement from
+    its own later run never becomes a second card. Only the description (verbatim supplement)
+    and the evidence change; title, deadline, audience and subject stay the item's own.
+    """
+    from studgroup.analysis.contracts import Audience, DeadlineValue, EvidenceRef
+    from studgroup.analysis.linking import (
+        STRONG,
+        _has_text,
+        _text_supplement_ok,
+        link_candidates,
+    )
+    from studgroup.analysis.text_hygiene import clean_text
+
+    by_id = {row.telegram_message_id: row for row in data.messages}
+    strong = {}
+    for link in link_candidates(data.messages):
+        if link.strength == STRONG and link.relation == "reply":
+            strong.setdefault(link.member, []).append(link)
+    replaced = {}
+    for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted, strict=True):
+        if proposal.action != "create" or proposal.deadline.at is not None:
+            continue
+        anchors, proven = set(), True
+        for ref in proposal.evidence:
+            member = by_id[ref.telegram_message_id]
+            good = [
+                link
+                for link in strong.get(member.telegram_message_id, [])
+                if _has_text(by_id[link.anchor])
+                and _text_supplement_ok(by_id[link.anchor], member, link)
+            ]
+            if not _has_text(member) or not good:
+                proven = False
+                break
+            anchors.update(link.anchor for link in good)
+        if not proven or len(anchors) != 1:
+            continue
+        anchor_id = next(iter(anchors))
+        anchor_raw = raw_by_id.get(anchor_id)
+        if anchor_raw is None or anchor_id in {r.telegram_message_id for r in proposal.evidence}:
+            continue
+        items = (
+            await db.scalars(
+                select(CanonicalAcademicItem)
+                .join(CanonicalItemEvidence, CanonicalItemEvidence.item_id == CanonicalAcademicItem.id)
+                .where(
+                    CanonicalAcademicItem.group_id == group_id,
+                    CanonicalAcademicItem.state == "active",
+                    CanonicalAcademicItem.destination == proposal.destination,
+                    CanonicalAcademicItem.semantic_kind == proposal.semantic_kind,
+                    CanonicalAcademicItem.audience_scope == proposal.audience.scope,
+                    CanonicalItemEvidence.raw_message_id == anchor_raw.id,
+                )
+                .distinct()
+            )
+        ).all()
+        items = [item for item in items if _same_subject(item.subject, proposal.subject)]
+        if len(items) != 1:
+            continue
+        item = items[0]
+        text = clean_text(" ".join(by_id[r.telegram_message_id].text for r in proposal.evidence))
+        description = item.description
+        if text and text not in description:
+            description = (description + "\n\nДополнение: " + text[:1500])[:8000]
+        anchor = by_id[anchor_id]
+        replaced[ordinal] = proposal.model_copy(
+            update={
+                "action": "update",
+                "existing_item_id": item.id,
+                "expected_item_revision": item.revision,
+                "title": item.title,
+                "description": description,
+                "subject": item.subject,
+                "deadline": DeadlineValue(
+                    at=item.deadline_at,
+                    date_only=item.deadline_date_only,
+                    basis=item.deadline_basis,
+                ),
+                "audience": Audience(scope=item.audience_scope, label=item.audience_label),
+                "attention_reasons": json.loads(item.attention_reasons),
+                "evidence": [
+                    EvidenceRef(
+                        telegram_message_id=anchor_id,
+                        revision=anchor.revision,
+                        fact_paths=["description"],
+                    ),
+                    *proposal.evidence,
+                ],
+            }
+        )
+    if not replaced:
+        return validation
+    return validation.model_copy(
+        update={
+            "accepted": [
+                replaced.get(ordinal, proposal)
+                for ordinal, proposal in zip(
+                    validation.accepted_ordinals, validation.accepted, strict=True
+                )
+            ]
+        }
+    )
 
 
 async def _links(db, group_id, validation, raw_by_telegram_id):
@@ -412,6 +521,7 @@ async def promote(
             break
         totals["runs_considered"] += 1
         data = AnalysisInput.model_validate_json(run.input_json)
+        validation = reconcile_validation(validation, data.messages)
         try:
             async with db.begin_nested() as savepoint:
                 raw_rows = (
@@ -425,6 +535,9 @@ async def promote(
                     )
                 ).all()
                 raw_by_id = {row.telegram_message_id: row for row in raw_rows}
+                validation = await with_supplement_updates(
+                    db, group_id, validation, data, raw_by_id
+                )
                 links, blocked = await _links(db, group_id, validation, raw_by_id)
                 kept, kept_ordinals = [], []
                 for ordinal, proposal in zip(

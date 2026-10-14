@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from studgroup.analysis.contract_prompt import contract_block
 from studgroup.analysis.contracts import AnalysisInput
 from studgroup.analysis.extraction_pipeline import AdaptedValidation, adapt_and_validate
+from studgroup.analysis.linking import candidates_payload
 from studgroup.analysis.provider import PreparedRequest
 from studgroup.analysis.validation import validate_provider_content
 
@@ -17,9 +18,16 @@ clarifications of one item, but never merge unrelated work merely because subjec
 The only destinations are task and deadline. Homework is task; test, control point, assessment,
 credit and exam are deadline, with their meaning retained in title and description.
 
-Write a short specific title that names the concrete action ("Определиться с командой и темой
-проекта", "Подготовить доклад-презентацию"); never a generic title such as "Учебное задание" or
-"Домашнее задание". Write a clear description with concrete student actions. Structure
+Title contract: one short line of the form <action verb in the infinitive> + <object> + <topic>,
+using only what the cited messages confirm ("Подготовить доклад про клетку", "Решить задачи 3–7
+со страницы 41", "Выбрать тему курсовой работы"). Drop greetings, filler words,
+hashtags, the delivery condition ("сдать на семинаре") and the deadline from the title; they
+belong to other fields. Keep academic terms, numbers and names. When the message names a
+presentation, report, essay or similar work, the title says which one and about what. Never a
+generic title such as "Учебное задание", "Домашнее задание" or "Доклад", never a copy of the
+first sentence of the chat message. If action, object or topic are not confirmed, write the
+shortest neutral title the evidence allows and do not guess the missing part.
+Write a clear description with concrete student actions. Structure
 compound work into readable points and preserve every evidenced page, number, quantity,
 restriction and submission format. Remove service hashtags (#орг, #матан), @mentions, greetings and chat noise from title and
 description, fix obvious typos and punctuation without changing meaning, and keep numbers, pages,
@@ -45,6 +53,12 @@ duplicate), change/reschedule/cancel of an item (action update/cancel, only with
 existing_items identity, otherwise attention_reasons=model_material_doubt), and a separate new
 item (own proposal). A later message does not cancel an earlier one without an explicit cancel
 or change statement. Conflicting or doubtful links are an attention reason, never a guess.
+link_candidates lists structurally provable or plausible links between messages (both earlier
+and later ones) with relation, strength and timing. strong = reply to the item or one album;
+use them: cite every message that really belongs to the item in its evidence, and put a
+confirmed supplement's content into the description. medium = possible continuation: cite it only
+when its content clearly continues the same item. weak and unlisted pairs are never evidence by
+themselves. Never cite a message that belongs to a different item.
 Files, photos and links come from message attachments and text; you see only their metadata
 (kind, file name, caption) and must not claim to know what a file contains. Use action=create
 for a new item. Messages that contain no academic
@@ -76,6 +90,7 @@ def prepare_extraction_request(
                 _local_message(row, analysis_input.group_timezone)
                 for row in analysis_input.messages
             ],
+            "link_candidates": candidates_payload(analysis_input.messages),
             "understood_context": understood_context,
             "existing_items": [dict(item) for item in existing_items or ()],
         },

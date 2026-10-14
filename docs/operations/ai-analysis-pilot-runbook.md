@@ -178,3 +178,26 @@ Mini App contract proposal for Codex (not implemented): card `materials: [{group
 kind, title, url?, telegram_link, message_id, via: cited|reply|album}]`, derived at read time
 from `CanonicalItemEvidence` → `RawMessage` → `MessageAttachment` + URLs in text; no storage
 change. Telegram file ids stay server-side; the client only gets `t.me` links.
+
+### Final stabilisation: titles and reliable supplements
+
+- **Title order** (`card_editor` + `analysis/title_builder.py`, no extra AI call): the model's own
+  title when sound -> action clause of the model's *evidenced* description -> action clause of
+  the cited source text (greetings, fillers, modal wrapper, delivery condition, deadline prefix
+  and `#tags` removed; "сделать презентацию" -> "Подготовить презентацию") -> neutral
+  `«<вид>: уточнить по сообщению в чате»` with reason `title_insufficient_data`. Titles that
+  start with a greeting/filler are rebuilt (`noisy_title`); good titles are not touched. The
+  prompt's title contract is: action + object + topic, only what the messages confirm.
+- **Supplements** (`analysis/linking.py`): before the model runs, every snapshot message gets
+  structural link candidates (both earlier and later messages): strong = direct reply or same
+  media group; medium = reply-to-reply, enumeration/continuation by the same author in the same
+  topic; weak = adjacent file. They are sent to the model as `link_candidates` (ids and facts
+  about the link only, no text). After extraction `reconcile_validation` (idempotent) adds
+  provable strong members: files/albums as sources, a reply text only from the headman/deputy or
+  the task's author, only when it carries content and is not itself a new task, appended
+  verbatim as `Дополнение: …`. A separate model card that only clarifies another card is merged
+  (`merged_supplement`). Ambiguous (one reply, several tasks) -> `supplement_ambiguous`;
+  doubtful medium/student replies -> `possible_missing_supplement`; a cited message with no
+  structural tie to the others -> `foreign_source_attached` (held). Cross-run: in preview/promote
+  `with_supplement_updates` turns a card that merely clarifies an already-built item into an
+  update of that item. Old stored shadow results get the same treatment when reviewed.

@@ -22,6 +22,7 @@ from studgroup.analysis.contracts import (
     RejectedItem,
     ValidationResult,
 )
+from studgroup.analysis.linking import reconcile_validation
 from studgroup.analysis.output_adapter import adapt_proposal
 from studgroup.analysis.validation import _safe_schema_issues
 
@@ -163,4 +164,5 @@ def adapt_and_validate(
         explicit_empty=explicit_empty,
         adapter_actions=dict(sorted(actions.items())),
     )
+    result = reconcile_validation(result, analysis_input.messages)
     return AdaptedValidation(result, candidates)

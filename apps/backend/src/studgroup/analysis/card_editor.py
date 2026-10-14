@@ -8,18 +8,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from studgroup.academic_context import has_date_cue
 from studgroup.analysis.contracts import ProposedAcademicItem, SourceMessage
 from studgroup.analysis.output_adapter import explicit_source_dates, mentions_weekday
-from studgroup.analysis.text_hygiene import (
-    clean_text,
-    clean_title,
-    is_service_subject,
-    neutral_title,
-)
+from studgroup.analysis.text_hygiene import clean_text, clean_title, is_service_subject
+from studgroup.analysis.title_builder import build_title
 
 GENERIC_TITLE_PATTERN = re.compile(
     r"^(?:учебное|домашнее)\s+задание(?:\s+по\s+(?:предмету\s+)?[«\"]?[\w\s-]{0,40}[»\"]?)?$|"
     r"^(?:(?:доклад|презентация|задание|орг)\s*)+$"
 )
 KIND_LABELS = {"homework": "Задание"}
+NOISY_TITLE = re.compile(r"^(?:ребят|короче|привет|здравствуй|добрый|доброе|всем привет)", re.IGNORECASE)
 NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 GENERIC_TITLES = {
     "домашнее задание",
@@ -34,6 +31,7 @@ SERIOUS_REASONS = {
     "conflicting_deadlines",
     "deadline_before_source",
     "unconfirmed_change",
+    "foreign_source_attached",
 }
 DEADLINE_LABELS = {
     "test": "Тест",
@@ -106,6 +104,8 @@ def primary_display_valid(proposal, sources, verified_subjects):
     if not proposal.title or not proposal.description:
         return False, "missing_display_text"
     title = normalized(proposal.title)
+    if NOISY_TITLE.match(title):
+        return False, "noisy_title"
     if title in GENERIC_TITLES or GENERIC_TITLE_PATTERN.match(title) or len(title) < 6:
         return False, "generic_title"
     source_texts = {normalized(source.text) for source in sources if source.text}
@@ -132,21 +132,39 @@ def primary_display_valid(proposal, sources, verified_subjects):
     return True, None
 
 
+def description_trusted(proposal, sources):
+    """The model's own description may feed a rebuilt title only if every fact is evidenced."""
+    description = proposal.description or ""
+    if not description.strip() or unsupported_numbers(description, sources):
+        return False
+    evidence_text = normalized("\n".join(source.text for source in sources))
+    shown = normalized(description)
+    return not any(stem in shown and stem not in evidence_text for stem in CRITICAL_FACT_STEMS)
+
+
 def fallback_display(proposal, sources, include_subject):
-    """Neutral display text from the cleaned source; nothing is inferred or invented."""
+    """Display text rebuilt from structured facts; nothing is inferred or invented.
+
+    Title order: evidenced model description -> cited source text -> neutral "insufficient data".
+    Returns ``(title, description, title_origin)``.
+    """
     label = (
         KIND_LABELS["homework"]
         if proposal.semantic_kind == "homework"
         else DEADLINE_LABELS[proposal.semantic_kind]
     )
-    primary = next((source.text for source in sources if (source.text or "").strip()), "")
-    title = neutral_title(primary, label)
+    source_text = "\n".join(source.text for source in sources if (source.text or "").strip())
+    title, origin = build_title(
+        proposal.description if description_trusted(proposal, sources) else None,
+        source_text,
+        label,
+    )
     cleaned = [clean_text(source.text) for source in sources if (source.text or "").strip()]
     cleaned = [text for text in cleaned if text]
     description = "\n".join(f"• {text}" if len(cleaned) > 1 else text for text in cleaned)
     if not description:
         description = "Содержание находится в приложенном исходном сообщении."
-    return title, description[:8000]
+    return title, description[:8000], origin
 
 
 def _scrub(proposal):
@@ -183,7 +201,9 @@ def edit_card(
             subject=subject,
         )
     if SERIOUS_REASONS & set(reasons):
-        title, description = fallback_display(proposal, sources, subject_supported)
+        title, description, origin = fallback_display(proposal, sources, subject_supported)
+        if origin == "insufficient":
+            reasons.append("title_insufficient_data")
         return EditedCard(
             title=title,
             description=description,
@@ -201,12 +221,13 @@ def edit_card(
             attention_reasons=reasons,
             subject=subject,
         )
-    title, description = fallback_display(proposal, sources, subject_supported)
+    title, description, origin = fallback_display(proposal, sources, subject_supported)
+    extra = ["title_insufficient_data"] if origin == "insufficient" else []
     return EditedCard(
         title=title,
         description=description,
         visibility="headman_attention",
-        attention_reasons=[*reasons, invalid_reason],
+        attention_reasons=[*reasons, invalid_reason, *extra],
         used_fallback=True,
         subject=subject if subject_supported else None,
     )

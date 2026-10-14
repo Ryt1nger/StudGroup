@@ -13,10 +13,17 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from studgroup.analysis.backfill import _expired, _links, _window, completed_runs
+from studgroup.analysis.backfill import (
+    _expired,
+    _links,
+    _window,
+    completed_runs,
+    with_supplement_updates,
+)
 from studgroup.analysis.card_editor import edit_card
 from studgroup.analysis.card_materials import derive_materials
 from studgroup.analysis.contracts import AnalysisInput, ValidationResult
+from studgroup.analysis.linking import reconcile_validation
 from studgroup.analysis.writer import apply_validated_batch
 from studgroup.models import (
     AcademicDeadline,
@@ -95,6 +102,8 @@ async def build_preview(db, *, group_id, since, now, limit=60):
                     break
                 validation = ValidationResult.model_validate_json(run.validation_result_json)
                 data = AnalysisInput.model_validate_json(run.input_json)
+                # Idempotent: results produced before the reconciliation step get it here.
+                validation = reconcile_validation(validation, data.messages)
                 for message in data.messages:
                     snapshots[message.telegram_message_id] = message
                 for rejected in validation.rejected:
@@ -120,6 +129,9 @@ async def build_preview(db, *, group_id, since, now, limit=60):
                     )
                 ).all()
                 raw_by_id = {row.telegram_message_id: row for row in raw_rows}
+                validation = await with_supplement_updates(
+                    db, group_id, validation, data, raw_by_id
+                )
                 links, blocked = await _links(db, group_id, validation, raw_by_id)
                 for ordinal, proposal in zip(
                     validation.accepted_ordinals, validation.accepted, strict=True
@@ -172,8 +184,8 @@ async def build_preview(db, *, group_id, since, now, limit=60):
                     touched = [i for i, rev in after.items() if before.get(i) != rev]
                     if touched:
                         entry["item_id"] = touched[0]
-                    elif linked is not None and status in {"unchanged", "updated"}:
-                        entry["item_id"] = linked.id
+                    elif status in {"unchanged", "updated"} and effective.existing_item_id:
+                        entry["item_id"] = effective.existing_item_id
                     if entry["item_id"] is not None:
                         by_item.setdefault(entry["item_id"], []).append(entry)
             final = await _collect_items(db, by_item, snapshots)

@@ -89,7 +89,8 @@ def test_bad_ai_title_from_tags_is_replaced_by_a_neutral_source_title_not_invent
     for bad in ("#орг доклад презентация", "Учебное задание по предмету Культура", "Задание"):
         card = edit_card(proposal([1], title=bad), [source])
         assert card.used_fallback and card.visibility == "headman_attention"
-        assert card.title == "Каждый делает доклад-презентацию о выдающихся героях (персоналиях) РФ"
+        # rebuilt from the evidenced description, not copied from the first sentence
+        assert card.title == "Подготовить доклад-презентацию о выдающихся героях РФ"
         assert "#" not in card.description and "Учебное задание" not in card.title
 
 
@@ -104,8 +105,12 @@ def test_good_ai_title_survives_and_is_scrubbed_of_tags():
 
 def test_title_without_reliable_text_is_neutral_not_invented():
     assert neutral_title("#орг", "Задание") == "Задание: содержание в сообщении чата"
-    card = edit_card(proposal([1], title="Задание"), [msg(1, "", files=[("document", "a.pdf", None)])])
-    assert card.title == "Задание: содержание в сообщении чата"
+    card = edit_card(
+        proposal([1], title="Задание", description=None),
+        [msg(1, "", files=[("document", "a.pdf", None)])],
+    )
+    assert card.title == "Задание: уточнить по сообщению в чате"
+    assert "title_insufficient_data" in card.attention_reasons
     assert card.description == "Содержание находится в приложенном исходном сообщении."
 
 
@@ -258,3 +263,72 @@ def test_context_keeps_captionless_reply_files_and_albums_but_not_far_unrelated_
     assert all("author_role" in row for row in context)
     file_row = next(row for row in context if row["message_id"] == 2)
     assert file_row["text"] == "" and file_row["attachments"][0]["file_name"] == "t.pdf"
+
+
+# -- title builder: structured facts first, never a raw first sentence --------------------------
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            "Ребят, тут короче по истории нужно сделать презентацию про Петра I, сдать на семинаре",
+            "Подготовить презентацию про Петра I",
+        ),
+        ("#орг Всем привет!! Напоминаю, надо решить №12,14 на стр.43, до пятницы",
+         "Решить №12,14 на стр.43"),
+        ("Сделать презинтацию по теме Клетка. Сдать в четверг", "Подготовить презентацию по теме Клетка"),
+        ("1) конспект §5\n2) задачи 3-7", "Конспект §5 и задачи 3-7"),
+        ("Нужно написать реферат про Ломоносова и сдать до 20.10", "Написать реферат про Ломоносова"),
+        ("к следующей паре определиться с командами на проект и темой",
+         "Определиться с командами на проект и темой"),
+        ("Каждый делает доклад о Менделееве. Тема на выбор", "Подготовить доклад о Менделееве"),
+        ("ок", "Задание: уточнить по сообщению в чате"),
+    ],
+)
+def test_rebuilt_titles_are_concrete_without_copying_the_first_sentence(source, expected):
+    from studgroup.analysis.title_builder import build_title
+
+    assert build_title(None, source, "Задание")[0] == expected
+
+
+def test_trusted_description_is_the_first_structured_source_for_a_rebuilt_title():
+    source = msg(1, "Ребят, тут короче по истории нужно сделать презентацию про Петра I, сдать на семинаре")
+    card = edit_card(
+        proposal(
+            [1],
+            title="Задание",
+            subject=None,
+            description="Подготовить презентацию про Петра I. Сдать на семинаре.",
+        ),
+        [source],
+    )
+    assert card.title == "Подготовить презентацию про Петра I"
+    assert card.used_fallback and "generic_title" in card.attention_reasons
+
+
+def test_untrusted_description_is_not_used_for_the_title():
+    source = msg(1, "Подготовить презентацию про Петра")
+    card = edit_card(
+        proposal([1], title="Задание", description="Подготовить 12 слайдов про Петра"), [source]
+    )
+    assert "12" not in card.title and card.title == "Подготовить презентацию про Петра"
+
+
+def test_good_model_title_is_left_untouched():
+    for good in ("Решить задачи 3–7 со страницы 41", "Подготовить доклад про клетку"):
+        source = msg(1, f"Нужно {good[0].lower()}{good[1:]}, 3–7 41")
+        card = edit_card(
+            proposal([1], title=good, description=good + ".", subject=None), [source]
+        )
+        assert card.title == good and not card.used_fallback
+
+
+def test_title_with_preamble_from_the_model_is_rebuilt_not_published():
+    source = msg(1, "Ребят, короче надо подготовить доклад про клетку")
+    card = edit_card(
+        proposal([1], title="Ребят, короче надо подготовить доклад про клетку",
+                 description="Подготовить доклад про клетку.", subject=None),
+        [source],
+    )
+    assert card.title == "Подготовить доклад про клетку" and "noisy_title" in card.attention_reasons

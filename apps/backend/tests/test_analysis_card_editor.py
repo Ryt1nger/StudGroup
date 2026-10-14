@@ -82,7 +82,7 @@ def test_generic_title_uses_fallback_but_does_not_hold_useful_card():
     card = edit_card(proposal(title="Домашнее задание"), [source()])
     assert card.used_fallback
     assert card.visibility == "headman_attention"
-    assert card.title == "По математике решить номера 10–16, страницы 43–44"
+    assert card.title == "Решить номера 10–16 на страницах 43–44"
     assert not card.title.startswith("Учебное задание")
 
 
