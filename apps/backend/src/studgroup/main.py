@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     ai_shadow_prepare_once_key: str | None = None
     ai_shadow_prepare_message_id: int | None = None
     ai_shadow_backfill_key: str | None = None
+    ai_shadow_find_candidates: bool = False
     ai_shadow_backfill_limit: int | None = None
     ai_import_chat_id: int | None = None
     ai_schedule_enabled: bool = False
@@ -175,6 +176,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             preparation = await prepare_shadow_canary(app.state.engine, settings)
             print(f"SHADOW_CANARY_PREPARATION {preparation}", flush=True)
+        if settings.ai_shadow_find_candidates:
+            import json as _json
+
+            from sqlalchemy.ext.asyncio import AsyncSession
+
+            from studgroup.analysis.canary_finder import find_candidates
+
+            try:
+                async with AsyncSession(app.state.engine) as session:
+                    found = await find_candidates(session)
+                    await session.rollback()
+                print("SHADOW_CANARY_CANDIDATES " + _json.dumps(found, sort_keys=True), flush=True)
+            except Exception as error:  # noqa: BLE001 -- read-only diagnostic, never blocks startup
+                print("SHADOW_CANARY_CANDIDATES_FAILED " + type(error).__name__, flush=True)
         if settings.ai_shadow_backfill_key and settings.ai_shadow_backfill_limit:
             from studgroup.analysis.shadow_worker import prepare_backfill_wave
 
