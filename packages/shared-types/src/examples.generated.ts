@@ -142,8 +142,13 @@ export const contractExamples = {
           {
             "id": "44444444-4444-4444-8444-444444444444",
             "type": "homework",
+            "card_kind": "homework",
             "title": "ДЗ №12–140",
             "subject": {
+              "id": "55555555-5555-4555-8555-555555555555",
+              "name": "Математический анализ"
+            },
+            "confirmed_subject": {
               "id": "55555555-5555-4555-8555-555555555555",
               "name": "Математический анализ"
             },
@@ -151,7 +156,9 @@ export const contractExamples = {
             "deadline": {
               "state": "known",
               "at": "2026-10-04T20:59:00Z",
-              "date_only": false
+              "date_only": false,
+              "certainty": "from_source",
+              "origin": "explicit_message"
             },
             "status": "published",
             "urgency": "urgent",
@@ -217,8 +224,13 @@ export const contractExamples = {
   "HomeworkDetailAvailable": {
     "id": "44444444-4444-4444-8444-444444444444",
     "type": "homework",
+    "card_kind": "homework",
     "title": "ДЗ №12–140",
     "subject": {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "name": "Математический анализ"
+    },
+    "confirmed_subject": {
       "id": "55555555-5555-4555-8555-555555555555",
       "name": "Математический анализ"
     },
@@ -226,7 +238,9 @@ export const contractExamples = {
     "deadline": {
       "state": "known",
       "at": "2026-10-04T20:59:00Z",
-      "date_only": false
+      "date_only": false,
+      "certainty": "from_source",
+      "origin": "explicit_message"
     },
     "status": "published",
     "urgency": "urgent",
@@ -269,6 +283,23 @@ export const contractExamples = {
         "url": "https://t.me/c/1234567890/42"
       }
     },
+    "sources": [
+      {
+        "kind": "telegram_group_message",
+        "imported": false,
+        "availability": {
+          "state": "available",
+          "reason": null
+        },
+        "message_date": "2026-10-04T09:15:00Z",
+        "excerpt": "По матану решаем номера 12–140.",
+        "action": {
+          "type": "open_telegram_link",
+          "url": "https://t.me/c/1234567890/42"
+        }
+      }
+    ],
+    "updates": [],
     "permissions": [
       "homework.read",
       "homework.completion.write"
@@ -278,16 +309,20 @@ export const contractExamples = {
   "HomeworkDetailUnavailable": {
     "id": "66666666-6666-4666-8666-666666666666",
     "type": "homework",
+    "card_kind": "homework",
     "title": "Подготовить презентацию",
     "subject": {
       "id": "77777777-7777-4777-8777-777777777777",
       "name": "Маркетинг"
     },
+    "confirmed_subject": null,
     "summary": "Точная дата уточняется",
     "deadline": {
       "state": "unknown",
       "at": null,
-      "date_only": false
+      "date_only": false,
+      "certainty": "unknown",
+      "origin": "imported"
     },
     "status": "needs_clarification",
     "urgency": "normal",
@@ -330,6 +365,23 @@ export const contractExamples = {
         "url": null
       }
     },
+    "sources": [
+      {
+        "kind": "imported_history",
+        "imported": true,
+        "availability": {
+          "state": "unavailable",
+          "reason": "imported_without_link"
+        },
+        "message_date": "2026-09-20T09:55:00Z",
+        "excerpt": null,
+        "action": {
+          "type": "none",
+          "url": null
+        }
+      }
+    ],
+    "updates": [],
     "permissions": [
       "homework.read",
       "homework.completion.write"

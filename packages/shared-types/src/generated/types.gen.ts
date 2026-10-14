@@ -148,17 +148,23 @@ export type TodaySection = {
 
 export type AcademicDeadline = {
     id: string;
-    kind: 'control_point' | 'assessment' | 'test';
+    kind: 'control_point' | 'assessment' | 'test' | 'credit' | 'exam' | 'other_academic_deadline';
+    card_kind?: LearningCardKind;
     subject: string;
+    confirmed_subject?: SubjectRef | null;
     title: string;
     description: string;
     deadline_at: string | null;
     date_only: boolean;
+    deadline_certainty?: 'confirmed' | 'from_source' | 'inferred' | 'needs_clarification' | 'unknown';
+    deadline_origin?: 'explicit_message' | 'schedule_inferred' | 'ambiguous_message' | 'manual' | 'imported' | 'unknown';
     window_start: string | null;
     window_end: string | null;
     date_hint: string | null;
     needs_clarification: boolean;
     source_message_ids: Array<number>;
+    sources?: Array<SourceDetail>;
+    updates?: Array<LearningCardUpdate>;
     revision?: number;
     cancelled_at?: string | null;
     materials?: Array<MaterialLink>;
@@ -168,6 +174,30 @@ export type MaterialLink = {
     id: string;
     title: string;
     url: string;
+    kind?: 'link' | 'photo' | 'document' | 'video' | 'audio' | 'voice' | 'animation';
+    file_name?: string | null;
+    mime_type?: string | null;
+    size_bytes?: number | null;
+};
+
+export type LearningCardUpdate = {
+    id: string;
+    kind: 'supplement' | 'change' | 'cancellation';
+    text: string;
+    created_at: string;
+};
+
+export type SubjectListResponse = {
+    generated_at: string;
+    group_timezone: string;
+    items: Array<SubjectOverview>;
+};
+
+export type SubjectOverview = {
+    id: string;
+    name: string;
+    homework_count: number;
+    deadline_count: number;
 };
 
 export type LessonSubjectResponse = {
@@ -213,8 +243,13 @@ export type HomeworkSummary = {
     materials?: Array<MaterialLink>;
     id: string;
     type: 'homework';
+    card_kind?: LearningCardKind;
     title: string;
     subject: SubjectRef;
+    /**
+     * Confirmed subject for new clients. Null means that publication did not establish a subject. The legacy subject field remains populated during the compatibility window.
+     */
+    confirmed_subject?: SubjectRef | null;
     summary?: string | null;
     deadline: Deadline;
     status: HomeworkStatus;
@@ -241,6 +276,11 @@ export type HomeworkSummary = {
 export type HomeworkDetail = HomeworkSummary & {
     description: string | null;
     source_detail: SourceDetail;
+    /**
+     * Evidence for the currently published projection revision. source_detail is kept as the first item for old clients.
+     */
+    sources?: Array<SourceDetail>;
+    updates?: Array<LearningCardUpdate>;
     permissions: Array<Permission>;
     generated_at: string;
 };
@@ -260,7 +300,20 @@ export type Deadline = {
      * True when no exact time was established.
      */
     date_only: boolean;
+    /**
+     * Confidence of this deadline only; never inferred from whole-card status by clients.
+     */
+    certainty?: 'confirmed' | 'from_source' | 'inferred' | 'needs_clarification' | 'unknown';
+    /**
+     * Student-safe origin; no model confidence, prompt or internal evidence metadata.
+     */
+    origin?: 'explicit_message' | 'schedule_inferred' | 'ambiguous_message' | 'manual' | 'imported' | 'unknown';
 };
+
+/**
+ * Exhaustive canonical semantic kinds. The current writer projects homework to Homework; all other values are projected to AcademicDeadline and cannot use personal completion.
+ */
+export type LearningCardKind = 'homework' | 'test' | 'control_point' | 'assessment' | 'credit' | 'exam' | 'other_academic_deadline';
 
 /**
  * detected and incomplete_hidden are internal and never returned.
@@ -286,6 +339,14 @@ export type SourceSummary = {
 };
 
 export type SourceDetail = SourceSummary & {
+    /**
+     * Stable retained source id when available.
+     */
+    id?: string | null;
+    /**
+     * Group-local Telegram message id; not a credential.
+     */
+    telegram_message_id?: number | null;
     message_date: string | null;
     excerpt: string | null;
     action: SourceAction;
@@ -538,6 +599,35 @@ export type GetLessonSubjectResponses = {
 };
 
 export type GetLessonSubjectResponse = GetLessonSubjectResponses[keyof GetLessonSubjectResponses];
+
+export type ListSubjectsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/subjects';
+};
+
+export type ListSubjectsErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+};
+
+export type ListSubjectsError = ListSubjectsErrors[keyof ListSubjectsErrors];
+
+export type ListSubjectsResponses = {
+    /**
+     * Stable subject identities and published item counts
+     */
+    200: SubjectListResponse;
+};
+
+export type ListSubjectsResponse = ListSubjectsResponses[keyof ListSubjectsResponses];
 
 export type ListAcademicDeadlinesData = {
     body?: never;

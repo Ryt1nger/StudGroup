@@ -27,3 +27,4 @@ Accepted decisions:
 - [ADR-008: AI card editing and publication policy](ADR-008-ai-card-publication-policy.md)
 - [ADR-009: AI diagnostics, bounded repair and retention](ADR-009-ai-diagnostics-and-repair.md)
 - [ADR-010: Hybrid AI output adapter and bounded structural repair](ADR-010-hybrid-ai-output-adapter.md)
+- [ADR-011: Published student-card projection API](ADR-011-student-card-projection-api.md)

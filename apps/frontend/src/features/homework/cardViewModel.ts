@@ -1,18 +1,14 @@
-import type { HomeworkDetail, SourceDetail } from '@studgroup/shared-types';
-
-export type LearningCardKind =
-  'homework' | 'control_work' | 'test' | 'credit' | 'exam' | 'project' | 'presentation' | 'other';
+import type {
+  HomeworkDetail,
+  LearningCardKind,
+  MaterialLink,
+  SourceDetail,
+  SubjectRef,
+} from '@studgroup/shared-types';
+import { confirmedSubject } from './confirmedSubject';
 
 export type DeadlineCertainty = 'confirmed' | 'from_source' | 'inferred' | 'needs_clarification' | 'unknown';
-export type LearningMaterialKind = 'photo' | 'document' | 'link';
 export type LearningCardUpdateKind = 'supplement' | 'change' | 'cancellation';
-
-export interface LearningMaterialView {
-  id: string;
-  title: string;
-  url: string;
-  kind: LearningMaterialKind;
-}
 
 export interface LearningCardUpdateView {
   id: string;
@@ -23,8 +19,9 @@ export interface LearningCardUpdateView {
 
 export interface HomeworkCardViewModel {
   kind: LearningCardKind;
+  subject: SubjectRef | null;
   deadlineCertainty: DeadlineCertainty;
-  materials: LearningMaterialView[] | undefined;
+  materials: MaterialLink[] | undefined;
   sources: SourceDetail[];
   updates: LearningCardUpdateView[];
 }
@@ -37,13 +34,12 @@ function record(value: unknown): UnknownRecord | null {
 
 function learningCardKind(value: unknown): LearningCardKind {
   switch (value) {
-    case 'control_work':
+    case 'control_point':
+    case 'assessment':
     case 'test':
     case 'credit':
     case 'exam':
-    case 'project':
-    case 'presentation':
-    case 'other':
+    case 'other_academic_deadline':
       return value;
     default:
       return 'homework';
@@ -51,7 +47,7 @@ function learningCardKind(value: unknown): LearningCardKind {
 }
 
 function deadlineCertainty(detail: HomeworkDetail, extension: UnknownRecord): DeadlineCertainty {
-  if (detail.deadline.state === 'unknown' || !detail.deadline.at) return 'unknown';
+  if (detail.deadline.certainty) return detail.deadline.certainty;
   const deadline = record(extension.deadline);
   const explicit = deadline?.certainty;
   if (
@@ -62,6 +58,7 @@ function deadlineCertainty(detail: HomeworkDetail, extension: UnknownRecord): De
   ) {
     return explicit;
   }
+  if (detail.deadline.state === 'unknown' || !detail.deadline.at) return 'unknown';
   if (detail.status === 'needs_clarification' || detail.verification_state === 'needs_clarification') {
     return 'needs_clarification';
   }
@@ -69,18 +66,6 @@ function deadlineCertainty(detail: HomeworkDetail, extension: UnknownRecord): De
   if (detail.verification_state === 'from_group_message') return 'from_source';
   if (detail.verification_state === 'inferred') return 'inferred';
   return 'unknown';
-}
-
-function materialKind(value: unknown): LearningMaterialKind {
-  return value === 'photo' || value === 'document' ? value : 'link';
-}
-
-function materials(detail: HomeworkDetail): LearningMaterialView[] | undefined {
-  if (detail.materials === undefined) return undefined;
-  return detail.materials.map((item) => {
-    const extension = record(item);
-    return { id: item.id, title: item.title, url: item.url, kind: materialKind(extension?.kind) };
-  });
 }
 
 function isSourceDetail(value: unknown): value is SourceDetail {
@@ -96,6 +81,7 @@ function isSourceDetail(value: unknown): value is SourceDetail {
 }
 
 function sources(detail: HomeworkDetail, extension: UnknownRecord): SourceDetail[] {
+  if (detail.sources?.length) return detail.sources;
   if (Array.isArray(extension.sources)) {
     const compatible = extension.sources.filter(isSourceDetail);
     if (compatible.length) return compatible;
@@ -134,9 +120,10 @@ function updates(extension: UnknownRecord): LearningCardUpdateView[] {
 export function toHomeworkCardViewModel(detail: HomeworkDetail): HomeworkCardViewModel {
   const extension = detail as unknown as UnknownRecord;
   return {
-    kind: learningCardKind(extension.card_kind),
+    kind: learningCardKind(detail.card_kind ?? extension.card_kind),
+    subject: confirmedSubject(detail),
     deadlineCertainty: deadlineCertainty(detail, extension),
-    materials: materials(detail),
+    materials: detail.materials,
     sources: sources(detail, extension),
     updates: updates(extension),
   };

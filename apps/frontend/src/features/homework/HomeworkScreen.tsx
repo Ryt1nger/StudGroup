@@ -224,6 +224,7 @@ export function HomeworkScreen() {
   const navigate = useNavigate();
   const query = useHomeworkQuery(homeworkId);
   const detail = query.data;
+  const subject = detail ? toHomeworkCardViewModel(detail).subject : null;
   const nowMs = useServerNow(detail?.generated_at, query.dataUpdatedAt);
 
   const goBack = useCallback(() => {
@@ -247,7 +248,7 @@ export function HomeworkScreen() {
           <span className={styles.backSpacer} />
         )}
         <h1 className={styles.headerTitle}>
-          {detail ? detail.subject.name : <Skeleton height={20} width={160} />}
+          {detail ? (subject?.name ?? 'Без предмета') : <Skeleton height={20} width={160} />}
         </h1>
         <span className={styles.backSpacer} />
       </header>

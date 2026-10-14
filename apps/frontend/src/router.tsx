@@ -8,7 +8,10 @@ import { AppShell } from './shell/AppShell';
 import { TasksScreen } from './features/tasks/TasksScreen';
 import { ScheduleScreen } from './features/schedule/ScheduleScreen';
 import { LessonScreen } from './features/schedule/LessonScreen';
-import { PreparedSection } from './shell/PreparedSection';
+import { SubjectsScreen } from './features/subjects/SubjectsScreen';
+import { LessonSubjectScreen } from './features/subjects/LessonSubjectScreen';
+import { DeadlinesScreen } from './features/deadlines/DeadlinesScreen';
+import { AcademicDeadlineScreen } from './features/deadlines/AcademicDeadlineScreen';
 import { StateView } from './ui/StateView';
 import { Button } from './ui/Button';
 import { AlertCircle } from './ui/icons';
@@ -36,7 +39,14 @@ export function appRoutes(startParam: string | null) {
   // backend still enforces session, membership and ownership on the resulting request.
   const deepLinkId = homeworkIdFromStartParam(startParam);
   const devRoutes = import.meta.env.DEV
-    ? [{ path: 'preview/schedule', lazy: async () => ({ Component: (await import('./features/schedule/SchedulePreview')).SchedulePreview }) }]
+    ? [
+        {
+          path: 'preview/schedule',
+          lazy: async () => ({
+            Component: (await import('./features/schedule/SchedulePreview')).SchedulePreview,
+          }),
+        },
+      ]
     : [];
   return [
     {
@@ -50,7 +60,10 @@ export function appRoutes(startParam: string | null) {
         { path: 'tasks', Component: TasksScreen },
         { path: 'schedule', Component: ScheduleScreen },
         { path: 'schedule/lesson/:lessonId', Component: LessonScreen },
-        { path: 'subjects', element: <PreparedSection title={ru.nav.subjects} /> },
+        { path: 'subjects', Component: SubjectsScreen },
+        { path: 'subjects/lessons/:lessonId', Component: LessonSubjectScreen },
+        { path: 'deadlines', Component: DeadlinesScreen },
+        { path: 'deadlines/:deadlineId', Component: AcademicDeadlineScreen },
         ...devRoutes,
         { path: '*', Component: NotFound },
       ],

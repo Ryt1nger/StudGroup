@@ -1,13 +1,53 @@
-import type { ApiError, HomeworkListResponse, ScheduleResponse, HomeworkDetail, SessionBootstrapResponse, SetCompletionRequest, TodayResponse } from '@studgroup/shared-types';
+import type {
+  ApiError,
+  HomeworkListResponse,
+  ScheduleResponse,
+  HomeworkDetail,
+  SessionBootstrapResponse,
+  SetCompletionRequest,
+  SubjectListResponse,
+  TodayResponse,
+} from '@studgroup/shared-types';
 import { delay, http, HttpResponse, type HttpHandler } from 'msw';
-import { addManyHomework, buildNextLesson, buildSchedule, buildToday, buildWorld, exampleNoGroup, exampleSession, exampleTodayDelayed, exampleTodayEmpty, sessionAt, type MockWorld } from './data';
+import {
+  addManyHomework,
+  buildNextLesson,
+  buildSchedule,
+  buildToday,
+  buildWorld,
+  exampleNoGroup,
+  exampleSession,
+  exampleTodayDelayed,
+  exampleTodayEmpty,
+  sessionAt,
+  type MockWorld,
+} from './data';
 import type { Scenario } from './scenarios';
-import { CURSOR_TTL_MS, decodeCursor, encodeCursor, GROUP_TZ, isListFilter, selectHomework } from './homeworkList';
+import {
+  CURSOR_TTL_MS,
+  decodeCursor,
+  encodeCursor,
+  GROUP_TZ,
+  isListFilter,
+  selectHomework,
+} from './homeworkList';
 import { addDays, dayKey } from '../lib/format';
-import { buildReviewedNextLesson, buildReviewedSchedule, buildReviewedWorld, reviewedDeadlineArchived, reviewedDeadlines } from './reviewedDemoData';
+import {
+  buildReviewedNextLesson,
+  buildReviewedSchedule,
+  buildReviewedWorld,
+  reviewedDeadlineArchived,
+  reviewedDeadlines,
+} from './reviewedDemoData';
 
 function apiError(code: ApiError['code'], message: string, status: number, extra: Partial<ApiError> = {}) {
-  const error: ApiError = { code, message, correlation_id: '01J9Z4A8Z1R9N2Y3P4Q5W6E7T8', retryable: status >= 500 || status === 429, ...extra };
+  const error: ApiError = {
+    code,
+    message,
+    correlation_id: '01J9Z4A8Z1R9N2Y3P4Q5W6E7T8',
+    retryable: status >= 500 || status === 429,
+    ...extra,
+  };
   return HttpResponse.json({ error }, { status });
 }
 
@@ -19,7 +59,13 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
     world.sections = world.sections.filter((s) => s.kind === 'due_today');
   }
   const now = () => Date.now();
-  if (scenario === 'tasks-many' || scenario === 'tasks-cursor-expired' || scenario === 'tasks-more-fails' || scenario === 'tasks-dup-page') addManyHomework(world, now(), 120);
+  if (
+    scenario === 'tasks-many' ||
+    scenario === 'tasks-cursor-expired' ||
+    scenario === 'tasks-more-fails' ||
+    scenario === 'tasks-dup-page'
+  )
+    addManyHomework(world, now(), 120);
   let cursorExpiredOnce = false;
   let moreFailures = 0;
   let conflictPending = scenario === 'completion-conflict';
@@ -29,8 +75,12 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
   };
 
   const handlers: HttpHandler[] = [
-    http.get(url('/notifications'), () => HttpResponse.json({ items: [], unread_count: 0, generated_at: new Date().toISOString() })),
-    http.post(url('/notifications/read-all'), () => HttpResponse.json({ items: [], unread_count: 0, generated_at: new Date().toISOString() })),
+    http.get(url('/notifications'), () =>
+      HttpResponse.json({ items: [], unread_count: 0, generated_at: new Date().toISOString() }),
+    ),
+    http.post(url('/notifications/read-all'), () =>
+      HttpResponse.json({ items: [], unread_count: 0, generated_at: new Date().toISOString() }),
+    ),
     http.post(url('/session/bootstrap'), async () => {
       await maybeSlow();
       if (scenario === 'offline') return HttpResponse.error();
@@ -47,7 +97,14 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
         );
       }
       if (scenario === 'left') {
-        return HttpResponse.json(sessionAt(exampleSession, now(), (s) => ({ ...s, access_state: 'membership_left', membership: { ...s.membership!, status: 'left', can_recheck: false }, permissions: [] })));
+        return HttpResponse.json(
+          sessionAt(exampleSession, now(), (s) => ({
+            ...s,
+            access_state: 'membership_left',
+            membership: { ...s.membership!, status: 'left', can_recheck: false },
+            permissions: [],
+          })),
+        );
       }
       const active = sessionAt(exampleSession, now(), (session) =>
         publicDemo
@@ -71,45 +128,125 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
       if (scenario === 'offline') return HttpResponse.error();
       if (scenario === 'forbidden') return apiError('permission_denied', 'Нет доступа.', 403);
       if (scenario === 'service-error') return apiError('service_unavailable', 'Сервис недоступен.', 503);
-      const stamp = { server_time: new Date(now()).toISOString(), generated_at: new Date(now()).toISOString() };
+      const stamp = {
+        server_time: new Date(now()).toISOString(),
+        generated_at: new Date(now()).toISOString(),
+      };
       // `next_lesson` is independent of `empty`: a feed without homework still shows the lesson.
       const next_lesson = publicDemo
         ? buildReviewedNextLesson(now())
-        : buildNextLesson(now(), scenario === 'next-current' ? 'current' : scenario === 'next-null' ? 'none' : 'upcoming');
+        : buildNextLesson(
+            now(),
+            scenario === 'next-current' ? 'current' : scenario === 'next-null' ? 'none' : 'upcoming',
+          );
       let today: TodayResponse;
       if (scenario === 'empty') today = { ...exampleTodayEmpty, ...stamp };
       else if (scenario === 'delayed') today = { ...exampleTodayDelayed, ...stamp };
-      else if (scenario === 'updating') today = { ...exampleTodayEmpty, processing: { state: 'updating', retry_after_seconds: 10 }, ...stamp };
+      else if (scenario === 'updating')
+        today = {
+          ...exampleTodayEmpty,
+          processing: { state: 'updating', retry_after_seconds: 10 },
+          ...stamp,
+        };
       else {
         today = buildToday(world, now());
-        if (scenario === 'stale') today.freshness = { last_successful_sync_at: new Date(now() - 40 * 60_000).toISOString(), stale: true };
+        if (scenario === 'stale')
+          today.freshness = {
+            last_successful_sync_at: new Date(now() - 40 * 60_000).toISOString(),
+            stale: true,
+          };
       }
       if (new URL(request.url).searchParams.get('day') === 'tomorrow') {
         const selected = addDays(dayKey(stamp.server_time, today.group_timezone), 1);
-        const items = today.sections.flatMap((section) => section.items).filter((item) => item.deadline.state === 'known' && item.deadline.at && dayKey(item.deadline.at, today.group_timezone) === selected);
-        const lesson = next_lesson && dayKey(next_lesson.lesson.starts_at, today.group_timezone) === selected ? next_lesson : null;
-        return HttpResponse.json({ ...today, sections: items.length ? [{ kind: 'due_today', items }] : [], empty: items.length === 0, next_lesson: lesson } satisfies TodayResponse);
+        const items = today.sections
+          .flatMap((section) => section.items)
+          .filter(
+            (item) =>
+              item.deadline.state === 'known' &&
+              item.deadline.at &&
+              dayKey(item.deadline.at, today.group_timezone) === selected,
+          );
+        const lesson =
+          next_lesson && dayKey(next_lesson.lesson.starts_at, today.group_timezone) === selected
+            ? next_lesson
+            : null;
+        return HttpResponse.json({
+          ...today,
+          sections: items.length ? [{ kind: 'due_today', items }] : [],
+          empty: items.length === 0,
+          next_lesson: lesson,
+        } satisfies TodayResponse);
       }
       return HttpResponse.json({ ...today, next_lesson } satisfies TodayResponse);
     }),
 
     http.get(url('/deadlines'), ({ request }) => {
       const archive = new URL(request.url).searchParams.get('archive') === 'true';
-      const items = publicDemo ? reviewedDeadlines.filter((item) => reviewedDeadlineArchived(item, now()) === archive) : [];
-      return HttpResponse.json({ generated_at: new Date(now()).toISOString(), group_timezone: GROUP_TZ, items });
+      const items = publicDemo
+        ? reviewedDeadlines.filter((item) => reviewedDeadlineArchived(item, now()) === archive)
+        : [];
+      return HttpResponse.json({
+        generated_at: new Date(now()).toISOString(),
+        group_timezone: GROUP_TZ,
+        items,
+      });
     }),
 
     http.get(url('/deadlines/:deadline_id'), ({ params }) => {
-      const item = publicDemo ? reviewedDeadlines.find((candidate) => candidate.id === params.deadline_id) : null;
+      const item = publicDemo
+        ? reviewedDeadlines.find((candidate) => candidate.id === params.deadline_id)
+        : null;
       if (!item) return apiError('not_found', 'Контрольная точка не найдена', 404);
-      return HttpResponse.json({ generated_at: new Date(now()).toISOString(), group_timezone: GROUP_TZ, item });
+      return HttpResponse.json({
+        generated_at: new Date(now()).toISOString(),
+        group_timezone: GROUP_TZ,
+        item,
+      });
+    }),
+
+    http.get(url('/subjects'), () => {
+      const subjects = new Map<
+        string,
+        { id: string; name: string; homework_count: number; deadline_count: number }
+      >();
+      for (const item of world.summaries.values()) {
+        const subject = Object.prototype.hasOwnProperty.call(item, 'confirmed_subject')
+          ? item.confirmed_subject
+          : item.subject;
+        if (!subject) continue;
+        const key = subject.name.trim().toLocaleLowerCase('ru-RU').replaceAll('ё', 'е');
+        const current = subjects.get(key);
+        subjects.set(
+          key,
+          current
+            ? { ...current, homework_count: current.homework_count + 1 }
+            : { id: subject.id, name: subject.name, homework_count: 1, deadline_count: 0 },
+        );
+      }
+      return HttpResponse.json({
+        generated_at: new Date(now()).toISOString(),
+        group_timezone: GROUP_TZ,
+        items: [...subjects.values()].sort((left, right) => left.name.localeCompare(right.name, 'ru-RU')),
+      } satisfies SubjectListResponse);
     }),
 
     http.get(url('/lessons/:lesson_id/subject'), ({ params }) => {
-      const next = publicDemo ? buildReviewedNextLesson(now()) : buildNextLesson(now(), scenario === 'next-current' ? 'current' : 'upcoming');
+      const next = publicDemo
+        ? buildReviewedNextLesson(now())
+        : buildNextLesson(now(), scenario === 'next-current' ? 'current' : 'upcoming');
       if (!next || next.lesson.id !== params.lesson_id) return apiError('not_found', 'Пара не найдена', 404);
-      const homework = buildToday(world, now()).sections.flatMap((section) => section.items).filter((item) => item.subject.name === next.lesson.subject);
-      return HttpResponse.json({ generated_at: new Date(now()).toISOString(), group_timezone: GROUP_TZ, lesson: next.lesson, homework, homework_total: homework.length, events_state: 'not_connected', materials_state: 'not_connected' });
+      const homework = buildToday(world, now())
+        .sections.flatMap((section) => section.items)
+        .filter((item) => item.subject.name === next.lesson.subject);
+      return HttpResponse.json({
+        generated_at: new Date(now()).toISOString(),
+        group_timezone: GROUP_TZ,
+        lesson: next.lesson,
+        homework,
+        homework_total: homework.length,
+        events_state: 'not_connected',
+        materials_state: 'not_connected',
+      });
     }),
 
     http.get(url('/schedule'), async ({ request }) => {
@@ -121,8 +258,13 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
       const start = params.get('start');
       const end = params.get('end');
       if (!start || !end) return apiError('invalid_request', 'Укажите start и end.', 422);
-      const variant = scenario === 'schedule-clarify' ? 'clarify' : scenario === 'schedule-empty' ? 'empty' : 'ready';
-      return HttpResponse.json((publicDemo ? buildReviewedSchedule(start, end, now()) : buildSchedule(start, end, now(), variant)) satisfies ScheduleResponse);
+      const variant =
+        scenario === 'schedule-clarify' ? 'clarify' : scenario === 'schedule-empty' ? 'empty' : 'ready';
+      return HttpResponse.json(
+        (publicDemo
+          ? buildReviewedSchedule(start, end, now())
+          : buildSchedule(start, end, now(), variant)) satisfies ScheduleResponse,
+      );
     }),
 
     // Canonical GET /homework (contract 0.3.0): server-side filters, created_at/id ordering, opaque
@@ -159,18 +301,31 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
         selectedAt = cursor.t;
       }
       const stamp = new Date(now()).toISOString();
-      const base = { server_time: new Date(selectedAt).toISOString(), generated_at: stamp, group_timezone: GROUP_TZ, freshness: { last_successful_sync_at: stamp, stale: false }, processing: { state: 'idle' as const, retry_after_seconds: null } };
+      const base = {
+        server_time: new Date(selectedAt).toISOString(),
+        generated_at: stamp,
+        group_timezone: GROUP_TZ,
+        freshness: { last_successful_sync_at: stamp, stale: false },
+        processing: { state: 'idle' as const, retry_after_seconds: null },
+      };
       if (scenario === 'tasks-empty' || scenario === 'empty') {
         return HttpResponse.json({ ...base, items: [], next_cursor: null } satisfies HomeworkListResponse);
       }
       if (scenario === 'tasks-empty-first-page' && !cursorToken) {
         // An empty page does not mean an empty list while a cursor is returned.
-        return HttpResponse.json({ ...base, items: [], next_cursor: encodeCursor({ f: filter, o: 0, t: selectedAt }) } satisfies HomeworkListResponse);
+        return HttpResponse.json({
+          ...base,
+          items: [],
+          next_cursor: encodeCursor({ f: filter, o: 0, t: selectedAt }),
+        } satisfies HomeworkListResponse);
       }
       const selected = selectHomework([...world.summaries.values()], filter, selectedAt);
       let items = selected.slice(offset, offset + limit);
       if (scenario === 'tasks-dup-page' && offset > 0 && selected[0]) items = [selected[0], ...items];
-      const next = offset + limit < selected.length ? encodeCursor({ f: filter, o: offset + limit, t: selectedAt }) : null;
+      const next =
+        offset + limit < selected.length
+          ? encodeCursor({ f: filter, o: offset + limit, t: selectedAt })
+          : null;
       return HttpResponse.json({ ...base, items, next_cursor: next } satisfies HomeworkListResponse);
     }),
 
@@ -178,7 +333,8 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
       await maybeSlow();
       if (scenario === 'offline') return HttpResponse.error();
       const id = String(params.id);
-      if (id === '00000000-0000-4000-8000-000000000410') return apiError('gone', 'Эти данные больше не хранятся.', 410);
+      if (id === '00000000-0000-4000-8000-000000000410')
+        return apiError('gone', 'Эти данные больше не хранятся.', 410);
       const detail = world.details.get(id);
       if (!detail) return apiError('not_found', 'Задание не найдено.', 404);
       return HttpResponse.json(detail);
@@ -198,15 +354,29 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
       }
       const detail = world.details.get(id) ?? stored;
       if (body.expected_revision !== detail.revision) {
-        return apiError('revision_conflict', 'Данные задания изменились. Обновите карточку и повторите действие.', 409, {
-          retryable: true,
-          details: { resource_id: id, expected_revision: body.expected_revision, current_revision: detail.revision, action: 'refetch' },
-        });
+        return apiError(
+          'revision_conflict',
+          'Данные задания изменились. Обновите карточку и повторите действие.',
+          409,
+          {
+            retryable: true,
+            details: {
+              resource_id: id,
+              expected_revision: body.expected_revision,
+              current_revision: detail.revision,
+              action: 'refetch',
+            },
+          },
+        );
       }
       const updated: HomeworkDetail = {
         ...detail,
         my_state: body.completed
-          ? { completion: 'completed', completed_at: new Date(now()).toISOString(), completed_revision: detail.revision }
+          ? {
+              completion: 'completed',
+              completed_at: new Date(now()).toISOString(),
+              completed_revision: detail.revision,
+            }
           : { completion: 'pending', completed_at: null, completed_revision: null },
       };
       world.details.set(id, updated);

@@ -5,6 +5,7 @@ import {
   listHomework,
   getToday,
   getLessonSubject,
+  listSubjects,
   listAcademicDeadlines,
   getAcademicDeadline,
   recheckMembership,
@@ -16,6 +17,7 @@ import {
   type SessionContext,
   type TodayResponse,
   type LessonSubjectResponse,
+  type SubjectListResponse,
 } from '@studgroup/shared-types';
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { unwrap, isApiRequestError } from './errors';
@@ -23,17 +25,24 @@ import { queryKeys } from './keys';
 import { detailQueryOptions, scheduleQueryOptions, todayQueryOptions } from './cachePolicy';
 
 export const HOMEWORK_PAGE_SIZE = 50;
-export type HomeworkListFilter = NonNullable<NonNullable<Parameters<typeof listHomework>[0]>['query']>['filter'] & string;
+export type HomeworkListFilter = NonNullable<
+  NonNullable<Parameters<typeof listHomework>[0]>['query']
+>['filter'] &
+  string;
 
 export const api = {
   bootstrap: (initData: string): Promise<SessionBootstrapResponse> =>
     unwrap(bootstrapSession({ body: { init_data: initData } })),
   recheck: (): Promise<SessionContext> => unwrap(recheckMembership()),
-  today: (day: 'today' | 'tomorrow' = 'today'): Promise<TodayResponse> => unwrap(getToday({ query: { day } })),
-  lessonSubject: (id: string): Promise<LessonSubjectResponse> => unwrap(getLessonSubject({ path: { lesson_id: id } })),
+  today: (day: 'today' | 'tomorrow' = 'today'): Promise<TodayResponse> =>
+    unwrap(getToday({ query: { day } })),
+  lessonSubject: (id: string): Promise<LessonSubjectResponse> =>
+    unwrap(getLessonSubject({ path: { lesson_id: id } })),
+  subjects: (): Promise<SubjectListResponse> => unwrap(listSubjects()),
   deadlines: (archive = false) => unwrap(listAcademicDeadlines({ query: { archive } })),
   event: (id: string) => unwrap(getAcademicDeadline({ path: { deadline_id: id } })),
-  schedule: (start: string, end: string): Promise<ScheduleResponse> => unwrap(getSchedule({ query: { start, end } })),
+  schedule: (start: string, end: string): Promise<ScheduleResponse> =>
+    unwrap(getSchedule({ query: { start, end } })),
   listHomework: (filter: HomeworkListFilter, cursor?: string): Promise<HomeworkListResponse> =>
     unwrap(listHomework({ query: { filter, limit: HOMEWORK_PAGE_SIZE, ...(cursor ? { cursor } : {}) } })),
   homework: (id: string): Promise<HomeworkDetail> => unwrap(getHomework({ path: { homework_id: id } })),
@@ -47,27 +56,56 @@ export const api = {
 };
 
 export function useTodayQuery(day: 'today' | 'tomorrow' = 'today') {
-  return useQuery({ queryKey: [...queryKeys.today, day], queryFn: () => api.today(day), ...todayQueryOptions });
+  return useQuery({
+    queryKey: [...queryKeys.today, day],
+    queryFn: () => api.today(day),
+    ...todayQueryOptions,
+  });
 }
 
 export function useLessonSubjectQuery(id: string) {
-  return useQuery({ queryKey: queryKeys.lessonSubject(id), queryFn: () => api.lessonSubject(id), ...detailQueryOptions });
+  return useQuery({
+    queryKey: queryKeys.lessonSubject(id),
+    queryFn: () => api.lessonSubject(id),
+    ...detailQueryOptions,
+  });
+}
+
+export function useSubjectsQuery() {
+  return useQuery({ queryKey: queryKeys.subjects, queryFn: api.subjects, ...todayQueryOptions });
 }
 
 export function useAcademicDeadlinesQuery(archive = false) {
-  return useQuery({ queryKey: ['academic-deadlines', archive], queryFn: () => api.deadlines(archive), ...todayQueryOptions });
+  return useQuery({
+    queryKey: ['academic-deadlines', archive],
+    queryFn: () => api.deadlines(archive),
+    ...todayQueryOptions,
+  });
 }
 
 export function useAcademicDeadlineQuery(id: string) {
-  return useQuery({ queryKey: ['academic-deadline', id], queryFn: () => api.event(id), ...detailQueryOptions });
+  return useQuery({
+    queryKey: ['academic-deadline', id],
+    queryFn: () => api.event(id),
+    ...detailQueryOptions,
+  });
 }
 
 export function useScheduleQuery(start: string, end: string, enabled = true) {
-  return useQuery({ queryKey: queryKeys.schedule(start, end), queryFn: () => api.schedule(start, end), enabled, ...scheduleQueryOptions });
+  return useQuery({
+    queryKey: queryKeys.schedule(start, end),
+    queryFn: () => api.schedule(start, end),
+    enabled,
+    ...scheduleQueryOptions,
+  });
 }
 
 export function useHomeworkQuery(id: string) {
-  return useQuery({ queryKey: queryKeys.homework(id), queryFn: () => api.homework(id), ...detailQueryOptions });
+  return useQuery({
+    queryKey: queryKeys.homework(id),
+    queryFn: () => api.homework(id),
+    ...detailQueryOptions,
+  });
 }
 
 interface CompletionVars {
@@ -82,7 +120,8 @@ interface CompletionVars {
 export function useCompletionMutation(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ completed, expectedRevision }: CompletionVars) => api.setCompletion(id, completed, expectedRevision),
+    mutationFn: ({ completed, expectedRevision }: CompletionVars) =>
+      api.setCompletion(id, completed, expectedRevision),
     onMutate: async ({ completed }) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.homework(id) });
       const previous = queryClient.getQueryData<HomeworkDetail>(queryKeys.homework(id));

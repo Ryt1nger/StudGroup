@@ -2,13 +2,17 @@ import type { MaterialLink } from '@studgroup/shared-types';
 import { Download, ExternalLink } from './icons';
 import styles from './MaterialLinks.module.css';
 
-type MaterialKind = 'photo' | 'document' | 'link';
-type DisplayMaterial = MaterialLink & { kind?: MaterialKind };
+type MaterialKind = NonNullable<MaterialLink['kind']>;
+type DisplayMaterial = MaterialLink;
 
 const labels: Record<MaterialKind, string> = {
   photo: 'Фотография',
   document: 'Документ',
   link: 'Ссылка',
+  video: 'Видео',
+  audio: 'Аудиозапись',
+  voice: 'Голосовое сообщение',
+  animation: 'Анимация',
 };
 
 export function MaterialLinks({ items }: { items?: DisplayMaterial[] }) {

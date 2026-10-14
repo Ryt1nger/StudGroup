@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, active_group, database
-from studgroup.materials import links
 from studgroup.models import AcademicDeadline, Group
+from studgroup.student_cards import enrich_deadline
 
 router = APIRouter(prefix="/v1")
 
@@ -34,11 +34,14 @@ def archived(row, now, timezone):
     return bool(row.window_end and utc(row.window_end) <= now)
 
 
-def representation(row):
+async def representation(db, group, row, now):
+    enrichment = await enrich_deadline(db, group, row, now)
     return {
         "id": row.id,
         "kind": row.kind,
+        "card_kind": enrichment["card_kind"],
         "subject": row.subject,
+        "confirmed_subject": enrichment["confirmed_subject"],
         "title": row.title,
         "description": row.description,
         "deadline_at": utc(row.deadline_at) if row.deadline_at else None,
@@ -47,7 +50,12 @@ def representation(row):
         "window_end": utc(row.window_end) if row.window_end else None,
         "date_hint": row.date_hint,
         "needs_clarification": row.needs_clarification,
+        "deadline_certainty": enrichment["deadline_certainty"],
+        "deadline_origin": enrichment["deadline_origin"],
         "source_message_ids": json.loads(row.source_message_ids),
+        "sources": enrichment["sources"],
+        "updates": enrichment["updates"],
+        "materials": enrichment["materials"],
         "revision": row.revision,
         "cancelled_at": utc(row.cancelled_at) if row.cancelled_at else None,
     }
@@ -82,8 +90,7 @@ async def items(db, group, now, archive=False, subject=None):
     )
     result = []
     for row in selected:
-        item = representation(row)
-        item["materials"] = await links(db, group.id, [f"e:{row.id}"])
+        item = await representation(db, group, row, now)
         result.append(item)
     return result
 
@@ -118,6 +125,5 @@ async def get_deadline(
     )
     if row is None:
         raise ApiError("not_found", "Событие не найдено", 404)
-    item = representation(row)
-    item["materials"] = await links(db, group.id, [f"e:{row.id}"])
+    item = await representation(db, group, row, now)
     return {"generated_at": now, "group_timezone": group.timezone, "item": item}
