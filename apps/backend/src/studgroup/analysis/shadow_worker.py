@@ -31,6 +31,23 @@ SHADOW_MAX_ATTEMPTS = 3
 SHADOW_LEASE = timedelta(minutes=3)
 
 
+CARRIED_METRICS = ("history", "attempt_base", "requeue_version")
+
+
+def _metrics(row):
+    try:
+        value = json.loads(row.metrics_json or "{}")
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def attempt_base(row):
+    """Attempts already spent before the latest owner requeue (attempts stay monotonic)."""
+    value = _metrics(row).get("attempt_base", 0)
+    return value if isinstance(value, int) and value >= 0 else 0
+
+
 def _utc(value):
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
@@ -400,8 +417,10 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
             row.context_result_json = result.context.model_dump_json()
             row.validation_result_json = result.validation.model_dump_json()
             row.provider_payload_hashes = json.dumps(result.provider_payload_hashes)
+            carried = {k: v for k, v in _metrics(row).items() if k in CARRIED_METRICS}
             row.metrics_json = json.dumps(
-                {
+                carried
+                | {
                     "accepted_items": len(result.validation.accepted),
                     "rejected_items": len(result.validation.rejected),
                     "raw_proposal_count": result.validation.raw_proposal_count,
@@ -428,7 +447,7 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
         if len(failure.raw_results) > 1:
             row.validation_result_json = failure.raw_results[1]
         row.last_error = failure.code
-        if failure.retryable and row.attempts < SHADOW_MAX_ATTEMPTS:
+        if failure.retryable and row.attempts - attempt_base(row) < SHADOW_MAX_ATTEMPTS:
             row.state = "retry"
             row.available_at = now + timedelta(seconds=15 * 2 ** (row.attempts - 1))
             outcome = "retry"

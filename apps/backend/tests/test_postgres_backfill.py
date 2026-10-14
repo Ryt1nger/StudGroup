@@ -244,15 +244,49 @@ def test_postgres_backfill_review_and_guarded_promotion():
             assert repeat["totals"]["runs_already_promoted"] == 4
             assert await counts() == after
 
-            # A run lost to a pipeline defect can be re-run from its stored snapshot.
+            # A run lost to a pipeline defect is re-run from its snapshot; history survives.
             async with AsyncSession(engine) as db:
-                run = await db.scalar(select(ShadowEvaluationRun).limit(1))
+                run = await db.scalar(
+                    select(ShadowEvaluationRun).order_by(ShadowEvaluationRun.created_at).limit(1)
+                )
+                run_id = run.id
                 run.state, run.last_error = "failed", "invalid_shadow_context"
+                run.metrics_json = json.dumps({"preparation_key": "canary-1", "accepted_items": 0})
+                before_validation = run.validation_result_json
+                before_attempts, before_cost = run.attempts, run.charged_usd
                 await db.commit()
             async with AsyncSession(engine) as db:
                 requeued = await backfill.requeue_failed(db, **common, limit=10, apply=True)
                 await db.commit()
-                assert requeued["requeued"] >= 1
+                assert requeued["requeued"] == 1
+            async with AsyncSession(engine) as db:
+                run = await db.get(ShadowEvaluationRun, run_id)
+                metrics = json.loads(run.metrics_json)
+                assert run.state == "queued" and run.attempts == before_attempts
+                assert run.charged_usd == before_cost  # cost history is cumulative
+                assert metrics["preparation_key"] == "canary-1"  # canary marker kept
+                (entry,) = metrics["history"]
+                assert entry["state"] == "failed" and entry["last_error"] == "invalid_shadow_context"
+                assert entry["validation_result_json"] == before_validation
+                assert metrics["attempt_base"] == before_attempts
+            async with AsyncSession(engine) as db:  # not repeated: no unbounded paid loop
+                again = await backfill.requeue_failed(db, **common, limit=10, apply=True)
+                assert again["requeued"] == 0
+            canary = Settings(
+                database_url=url, ai_enabled=False, ai_shadow_enabled=True,
+                ai_shadow_canary_only=True,
+            )
+            assert await process_shadow_next(engine, canary, ScriptedProvider(script), now) == (
+                "completed"
+            )
+            async with AsyncSession(engine) as db:
+                run = await db.get(ShadowEvaluationRun, run_id)
+                metrics = json.loads(run.metrics_json)
+                assert run.state == "completed" and metrics["history"][0]["state"] == "failed"
+                assert metrics["accepted_items"] >= 1 and run.attempts == before_attempts + 1
+                assert run.charged_usd > before_cost
+                again = await backfill.requeue_failed(db, **common, limit=10, apply=True)
+                assert again["requeued"] == 0  # completed by new code
             async with AsyncSession(engine) as db:
                 group = await db.get(Group, group_id)
                 group.pilot_authorized = False

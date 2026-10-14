@@ -148,10 +148,38 @@ async def enqueue_window(db, *, group_id, since, now, limit, apply=False):
     return {"would_enqueue" if not apply else "enqueued": created, "limit": limit}
 
 
-async def requeue_failed(db, *, group_id, since, now, limit, apply=False, include_rejected=True):
-    """Re-run runs lost to a pipeline defect (failed, or completed with only rejections).
+REQUEUE_VERSION = "cplus-hybrid-1"
+MAX_HISTORY = 5
 
-    The stored input snapshot is reused, so the new run sees exactly the same sources.
+
+def _metrics(row):
+    try:
+        value = json.loads(row.metrics_json or "{}")
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _requeue_candidate(row, include_rejected, force):
+    metrics = _metrics(row)
+    if not force and metrics.get("requeue_version") == REQUEUE_VERSION:
+        return False  # already re-run on this code: never loop paid calls
+    if row.state == "failed":
+        return True
+    # Completed by the pre-adapter code with only rejections (no adapter metrics recorded).
+    return include_rejected and "adapter_actions" not in metrics and _only_rejections(row)
+
+
+async def requeue_failed(
+    db, *, group_id, since, now, limit, apply=False, include_rejected=True, force=False
+):
+    """Re-run runs lost to the old pipeline defect, keeping every earlier result.
+
+    The superseded outcome (state, error, context/validation JSON, hashes, metrics, cost so
+    far) is appended to ``metrics.history`` before the row is reset; attempts, tokens and
+    charges stay cumulative, so retry caps, leases and the daily budget remain truthful. A
+    row is re-run at most once per ``REQUEUE_VERSION`` unless ``force`` is given. The stored
+    input snapshot and a canary preparation marker are preserved.
     """
     group = await db.get(Group, group_id)
     lower, now = _window(group, since, now)
@@ -165,25 +193,47 @@ async def requeue_failed(db, *, group_id, since, now, limit, apply=False, includ
                 ShadowEvaluationRun.state.in_(["failed", "completed"]),
             )
             .order_by(RawMessage.message_date, ShadowEvaluationRun.created_at)
+            .with_for_update(skip_locked=True)
         )
     ).all()
-    picked = []
-    for row in rows:
-        if row.state == "failed" or include_rejected and _only_rejections(row):
-            picked.append(row)
-        if len(picked) >= limit:
-            break
+    picked = [row for row in rows if _requeue_candidate(row, include_rejected, force)][:limit]
     if apply:
         for row in picked:
+            metrics = _metrics(row)
+            history = list(metrics.get("history", []))
+            history.append(
+                {
+                    "superseded_at": now.isoformat(),
+                    "state": row.state,
+                    "last_error": row.last_error,
+                    "attempts": row.attempts,
+                    "context_result_json": row.context_result_json,
+                    "validation_result_json": row.validation_result_json,
+                    "provider_payload_hashes": row.provider_payload_hashes,
+                    "metrics": {k: v for k, v in metrics.items() if k != "history"},
+                    "prompt_tokens": row.prompt_tokens,
+                    "completion_tokens": row.completion_tokens,
+                    "charged_usd": str(row.charged_usd),
+                    "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+                }
+            )
+            kept = {k: metrics[k] for k in ("preparation_key",) if k in metrics}
+            row.metrics_json = json.dumps(
+                kept
+                | {
+                    "history": history[-MAX_HISTORY:],
+                    "attempt_base": row.attempts,
+                    "requeue_version": REQUEUE_VERSION,
+                },
+                sort_keys=True,
+            )
             row.state = "queued"
-            row.attempts = 0
             row.available_at = now
             row.lease_until = None
             row.last_error = None
             row.context_result_json = None
             row.validation_result_json = None
             row.provider_payload_hashes = None
-            row.metrics_json = None
             row.completed_at = None
             row.reserved_usd = Decimal(0)
     return {"would_requeue" if not apply else "requeued": len(picked)}
