@@ -210,8 +210,8 @@ async def wave_preflight(db, settings, now=None, *, since=None, wave_size=25):
         blockers.append("active_ai_lease_present")
     if wave["foreign_prepared_rows"]:
         blockers.append("conflicting_prepared_rows")
-    if wave["claimable_failed_rows"]:
-        blockers.append("failed_rows_claimable")
+    if wave["expired_running_rows"]:
+        blockers.append("recoverable_running_rows")
     if wave["prepared"] and wave["prepared"] != wave_size:
         blockers.append("wave_size_mismatch")
     if wave["max_package_upper_bound_usd"] and (
@@ -297,12 +297,16 @@ async def _wave_rows(db, group, now):
             envelopes.append(_canary_envelope(row))
         except Exception:  # noqa: BLE001 -- stable code only, never retained values
             errors += 1
-    claimable_failed = int(
+    # A failed run is never picked up again (the canary-only worker claims only queued rows that
+    # carry a preparation key and running rows whose lease expired), so failed rows are not a
+    # blocker; an expired running lease is the only other thing the worker could resume.
+    recoverable_running = int(
         await db.scalar(
             select(func.count(ShadowEvaluationRun.id)).where(
                 ShadowEvaluationRun.group_id == group.id,
-                ShadowEvaluationRun.state == "failed",
-                ShadowEvaluationRun.metrics_json.contains('"preparation_key"'),
+                ShadowEvaluationRun.state == "running",
+                ShadowEvaluationRun.lease_until.is_not(None),
+                ShadowEvaluationRun.lease_until <= now,
             )
         )
         or 0
@@ -352,7 +356,7 @@ async def _wave_rows(db, group, now):
     return {
         "prepared": len(wave_rows),
         "foreign_prepared_rows": foreign,
-        "claimable_failed_rows": claimable_failed,
+        "expired_running_rows": recoverable_running,
         "active_leases": active,
         "envelope_errors": errors,
         "coverage": _coverage(targets) if targets else None,

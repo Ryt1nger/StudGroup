@@ -161,7 +161,7 @@ def test_wave_preflight_counts_one_package_per_revision_and_never_retries_failed
                 )
             assert ready["status"] == "ready", ready["blocking_codes"]
             prepared = ready["prepared_wave"]
-            assert prepared["prepared"] == 3 and prepared["claimable_failed_rows"] == 0
+            assert prepared["prepared"] == 3 and prepared["expired_running_rows"] == 0
             assert prepared["foreign_prepared_rows"] == 0 and prepared["envelope_errors"] == 0
             assert Decimal(prepared["max_package_upper_bound_usd"]) <= Decimal("0.04")
             assert Decimal(prepared["sum_estimated_cost_usd"]) > 0
@@ -289,7 +289,7 @@ def test_spread_wave_covers_days_and_topics_skips_failed_and_is_idempotent():
             assert len(queued) == len(set(queued)) == 4
             wave = after["prepared_wave"]
             assert after["status"] == "ready", after["blocking_codes"]
-            assert wave["prepared"] == 4 and wave["claimable_failed_rows"] == 0
+            assert wave["prepared"] == 4 and wave["expired_running_rows"] == 0
             assert wave["coverage"]["distinct_days"] == 3
             assert wave["coverage"]["telegram_message_ids"] == nxt["coverage"]["telegram_message_ids"]
             assert set(wave["context_overlap"]) == {

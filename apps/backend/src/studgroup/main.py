@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     ai_shadow_backfill_key: str | None = None
     ai_shadow_find_candidates: bool = False
     ai_shadow_wave_preflight: bool = False
+    ai_shadow_wave_results: bool = False
     ai_shadow_backfill_spread: bool = False
     ai_shadow_backfill_limit: int | None = None
     ai_import_chat_id: int | None = None
@@ -197,6 +198,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             wave = await prepare_backfill_wave(app.state.engine, settings)
             print(f"SHADOW_BACKFILL_WAVE {wave}", flush=True)
+        if settings.ai_shadow_wave_results:
+            import json as _json_results
+
+            from sqlalchemy.ext.asyncio import AsyncSession as _ResultsSession
+
+            from studgroup.analysis.wave_results import wave_results
+
+            try:
+                async with _ResultsSession(app.state.engine) as session:
+                    summary = await wave_results(session)
+                    await session.rollback()
+                print(
+                    "SHADOW_WAVE_RESULTS "
+                    + _json_results.dumps(summary, sort_keys=True, default=str),
+                    flush=True,
+                )
+            except Exception as error:  # noqa: BLE001 -- read-only diagnostic, never blocks startup
+                print("SHADOW_WAVE_RESULTS_FAILED " + type(error).__name__, flush=True)
         if settings.ai_shadow_wave_preflight:
             import json as _json_wave
 

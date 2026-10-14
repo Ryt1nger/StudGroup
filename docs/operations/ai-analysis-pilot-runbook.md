@@ -128,6 +128,13 @@ deterministic and idempotent: revisions with any run, failed ones included, are 
 the wave key blocks a second wave. The preflight shows days, topics and message ids of the
 selection, and for a prepared wave the exact context overlap between packages.
 
+Wave results (read-only, `AI_SHADOW_WAVE_RESULTS=true`, logged as `SHADOW_WAVE_RESULTS`): run
+states and error codes, tokens and charged cost, proposals found/accepted/rejected by kind, action
+and reason, and the same cards `/shadowcards` previews (status, kind, subject and deadline coverage,
+multi-source cards, confirmed materials, source messages cited by several cards as a duplicate
+signal). No message text is logged. A failed run is never claimed again by the canary-only worker;
+only an expired running lease is recoverable, and the preflight reports it.
+
 Known limit: cancellation, reschedule and amendment of an earlier item need its identity. Backfill
 runs cannot supply one before promotion, so those proposals are rejected as
 `mutation_identity_missing`; review such source messages manually.

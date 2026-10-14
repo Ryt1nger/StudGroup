@@ -177,7 +177,10 @@ def test_postgres_preview_merges_supplements_and_materials_without_writing():
 
             zero = await counts()
             async with AsyncSession(engine) as db:
-                await backfill.enqueue_window(db, **common, limit=20, apply=True)
+                await backfill.enqueue_window(
+                    db, **common, limit=20, apply=True,
+                    marker={"preparation_key": "w-t", "wave": "w-t"},
+                )
                 await db.commit()
             provider = ScriptedProvider(script)
             statuses = [await process_shadow_next(engine, settings, provider, now)
@@ -238,6 +241,23 @@ def test_postgres_preview_merges_supplements_and_materials_without_writing():
             # personal assignment is never published to the group
             personal = next(c for c in cards if 9209 in {s["telegram_message_id"] for s in c["sources"]})
             assert personal["status"].startswith("удержана")
+
+            from studgroup.analysis.wave_results import wave_results
+
+            async with AsyncSession(engine) as db:
+                summary = await wave_results(db, now, wave_key="w-t")
+                await db.rollback()
+            assert await counts() == zero  # the summary is read-only too
+            assert summary["status"] == "ok" and summary["runs_by_state"]["completed"] >= 7
+            assert summary["proposals"]["accepted"] >= 6
+            assert summary["cards"]["total"] == len(cards)
+            assert summary["cards"]["multi_source"] >= 1
+            assert summary["cards"]["with_confirmed_materials"] >= 1
+            assert summary["cards"]["with_deadline"] >= 1
+            assert summary["tokens"]["charged_usd"] is not None
+            assert "кмк-секрет" not in str(summary)
+            assert all(not isinstance(v, str) or len(v) < 80
+                       for v in summary["proposals"]["by_kind"])
 
             chunks = render_preview(preview, -1004400000001, 0, 5)
             text = "\n".join(chunks)
