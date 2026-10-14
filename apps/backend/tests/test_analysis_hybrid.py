@@ -651,3 +651,20 @@ def test_existing_fake_provider_payload_is_accepted_by_adapter_path(client):
     engine = client.app.state.engine
     assert asyncio.run(dispatch_next(engine, settings, provider, NOW)) == "shadow_queued"
     assert asyncio.run(dispatch_next(engine, settings, provider, NOW)) == "shadow_completed"
+
+
+def test_render_cards_is_bounded_and_links_supergroup_sources():
+    from studgroup.analysis.review_text import MAX_CHUNK, render_cards, telegram_link
+
+    assert telegram_link(-1004421204622, 7) == "https://t.me/c/4421204622/7"
+    assert telegram_link(-5, 7) is None
+    card = {
+        "kind": "homework", "subject": None, "title": "T", "description": "d" * 2000,
+        "deadline_at": None, "deadline_date_only": False, "deadline_basis": "unknown",
+        "audience": {"scope": "group"}, "visibility": "visible", "attention_reasons": [],
+        "sources": [{"telegram_message_id": 1, "message_date": datetime(2026, 10, 10, tzinfo=UTC),
+                     "text": "x" * 5000, "fact_paths": []}],
+    }
+    chunks = render_cards([card] * 6, -1004421204622)
+    assert chunks and all(len(c) <= MAX_CHUNK for c in chunks)
+    assert "срок не указан" in chunks[0] and "без предмета" in chunks[0]

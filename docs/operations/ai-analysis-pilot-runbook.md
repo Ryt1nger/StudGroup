@@ -128,3 +128,9 @@ Rollback immediately for any human-lock overwrite, cross-group source, duplicate
 notification, unexplained missing proposal, unbounded cost, growing unrecoverable backlog or
 student-visible internal uncertainty marker. Preserve the audit rows and collect row counts,
 reason codes and hashes only; do not copy private chat text into incident logs.
+
+### Owner-chosen canary message and card review without a shell
+
+- `AI_SHADOW_PREPARE_MESSAGE_ID=<telegram message id>` (used only together with `AI_SHADOW_PREPARE_ONCE_KEY`, while `AI_ENABLED` and `AI_SHADOW_ENABLED` are false) prepares exactly that stored message instead of the oldest eligible one. It bypasses only the "newer than the shadow switch" window; the `bot_added_at` bound, retention, one-run-per-revision and the single marked package still apply. An unknown id prepares nothing (`preparation_empty`).
+- Canary sequence: set key + message id + `AI_OUTPUT_REPAIR_ENABLED=false` → deploy → check `AI_STARTUP_DIAGNOSTICS` shows one prepared canary and `/shadowstatus` → owner approves → `AI_SHADOW_ENABLED=true` with an absolute `AI_SHADOW_ENABLED_UNTIL` a few minutes ahead, `AI_SHADOW_CANARY_ONLY=true` → check `/shadowstatus` "Принято: N" → switch shadow off and clear key and message id.
+- `/shadowcards` (owner's private chat only, same gate as `/shadowstatus`) sends up to 5 accepted cards with cited source messages and `t.me/c/...` links to the owner. It writes nothing and publishes nothing to students.

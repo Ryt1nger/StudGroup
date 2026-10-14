@@ -76,5 +76,9 @@ def test_shadow_preparation_key_accepts_only_bounded_safe_identifiers():
         "canary-2"
     )
     assert Settings(ai_shadow_prepare_once_key="").ai_shadow_prepare_once_key is None
+    assert Settings(ai_shadow_prepare_message_id="").ai_shadow_prepare_message_id is None
+    assert Settings(ai_shadow_prepare_message_id="4029").ai_shadow_prepare_message_id == 4029
+    with pytest.raises(ValueError):
+        Settings(ai_shadow_prepare_message_id=0)
     with pytest.raises(ValueError, match="invalid shadow preparation key"):
         Settings(ai_shadow_prepare_once_key="CANARY/private")

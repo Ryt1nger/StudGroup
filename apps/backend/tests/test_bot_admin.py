@@ -357,3 +357,71 @@ def test_explain_without_key_reports_configuration_error_without_calling_api(cli
     monkeypatch.setattr(explain_module.DeepSeekProvider, "_complete", unexpected_request)
     private(client, "/explain 7")
     assert "Ошибка ИИ: provider_not_configured" in session(client)[1][-1]["text"]
+
+
+def _sample_card():
+    return {
+        "run_id": "r",
+        "ordinal": 0,
+        "target_message_id": 4029,
+        "promoted": False,
+        "visibility": "held",
+        "attention_reasons": ["conflicting_deadlines"],
+        "action": "create",
+        "kind": "homework",
+        "subject": "Математический анализ",
+        "title": "Предел функции в бесконечности",
+        "description": "Подготовить тему.",
+        "deadline_at": datetime(2026, 10, 15, 20, 59, tzinfo=UTC),
+        "deadline_date_only": False,
+        "deadline_basis": "explicit",
+        "audience": {"scope": "group", "label": None},
+        "sources": [
+            {
+                "telegram_message_id": 4029,
+                "message_date": datetime(2026, 10, 10, 9, 0, tzinfo=UTC),
+                "text": "#матан - предел функции в бесконечности",
+                "fact_paths": ["title"],
+            }
+        ],
+    }
+
+
+def _mark_bot_added(client):
+    from studgroup.models import Group
+
+    async def mark():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.pilot_authorized.is_(True)))
+            group.bot_added_at = datetime(2026, 10, 8, 15, 25, tzinfo=UTC)
+            await db.commit()
+
+    asyncio.run(mark())
+
+
+def test_shadowcards_goes_only_to_the_owner_with_sources_and_links(client, monkeypatch):
+    from studgroup.analysis import backfill
+
+    _mark_bot_added(client)
+
+    async def fake_review(db, **kwargs):
+        assert kwargs["limit"] == 5
+        return [_sample_card()]
+
+    monkeypatch.setattr(backfill, "review", fake_review)
+    private(client, "/shadowcards", uid=2)
+    assert session(client)[1] == []  # a stranger gets neither cards nor an error with content
+    private(client, "/shadowcards", update=103)
+    texts = [m["text"] for m in session(client)[1]]
+    assert texts[0].startswith("Принятые shadow-карточки")
+    assert "студентам не опубликованы" in texts[0]
+    body = "\n".join(texts[1:])
+    assert "#матан - предел функции в бесконечности" in body
+    assert "conflicting_deadlines" in body and "№4029" in body
+    assert "https://t.me/c/" in body and "/4029" in body
+
+
+def test_shadowcards_reports_empty_without_inventing_cards(client):
+    _mark_bot_added(client)
+    private(client, "/shadowcards", update=104)
+    assert "пока нет" in session(client)[1][-1]["text"]

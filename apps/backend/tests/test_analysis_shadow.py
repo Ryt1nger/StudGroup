@@ -49,6 +49,7 @@ from studgroup.models import (
     GroupAnalysisSettings,
     Homework,
     Notification,
+    RawMessage,
     ShadowEvaluationRun,
 )
 
@@ -906,3 +907,54 @@ def test_evaluation_matches_entities_not_raw_proposal_counts():
         "completeness_mean": 3,
         "readability_mean": 4,
     }
+
+
+def test_owner_chosen_canary_message_overrides_the_newer_than_switch_window(client):
+    source(client, mid=81, text="Физика: конспект параграфа до 20.10")
+    enable_shadow(client)  # message 81 now predates the shadow switch
+    source(client, mid=82, text="Позднее сообщение")
+    base = {
+        "_env_file": None,
+        "ai_enabled": False,
+        "ai_shadow_enabled": False,
+        "ai_shadow_canary_only": True,
+    }
+
+    async def prepared_target(settings):
+        status = await prepare_shadow_canary(client.app.state.engine, settings)
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(
+                select(RawMessage.telegram_message_id)
+                .join(ShadowEvaluationRun, ShadowEvaluationRun.raw_message_id == RawMessage.id)
+            )
+        return status, row
+
+    status, target = asyncio.run(
+        prepared_target(
+            Settings(**base, ai_shadow_prepare_once_key="target-1", ai_shadow_prepare_message_id=81)
+        )
+    )
+    assert (status, target) == ("prepared_queued", 81)
+    again = asyncio.run(
+        prepare_shadow_canary(
+            client.app.state.engine,
+            Settings(**base, ai_shadow_prepare_once_key="target-1", ai_shadow_prepare_message_id=81),
+        )
+    )
+    assert again == "prepared_existing"  # idempotent: no second package
+
+
+def test_unknown_canary_target_prepares_nothing(client):
+    enable_shadow(client)
+    source(client, mid=83, text="Любое сообщение")
+    settings = Settings(
+        _env_file=None,
+        ai_enabled=False,
+        ai_shadow_enabled=False,
+        ai_shadow_canary_only=True,
+        ai_shadow_prepare_once_key="target-2",
+        ai_shadow_prepare_message_id=999999,
+    )
+    assert asyncio.run(prepare_shadow_canary(client.app.state.engine, settings)) == (
+        "preparation_empty"
+    )

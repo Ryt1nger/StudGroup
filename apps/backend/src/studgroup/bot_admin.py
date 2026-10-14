@@ -191,6 +191,37 @@ async def handle(db, update, settings):
             f"{latest_text}",
         )
         return True
+    if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/shadowcards":
+        from studgroup.analysis import backfill
+        from studgroup.analysis.review_text import render_cards
+
+        groups = (
+            await db.scalars(
+                select(Group).where(Group.pilot_authorized.is_(True), Group.status == "active")
+            )
+        ).all()
+        if len(groups) != 1 or groups[0].bot_added_at is None:
+            await say(db, chat, "Карточки shadow: нужна ровно одна подключённая группа.")
+            return True
+        group = groups[0]
+        cards = await backfill.review(
+            db, group_id=group.id, since=group.bot_added_at, now=now, limit=5
+        )
+        if not cards:
+            await say(db, chat, "Принятых shadow-карточек пока нет.")
+            return True
+        # Plain sendMessage rows (not panel frames): several chunks must all be delivered.
+        header = (
+            f"Принятые shadow-карточки «{group.name}» ({len(cards)}). Только для владельца; "
+            "студентам не опубликованы."
+        )
+        for chunk in [header, *render_cards(cards, group.telegram_chat_id)]:
+            enqueue(
+                db,
+                "sendMessage",
+                {"chat_id": chat, "text": chunk, "link_preview_options": {"is_disabled": True}},
+            )
+        return True
     if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/shadowrun":
         from studgroup.analysis.shadow_replay import replay_summary
 

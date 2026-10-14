@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     ai_shadow_enabled_until: datetime | None = None
     ai_shadow_canary_only: bool = False
     ai_shadow_prepare_once_key: str | None = None
+    ai_shadow_prepare_message_id: int | None = None
     ai_import_chat_id: int | None = None
     ai_schedule_enabled: bool = False
     ai_live_two_pass: bool = False
@@ -110,6 +111,16 @@ class Settings(BaseSettings):
     @classmethod
     def empty_owner(cls, value):
         return None if value == "" else value
+
+    @field_validator("ai_shadow_prepare_message_id", mode="before")
+    @classmethod
+    def valid_shadow_preparation_message(cls, value):
+        if value in (None, ""):
+            return None
+        number = int(value)
+        if number <= 0:
+            raise ValueError("invalid shadow preparation message id")
+        return number
 
     @field_validator("ai_shadow_prepare_once_key", mode="before")
     @classmethod

@@ -149,7 +149,9 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
     return row
 
 
-async def enqueue_next_shadow(engine, now=None, *, preparation_key=None):
+async def enqueue_next_shadow(
+    engine, now=None, *, preparation_key=None, preparation_message_id=None
+):
     """Capture one new/edited Telegram source even if legacy relevance rejects it."""
     now = _utc(now or datetime.now(UTC))
     async with AsyncSession(engine) as db:
@@ -205,12 +207,19 @@ async def enqueue_next_shadow(engine, now=None, *, preparation_key=None):
                     if preparation_group_id is not None
                     else True
                 ),
-                or_(
-                    RawMessage.live_received_at >= GroupAnalysisSettings.updated_at,
-                    (
-                        RawMessage.imported.is_(True)
-                        & (RawMessage.version_date >= GroupAnalysisSettings.updated_at)
-                    ),
+                (
+                    # An owner-chosen canary message replaces the "newer than the shadow
+                    # switch" window; every other guard (bot_added_at, retention, no
+                    # existing run for this revision, one marked package) still applies.
+                    RawMessage.telegram_message_id == preparation_message_id
+                    if preparation_message_id is not None and preparation_key is not None
+                    else or_(
+                        RawMessage.live_received_at >= GroupAnalysisSettings.updated_at,
+                        (
+                            RawMessage.imported.is_(True)
+                            & (RawMessage.version_date >= GroupAnalysisSettings.updated_at)
+                        ),
+                    )
                 ),
                 ~exists().where(
                     ShadowEvaluationRun.raw_message_id == RawMessage.id,
@@ -255,6 +264,7 @@ async def prepare_shadow_canary(engine, settings, now=None):
         engine,
         now=now,
         preparation_key=settings.ai_shadow_prepare_once_key,
+        preparation_message_id=getattr(settings, "ai_shadow_prepare_message_id", None),
     )
 
 
