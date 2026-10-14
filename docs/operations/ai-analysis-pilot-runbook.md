@@ -107,6 +107,18 @@ python -m studgroup.analysis_backfill plan --group-id GROUP_UUID --since 2026-10
 python -m studgroup.analysis_backfill promote --group-id GROUP_UUID --since 2026-10-08 --limit 10
 ```
 
+Wave preflight (read-only, `AI_SHADOW_WAVE_PREFLIGHT=true`, logged as `SHADOW_WAVE_PREFLIGHT`):
+the unit of a wave is one stored source revision = one package = one paid run. Context overlap is
+not merged, so neighbouring messages are paid again by each package. Revisions that already have a
+run (any state, including `failed`) are excluded from `enqueue`, and the canary-only worker claims
+only queued rows carrying a preparation key, so failed runs are never retried unless `requeue` is
+run separately. The report holds ids, dates, counts and money only: window size, uncovered package
+count and composition, the next wave (oldest first, no keyword filter), per-day volume, measured
+cost with the 1.5x margin, the hard cap (USD 0.04 per package), the route budget, and, once a wave
+is prepared with `AI_SHADOW_BACKFILL_KEY`/`AI_SHADOW_BACKFILL_LIMIT`, the summed request envelopes
+and blocking codes (AI flags, repair, sample percent below 100, leases, foreign prepared rows,
+claimable failed rows, package cap, route budget).
+
 Known limit: cancellation, reschedule and amendment of an earlier item need its identity. Backfill
 runs cannot supply one before promotion, so those proposals are rejected as
 `mutation_identity_missing`; review such source messages manually.

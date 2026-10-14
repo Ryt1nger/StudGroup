@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     ai_shadow_prepare_message_id: int | None = None
     ai_shadow_backfill_key: str | None = None
     ai_shadow_find_candidates: bool = False
+    ai_shadow_wave_preflight: bool = False
     ai_shadow_backfill_limit: int | None = None
     ai_import_chat_id: int | None = None
     ai_schedule_enabled: bool = False
@@ -195,6 +196,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             wave = await prepare_backfill_wave(app.state.engine, settings)
             print(f"SHADOW_BACKFILL_WAVE {wave}", flush=True)
+        if settings.ai_shadow_wave_preflight:
+            import json as _json_wave
+
+            from sqlalchemy.ext.asyncio import AsyncSession as _WaveSession
+
+            from studgroup.analysis.wave_preflight import wave_preflight
+
+            try:
+                async with _WaveSession(app.state.engine) as session:
+                    report = await wave_preflight(
+                        session, settings, wave_size=settings.ai_shadow_backfill_limit or 25
+                    )
+                    await session.rollback()
+                print(
+                    "SHADOW_WAVE_PREFLIGHT " + _json_wave.dumps(report, sort_keys=True),
+                    flush=True,
+                )
+            except Exception as error:  # noqa: BLE001 -- read-only diagnostic, never blocks startup
+                print("SHADOW_WAVE_PREFLIGHT_FAILED " + type(error).__name__, flush=True)
         if settings.owner_update_notifications_enabled:
             from studgroup.processing_diagnostics import startup
 
