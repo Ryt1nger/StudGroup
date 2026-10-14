@@ -1,5 +1,6 @@
-import type { HomeworkDetail } from '@studgroup/shared-types';
+import type { SourceDetail } from '@studgroup/shared-types';
 import { ru } from '../../i18n/ru';
+import { formatShortDate, formatTime } from '../../lib/format';
 import { isAllowedTelegramUrl } from '../../lib/telegramUrl';
 import { useTelegram } from '../../telegram/TelegramProvider';
 import { Badge } from '../../ui/Badge';
@@ -7,7 +8,8 @@ import { ExternalLink, TelegramMark } from '../../ui/icons';
 import styles from './SourceBlock.module.css';
 
 interface Props {
-  detail: HomeworkDetail;
+  sources: SourceDetail[];
+  timeZone: string;
 }
 
 type SourceReason = keyof typeof ru.source.reason;
@@ -16,9 +18,8 @@ type SourceReason = keyof typeof ru.source.reason;
  * Source action or the «Источник недоступен» explanation. Unavailable is a normal, calm state:
  * the card stays and safe metadata remains visible. Message excerpts are not rendered.
  */
-export function SourceBlock({ detail }: Props) {
+function SourceRow({ source, timeZone }: { source: SourceDetail; timeZone: string }) {
   const { adapter } = useTelegram();
-  const source = detail.source_detail;
   const url = source.action.type === 'open_telegram_link' ? source.action.url : null;
   const canOpen = source.availability.state === 'available' && isAllowedTelegramUrl(url);
   const kindLabel = (ru.source.kind as Record<string, string | undefined>)[source.kind];
@@ -26,11 +27,7 @@ export function SourceBlock({ detail }: Props) {
   const reason = ru.source.reason[reasonKey] ?? ru.source.reason.unknown;
 
   return (
-    <section className={styles.block} aria-labelledby="source-title">
-      <h2 id="source-title" className={styles.title}>
-        {ru.detail.source}
-      </h2>
-
+    <div className={styles.sourceItem}>
       {canOpen ? (
         <button type="button" className={styles.row} onClick={() => adapter?.openTelegramLink(url)}>
           <TelegramMark size={36} />
@@ -59,7 +56,31 @@ export function SourceBlock({ detail }: Props) {
           </dl>
         </div>
       )}
+      {source.message_date ? (
+        <p className={styles.date}>
+          {ru.detail.received} {formatShortDate(source.message_date, timeZone)} ·{' '}
+          {formatTime(source.message_date, timeZone)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
+export function SourceBlock({ sources, timeZone }: Props) {
+  return (
+    <section className={styles.block} aria-labelledby="source-title">
+      <h2 id="source-title" className={styles.title}>
+        {sources.length > 1 ? ru.detail.sources : ru.detail.source}
+      </h2>
+      <div className={styles.sourceList}>
+        {sources.map((source, index) => (
+          <SourceRow
+            key={`${source.kind}-${source.message_date ?? 'undated'}-${index}`}
+            source={source}
+            timeZone={timeZone}
+          />
+        ))}
+      </div>
     </section>
   );
 }
