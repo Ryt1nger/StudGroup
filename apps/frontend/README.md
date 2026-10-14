@@ -8,6 +8,8 @@ Run: `pnpm install` then `pnpm --filter @studgroup/frontend dev:mock` (see `FRON
 
 This application contains the Telegram WebApp and consume versioned contracts from `packages/contracts`.
 
+Current published-card coverage and the proposed compatibility boundary are documented in [`CARD_READINESS.md`](./CARD_READINESS.md).
+
 Expected product areas include:
 
 - Today, Tomorrow, Week, and Deadlines;

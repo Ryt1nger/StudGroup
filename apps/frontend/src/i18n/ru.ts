@@ -4,7 +4,13 @@
  */
 export const ru = {
   appName: 'StudGroup',
-  nav: { today: 'Сегодня', tasks: 'Задания', schedule: 'Расписание', subjects: 'Предметы', aria: 'Основная навигация' },
+  nav: {
+    today: 'Сегодня',
+    tasks: 'Задания',
+    schedule: 'Расписание',
+    subjects: 'Предметы',
+    aria: 'Основная навигация',
+  },
   today: {
     title: 'Сегодня',
     // proposal: section headings by contract kind
@@ -39,13 +45,37 @@ export const ru = {
     empty: {
       all: { title: 'Заданий пока нет', body: 'Когда в группе появится задание, оно отобразится здесь.' },
       today: { title: 'На сегодня заданий нет', body: 'Здесь появятся задания со сроком на сегодня.' },
-      week: { title: 'На этой неделе заданий нет', body: 'Здесь появятся задания со сроком на текущую неделю.' },
-      mine: { title: 'Выполненных заданий пока нет', body: 'Задания, которые вы отметите выполненными, появятся здесь.' },
+      week: {
+        title: 'На этой неделе заданий нет',
+        body: 'Здесь появятся задания со сроком на текущую неделю.',
+      },
+      mine: {
+        title: 'Выполненных заданий пока нет',
+        body: 'Задания, которые вы отметите выполненными, появятся здесь.',
+      },
       archive: { title: 'Архив пока пуст', body: 'Здесь будут задания с прошедшим сроком и отменённые.' },
     },
   },
   card: {
     homeworkChip: 'ДЗ', // detail only; not shown on list cards
+    kind: {
+      homework: 'ДЗ',
+      control_work: 'Контрольная',
+      test: 'Тест',
+      credit: 'Зачёт',
+      exam: 'Экзамен',
+      project: 'Проект',
+      presentation: 'Презентация',
+      other: 'Задание',
+    },
+    deadlineCertainty: {
+      confirmed: 'Срок подтверждён',
+      from_source: 'Срок указан в источнике',
+      inferred: 'Дата определена автоматически',
+      needs_clarification: 'Дата требует уточнения',
+      unknown: 'Срок не указан',
+    },
+    published: 'Опубликовано',
     reanalyzing: 'Проверяем обновление',
     delayed: 'Обработка информации задерживается. Данные появятся автоматически',
     completedByMe: 'Выполнено мной',
@@ -58,12 +88,21 @@ export const ru = {
     sourceGroup: 'Из группы',
     sourceImported: 'Импортировано',
     deadlineUnknown: 'Срок уточняется',
+    deadlineAbsent: 'Срок не указан',
     open: 'Открыть задание',
   },
   detail: {
     whatToDo: 'Что нужно сделать',
     noDescription: 'Описание не указано', // proposal
     source: 'Источник',
+    sources: 'Источники',
+    updates: 'Дополнения и изменения',
+    cardUpdated: 'Условия задания изменились. Проверьте актуальную карточку.',
+    updateKind: {
+      supplement: 'Дополнение',
+      change: 'Изменение',
+      cancellation: 'Отмена',
+    },
     received: 'Получено',
     info: 'Информация об источнике',
     deadlinePrefix: 'Срок',
@@ -147,7 +186,8 @@ export const ru = {
       date: 'Дата',
       time: 'Время',
       duration: 'Длительность',
-      durationValue: (m: number) => (m >= 60 ? (m % 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${Math.floor(m / 60)} ч`) : `${m} мин`),
+      durationValue: (m: number) =>
+        m >= 60 ? (m % 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${Math.floor(m / 60)} ч`) : `${m} мин`,
       teacher: 'Преподаватель',
       location: 'Аудитория',
       status: 'Статус',
@@ -163,9 +203,11 @@ export const ru = {
     expiredTitle: 'Сессия истекла',
     expiredBody: 'Откройте приложение заново из Telegram.',
     noGroupTitle: 'Нет активной группы',
-    noGroupBody: 'Присоединитесь к группе по приглашению старосты через бота StudGroup, затем откройте приложение снова.',
+    noGroupBody:
+      'Присоединитесь к группе по приглашению старосты через бота StudGroup, затем откройте приложение снова.',
     suspendedTitle: 'Не удалось подтвердить участие',
-    suspendedBody: 'Мы не смогли подтвердить, что вы состоите в Telegram-группе. Это можно проверить ещё раз.',
+    suspendedBody:
+      'Мы не смогли подтвердить, что вы состоите в Telegram-группе. Это можно проверить ещё раз.',
     leftTitle: 'Вы не состоите в группе',
     leftBody: 'Чтобы вернуться, получите новое приглашение у старосты через бота StudGroup.',
     deletionTitle: 'Группа готовится к удалению',
