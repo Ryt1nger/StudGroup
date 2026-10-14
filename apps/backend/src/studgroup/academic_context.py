@@ -40,6 +40,11 @@ def has_date_cue(text):
     )
 
 
+def _carries_content(message):
+    """A message is evidence when it has text or attached files (a file without caption)."""
+    return bool(message.text or getattr(message, "attachments", None))
+
+
 def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
     by_id = {message.message_id: message for message in messages}
     target = by_id[target_id]
@@ -66,31 +71,49 @@ def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
     }
     # Generic pinned topic IDs are absent from the export. Never fabricate their contents.
     parent = by_id.get(target.reply_to_message_id)
-    if parent and parent.text:
+    if parent and _carries_content(parent):
         selected.add(parent.message_id)
     for _ in range(2):
         selected.update(
-            m.message_id for m in messages if m.reply_to_message_id in selected and m.text
+            m.message_id
+            for m in messages
+            if m.reply_to_message_id in selected and _carries_content(m)
         )
+    # Files of one album (media group) belong together with whichever album message is chosen.
+    groups = {
+        a.get("media_group_id")
+        for m in messages
+        if m.message_id in selected
+        for a in getattr(m, "attachments", None) or []
+        if a.get("media_group_id")
+    }
+    selected.update(
+        m.message_id
+        for m in messages
+        if _carries_content(m)
+        and any(
+            a.get("media_group_id") in groups for a in getattr(m, "attachments", None) or []
+        )
+    )
     subject_tags = tags(target.text)
     ranked = []
     for message in messages:
-        if not message.text or message.message_id == target_id:
+        if not _carries_content(message) or message.message_id == target_id:
             continue
         direct = message.message_id in selected
         same_topic = (
             target_topic is not None and getattr(message, "message_thread_id", None) == target_topic
         )
-        same_subject = bool(subject_tags & tags(message.text))
+        same_subject = bool(subject_tags & tags(message.text or ""))
         nearby = abs(message.message_date - target.message_date) <= timedelta(days=7)
         correction = abs(message.message_date - target.message_date) <= timedelta(
             minutes=3
-        ) and re.search(r"оказывается|это не кт|перенес|отмен", message.text, re.IGNORECASE)
+        ) and re.search(r"оказывается|это не кт|перенес|отмен", message.text or "", re.IGNORECASE)
         # Adjacent date fragments are evidence candidates, not automatic inherited dates.
         # The provider must cite supporting IDs and match the task/subject before using them.
         date_fragment = abs(message.message_date - target.message_date) <= timedelta(
             minutes=3
-        ) and has_date_cue(message.text)
+        ) and has_date_cue(message.text or "")
         if (
             direct
             or correction
@@ -103,7 +126,7 @@ def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
     used = len(target.text.encode()) + 300
     chosen = [target]
     for _, _, message in sorted(ranked, key=lambda row: (row[0], row[1], row[2].message_id)):
-        size = len(message.text.encode()) + 300
+        size = len((message.text or "").encode()) + 300
         if used + size > max_bytes or len(chosen) >= 25:
             continue
         used += size
@@ -116,6 +139,7 @@ def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
             "topic_id": getattr(m, "message_thread_id", None),
             "topic_name": getattr(m, "topic_name", None),
             "author_alias": getattr(m, "author_alias", None),
+            "author_role": getattr(m, "author_role", None),
             "attachment_kinds": getattr(m, "attachment_kinds", []),
             "attachments": getattr(m, "attachments", []),
             "text": m.text,

@@ -109,6 +109,7 @@ _WEEKDAY_WORDS = (
 UNRESOLVED_RELATIVE_BASES = frozenset(
     {"next_subject_lesson_reference", "unresolved_explicit_deadline", "ambiguous_weekday"}
 )
+UNCONFIRMED_CHANGE_REASON = "unconfirmed_change"
 RELATIVE_UNRESOLVED_REASON = "relative_deadline_unresolved"
 DEADLINE_NOT_IN_SOURCE_REASON = "deadline_not_in_source"
 
@@ -466,7 +467,19 @@ class _Normalizer:
             # identity on a create is contradictory and left for strict validation to reject.
             pass
         else:
-            if value["existing_item_id"] is None or value["expected_item_revision"] is None:
+            if (
+                self.existing_items is None
+                and value["action"] in {"update", "reschedule"}
+                and (value["existing_item_id"] is None or value["expected_item_revision"] is None)
+            ):
+                # Shadow carries no trusted item identity. A claimed change is kept as a
+                # held proposal (never a silent edit) so the owner can confirm or discard it.
+                value["action"] = "create"
+                value["existing_item_id"] = None
+                value["expected_item_revision"] = None
+                self.extra_reasons.append(UNCONFIRMED_CHANGE_REASON)
+                self.note("change_without_identity_held")
+            elif value["existing_item_id"] is None or value["expected_item_revision"] is None:
                 _reject("mutation_identity_missing", "existing_item_id", None,
                         expected="required_field", repairable=False)
             if self.existing_items is not None and (
@@ -536,6 +549,11 @@ class _Normalizer:
         ):
             value["audience"] = {"scope": "group", "label": None}
             self.note("audience_collective_to_group")
+        from studgroup.analysis.text_hygiene import is_service_subject
+
+        if isinstance(value.get("subject"), str) and is_service_subject(value["subject"]):
+            value["subject"] = None
+            self.note("service_tag_subject_cleared")
         for reason in self.extra_reasons:
             if reason not in reasons:
                 reasons.append(reason)

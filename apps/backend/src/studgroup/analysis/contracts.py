@@ -51,6 +51,8 @@ class SourceAttachment(StrictDTO):
     size_bytes: int | None = Field(default=None, ge=0)
     media_group_id: str | None = Field(default=None, max_length=255)
     processing_state: Literal["metadata_only", "ready", "failed"] = "metadata_only"
+    # Metadata only: C+ never reads file contents. Optional for old frozen snapshots.
+    file_name: str | None = Field(default=None, max_length=255)
 
 
 class SourceMessage(StrictDTO):
@@ -61,6 +63,9 @@ class SourceMessage(StrictDTO):
     reply_to_message_id: int | None = None
     topic_id: int | None = None
     topic_name: str | None = Field(default=None, max_length=255)
+    author_alias: str | None = Field(default=None, max_length=64)
+    # Group role of the sender (headman clarifications outrank ordinary messages).
+    author_role: Literal["student", "deputy", "headman"] | None = None
     attachments: list[SourceAttachment] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")

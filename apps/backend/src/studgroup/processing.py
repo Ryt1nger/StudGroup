@@ -38,11 +38,13 @@ from studgroup.models import (
     GroupAnalysisSettings,
     GroupTopic,
     Homework,
+    Membership,
     MessageAttachment,
     OwnerIncident,
     OwnerIncidentEpisode,
     RawMessage,
     SchedulePattern,
+    User,
 )
 from studgroup.notifications import record_change
 
@@ -845,11 +847,28 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
                 "size_bytes": attachment.size_bytes,
                 "media_group_id": attachment.media_group_id,
                 "processing_state": attachment.processing_state,
+                "file_name": (attachment.file_name or None) and attachment.file_name[:255],
             }
         )
+    sender_ids = {row.sender_id for row in indexed.values() if row.sender_id is not None}
+    roles = {}
+    if sender_ids:
+        for telegram_user_id, role in (
+            await db.execute(
+                select(User.telegram_user_id, Membership.role)
+                .join(Membership, Membership.user_id == User.id)
+                .where(
+                    Membership.group_id == raw.group_id,
+                    Membership.status == "active",
+                    User.telegram_user_id.in_(sender_ids),
+                )
+            )
+        ).all():
+            roles[telegram_user_id] = role
     messages = [
         SimpleNamespace(
             message_id=row.telegram_message_id,
+            author_role=roles.get(row.sender_id),
             reply_to_message_id=row.reply_to_message_id,
             message_date=utc(row.message_date),
             text=row.text,

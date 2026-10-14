@@ -192,8 +192,8 @@ async def handle(db, update, settings):
         )
         return True
     if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/shadowcards":
-        from studgroup.analysis import backfill
-        from studgroup.analysis.review_text import render_cards
+        from studgroup.analysis.preview import build_preview
+        from studgroup.analysis.review_text import render_preview
 
         groups = (
             await db.scalars(
@@ -206,26 +206,23 @@ async def handle(db, update, settings):
         group = groups[0]
         arguments = text.split()[1:]
         offset = int(arguments[0]) if arguments and arguments[0].isdigit() else 0
-        everything = await backfill.review(
-            db, group_id=group.id, since=group.bot_added_at, now=now, limit=offset + 5
-        )
-        cards = everything[offset : offset + 5]
-        if not cards:
+        # Real card editor + resolver + projection in a savepoint that is always rolled back.
+        preview = await build_preview(db, group_id=group.id, since=group.bot_added_at, now=now)
+        total = len(preview["cards"])
+        if offset >= total:
             await say(
                 db,
                 chat,
-                "Принятых shadow-карточек пока нет."
-                if offset == 0
-                else "Дальше карточек нет.",
+                "Принятых shadow-карточек пока нет." if total == 0 else "Дальше карточек нет.",
             )
             return True
-        # Plain sendMessage rows (not panel frames): several chunks must all be delivered.
+        last = min(offset + 5, total)
         header = (
-            f"Принятые shadow-карточки «{group.name}» №{offset + 1}–{offset + len(cards)}"
-            f" (дальше: /shadowcards {offset + 5}). Только для владельца; студентам не "
-            "опубликованы."
+            f"Предпросмотр карточек «{group.name}» №{offset + 1}–{last} из {total}"
+            + (f" (дальше: /shadowcards {last})" if last < total else "")
+            + ". Только для владельца; студентам не опубликовано, база не изменена."
         )
-        for chunk in [header, *render_cards(cards, group.telegram_chat_id)]:
+        for chunk in [header, *render_preview(preview, group.telegram_chat_id, offset, 5)]:
             enqueue(
                 db,
                 "sendMessage",

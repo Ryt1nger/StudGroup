@@ -145,3 +145,36 @@ reason codes and hashes only; do not copy private chat text into incident logs.
 - `AI_SHADOW_BACKFILL_KEY=<a-z0-9-> AI_SHADOW_BACKFILL_LIMIT=<1..200>` (with `AI_ENABLED=false`, `AI_SHADOW_ENABLED=false`) queues one marked wave of the oldest stored messages without a run since `bot_added_at` at startup (`SHADOW_BACKFILL_WAVE wave_prepared_N`). The wave key is carried on the rows, so a restart with the same key never queues a second wave (`wave_exists`).
 - Only a canary-only worker (`AI_SHADOW_CANARY_ONLY=true`, `AI_SHADOW_ENABLED=true` until an absolute `AI_SHADOW_ENABLED_UNTIL`) claims marked rows, so the wave size is the hard bound on paid packages; the group's shadow daily budget and the global/hourly limits still apply.
 - Review with `/shadowcards [offset]` (5 per page, owner only). Nothing is published; promotion is a separate, explicitly approved step.
+
+### Card quality, context, materials and owner preview (prompt `cplus-extraction-4`)
+
+No paid call, no migration, no production writer change.
+
+- **Text hygiene** (`analysis/text_hygiene.py`, applied inside `card_editor`, i.e. the same path
+  the future writer uses): service hashtags (`#орг`, `#матан`), @mentions, greetings and stray
+  spacing are removed from AI title/description; digits, pages, links and requirements are never
+  touched. A generic or tag-only AI title is replaced by the cleaned first clause of the source
+  (or `«<вид>: содержание в сообщении чата»` if there is no text) — never `Учебное задание…`.
+  `#орг` and similar service tags are never a subject.
+- **Context**: files and photos without a caption are now evidence for neighbouring-message
+  linking (direct replies, same media group, ordinary neighbourhood); `SourceMessage` carries
+  `author_role` (student/deputy/headman) and `SourceAttachment.file_name`. Both are optional, so
+  frozen snapshots stay valid. Adjacency alone is not proof; the prompt tells the model to link on
+  reply/topic/enumeration/explicit pointers and to give the headman priority.
+- **Changes**: shadow has no trusted `existing_items`. A `reschedule`/`update` without identity
+  is kept as a *held* proposal with reason `unconfirmed_change` (never a silent edit). A `cancel`
+  without identity is rejected and listed by `/shadowcards` as "отклонено валидацией".
+- **Materials** (`analysis/card_materials.py`): derived only from stored metadata — attachments
+  and URLs of cited messages, direct replies to them and members of the same media group. Other
+  nearby attachments are shown as *unconfirmed candidates*. File contents are never read
+  (OCR/PDF/multimodal is a separate stage).
+- **Preview**: `/shadowcards [offset]` runs the real `edit_card` → resolver → projection for all
+  completed accepted shadow runs inside one savepoint that is always rolled back, then renders
+  title, clean description, subject/type, deadline + reliability, audience, materials,
+  history of supplements, source links and review reasons. Owner-only, private chat, never an
+  HTTP API; DB unchanged (verified by `tests/test_postgres_preview.py`).
+
+Mini App contract proposal for Codex (not implemented): card `materials: [{group: photo|file|media|link,
+kind, title, url?, telegram_link, message_id, via: cited|reply|album}]`, derived at read time
+from `CanonicalItemEvidence` → `RawMessage` → `MessageAttachment` + URLs in text; no storage
+change. Telegram file ids stay server-side; the client only gets `t.me` links.

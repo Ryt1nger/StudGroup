@@ -99,6 +99,8 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
             reply_to_message_id=row.get("reply_to"),
             topic_id=row.get("topic_id"),
             topic_name=row.get("topic_name"),
+            author_alias=row.get("author_alias"),
+            author_role=row.get("author_role"),
             attachments=row.get("attachments", []),
         )
         for row in context

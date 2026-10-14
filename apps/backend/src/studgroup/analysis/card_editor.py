@@ -8,7 +8,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from studgroup.academic_context import has_date_cue
 from studgroup.analysis.contracts import ProposedAcademicItem, SourceMessage
 from studgroup.analysis.output_adapter import explicit_source_dates, mentions_weekday
+from studgroup.analysis.text_hygiene import (
+    clean_text,
+    clean_title,
+    is_service_subject,
+    neutral_title,
+)
 
+GENERIC_TITLE_PATTERN = re.compile(
+    r"^(?:учебное|домашнее)\s+задание(?:\s+по\s+(?:предмету\s+)?[«\"]?[\w\s-]{0,40}[»\"]?)?$|"
+    r"^(?:(?:доклад|презентация|задание|орг)\s*)+$"
+)
+KIND_LABELS = {"homework": "Задание"}
 NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 GENERIC_TITLES = {
     "домашнее задание",
@@ -22,6 +33,7 @@ SERIOUS_REASONS = {
     "model_material_doubt",
     "conflicting_deadlines",
     "deadline_before_source",
+    "unconfirmed_change",
 }
 DEADLINE_LABELS = {
     "test": "Тест",
@@ -56,6 +68,7 @@ class EditedCard(BaseModel):
     visibility: Literal["normal", "headman_attention", "held"]
     attention_reasons: list[str] = Field(default_factory=list)
     used_fallback: bool = False
+    subject: str | None = None
 
 
 def normalized(value):
@@ -93,7 +106,7 @@ def primary_display_valid(proposal, sources, verified_subjects):
     if not proposal.title or not proposal.description:
         return False, "missing_display_text"
     title = normalized(proposal.title)
-    if title in GENERIC_TITLES or len(title) < 6:
+    if title in GENERIC_TITLES or GENERIC_TITLE_PATTERN.match(title) or len(title) < 6:
         return False, "generic_title"
     source_texts = {normalized(source.text) for source in sources if source.text}
     if title in source_texts and len(title) > 120:
@@ -120,18 +133,27 @@ def primary_display_valid(proposal, sources, verified_subjects):
 
 
 def fallback_display(proposal, sources, include_subject):
-    subject_suffix = (
-        f" по предмету «{proposal.subject}»" if proposal.subject and include_subject else ""
+    """Neutral display text from the cleaned source; nothing is inferred or invented."""
+    label = (
+        KIND_LABELS["homework"]
+        if proposal.semantic_kind == "homework"
+        else DEADLINE_LABELS[proposal.semantic_kind]
     )
-    if proposal.semantic_kind == "homework":
-        title = f"Учебное задание{subject_suffix}"
-    else:
-        title = f"{DEADLINE_LABELS[proposal.semantic_kind]}{subject_suffix}"
-    evidence_text = [" ".join(source.text.split()) for source in sources if source.text.strip()]
-    description = "\n".join(f"• {text}" for text in evidence_text)
+    primary = next((source.text for source in sources if (source.text or "").strip()), "")
+    title = neutral_title(primary, label)
+    cleaned = [clean_text(source.text) for source in sources if (source.text or "").strip()]
+    cleaned = [text for text in cleaned if text]
+    description = "\n".join(f"• {text}" if len(cleaned) > 1 else text for text in cleaned)
     if not description:
         description = "Содержание находится в приложенном исходном сообщении."
     return title, description[:8000]
+
+
+def _scrub(proposal):
+    """Service tags, greetings and spacing out of AI-written display text (facts untouched)."""
+    title = clean_title(proposal.title or "")
+    description = clean_text(proposal.description or "")
+    return proposal.model_copy(update={"title": title, "description": description})
 
 
 def edit_card(
@@ -141,7 +163,12 @@ def edit_card(
     verified_subjects=(),
 ):
     sources = cited_sources(proposal, messages)
+    proposal = _scrub(proposal)
     reasons = list(dict.fromkeys(proposal.attention_reasons))
+    subject = None if is_service_subject(proposal.subject) else proposal.subject
+    if subject != proposal.subject:
+        proposal = proposal.model_copy(update={"subject": None})
+        reasons.append("service_tag_not_subject")
     evidence_text = normalized("\n".join(source.text for source in sources))
     subject_supported = not proposal.subject or (
         phrase_supported(proposal.subject, evidence_text)
@@ -153,6 +180,7 @@ def edit_card(
             description=proposal.description or "Требуется индивидуальная проверка.",
             visibility="held",
             attention_reasons=[*reasons, "personal_not_group_publishable"],
+            subject=subject,
         )
     if SERIOUS_REASONS & set(reasons):
         title, description = fallback_display(proposal, sources, subject_supported)
@@ -162,6 +190,7 @@ def edit_card(
             visibility="held",
             attention_reasons=reasons,
             used_fallback=True,
+            subject=subject if subject_supported else None,
         )
     valid, invalid_reason = primary_display_valid(proposal, sources, verified_subjects)
     if valid:
@@ -170,6 +199,7 @@ def edit_card(
             description=proposal.description,
             visibility="headman_attention" if reasons else "normal",
             attention_reasons=reasons,
+            subject=subject,
         )
     title, description = fallback_display(proposal, sources, subject_supported)
     return EditedCard(
@@ -178,4 +208,5 @@ def edit_card(
         visibility="headman_attention",
         attention_reasons=[*reasons, invalid_reason],
         used_fallback=True,
+        subject=subject if subject_supported else None,
     )
