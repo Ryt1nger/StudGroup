@@ -317,6 +317,60 @@ CASES = [
         accepted_=[accepted("Математика", "homework", visibility="held")],
     ),
     case(
+        "collective_address_each_student_is_group_not_personal",
+        [msg(10, "Каждый делает доклад-презентацию о выдающихся учёных России")],
+        [item(
+            subject=None,
+            title="Подготовить доклад-презентацию",
+            description="Каждый делает доклад-презентацию о выдающихся учёных России.",
+            audience={"scope": "personal", "label": None},
+        )],
+        accepted_=[accepted(None, "homework")],
+        actions=["audience_collective_to_group"],
+    ),
+    case(
+        "collective_address_with_named_person_stays_personal",
+        [msg(10, "Всем сдать отчёт по математике. Иванов, тебе отдельно подойти к преподавателю")],
+        [item(audience={"scope": "personal", "label": None})],
+        accepted_=[accepted("Математика", "homework", visibility="held")],
+    ),
+    case(
+        "next_lesson_date_computed_by_model_is_cleared_for_clarification",
+        [msg(10, "К следующей паре определиться с темой проекта и командами")],
+        [item(
+            subject=None,
+            title="Определиться с темой и командой проекта",
+            description="Определиться с темой проекта и командами.",
+            deadline=dl("2026-10-20T23:59:00+03:00"),
+        )],
+        accepted_=[accepted(None, "homework", visibility="headman_attention")],
+        actions=["unsupported_explicit_deadline_cleared"],
+        reasons={0: "relative_deadline_unresolved"},
+    ),
+    case(
+        "named_weekday_with_qualifier_keeps_the_explicit_date",
+        [msg(10, "По математике сдать конспект к этой пятнице")],
+        [item(
+            title="Сдать конспект",
+            description="Сдать конспект по математике.",
+            deadline=dl("2026-10-16T23:59:00+03:00"),
+        )],
+        accepted_=[accepted("Математика", "homework", "2026-10-16T23:59", basis="explicit")],
+    ),
+    case(
+        "date_without_any_source_support_is_cleared",
+        [msg(10, "Подготовить презентацию по истории")],
+        [item(
+            subject="История",
+            title="Подготовить презентацию",
+            description="Подготовить презентацию по истории.",
+            deadline=dl("2026-10-20T23:59:00+03:00"),
+        )],
+        accepted_=[accepted("История", "homework", visibility="headman_attention")],
+        actions=["unsupported_explicit_deadline_cleared"],
+        reasons={0: "deadline_not_in_source"},
+    ),
+    case(
         "typical_deepseek_shape_defects_are_normalized",
         [msg(10, "По математике решить задачи 1–3 из учебника")],
         [{

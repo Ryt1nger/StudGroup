@@ -405,8 +405,8 @@ def test_shadowcards_goes_only_to_the_owner_with_sources_and_links(client, monke
     _mark_bot_added(client)
 
     async def fake_review(db, **kwargs):
-        assert kwargs["limit"] == 5
-        return [_sample_card()]
+        assert kwargs["limit"] in {5, 10}
+        return [_sample_card()] * kwargs["limit"]
 
     monkeypatch.setattr(backfill, "review", fake_review)
     private(client, "/shadowcards", uid=2)
@@ -419,6 +419,9 @@ def test_shadowcards_goes_only_to_the_owner_with_sources_and_links(client, monke
     assert "#матан - предел функции в бесконечности" in body
     assert "conflicting_deadlines" in body and "№4029" in body
     assert "https://t.me/c/" in body and "/4029" in body
+    assert "№1–5" in texts[0] and "/shadowcards 5" in texts[0]
+    private(client, "/shadowcards 5", update=105)
+    assert any("№6–10" in m["text"] for m in session(client)[1])
 
 
 def test_shadowcards_reports_empty_without_inventing_cards(client):

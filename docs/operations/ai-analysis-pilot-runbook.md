@@ -134,3 +134,14 @@ reason codes and hashes only; do not copy private chat text into incident logs.
 - `AI_SHADOW_PREPARE_MESSAGE_ID=<telegram message id>` (used only together with `AI_SHADOW_PREPARE_ONCE_KEY`, while `AI_ENABLED` and `AI_SHADOW_ENABLED` are false) prepares exactly that stored message instead of the oldest eligible one. It bypasses only the "newer than the shadow switch" window; the `bot_added_at` bound, retention, one-run-per-revision and the single marked package still apply. An unknown id prepares nothing (`preparation_empty`).
 - Canary sequence: set key + message id + `AI_OUTPUT_REPAIR_ENABLED=false` → deploy → check `AI_STARTUP_DIAGNOSTICS` shows one prepared canary and `/shadowstatus` → owner approves → `AI_SHADOW_ENABLED=true` with an absolute `AI_SHADOW_ENABLED_UNTIL` a few minutes ahead, `AI_SHADOW_CANARY_ONLY=true` → check `/shadowstatus` "Принято: N" → switch shadow off and clear key and message id.
 - `/shadowcards` (owner's private chat only, same gate as `/shadowstatus`) sends up to 5 accepted cards with cited source messages and `t.me/c/...` links to the owner. It writes nothing and publishes nothing to students.
+
+### Quality rules added after the first real canary (prompt `cplus-extraction-3`)
+
+- Audience: "каждый / все / всем / вся группа" addressed to the whole group is `group` even when each student works alone. The prompt says so, and the adapter converts a model `personal` to `group` only when the cited text is collective AND contains no personal address (a name followed by `,`/`:`, "Старосте", "тебе", "ты", `@user`, "лично"). Genuine personal instructions stay `personal` and held.
+- Deadline origin: `basis=explicit` must be backed by a written date, a resolvable relative word ("завтра", "послезавтра") or a named weekday within two weeks. Anything else ("к следующей паре" needs a trusted timetable that shadow input does not carry) is cleared to `unknown` with the attention reason `relative_deadline_unresolved` (or `deadline_not_in_source`) and shown for clarification. The model's computed date is never promoted to a stated date.
+
+### Bounded shadow backfill wave without a shell
+
+- `AI_SHADOW_BACKFILL_KEY=<a-z0-9-> AI_SHADOW_BACKFILL_LIMIT=<1..200>` (with `AI_ENABLED=false`, `AI_SHADOW_ENABLED=false`) queues one marked wave of the oldest stored messages without a run since `bot_added_at` at startup (`SHADOW_BACKFILL_WAVE wave_prepared_N`). The wave key is carried on the rows, so a restart with the same key never queues a second wave (`wave_exists`).
+- Only a canary-only worker (`AI_SHADOW_CANARY_ONLY=true`, `AI_SHADOW_ENABLED=true` until an absolute `AI_SHADOW_ENABLED_UNTIL`) claims marked rows, so the wave size is the hard bound on paid packages; the group's shadow daily budget and the global/hourly limits still apply.
+- Review with `/shadowcards [offset]` (5 per page, owner only). Nothing is published; promotion is a separate, explicitly approved step.

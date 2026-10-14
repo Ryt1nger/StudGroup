@@ -31,7 +31,7 @@ SHADOW_MAX_ATTEMPTS = 3
 SHADOW_LEASE = timedelta(minutes=3)
 
 
-CARRIED_METRICS = ("history", "attempt_base", "requeue_version")
+CARRIED_METRICS = ("history", "attempt_base", "requeue_version", "wave")
 
 
 def _metrics(row):
@@ -266,6 +266,59 @@ async def prepare_shadow_canary(engine, settings, now=None):
         preparation_key=settings.ai_shadow_prepare_once_key,
         preparation_message_id=getattr(settings, "ai_shadow_prepare_message_id", None),
     )
+
+
+async def prepare_backfill_wave(engine, settings, now=None):
+    """Queue one bounded, marked wave of stored messages (oldest first) without enabling AI.
+
+    The marked rows are claimed only by a canary-only worker, so the wave size is the hard
+    bound on paid packages. The wave key is carried on the rows, so a restart with the same key
+    never queues a second wave.
+    """
+    from studgroup.analysis import backfill
+
+    key, limit = settings.ai_shadow_backfill_key, settings.ai_shadow_backfill_limit
+    if not key or not limit:
+        return "disabled"
+    if settings.ai_enabled or settings.ai_shadow_enabled:
+        return "blocked_ai_enabled"
+    now = _utc(now or datetime.now(UTC))
+    marker = {"preparation_key": key, "wave": key}
+    async with AsyncSession(engine) as db:
+        group = await db.scalar(
+            select(Group)
+            .join(GroupAnalysisSettings, GroupAnalysisSettings.group_id == Group.id)
+            .where(
+                GroupAnalysisSettings.analysis_mode == "shadow",
+                Group.status == "active",
+                Group.pilot_authorized.is_(True),
+                Group.bot_added_at.is_not(None),
+            )
+            .order_by(Group.id)
+            .with_for_update(of=Group)
+            .limit(1)
+        )
+        if group is None:
+            return "wave_group_unavailable"
+        existing = await db.scalar(
+            select(func.count(ShadowEvaluationRun.id)).where(
+                ShadowEvaluationRun.group_id == group.id,
+                ShadowEvaluationRun.metrics_json.contains(f'"wave": "{key}"'),
+            )
+        )
+        if existing:
+            return "wave_exists"
+        result = await backfill.enqueue_window(
+            db,
+            group_id=group.id,
+            since=group.bot_added_at,
+            now=now,
+            limit=limit,
+            apply=True,
+            marker=marker,
+        )
+        await db.commit()
+        return f"wave_prepared_{result['enqueued']}"
 
 
 async def _claim(engine, now, *, canary_only=False):

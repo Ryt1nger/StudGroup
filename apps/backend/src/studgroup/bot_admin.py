@@ -204,16 +204,26 @@ async def handle(db, update, settings):
             await say(db, chat, "Карточки shadow: нужна ровно одна подключённая группа.")
             return True
         group = groups[0]
-        cards = await backfill.review(
-            db, group_id=group.id, since=group.bot_added_at, now=now, limit=5
+        arguments = text.split()[1:]
+        offset = int(arguments[0]) if arguments and arguments[0].isdigit() else 0
+        everything = await backfill.review(
+            db, group_id=group.id, since=group.bot_added_at, now=now, limit=offset + 5
         )
+        cards = everything[offset : offset + 5]
         if not cards:
-            await say(db, chat, "Принятых shadow-карточек пока нет.")
+            await say(
+                db,
+                chat,
+                "Принятых shadow-карточек пока нет."
+                if offset == 0
+                else "Дальше карточек нет.",
+            )
             return True
         # Plain sendMessage rows (not panel frames): several chunks must all be delivered.
         header = (
-            f"Принятые shadow-карточки «{group.name}» ({len(cards)}). Только для владельца; "
-            "студентам не опубликованы."
+            f"Принятые shadow-карточки «{group.name}» №{offset + 1}–{offset + len(cards)}"
+            f" (дальше: /shadowcards {offset + 5}). Только для владельца; студентам не "
+            "опубликованы."
         )
         for chunk in [header, *render_cards(cards, group.telegram_chat_id)]:
             enqueue(

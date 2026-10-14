@@ -69,10 +69,13 @@ DEADLINE_RULES = (
         "that date, e.g. \"2026-10-15\" or midnight local time."
     ),
     (
-        "deadline.basis is explicit when the message text states or implies a date (resolve words "
-        "such as \"завтра\", \"в пятницу\" or \"следующий понедельник\" from that message's "
-        "local_date and local_weekday), schedule_inferred only when trusted context supplies it, "
-        "ambiguous_range for a range of dates, otherwise unknown."
+        "deadline.basis is explicit only when the message text writes a calendar date or a "
+        "calendar word you can resolve from that message's local_date and local_weekday "
+        "(\"завтра\", \"послезавтра\", \"в пятницу\"). A reference to the next lesson "
+        "(\"к следующей паре\", \"к следующему занятию\", \"на следующей неделе\") is NOT a "
+        "date: use unknown with at=null, never compute a date from a guessed timetable. "
+        "schedule_inferred only when trusted context supplies the date, ambiguous_range for a "
+        "range of dates, otherwise unknown."
     ),
     (
         "basis explicit or schedule_inferred REQUIRES a non-null at; date_only=true REQUIRES a "

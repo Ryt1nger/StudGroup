@@ -38,6 +38,7 @@ from studgroup.analysis.routing import (
 )
 from studgroup.analysis.shadow import persist_shadow_summary, run_shadow
 from studgroup.analysis.shadow_worker import (
+    prepare_backfill_wave,
     prepare_shadow_canary,
     purge_expired_shadow_runs,
 )
@@ -958,3 +959,45 @@ def test_unknown_canary_target_prepares_nothing(client):
     assert asyncio.run(prepare_shadow_canary(client.app.state.engine, settings)) == (
         "preparation_empty"
     )
+
+
+def test_backfill_wave_is_bounded_marked_idempotent_and_processed_only_when_enabled(client):
+    enable_shadow(client)
+    for mid in range(91, 97):
+        source(client, mid=mid, text=f"Физика: конспект параграфа {mid} до 20.10")
+    off = Settings(
+        _env_file=None,
+        ai_enabled=False,
+        ai_shadow_enabled=False,
+        ai_shadow_canary_only=True,
+        ai_shadow_backfill_key="wave-1",
+        ai_shadow_backfill_limit=3,
+    )
+    engine = client.app.state.engine
+    before = product_snapshot(client)
+
+    assert asyncio.run(prepare_backfill_wave(engine, off)) == "wave_prepared_3"
+    assert asyncio.run(prepare_backfill_wave(engine, off)) == "wave_exists"
+    on = off.model_copy(update={"ai_shadow_enabled": True})
+    assert asyncio.run(prepare_backfill_wave(engine, on)) == "blocked_ai_enabled"
+    assert product_snapshot(client) == before
+
+    provider = HybridProvider()
+    live = Settings(
+        _env_file=None, ai_enabled=False, ai_shadow_enabled=True, ai_shadow_canary_only=True
+    )
+    statuses = [
+        asyncio.run(dispatch_next(engine, live, provider, datetime.now(UTC))) for _ in range(5)
+    ]
+    assert statuses.count("shadow_completed") == 3 and statuses[-1] == "disabled"
+
+    async def inspect():
+        async with AsyncSession(engine) as db:
+            rows = (await db.scalars(select(ShadowEvaluationRun))).all()
+            assert len(rows) == 3 and all(row.state == "completed" for row in rows)
+            assert all(json.loads(row.metrics_json)["wave"] == "wave-1" for row in rows)
+
+    asyncio.run(inspect())
+    # The wave key survives completion: a restart queues no second wave.
+    assert asyncio.run(prepare_backfill_wave(engine, off)) == "wave_exists"
+    assert product_snapshot(client) == before

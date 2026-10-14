@@ -668,3 +668,58 @@ def test_render_cards_is_bounded_and_links_supergroup_sources():
     chunks = render_cards([card] * 6, -1004421204622)
     assert chunks and all(len(c) <= MAX_CHUNK for c in chunks)
     assert "срок не указан" in chunks[0] and "без предмета" in chunks[0]
+
+
+def _adapted(case_id):
+    case = next(row for row in CASES if row["id"] == case_id)
+    data = build_input(case)
+    result = validate_extraction_adapted(envelope(case["proposals"]), data).result
+    return data, result
+
+
+def test_collective_address_becomes_group_and_the_ai_title_survives():
+    data, result = _adapted("collective_address_each_student_is_group_not_personal")
+    (proposal,) = result.accepted
+    assert (proposal.audience.scope, proposal.audience.label) == ("group", None)
+    assert proposal.subject is None and proposal.deadline.basis == "unknown"
+    card = edit_card(proposal, data.messages)
+    assert card.visibility == "normal" and not card.used_fallback
+    assert card.title == "Подготовить доклад-презентацию"
+
+
+def test_genuine_personal_instructions_stay_personal_and_held():
+    for case_id in ("personal_instruction_is_held",
+                    "collective_address_with_named_person_stays_personal"):
+        data, result = _adapted(case_id)
+        (proposal,) = result.accepted
+        assert proposal.audience.scope == "personal"
+        assert edit_card(proposal, data.messages).visibility == "held"
+
+
+def test_collective_address_detector_edges():
+    from studgroup.analysis.output_adapter import collective_address_only
+
+    assert collective_address_only(["Каждому подготовить доклад"])
+    assert collective_address_only(["Всем: сдать отчёт до пятницы"])
+    assert not collective_address_only(["Старосте: каждому напомнить про доклад"])
+    assert not collective_address_only(["Иванов, подготовь доклад"])
+    assert not collective_address_only(["Решить задачи каждый раз перед парой"])
+    assert not collective_address_only(["Подойти к преподавателю"])
+
+
+def test_relative_lesson_date_is_not_presented_as_an_explicit_deadline():
+    data, result = _adapted("next_lesson_date_computed_by_model_is_cleared_for_clarification")
+    (proposal,) = result.accepted
+    assert proposal.deadline.at is None and proposal.deadline.basis == "unknown"
+    assert "relative_deadline_unresolved" in proposal.attention_reasons
+    card = edit_card(proposal, data.messages)
+    assert card.visibility == "headman_attention" and not card.used_fallback
+    assert card.title == "Определиться с темой и командой проекта"
+    assert result.adapter_actions["unsupported_explicit_deadline_cleared"] == 1
+
+
+def test_written_dates_still_win_over_the_new_origin_check():
+    case = next(row for row in CASES if row["id"] == "homework_iso_datetime_with_offset")
+    _data, result = _adapted(case["id"])
+    assert result.accepted[0].deadline.basis == "explicit"
+    assert "unsupported_explicit_deadline_cleared" not in result.adapter_actions

@@ -80,5 +80,12 @@ def test_shadow_preparation_key_accepts_only_bounded_safe_identifiers():
     assert Settings(ai_shadow_prepare_message_id="4029").ai_shadow_prepare_message_id == 4029
     with pytest.raises(ValueError):
         Settings(ai_shadow_prepare_message_id=0)
+    assert Settings(ai_shadow_backfill_limit="25").ai_shadow_backfill_limit == 25
+    assert Settings(ai_shadow_backfill_limit="").ai_shadow_backfill_limit is None
+    for bad in (0, 201):
+        with pytest.raises(ValueError):
+            Settings(ai_shadow_backfill_limit=bad)
+    with pytest.raises(ValueError):
+        Settings(ai_shadow_backfill_key="WAVE/private")
     with pytest.raises(ValueError, match="invalid shadow preparation key"):
         Settings(ai_shadow_prepare_once_key="CANARY/private")

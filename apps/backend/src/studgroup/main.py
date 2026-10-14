@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     ai_shadow_canary_only: bool = False
     ai_shadow_prepare_once_key: str | None = None
     ai_shadow_prepare_message_id: int | None = None
+    ai_shadow_backfill_key: str | None = None
+    ai_shadow_backfill_limit: int | None = None
     ai_import_chat_id: int | None = None
     ai_schedule_enabled: bool = False
     ai_live_two_pass: bool = False
@@ -122,7 +124,17 @@ class Settings(BaseSettings):
             raise ValueError("invalid shadow preparation message id")
         return number
 
-    @field_validator("ai_shadow_prepare_once_key", mode="before")
+    @field_validator("ai_shadow_backfill_limit", mode="before")
+    @classmethod
+    def valid_backfill_limit(cls, value):
+        if value in (None, ""):
+            return None
+        number = int(value)
+        if not 1 <= number <= 200:
+            raise ValueError("invalid shadow backfill limit")
+        return number
+
+    @field_validator("ai_shadow_prepare_once_key", "ai_shadow_backfill_key", mode="before")
     @classmethod
     def valid_shadow_preparation_key(cls, value):
         if value in (None, ""):
@@ -163,6 +175,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             preparation = await prepare_shadow_canary(app.state.engine, settings)
             print(f"SHADOW_CANARY_PREPARATION {preparation}", flush=True)
+        if settings.ai_shadow_backfill_key and settings.ai_shadow_backfill_limit:
+            from studgroup.analysis.shadow_worker import prepare_backfill_wave
+
+            wave = await prepare_backfill_wave(app.state.engine, settings)
+            print(f"SHADOW_BACKFILL_WAVE {wave}", flush=True)
         if settings.owner_update_notifications_enabled:
             from studgroup.processing_diagnostics import startup
 

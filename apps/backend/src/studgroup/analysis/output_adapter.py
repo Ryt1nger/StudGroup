@@ -74,6 +74,59 @@ def explicit_source_dates(text):
     return found
 
 
+# Collective address: the instruction is for every student even when each does it alone.
+_COLLECTIVE = re.compile(
+    r"(?<![а-яе])(?:кажд(?:ый|ая|ое|ого|ому|ым|ую|ые|ых|ыми)(?!\s+(?:раз|день|дн\w*|недел\w*|пар\w*))"
+    r"|всем|всех|вся\s+групп\w*|всей\s+групп\w*"
+    r"|все\s+(?:студент\w*|должн\w*|делают|готовят|сдают|обязан\w*|присылают))(?![а-яе])"
+)
+# Direct address to one person or role keeps the instruction personal.
+_PERSONAL_ADDRESS = re.compile(r"(?<![а-яе])(?:старосте|тебе|тебя|ты|лично)(?![а-яе])|@\w+")
+_NAME_ADDRESS = re.compile(r"^\s*[А-ЯЁ][а-яё]{2,}(?:\s+[А-ЯЁ][а-яё]+)?\s*[,:—-]")
+
+
+def _fold(text):
+    return text.casefold().replace("ё", "е")
+
+
+def collective_address_only(texts):
+    """True when the cited text addresses everyone and never a single person or role."""
+    collective = personal = False
+    for text in texts:
+        folded = _fold(text)
+        collective = collective or bool(_COLLECTIVE.search(folded))
+        named = _NAME_ADDRESS.match(text)
+        personal = personal or bool(_PERSONAL_ADDRESS.search(folded)) or bool(
+            named and not _COLLECTIVE.search(_fold(named.group(0)))
+        )
+    return collective and not personal
+
+
+_WEEKDAY_WORDS = (
+    r"понедельник\w*", r"вторник\w*", r"сред(?:а|е|у|ы)", r"четверг\w*", r"пятниц\w*",
+    r"суббот\w*", r"воскресень\w*",
+)
+UNRESOLVED_RELATIVE_BASES = frozenset(
+    {"next_subject_lesson_reference", "unresolved_explicit_deadline", "ambiguous_weekday"}
+)
+RELATIVE_UNRESOLVED_REASON = "relative_deadline_unresolved"
+DEADLINE_NOT_IN_SOURCE_REASON = "deadline_not_in_source"
+
+
+def mentions_weekday(text):
+    folded = _fold(text)
+    return any(re.search(r"(?<![а-яе])" + word, folded) for word in _WEEKDAY_WORDS)
+
+
+def weekday_supports(texts, local_moment, first_sent):
+    """A named weekday (any qualifier) that equals the model date within two weeks of sending."""
+    delta = (local_moment.date() - first_sent.date()).days
+    if not 0 <= delta <= 14:
+        return False
+    folded = " ".join(_fold(text) for text in texts)
+    return bool(re.search(r"(?<![а-яе])" + _WEEKDAY_WORDS[local_moment.weekday()], folded))
+
+
 class AdapterReject(Exception):
     """A single proposal cannot be safely normalized."""
 
@@ -275,9 +328,15 @@ class _Normalizer:
             self.extra_reasons.append(FAR_FUTURE_REASON)
 
     def deterministic_conflict(self, deadline, base):
-        """Flag, never rewrite, a model date that contradicts a deterministic source rule."""
+        """Verify the origin of an ``explicit`` date; flag a contradiction, clear a guess.
+
+        A calendar date written in the cited text outranks every heuristic. A date that no
+        written date, relative word or named weekday supports (for example "к следующей паре"
+        needs a trusted timetable that shadow input does not carry) is not an explicit date: it
+        is cleared to unknown and routed to clarification instead of being shown as a fact.
+        """
         if deadline["at"] is None or deadline["basis"] != "explicit":
-            return
+            return deadline
         ordered = sorted((self.messages[i] for i in base if i in self.messages),
                          key=lambda row: row.message_date)
         local = deadline["at"].astimezone(self.tz)
@@ -285,23 +344,40 @@ class _Normalizer:
         for source in ordered:
             literal |= explicit_source_dates(source.text)
         if literal:
-            # A calendar date written in the cited text outranks relative-date heuristics. A
-            # proposal that ignores every written date is held for review, not published.
+            # A proposal that ignores every written date is held for review, not published.
             if (local.day, local.month) not in literal:
                 self.extra_reasons.append(SERIOUS_CONFLICT_REASON)
-            return
+            return deadline
         from studgroup.deadlines import contextual_deadline
 
         resolved = None
+        unresolved_basis = None
         for source in ordered:
             try:
                 candidate = contextual_deadline(source.text, source.message_date, str(self.tz))
             except (ValueError, TypeError):
                 continue
-            if candidate is not None and candidate.at is not None:
+            if candidate is None:
+                continue
+            if candidate.at is not None:
                 resolved = candidate
-        if resolved is not None and resolved.at.astimezone(self.tz).date() != local.date():
-            self.extra_reasons.append(SERIOUS_CONFLICT_REASON)
+            else:
+                unresolved_basis = candidate.basis
+        if resolved is not None:
+            if resolved.at.astimezone(self.tz).date() != local.date():
+                self.extra_reasons.append(SERIOUS_CONFLICT_REASON)
+            return deadline
+        if ordered and weekday_supports(
+            [row.text for row in ordered], local, ordered[0].message_date.astimezone(self.tz)
+        ):
+            return deadline
+        self.note("unsupported_explicit_deadline_cleared")
+        self.extra_reasons.append(
+            RELATIVE_UNRESOLVED_REASON
+            if unresolved_basis in UNRESOLVED_RELATIVE_BASES
+            else DEADLINE_NOT_IN_SOURCE_REASON
+        )
+        return {"at": None, "date_only": False, "basis": "unknown"}
 
     # -- evidence -------------------------------------------------------------------------
     def fact_paths(self, value, path):
@@ -454,7 +530,12 @@ class _Normalizer:
             }
             for paths, message_id, revision in refs
         ]
-        self.deterministic_conflict(value["deadline"], evidence_ids)
+        value["deadline"] = self.deterministic_conflict(value["deadline"], evidence_ids)
+        if value["audience"]["scope"] == "personal" and collective_address_only(
+            self.messages[i].text for i in evidence_ids if i in self.messages
+        ):
+            value["audience"] = {"scope": "group", "label": None}
+            self.note("audience_collective_to_group")
         for reason in self.extra_reasons:
             if reason not in reasons:
                 reasons.append(reason)

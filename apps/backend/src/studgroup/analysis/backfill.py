@@ -112,7 +112,7 @@ async def plan(db, *, group_id, since, now):
     }
 
 
-async def enqueue_window(db, *, group_id, since, now, limit, apply=False):
+async def enqueue_window(db, *, group_id, since, now, limit, apply=False, marker=None):
     """Create missing shadow runs oldest-first. Idempotent: existing runs are never touched."""
     from studgroup.analysis.shadow_worker import enqueue_shadow
     from studgroup.processing import context_for
@@ -144,6 +144,8 @@ async def enqueue_window(db, *, group_id, since, now, limit, apply=False):
             continue
         context, _schedule = await context_for(db, raw, group, now, semantic_neighborhood=True)
         row = await enqueue_shadow(db, group=group, job=None, raw=raw, context=context, now=now)
+        if row is not None and marker is not None:
+            row.metrics_json = json.dumps(marker, sort_keys=True)
         created += row is not None and row.state == "queued"
     return {"would_enqueue" if not apply else "enqueued": created, "limit": limit}
 
