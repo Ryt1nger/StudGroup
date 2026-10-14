@@ -201,3 +201,15 @@ change. Telegram file ids stay server-side; the client only gets `t.me` links.
   structural tie to the others -> `foreign_source_attached` (held). Cross-run: in preview/promote
   `with_supplement_updates` turns a card that merely clarifies an already-built item into an
   update of that item. Old stored shadow results get the same treatment when reviewed.
+
+### Stored results are re-normalised on read (`analysis/stored.py`)
+
+A stored shadow `validation_result_json` keeps the proposals exactly as the code of that day
+produced them, so later deterministic safeguards never reached them (the 4575 date computed
+from "к следующей паре" and the 4597 `personal` audience were such cases). `effective_validation`
+re-applies, on read, the same source-checked rules the adapter uses (`_Normalizer.semantic_rules`:
+date origin, collective address -> group, service-tag subject) plus the supplement reconciliation.
+It is used by `backfill.review`, `backfill.promote`, `/shadowcards` preview and, as defence in
+depth, by `apply_validated_batch` itself, so no path (preview, promote, live writer, Mini App
+projection) can read the old values. Idempotent; sources are never replaced; literal-date
+conflicts stay serious; no AI call.

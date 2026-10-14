@@ -14,8 +14,8 @@ from decimal import Decimal
 from sqlalchemy import func, select
 
 from studgroup.analysis.contracts import AnalysisInput, ValidationResult
-from studgroup.analysis.linking import reconcile_validation
 from studgroup.analysis.routing import get_route
+from studgroup.analysis.stored import effective_validation
 from studgroup.analysis.writer import apply_validated_batch
 from studgroup.models import (
     CanonicalAcademicItem,
@@ -285,7 +285,7 @@ async def review(db, *, group_id, since, now, limit=50):
         if not validation.accepted:
             continue
         data = AnalysisInput.model_validate_json(run.input_json)
-        validation = reconcile_validation(validation, data.messages)
+        validation = effective_validation(validation, data.messages, group.timezone)
         by_id = {row.telegram_message_id: row for row in data.messages}
         for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted,
                                      strict=True):
@@ -521,7 +521,7 @@ async def promote(
             break
         totals["runs_considered"] += 1
         data = AnalysisInput.model_validate_json(run.input_json)
-        validation = reconcile_validation(validation, data.messages)
+        validation = effective_validation(validation, data.messages, group.timezone)
         try:
             async with db.begin_nested() as savepoint:
                 raw_rows = (

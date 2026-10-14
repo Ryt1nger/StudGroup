@@ -23,7 +23,7 @@ from studgroup.analysis.backfill import (
 from studgroup.analysis.card_editor import edit_card
 from studgroup.analysis.card_materials import derive_materials
 from studgroup.analysis.contracts import AnalysisInput, ValidationResult
-from studgroup.analysis.linking import reconcile_validation
+from studgroup.analysis.stored import effective_validation
 from studgroup.analysis.writer import apply_validated_batch
 from studgroup.models import (
     AcademicDeadline,
@@ -102,8 +102,8 @@ async def build_preview(db, *, group_id, since, now, limit=60):
                     break
                 validation = ValidationResult.model_validate_json(run.validation_result_json)
                 data = AnalysisInput.model_validate_json(run.input_json)
-                # Idempotent: results produced before the reconciliation step get it here.
-                validation = reconcile_validation(validation, data.messages)
+                # Stored results get today's deterministic rules (audience, date origin, links) on read.
+                validation = effective_validation(validation, data.messages, group.timezone)
                 for message in data.messages:
                     snapshots[message.telegram_message_id] = message
                 for rejected in validation.rejected:

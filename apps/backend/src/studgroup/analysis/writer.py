@@ -6,6 +6,8 @@ from studgroup.analysis.card_editor import edit_card
 from studgroup.analysis.contracts import ApplicationOutcome
 from studgroup.analysis.projection import project_item
 from studgroup.analysis.resolver import resolve_proposal
+from studgroup.analysis.stored import effective_validation
+from studgroup.models import Group
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,11 @@ async def apply_validated_batch(
     verified_subjects=(),
     emit_notifications=True,
 ):
+    # Defence in depth: whatever produced the validation (live adapter or an older stored run),
+    # the same source-checked rules decide audience and date origin before anything is written.
+    group = await db.get(Group, group_id)
+    if group is not None:
+        validation = effective_validation(validation, messages, group.timezone)
     outcomes = []
     writes = 0
     notifications = 0

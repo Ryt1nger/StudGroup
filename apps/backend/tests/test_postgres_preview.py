@@ -354,8 +354,9 @@ def test_postgres_preview_supplement_from_its_own_later_run_is_not_a_second_card
             cards = preview["cards"]
             assert len(cards) == 2  # report (with its supplement) + physics, no third card
             report = next(c for c in cards if 9301 in {s["telegram_message_id"] for s in c["sources"]})
-            assert {s["telegram_message_id"] for s in report["sources"]} == {9301, 9302}
-            assert sorted(s["telegram_message_id"] for s in report["sources"]) == [9301, 9302]
+            # the captionless PDF (a reply to the task) is a source too, added by the writer's
+            # reconciliation even though its own run produced nothing
+            assert sorted(s["telegram_message_id"] for s in report["sources"]) == [9301, 9302, 9303]
             assert "Дополнение: Темы: 1) Исторические деятели" in report["description"]
             assert report["title"] == "Подготовить доклад-презентацию о героях РФ"
             assert [m["title"] for m in report["materials"] if m["group"] == "file"] == ["Критерии.pdf"]

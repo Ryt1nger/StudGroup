@@ -439,6 +439,25 @@ class _Normalizer:
             result.append((entry.get("fact_paths"), message_id, revision))
         return result
 
+    def semantic_rules(self, value, evidence_ids):
+        """Deterministic source-checked rules; also re-applied to stored proposals on read.
+
+        Works on the plain value dict: deadline origin, collective address -> group audience,
+        service tag is not a subject. Idempotent by construction.
+        """
+        value["deadline"] = self.deterministic_conflict(value["deadline"], evidence_ids)
+        if value["audience"]["scope"] == "personal" and collective_address_only(
+            self.messages[i].text for i in evidence_ids if i in self.messages
+        ):
+            value["audience"] = {"scope": "group", "label": None}
+            self.note("audience_collective_to_group")
+        from studgroup.analysis.text_hygiene import is_service_subject
+
+        if isinstance(value.get("subject"), str) and is_service_subject(value["subject"]):
+            value["subject"] = None
+            self.note("service_tag_subject_cleared")
+        return value
+
     # -- proposal -------------------------------------------------------------------------
     def proposal(self, raw):
         if not isinstance(raw, dict):
@@ -543,17 +562,7 @@ class _Normalizer:
             }
             for paths, message_id, revision in refs
         ]
-        value["deadline"] = self.deterministic_conflict(value["deadline"], evidence_ids)
-        if value["audience"]["scope"] == "personal" and collective_address_only(
-            self.messages[i].text for i in evidence_ids if i in self.messages
-        ):
-            value["audience"] = {"scope": "group", "label": None}
-            self.note("audience_collective_to_group")
-        from studgroup.analysis.text_hygiene import is_service_subject
-
-        if isinstance(value.get("subject"), str) and is_service_subject(value["subject"]):
-            value["subject"] = None
-            self.note("service_tag_subject_cleared")
+        self.semantic_rules(value, evidence_ids)
         for reason in self.extra_reasons:
             if reason not in reasons:
                 reasons.append(reason)
