@@ -49,6 +49,20 @@ def _covered(raw=RawMessage):
     )
 
 
+def _coverage(rows):
+    """Where a selection falls: days and topics only, with the message ids for the owner."""
+    days = Counter(_utc(row.message_date).date().isoformat() for row in rows)
+    topics = Counter(row.message_thread_id for row in rows)
+    ordered = sorted(rows, key=lambda row: (row.message_date, row.telegram_message_id))
+    return {
+        "distinct_days": len(days),
+        "distinct_topics": len(topics),
+        "per_day": dict(sorted(days.items())),
+        "per_topic": {("general" if key is None else str(key)): n for key, n in topics.items()},
+        "telegram_message_ids": [row.telegram_message_id for row in ordered],
+    }
+
+
 def _composition(rows, attachment_counts):
     texts = [(row.text or "").strip() for row in rows]
     with_text = sum(1 for text in texts if text)
@@ -126,17 +140,16 @@ async def wave_preflight(db, settings, now=None, *, since=None, wave_size=25):
         )
         or 0
     )
-    next_rows = (
-        await db.scalars(
-            select(RawMessage)
-            .where(*eligible_filter, ~_covered())
-            .order_by(RawMessage.message_date, RawMessage.telegram_message_id)
-            .limit(wave_size)
-        )
-    ).all()
     all_uncovered_rows = (
         await db.scalars(select(RawMessage).where(*eligible_filter, ~_covered()))
     ).all()
+    spread = bool(getattr(settings, "ai_shadow_backfill_spread", False))
+    if spread:
+        next_rows = backfill.select_spread(all_uncovered_rows, wave_size)
+    else:
+        next_rows = sorted(
+            all_uncovered_rows, key=lambda row: (row.message_date, row.telegram_message_id)
+        )[:wave_size]
     attachment_counts = {
         raw_id: count
         for raw_id, count in (
@@ -228,7 +241,9 @@ async def wave_preflight(db, settings, now=None, *, since=None, wave_size=25):
             "last_message_date": _utc(next_rows[-1].message_date).isoformat() if next_rows else None,
             "first_telegram_message_id": next_rows[0].telegram_message_id if next_rows else None,
             "last_telegram_message_id": next_rows[-1].telegram_message_id if next_rows else None,
+            "selection": "spread" if spread else "oldest_first",
             "composition": _composition(next_rows, attachment_counts),
+            "coverage": _coverage(next_rows),
         },
         "cost": {
             "measured_cost_per_run_usd": str(measured.quantize(Decimal("0.00000001"))),
@@ -306,12 +321,47 @@ async def _wave_rows(db, group, now):
     def total(key):
         return sum((Decimal(item[key]) for item in envelopes), Decimal(0))
 
+    targets = []
+    if wave_rows:
+        targets = (
+            await db.scalars(
+                select(RawMessage).where(RawMessage.id.in_([row.raw_message_id for row in wave_rows]))
+            )
+        ).all()
+    memberships = []
+    for row in wave_rows:
+        try:
+            memberships.append(
+                {item["telegram_message_id"] for item in json.loads(row.input_json)["messages"]}
+            )
+        except (TypeError, ValueError, KeyError):
+            memberships.append(set())
+    appearances = Counter(mid for members in memberships for mid in members)
+    shared = {mid for mid, count in appearances.items() if count > 1}
+    by_raw = {row.id: row.telegram_message_id for row in targets}
+    inside_other = sum(
+        1
+        for index, row in enumerate(wave_rows)
+        if any(
+            by_raw.get(row.raw_message_id) in members
+            for other, members in enumerate(memberships)
+            if other != index
+        )
+    )
+
     return {
         "prepared": len(wave_rows),
         "foreign_prepared_rows": foreign,
         "claimable_failed_rows": claimable_failed,
         "active_leases": active,
         "envelope_errors": errors,
+        "coverage": _coverage(targets) if targets else None,
+        "context_overlap": {
+            "distinct_messages_in_all_packages": len(appearances),
+            "messages_shared_by_several_packages": len(shared),
+            "packages_sharing_context": sum(1 for members in memberships if members & shared),
+            "targets_inside_another_package": inside_other,
+        },
         "messages_in_packages": sum(item["message_count"] for item in envelopes),
         "attachments_in_packages": sum(item["attachment_count"] for item in envelopes),
         "largest_package_messages": max((item["message_count"] for item in envelopes), default=0),

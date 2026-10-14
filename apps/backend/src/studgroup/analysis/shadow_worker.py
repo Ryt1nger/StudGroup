@@ -318,6 +318,7 @@ async def prepare_backfill_wave(engine, settings, now=None):
             limit=limit,
             apply=True,
             marker=marker,
+            spread=bool(getattr(settings, "ai_shadow_backfill_spread", False)),
         )
         await db.commit()
         return f"wave_prepared_{result['enqueued']}"

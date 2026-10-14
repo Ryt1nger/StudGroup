@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     ai_shadow_backfill_key: str | None = None
     ai_shadow_find_candidates: bool = False
     ai_shadow_wave_preflight: bool = False
+    ai_shadow_backfill_spread: bool = False
     ai_shadow_backfill_limit: int | None = None
     ai_import_chat_id: int | None = None
     ai_schedule_enabled: bool = False

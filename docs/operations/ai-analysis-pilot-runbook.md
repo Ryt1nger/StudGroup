@@ -119,6 +119,15 @@ is prepared with `AI_SHADOW_BACKFILL_KEY`/`AI_SHADOW_BACKFILL_LIMIT`, the summed
 and blocking codes (AI flags, repair, sample percent below 100, leases, foreign prepared rows,
 claimable failed rows, package cap, route budget).
 
+Spread selection (`AI_SHADOW_BACKFILL_SPREAD=true`, off by default; chronological `enqueue` is
+unchanged): `AI_SHADOW_BACKFILL_LIMIT` unprocessed revisions are picked across the whole window.
+Slots go to days in proportion to volume (every day gets one when the limit allows), rotate over
+topics inside a day, and each pick is the message farthest in time from those already chosen that
+day. There is no keyword or task-word filter, so ordinary chatter is sampled too. The choice is
+deterministic and idempotent: revisions with any run, failed ones included, are never picked, and
+the wave key blocks a second wave. The preflight shows days, topics and message ids of the
+selection, and for a prepared wave the exact context overlap between packages.
+
 Known limit: cancellation, reschedule and amendment of an earlier item need its identity. Backfill
 runs cannot supply one before promotion, so those proposals are rejected as
 `mutation_identity_missing`; review such source messages manually.

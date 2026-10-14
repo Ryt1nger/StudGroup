@@ -113,8 +113,88 @@ async def plan(db, *, group_id, since, now):
     }
 
 
-async def enqueue_window(db, *, group_id, since, now, limit, apply=False, marker=None):
-    """Create missing shadow runs oldest-first. Idempotent: existing runs are never touched."""
+def select_spread(rows, limit):
+    """Deterministic spread over the whole window: every day, then every topic, no keywords.
+
+    Slots go to days in proportion to their volume (at least one per day when ``limit`` allows;
+    otherwise evenly spaced days). Inside a day the slots rotate over topics, busiest first, and
+    each pick is the message farthest in time from those already chosen that day, so neighbouring
+    messages (and their overlapping context) are avoided where the data allows it.
+    """
+    rows = sorted(rows, key=lambda row: (row.message_date, row.telegram_message_id))
+    if limit <= 0 or not rows:
+        return []
+    if len(rows) <= limit:
+        return rows
+    days = {}
+    for row in rows:
+        days.setdefault(_utc(row.message_date).date(), []).append(row)
+    ordered = sorted(days)
+    if limit < len(ordered):
+        chosen = [ordered[index * len(ordered) // limit] for index in range(limit)]
+        quotas = {day: 1 for day in chosen}
+    else:
+        quotas = {day: 1 for day in ordered}
+        spare = limit - len(ordered)
+        total = len(rows)
+        shares = {day: len(days[day]) * spare / total for day in ordered}
+        for day in ordered:
+            quotas[day] += int(shares[day])
+        left = limit - sum(quotas.values())
+        for day in sorted(ordered, key=lambda d: (-(shares[d] - int(shares[d])), d))[:left]:
+            quotas[day] += 1
+        for day in ordered:  # a day cannot give more than it holds; hand the rest on
+            quotas[day] = min(quotas[day], len(days[day]))
+        short = limit - sum(quotas.values())
+        for day in sorted(ordered, key=lambda d: (-len(days[d]), d)):
+            while short and quotas[day] < len(days[day]):
+                quotas[day] += 1
+                short -= 1
+    picked = []
+    for day in sorted(quotas):
+        picked.extend(_spread_day(days[day], quotas[day]))
+    return sorted(picked, key=lambda row: (row.message_date, row.telegram_message_id))
+
+
+def _spread_day(rows, quota):
+    position = {id(row): index for index, row in enumerate(rows)}
+    topics = {}
+    for row in rows:
+        topics.setdefault(row.message_thread_id, []).append(row)
+    queue = sorted(topics, key=lambda topic: (-len(topics[topic]), -1 if topic is None else topic))
+    chosen = []
+    while len(chosen) < quota:
+        progressed = False
+        for topic in queue:
+            if len(chosen) >= quota:
+                break
+            remaining = [row for row in topics[topic] if row not in chosen]
+            if not remaining:
+                continue
+            if not chosen:
+                pick = remaining[len(remaining) // 2]
+            else:
+                pick = max(
+                    remaining,
+                    key=lambda row: (
+                        min(abs(position[id(row)] - position[id(other)]) for other in chosen),
+                        -position[id(row)],
+                    ),
+                )
+            chosen.append(pick)
+            progressed = True
+        if not progressed:
+            break
+    return chosen
+
+
+async def enqueue_window(
+    db, *, group_id, since, now, limit, apply=False, marker=None, spread=False
+):
+    """Create missing shadow runs. Idempotent: existing runs are never touched.
+
+    Oldest-first by default; ``spread`` picks the same number of messages across the whole window.
+    """
     from studgroup.analysis.shadow_worker import enqueue_shadow
     from studgroup.processing import context_for
 
@@ -135,9 +215,11 @@ async def enqueue_window(db, *, group_id, since, now, limit, apply=False, marker
             select(RawMessage)
             .where(*_eligible_raw(group_id, lower, now), ~covered.exists())
             .order_by(RawMessage.message_date, RawMessage.telegram_message_id)
-            .limit(limit)
+            .limit(None if spread else limit)
         )
     ).all()
+    if spread:
+        rows = select_spread(rows, limit)
     created = 0
     for raw in rows:
         if not apply:
