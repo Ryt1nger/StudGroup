@@ -141,7 +141,13 @@ def test_conversational_detector_does_not_flag_real_titles():
         "Подготовить доклад про клетку",
     ):
         assert not is_conversational_title(good)
-    for bad in ("У кого двойка", "Ребята, внимание", "Если кто-то", "Когда сдавать?", "Не затягивать"):
+    for bad in (
+        "У кого двойка",
+        "Ребята, внимание",
+        "Если кто-то",
+        "Когда сдавать?",
+        "Не затягивать",
+    ):
         assert is_conversational_title(bad)
 
 
@@ -379,7 +385,11 @@ def test_invented_fact_in_the_title_replaces_only_the_title():
 def test_unsupported_explicit_deadline_is_flagged_but_does_not_touch_the_texts():
     card = edit_card(
         item(
-            deadline={"at": datetime(2026, 10, 20, tzinfo=UTC), "date_only": True, "basis": "explicit"}
+            deadline={
+                "at": datetime(2026, 10, 20, tzinfo=UTC),
+                "date_only": True,
+                "basis": "explicit",
+            }
         ),
         [msg(1, RETAKE_SOURCE)],
     )
@@ -399,7 +409,9 @@ def test_fallback_description_contains_no_source_text():
     assert card.description == DESCRIPTION_PENDING
     assert secret not in card.description and "•" not in card.description
     assert "description_pending_ai" in card.attention_reasons
-    assert card.title == "Повторная самостоятельная по алгебре"  # title survives a missing description
+    assert (
+        card.title == "Повторная самостоятельная по алгебре"
+    )  # title survives a missing description
 
 
 # -- 8. older valid cards are not made worse ----------------------------------------------------
@@ -438,7 +450,7 @@ def test_previously_valid_cards_keep_title_description_and_visibility(source, ti
 
 
 def test_prompt_version_and_the_title_and_description_contracts():
-    assert EXTRACTION_PROMPT_VERSION == "cplus-extraction-5"
+    assert EXTRACTION_PROMPT_VERSION == "cplus-extraction-6"
     prompt = EXTRACTION_SYSTEM_PROMPT
     assert "Title contract" in prompt and "ideally under 60 characters" in prompt
     assert "Description contract" in prompt and "in your own words" in prompt

@@ -103,6 +103,14 @@ def test_postgres_preview_merges_supplements_and_materials_without_writing():
         (9207, 330, "Контрольная в среду", HEADMAN_TELEGRAM_ID, None, []),
         (9208, 340, "Перенесли на пятницу", HEADMAN_TELEGRAM_ID, 9207, []),
         (9209, 360, "Иванов, принеси справку в деканат", HEADMAN_TELEGRAM_ID, None, []),
+        (
+            9210,
+            380,
+            "В четверг после пар встреча студентов с выпускниками кафедры",
+            HEADMAN_TELEGRAM_ID,
+            None,
+            [],
+        ),
     ]
     script = defaultdict(list)
     script[9201] = [card(None, "#орг доклад презентация", "#орг доклад-презентация", [9201])]
@@ -147,6 +155,19 @@ def test_postgres_preview_merges_supplements_and_materials_without_writing():
     ]
     script[9209] = [
         card(None, "Принести справку", "Принести справку в деканат.", [9209], audience="personal")
+    ]
+    # An event is not one of the published categories: a held candidate, never a card.
+    script[9210] = [
+        {
+            "category": "event",
+            "title": "Встреча с выпускниками",
+            "description": "Встреча студентов с выпускниками кафедры.",
+            "when_text": "в четверг после пар",
+            "confidence": 80,
+            "evidence": [
+                {"telegram_message_id": 9210, "revision": 1, "fact_paths": ["description"]}
+            ],
+        }
     ]
 
     async def scenario():
@@ -338,6 +359,13 @@ def test_postgres_preview_merges_supplements_and_materials_without_writing():
             )
             assert exam["deadline_at"].astimezone(MSK).date() == wednesday.date()
 
+            # the event is reported for the owner but is neither a card nor a product write
+            assert not any(9210 in {s["telegram_message_id"] for s in c["sources"]} for c in cards)
+            held = [h for h in preview["held_candidates"] if h["target_message_id"] == 9210]
+            assert [(h["category"], h["title"]) for h in held] == [
+                ("event", "Встреча с выпускниками")
+            ]
+
             # personal assignment is never published to the group
             personal = next(
                 c for c in cards if 9209 in {s["telegram_message_id"] for s in c["sources"]}
@@ -352,6 +380,7 @@ def test_postgres_preview_merges_supplements_and_materials_without_writing():
             assert await counts() == zero  # the summary is read-only too
             assert summary["status"] == "ok" and summary["runs_by_state"]["completed"] >= 7
             assert summary["proposals"]["accepted"] >= 6
+            assert summary["held_candidates"]["by_category"] == {"event": 1}
             assert summary["cards"]["total"] == len(cards)
             assert summary["cards"]["multi_source"] >= 1
             assert summary["cards"]["with_confirmed_materials"] >= 1

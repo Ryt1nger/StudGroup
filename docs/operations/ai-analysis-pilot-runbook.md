@@ -280,6 +280,40 @@ the section above.
   is published as `needs_clarification`, never as a confirmed card. A long but otherwise sound
   title is kept (cut by title hygiene) and raises no flag.
 
+### Discovery vs category: held candidates (prompt `cplus-extraction-6`)
+
+No paid call, no migration, no new API call per message (still context + extraction; the optional
+repair call is unchanged). Student API, `semantic_kind`, `destination` and the PostgreSQL models are
+untouched.
+
+- **Two logical steps in one extraction answer.** Step 1 discovers anything possibly useful to
+  students (study work, checks, events, organisational instructions, news) without keyword
+  triggers; step 2 lets the model choose the product category from the meaning in context:
+  ДЗ (`homework`, task), КТ/проверочные (`test`, `control_point`, `assessment`, `credit`, `exam`,
+  deadline), events and everything else as `candidates`. Ordinary conversation produces nothing.
+- **Contract extension (backward compatible).** `AnalysisOutput.candidates` is optional
+  (`CandidateProposal`: `category` event|organizational|information|other|homework|check, text
+  fields, `reason`, `when_text`, evidence). Stored in the existing `validation_result_json` as
+  `ValidationResult.candidates` (`UnpublishedCandidate`, adds `hold_code`, `origin`, `model_label`,
+  `proposal_ordinal`, `issues`). Results stored earlier simply have none.
+- **Salvage instead of loss.** A proposal the strict contract rejects (unknown kind such as
+  `event`/`quiz`, missing kind, unknown field, unusable evidence) keeps its readable content as a
+  candidate with `origin=rejected_proposal`, `hold_code=rejected_<issue>`; `RejectedItem.salvaged`
+  says so. Evidence is only ever a message of the request (defaulting to the target message,
+  flagged `evidence_defaulted_to_target`). Non-objects and content-free items leave a counter only
+  (`rejected_without_content`). A candidate that duplicates a card is dropped
+  (`candidate_duplicates_card_discarded`); an optional repair that recovers a proposal removes its
+  held copy.
+- **Never published.** `apply_validated_batch`, the resolver and projection read only `accepted`;
+  candidates appear solely in the owner preview (`held_candidates`, footer «Не карточки…») and
+  `wave_results` (`held_candidates` by category and hold code). Events stay unpublished until a
+  frontend/API category exists; the compatible way to add it later is a new product category in the
+  projection layer reading these stored candidates, with no change to the seven `semantic_kind`s.
+- **Not changed on purpose.** The legacy `ACADEMIC_CUE` gate applies only when
+  `ai_live_two_pass` is off (the two-pass C+ path sends every message to the model). Pass 1
+  (`cplus-context-1`) is untouched. The strict adapter-free reference validator ignores
+  `candidates`.
+
 ### Stored results are re-normalised on read (`analysis/stored.py`)
 
 A stored shadow `validation_result_json` keeps the proposals exactly as the code of that day

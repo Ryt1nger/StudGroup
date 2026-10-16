@@ -14,6 +14,7 @@ from studgroup.analysis.contracts import (
     ANALYSIS_SCHEMA_VERSION,
     AnalysisOutput,
     Audience,
+    CandidateProposal,
     DeadlineValue,
     EvidenceRef,
     ProposedAcademicItem,
@@ -84,6 +85,16 @@ DEADLINE_RULES = (
     ),
 )
 
+CANDIDATE_RULES = (
+    (
+        "candidates is optional (omit it or use [] when there are none). A candidate is something "
+        "useful that is NOT a published card: category event, organizational, information or other, "
+        "or a doubtful homework or check. It needs category and evidence (telegram_message_id and "
+        "revision copied from the supplied messages); title, description, subject, when_text, "
+        "reason, audience and confidence are optional. A candidate is never published."
+    ),
+)
+
 PROPOSAL_RULES = (
     ("destination is task for semantic_kind homework and deadline for every other semantic_kind."),
     (
@@ -147,8 +158,20 @@ def _example_output() -> dict:
             EvidenceRef(telegram_message_id=104, revision=1, fact_paths=["deadline"]),
         ],
     )
+    event = CandidateProposal(
+        category="event",
+        title="Встреча студентов с выпускниками",
+        description="Встреча студентов с выпускниками кафедры.",
+        when_text="в четверг после пар",
+        reason="Событие: карточки событий пока не публикуются.",
+        confidence=80,
+        evidence=[EvidenceRef(telegram_message_id=105, revision=1, fact_paths=["description"])],
+    )
     output = AnalysisOutput(
-        source_revision=1, proposals=[homework, dated, timed], explicit_empty=False
+        source_revision=1,
+        proposals=[homework, dated, timed],
+        candidates=[event],
+        explicit_empty=False,
     )
     return output.model_dump(mode="json")
 
@@ -160,15 +183,15 @@ def example_output() -> dict:
 
 def contract_block() -> str:
     example = json.dumps(_example_output(), ensure_ascii=False, separators=(",", ":"))
-    rules = "\n".join(f"- {rule}" for rule in (*PROPOSAL_RULES, *DEADLINE_RULES))
+    rules = "\n".join(f"- {rule}" for rule in (*PROPOSAL_RULES, *CANDIDATE_RULES, *DEADLINE_RULES))
     return (
         "Return JSON only, exactly this contract (generated from the backend models; `?` marks "
         "an optional key, keys not listed are forbidden):\n"
         f"{render_contract()}\n"
         f'Copy schema_version "{ANALYSIS_SCHEMA_VERSION}", engine_version '
         f'"{ANALYSIS_ENGINE_VERSION}" and source_revision exactly from the request. With no '
-        "academic items return proposals [] and explicit_empty true; otherwise explicit_empty "
-        "false.\n"
+        "publishable proposals return proposals [] and explicit_empty true (candidates may still "
+        "be listed); otherwise explicit_empty false.\n"
         f"Rules:\n{rules}\n"
         "Valid example (ids, subjects and dates are illustrative only; never copy them):\n"
         f"{example}"

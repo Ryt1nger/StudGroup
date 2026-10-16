@@ -52,6 +52,7 @@ async def wave_results(db, now=None, *, wave_key="wave-a-spread-1"):
     states, errors = Counter(), Counter()
     tokens = Counter()
     kinds, actions, rejected = Counter(), Counter(), Counter()
+    held_categories, held_codes = Counter(), Counter()
     per_run, empty_runs, accepted_total, raw_total = [], 0, 0, 0
     wave_ids = set()
     for run, raw in rows:
@@ -71,8 +72,11 @@ async def wave_results(db, now=None, *, wave_key="wave-a-spread-1"):
         validation = effective_validation(validation, data.messages, group.timezone)
         raw_total += validation.raw_proposal_count
         accepted_total += len(validation.accepted)
-        if not validation.accepted and not validation.rejected:
+        if not validation.accepted and not validation.rejected and not validation.candidates:
             empty_runs += 1
+        for candidate in validation.candidates:
+            held_categories[candidate.category] += 1
+            held_codes[candidate.hold_code] += 1
         for proposal in validation.accepted:
             kinds[proposal.semantic_kind] += 1
             actions[proposal.action] += 1
@@ -116,6 +120,11 @@ async def wave_results(db, now=None, *, wave_key="wave-a-spread-1"):
             "by_action": dict(actions),
             "completed_runs_with_nothing_found": empty_runs,
             "completed_runs_with_cards": sum(1 for item in per_run if item["accepted"]),
+        },
+        "held_candidates": {
+            "total": sum(held_categories.values()),
+            "by_category": dict(held_categories),
+            "by_hold_code": dict(held_codes),
         },
         "cards": {
             "total": len(wave_cards),

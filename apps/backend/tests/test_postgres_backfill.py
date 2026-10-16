@@ -59,7 +59,13 @@ class ScriptedProvider:
             )
         else:
             assert request.prompt_version == EXTRACTION_PROMPT_VERSION
-            content = envelope(self.script[self.target], source_revision=payload["source_revision"])
+            items = self.script[self.target]
+            # An entry with a "category" key is a held candidate, anything else a proposal.
+            content = envelope(
+                [item for item in items if "category" not in item],
+                candidates=[item for item in items if "category" in item],
+                source_revision=payload["source_revision"],
+            )
         return ProviderResponse(
             content=content,
             usage=ProviderUsage(prompt_tokens=600, completion_tokens=200),

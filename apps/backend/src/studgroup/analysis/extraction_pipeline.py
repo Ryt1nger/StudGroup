@@ -12,6 +12,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from studgroup.analysis.candidates import MAX_CANDIDATES, parse_model_candidates, salvage_rejected
 from studgroup.analysis.contracts import (
     ANALYSIS_ENGINE_VERSION,
     ANALYSIS_SCHEMA_VERSION,
@@ -122,6 +123,37 @@ def parse_envelope(content, analysis_input: AnalysisInput, actions: Counter):
     return payload, raw
 
 
+NOT_SALVAGED = {"duplicate_proposal", "proposal_overflow"}
+
+
+def _held_candidates(payload, raw, rejected, accepted, analysis_input, actions):
+    held = []
+    for item in rejected:
+        if item.reason_code in NOT_SALVAGED or item.proposal_ordinal >= len(raw):
+            continue
+        built = salvage_rejected(
+            item.proposal_ordinal,
+            raw[item.proposal_ordinal],
+            item.schema_issues[0].error_type if item.schema_issues else item.reason_code,
+            item.schema_issues,
+            analysis_input,
+            actions,
+        )
+        if built is not None:
+            held.append(built)
+    card_sources = [{ref.telegram_message_id for ref in card.evidence} for card in accepted]
+    for candidate in parse_model_candidates(payload.get("candidates"), analysis_input, actions):
+        cited = {ref.telegram_message_id for ref in candidate.evidence}
+        # The same item reported twice (as a card and as a candidate) stays a card only.
+        if candidate.category in {"homework", "check"} and any(
+            cited <= ids for ids in card_sources
+        ):
+            actions["candidate_duplicates_card_discarded"] += 1
+            continue
+        held.append(candidate)
+    return held[:MAX_CANDIDATES]
+
+
 def adapt_and_validate(
     content, analysis_input: AnalysisInput, *, existing_items=None
 ) -> AdaptedValidation:
@@ -152,6 +184,19 @@ def adapt_and_validate(
         RejectedItem(proposal_ordinal=ordinal, reason_code="proposal_overflow")
         for ordinal in range(MAX_PROPOSALS, len(raw))
     )
+    # Free discovery is kept apart from publication: what the strict contract rejected and what the
+    # model itself flagged as "not a card" stay as stored, non-publishable candidates.
+    held = _held_candidates(payload, raw, rejected, accepted, analysis_input, actions)
+    rejected = [
+        item.model_copy(update={"salvaged": True})
+        if any(
+            c.proposal_ordinal == item.proposal_ordinal
+            for c in held
+            if c.origin == "rejected_proposal"
+        )
+        else item
+        for item in rejected
+    ]
     # explicit_empty is fully derived from the proposal list; a wrong flag cannot create a card.
     declared = payload.get("explicit_empty")
     explicit_empty = not raw
@@ -165,6 +210,7 @@ def adapt_and_validate(
         raw_proposal_count=len(raw),
         explicit_empty=explicit_empty,
         adapter_actions=dict(sorted(actions.items())),
+        candidates=held,
     )
     result = reconcile_validation(result, analysis_input.messages)
     return AdaptedValidation(result, candidates)

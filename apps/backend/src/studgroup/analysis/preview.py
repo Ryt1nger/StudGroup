@@ -96,6 +96,7 @@ async def build_preview(db, *, group_id, since, now, limit=60):
     group = await db.get(Group, group_id)
     lower, now = _window(group, since, now)
     entries, snapshots, by_item, review_marks = [], {}, {}, []
+    held_candidates = []
     outcomes = Counter()
     considered = 0
     async with db.begin_nested() as savepoint:
@@ -116,6 +117,25 @@ async def build_preview(db, *, group_id, since, now, limit=60):
                         {
                             "target_message_id": raw.telegram_message_id,
                             "reason": rejected.reason_code,
+                        }
+                    )
+                for candidate in validation.candidates:
+                    # Findings that are deliberately not cards (events, organisational
+                    # instructions, doubtful items, rejected content). Report-only: never applied.
+                    held_candidates.append(
+                        {
+                            "target_message_id": raw.telegram_message_id,
+                            "category": candidate.category,
+                            "hold_code": candidate.hold_code,
+                            "origin": candidate.origin,
+                            "title": candidate.title,
+                            "description": candidate.description,
+                            "reason": candidate.reason,
+                            "when_text": candidate.when_text,
+                            "model_label": candidate.model_label,
+                            "cited": sorted(
+                                {ref.telegram_message_id for ref in candidate.evidence}
+                            ),
                         }
                     )
                 if not validation.accepted:
@@ -195,7 +215,12 @@ async def build_preview(db, *, group_id, since, now, limit=60):
         finally:
             await savepoint.rollback()
     cards = _assemble(entries, final, snapshots, group.telegram_chat_id, ZoneInfo(group.timezone))
-    return {"cards": cards, "outcomes": dict(outcomes), "review_marks": review_marks}
+    return {
+        "cards": cards,
+        "outcomes": dict(outcomes),
+        "review_marks": review_marks,
+        "held_candidates": held_candidates,
+    }
 
 
 async def _collect_items(db, by_item, snapshots):

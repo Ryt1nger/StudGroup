@@ -145,6 +145,30 @@ def render_preview_card(index, card, chat_id):
     return "\n".join(lines)
 
 
+CATEGORY_TEXT = {
+    "homework": "возможное ДЗ",
+    "check": "возможная проверочная",
+    "event": "событие",
+    "organizational": "организационное",
+    "information": "информация",
+    "other": "прочее",
+}
+
+
+def render_held_candidates(held, limit=12):
+    """Owner-only footer: what the AI found but deliberately did not turn into a card."""
+    lines = [f"Не карточки, сохранены для проверки ({len(held)}), студентам не показываются:"]
+    for item in held[:limit]:
+        label = item["title"] or _clip(item["description"] or "", 80)
+        lines.append(
+            f"  • {CATEGORY_TEXT.get(item['category'], item['category'])}: {label}"
+            + f" (№{', №'.join(str(i) for i in item['cited'][:3])})"
+        )
+    if len(held) > limit:
+        lines.append(f"  … и ещё {len(held) - limit}")
+    return "\n".join(lines)
+
+
 def render_preview(preview, chat_id, offset, size):
     """Chunks for one page of cards plus the owner-only footer for possible changes."""
     page = preview["cards"][offset : offset + size]
@@ -157,6 +181,9 @@ def render_preview(preview, chat_id, offset, size):
             "Отклонено валидацией, возможно изменение или отмена (проверить вручную): "
             + ", ".join(f"№{i}" for i in ids[:30])
         )
+    held = preview.get("held_candidates") or []
+    if offset + size >= len(preview["cards"]) and held:
+        blocks.append(render_held_candidates(held))
     chunks, current = [], ""
     for block in blocks:
         if current and len(current) + len(block) + 2 > MAX_CHUNK:

@@ -320,5 +320,14 @@ def apply_repair(validation, repair: RepairResult):
             "accepted": [item for _ordinal, item in pairs],
             "accepted_ordinals": [ordinal for ordinal, _item in pairs],
             "rejected": rejected,
+            # A repaired proposal is a card now: its held copy would be a duplicate.
+            "candidates": [
+                candidate
+                for candidate in validation.candidates
+                if not (
+                    candidate.origin == "rejected_proposal"
+                    and candidate.proposal_ordinal in repair.repaired
+                )
+            ],
         }
     )

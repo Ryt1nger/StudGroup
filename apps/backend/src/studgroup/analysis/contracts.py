@@ -239,12 +239,62 @@ class ProposalSchemaIssue(StrictDTO):
     ) = None
 
 
+# The three product categories and how the published contract maps onto them. A proposal is only
+# ever a "homework" (destination task) or a "check" (destination deadline); events and everything
+# else the model finds travel as UnpublishedCandidate and are never shown to students.
+PRODUCT_CATEGORY = {
+    "homework": "homework",
+    "test": "check",
+    "control_point": "check",
+    "assessment": "check",
+    "credit": "check",
+    "exam": "check",
+    "other_academic_deadline": "other_deadline",
+}
+
+
+class CandidateProposal(StrictDTO):
+    """What the model may report besides publishable proposals (never published).
+
+    Free discovery: an event, an organisational instruction, other useful information or an item
+    the model cannot confidently categorise. It must still be supported by cited messages.
+    """
+
+    category: Literal["homework", "check", "event", "organizational", "information", "other"]
+    title: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=8000)
+    subject: str | None = Field(default=None, max_length=255)
+    when_text: str | None = Field(default=None, max_length=255)
+    reason: str | None = Field(default=None, max_length=300)
+    audience: Audience = Field(default_factory=Audience)
+    confidence: int = Field(default=50, ge=0, le=100)
+    evidence: list[EvidenceRef] = Field(min_length=1, max_length=24)
+
+
+class UnpublishedCandidate(CandidateProposal):
+    """A stored, non-publishable finding. The fields below are set by code, never by the model.
+
+    It keeps the content (not just a reason code) of anything that is not a card so it can be
+    reviewed or re-evaluated later: model candidates, and proposals the strict contract rejected
+    (for example an unknown kind). Nothing here is applied, projected or shown to students.
+    """
+
+    hold_code: str = Field(default="category_not_published", max_length=64)
+    origin: Literal["model_candidate", "rejected_proposal"] = "model_candidate"
+    model_label: str | None = Field(default=None, max_length=64)
+    proposal_ordinal: int | None = Field(default=None, ge=0)
+    issues: list[ProposalSchemaIssue] = Field(default_factory=list, max_length=12)
+    attention_reasons: list[str] = Field(default_factory=list, max_length=20)
+
+
 class RejectedItem(StrictDTO):
     proposal_ordinal: int = Field(ge=0)
     reason_code: str = Field(max_length=64)
     schema_issues: list[ProposalSchemaIssue] = Field(default_factory=list, max_length=12)
     schema_issues_truncated: bool = False
     repair_outcome: str | None = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    # True when the rejected proposal's content was kept as an UnpublishedCandidate.
+    salvaged: bool = False
 
 
 class AnalysisOutput(StrictDTO):
@@ -252,6 +302,7 @@ class AnalysisOutput(StrictDTO):
     engine_version: Literal[ANALYSIS_ENGINE_VERSION] = ANALYSIS_ENGINE_VERSION
     source_revision: int = Field(ge=1)
     proposals: list[ProposedAcademicItem] = Field(default_factory=list, max_length=40)
+    candidates: list[CandidateProposal] = Field(default_factory=list, max_length=40)
     explicit_empty: bool = False
 
     @model_validator(mode="after")
@@ -270,6 +321,8 @@ class ValidationResult(StrictDTO):
     explicit_empty: bool
     # Value-free counters of deterministic normalizations applied before strict validation.
     adapter_actions: dict[str, int] = Field(default_factory=dict)
+    # Non-publishable findings kept for review/re-evaluation (older stored results have none).
+    candidates: list[UnpublishedCandidate] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_accepted_ordinals(self):
