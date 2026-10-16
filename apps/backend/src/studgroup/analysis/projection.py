@@ -9,6 +9,7 @@ from sqlalchemy import exists, select
 
 from studgroup.analysis.card_editor import DESCRIPTION_ATTACHMENT_ONLY, DESCRIPTION_PENDING
 from studgroup.analysis.linking import PENDING_INTEGRATION
+from studgroup.analysis.subject_identity import subject_uuid
 from studgroup.models import (
     AcademicDeadline,
     CanonicalItemEvidence,

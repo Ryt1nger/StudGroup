@@ -28,7 +28,8 @@ from studgroup.analysis.repair import facts_preserved
 from studgroup.analysis.resolver import resolve_proposal
 from studgroup.analysis.shadow import run_shadow, source_snapshot_sha256
 from studgroup.analysis.stored import effective_validation
-from studgroup.analysis.subject_catalog import build_catalog, label_key, prompt_payload
+from studgroup.analysis.subject_catalog import build_catalog, label_key
+from studgroup.analysis.subject_identity import subject_uuid
 from studgroup.models import CanonicalAcademicItem, Group
 
 pytest_plugins = ["test_schedule_api"]
@@ -46,7 +47,10 @@ MATH, ENG, RUS, ORG, ALG, ALG2, PHYS = (
 
 def catalog(*entries, complete=False, group=GROUP):
     return SubjectCatalog(
-        group_id=group, version="v1", complete=complete, subjects=list(entries or [MATH, ENG, RUS, ORG, ALG, ALG2, PHYS])
+        group_id=group,
+        version="v1",
+        complete=complete,
+        subjects=list(entries or [MATH, ENG, RUS, ORG, ALG, ALG2, PHYS]),
     )
 
 
@@ -105,7 +109,9 @@ def test_abbreviation_resolves_to_the_catalog_subject(text, said, sid, expected)
     messages = [msg(1, text)]
     proposal, card = edited(messages, card_item(said, sid), catalog())
     assert (proposal.subject, proposal.subject_source) == (expected, "catalog")
-    assert proposal.subject_id == (sid or next(e.id for e in catalog().subjects if e.name == expected))
+    assert proposal.subject_id == (
+        sid or next(e.id for e in catalog().subjects if e.name == expected)
+    )
     assert card.subject == expected and "unsupported_subject" not in card.attention_reasons
 
 
@@ -125,14 +131,21 @@ def test_a_group_label_follows_the_context_the_model_read():
         msg(1, "ПИР у Юлии Петровны, она ведёт русский язык", role="headman"),
         msg(2, "ПИР: сделать конспект главы 3", minutes=5),
     ]
-    raw = card_item("ПИР", "s-rus", evidence=[{"telegram_message_id": 2, "revision": 1, "fact_paths": ["subject"]}])
+    raw = card_item(
+        "ПИР",
+        "s-rus",
+        evidence=[{"telegram_message_id": 2, "revision": 1, "fact_paths": ["subject"]}],
+    )
     data, result = run(messages, raw, catalog())
     (proposal,) = result.accepted
     assert (proposal.subject, proposal.subject_id) == ("Русский язык", "s-rus")
     assert edit_card(proposal, messages).subject == "Русский язык"
     # the model was given the catalog and the confirming message; nothing maps ПИР in our code
     request = prepare_extraction_request(data, {})
-    assert {row["id"] for row in request.user_payload["subject_catalog"]["subjects"]} >= {"s-rus", "s-math"}
+    assert {row["id"] for row in request.user_payload["subject_catalog"]["subjects"]} >= {
+        "s-rus",
+        "s-math",
+    }
     assert [row["telegram_message_id"] for row in request.user_payload["messages"]] == [1, 2]
     assert "ПИР" not in json.dumps(request.user_payload["subject_catalog"], ensure_ascii=False)
     assert "ПИР" not in EXTRACTION_SYSTEM_PROMPT
@@ -141,7 +154,9 @@ def test_a_group_label_follows_the_context_the_model_read():
 def test_the_same_label_without_context_stays_without_a_subject():
     messages = [msg(1, "ПИР: сделать конспект главы 3")]
     for cat in (catalog(), catalog(complete=True)):
-        proposal, card = edited(messages, card_item(None), cat)  # the model correctly says "unknown"
+        proposal, card = edited(
+            messages, card_item(None), cat
+        )  # the model correctly says "unknown"
         assert proposal.subject is None and proposal.subject_id is None
         assert card.subject is None
         assert not [r for r in card.attention_reasons if "subject" in r]  # nothing was invented
@@ -185,8 +200,11 @@ def test_similar_subjects_are_told_apart_by_id_or_exact_name_only():
     messages = [msg(1, "По алгебре решить номера 5–8")]
     by_name = edited(messages, card_item("Алгебра"), catalog())[0]
     assert by_name.subject_id == "s-alg"  # exact name, not "starts with"
-    by_id = edited(messages, card_item("алгебра", "s-alg2"), catalog())[0]
+    by_id = edited(messages, card_item("алгебра и геом", "s-alg2"), catalog())[0]
     assert (by_id.subject, by_id.subject_id) == ("Алгебра и геометрия", "s-alg2")
+    # an id next to the exact name of ANOTHER subject is a contradiction, never a confirmation
+    clash = edited(messages, card_item("алгебра", "s-alg2"), catalog())[0]
+    assert clash.subject is None and "subject_id_mismatch" in clash.attention_reasons
     prefix = edited(messages, card_item("Алг"), catalog(complete=True))[1]
     assert prefix.subject is None  # a prefix is never a match
     twin = SubjectEntry(id="s-alg-b", name="Алгебра (подгруппа)", aliases=["алгебра"])
@@ -199,7 +217,9 @@ def test_similar_subjects_are_told_apart_by_id_or_exact_name_only():
 
 def test_an_empty_catalog_changes_nothing():
     messages = [msg(1, "По физике решить номера 5–8")]
-    data, result = run(messages, card_item("Физика", "s-phys"), SubjectCatalog(group_id=GROUP, subjects=[]))
+    data, result = run(
+        messages, card_item("Физика", "s-phys"), SubjectCatalog(group_id=GROUP, subjects=[])
+    )
     (proposal,) = result.accepted
     assert result.adapter_actions["subject_catalog_ignored_empty"] == 1
     assert proposal.subject == "Физика" and proposal.subject_id is None
@@ -216,7 +236,9 @@ def test_a_catalog_of_another_group_is_not_used():
     assert "subject_catalog" not in prepare_extraction_request(data, {}).user_payload
     # an id that belongs to another group's catalog is unknown in this group's catalog
     own = catalog(MATH, ENG, complete=True)
-    proposal, _card = edited([msg(1, "По физике решить номера 5–8")], card_item("Физика", "s-phys"), own)
+    proposal, _card = edited(
+        [msg(1, "По физике решить номера 5–8")], card_item("Физика", "s-phys"), own
+    )
     assert proposal.subject is None and proposal.subject_id is None
 
 
@@ -240,7 +262,12 @@ def _resolver_case(client, proposals_and_actions):
             for proposal, card, extra in proposals_and_actions:
                 outcomes.append(
                     await resolve_proposal(
-                        db, group_id=group.id, proposal=proposal, edited_card=card, now=NOW, **extra(outcomes)
+                        db,
+                        group_id=group.id,
+                        proposal=proposal,
+                        edited_card=card,
+                        now=NOW,
+                        **extra(outcomes),
                     )
                 )
                 await db.commit()
@@ -252,9 +279,15 @@ def _resolver_case(client, proposals_and_actions):
 def test_resolver_stores_the_checked_subject_not_the_raw_text(client):
     messages = [msg(1, "По матану решить номера 5–8")]
     confirmed, card = edited(messages, card_item("матан", "s-math"), catalog())
-    unconfirmed, bad_card = edited([msg(1, "По химии решить номера 5–8")], card_item("Химия"), catalog(complete=True))
-    assert unconfirmed.subject is None  # adapter already refused; make the raw text differ on purpose:
-    forged = unconfirmed.model_copy(update={"subject": "Химия"})  # raw proposal text the card editor refused
+    unconfirmed, bad_card = edited(
+        [msg(1, "По химии решить номера 5–8")], card_item("Химия"), catalog(complete=True)
+    )
+    assert (
+        unconfirmed.subject is None
+    )  # adapter already refused; make the raw text differ on purpose:
+    forged = unconfirmed.model_copy(
+        update={"subject": "Химия"}
+    )  # raw proposal text the card editor refused
     outcomes, items = _resolver_case(
         client,
         [
@@ -287,9 +320,13 @@ def test_a_failed_reanalysis_does_not_erase_a_confirmed_subject(client):
             "expected_item_revision": outcomes[0].item.revision,
         }
 
-    outcomes, items = _resolver_case(client, [(first, first_card, lambda _o: {}), (later, later_card, update)])
+    outcomes, items = _resolver_case(
+        client, [(first, first_card, lambda _o: {}), (later, later_card, update)]
+    )
     assert outcomes[1].action == "update"
-    assert items[0].subject == "Математический анализ" and items[0].title.startswith("Решить номера 5")
+    assert items[0].subject == "Математический анализ" and items[0].title.startswith(
+        "Решить номера 5"
+    )
 
 
 def test_a_new_confirmed_subject_replaces_the_old_one(client):
@@ -304,7 +341,9 @@ def test_a_new_confirmed_subject_replaces_the_old_one(client):
             "expected_item_revision": outcomes[0].item.revision,
         }
 
-    _o, items = _resolver_case(client, [(first, first_card, lambda _o: {}), (later, later_card, update)])
+    _o, items = _resolver_case(
+        client, [(first, first_card, lambda _o: {}), (later, later_card, update)]
+    )
     assert items[0].subject == "Английский язык"
 
 
@@ -323,11 +362,18 @@ def test_run_shadow_sends_the_catalog_and_returns_the_canonical_subject():
     assert extraction.user_payload["subject_catalog"]["subjects"][0]["id"] == "s-math"
     assert "subject_catalog" not in provider.requests[0].user_payload  # Pass 1 is unchanged
     (proposal,) = result.validation.accepted
-    assert (proposal.subject, proposal.subject_id, proposal.subject_source) == ("Физика", "s-phys", "catalog")
+    assert (proposal.subject, proposal.subject_id, proposal.subject_source) == (
+        "Физика",
+        "s-phys",
+        "catalog",
+    )
     # stored result and the frozen input both survive serialisation
     stored = type(result.validation).model_validate_json(result.validation.model_dump_json())
     assert stored.accepted[0].subject_source == "catalog"
-    assert AnalysisInput.model_validate_json(data.model_dump_json()).subject_catalog == data.subject_catalog
+    assert (
+        AnalysisInput.model_validate_json(data.model_dump_json()).subject_catalog
+        == data.subject_catalog
+    )
 
 
 def test_the_catalog_is_not_part_of_the_source_snapshot_and_old_inputs_load():
@@ -344,7 +390,10 @@ def test_stored_confirmation_survives_the_effective_view():
     messages = [msg(1, "По матану решить номера 5–8")]
     _data, result = run(messages, card_item("матан", "s-math"), catalog())
     view = effective_validation(result, messages, "Europe/Moscow")
-    assert (view.accepted[0].subject, view.accepted[0].subject_source) == ("Математический анализ", "catalog")
+    assert (view.accepted[0].subject, view.accepted[0].subject_source) == (
+        "Математический анализ",
+        "catalog",
+    )
 
 
 def test_a_repair_may_confirm_the_same_subject_but_not_swap_it():
@@ -365,12 +414,24 @@ def test_catalog_built_from_the_schedule_and_verified_facts():
         SimpleNamespace(subject="Физика", teacher=None),
     ]
     facts = [
-        SimpleNamespace(group_id=GROUP, status="verified", fact_type="subject_alias",
-                        value_json=json.dumps({"alias": "матан", "subject": "Математический анализ"})),
-        SimpleNamespace(group_id=GROUP, status="proposed", fact_type="subject_alias",
-                        value_json=json.dumps({"alias": "физ", "subject": "Физика"})),
-        SimpleNamespace(group_id=uuid.UUID(int=5), status="verified", fact_type="subject_alias",
-                        value_json=json.dumps({"alias": "чужое", "subject": "Физика"})),
+        SimpleNamespace(
+            group_id=GROUP,
+            status="verified",
+            fact_type="subject_alias",
+            value_json=json.dumps({"alias": "матан", "subject": "Математический анализ"}),
+        ),
+        SimpleNamespace(
+            group_id=GROUP,
+            status="proposed",
+            fact_type="subject_alias",
+            value_json=json.dumps({"alias": "физ", "subject": "Физика"}),
+        ),
+        SimpleNamespace(
+            group_id=uuid.UUID(int=5),
+            status="verified",
+            fact_type="subject_alias",
+            value_json=json.dumps({"alias": "чужое", "subject": "Физика"}),
+        ),
     ]
     built = build_catalog(GROUP, rows, facts)
     again = build_catalog(GROUP, list(reversed(rows)), facts)
@@ -379,5 +440,7 @@ def test_catalog_built_from_the_schedule_and_verified_facts():
     assert by_name["Математический анализ"].aliases == ["матан"]
     assert by_name["Математический анализ"].teachers == ["Иванова И. И."]
     assert by_name["Физика"].aliases == []  # unverified and foreign aliases are not trusted
-    assert prompt_payload(built)["subjects"][0]["id"].startswith("sched-")
+    assert {e.id for e in built.subjects} == {
+        str(subject_uuid(GROUP, n)) for n in ("Математический анализ", "Физика")
+    }
     assert label_key("  Алгебра, и Геометрия ") == "алгебра и геометрия"

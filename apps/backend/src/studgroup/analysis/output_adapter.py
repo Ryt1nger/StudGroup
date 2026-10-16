@@ -563,7 +563,11 @@ class _Normalizer:
             value["subject_source"] = "catalog"
             self.note("subject_confirmed_by_catalog")
             return
-        if result.status == "ambiguous":
+        if result.status == "mismatch":
+            value["subject"] = None
+            self.note("subject_id_name_mismatch")
+            self.extra_reasons.append("subject_id_mismatch")
+        elif result.status == "ambiguous":
             value["subject"] = None
             self.note("subject_ambiguous_in_catalog")
             self.extra_reasons.append("subject_ambiguous")

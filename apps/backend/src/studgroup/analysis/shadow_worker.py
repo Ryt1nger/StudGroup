@@ -18,7 +18,7 @@ from studgroup.analysis.shadow import (
     source_snapshot_sha256,
     usage_cost_usd,
 )
-from studgroup.analysis.subject_catalog import load_subject_catalog
+from studgroup.analysis.subject_catalog import catalog_summary, load_subject_catalog
 from studgroup.models import (
     Group,
     GroupAnalysisSettings,
@@ -481,6 +481,7 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
                     "raw_proposal_count": result.validation.raw_proposal_count,
                     "adapter_actions": result.validation.adapter_actions,
                     "repair": result.repair,
+                    "subject_catalog": catalog_summary(analysis_input.subject_catalog),
                 },
                 sort_keys=True,
             )

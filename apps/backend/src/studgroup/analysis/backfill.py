@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from studgroup.analysis.contracts import AnalysisInput, ValidationResult
 from studgroup.analysis.routing import get_route
 from studgroup.analysis.stored import effective_validation
+from studgroup.analysis.subject_catalog import load_current_catalog, with_catalog
 from studgroup.analysis.writer import apply_validated_batch
 from studgroup.models import (
     CanonicalAcademicItem,
@@ -283,7 +284,15 @@ async def requeue_failed(
     ).all()
     picked = [row for row in rows if _requeue_candidate(row, include_rejected, force)][:limit]
     if apply:
+        # A requeue is an explicit re-analysis: it uses the group's subjects as they are now (the
+        # messages stay frozen). The superseded outcome keeps its own catalog fingerprint in
+        # ``history.metrics``. Run identity is unchanged, so no second run or card appears.
+        catalog = await load_current_catalog(db, group_id) if picked else None
         for row in picked:
+            if row.input_json:
+                refreshed = with_catalog(row.input_json, catalog)
+                if refreshed is not None:
+                    row.input_json = refreshed
             metrics = _metrics(row)
             history = list(metrics.get("history", []))
             history.append(

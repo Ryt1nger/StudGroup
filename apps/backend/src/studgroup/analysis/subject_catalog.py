@@ -13,9 +13,17 @@ What the code does (deterministic, and only this)
 
 Where the catalog comes from (integration point for Codex)
     ``load_subject_catalog`` is the single place that builds it. Today it derives it from
-    ``SchedulePattern`` rows and verified ``subject_alias``/``subject_teacher`` memory facts. When
-    Codex's subjects module exists, only the body of that function changes (stable ids, authoritative
+    ``SchedulePattern`` rows and verified ``subject_alias``/``subject_teacher`` memory facts. Ids are
+    the shared ``subject_identity.subject_uuid`` (the formula of ``studgroup.subjects``). When Codex
+    exposes an authoritative subject source, only the body of that function changes (authoritative
     ``complete`` flag, version); the contract below and everything downstream stay as they are.
+
+Versioning
+    The catalog is reference data, not source: it is NOT part of the run identity
+    (``(raw_message, revision, generation)``) or of ``source_snapshot_sha256``, so a schedule update
+    never creates a second run or a second card. What it is analysed with is recorded instead:
+    ``catalog_fingerprint`` goes into every run's metrics, and an explicit owner requeue refreshes the
+    stored catalog (the earlier outcome and its fingerprint stay in ``metrics.history``).
 """
 
 import hashlib
@@ -26,7 +34,8 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
-from studgroup.analysis.contracts import SubjectCatalog, SubjectEntry
+from studgroup.analysis.contracts import AnalysisInput, SubjectCatalog, SubjectEntry
+from studgroup.analysis.subject_identity import subject_key, subject_uuid
 from studgroup.models import SchedulePattern
 
 MAX_ALIASES = 20
@@ -42,7 +51,7 @@ def label_key(text):
 
 @dataclass(frozen=True)
 class SubjectResolution:
-    # confirmed_id | confirmed_name | unknown_id | ambiguous | not_in_catalog | none
+    # confirmed_id | confirmed_name | unknown_id | ambiguous | mismatch | not_in_catalog | none
     status: str
     entry: SubjectEntry | None = None
     id_was_unknown: bool = False
@@ -74,6 +83,12 @@ def resolve_subject(catalog, subject_id, subject_text) -> SubjectResolution:
     by_id, by_label = _index(catalog)
     sid = subject_id.strip() if isinstance(subject_id, str) and subject_id.strip() else None
     if sid is not None and sid in by_id:
+        # The id decides, but the wording must not point at a DIFFERENT catalog subject: an id for
+        # algebra next to the exact name "Физика" is a contradiction, not a confirmation. An
+        # unlisted abbreviation ("матан") names no other subject and is simply replaced.
+        named = by_label.get(label_key(subject_text), [])
+        if named and by_id[sid] not in named:
+            return SubjectResolution("mismatch", None)
         return SubjectResolution("confirmed_id", by_id[sid])
     unknown = sid is not None
     label = label_key(subject_text)
@@ -102,8 +117,51 @@ def prompt_payload(catalog):
     }
 
 
-def _subject_id(key):
-    return "sched-" + hashlib.sha1(key.encode()).hexdigest()[:12]
+def catalog_fingerprint(catalog):
+    """Content identity of a catalog (order and ``version`` label independent)."""
+    if catalog is None:
+        return None
+    body = {
+        "complete": catalog.complete,
+        "subjects": sorted(
+            (
+                {
+                    "id": row.id,
+                    "name": row.name,
+                    "aliases": sorted(row.aliases),
+                    "teachers": sorted(row.teachers),
+                }
+                for row in catalog.subjects
+            ),
+            key=lambda row: row["id"],
+        ),
+    }
+    return hashlib.sha256(
+        json.dumps(body, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()[:16]
+
+
+def catalog_summary(catalog):
+    """What a run records about the catalog it was analysed with (metrics, comparisons)."""
+    if catalog is None:
+        return {"present": False}
+    return {
+        "present": True,
+        "fingerprint": catalog_fingerprint(catalog),
+        "version": catalog.version,
+        "complete": catalog.complete,
+        "subjects": len(catalog.subjects),
+    }
+
+
+def with_catalog(input_json, catalog):
+    """The stored frozen input with its catalog replaced (messages untouched), or ``None``."""
+    try:
+        data = AnalysisInput.model_validate_json(input_json)
+    except (TypeError, ValueError):
+        return None
+    refreshed = data.model_copy(update={"subject_catalog": catalog})
+    return json.dumps(refreshed.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
 
 
 def build_catalog(group_id, patterns, facts=()):
@@ -111,7 +169,7 @@ def build_catalog(group_id, patterns, facts=()):
     spellings: dict[str, Counter] = {}
     teachers: dict[str, list[str]] = {}
     for row in patterns:
-        key = label_key(row.subject)
+        key = subject_key(row.subject)
         if not key:
             continue
         spellings.setdefault(key, Counter())[row.subject.strip()] += 1
@@ -128,16 +186,16 @@ def build_catalog(group_id, patterns, facts=()):
         except (TypeError, ValueError):
             continue
         if fact.fact_type == "subject_alias" and isinstance(value, dict):
-            key, alias = label_key(value.get("subject")), (value.get("alias") or "").strip()
+            key, alias = subject_key(value.get("subject")), (value.get("alias") or "").strip()
             if (
                 key in spellings
                 and alias
-                and label_key(alias) != key
+                and subject_key(alias) != key
                 and alias not in aliases.setdefault(key, [])
             ):
                 aliases[key].append(alias)
         elif fact.fact_type == "subject_teacher" and isinstance(value, dict):
-            key, teacher = label_key(value.get("subject")), (value.get("teacher") or "").strip()
+            key, teacher = subject_key(value.get("subject")), (value.get("teacher") or "").strip()
             if key in spellings and teacher and teacher not in teachers.setdefault(key, []):
                 teachers[key].append(teacher)
     entries = []
@@ -145,7 +203,7 @@ def build_catalog(group_id, patterns, facts=()):
         name = min(spellings[key].items(), key=lambda pair: (-pair[1], pair[0]))[0]
         entries.append(
             SubjectEntry(
-                id=_subject_id(key),
+                id=str(subject_uuid(group_id, name)),
                 name=name[:255],
                 aliases=[alias[:255] for alias in aliases.get(key, [])[:MAX_ALIASES]],
                 teachers=[teacher[:255] for teacher in teachers.get(key, [])[:MAX_TEACHERS]],
@@ -153,7 +211,9 @@ def build_catalog(group_id, patterns, facts=()):
         )
     entries = entries[:MAX_SUBJECTS]
     version = hashlib.sha1(
-        json.dumps([row.model_dump() for row in entries], ensure_ascii=False, sort_keys=True).encode()
+        json.dumps(
+            [row.model_dump() for row in entries], ensure_ascii=False, sort_keys=True
+        ).encode()
     ).hexdigest()[:16]
     # The schedule shows the subjects that have lessons; it does not prove that nothing else
     # exists, so it never claims completeness. Codex's authoritative source may.
@@ -170,3 +230,13 @@ async def load_subject_catalog(db, group_id, facts=()):
     ).all()
     catalog = build_catalog(group_id, rows, facts)
     return catalog if catalog.subjects else None
+
+
+async def load_current_catalog(db, group_id):
+    """Catalog as of now (loads the verified memory facts itself); used when a run is requeued."""
+    from studgroup.models import GroupKnowledgeFact
+
+    facts = (
+        await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group_id))
+    ).all()
+    return await load_subject_catalog(db, group_id, facts)

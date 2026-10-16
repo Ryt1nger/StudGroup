@@ -13,6 +13,7 @@ from sqlalchemy import select
 from studgroup.analysis.contracts import AnalysisInput, ValidationResult
 from studgroup.analysis.preview import build_preview
 from studgroup.analysis.stored import effective_validation
+from studgroup.analysis.subject_catalog import catalog_summary
 from studgroup.models import Group, GroupAnalysisSettings, RawMessage, ShadowEvaluationRun
 
 MAX_TARGET_IDS = 60
@@ -53,6 +54,7 @@ async def wave_results(db, now=None, *, wave_key="wave-a-spread-1"):
     tokens = Counter()
     kinds, actions, rejected = Counter(), Counter(), Counter()
     held_categories, held_codes, held_sources = Counter(), Counter(), Counter()
+    catalogs = Counter()
     per_run, empty_runs, accepted_total, raw_total = [], 0, 0, 0
     wave_ids = set()
     for run, raw in rows:
@@ -70,6 +72,7 @@ async def wave_results(db, now=None, *, wave_key="wave-a-spread-1"):
         validation = ValidationResult.model_validate_json(run.validation_result_json)
         data = AnalysisInput.model_validate_json(run.input_json)
         validation = effective_validation(validation, data.messages, group.timezone)
+        catalogs[catalog_summary(data.subject_catalog).get("fingerprint", "none")] += 1
         raw_total += validation.raw_proposal_count
         accepted_total += len(validation.accepted)
         if not validation.accepted and not validation.rejected and not validation.candidates:
@@ -122,6 +125,8 @@ async def wave_results(db, now=None, *, wave_key="wave-a-spread-1"):
             "completed_runs_with_nothing_found": empty_runs,
             "completed_runs_with_cards": sum(1 for item in per_run if item["accepted"]),
         },
+        # runs of one wave should share a catalog; several fingerprints mean the schedule changed
+        "subject_catalogs": {"runs_by_fingerprint": dict(catalogs)},
         "held_candidates": {
             "total": sum(held_categories.values()),
             "by_category": dict(held_categories),
