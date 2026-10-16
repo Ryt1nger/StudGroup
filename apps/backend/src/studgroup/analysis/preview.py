@@ -133,6 +133,7 @@ async def build_preview(db, *, group_id, since, now, limit=60):
                             "reason": candidate.reason,
                             "when_text": candidate.when_text,
                             "model_label": candidate.model_label,
+                            "source_status": candidate.source_status,
                             "cited": sorted(
                                 {ref.telegram_message_id for ref in candidate.evidence}
                             ),

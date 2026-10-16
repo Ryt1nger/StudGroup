@@ -11,11 +11,13 @@ module never decides a category from message keywords: the category is the model
 label vocabulary below only labels what the model already said.
 """
 
+import hashlib
 import re
 
 from studgroup.analysis.contracts import (
     AnalysisInput,
     Audience,
+    EventRecord,
     EvidenceRef,
     ProposalSchemaIssue,
     UnpublishedCandidate,
@@ -63,9 +65,28 @@ def _clean_label(label):
     return cleaned[:64] or None
 
 
+def _claimed_ids(raw):
+    ids = []
+    if isinstance(raw, list):
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            message_id = entry.get("telegram_message_id", entry.get("message_id"))
+            if isinstance(message_id, int) and not isinstance(message_id, bool):
+                ids.append(message_id)
+    return list(dict.fromkeys(ids))[:24]
+
+
 def _evidence(raw, analysis_input: AnalysisInput, reasons):
-    """Valid cited messages only; otherwise the run's target message (never an invented source)."""
+    """Confirmed sources only; the target message stands in, clearly marked, when none is.
+
+    Returns (refs, source_status, claimed_ids). An id that is not in the request, or is cited at a
+    revision other than the stored one, is not a confirmed source. When no cited id is usable the
+    candidate is attached to the run's target message by code and ``defaulted_to_target`` plus
+    ``unverified_source`` say that this attachment is not the model's confirmed evidence.
+    """
     allowed = {row.telegram_message_id: row.revision for row in analysis_input.messages}
+    claimed = _claimed_ids(raw)
     refs, seen = [], set()
     if isinstance(raw, list):
         for entry in raw:
@@ -76,6 +97,9 @@ def _evidence(raw, analysis_input: AnalysisInput, reasons):
                 continue
             if message_id not in allowed or message_id in seen:
                 continue
+            revision = entry.get("revision")
+            if revision is not None and revision != allowed[message_id]:
+                continue  # the cited version is not the one on record
             seen.add(message_id)
             refs.append(
                 EvidenceRef(
@@ -85,17 +109,24 @@ def _evidence(raw, analysis_input: AnalysisInput, reasons):
                 )
             )
     if refs:
-        return refs
-    reasons.append("evidence_defaulted_to_target")
-    return [
-        EvidenceRef(
-            telegram_message_id=message_id,
-            revision=allowed[message_id],
-            fact_paths=["description"],
-        )
-        for message_id in analysis_input.target_message_ids
-        if message_id in allowed
-    ]
+        if len(refs) < len(claimed):
+            reasons.append("evidence_partially_invalid")
+            return refs, "partially_verified", claimed
+        return refs, "verified", claimed
+    reasons.extend(["evidence_defaulted_to_target", "unverified_source"])
+    return (
+        [
+            EvidenceRef(
+                telegram_message_id=message_id,
+                revision=allowed[message_id],
+                fact_paths=["description"],
+            )
+            for message_id in analysis_input.target_message_ids
+            if message_id in allowed
+        ],
+        "defaulted_to_target",
+        claimed,
+    )
 
 
 def _audience(raw, reasons):
@@ -120,15 +151,19 @@ def _reasons(raw):
     ]
 
 
-def _build(raw, analysis_input, *, category, hold_code, origin, ordinal=None, issues=(), label=None):
+def _build(
+    raw, analysis_input, *, category, hold_code, origin, ordinal=None, issues=(), label=None
+):
     reasons = _reasons(raw.get("attention_reasons"))
     title = _text(raw.get("title"), 255, noisy=True)
     description = _text(raw.get("description"), 8000, noisy=True)
     if not title and not description:
         return None
-    evidence = _evidence(raw.get("evidence"), analysis_input, reasons)
+    evidence, source_status, claimed = _evidence(raw.get("evidence"), analysis_input, reasons)
     if not evidence:
         return None
+    if source_status == "defaulted_to_target":
+        hold_code = "unverified_source"
     return UnpublishedCandidate(
         category=category,
         title=title,
@@ -140,6 +175,8 @@ def _build(raw, analysis_input, *, category, hold_code, origin, ordinal=None, is
         confidence=_confidence(raw.get("confidence")),
         evidence=evidence,
         hold_code=hold_code,
+        source_status=source_status,
+        claimed_source_ids=claimed,
         origin=origin,
         model_label=label,
         proposal_ordinal=ordinal,
@@ -166,10 +203,14 @@ def parse_model_candidates(raw_list, analysis_input, actions):
             analysis_input,
             category=category,
             hold_code=(
-                "doubtful_candidate" if category in {"homework", "check"} else "category_not_published"
+                "doubtful_candidate"
+                if category in {"homework", "check"}
+                else "category_not_published"
             ),
             origin="model_candidate",
-            label=_clean_label(entry.get("category")) if entry.get("category") not in CATEGORIES else None,
+            label=_clean_label(entry.get("category"))
+            if entry.get("category") not in CATEGORIES
+            else None,
         )
         if built is None:
             actions["candidate_without_content_discarded"] += 1
@@ -179,7 +220,9 @@ def parse_model_candidates(raw_list, analysis_input, actions):
     return out
 
 
-def salvage_rejected(ordinal, raw, reason_code, issues: list[ProposalSchemaIssue], analysis_input, actions):
+def salvage_rejected(
+    ordinal, raw, reason_code, issues: list[ProposalSchemaIssue], analysis_input, actions
+):
     """Keep the readable content of a rejected proposal as a non-publishable candidate."""
     if not isinstance(raw, dict):
         actions["rejected_without_content"] += 1
@@ -205,3 +248,44 @@ def salvage_rejected(ordinal, raw, reason_code, issues: list[ProposalSchemaIssue
         return None
     actions["candidate_salvaged_from_rejection"] += 1
     return built
+
+
+def _fingerprint(candidate):
+    """Stable across runs for the same event: its title and the date words, not the sources."""
+    key = "|".join(
+        " ".join((part or "").casefold().replace("ё", "е").split())
+        for part in (candidate.title or candidate.description, candidate.when_text)
+    )
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def event_records(validation):
+    """Structured, unpublished event records from a stored validation result (pure read)."""
+    records = []
+    for candidate in validation.candidates:
+        if candidate.category != "event":
+            continue
+        blockers = []
+        if candidate.source_status != "verified":
+            blockers.append("unverified_source")
+        if not candidate.title:
+            blockers.append("title_missing")
+        if candidate.audience.scope in {"personal", "unknown"}:
+            blockers.append(f"audience_{candidate.audience.scope}")
+        records.append(
+            EventRecord(
+                fingerprint=_fingerprint(candidate),
+                title=candidate.title,
+                description=candidate.description,
+                when_text=candidate.when_text,
+                classification_reason=candidate.reason,
+                audience=candidate.audience,
+                confidence=candidate.confidence,
+                source_message_ids=[ref.telegram_message_id for ref in candidate.evidence],
+                evidence=candidate.evidence,
+                source_status=candidate.source_status,
+                origin=candidate.origin,
+                promotion_blockers=blockers,
+            )
+        )
+    return records

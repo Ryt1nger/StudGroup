@@ -746,7 +746,7 @@ CASES = [
     case(
         "unknown_semantic_kind_is_rejected",
         [msg(10, "По математике сегодня опрос")],
-        [item(semantic_kind="quiz")],
+        [item(semantic_kind="lecture")],
         rejected=["enum_value_not_allowed"],
     ),
     case(

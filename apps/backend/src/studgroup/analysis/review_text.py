@@ -163,6 +163,11 @@ def render_held_candidates(held, limit=12):
         lines.append(
             f"  • {CATEGORY_TEXT.get(item['category'], item['category'])}: {label}"
             + f" (№{', №'.join(str(i) for i in item['cited'][:3])})"
+            + (
+                " — источник не подтверждён моделью"
+                if item.get("source_status", "verified") != "verified"
+                else ""
+            )
         )
     if len(held) > limit:
         lines.append(f"  … и ещё {len(held) - limit}")

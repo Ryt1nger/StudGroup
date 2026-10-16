@@ -280,11 +280,43 @@ class UnpublishedCandidate(CandidateProposal):
     """
 
     hold_code: str = Field(default="category_not_published", max_length=64)
+    # How far the cited sources are confirmed: verified = every cited message exists in the request
+    # at the cited revision; partially_verified = some claimed ids were unusable and dropped;
+    # defaulted_to_target = none was usable, the evidence below is the run's target message put
+    # there by code and is NOT a source the model confirmed (claimed_source_ids is what it cited).
+    source_status: Literal["verified", "partially_verified", "defaulted_to_target"] = "verified"
+    claimed_source_ids: list[int] = Field(default_factory=list, max_length=24)
     origin: Literal["model_candidate", "rejected_proposal"] = "model_candidate"
     model_label: str | None = Field(default=None, max_length=64)
     proposal_ordinal: int | None = Field(default=None, ge=0)
     issues: list[ProposalSchemaIssue] = Field(default_factory=list, max_length=12)
     attention_reasons: list[str] = Field(default_factory=list, max_length=20)
+
+
+class EventRecord(StrictDTO):
+    """A stored event finding as a self-contained structured record (never published).
+
+    Built from a held candidate of category ``event`` by ``candidates.event_records``; everything a
+    future Mini App event needs is here, so nothing has to re-read the chat. ``when_text`` is the
+    date/time as the messages worded it (no computed date). ``promotion_blockers`` lists why the
+    record must not be published as it stands; an empty list means the data is complete, not that
+    publishing is approved.
+    """
+
+    record_type: Literal["event"] = "event"
+    fingerprint: str = Field(min_length=64, max_length=64)
+    title: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=8000)
+    when_text: str | None = Field(default=None, max_length=255)
+    classification_reason: str | None = Field(default=None, max_length=300)
+    audience: Audience = Field(default_factory=Audience)
+    confidence: int = Field(ge=0, le=100)
+    source_message_ids: list[int] = Field(min_length=1, max_length=24)
+    evidence: list[EvidenceRef] = Field(min_length=1, max_length=24)
+    source_status: Literal["verified", "partially_verified", "defaulted_to_target"]
+    origin: Literal["model_candidate", "rejected_proposal"]
+    published: Literal[False] = False
+    promotion_blockers: list[str] = Field(default_factory=list, max_length=8)
 
 
 class RejectedItem(StrictDTO):

@@ -52,7 +52,7 @@ async def wave_results(db, now=None, *, wave_key="wave-a-spread-1"):
     states, errors = Counter(), Counter()
     tokens = Counter()
     kinds, actions, rejected = Counter(), Counter(), Counter()
-    held_categories, held_codes = Counter(), Counter()
+    held_categories, held_codes, held_sources = Counter(), Counter(), Counter()
     per_run, empty_runs, accepted_total, raw_total = [], 0, 0, 0
     wave_ids = set()
     for run, raw in rows:
@@ -77,6 +77,7 @@ async def wave_results(db, now=None, *, wave_key="wave-a-spread-1"):
         for candidate in validation.candidates:
             held_categories[candidate.category] += 1
             held_codes[candidate.hold_code] += 1
+            held_sources[candidate.source_status] += 1
         for proposal in validation.accepted:
             kinds[proposal.semantic_kind] += 1
             actions[proposal.action] += 1
@@ -125,6 +126,7 @@ async def wave_results(db, now=None, *, wave_key="wave-a-spread-1"):
             "total": sum(held_categories.values()),
             "by_category": dict(held_categories),
             "by_hold_code": dict(held_codes),
+            "by_source_status": dict(held_sources),
         },
         "cards": {
             "total": len(wave_cards),

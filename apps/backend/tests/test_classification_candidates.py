@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from test_analysis_hybrid import TwoPassProvider, build_input, envelope, shadow_case
 from test_card_text_quality import GROUP, msg
 
-from studgroup.analysis.candidates import label_category
+from studgroup.analysis.candidates import event_records, label_category
 from studgroup.analysis.card_editor import edit_card
 from studgroup.analysis.contract_prompt import example_output
 from studgroup.analysis.contracts import (
@@ -207,9 +207,7 @@ def test_clarification_of_an_existing_task_is_not_an_independent_card():
         msg(2, "Формат — PDF, до 10 слайдов", minutes=300, reply=1, role="headman"),
     ]
     task = proposal("homework", "Доклад-презентация о героях РФ", "Доклад-презентация о героях РФ.")
-    separate = proposal(
-        "homework", "Формат презентации", "Формат — PDF, до 10 слайдов.", mids=(2,)
-    )
+    separate = proposal("homework", "Формат презентации", "Формат — PDF, до 10 слайдов.", mids=(2,))
     result = validate(messages, [task, separate], target=1)
     assert len(result.accepted) == 1  # merged into the task, not a second card
     assert {ref.telegram_message_id for ref in result.accepted[0].evidence} == {1, 2}
@@ -231,10 +229,22 @@ def test_same_item_reported_as_card_and_candidate_stays_one_card():
 @pytest.mark.parametrize(
     ("raw", "category", "code"),
     [
-        (proposal("лекция", "Лекция по физике", "Лекция в 9:00."), "other", "enum_value_not_allowed"),
-        (proposal("quiz", "Квиз по цивилизациям", "Квиз по цивилизациям."), "check", "enum_value_not_allowed"),
         (
-            {k: v for k, v in proposal("test", "Тест", "Тест по истории.").items() if k != "semantic_kind"}
+            proposal("лекция", "Лекция по физике", "Лекция в 9:00."),
+            "other",
+            "enum_value_not_allowed",
+        ),
+        (
+            proposal("lecture", "Лекция по физике", "Лекция в 9:00."),
+            "other",
+            "enum_value_not_allowed",
+        ),
+        (
+            {
+                k: v
+                for k, v in proposal("test", "Тест", "Тест по истории.").items()
+                if k != "semantic_kind"
+            }
             | {"destination": "deadline"},
             "check",
             "semantic_kind_missing",
@@ -245,7 +255,7 @@ def test_same_item_reported_as_card_and_candidate_stays_one_card():
             "proposal_field_not_allowed",
         ),
     ],
-    ids=["unknown-kind", "quiz-label", "missing-kind", "unknown-field"],
+    ids=["unknown-kind", "english-unknown-kind", "missing-kind", "unknown-field"],
 )
 def test_contract_error_keeps_the_available_content(raw, category, code):
     result = validate([msg(1, "Тест по истории, квиз, лекция, решить задачу")], [raw])
@@ -264,6 +274,8 @@ def test_rejected_proposal_with_unusable_evidence_is_cited_to_the_target_message
     (held,) = result.candidates
     assert [ref.telegram_message_id for ref in held.evidence] == [2]
     assert "evidence_defaulted_to_target" in held.attention_reasons
+    assert held.source_status == "defaulted_to_target" and held.claimed_source_ids == [999]
+    assert held.hold_code == "unverified_source"  # flagged, never passed off as reliable
 
 
 def test_content_free_rejections_leave_only_the_counter():
@@ -306,7 +318,11 @@ def test_candidates_are_never_applied_or_shown_to_students(client):
         async with AsyncSession(client.app.state.engine) as db:
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
             outcome = await apply_validated_batch(
-                db, group_id=group.id, validation=result, messages=messages, now=messages[0].message_date
+                db,
+                group_id=group.id,
+                validation=result,
+                messages=messages,
+                now=messages[0].message_date,
             )
             await db.commit()
             assert outcome.product_writes == 0 and outcome.notifications_requested == 0
@@ -328,7 +344,10 @@ def test_published_contract_values_are_unchanged():
         "homework", "test", "control_point", "assessment", "credit", "exam",
         "other_academic_deadline",
     )  # fmt: skip
-    assert get_args(ProposedAcademicItem.model_fields["destination"].annotation) == ("task", "deadline")
+    assert get_args(ProposedAcademicItem.model_fields["destination"].annotation) == (
+        "task",
+        "deadline",
+    )
 
 
 def test_a_result_stored_before_this_change_still_loads_and_an_old_answer_still_validates():
@@ -340,9 +359,12 @@ def test_a_result_stored_before_this_change_still_loads_and_an_old_answer_still_
         item.pop("salvaged", None)
     restored = ValidationResult.model_validate(old_json)
     assert restored.candidates == [] and len(restored.accepted) == 1
-    assert AnalysisOutput.model_validate(
-        {"source_revision": 1, "proposals": [], "explicit_empty": True}
-    ).candidates == []
+    assert (
+        AnalysisOutput.model_validate(
+            {"source_revision": 1, "proposals": [], "explicit_empty": True}
+        ).candidates
+        == []
+    )
 
 
 def test_the_prompt_example_validates_through_the_production_path_with_its_candidate():
@@ -397,14 +419,168 @@ def test_extraction_adds_no_provider_call_with_or_without_candidates():
 
 def test_optional_repair_removes_the_held_copy_of_a_proposal_it_recovered():
     case, good, _ = shadow_case()
-    unknown = good | {"semantic_kind": "quiz"}
+    unknown = good | {"semantic_kind": "lecture"}
 
     def reclassify(request):
         return [
-            {"ordinal": e["ordinal"], "proposal": e["original"] | {"semantic_kind": "test", "destination": "deadline"}}
+            {
+                "ordinal": e["ordinal"],
+                "proposal": e["original"] | {"semantic_kind": "test", "destination": "deadline"},
+            }
             for e in request.user_payload["items"]
         ]
 
     provider = TwoPassProvider(envelope([good, unknown]), reclassify)
     result = asyncio.run(run_shadow(provider, build_input(case), [], repair_enabled=True))
     assert len(result.validation.accepted) == 2 and result.validation.candidates == []
+
+
+# -- 7. 04B: obvious synonyms are normalised, nothing else is guessed ----------------------------
+
+
+@pytest.mark.parametrize(
+    ("label", "kind", "destination"),
+    [
+        ("quiz", "test", "deadline"),
+        ("Квиз", "test", "deadline"),
+        ("test", "test", "deadline"),
+        ("самостоятельная", "assessment", "deadline"),
+        ("Самостоятельная работа", "assessment", "deadline"),
+        ("контрольная-работа", "assessment", "deadline"),
+        ("КТ", "control_point", "deadline"),
+        ("зачёт", "credit", "deadline"),
+        ("Экзамен", "exam", "deadline"),
+        ("ДЗ", "homework", "task"),
+        ("домашнее задание", "homework", "task"),
+    ],
+)
+def test_obvious_kind_synonyms_become_the_published_kind(label, kind, destination):
+    messages = [msg(1, "Квиз, самостоятельная, КТ, зачёт, экзамен, ДЗ, тест")]
+    result = validate(messages, [proposal(label, "Работа по предмету", "Работа по предмету.")])
+    (card,) = result.accepted
+    assert (card.semantic_kind, card.destination) == (kind, destination)
+    assert result.candidates == [] and result.rejected == []
+    assert result.adapter_actions.get("semantic_kind_synonym_normalized", 0) == (
+        0 if label == "test" else 1
+    )
+    assert [ref.telegram_message_id for ref in card.evidence] == [1]
+
+
+@pytest.mark.parametrize(
+    "label", ["проверочная", "опрос", "lecture", "event", "мероприятие", "задание-или-тест", "q"]
+)
+def test_unknown_or_ambiguous_labels_are_not_normalised(label):
+    result = validate(
+        [msg(1, "Что-то про учёбу")], [proposal(label, "Что-то", "Что-то про учёбу.")]
+    )
+    assert result.accepted == [] and len(result.candidates) == 1
+    assert "semantic_kind_synonym_normalized" not in result.adapter_actions
+
+
+def test_a_normalised_proposal_still_goes_through_every_other_check():
+    messages = [msg(1, "Квиз в среду")]
+    bad_source = validate(messages, [proposal("quiz", "Квиз", "Квиз в среду.", mids=(77,))])
+    assert bad_source.accepted == []
+    assert bad_source.candidates[0].source_status == "defaulted_to_target"
+    clash = validate(messages, [proposal("quiz", "Квиз", "Квиз в среду.", destination="task")])
+    assert clash.accepted == [] and clash.rejected[0].salvaged
+    nameless = validate(
+        messages,
+        [proposal("quiz", "Квиз", "Квиз в среду.", audience={"scope": "subgroup", "label": None})],
+    )
+    assert nameless.accepted == [] and len(nameless.candidates) == 1
+    ok = validate(
+        messages,
+        [
+            proposal(
+                "quiz",
+                "Квиз по цивилизациям",
+                "Квиз по цивилизациям.",
+                audience={"scope": "subgroup", "label": "Подгруппа 2"},
+            )
+        ],
+    )
+    (card,) = ok.accepted
+    assert card.audience.scope == "subgroup" and card.audience.label == "Подгруппа 2"
+
+
+# -- 8. event as a self-contained structured record ------------------------------------------------
+
+
+def _event_result(**patch):
+    messages = [msg(1, "В четверг после пар встреча студентов с выпускниками")]
+    entry = (
+        candidate(
+            "event",
+            "Встреча с выпускниками",
+            "Встреча студентов с выпускниками кафедры.",
+            when_text="в четверг после пар",
+            reason="Встреча, а не учебное задание",
+            audience={"scope": "group", "label": None},
+        )
+        | patch
+    )
+    return validate(messages, [], [entry])
+
+
+def test_event_record_carries_everything_needed_without_the_chat():
+    record = event_records(_event_result())[0]
+    assert record.record_type == "event" and record.published is False
+    assert (record.title, record.when_text) == ("Встреча с выпускниками", "в четверг после пар")
+    assert record.description.startswith("Встреча студентов")
+    assert record.classification_reason == "Встреча, а не учебное задание"
+    assert record.audience.scope == "group" and record.source_message_ids == [1]
+    assert record.source_status == "verified" and record.promotion_blockers == []
+    assert record.model_dump(mode="json")["record_type"] == "event"
+
+
+def test_event_record_blockers_name_why_it_is_not_ready():
+    unverified = event_records(
+        _event_result(evidence=[{"telegram_message_id": 404, "revision": 1, "fact_paths": []}])
+    )[0]
+    assert unverified.promotion_blockers == ["unverified_source"]
+    personal = event_records(_event_result(audience={"scope": "personal", "label": None}))[0]
+    assert personal.promotion_blockers == ["audience_personal"]
+
+
+def test_event_fingerprint_is_stable_across_runs_and_sources():
+    first = event_records(_event_result())[0]
+    second = event_records(_event_result(title="  встреча с ВЫПУСКНИКАМИ "))[0]
+    other = event_records(_event_result(when_text="в пятницу"))[0]
+    assert first.fingerprint == second.fingerprint != other.fingerprint
+
+
+def test_event_from_a_rejected_proposal_is_also_a_record():
+    messages = [msg(1, "В субботу турнир по настольным играм")]
+    result = validate(
+        messages, [proposal("event", "Турнир по настольным играм", "Турнир в субботу.")]
+    )
+    (record,) = event_records(result)
+    assert record.origin == "rejected_proposal" and record.title == "Турнир по настольным играм"
+
+
+# -- 9. source honesty -------------------------------------------------------------------------------
+
+
+def test_partly_valid_sources_keep_only_the_confirmed_ones_and_say_so():
+    messages = [msg(1, "Встреча в четверг"), msg(2, "после пар")]
+    entry = candidate("event", "Встреча", "Встреча в четверг после пар.", mids=(1, 404))
+    (held,) = validate(messages, [], [entry], target=2).candidates
+    assert [r.telegram_message_id for r in held.evidence] == [1]
+    assert held.source_status == "partially_verified" and held.claimed_source_ids == [1, 404]
+    assert "evidence_partially_invalid" in held.attention_reasons
+    assert held.hold_code == "category_not_published"
+
+
+def test_a_stale_revision_is_not_a_confirmed_source():
+    messages = [msg(1, "Встреча в четверг")]
+    stale = candidate("event", "Встреча", "Встреча в четверг.")
+    stale["evidence"] = [{"telegram_message_id": 1, "revision": 9, "fact_paths": ["description"]}]
+    (held,) = validate(messages, [], [stale]).candidates
+    assert held.source_status == "defaulted_to_target" and held.hold_code == "unverified_source"
+
+
+def test_verified_sources_stay_verified():
+    (held,) = _event_result().candidates
+    assert held.source_status == "verified" and held.claimed_source_ids == [1]
+    assert "unverified_source" not in held.attention_reasons

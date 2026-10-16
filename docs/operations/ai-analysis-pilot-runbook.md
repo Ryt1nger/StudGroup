@@ -280,7 +280,7 @@ the section above.
   is published as `needs_clarification`, never as a confirmed card. A long but otherwise sound
   title is kept (cut by title hygiene) and raises no flag.
 
-### Discovery vs category: held candidates (prompt `cplus-extraction-6`)
+### Discovery vs category: held candidates (prompt `cplus-extraction-7`)
 
 No paid call, no migration, no new API call per message (still context + extraction; the optional
 repair call is unchanged). Student API, `semantic_kind`, `destination` and the PostgreSQL models are
@@ -313,6 +313,22 @@ untouched.
   `ai_live_two_pass` is off (the two-pass C+ path sends every message to the model). Pass 1
   (`cplus-context-1`) is untouched. The strict adapter-free reference validator ignores
   `candidates`.
+
+**04B (prompt `cplus-extraction-7`).**
+
+- *Synonyms.* Before strict validation the adapter maps whole-label synonyms to the published
+  kind: quiz/квиз/тест → `test`; самостоятельная, контрольная → `assessment`; КТ → `control_point`;
+  зачёт → `credit`; экзамен → `exam`; ДЗ → `homework` (counter `semantic_kind_synonym_normalized`).
+  Unknown or ambiguous labels (проверочная, опрос, lecture, event) are not guessed and are held.
+  Source, audience and destination checks still apply after normalisation.
+- *Source honesty.* `UnpublishedCandidate.source_status` is `verified`, `partially_verified` or
+  `defaulted_to_target`; `claimed_source_ids` keeps what the model cited. A candidate with no
+  confirmed source gets `hold_code=unverified_source` and is shown in the preview as
+  «источник не подтверждён моделью»; `wave_results` counts `by_source_status`.
+- *Events.* `candidates.event_records` yields `EventRecord` (title, description, `when_text`,
+  reason, audience, sources, fingerprint, `promotion_blockers`, `published=false`). Contract for
+  Codex: `docs/architecture/event-records-contract.md`. Batch plan:
+  `docs/operations/ai-batch-processing-plan.md` (analysis only, nothing implemented).
 
 ### Stored results are re-normalised on read (`analysis/stored.py`)
 

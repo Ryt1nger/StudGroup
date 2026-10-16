@@ -53,6 +53,25 @@ FACT_PATH_ROOTS = frozenset(
 )
 
 ACTIONS = frozenset(get_args(ProposedAcademicItem.model_fields["action"].annotation))
+# Obvious spelling/language variants of the published kinds, matched on the whole label only (never
+# a substring, never a guess): "quiz" is a test, "самостоятельная" an assessment. Labels that are
+# unknown or ambiguous ("проверочная", "опрос", "lecture") are not here: they stay rejected and are
+# kept as held candidates. Applied before strict validation, so sources, audience and every other
+# check still run on the normalised proposal.
+SEMANTIC_KIND_SYNONYMS = {
+    "test": ("quiz", "quizz", "квиз", "тест", "тестирование"),
+    "assessment": (
+        "самостоятельная", "самостоятельная_работа", "independent_work", "контрольная",
+        "контрольная_работа", "control_work",
+    ),
+    "control_point": ("кт", "контрольная_точка", "checkpoint"),
+    "credit": ("зачет",),
+    "exam": ("экзамен",),
+    "homework": ("дз", "домашнее_задание", "домашка", "домашняя_работа"),
+}  # fmt: skip
+KIND_SYNONYM_LOOKUP = {
+    label: kind for kind, labels in SEMANTIC_KIND_SYNONYMS.items() for label in labels
+}
 DESTINATIONS = frozenset(get_args(ProposedAcademicItem.model_fields["destination"].annotation))
 SEMANTIC_KINDS = frozenset(get_args(ProposedAcademicItem.model_fields["semantic_kind"].annotation))
 BASES = frozenset(get_args(DeadlineValue.model_fields["basis"].annotation))
@@ -565,6 +584,11 @@ class _Normalizer:
         kind = raw.get("semantic_kind")
         if kind is None:
             _reject("semantic_kind_missing", "semantic_kind", None, expected="required_field")
+        if isinstance(kind, str):
+            label = "_".join(kind.strip().casefold().replace("ё", "е").replace("-", " ").split())
+            if label not in SEMANTIC_KINDS and label in KIND_SYNONYM_LOOKUP:
+                kind = KIND_SYNONYM_LOOKUP[label]
+                self.note("semantic_kind_synonym_normalized")
         value["semantic_kind"] = self.enum(kind, SEMANTIC_KINDS, "semantic_kind")
         derived = "task" if value["semantic_kind"] == "homework" else "deadline"
         if raw.get("destination") is None:
