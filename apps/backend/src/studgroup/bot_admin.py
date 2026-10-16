@@ -1,6 +1,9 @@
 """Owner-only private dialogs with expiring callbacks and durable Telegram replies."""
 
 import asyncio
+import gzip
+import hashlib
+import io
 import json
 import logging
 import secrets
@@ -9,11 +12,20 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.models import BotAdminAudit, BotAdminSession, BotOutbox, Group, Membership, User
+
+SHADOW_EXPORT_WAVE = "wave-a-spread-1"
+SHADOW_EXPORT_METHOD = "sendShadowExport"
+SHADOW_EXPORT_MAX_RUNS = 200
+SHADOW_EXPORT_MAX_STORED_BYTES = 8 * 1024 * 1024
+SHADOW_EXPORT_MAX_JSON_BYTES = 16 * 1024 * 1024
+SHADOW_EXPORT_MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
+SHADOW_EXPORT_ACTIVE_WINDOW = timedelta(minutes=15)
 
 
 def enqueue(db, method, payload, dedup_key=None):
@@ -24,6 +36,55 @@ def enqueue(db, method, payload, dedup_key=None):
             available_at=datetime.now(UTC),
             dedup_key=dedup_key,
         )
+    )
+
+
+async def enqueue_once(db, method, payload, dedup_key):
+    values = {
+        "id": uuid.uuid4(),
+        "method": method,
+        "payload": json.dumps(payload, ensure_ascii=False),
+        "state": "pending",
+        "attempts": 0,
+        "available_at": datetime.now(UTC),
+        "dedup_key": dedup_key,
+    }
+    dialect = db.bind.dialect.name
+    statement = sqlite_insert(BotOutbox) if dialect == "sqlite" else insert(BotOutbox)
+    result = await db.execute(
+        statement.values(**values).on_conflict_do_nothing(index_elements=[BotOutbox.dedup_key])
+    )
+    return result.rowcount == 1
+
+
+def compressed_export(bundle):
+    output = io.BytesIO()
+    uncompressed = 0
+    encoder = json.JSONEncoder(ensure_ascii=False, default=str, separators=(",", ":"))
+    with gzip.GzipFile(fileobj=output, mode="wb", compresslevel=9, mtime=0) as archive:
+        for chunk in encoder.iterencode(bundle):
+            encoded = chunk.encode("utf-8")
+            uncompressed += len(encoded)
+            if uncompressed > SHADOW_EXPORT_MAX_JSON_BYTES:
+                raise ValueError("shadow_export_json_too_large")
+            archive.write(encoded)
+            if output.tell() > SHADOW_EXPORT_MAX_DOCUMENT_BYTES:
+                raise ValueError("shadow_export_document_too_large")
+    if output.tell() > SHADOW_EXPORT_MAX_DOCUMENT_BYTES:
+        raise ValueError("shadow_export_document_too_large")
+    return output.getvalue(), uncompressed
+
+
+def active_shadow_export(now):
+    return and_(
+        BotOutbox.method == SHADOW_EXPORT_METHOD,
+        or_(
+            BotOutbox.state == "pending",
+            and_(
+                BotOutbox.state == "dispatching",
+                BotOutbox.available_at > now - SHADOW_EXPORT_ACTIVE_WINDOW,
+            ),
+        ),
     )
 
 
@@ -78,7 +139,10 @@ async def handle(db, update, settings):
         return True
     now = datetime.now(UTC)
     session = await db.scalar(
-        select(BotAdminSession).where(BotAdminSession.owner_id == sender.id).with_for_update()
+        select(BotAdminSession)
+        .where(BotAdminSession.owner_id == sender.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if not callback and text.strip().split("@")[0] in ["/admin", "/cancel", "Отмена"]:
         if session is None:
@@ -237,6 +301,42 @@ async def handle(db, update, settings):
                 {"chat_id": chat, "text": chunk, "link_preview_options": {"is_disabled": True}},
             )
         return True
+    if not callback and text.strip().split("@")[0] == "/shadowexport":
+        from studgroup.export_shadow_wave import ShadowWaveUnavailable, resolve_wave_group
+
+        try:
+            group = await resolve_wave_group(db, SHADOW_EXPORT_WAVE)
+        except ShadowWaveUnavailable as error:
+            message = (
+                "Приватный экспорт недоступен: сохранённая волна wave-a-spread-1 не найдена."
+                if str(error) == "shadow_wave_not_found"
+                else "Приватный экспорт недоступен: группу сохранённой волны нельзя определить "
+                "однозначно."
+            )
+            await say(db, chat, message)
+            return True
+        active = await db.scalar(select(BotOutbox.id).where(active_shadow_export(now)))
+        if active is not None:
+            await say(db, chat, "Приватный экспорт уже формируется или отправляется.")
+            return True
+        if session is None:
+            session = BotAdminSession(owner_id=sender.id, nonce="", step="groups", expires_at=now)
+            db.add(session)
+        session.nonce = secrets.token_hex(6)
+        session.step = "shadow_export"
+        session.group_id = group.id
+        session.candidate_id = None
+        session.request_id = None
+        session.expires_at = now + timedelta(minutes=15)
+        await say(
+            db,
+            chat,
+            f"Подготовить приватный экспорт {SHADOW_EXPORT_WAVE} для группы «{group.name}»?\n"
+            "Файл содержит исходные сообщения и будет отправлен в этот личный чат Telegram. "
+            "Telegram будет хранить документ в облаке.",
+            buttons(session, [[("Подтвердить экспорт", "shadow_export")]]),
+        )
+        return True
     if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/shadowrun":
         from studgroup.analysis.shadow_replay import replay_summary
 
@@ -336,6 +436,51 @@ async def handle(db, update, settings):
             await say(db, chat, "Кнопка устарела. Отправь /admin заново.")
             return True
         action = parts[2]
+        if action == "shadow_export" and session.step == "shadow_export" and session.group_id:
+            from studgroup.export_shadow_wave import ShadowWaveUnavailable, resolve_wave_group
+
+            try:
+                group = await resolve_wave_group(db, SHADOW_EXPORT_WAVE)
+            except ShadowWaveUnavailable:
+                await say(db, chat, "Экспорт отменён: сохранённая волна больше недоступна.")
+                session.step = "done"
+                session.nonce = secrets.token_hex(6)
+                return True
+            if group.id != session.group_id:
+                await say(db, chat, "Экспорт отменён: группа сохранённой волны изменилась.")
+                session.step = "done"
+                session.nonce = secrets.token_hex(6)
+                return True
+            active = await db.scalar(
+                select(BotOutbox.id)
+                .where(active_shadow_export(now))
+                .with_for_update(skip_locked=True)
+            )
+            confirmation_nonce = session.nonce
+            session.step = "done"
+            session.nonce = secrets.token_hex(6)
+            if active is not None:
+                await say(db, chat, "Приватный экспорт уже формируется или отправляется.")
+                return True
+            queued = await enqueue_once(
+                db,
+                SHADOW_EXPORT_METHOD,
+                {
+                    "owner_id": sender.id,
+                    "chat_id": chat,
+                    "group_id": str(group.id),
+                    "wave": SHADOW_EXPORT_WAVE,
+                },
+                f"shadow-export:{sender.id}:{confirmation_nonce}",
+            )
+            await say(
+                db,
+                chat,
+                "Экспорт поставлен в очередь. Бот пришлёт сжатый JSON отдельным документом."
+                if queued
+                else "Это подтверждение уже было использовано.",
+            )
+            return True
         if action.startswith("shadow:") and session.step == "shadow" and session.group_id:
             from studgroup.analysis.shadow_replay import begin_replay
 
@@ -525,6 +670,124 @@ async def telegram_request(settings, method, payload):
         return data
 
 
+async def telegram_document_request(settings, *, chat_id, filename, document, caption):
+    async with httpx.AsyncClient(timeout=30, trust_env=False, follow_redirects=False) as client:
+        response = await client.post(
+            f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendDocument",
+            data={"chat_id": str(chat_id), "caption": caption},
+            files={"document": (filename, document, "application/gzip")},
+        )
+        data = response.json()
+        if response.status_code != 200:
+            data["ok"] = False
+        return data
+
+
+async def deliver_shadow_export(db, row, settings):
+    """Generate and send one export at most once; never persist its contents."""
+    from studgroup.export_shadow_wave import ShadowWaveUnavailable, export_wave, resolve_wave_group
+
+    row_id = row.id
+    try:
+        payload = json.loads(row.payload)
+        owner_id = int(payload["owner_id"])
+        chat_id = int(payload["chat_id"])
+        group_id = uuid.UUID(payload["group_id"])
+        wave = payload["wave"]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        row.state = "failed"
+        row.lease_until = None
+        await db.commit()
+        return
+    if (
+        settings.bot_admin_user_id is None
+        or owner_id != settings.bot_admin_user_id
+        or chat_id != owner_id
+        or wave != SHADOW_EXPORT_WAVE
+    ):
+        row.state = "failed"
+        row.lease_until = None
+        await db.commit()
+        return
+
+    # Commit the at-most-once claim before any bytes leave the process. An ambiguous
+    # Telegram result is deliberately never retried automatically.
+    row.state = "dispatching"
+    row.lease_until = None
+    row.available_at = datetime.now(UTC)
+    await db.commit()
+    failure = None
+    document = None
+    counts = None
+    digest = None
+    try:
+        group = await resolve_wave_group(db, wave)
+        if group.id != group_id:
+            raise ShadowWaveUnavailable("shadow_wave_group_mismatch")
+        bundle = await export_wave(
+            db,
+            wave,
+            expected_group_id=group_id,
+            max_runs=SHADOW_EXPORT_MAX_RUNS,
+            max_stored_bytes=SHADOW_EXPORT_MAX_STORED_BYTES,
+        )
+        document, _uncompressed = compressed_export(bundle)
+        counts = bundle["counts"]
+        digest = hashlib.sha256(document).hexdigest()
+    except ShadowWaveUnavailable as error:
+        failure = (
+            "Экспорт не отправлен: сохранённая волна отсутствует или больше не связана "
+            "с подтверждённой группой."
+            if str(error)
+            in {
+                "shadow_wave_not_found",
+                "shadow_wave_group_ambiguous",
+                "shadow_wave_group_missing",
+                "shadow_wave_group_mismatch",
+                "shadow_wave_sources_unavailable",
+                "shadow_wave_group_boundary_unavailable",
+            }
+            else "Экспорт не отправлен: сохранённые данные превышают безопасный лимит."
+        )
+    except (TypeError, ValueError):
+        failure = "Экспорт не отправлен: размер файла превышает безопасный лимит."
+    except Exception:  # noqa: BLE001 -- never expose private validation/parser details
+        failure = "Экспорт не отправлен: сохранённые данные не удалось безопасно подготовить."
+    finally:
+        # Read-only export generation is never allowed to commit preview-side effects.
+        await db.rollback()
+
+    sent = False
+    if document is not None:
+        try:
+            result = await telegram_document_request(
+                settings,
+                chat_id=owner_id,
+                filename="studgroup-wave-a-spread-1.json.gz",
+                document=document,
+                caption=(
+                    f"Приватный C+ экспорт: {counts['runs']} запусков, "
+                    f"{counts['preview_cards']} итоговых карточек. SHA-256: {digest}"
+                ),
+            )
+            sent = result.get("ok") is True
+        except Exception:  # noqa: BLE001 -- ambiguous delivery is at-most-once
+            # Telegram may have accepted the upload before the connection failed.
+            # Mark failed and require a fresh owner confirmation instead of retrying.
+            sent = False
+        document = None
+    elif failure:
+        try:
+            await telegram_request(settings, "sendMessage", {"chat_id": owner_id, "text": failure})
+        except Exception:  # noqa: BLE001, S110 -- export remains failed without retry
+            pass
+
+    current = await db.get(BotOutbox, row_id)
+    current.state = "sent" if sent else "failed"
+    current.lease_until = None
+    await db.commit()
+
+
 async def deliver(engine, settings):
     if not settings.telegram_bot_token:
         return
@@ -569,6 +832,9 @@ async def deliver(engine, settings):
         row.lease_until = now + timedelta(seconds=30)
         row.attempts += 1
         await db.commit()
+        if row.method == SHADOW_EXPORT_METHOD:
+            await deliver_shadow_export(db, row, settings)
+            return
         ok = False
         try:
             if row.panel_id:

@@ -162,6 +162,12 @@ reason codes and hashes only; do not copy private chat text into incident logs.
 - `AI_SHADOW_PREPARE_MESSAGE_ID=<telegram message id>` (used only together with `AI_SHADOW_PREPARE_ONCE_KEY`, while `AI_ENABLED` and `AI_SHADOW_ENABLED` are false) prepares exactly that stored message instead of the oldest eligible one. It bypasses only the "newer than the shadow switch" window; the `bot_added_at` bound, retention, one-run-per-revision and the single marked package still apply. An unknown id prepares nothing (`preparation_empty`).
 - Canary sequence: set key + message id + `AI_OUTPUT_REPAIR_ENABLED=false` → deploy → check `AI_STARTUP_DIAGNOSTICS` shows one prepared canary and `/shadowstatus` → owner approves → `AI_SHADOW_ENABLED=true` with an absolute `AI_SHADOW_ENABLED_UNTIL` a few minutes ahead, `AI_SHADOW_CANARY_ONLY=true` → check `/shadowstatus` "Принято: N" → switch shadow off and clear key and message id.
 - `/shadowcards` (owner's private chat only, same gate as `/shadowstatus`) sends up to 5 accepted cards with cited source messages and `t.me/c/...` links to the owner. It writes nothing and publishes nothing to students.
+- `/shadowexport` resolves the stored `wave-a-spread-1` to its own group, asks the configured
+  owner for a 15-minute single-use confirmation, and sends a bounded in-memory `.json.gz` through
+  the private Telegram chat. It does not call AI or store the export in the outbox or filesystem.
+  Telegram retains the sent document in the owner's cloud chat; download it and delete the
+  message when that copy is no longer required. A failed or ambiguous upload is not retried
+  automatically; issue the command and confirm again.
 
 ### Quality rules added after the first real canary (prompt `cplus-extraction-3`)
 
