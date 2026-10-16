@@ -258,7 +258,7 @@ def test_generated_examples_pass_the_production_path():
 def test_prompt_lists_every_contract_field_and_literal():
     signature = render_contract()
     for name in (
-        *ProposedAcademicItem.model_fields,
+        *(name for name in ProposedAcademicItem.model_fields if name != "subject_source"),
         "at",
         "date_only",
         "basis",

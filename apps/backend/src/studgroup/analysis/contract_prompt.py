@@ -42,6 +42,7 @@ def _render(node, defs):
         fields = ", ".join(
             f"{name}{'' if name in required else '?'}: {_render(child, defs)}"
             for name, child in node.get("properties", {}).items()
+            if not child.get("internal")  # code-set fields are not part of the model's contract
         )
         return "{" + fields + "}"
     if kind == "array":
@@ -173,7 +174,7 @@ def _example_output() -> dict:
         candidates=[event],
         explicit_empty=False,
     )
-    return output.model_dump(mode="json")
+    return output.model_dump(mode="json", exclude={"proposals": {"__all__": {"subject_source"}}})
 
 
 def example_output() -> dict:

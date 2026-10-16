@@ -330,6 +330,18 @@ untouched.
   Codex: `docs/architecture/event-records-contract.md`. Batch plan:
   `docs/operations/ai-batch-processing-plan.md` (analysis only, nothing implemented).
 
+### Subject catalog (prompt `cplus-extraction-8`)
+
+The group's real subjects (`AnalysisInput.subject_catalog`, built by
+`analysis/subject_catalog.load_subject_catalog` from the schedule and verified memory facts) go to
+the extraction call; the model picks the subject by meaning and answers `subject_id` + canonical
+`subject` (or null). The adapter only verifies it: confirmed by id or exact name/alias, unknown id,
+ambiguous label and (for a complete catalog) an off-catalog subject are never confirmed; a foreign
+or empty catalog is ignored. `resolver` stores `edited_card.subject` and never erases an existing
+subject. Counters: `subject_confirmed_by_catalog`, `subject_canonicalised`, `subject_id_unknown`,
+`subject_not_in_catalog`, `subject_ambiguous_in_catalog`, `subject_catalog_ignored_*`. Contract and
+what Codex still has to plug in: `docs/architecture/subject-catalog-contract.md`.
+
 ### Stored results are re-normalised on read (`analysis/stored.py`)
 
 A stored shadow `validation_result_json` keeps the proposals exactly as the code of that day

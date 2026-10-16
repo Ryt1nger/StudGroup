@@ -77,6 +77,43 @@ class SourceMessage(StrictDTO):
         return self
 
 
+class SubjectEntry(StrictDTO):
+    """One real subject of a group, as the trusted catalog states it."""
+
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=255)
+    aliases: list[str] = Field(default_factory=list, max_length=20)
+    teachers: list[str] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def validate_labels(self):
+        if not self.name.strip() or any(
+            not item.strip() or len(item) > 255 for item in [*self.aliases, *self.teachers]
+        ):
+            raise ValueError("blank_or_long_catalog_label")
+        return self
+
+
+class SubjectCatalog(StrictDTO):
+    """Trusted list of the real subjects of ONE group (internal contract, see subject_catalog.py).
+
+    ``complete`` is true only when the source guarantees that no subject of the group is missing;
+    an incomplete catalog never makes a subject outside it wrong, only unconfirmed.
+    """
+
+    group_id: UUID
+    version: str | None = Field(default=None, max_length=64)
+    complete: bool = False
+    subjects: list[SubjectEntry] = Field(default_factory=list, max_length=80)
+
+    @model_validator(mode="after")
+    def validate_unique_ids(self):
+        ids = [row.id for row in self.subjects]
+        if len(ids) != len(set(ids)):
+            raise ValueError("duplicate_subject_id")
+        return self
+
+
 class AnalysisInput(StrictDTO):
     schema_version: Literal[ANALYSIS_SCHEMA_VERSION] = ANALYSIS_SCHEMA_VERSION
     engine_version: Literal[ANALYSIS_ENGINE_VERSION] = ANALYSIS_ENGINE_VERSION
@@ -85,6 +122,9 @@ class AnalysisInput(StrictDTO):
     source_revision: int = Field(ge=1)
     target_message_ids: list[int] = Field(min_length=1, max_length=80)
     messages: list[SourceMessage] = Field(min_length=1, max_length=80)
+    # Not part of the source snapshot (see shadow.source_snapshot_sha256): reference data the
+    # frozen run was analysed with. Absent on every run created before the catalog existed.
+    subject_catalog: SubjectCatalog | None = None
 
     @model_validator(mode="after")
     def validate_scope(self):
@@ -173,6 +213,13 @@ class ProposedAcademicItem(StrictDTO):
         "other_academic_deadline",
     ]
     subject: str | None = Field(default=None, max_length=255)
+    # The model may name a catalog subject by id. The adapter checks it against the group's trusted
+    # catalog and keeps it only when it is there; ``subject_source`` is set by code alone (never
+    # accepted from the model) and says the subject was confirmed by that catalog.
+    subject_id: str | None = Field(default=None, max_length=64)
+    subject_source: Literal["catalog"] | None = Field(
+        default=None, json_schema_extra={"internal": True}
+    )
     title: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=8000)
     deadline: DeadlineValue = Field(default_factory=DeadlineValue)

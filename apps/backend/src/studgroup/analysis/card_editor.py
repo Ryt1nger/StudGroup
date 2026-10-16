@@ -214,10 +214,16 @@ def description_problem(description, sources, evidence_text, audience_scope):
     return facts_problem(description, sources, evidence_text, audience_scope)
 
 
-def _subject_supported(subject, evidence_text, verified_subjects):
-    return not subject or (
-        phrase_supported(subject, evidence_text)
-        or normalized(subject) in {normalized(item) for item in verified_subjects}
+def _subject_supported(subject, evidence_text, verified_subjects, catalog_confirmed=False):
+    # A catalog-confirmed subject needs no literal mention: "матан" in the chat is the catalog's
+    # «Математический анализ». Everything else keeps the text rule.
+    return (
+        not subject
+        or catalog_confirmed
+        or (
+            phrase_supported(subject, evidence_text)
+            or normalized(subject) in {normalized(item) for item in verified_subjects}
+        )
     )
 
 
@@ -264,7 +270,12 @@ def edit_card(
         proposal = proposal.model_copy(update={"subject": None})
         reasons.append("service_tag_not_subject")
     evidence_text = normalized("\n".join(source.text for source in sources))
-    subject_supported = _subject_supported(proposal.subject, evidence_text, verified_subjects)
+    subject_supported = _subject_supported(
+        proposal.subject,
+        evidence_text,
+        verified_subjects,
+        catalog_confirmed=proposal.subject_source == "catalog",
+    )
     # A subject problem is a subject problem: it is reported and the subject is dropped, but the
     # title and description are judged on their own.
     if not subject_supported:

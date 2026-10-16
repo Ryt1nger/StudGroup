@@ -107,7 +107,8 @@ def _sum_usage(*rows):
 
 
 def source_snapshot_sha256(analysis_input):
-    payload = analysis_input.model_dump(mode="json")
+    # The subject catalog is reference data, not source: the snapshot hash stays what it was.
+    payload = analysis_input.model_dump(mode="json", exclude={"subject_catalog"})
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
     ).hexdigest()

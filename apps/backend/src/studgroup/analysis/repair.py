@@ -28,6 +28,7 @@ from studgroup.analysis.output_adapter import (
     _Normalizer,
 )
 from studgroup.analysis.provider import PreparedRequest, ProviderUsage
+from studgroup.analysis.subject_catalog import resolve_subject, usable_catalog
 
 REPAIR_PROMPT_VERSION = "cplus-repair-1"
 MAX_REPAIR_ITEMS = 8
@@ -160,6 +161,17 @@ def facts_preserved(raw, repaired: ProposedAcademicItem, analysis_input):
         original = _lenient(normalizer.optional_text, raw.get(name), name)
         new = getattr(repaired, name)
         if original is _INVALID:
+            continue
+        if name == "subject" and repaired.subject_source == "catalog":
+            # a canonical catalog name is not "changed text": it must be the subject the original
+            # already pointed to (by id or name), not another one the repair chose
+            catalog, _why = usable_catalog(analysis_input.subject_catalog, analysis_input.group_id)
+            raw_id = raw.get("subject_id") if isinstance(raw.get("subject_id"), str) else None
+            pointed = resolve_subject(catalog, raw_id, original) if catalog else None
+            if original is None and raw_id is None:
+                return False, "repair_added_text", False
+            if pointed is None or pointed.entry is None or pointed.entry.id != repaired.subject_id:
+                return False, "repair_changed_text", False
             continue
         if original is None and new is not None:
             return False, "repair_added_text", False

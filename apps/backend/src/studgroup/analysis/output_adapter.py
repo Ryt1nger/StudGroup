@@ -21,7 +21,8 @@ from studgroup.analysis.contracts import (
     ProposedAcademicItem,
 )
 
-_PROPOSAL_FIELDS = frozenset(ProposedAcademicItem.model_fields)
+# ``subject_source`` is set by code after the catalog check; a model never supplies it.
+_PROPOSAL_FIELDS = frozenset(ProposedAcademicItem.model_fields) - {"subject_source"}
 # Purely explanatory keys: dropping them cannot change any academic fact.
 INFORMATIONAL_KEYS = frozenset(
     {"quote", "quotes", "reasoning", "explanation", "rationale", "notes", "comment", "comments"}
@@ -232,8 +233,18 @@ def _reject(code, path, value=None, *, expected="valid_value", repairable=True):
 
 
 class _Normalizer:
-    def __init__(self, ordinal, *, group_timezone, messages, allowed_sources, existing_items):
+    def __init__(
+        self,
+        ordinal,
+        *,
+        group_timezone,
+        messages,
+        allowed_sources,
+        existing_items,
+        subject_catalog=None,
+    ):
         self.ordinal = ordinal
+        self.catalog = subject_catalog  # already checked with usable_catalog, or None
         self.tz = ZoneInfo(group_timezone)
         self.messages = messages  # {telegram_message_id: SourceMessage}
         self.allowed_sources = allowed_sources
@@ -522,6 +533,50 @@ class _Normalizer:
             self.note("service_tag_subject_cleared")
         return value
 
+    def catalog_subject(self, value, raw_id):
+        """Tie the model's subject to the group's trusted catalog (or refuse to confirm it).
+
+        Confirmed: the id (or, failing that, the exact name/alias) is in the catalog; the wording
+        becomes the canonical name. Never confirmed: an unknown id, an ambiguous label, anything
+        outside a complete catalog. Without a usable catalog the old text rule stays in charge.
+        """
+        value["subject_id"] = None
+        value["subject_source"] = None
+        if raw_id is not None and not isinstance(raw_id, str):
+            raw_id = None
+            self.note("subject_id_ignored_not_text")
+        if self.catalog is None:
+            if raw_id and raw_id.strip():
+                self.note("subject_id_without_catalog")
+            return
+        from studgroup.analysis.subject_catalog import label_key, resolve_subject
+
+        result = resolve_subject(self.catalog, raw_id, value.get("subject"))
+        if result.id_was_unknown:
+            self.note("subject_id_unknown")
+            self.extra_reasons.append("subject_id_unknown")
+        if result.entry is not None:
+            if label_key(value.get("subject")) != label_key(result.entry.name):
+                self.note("subject_canonicalised")
+            value["subject"] = result.entry.name
+            value["subject_id"] = result.entry.id
+            value["subject_source"] = "catalog"
+            self.note("subject_confirmed_by_catalog")
+            return
+        if result.status == "ambiguous":
+            value["subject"] = None
+            self.note("subject_ambiguous_in_catalog")
+            self.extra_reasons.append("subject_ambiguous")
+        elif result.status in {"not_in_catalog", "unknown_id"} and value.get("subject"):
+            if self.catalog.complete:
+                value["subject"] = None
+                self.note("subject_not_in_catalog")
+                self.extra_reasons.append("subject_not_in_catalog")
+            else:
+                self.note("subject_outside_incomplete_catalog")
+        elif result.status == "unknown_id":
+            value["subject"] = None
+
     # -- proposal -------------------------------------------------------------------------
     def proposal(self, raw):
         if not isinstance(raw, dict):
@@ -530,6 +585,8 @@ class _Normalizer:
         for key in INFORMATIONAL_KEYS & set(raw):
             raw.pop(key)
             self.note("informational_key_dropped")
+        if raw.get("subject_source") is None:
+            raw.pop("subject_source", None)  # a copied null is harmless; a value is not allowed
         unknown = set(raw) - _PROPOSAL_FIELDS
         if unknown:
             _reject("proposal_field_not_allowed", "proposal", raw, expected="field_not_allowed")
@@ -598,6 +655,7 @@ class _Normalizer:
             value["destination"] = self.enum(raw["destination"], DESTINATIONS, "destination")
         for name in ("subject", "title", "description"):
             value[name] = self.optional_text(raw.get(name), name)
+        self.catalog_subject(value, raw.get("subject_id"))
         confidence = raw.get("confidence")
         if confidence is None:
             _reject("confidence_missing", "confidence", None, expected="required_field")
@@ -659,6 +717,7 @@ def adapt_proposal(
     messages,
     allowed_sources,
     existing_items=None,
+    subject_catalog=None,
 ) -> AdaptedProposal:
     """Normalize one provider proposal; failure never affects sibling proposals."""
     normalizer = _Normalizer(
@@ -667,6 +726,7 @@ def adapt_proposal(
         messages=messages,
         allowed_sources=allowed_sources,
         existing_items=existing_items,
+        subject_catalog=subject_catalog,
     )
     try:
         value = normalizer.proposal(raw)

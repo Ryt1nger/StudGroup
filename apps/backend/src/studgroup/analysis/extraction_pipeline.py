@@ -25,6 +25,7 @@ from studgroup.analysis.contracts import (
 )
 from studgroup.analysis.linking import reconcile_validation
 from studgroup.analysis.output_adapter import adapt_proposal
+from studgroup.analysis.subject_catalog import usable_catalog
 from studgroup.analysis.validation import _safe_schema_issues
 
 MAX_PROPOSALS = 40
@@ -54,6 +55,7 @@ def source_maps(analysis_input: AnalysisInput):
 def validate_single(ordinal, raw, analysis_input, *, existing_items=None):
     """Return (accepted_item|None, rejected|None, repairable, actions)."""
     messages, allowed = source_maps(analysis_input)
+    catalog, _why = usable_catalog(analysis_input.subject_catalog, analysis_input.group_id)
     adapted = adapt_proposal(
         ordinal,
         raw,
@@ -61,6 +63,7 @@ def validate_single(ordinal, raw, analysis_input, *, existing_items=None):
         messages=messages,
         allowed_sources=allowed,
         existing_items=existing_items,
+        subject_catalog=catalog,
     )
     if not adapted.ok:
         rejected = RejectedItem(
@@ -159,6 +162,10 @@ def adapt_and_validate(
 ) -> AdaptedValidation:
     actions: Counter = Counter()
     payload, raw = parse_envelope(content, analysis_input, actions)
+    if analysis_input.subject_catalog is not None:
+        _usable, why_not = usable_catalog(analysis_input.subject_catalog, analysis_input.group_id)
+        if why_not:
+            actions[f"subject_catalog_ignored_{why_not}"] += 1
     accepted, ordinals, rejected, candidates = [], [], [], []
     seen = set()
     for ordinal, item in enumerate(raw[:MAX_PROPOSALS]):

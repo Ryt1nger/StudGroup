@@ -111,7 +111,8 @@ async def resolve_proposal(
             group_id=group_id,
             destination=proposal.destination,
             semantic_kind=proposal.semantic_kind,
-            subject=proposal.subject,
+            # the checked subject, never the raw proposal text: an unconfirmed subject stays out
+            subject=edited_card.subject,
             title=edited_card.title,
             description=edited_card.description,
             deadline_at=proposal.deadline.at,
@@ -136,7 +137,10 @@ async def resolve_proposal(
         else:
             item.destination = proposal.destination
             item.semantic_kind = proposal.semantic_kind
-            item.subject = proposal.subject
+            # a confirmed subject replaces the old one; a failed or silent re-analysis never
+            # erases the subject the card already has
+            if edited_card.subject is not None:
+                item.subject = edited_card.subject
             item.title, item.description = _kept_texts(item, edited_card)
             item.deadline_at = proposal.deadline.at
             item.deadline_date_only = proposal.deadline.date_only

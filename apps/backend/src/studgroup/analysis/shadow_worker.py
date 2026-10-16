@@ -18,6 +18,7 @@ from studgroup.analysis.shadow import (
     source_snapshot_sha256,
     usage_cost_usd,
 )
+from studgroup.analysis.subject_catalog import load_subject_catalog
 from studgroup.models import (
     Group,
     GroupAnalysisSettings,
@@ -105,16 +106,17 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
         )
         for row in context
     ]
+    facts = (
+        await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
+    ).all()
     analysis_input = AnalysisInput(
         group_id=group.id,
         group_timezone=group.timezone,
         source_revision=raw.revision,
         target_message_ids=[raw.telegram_message_id],
         messages=messages,
+        subject_catalog=await load_subject_catalog(db, group.id, facts),
     )
-    facts = (
-        await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
-    ).all()
     memory = assemble_memory_context(group.id, " ".join(row.text for row in messages), facts)
     selected = sampled(group.id, sample_key, route.shadow_sample_percent)
     row = ShadowEvaluationRun(
