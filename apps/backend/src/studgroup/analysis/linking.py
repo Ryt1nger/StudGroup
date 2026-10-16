@@ -43,7 +43,7 @@ NEW_TASK = re.compile(
     r"составить|сдать)\b",
     re.IGNORECASE,
 )
-APPEND_LIMIT = 1500
+PENDING_INTEGRATION = "supplement_pending_integration"
 
 
 @dataclass(frozen=True)
@@ -271,16 +271,13 @@ def reconcile_validation(validation, messages):
                     queue.append(link.member)  # siblings of an album join the same card
                     actions["supplement_source_added"] += 1
                 elif _text_supplement_ok(anchor, member, link):
+                    # The clarification stays a cited source. Its raw chat text is never pasted
+                    # into the description: the card is flagged until the AI re-reads the item.
                     evidence.append(_ref(member))
                     own.add(link.member)
                     actions["supplement_source_added"] += 1
-                    if description:
-                        description = (
-                            description
-                            + "\n\nДополнение: "
-                            + clean_text(member.text)[:APPEND_LIMIT]
-                        )[:8000]
-                        actions["supplement_text_appended"] += 1
+                    reasons = _with_reason(reasons, PENDING_INTEGRATION)
+                    actions["supplement_pending_integration"] += 1
                 elif CONTENT_SIGNAL.search(member.text or ""):
                     reasons = _with_reason(reasons, "possible_missing_supplement")
                     actions["possible_missing_supplement_flagged"] += 1

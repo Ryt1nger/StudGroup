@@ -3,9 +3,39 @@
 import json
 from dataclasses import dataclass
 
+from sqlalchemy import select
+
 from studgroup.analysis.entities import item_snapshot
 from studgroup.analysis.evidence import add_item_evidence, resolve_evidence
-from studgroup.models import CanonicalAcademicItem, CanonicalItemRevision
+from studgroup.models import CanonicalAcademicItem, CanonicalItemEvidence, CanonicalItemRevision
+
+
+async def _record_missing_evidence(db, item, proposal, sources):
+    """A cited message that is new to the item is kept as evidence even if no field changed."""
+    present = set(
+        (
+            await db.execute(
+                select(CanonicalItemEvidence.raw_message_id, CanonicalItemEvidence.fact_path).where(
+                    CanonicalItemEvidence.item_id == item.id,
+                    CanonicalItemEvidence.item_revision == item.revision,
+                )
+            )
+        ).all()
+    )
+    for reference in proposal.evidence:
+        for fact_path in reference.fact_paths:
+            raw_id = sources[reference.telegram_message_id].id
+            if (raw_id, fact_path) not in present:
+                db.add(
+                    CanonicalItemEvidence(
+                        item_id=item.id,
+                        item_revision=item.revision,
+                        raw_message_id=raw_id,
+                        source_revision=reference.revision,
+                        fact_path=fact_path,
+                    )
+                )
+                present.add((raw_id, fact_path))
 
 
 @dataclass(frozen=True)
@@ -89,6 +119,7 @@ async def resolve_proposal(
         item.updated_at = now
         after_without_revision = item_snapshot(item)
         if before == after_without_revision:
+            await _record_missing_evidence(db, item, proposal, sources)
             return Resolution("no_change", item, "canonical_item_unchanged")
         item.revision += 1
         resolved_action = "cancel" if action == "cancel" else "update"

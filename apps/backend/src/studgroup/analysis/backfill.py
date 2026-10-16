@@ -429,12 +429,12 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
     """
     from studgroup.analysis.contracts import Audience, DeadlineValue, EvidenceRef
     from studgroup.analysis.linking import (
+        PENDING_INTEGRATION,
         STRONG,
         _has_text,
         _text_supplement_ok,
         link_candidates,
     )
-    from studgroup.analysis.text_hygiene import clean_text
 
     by_id = {row.telegram_message_id: row for row in data.messages}
     strong = {}
@@ -485,10 +485,11 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
         if len(items) != 1:
             continue
         item = items[0]
-        text = clean_text(" ".join(by_id[r.telegram_message_id].text for r in proposal.evidence))
-        description = item.description
-        if text and text not in description:
-            description = (description + "\n\nДополнение: " + text[:1500])[:8000]
+        # The supplement joins the item as a cited source only; its raw text is not pasted into
+        # the description. The item is flagged until the AI integrates the clarification.
+        reasons = json.loads(item.attention_reasons)
+        if PENDING_INTEGRATION not in reasons:
+            reasons.append(PENDING_INTEGRATION)
         anchor = by_id[anchor_id]
         replaced[ordinal] = proposal.model_copy(
             update={
@@ -496,7 +497,7 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
                 "existing_item_id": item.id,
                 "expected_item_revision": item.revision,
                 "title": item.title,
-                "description": description,
+                "description": item.description,
                 "subject": item.subject,
                 "deadline": DeadlineValue(
                     at=item.deadline_at,
@@ -504,7 +505,7 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
                     basis=item.deadline_basis,
                 ),
                 "audience": Audience(scope=item.audience_scope, label=item.audience_label),
-                "attention_reasons": json.loads(item.attention_reasons),
+                "attention_reasons": reasons,
                 "evidence": [
                     EvidenceRef(
                         telegram_message_id=anchor_id,

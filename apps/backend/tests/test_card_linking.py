@@ -74,9 +74,14 @@ def test_list_of_topics_in_a_reply_is_attached_even_if_the_model_cited_only_the_
     result, data = run([raw([1])], messages)
     (card,) = result.accepted
     assert ids(card) == [1, 2]
-    assert card.description.endswith("Дополнение: 1) Исторические деятели 2) Творцы 3) Учёные")
-    assert result.adapter_actions["supplement_text_appended"] == 1
-    assert edit_card(card, data.messages).visibility == "normal"
+    # the reply is a cited source; its raw text is not pasted into the description
+    assert card.description == "Каждый готовит доклад-презентацию о выдающихся героях РФ."
+    assert "supplement_pending_integration" in card.attention_reasons
+    assert result.adapter_actions["supplement_pending_integration"] == 1
+    assert "supplement_text_appended" not in result.adapter_actions
+    edited = edit_card(card, data.messages)
+    assert edited.visibility == "headman_attention" and not edited.used_fallback
+    assert edited.description == card.description
 
 
 def test_reply_with_extra_requirement_from_the_headman_hours_later_is_merged():
@@ -86,7 +91,8 @@ def test_reply_with_extra_requirement_from_the_headman_hours_later_is_merged():
     ]
     result, _ = run([raw([1])], messages)
     (card,) = result.accepted
-    assert ids(card) == [1, 2] and "до 10 слайдов" in card.description
+    assert ids(card) == [1, 2] and "до 10 слайдов" not in card.description
+    assert "supplement_pending_integration" in card.attention_reasons
 
 
 def test_pdf_without_caption_in_a_reply_joins_the_sources_without_new_text():

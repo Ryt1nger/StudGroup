@@ -21,7 +21,7 @@ from studgroup.analysis.contracts import (
     SourceMessage,
     ValidationResult,
 )
-from studgroup.analysis.preview import build_preview
+from studgroup.analysis.preview import build_preview, reliability
 from studgroup.analysis.stored import effective_validation
 from studgroup.models import (
     AcademicDeadline,
@@ -118,7 +118,18 @@ def test_old_relative_deadline_is_not_shown_as_an_explicit_date():
     assert effective.adapter_actions["unsupported_explicit_deadline_cleared"] == 1
     card = edit_card(proposal, data.messages)
     assert card.visibility == "headman_attention"
-    assert "к следующей паре" in card.description.casefold()  # relative wording preserved
+    # the model's own description is kept; the chat wording is not pasted into it ...
+    assert card.description == "Определиться с командами и темой проекта."
+    # ... and the relative wording stays visible next to the deadline in the owner's preview
+    when, trust = reliability(
+        proposal.deadline.at,
+        proposal.deadline.date_only,
+        proposal.deadline.basis,
+        card.attention_reasons,
+        MSK,
+        [message.text for message in data.messages],
+    )
+    assert "к следующей паре" in when and "дата не подтверждена" in trust
 
 
 def test_old_each_student_assignment_is_group_not_personal_held():

@@ -230,6 +230,37 @@ change. Telegram file ids stay server-side; the client only gets `t.me` links.
   `with_supplement_updates` turns a card that merely clarifies an already-built item into an
   update of that item. Old stored shadow results get the same treatment when reviewed.
 
+### Card text quality: independent fields (prompt `cplus-extraction-5`)
+
+No paid call, no migration. Supersedes the title order and the verbatim `Дополнение: …` rule of
+the section above.
+
+- **Prompt**: the title is 2-8 words (ideally under 60 characters), names the work and never
+  starts with an address, question or remark; the description is one to four sentences in the
+  model's own words (what, for whom when only part of the group is affected, format, materials),
+  merged from every cited message, never quoted or pasted chat text.
+- **`card_editor.edit_card` judges title, description and subject separately.** A subject problem
+  (`unsupported_subject`) drops only the subject. A bad title is rebuilt without touching a sound
+  description and vice versa. Held/attention visibility rules and `SERIOUS_REASONS` are unchanged.
+- **Fact check** (`facts_problem`): numbers (list markers `1)` ignored), calendar words,
+  subgroup wording and named works must come from the cited messages. A work/concept counts as
+  supported by any word of the same family (`выступление` for `доклад`, `КТ3` for
+  `контрольная точка`), so a faithful paraphrase is kept. Invented facts still fail.
+- **Titles**: conversational phrasing (`У кого…`, `Если кто-то…`, `Это…`, `Не…`, questions,
+  truncated `…`) never survives. A rebuilt title must be a safe action or named work taken from
+  the evidenced description, then from the source; otherwise `«<вид>: уточнить по сообщению в
+  чате»` with `title_insufficient_data`. An overlong but sound title is shortened from the
+  description (`title_too_long`).
+- **Descriptions**: an unsupported description keeps its supported sentences (`description_trimmed`);
+  if none remain it becomes the neutral marker `Описание уточняется: подробности в исходном
+  сообщении чата.` (`description_pending_ai`) until the AI re-reads the item. Source messages are
+  never copied into a description; they stay in the card's sources.
+- **Supplements** (`linking.reconcile_validation`, `backfill.with_supplement_updates`): a
+  provable clarification is added as a cited source and the card gets
+  `supplement_pending_integration`; its raw chat text is not appended. The resolver now records a
+  new source even when no visible field changed. Until the AI integrates the clarification the
+  description does not contain it.
+
 ### Stored results are re-normalised on read (`analysis/stored.py`)
 
 A stored shadow `validation_result_json` keeps the proposals exactly as the code of that day
