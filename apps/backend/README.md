@@ -16,7 +16,7 @@ uv run python -m studgroup.export_shadow_wave \
 The exporter only reads stored shadow rows. The existing preview path uses a savepoint that is
 always rolled back. The resulting JSON contains private Telegram text and must remain under the
 Git-ignored `tmp/` directory; do not attach it to issues, commits, CI artifacts, or application
-logs. It can be opened directly by the development-only `/ai-audit` page.
+logs. Use the bundle only with an explicitly approved offline review workflow.
 
 The bundle distinguishes stored validation, the current deterministic `effective_validation`,
 card-editor output before cross-run merging, and the final owner preview. Raw provider responses
