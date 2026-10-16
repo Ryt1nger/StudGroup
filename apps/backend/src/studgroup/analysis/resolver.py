@@ -5,9 +5,38 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
+from studgroup.analysis.card_editor import DESCRIPTION_ATTACHMENT_ONLY, DESCRIPTION_PENDING
 from studgroup.analysis.entities import item_snapshot
 from studgroup.analysis.evidence import add_item_evidence, resolve_evidence
+from studgroup.analysis.title_builder import INSUFFICIENT
 from studgroup.models import CanonicalAcademicItem, CanonicalItemEvidence, CanonicalItemRevision
+
+
+def _kept_texts(item, edited_card):
+    """Title and description for an update, never worse than what the item already shows.
+
+    A display field the card editor had to replace (fallback) is a placeholder or a salvaged
+    fragment. It must not overwrite a title or description the item already carries from an earlier
+    accepted pass: the previous text stays, and the card keeps the reasons that mark it unconfirmed.
+    A previous placeholder is replaced by anything better.
+    """
+    title, description = edited_card.title, edited_card.description
+    fallback = set(edited_card.fallback_fields)
+    if (
+        "title" in fallback
+        and "title_insufficient_data" in edited_card.attention_reasons
+        and item.title
+        and not item.title.endswith(INSUFFICIENT)
+    ):
+        title = item.title
+    if (
+        "description" in fallback
+        and "description_pending_ai" in edited_card.attention_reasons
+        and item.description
+        and item.description not in {DESCRIPTION_PENDING, DESCRIPTION_ATTACHMENT_ONLY}
+    ):
+        description = item.description
+    return title, description
 
 
 async def _record_missing_evidence(db, item, proposal, sources):
@@ -108,8 +137,7 @@ async def resolve_proposal(
             item.destination = proposal.destination
             item.semantic_kind = proposal.semantic_kind
             item.subject = proposal.subject
-            item.title = edited_card.title
-            item.description = edited_card.description
+            item.title, item.description = _kept_texts(item, edited_card)
             item.deadline_at = proposal.deadline.at
             item.deadline_date_only = proposal.deadline.date_only
             item.deadline_basis = proposal.deadline.basis

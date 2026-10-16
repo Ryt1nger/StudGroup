@@ -162,6 +162,36 @@ def facts_problem(text, sources, evidence_text, audience_scope):
     return None
 
 
+SUPPLEMENT_MIN_NEW_WORDS = 2
+
+
+def _content_stems(text):
+    return {word[:5] for word in re.findall(r"[a-zа-я]{4,}", normalized(text))}
+
+
+def supplement_adds_information(known_text, supplement_text):
+    """Does a clarification say something the card does not already say?
+
+    A number, a calendar word or a named work/concept the card lacks, or several new content words,
+    count as new information. A reply that only repeats or confirms the card does not. The check
+    is deliberately cheap and errs towards "new": a missed integration is worse than a flag.
+    """
+    if _numbers(supplement_text) - _numbers(known_text):
+        return True
+    if _date_stems(supplement_text) - _date_stems(known_text):
+        return True
+    shown_known, shown_new = normalized(known_text), normalized(supplement_text)
+    for shown_rx, allowed_rx in CONCEPTS.values():
+        if (shown_rx.search(shown_new) or allowed_rx.search(shown_new)) and not (
+            shown_rx.search(shown_known) or allowed_rx.search(shown_known)
+        ):
+            return True
+    return (
+        len(_content_stems(supplement_text) - _content_stems(known_text))
+        >= SUPPLEMENT_MIN_NEW_WORDS
+    )
+
+
 def title_problem(title, raw_length, sources, evidence_text, audience_scope):
     if not title:
         return "missing_display_text"
@@ -263,9 +293,12 @@ def edit_card(
         rebuilt, origin = build_title(
             None if description_issue else proposal.description, source_text, label
         )
-        reasons.append(title_issue)
-        # A long but otherwise sound model title beats "needs clarification": it is only flagged.
-        if not (origin == "insufficient" and title_issue == "title_too_long" and title):
+        # A long but otherwise sound model title beats "needs clarification": it is kept as is and
+        # raises no flag (a card must not be marked unconfirmed merely for being wordy).
+        if origin == "insufficient" and title_issue == "title_too_long" and title:
+            pass
+        else:
+            reasons.append(title_issue)
             title = rebuilt
             fallback_fields.append("title")
             if origin == "insufficient":

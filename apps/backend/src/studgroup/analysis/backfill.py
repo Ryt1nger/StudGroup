@@ -424,13 +424,17 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
     """A card that only clarifies an existing item (provable reply) becomes an update of it.
 
     Runs after the cross-run state is visible (earlier runs applied first), so a supplement from
-    its own later run never becomes a second card. Only the description (verbatim supplement)
-    and the evidence change; title, deadline, audience and subject stay the item's own.
+    its own later run never becomes a second card. Only the evidence changes (the clarification
+    joins as a cited source marked ``supplement_reply``); title, description, deadline, audience and
+    subject stay the item's own. The item is flagged ``supplement_pending_integration`` only when
+    the clarification says something the card does not already say.
     """
+    from studgroup.analysis.card_editor import supplement_adds_information
     from studgroup.analysis.contracts import Audience, DeadlineValue, EvidenceRef
     from studgroup.analysis.linking import (
         PENDING_INTEGRATION,
         STRONG,
+        SUPPLEMENT_PATH,
         _has_text,
         _text_supplement_ok,
         link_candidates,
@@ -488,7 +492,11 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
         # The supplement joins the item as a cited source only; its raw text is not pasted into
         # the description. The item is flagged until the AI integrates the clarification.
         reasons = json.loads(item.attention_reasons)
-        if PENDING_INTEGRATION not in reasons:
+        known = f"{item.title}\n{item.description}"
+        if PENDING_INTEGRATION not in reasons and any(
+            supplement_adds_information(known, by_id[ref.telegram_message_id].text or "")
+            for ref in proposal.evidence
+        ):
             reasons.append(PENDING_INTEGRATION)
         anchor = by_id[anchor_id]
         replaced[ordinal] = proposal.model_copy(
@@ -512,7 +520,14 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
                         revision=anchor.revision,
                         fact_paths=["description"],
                     ),
-                    *proposal.evidence,
+                    *[
+                        EvidenceRef(
+                            telegram_message_id=ref.telegram_message_id,
+                            revision=ref.revision,
+                            fact_paths=sorted({*ref.fact_paths, SUPPLEMENT_PATH}),
+                        )
+                        for ref in proposal.evidence
+                    ],
                 ],
             }
         )

@@ -256,10 +256,29 @@ the section above.
   сообщении чата.` (`description_pending_ai`) until the AI re-reads the item. Source messages are
   never copied into a description; they stay in the card's sources.
 - **Supplements** (`linking.reconcile_validation`, `backfill.with_supplement_updates`): a
-  provable clarification is added as a cited source and the card gets
-  `supplement_pending_integration`; its raw chat text is not appended. The resolver now records a
-  new source even when no visible field changed. Until the AI integrates the clarification the
-  description does not contain it.
+  provable clarification (reply from staff/the same author, strong link) is added as a cited
+  source marked with the fact path `supplement_reply`; its raw chat text is never appended. Only a
+  clarification that says something the card lacks (`card_editor.supplement_adds_information`: a
+  new number, calendar word or named work, or at least two new content words) adds
+  `supplement_pending_integration`; a reply that merely repeats the card adds the source and
+  nothing else. The check errs towards "new" (a missed integration is worse than a flag). The
+  resolver records a new source even when no visible field changed.
+- **A lagging description is never presented as final.** A student does not see the
+  `needs_clarification` state, so `projection.visible_description` appends one neutral sentence
+  (`LAGGING_NOTE`, points to the source messages, states no fact) to the projected description
+  while `supplement_pending_integration` or `description_pending_ai` is among the reasons. The
+  canonical description stays clean and the note disappears when the AI integrates the
+  clarification (the reasons are replaced). The placeholder description carries no note.
+- **A failed field never destroys an accepted text** (`resolver._kept_texts`): when an update's
+  description (`description_pending_ai`) or title (`title_insufficient_data`) had to fall back to a
+  placeholder, the item keeps the text it already has; the reasons keep the card marked
+  unconfirmed. A previous placeholder is replaced by the first sound text. Why `resolver.py`
+  changed in a text-quality task: without this the placeholder written by the editor would
+  overwrite a previously accepted description on every update, i.e. the new fallback would be
+  *worse* than the old behaviour. The other resolver change records new evidence on `no_change`.
+- **Visibility**: only `SERIOUS_REASONS` hold a card. A card with a placeholder or trimmed text
+  is published as `needs_clarification`, never as a confirmed card. A long but otherwise sound
+  title is kept (cut by title hygiene) and raises no flag.
 
 ### Stored results are re-normalised on read (`analysis/stored.py`)
 
