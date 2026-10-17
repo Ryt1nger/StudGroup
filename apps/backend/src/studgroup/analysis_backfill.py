@@ -76,9 +76,7 @@ async def run(args):
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    result.add_argument(
-        "command", choices=["plan", "enqueue", "requeue", "review", "promote"]
-    )
+    result.add_argument("command", choices=["plan", "enqueue", "requeue", "review", "promote"])
     result.add_argument("--group-id", type=uuid.UUID, required=True)
     result.add_argument("--since", default="2026-10-08", help="YYYY-MM-DD in the group timezone")
     result.add_argument("--limit", type=int, default=20)

@@ -34,15 +34,11 @@ class LegacyStrategy:
             schedule,
             target_message_id=analysis_input.target_message_ids[-1],
         )
-        revisions = {
-            row.telegram_message_id: row.revision for row in analysis_input.messages
-        }
+        revisions = {row.telegram_message_id: row.revision for row in analysis_input.messages}
         proposals = []
         for item in result.batch.assignments:
             destination = "task" if item.kind == "homework" else "deadline"
-            semantic_kind = (
-                "other_academic_deadline" if item.kind == "needs_context" else item.kind
-            )
+            semantic_kind = "other_academic_deadline" if item.kind == "needs_context" else item.kind
             proposals.append(
                 ProposedAcademicItem(
                     destination=destination,
@@ -58,9 +54,7 @@ class LegacyStrategy:
                     audience=Audience(),
                     confidence=item.confidence,
                     attention_reasons=(
-                        ["legacy_partial_proposal"]
-                        if item.publication_state != "published"
-                        else []
+                        ["legacy_partial_proposal"] if item.publication_state != "published" else []
                     ),
                     evidence=[
                         EvidenceRef(

@@ -949,9 +949,7 @@ def test_all_rejected_is_durable_and_not_a_clean_empty_success(client):
                 raw_provider_response='{"assignments":[{"broken":true}]}',
             )
 
-    assert (
-        run(client, RejectedProvider(), ai_store_raw_provider_responses=True) == "completed"
-    )
+    assert run(client, RejectedProvider(), ai_store_raw_provider_responses=True) == "completed"
     assert count(client, Homework) == 0
     assert count(client, AICandidate) == 0
 

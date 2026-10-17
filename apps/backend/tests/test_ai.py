@@ -133,9 +133,7 @@ def test_deep_batch_isolates_bad_proposal_and_keeps_valid_one():
 
 
 def test_deep_batch_repairs_malformed_json_once_and_accounts_for_both_calls():
-    repaired = json.dumps(
-        {"assignments": [facts(source_message_ids=[1])], "online_lessons": []}
-    )
+    repaired = json.dumps({"assignments": [facts(source_message_ids=[1])], "online_lessons": []})
     requests = []
 
     def handler(request):
@@ -636,9 +634,7 @@ def test_target_test_infers_missing_subject_from_known_academic_topic():
                     "message_date": "2026-10-09T11:13:41+03:00",
                     "text": "Группа Божидаевой, тестик через часик в СДО закроется",
                     "topic_name": "Основы информатики 💻",
-                    "group_structure": {
-                        "schedule_subjects": ["Основы информатики"]
-                    },
+                    "group_structure": {"schedule_subjects": ["Основы информатики"]},
                     "is_target": True,
                 }
             ],
@@ -683,9 +679,7 @@ def test_target_test_does_not_infer_subject_from_generic_topic():
                     "message_date": "2026-10-09T11:13:41+03:00",
                     "text": "Тест в СДО",
                     "topic_name": "Общее",
-                    "group_structure": {
-                        "schedule_subjects": ["Основы информатики"]
-                    },
+                    "group_structure": {"schedule_subjects": ["Основы информатики"]},
                     "is_target": True,
                 }
             ],

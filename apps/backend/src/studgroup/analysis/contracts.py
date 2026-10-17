@@ -207,30 +207,36 @@ class ProposalSchemaIssue(StrictDTO):
         pattern=r"^[A-Za-z0-9_<>.\[\]*-]+$",
     )
     error_type: str = Field(max_length=64, pattern=r"^[a-z][a-z0-9_]{0,63}$")
-    expected: Literal[
-        "required_field",
-        "field_not_allowed",
-        "string",
-        "integer",
-        "boolean",
-        "array",
-        "object",
-        "allowed_literal",
-        "timezone_aware_datetime",
-        "valid_identifier",
-        "valid_value",
-    ] | None = None
-    received_type: Literal[
-        "missing",
-        "null",
-        "string",
-        "integer",
-        "number",
-        "boolean",
-        "array",
-        "object",
-        "other",
-    ] | None = None
+    expected: (
+        Literal[
+            "required_field",
+            "field_not_allowed",
+            "string",
+            "integer",
+            "boolean",
+            "array",
+            "object",
+            "allowed_literal",
+            "timezone_aware_datetime",
+            "valid_identifier",
+            "valid_value",
+        ]
+        | None
+    ) = None
+    received_type: (
+        Literal[
+            "missing",
+            "null",
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "array",
+            "object",
+            "other",
+        ]
+        | None
+    ) = None
 
 
 class RejectedItem(StrictDTO):

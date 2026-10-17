@@ -57,7 +57,10 @@ def clean_text(text):
     ]
     text = "".join(chunks)
     lines = [_fix_line(line) for line in text.replace("\r", "").split("\n")]
-    lines = [line.strip(" \t-–—,;:") if not re.match(r"^\s*[-–—•]\s*\S", line) else line for line in lines]
+    lines = [
+        line.strip(" \t-–—,;:") if not re.match(r"^\s*[-–—•]\s*\S", line) else line
+        for line in lines
+    ]
     cleaned = [line for line in lines if line]
     if not cleaned:
         return ""

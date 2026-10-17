@@ -85,9 +85,7 @@ async def resolve_proposal(
             item.deadline_basis = proposal.deadline.basis
             item.audience_scope = proposal.audience.scope
             item.audience_label = proposal.audience.label
-            item.attention_reasons = json.dumps(
-                edited_card.attention_reasons, ensure_ascii=False
-            )
+            item.attention_reasons = json.dumps(edited_card.attention_reasons, ensure_ascii=False)
         item.updated_at = now
         after_without_revision = item_snapshot(item)
         if before == after_without_revision:

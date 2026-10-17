@@ -16,7 +16,9 @@ GENERIC_TITLE_PATTERN = re.compile(
     r"^(?:(?:доклад|презентация|задание|орг)\s*)+$"
 )
 KIND_LABELS = {"homework": "Задание"}
-NOISY_TITLE = re.compile(r"^(?:ребят|короче|привет|здравствуй|добрый|доброе|всем привет)", re.IGNORECASE)
+NOISY_TITLE = re.compile(
+    r"^(?:ребят|короче|привет|здравствуй|добрый|доброе|всем привет)", re.IGNORECASE
+)
 NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 GENERIC_TITLES = {
     "домашнее задание",
@@ -77,8 +79,7 @@ def phrase_supported(value, evidence_text):
     value_tokens = re.findall(r"[a-zа-яё]+", normalized(value))
     evidence_tokens = re.findall(r"[a-zа-яё]+", evidence_text)
     return bool(value_tokens) and all(
-        any(token[:5] == candidate[:5] for candidate in evidence_tokens)
-        for token in value_tokens
+        any(token[:5] == candidate[:5] for candidate in evidence_tokens) for token in value_tokens
     )
 
 

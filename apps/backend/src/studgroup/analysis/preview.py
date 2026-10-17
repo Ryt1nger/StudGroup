@@ -58,7 +58,10 @@ def reliability(deadline_at, date_only, basis, reasons, tz, texts=()):
     if deadline_at is None:
         relative = next((m.group(0) for t in texts if (m := RELATIVE_PHRASE.search(t or ""))), None)
         if relative:
-            when, trust = f"срок не указан (в тексте: «{relative}»)", "относительный, дата не подтверждена"
+            when, trust = (
+                f"срок не указан (в тексте: «{relative}»)",
+                "относительный, дата не подтверждена",
+            )
         else:
             when, trust = "срок не указан", "неизвестен"
     else:

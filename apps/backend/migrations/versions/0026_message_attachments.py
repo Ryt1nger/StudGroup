@@ -47,7 +47,9 @@ def upgrade():
             name="uq_message_attachment_source_revision",
         ),
     )
-    op.create_index("ix_message_attachments_raw_message_id", "message_attachments", ["raw_message_id"])
+    op.create_index(
+        "ix_message_attachments_raw_message_id", "message_attachments", ["raw_message_id"]
+    )
     op.create_index("ix_message_attachments_group_id", "message_attachments", ["group_id"])
     op.create_index("ix_message_attachments_delete_at", "message_attachments", ["delete_at"])
 

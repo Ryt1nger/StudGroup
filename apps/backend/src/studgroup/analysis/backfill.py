@@ -369,8 +369,9 @@ async def review(db, *, group_id, since, now, limit=50):
         data = AnalysisInput.model_validate_json(run.input_json)
         validation = effective_validation(validation, data.messages, group.timezone)
         by_id = {row.telegram_message_id: row for row in data.messages}
-        for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted,
-                                     strict=True):
+        for ordinal, proposal in zip(
+            validation.accepted_ordinals, validation.accepted, strict=True
+        ):
             card = edit_card(proposal, data.messages)
             out.append(
                 {
@@ -466,7 +467,9 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
         items = (
             await db.scalars(
                 select(CanonicalAcademicItem)
-                .join(CanonicalItemEvidence, CanonicalItemEvidence.item_id == CanonicalAcademicItem.id)
+                .join(
+                    CanonicalItemEvidence, CanonicalItemEvidence.item_id == CanonicalAcademicItem.id
+                )
                 .where(
                     CanonicalAcademicItem.group_id == group_id,
                     CanonicalAcademicItem.state == "active",
@@ -548,7 +551,9 @@ async def _links(db, group_id, validation, raw_by_telegram_id):
         items = (
             await db.scalars(
                 select(CanonicalAcademicItem)
-                .join(CanonicalItemEvidence, CanonicalItemEvidence.item_id == CanonicalAcademicItem.id)
+                .join(
+                    CanonicalItemEvidence, CanonicalItemEvidence.item_id == CanonicalAcademicItem.id
+                )
                 .where(
                     CanonicalAcademicItem.group_id == group_id,
                     CanonicalAcademicItem.state == "active",

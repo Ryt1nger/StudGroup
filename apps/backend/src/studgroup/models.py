@@ -335,9 +335,7 @@ class AIAttempt(Base):
 
 class AnalysisApplicationOutcome(Base):
     __tablename__ = "analysis_application_outcomes"
-    __table_args__ = (
-        UniqueConstraint("attempt_id", "stage", "proposal_kind", "proposal_ordinal"),
-    )
+    __table_args__ = (UniqueConstraint("attempt_id", "stage", "proposal_kind", "proposal_ordinal"),)
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     attempt_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("ai_attempts.id", ondelete="CASCADE"), index=True
@@ -497,7 +495,9 @@ class CanonicalAcademicItem(Base):
 class CanonicalItemEvidence(Base):
     __tablename__ = "canonical_item_evidence"
     __table_args__ = (
-        UniqueConstraint("item_id", "item_revision", "raw_message_id", "source_revision", "fact_path"),
+        UniqueConstraint(
+            "item_id", "item_revision", "raw_message_id", "source_revision", "fact_path"
+        ),
     )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     item_id: Mapped[uuid.UUID] = mapped_column(

@@ -154,9 +154,7 @@ async def purge_expired_analysis_outcomes(engine, now=None):
     cutoff = utc(now or datetime.now(UTC))
     async with AsyncSession(engine) as db:
         result = await db.execute(
-            delete(AnalysisApplicationOutcome).where(
-                AnalysisApplicationOutcome.delete_at <= cutoff
-            )
+            delete(AnalysisApplicationOutcome).where(AnalysisApplicationOutcome.delete_at <= cutoff)
         )
         await db.commit()
         return result.rowcount or 0
@@ -679,9 +677,7 @@ async def claim(engine, settings, now, *, writer="legacy"):
                 )
             )
             reservation = (
-                REPAIR_RESERVATION
-                if settings.ai_technical_repair_enabled
-                else RESERVATION
+                REPAIR_RESERVATION if settings.ai_technical_repair_enabled else RESERVATION
             )
             total_limit = Decimal(str(settings.ai_total_budget_usd))
             daily_limit = Decimal(str(settings.ai_daily_group_budget_usd))
@@ -1474,9 +1470,7 @@ async def process_next(engine, settings, provider=None, now=None):
                     stage="screen",
                     technical_status="parsed",
                     academic_status="signal" if screen_result.decision.signal else "no_signal",
-                    application_status="deep_queued"
-                    if screen_result.decision.signal
-                    else "none",
+                    application_status="deep_queued" if screen_result.decision.signal else "none",
                     reason_code="screen_signal"
                     if screen_result.decision.signal
                     else "screen_no_signal",
@@ -1532,9 +1526,7 @@ async def process_next(engine, settings, provider=None, now=None):
                     )
                     db.add(candidate)
                     candidates.append(candidate)
-                accepted_total = len(result.batch.assignments) + len(
-                    result.batch.online_lessons
-                )
+                accepted_total = len(result.batch.assignments) + len(result.batch.online_lessons)
                 all_items_rejected = result.raw_proposal_count > 0 and accepted_total == 0
                 if all_items_rejected:
                     raw.processing_state = "needs_context"

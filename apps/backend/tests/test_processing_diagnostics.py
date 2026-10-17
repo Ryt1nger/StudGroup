@@ -52,9 +52,7 @@ def test_canary_preflight_sizes_one_expired_run_without_mutating_it(client):
     async def check():
         async with AsyncSession(client.app.state.engine) as db:
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
-            raw = await db.scalar(
-                select(RawMessage).where(RawMessage.telegram_message_id == 41)
-            )
+            raw = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 41))
             db.add(
                 GroupAnalysisSettings(
                     group_id=group.id,
@@ -126,9 +124,7 @@ def test_canary_preflight_sizes_one_expired_run_without_mutating_it(client):
             assert preflight["active_legacy_lease_count"] == 0
             assert preflight["envelope"]["message_count"] == 1
             assert preflight["envelope"]["context_request_bytes"] > 0
-            assert Decimal(preflight["envelope"]["cost_upper_bound_usd"]) < Decimal(
-                "0.04"
-            )
+            assert Decimal(preflight["envelope"]["cost_upper_bound_usd"]) < Decimal("0.04")
             assert group_result["notifications"] == 0
             assert group_result["bot_outbox"] == 0
             assert group_result["canonical_items"] == 0
@@ -151,9 +147,7 @@ def test_canary_preflight_recognizes_one_queued_prepared_run(client):
     async def check():
         async with AsyncSession(client.app.state.engine) as db:
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
-            raw = await db.scalar(
-                select(RawMessage).where(RawMessage.telegram_message_id == 42)
-            )
+            raw = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 42))
             db.add(
                 GroupAnalysisSettings(
                     group_id=group.id,
@@ -224,9 +218,7 @@ def test_canary_preflight_recognizes_one_queued_prepared_run(client):
             assert preflight["active_shadow_lease_count"] == 0
             assert preflight["active_legacy_lease_count"] == 0
             assert preflight["envelope"]["message_count"] == 1
-            assert Decimal(preflight["envelope"]["cost_upper_bound_usd"]) < Decimal(
-                "0.04"
-            )
+            assert Decimal(preflight["envelope"]["cost_upper_bound_usd"]) < Decimal("0.04")
             assert "reserve_prepared_canary" in preflight["launch_requirements"]
             assert private_text not in json.dumps(result, ensure_ascii=False)
 

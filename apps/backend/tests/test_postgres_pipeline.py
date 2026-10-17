@@ -162,9 +162,7 @@ def test_postgres_telegram_worker_router_shadow_e2e_is_read_only():
                     counts[model.__tablename__] = await db.scalar(
                         select(func.count()).select_from(model).where(model.group_id == group_id)
                     )
-                counts["bot_outbox"] = await db.scalar(
-                    select(func.count()).select_from(BotOutbox)
-                )
+                counts["bot_outbox"] = await db.scalar(select(func.count()).select_from(BotOutbox))
                 return homework, counts
         finally:
             await engine.dispose()
@@ -214,9 +212,7 @@ def test_postgres_telegram_worker_router_shadow_e2e_is_read_only():
         assert client.post("/v1/telegram/webhook", json=payload, headers=headers).status_code == 200
         # Telegram retries are acknowledged idempotently.
         assert client.post("/v1/telegram/webhook", json=payload, headers=headers).status_code == 200
-        statuses = [
-            asyncio.run(sweep_once(config, provider))["status"] for _ in range(3)
-        ]
+        statuses = [asyncio.run(sweep_once(config, provider))["status"] for _ in range(3)]
         assert statuses == ["structure_mapped", "shadow_completed", "completed"]
         stable = asyncio.run(snapshot(url, group_id))
         row = asyncio.run(shadow_row(url, group_id))
@@ -354,17 +350,12 @@ def test_postgres_shadow_budget_reservation_is_atomic_under_concurrency():
             process_shadow_next(engine, settings, provider, now),
         )
         assert sorted(outcomes) == ["completed", "idle"]
-        assert (
-            await process_shadow_next(engine, settings, provider, now)
-            == "budget_deferred"
-        )
+        assert await process_shadow_next(engine, settings, provider, now) == "budget_deferred"
         assert len(provider.requests) == 2
         async with AsyncSession(engine) as db:
             rows = (
                 await db.scalars(
-                    select(ShadowEvaluationRun).where(
-                        ShadowEvaluationRun.group_id == group_id
-                    )
+                    select(ShadowEvaluationRun).where(ShadowEvaluationRun.group_id == group_id)
                 )
             ).all()
             assert sorted(row.state for row in rows) == ["budget_deferred", "completed"]

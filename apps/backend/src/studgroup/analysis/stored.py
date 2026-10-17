@@ -43,12 +43,14 @@ def _renormalized(ordinal, proposal, messages, timezone, actions):
         if reason not in reasons:
             reasons.append(reason)
     if (
-        value["deadline"] == {
+        value["deadline"]
+        == {
             "at": proposal.deadline.at,
             "date_only": proposal.deadline.date_only,
             "basis": proposal.deadline.basis,
         }
-        and value["audience"] == {
+        and value["audience"]
+        == {
             "scope": proposal.audience.scope,
             "label": proposal.audience.label,
         }
@@ -74,9 +76,7 @@ def effective_validation(validation, messages, timezone):
     actions = Counter(validation.adapter_actions)
     accepted = [
         _renormalized(ordinal, proposal, messages, timezone, actions)
-        for ordinal, proposal in zip(
-            validation.accepted_ordinals, validation.accepted, strict=True
-        )
+        for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted, strict=True)
     ]
     updated = validation.model_copy(
         update={"accepted": accepted, "adapter_actions": dict(sorted(actions.items()))}

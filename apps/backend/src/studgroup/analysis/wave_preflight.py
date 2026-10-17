@@ -67,7 +67,9 @@ def _composition(rows, attachment_counts):
     texts = [(row.text or "").strip() for row in rows]
     with_text = sum(1 for text in texts if text)
     files_only = sum(
-        1 for row, text in zip(rows, texts, strict=True) if not text and attachment_counts.get(row.id)
+        1
+        for row, text in zip(rows, texts, strict=True)
+        if not text and attachment_counts.get(row.id)
     )
     return {
         "messages": len(rows),
@@ -103,9 +105,7 @@ async def wave_preflight(db, settings, now=None, *, since=None, wave_size=25):
     route = await db.get(GroupAnalysisSettings, group.id)
     eligible_filter = backfill._eligible_raw(group.id, lower, now)
 
-    eligible = int(
-        await db.scalar(select(func.count(RawMessage.id)).where(*eligible_filter)) or 0
-    )
+    eligible = int(await db.scalar(select(func.count(RawMessage.id)).where(*eligible_filter)) or 0)
     day_counts = Counter()
     for (moment,) in (
         await db.execute(select(RawMessage.message_date).where(*eligible_filter))
@@ -135,10 +135,7 @@ async def wave_preflight(db, settings, now=None, *, since=None, wave_size=25):
         or 0
     )
     uncovered_total = int(
-        await db.scalar(
-            select(func.count(RawMessage.id)).where(*eligible_filter, ~_covered())
-        )
-        or 0
+        await db.scalar(select(func.count(RawMessage.id)).where(*eligible_filter, ~_covered())) or 0
     )
     all_uncovered_rows = (
         await db.scalars(select(RawMessage).where(*eligible_filter, ~_covered()))
@@ -155,9 +152,7 @@ async def wave_preflight(db, settings, now=None, *, since=None, wave_size=25):
         for raw_id, count in (
             await db.execute(
                 select(MessageAttachment.raw_message_id, func.count())
-                .where(
-                    MessageAttachment.group_id == group.id, MessageAttachment.active.is_(True)
-                )
+                .where(MessageAttachment.group_id == group.id, MessageAttachment.active.is_(True))
                 .group_by(MessageAttachment.raw_message_id)
             )
         ).all()
@@ -237,8 +232,12 @@ async def wave_preflight(db, settings, now=None, *, since=None, wave_size=25):
         "uncovered_composition": _composition(all_uncovered_rows, attachment_counts),
         "next_wave_if_prepared": {
             "size": len(next_rows),
-            "first_message_date": _utc(next_rows[0].message_date).isoformat() if next_rows else None,
-            "last_message_date": _utc(next_rows[-1].message_date).isoformat() if next_rows else None,
+            "first_message_date": _utc(next_rows[0].message_date).isoformat()
+            if next_rows
+            else None,
+            "last_message_date": _utc(next_rows[-1].message_date).isoformat()
+            if next_rows
+            else None,
             "first_telegram_message_id": next_rows[0].telegram_message_id if next_rows else None,
             "last_telegram_message_id": next_rows[-1].telegram_message_id if next_rows else None,
             "selection": "spread" if spread else "oldest_first",
@@ -329,7 +328,9 @@ async def _wave_rows(db, group, now):
     if wave_rows:
         targets = (
             await db.scalars(
-                select(RawMessage).where(RawMessage.id.in_([row.raw_message_id for row in wave_rows]))
+                select(RawMessage).where(
+                    RawMessage.id.in_([row.raw_message_id for row in wave_rows])
+                )
             )
         ).all()
     memberships = []

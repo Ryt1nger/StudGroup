@@ -24,7 +24,9 @@ STRONG, MEDIUM, WEAK = "strong", "medium", "weak"
 RANK = {STRONG: 0, MEDIUM: 1, WEAK: 2}
 MAX_PAYLOAD_LINKS = 40
 STAFF_ROLES = {"headman", "deputy"}
-ENUMERATION_START = re.compile(r"^\s*(?:\d{1,2}[).]|[-•*–—]|темы\b|варианты\b|список\b)", re.IGNORECASE)
+ENUMERATION_START = re.compile(
+    r"^\s*(?:\d{1,2}[).]|[-•*–—]|темы\b|варианты\b|список\b)", re.IGNORECASE
+)
 CONTINUATION_START = re.compile(
     r"^\s*(?:и\s+ещ[её]|а\s+также|ещ[её]\b|кстати|добавлю|добавляю|дополнени\w+|уточнени\w+|"
     r"уточняю|забыл\w*|и\s+\w+\s+тоже|нет[,\s])",
@@ -217,7 +219,9 @@ def reconcile_validation(validation, messages):
         evidence = [*host.evidence, *[r for r in candidate.evidence if r not in host.evidence]]
         description = host.description
         if description and candidate.description and candidate.description not in description:
-            description = (description + "\n\nДополнение: " + clean_text(candidate.description))[:8000]
+            description = (description + "\n\nДополнение: " + clean_text(candidate.description))[
+                :8000
+            ]
         items[host_index] = (
             items[host_index][0],
             host.model_copy(update={"evidence": evidence, "description": description}),
@@ -236,9 +240,11 @@ def reconcile_validation(validation, messages):
         evidence = list(proposal.evidence)
         description = proposal.description
         reasons = list(proposal.attention_reasons)
-        others = set().union(*(c for k, c in enumerate(cited_all) if k != position)) if len(
-            cited_all
-        ) > 1 else set()
+        others = (
+            set().union(*(c for k, c in enumerate(cited_all) if k != position))
+            if len(cited_all) > 1
+            else set()
+        )
         queue = sorted(own)
         visited = set()
         while queue:
@@ -270,7 +276,9 @@ def reconcile_validation(validation, messages):
                     actions["supplement_source_added"] += 1
                     if description:
                         description = (
-                            description + "\n\nДополнение: " + clean_text(member.text)[:APPEND_LIMIT]
+                            description
+                            + "\n\nДополнение: "
+                            + clean_text(member.text)[:APPEND_LIMIT]
                         )[:8000]
                         actions["supplement_text_appended"] += 1
                 elif CONTENT_SIGNAL.search(member.text or ""):

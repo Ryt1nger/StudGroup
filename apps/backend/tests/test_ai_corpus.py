@@ -66,11 +66,13 @@ def test_ai_corpus_rejects_unexplained_negative_case():
 def test_ai_corpus_rejects_discussion_split_leakage(tmp_path):
     fixture = FIXTURES / "synthetic.jsonl"
     development = fixture.read_text(encoding="utf-8").strip()
-    evaluation = development.replace(
-        '"case_id":"synthetic-multiple-items","split":"development"',
-        '"case_id":"synthetic-evaluation","split":"evaluation"',
-    ).replace("synthetic-task-1", "synthetic-task-2").replace(
-        "synthetic-deadline-1", "synthetic-deadline-2"
+    evaluation = (
+        development.replace(
+            '"case_id":"synthetic-multiple-items","split":"development"',
+            '"case_id":"synthetic-evaluation","split":"evaluation"',
+        )
+        .replace("synthetic-task-1", "synthetic-task-2")
+        .replace("synthetic-deadline-1", "synthetic-deadline-2")
     )
     path = tmp_path / "leaked.jsonl"
     path.write_text(f"{development}\n{evaluation}\n", encoding="utf-8")

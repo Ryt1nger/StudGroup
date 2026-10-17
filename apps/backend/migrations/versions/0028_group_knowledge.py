@@ -88,9 +88,7 @@ def upgrade():
         sa.Column("value_json", sa.Text(), nullable=False),
         sa.Column("reason_code", sa.String(64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint(
-            "fact_id", "fact_revision", name="uq_group_knowledge_history_revision"
-        ),
+        sa.UniqueConstraint("fact_id", "fact_revision", name="uq_group_knowledge_history_revision"),
     )
     op.create_index("ix_group_knowledge_history_fact_id", "group_knowledge_history", ["fact_id"])
 

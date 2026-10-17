@@ -91,9 +91,7 @@ def build_context(messages, target_id, max_bytes=13000, *, neighborhood=0):
         m.message_id
         for m in messages
         if _carries_content(m)
-        and any(
-            a.get("media_group_id") in groups for a in getattr(m, "attachments", None) or []
-        )
+        and any(a.get("media_group_id") in groups for a in getattr(m, "attachments", None) or [])
     )
     subject_tags = tags(target.text)
     ranked = []

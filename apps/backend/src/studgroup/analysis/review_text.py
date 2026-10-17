@@ -108,7 +108,9 @@ def render_preview_card(index, card, chat_id):
     if card["materials"]:
         lines.append(f"Материалы: {summary_label(card['materials'])}")
         for item in card["materials"][:6]:
-            target = item.get("url") or item.get("telegram_link") or f"сообщение №{item['message_id']}"
+            target = (
+                item.get("url") or item.get("telegram_link") or f"сообщение №{item['message_id']}"
+            )
             lines.append(f"  • {item['title']} — {target}")
         lines.append("  (содержимое файлов C+ не читал)")
     if card["candidates"]:
@@ -120,7 +122,8 @@ def render_preview_card(index, card, chat_id):
         lines.append(
             "История: "
             + "; ".join(
-                f"v{rev} {REVISION_ACTIONS.get(action, action)}" for rev, action in card["revisions"]
+                f"v{rev} {REVISION_ACTIONS.get(action, action)}"
+                for rev, action in card["revisions"]
             )
         )
     lines.append("Источники:")
@@ -138,7 +141,9 @@ def render_preview_card(index, card, chat_id):
 def render_preview(preview, chat_id, offset, size):
     """Chunks for one page of cards plus the owner-only footer for possible changes."""
     page = preview["cards"][offset : offset + size]
-    blocks = [render_preview_card(offset + i, card, chat_id)[:MAX_CHUNK] for i, card in enumerate(page, 1)]
+    blocks = [
+        render_preview_card(offset + i, card, chat_id)[:MAX_CHUNK] for i, card in enumerate(page, 1)
+    ]
     if offset + size >= len(preview["cards"]) and preview["review_marks"]:
         ids = sorted({mark["target_message_id"] for mark in preview["review_marks"]})
         blocks.append(

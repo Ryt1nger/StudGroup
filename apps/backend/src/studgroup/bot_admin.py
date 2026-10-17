@@ -129,27 +129,35 @@ async def handle(db, update, settings):
             await say(db, chat, "Статус shadow: нужна ровно одна подключённая группа.")
             return True
         report = await status(db, groups[0].id)
-        counts = ", ".join(
-            f"{state}: {count}" for state, count in sorted(report["counts"].items())
-        ) or "пока нет"
-        errors = ", ".join(
-            f"{code}: {count}" for code, count in sorted(report["errors"].items())
-        ) or "нет"
-        stages = ", ".join(
-            f"{stage}: {count}"
-            for stage, count in sorted(report["errors_by_stage"].items())
-        ) or "нет"
+        counts = (
+            ", ".join(f"{state}: {count}" for state, count in sorted(report["counts"].items()))
+            or "пока нет"
+        )
+        errors = (
+            ", ".join(f"{code}: {count}" for code, count in sorted(report["errors"].items()))
+            or "нет"
+        )
+        stages = (
+            ", ".join(
+                f"{stage}: {count}" for stage, count in sorted(report["errors_by_stage"].items())
+            )
+            or "нет"
+        )
         latest = report["latest_completed"]
         if latest is None:
             latest_text = "Последний shadow_completed: пока нет."
         else:
+
             def display(value):
                 return "нет данных" if value is None else str(value)
 
-            rejection_reasons = ", ".join(
-                f"{code}: {count}"
-                for code, count in sorted(latest["rejection_reasons"].items())
-            ) or "нет"
+            rejection_reasons = (
+                ", ".join(
+                    f"{code}: {count}"
+                    for code, count in sorted(latest["rejection_reasons"].items())
+                )
+                or "нет"
+            )
             if latest["schema_diagnostics"]:
                 issue_lines = []
                 for issue in latest["schema_diagnostics"]:

@@ -172,7 +172,10 @@ def test_wave_preflight_counts_one_package_per_revision_and_never_retries_failed
             blocked = off.model_copy(update={"ai_shadow_enabled": True})
             async with AsyncSession(engine) as db:
                 refused = await wave_preflight(
-                    db, blocked, now + timedelta(minutes=3), since=now - timedelta(days=5),
+                    db,
+                    blocked,
+                    now + timedelta(minutes=3),
+                    since=now - timedelta(days=5),
                     wave_size=3,
                 )
                 await db.rollback()
@@ -276,8 +279,9 @@ def test_spread_wave_covers_days_and_topics_skips_failed_and_is_idempotent():
             assert await prepare_backfill_wave(engine, spread) == "wave_prepared_4"
             assert await prepare_backfill_wave(engine, spread) == "wave_exists"
             async with AsyncSession(engine) as db:
-                after = await wave_preflight(db, spread, at + timedelta(minutes=1), since=since,
-                                             wave_size=4)
+                after = await wave_preflight(
+                    db, spread, at + timedelta(minutes=1), since=since, wave_size=4
+                )
                 await db.rollback()
                 queued = (
                     await db.scalars(
@@ -291,7 +295,9 @@ def test_spread_wave_covers_days_and_topics_skips_failed_and_is_idempotent():
             assert after["status"] == "ready", after["blocking_codes"]
             assert wave["prepared"] == 4 and wave["expired_running_rows"] == 0
             assert wave["coverage"]["distinct_days"] == 3
-            assert wave["coverage"]["telegram_message_ids"] == nxt["coverage"]["telegram_message_ids"]
+            assert (
+                wave["coverage"]["telegram_message_ids"] == nxt["coverage"]["telegram_message_ids"]
+            )
             assert set(wave["context_overlap"]) == {
                 "distinct_messages_in_all_packages",
                 "messages_shared_by_several_packages",

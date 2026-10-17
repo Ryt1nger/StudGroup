@@ -29,11 +29,27 @@ INFORMATIONAL_KEYS = frozenset(
 EVIDENCE_ALIASES = {"message_id": "telegram_message_id", "source_id": "telegram_message_id"}
 EVIDENCE_INFORMATIONAL_KEYS = frozenset({"quote", "text", "excerpt"})
 # Placeholders copied from historic prompt examples mean "no value".
-NULL_STRINGS = frozenset({"null", "none", "n/a", "subject or null", "short specific title or null",
-                          "clear evidenced actions or null"})
+NULL_STRINGS = frozenset(
+    {
+        "null",
+        "none",
+        "n/a",
+        "subject or null",
+        "short specific title or null",
+        "clear evidenced actions or null",
+    }
+)
 FACT_PATH_ROOTS = frozenset(
-    {"subject", "title", "description", "deadline", "audience", "semantic_kind", "destination",
-     "action"}
+    {
+        "subject",
+        "title",
+        "description",
+        "deadline",
+        "audience",
+        "semantic_kind",
+        "destination",
+        "action",
+    }
 )
 
 ACTIONS = frozenset(get_args(ProposedAcademicItem.model_fields["action"].annotation))
@@ -54,11 +70,23 @@ FAR_FUTURE_DAYS = 400
 
 
 _MONTHS = {
-    "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
-    "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
+    "января": 1,
+    "февраля": 2,
+    "марта": 3,
+    "апреля": 4,
+    "мая": 5,
+    "июня": 6,
+    "июля": 7,
+    "августа": 8,
+    "сентября": 9,
+    "октября": 10,
+    "ноября": 11,
+    "декабря": 12,
 }
 _NUMERIC_DATE = re.compile(r"(?<![\d.,])(\d{1,2})[./](\d{2})(?![\d])(?![.,]\d)")
-_NAMED_DATE = re.compile(r"(?<!\d)(\d{1,2})\s+(" + "|".join(_MONTHS) + r")(?![а-яё])", re.IGNORECASE)
+_NAMED_DATE = re.compile(
+    r"(?<!\d)(\d{1,2})\s+(" + "|".join(_MONTHS) + r")(?![а-яё])", re.IGNORECASE
+)
 
 
 def explicit_source_dates(text):
@@ -96,15 +124,22 @@ def collective_address_only(texts):
         folded = _fold(text)
         collective = collective or bool(_COLLECTIVE.search(folded))
         named = _NAME_ADDRESS.match(text)
-        personal = personal or bool(_PERSONAL_ADDRESS.search(folded)) or bool(
-            named and not _COLLECTIVE.search(_fold(named.group(0)))
+        personal = (
+            personal
+            or bool(_PERSONAL_ADDRESS.search(folded))
+            or bool(named and not _COLLECTIVE.search(_fold(named.group(0))))
         )
     return collective and not personal
 
 
 _WEEKDAY_WORDS = (
-    r"понедельник\w*", r"вторник\w*", r"сред(?:а|е|у|ы)", r"четверг\w*", r"пятниц\w*",
-    r"суббот\w*", r"воскресень\w*",
+    r"понедельник\w*",
+    r"вторник\w*",
+    r"сред(?:а|е|у|ы)",
+    r"четверг\w*",
+    r"пятниц\w*",
+    r"суббот\w*",
+    r"воскресень\w*",
 )
 UNRESOLVED_RELATIVE_BASES = frozenset(
     {"next_subject_lesson_reference", "unresolved_explicit_deadline", "ambiguous_weekday"}
@@ -273,8 +308,9 @@ class _Normalizer:
         if extra:
             _reject("deadline_field_not_allowed", path, raw, expected="field_not_allowed")
         raw_at = raw.get("at")
-        if isinstance(raw_at, str) and (not raw_at.strip() or raw_at.strip().casefold() in
-                                        NULL_STRINGS):
+        if isinstance(raw_at, str) and (
+            not raw_at.strip() or raw_at.strip().casefold() in NULL_STRINGS
+        ):
             raw_at = None
             self.note("blank_text_to_null")
         date_only = raw.get("date_only", False)
@@ -301,8 +337,7 @@ class _Normalizer:
                 at = at.astimezone(self.tz).replace(hour=0, minute=0, second=0, microsecond=0)
         if basis_raw is None:
             if at is not None:
-                _reject("deadline_basis_missing", "deadline.basis", None,
-                        expected="required_field")
+                _reject("deadline_basis_missing", "deadline.basis", None, expected="required_field")
             basis = "unknown"
             self.note("basis_defaulted_unknown")
         else:
@@ -312,8 +347,7 @@ class _Normalizer:
                 self.note("date_only_cleared_without_value")
                 date_only = False
             if basis in {"explicit", "schedule_inferred"}:
-                _reject("deadline_basis_requires_value", "deadline", raw,
-                        expected="valid_value")
+                _reject("deadline_basis_requires_value", "deadline", raw, expected="valid_value")
         else:
             self.sanity_flags(at, base)
         return {"at": at, "date_only": date_only, "basis": basis}
@@ -338,8 +372,9 @@ class _Normalizer:
         """
         if deadline["at"] is None or deadline["basis"] != "explicit":
             return deadline
-        ordered = sorted((self.messages[i] for i in base if i in self.messages),
-                         key=lambda row: row.message_date)
+        ordered = sorted(
+            (self.messages[i] for i in base if i in self.messages), key=lambda row: row.message_date
+        )
         local = deadline["at"].astimezone(self.tz)
         literal = set()
         for source in ordered:
@@ -425,8 +460,13 @@ class _Normalizer:
             if set(entry) - {"telegram_message_id", "revision", "fact_paths"}:
                 _reject("evidence_field_not_allowed", path, entry, expected="field_not_allowed")
             if entry.get("telegram_message_id") is None:
-                _reject("evidence_message_id_missing", path, None, expected="required_field",
-                        repairable=False)
+                _reject(
+                    "evidence_message_id_missing",
+                    path,
+                    None,
+                    expected="required_field",
+                    repairable=False,
+                )
             message_id = self.integer(entry["telegram_message_id"], "evidence.telegram_message_id")
             if entry.get("revision") is not None:
                 revision = self.integer(entry["revision"], "evidence.revision")
@@ -434,8 +474,13 @@ class _Normalizer:
                 revision = self.allowed_sources[message_id]
                 self.note("revision_looked_up")
             else:
-                _reject("evidence_revision_missing", path, None, expected="required_field",
-                        repairable=False)
+                _reject(
+                    "evidence_revision_missing",
+                    path,
+                    None,
+                    expected="required_field",
+                    repairable=False,
+                )
             result.append((entry.get("fact_paths"), message_id, revision))
         return result
 
@@ -471,7 +516,8 @@ class _Normalizer:
             _reject("proposal_field_not_allowed", "proposal", raw, expected="field_not_allowed")
         value = {}
         value["action"] = (
-            self.enum(raw["action"], ACTIONS, "action") if raw.get("action") is not None
+            self.enum(raw["action"], ACTIONS, "action")
+            if raw.get("action") is not None
             else "create"
         )
         if raw.get("action") is None:
@@ -499,13 +545,23 @@ class _Normalizer:
                 self.extra_reasons.append(UNCONFIRMED_CHANGE_REASON)
                 self.note("change_without_identity_held")
             elif value["existing_item_id"] is None or value["expected_item_revision"] is None:
-                _reject("mutation_identity_missing", "existing_item_id", None,
-                        expected="required_field", repairable=False)
+                _reject(
+                    "mutation_identity_missing",
+                    "existing_item_id",
+                    None,
+                    expected="required_field",
+                    repairable=False,
+                )
             if self.existing_items is not None and (
-                self.existing_items.get(value["existing_item_id"]) != value["expected_item_revision"]
+                self.existing_items.get(value["existing_item_id"])
+                != value["expected_item_revision"]
             ):
-                _reject("existing_item_not_in_trusted_context", "existing_item_id", None,
-                        repairable=False)
+                _reject(
+                    "existing_item_not_in_trusted_context",
+                    "existing_item_id",
+                    None,
+                    repairable=False,
+                )
         kind = raw.get("semantic_kind")
         if kind is None:
             _reject("semantic_kind_missing", "semantic_kind", None, expected="required_field")
@@ -529,8 +585,9 @@ class _Normalizer:
             self.note("audience_defaulted_group")
         elif isinstance(audience, dict):
             if set(audience) - {"scope", "label"}:
-                _reject("audience_field_not_allowed", "audience", audience,
-                        expected="field_not_allowed")
+                _reject(
+                    "audience_field_not_allowed", "audience", audience, expected="field_not_allowed"
+                )
             scope = audience.get("scope")
             value["audience"] = {
                 "scope": "group" if scope is None else self.enum(scope, SCOPES, "audience.scope"),

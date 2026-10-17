@@ -86,9 +86,7 @@ def validate_context(content, analysis_input):
         raise ValueError("context_schema_invalid") from None
     if result.source_revision != analysis_input.source_revision:
         raise ValueError("context_source_revision_mismatch")
-    allowed = {
-        row.telegram_message_id: row.revision for row in analysis_input.messages
-    }
+    allowed = {row.telegram_message_id: row.revision for row in analysis_input.messages}
     if any(message_id not in allowed for message_id in result.relevant_source_ids):
         raise ValueError("context_source_outside_envelope")
     cited = [

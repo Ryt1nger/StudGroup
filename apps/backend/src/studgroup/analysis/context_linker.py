@@ -30,7 +30,9 @@ class SegmentPlan:
 
 
 def meaningful_tokens(text):
-    return {token for token in TOKEN.findall(text.casefold()) if len(token) >= 4 and token not in STOP}
+    return {
+        token for token in TOKEN.findall(text.casefold()) if len(token) >= 4 and token not in STOP
+    }
 
 
 def link_segments(group_id, messages: list[SourceMessage]):
@@ -69,7 +71,9 @@ def link_segments(group_id, messages: list[SourceMessage]):
                 and timedelta(0) <= distance <= timedelta(minutes=30)
                 and len(shared) >= 2
             ):
-                union(previous.telegram_message_id, message.telegram_message_id, "topic_semantic", 70)
+                union(
+                    previous.telegram_message_id, message.telegram_message_id, "topic_semantic", 70
+                )
         previous = message
 
     groups = {}
@@ -137,9 +141,7 @@ async def persist_segment_plans(db, group_id, plans, now):
                 (row.raw_message_id, row.source_revision, row.link_reason, row.strength)
                 for row in (
                     await db.scalars(
-                        select(SegmentSourceLink).where(
-                            SegmentSourceLink.segment_id == latest.id
-                        )
+                        select(SegmentSourceLink).where(SegmentSourceLink.segment_id == latest.id)
                     )
                 ).all()
             }

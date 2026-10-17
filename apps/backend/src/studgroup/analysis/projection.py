@@ -65,15 +65,15 @@ async def canonical_notification(db, item, entity_type, entity_id, now):
     if await db.get(Notification, notification_id) is None:
         db.add(
             Notification(
-            id=uuid.uuid5(uuid.NAMESPACE_URL, key),
-            group_id=item.group_id,
-            event_key=key,
-            title=item.subject or visible_title(item),
-            body=visible_title(item)[:1000],
-            entity_type=entity_type,
-            entity_id=entity_id,
-            created_at=now,
-            delete_at=now + timedelta(days=90),
+                id=uuid.uuid5(uuid.NAMESPACE_URL, key),
+                group_id=item.group_id,
+                event_key=key,
+                title=item.subject or visible_title(item),
+                body=visible_title(item)[:1000],
+                entity_type=entity_type,
+                entity_id=entity_id,
+                created_at=now,
+                delete_at=now + timedelta(days=90),
             )
         )
 
@@ -188,9 +188,7 @@ async def project_item(db, item, now, *, writer_mode="shadow", emit_notification
         row.window_end = None
         row.date_hint = None
         row.needs_clarification = bool(json.loads(item.attention_reasons))
-        row.source_message_ids = json.dumps(
-            [source.telegram_message_id for source in sources]
-        )
+        row.source_message_ids = json.dumps([source.telegram_message_id for source in sources])
         row.cancelled_at = now if item.state == "cancelled" else None
         row.delete_at = max(utc(source.delete_at), utc(now) + timedelta(days=90))
         entity_type = "deadline"

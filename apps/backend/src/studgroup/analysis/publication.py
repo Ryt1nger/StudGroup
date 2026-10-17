@@ -21,9 +21,7 @@ class ShadowPublisher:
                 application_status="shadow_only",
                 reason_code="shadow_proposal_validated",
             )
-            for ordinal, _proposal in zip(
-                result.accepted_ordinals, result.accepted, strict=True
-            )
+            for ordinal, _proposal in zip(result.accepted_ordinals, result.accepted, strict=True)
         ]
         outcomes.extend(
             ApplicationOutcome(

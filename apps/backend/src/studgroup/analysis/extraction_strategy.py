@@ -103,9 +103,7 @@ def prepare_extraction_request(
 def validate_extraction(content, analysis_input):
     return validate_provider_content(
         content,
-        allowed_sources={
-            row.telegram_message_id: row.revision for row in analysis_input.messages
-        },
+        allowed_sources={row.telegram_message_id: row.revision for row in analysis_input.messages},
         source_revision=analysis_input.source_revision,
     )
 

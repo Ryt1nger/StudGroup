@@ -141,7 +141,9 @@ def adapt_and_validate(
             continue
         signature = proposal.model_dump_json()
         if signature in seen:
-            rejected.append(RejectedItem(proposal_ordinal=ordinal, reason_code="duplicate_proposal"))
+            rejected.append(
+                RejectedItem(proposal_ordinal=ordinal, reason_code="duplicate_proposal")
+            )
             continue
         seen.add(signature)
         accepted.append(proposal)

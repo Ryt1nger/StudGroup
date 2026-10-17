@@ -192,7 +192,9 @@ def test_materials_from_replies_albums_links_and_files_without_text():
         msg(4, "", minutes=4, files=[("photo", None, "album")]),
         msg(5, "", minutes=4, files=[("photo", None, "album")]),
     ]
-    link = msg(6, "Лекция: https://disk.yandex.ru/d/abc, сайт https://example.org/x.", minutes=5, reply=1)
+    link = msg(
+        6, "Лекция: https://disk.yandex.ru/d/abc, сайт https://example.org/x.", minutes=5, reply=1
+    )
     unrelated = msg(7, "", minutes=8, files=[("photo", None, None)])
     far = msg(8, "", minutes=600, files=[("document", "other.pdf", None)])
     cited = [task, photos[0]]
@@ -275,13 +277,23 @@ def test_context_keeps_captionless_reply_files_and_albums_but_not_far_unrelated_
             "Ребят, тут короче по истории нужно сделать презентацию про Петра I, сдать на семинаре",
             "Подготовить презентацию про Петра I",
         ),
-        ("#орг Всем привет!! Напоминаю, надо решить №12,14 на стр.43, до пятницы",
-         "Решить №12,14 на стр.43"),
-        ("Сделать презинтацию по теме Клетка. Сдать в четверг", "Подготовить презентацию по теме Клетка"),
+        (
+            "#орг Всем привет!! Напоминаю, надо решить №12,14 на стр.43, до пятницы",
+            "Решить №12,14 на стр.43",
+        ),
+        (
+            "Сделать презинтацию по теме Клетка. Сдать в четверг",
+            "Подготовить презентацию по теме Клетка",
+        ),
         ("1) конспект §5\n2) задачи 3-7", "Конспект §5 и задачи 3-7"),
-        ("Нужно написать реферат про Ломоносова и сдать до 20.10", "Написать реферат про Ломоносова"),
-        ("к следующей паре определиться с командами на проект и темой",
-         "Определиться с командами на проект и темой"),
+        (
+            "Нужно написать реферат про Ломоносова и сдать до 20.10",
+            "Написать реферат про Ломоносова",
+        ),
+        (
+            "к следующей паре определиться с командами на проект и темой",
+            "Определиться с командами на проект и темой",
+        ),
         ("Каждый делает доклад о Менделееве. Тема на выбор", "Подготовить доклад о Менделееве"),
         ("ок", "Задание: уточнить по сообщению в чате"),
     ],
@@ -293,7 +305,9 @@ def test_rebuilt_titles_are_concrete_without_copying_the_first_sentence(source, 
 
 
 def test_trusted_description_is_the_first_structured_source_for_a_rebuilt_title():
-    source = msg(1, "Ребят, тут короче по истории нужно сделать презентацию про Петра I, сдать на семинаре")
+    source = msg(
+        1, "Ребят, тут короче по истории нужно сделать презентацию про Петра I, сдать на семинаре"
+    )
     card = edit_card(
         proposal(
             [1],
@@ -318,17 +332,19 @@ def test_untrusted_description_is_not_used_for_the_title():
 def test_good_model_title_is_left_untouched():
     for good in ("Решить задачи 3–7 со страницы 41", "Подготовить доклад про клетку"):
         source = msg(1, f"Нужно {good[0].lower()}{good[1:]}, 3–7 41")
-        card = edit_card(
-            proposal([1], title=good, description=good + ".", subject=None), [source]
-        )
+        card = edit_card(proposal([1], title=good, description=good + ".", subject=None), [source])
         assert card.title == good and not card.used_fallback
 
 
 def test_title_with_preamble_from_the_model_is_rebuilt_not_published():
     source = msg(1, "Ребят, короче надо подготовить доклад про клетку")
     card = edit_card(
-        proposal([1], title="Ребят, короче надо подготовить доклад про клетку",
-                 description="Подготовить доклад про клетку.", subject=None),
+        proposal(
+            [1],
+            title="Ребят, короче надо подготовить доклад про клетку",
+            description="Подготовить доклад про клетку.",
+            subject=None,
+        ),
         [source],
     )
     assert card.title == "Подготовить доклад про клетку" and "noisy_title" in card.attention_reasons

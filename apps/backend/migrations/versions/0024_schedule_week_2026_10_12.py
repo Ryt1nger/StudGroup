@@ -240,9 +240,7 @@ def downgrade():
     for group_id in group_ids:
         namespace = group_id if isinstance(group_id, uuid.UUID) else uuid.UUID(str(group_id))
         for weekday, starts, _ends, subject, _location in LESSONS:
-            imported_ids.append(
-                uuid.uuid5(namespace, f"2026-10-12|{weekday}|{starts}|{subject}")
-            )
+            imported_ids.append(uuid.uuid5(namespace, f"2026-10-12|{weekday}|{starts}|{subject}"))
     if imported_ids:
         bind.execute(schedule.delete().where(schedule.c.id.in_(imported_ids)))
 
@@ -257,7 +255,5 @@ def downgrade():
         if present is None:
             bind.execute(schedule.insert().values(**values))
         else:
-            bind.execute(
-                schedule.update().where(schedule.c.id == values["id"]).values(**values)
-            )
+            bind.execute(schedule.update().where(schedule.c.id == values["id"]).values(**values))
     op.drop_table("schedule_backup_20261012")

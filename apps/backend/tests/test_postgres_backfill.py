@@ -59,9 +59,7 @@ class ScriptedProvider:
             )
         else:
             assert request.prompt_version == EXTRACTION_PROMPT_VERSION
-            content = envelope(
-                self.script[self.target], source_revision=payload["source_revision"]
-            )
+            content = envelope(self.script[self.target], source_revision=payload["source_revision"])
         return ProviderResponse(
             content=content,
             usage=ProviderUsage(prompt_tokens=600, completion_tokens=200),
@@ -95,8 +93,11 @@ def test_postgres_backfill_review_and_guarded_promotion():
     url = os.environ["POSTGRES_TEST_URL"]
     now = datetime.now(UTC).replace(microsecond=0)
     local = now.astimezone(MSK)
-    soon, later, past = (local + timedelta(days=2), local + timedelta(days=4),
-                         local - timedelta(days=1))
+    soon, later, past = (
+        local + timedelta(days=2),
+        local + timedelta(days=4),
+        local - timedelta(days=1),
+    )
 
     def ddmm(value):
         return value.strftime("%d.%m")
@@ -111,14 +112,34 @@ def test_postgres_backfill_review_and_guarded_promotion():
         9104: "Старосте: подойти к преподавателю по информатике",
     }
     script = {
-        9101: [card("Физика", "Конспект параграфа", "Подготовить конспект параграфа.", [9101],
-                    at=iso(soon))],
-        9102: [card("Математика", "Решить задачи 1–3", "Решить задачи 1–3.", [9102],
-                    at=iso(past))],
-        9103: [card("Физика", "Конспект параграфа", "Подготовить конспект параграфа.",
-                    [9101, 9103], at=iso(later))],
-        9104: [card("Информатика", "Личное поручение по информатике",
-                    "Подойти к преподавателю по информатике.", [9104], audience="personal")],
+        9101: [
+            card(
+                "Физика",
+                "Конспект параграфа",
+                "Подготовить конспект параграфа.",
+                [9101],
+                at=iso(soon),
+            )
+        ],
+        9102: [card("Математика", "Решить задачи 1–3", "Решить задачи 1–3.", [9102], at=iso(past))],
+        9103: [
+            card(
+                "Физика",
+                "Конспект параграфа",
+                "Подготовить конспект параграфа.",
+                [9101, 9103],
+                at=iso(later),
+            )
+        ],
+        9104: [
+            card(
+                "Информатика",
+                "Личное поручение по информатике",
+                "Подойти к преподавателю по информатике.",
+                [9104],
+                audience="personal",
+            )
+        ],
     }
 
     async def scenario():
@@ -140,16 +161,25 @@ def test_postgres_backfill_review_and_guarded_promotion():
                 )
                 await db.flush()
                 await configure_group_mode(
-                    db, group_id, "shadow", now - timedelta(days=9),
-                    shadow_daily_budget_usd=Decimal("0.50"), shadow_sample_percent=100,
+                    db,
+                    group_id,
+                    "shadow",
+                    now - timedelta(days=9),
+                    shadow_daily_budget_usd=Decimal("0.50"),
+                    shadow_sample_percent=100,
                 )
                 for index, (mid, text) in enumerate(texts.items()):
                     stamp = now - timedelta(hours=10 - index)
                     db.add(
                         RawMessage(
-                            group_id=group_id, telegram_message_id=mid, text=text,
-                            message_date=stamp, version_date=stamp, revision=1,
-                            imported=False, live_received_at=stamp,
+                            group_id=group_id,
+                            telegram_message_id=mid,
+                            text=text,
+                            message_date=stamp,
+                            version_date=stamp,
+                            revision=1,
+                            imported=False,
+                            live_received_at=stamp,
                             delete_at=now + timedelta(days=30),
                         )
                     )
@@ -157,9 +187,15 @@ def test_postgres_backfill_review_and_guarded_promotion():
                 old = now - timedelta(days=5)
                 db.add(
                     RawMessage(
-                        group_id=group_id, telegram_message_id=9000, text="старое сообщение",
-                        message_date=old, version_date=old, revision=1, imported=False,
-                        live_received_at=old, delete_at=now + timedelta(days=30),
+                        group_id=group_id,
+                        telegram_message_id=9000,
+                        text="старое сообщение",
+                        message_date=old,
+                        version_date=old,
+                        revision=1,
+                        imported=False,
+                        live_received_at=old,
+                        delete_at=now + timedelta(days=30),
                     )
                 )
                 await db.commit()
@@ -169,8 +205,13 @@ def test_postgres_backfill_review_and_guarded_promotion():
             async def counts():
                 async with AsyncSession(engine) as db:
                     result = {}
-                    for model in (Homework, AcademicDeadline, Notification,
-                                  CanonicalAcademicItem, CanonicalProjectionLink):
+                    for model in (
+                        Homework,
+                        AcademicDeadline,
+                        Notification,
+                        CanonicalAcademicItem,
+                        CanonicalProjectionLink,
+                    ):
                         query = select(func.count()).select_from(model)
                         if hasattr(model, "group_id"):
                             query = query.where(model.group_id == group_id)
@@ -199,7 +240,9 @@ def test_postgres_backfill_review_and_guarded_promotion():
                 assert (rest["enqueued"], again["enqueued"]) == (1, 0)  # resumable, idempotent
 
             provider = ScriptedProvider(script)
-            statuses = [await process_shadow_next(engine, settings, provider, now) for _ in range(6)]
+            statuses = [
+                await process_shadow_next(engine, settings, provider, now) for _ in range(6)
+            ]
             assert statuses.count("completed") == 4 and statuses[-1] == "idle"
             assert await counts() == zero  # shadow alone never publishes
 
@@ -266,14 +309,18 @@ def test_postgres_backfill_review_and_guarded_promotion():
                 assert run.charged_usd == before_cost  # cost history is cumulative
                 assert metrics["preparation_key"] == "canary-1"  # canary marker kept
                 (entry,) = metrics["history"]
-                assert entry["state"] == "failed" and entry["last_error"] == "invalid_shadow_context"
+                assert (
+                    entry["state"] == "failed" and entry["last_error"] == "invalid_shadow_context"
+                )
                 assert entry["validation_result_json"] == before_validation
                 assert metrics["attempt_base"] == before_attempts
             async with AsyncSession(engine) as db:  # not repeated: no unbounded paid loop
                 again = await backfill.requeue_failed(db, **common, limit=10, apply=True)
                 assert again["requeued"] == 0
             canary = Settings(
-                database_url=url, ai_enabled=False, ai_shadow_enabled=True,
+                database_url=url,
+                ai_enabled=False,
+                ai_shadow_enabled=True,
                 ai_shadow_canary_only=True,
             )
             assert await process_shadow_next(engine, canary, ScriptedProvider(script), now) == (

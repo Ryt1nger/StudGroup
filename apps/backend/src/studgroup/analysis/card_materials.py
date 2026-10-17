@@ -86,12 +86,7 @@ def _from_message(message, chat_id, via):
 def derive_materials(cited, messages, chat_id):
     """Return (confirmed materials, unconfirmed candidates) for one card, deduplicated."""
     cited_ids = {row.telegram_message_id for row in cited}
-    albums = {
-        a.media_group_id
-        for row in cited
-        for a in row.attachments
-        if a.media_group_id
-    }
+    albums = {a.media_group_id for row in cited for a in row.attachments if a.media_group_id}
     confirmed, candidates, seen = [], [], set()
 
     def add(target, item):

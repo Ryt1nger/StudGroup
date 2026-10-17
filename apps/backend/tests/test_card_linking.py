@@ -67,7 +67,10 @@ def ids(proposal):
 
 
 def test_list_of_topics_in_a_reply_is_attached_even_if_the_model_cited_only_the_task():
-    messages = [msg(1, TASK), msg(2, "1) Исторические деятели 2) Творцы 3) Учёные", minutes=2, reply=1)]
+    messages = [
+        msg(1, TASK),
+        msg(2, "1) Исторические деятели 2) Творцы 3) Учёные", minutes=2, reply=1),
+    ]
     result, data = run([raw([1])], messages)
     (card,) = result.accepted
     assert ids(card) == [1, 2]
@@ -77,14 +80,20 @@ def test_list_of_topics_in_a_reply_is_attached_even_if_the_model_cited_only_the_
 
 
 def test_reply_with_extra_requirement_from_the_headman_hours_later_is_merged():
-    messages = [msg(1, TASK, who="a"), msg(2, "Формат — PDF, до 10 слайдов", minutes=300, reply=1, who="b")]
+    messages = [
+        msg(1, TASK, who="a"),
+        msg(2, "Формат — PDF, до 10 слайдов", minutes=300, reply=1, who="b"),
+    ]
     result, _ = run([raw([1])], messages)
     (card,) = result.accepted
     assert ids(card) == [1, 2] and "до 10 слайдов" in card.description
 
 
 def test_pdf_without_caption_in_a_reply_joins_the_sources_without_new_text():
-    messages = [msg(1, TASK), msg(2, "", minutes=3, reply=1, files=[("document", "Требования.pdf", None)])]
+    messages = [
+        msg(1, TASK),
+        msg(2, "", minutes=3, reply=1, files=[("document", "Требования.pdf", None)]),
+    ]
     result, _ = run([raw([1])], messages)
     (card,) = result.accepted
     assert ids(card) == [1, 2]
@@ -106,7 +115,9 @@ def test_album_of_photos_joins_as_one_group():
 
 def test_two_different_assignments_in_a_row_stay_two_cards():
     messages = [msg(1, TASK), msg(2, "Решить задачи 3–7 из учебника", minutes=1)]
-    result, _ = run([raw([1]), raw([2], title="Решить задачи 3–7", description="Решить задачи 3–7.")], messages)
+    result, _ = run(
+        [raw([1]), raw([2], title="Решить задачи 3–7", description="Решить задачи 3–7.")], messages
+    )
     assert [ids(card) for card in result.accepted] == [[1], [2]]
     assert not any(card.attention_reasons for card in result.accepted)
 
@@ -117,7 +128,9 @@ def test_one_message_with_two_assignments_does_not_hand_a_reply_to_both():
         msg(2, "", minutes=2, reply=1, files=[("document", "Образец.pdf", None)]),
     ]
     first = raw([1], title="Решить задачи 3–7", description="Решить задачи 3–7.")
-    second = raw([1], title="Подготовить доклад про клетку", description="Подготовить доклад про клетку.")
+    second = raw(
+        [1], title="Подготовить доклад про клетку", description="Подготовить доклад про клетку."
+    )
     result, _ = run([first, second], messages)
     assert [ids(card) for card in result.accepted] == [[1], [1]]
     assert all("supplement_ambiguous" in card.attention_reasons for card in result.accepted)
@@ -125,9 +138,7 @@ def test_one_message_with_two_assignments_does_not_hand_a_reply_to_both():
 
 def test_separate_model_card_that_only_clarifies_the_task_is_merged_not_duplicated():
     messages = [msg(1, TASK), msg(2, "Темы: 1) Учёные 2) Творцы", minutes=2, reply=1)]
-    clarification = raw(
-        [2], title="Темы доклада", description="Темы: 1) Учёные 2) Творцы"
-    )
+    clarification = raw([2], title="Темы доклада", description="Темы: 1) Учёные 2) Творцы")
     result, _ = run([raw([1]), clarification], messages)
     (card,) = result.accepted
     assert ids(card) == [1, 2] and "Учёные" in card.description
@@ -135,16 +146,29 @@ def test_separate_model_card_that_only_clarifies_the_task_is_merged_not_duplicat
 
 
 def test_independent_reply_task_is_not_merged_and_stays_its_own_card():
-    messages = [msg(1, TASK), msg(2, "Ещё нужно написать реферат про Ломоносова", minutes=2, reply=1)]
+    messages = [
+        msg(1, TASK),
+        msg(2, "Ещё нужно написать реферат про Ломоносова", minutes=2, reply=1),
+    ]
     result, _ = run(
-        [raw([1]), raw([2], title="Написать реферат про Ломоносова", description="Написать реферат про Ломоносова.")],
+        [
+            raw([1]),
+            raw(
+                [2],
+                title="Написать реферат про Ломоносова",
+                description="Написать реферат про Ломоносова.",
+            ),
+        ],
         messages,
     )
     assert [ids(card) for card in result.accepted] == [[1], [2]]
 
 
 def test_student_reply_with_a_requirement_is_flagged_not_merged():
-    messages = [msg(1, TASK), msg(2, "Формат PDF, 10 слайдов", minutes=2, reply=1, who="s", role="student")]
+    messages = [
+        msg(1, TASK),
+        msg(2, "Формат PDF, 10 слайдов", minutes=2, reply=1, who="s", role="student"),
+    ]
     result, _ = run([raw([1])], messages)
     (card,) = result.accepted
     assert ids(card) == [1] and "possible_missing_supplement" in card.attention_reasons
@@ -201,8 +225,11 @@ def test_candidates_cover_later_messages_and_reach_the_model_payload():
     assert reply["strength"] == "strong" and reply["minutes_after_anchor"] == 300
     assert any(row["relation"] == "adjacent_file" and row["strength"] == "weak" for row in payload)
     data = AnalysisInput(
-        group_id=GROUP, group_timezone="Europe/Moscow", source_revision=1,
-        target_message_ids=[1], messages=messages,
+        group_id=GROUP,
+        group_timezone="Europe/Moscow",
+        source_revision=1,
+        target_message_ids=[1],
+        messages=messages,
     )
     request = prepare_extraction_request(data, {})
     assert request.user_payload["link_candidates"] == payload

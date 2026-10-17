@@ -148,15 +148,9 @@ def test_schema_rejection_persists_only_bounded_structural_diagnostics():
     issues = {(issue.path, issue.error_type): issue for issue in rejected.schema_issues}
     assert issues[("proposals[0].destination", "missing")].expected == "required_field"
     assert issues[("proposals[0].subject", "string_type")].received_type == "integer"
-    assert issues[("proposals[0].audience.scope", "literal_error")].expected == (
-        "allowed_literal"
-    )
-    assert issues[("proposals[0].evidence[0].fact_paths", "missing")].received_type == (
-        "missing"
-    )
-    assert issues[("proposals[0].<extra>", "extra_forbidden")].expected == (
-        "field_not_allowed"
-    )
+    assert issues[("proposals[0].audience.scope", "literal_error")].expected == ("allowed_literal")
+    assert issues[("proposals[0].evidence[0].fact_paths", "missing")].received_type == ("missing")
+    assert issues[("proposals[0].<extra>", "extra_forbidden")].expected == ("field_not_allowed")
     serialized = result.model_dump_json()
     assert "PRIVATE" not in serialized
     assert '"input"' not in serialized and '"ctx"' not in serialized
@@ -193,9 +187,7 @@ def test_schema_revision_mismatch_fails_before_item_validation():
     payload = output_payload([proposal()])
     payload["source_revision"] = 2
     with pytest.raises(ValueError, match="source_revision_mismatch"):
-        validate_provider_content(
-            json.dumps(payload), allowed_sources={10: 3}, source_revision=3
-        )
+        validate_provider_content(json.dumps(payload), allowed_sources={10: 3}, source_revision=3)
 
 
 def test_legacy_strategy_adapts_without_product_writes():
@@ -234,9 +226,7 @@ def test_deepseek_adapter_implements_transport_only_provider_port():
             200,
             json={
                 "model": "deepseek-flash",
-                "choices": [
-                    {"finish_reason": "stop", "message": {"content": '{"ok":true}'}}
-                ],
+                "choices": [{"finish_reason": "stop", "message": {"content": '{"ok":true}'}}],
                 "usage": {
                     "prompt_tokens": 2,
                     "completion_tokens": 1,

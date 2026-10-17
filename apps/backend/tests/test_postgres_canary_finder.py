@@ -32,44 +32,83 @@ def test_finder_ranks_supplemented_tasks_skips_analysed_ones_and_leaks_no_text()
         try:
             async with AsyncSession(engine) as db:
                 await db.execute(delete(Group).where(Group.name.like("Disposable %")))
-                db.add(Group(id=group_id,
-                             telegram_chat_id=-1004400000000 - int(uuid.uuid4().int % 10**6),
-                             name="Disposable finder E2E", timezone="Europe/Moscow",
-                             pilot_authorized=True, bot_added_at=now - timedelta(days=3)))
+                db.add(
+                    Group(
+                        id=group_id,
+                        telegram_chat_id=-1004400000000 - int(uuid.uuid4().int % 10**6),
+                        name="Disposable finder E2E",
+                        timezone="Europe/Moscow",
+                        pilot_authorized=True,
+                        bot_added_at=now - timedelta(days=3),
+                    )
+                )
                 await db.flush()
-                await configure_group_mode(db, group_id, "shadow", now - timedelta(days=2),
-                                           shadow_daily_budget_usd=Decimal("0.50"),
-                                           shadow_sample_percent=100)
+                await configure_group_mode(
+                    db,
+                    group_id,
+                    "shadow",
+                    now - timedelta(days=2),
+                    shadow_daily_budget_usd=Decimal("0.50"),
+                    shadow_sample_percent=100,
+                )
                 rows = {}
                 spec = [
                     (1, f"{secret} Подготовить доклад про клетку для всей группы", None),
                     (2, "Темы: 1) строение 2) функции", 1),
                     (3, "", 1),  # a captionless file replying to 1
                     (4, f"{secret} Решить задачи 3–7 из учебника, стр. 41", None),
-                    (5, f"{secret} Подготовить реферат про Ломоносова (уже проанализировано)", None),
+                    (
+                        5,
+                        f"{secret} Подготовить реферат про Ломоносова (уже проанализировано)",
+                        None,
+                    ),
                     (6, "Просто болтовня без задания и без ссылок вообще никаких", None),
                 ]
                 for index, (mid, text, reply) in enumerate(spec):
                     stamp = now - timedelta(hours=5 - index)
-                    row = RawMessage(group_id=group_id, telegram_message_id=mid, text=text,
-                                     reply_to_message_id=reply, message_thread_id=591,
-                                     message_date=stamp, version_date=stamp, revision=1,
-                                     imported=False, live_received_at=stamp,
-                                     delete_at=now + timedelta(days=30))
+                    row = RawMessage(
+                        group_id=group_id,
+                        telegram_message_id=mid,
+                        text=text,
+                        reply_to_message_id=reply,
+                        message_thread_id=591,
+                        message_date=stamp,
+                        version_date=stamp,
+                        revision=1,
+                        imported=False,
+                        live_received_at=stamp,
+                        delete_at=now + timedelta(days=30),
+                    )
                     db.add(row)
                     await db.flush()
                     rows[mid] = row
-                db.add(MessageAttachment(raw_message_id=rows[3].id, group_id=group_id,
-                                         source_revision=1, kind="document",
-                                         stable_file_id="f", telegram_file_id="tf",
-                                         file_name="x.pdf", created_at=now,
-                                         delete_at=now + timedelta(days=30)))
-                db.add(ShadowEvaluationRun(
-                    group_id=group_id, raw_message_id=rows[5].id, source_revision=1,
-                    analysis_generation=rows[5].analysis_generation,
-                    source_snapshot_sha256="c" * 64, engine_version="cplus-shadow-1",
-                    state="completed", metrics_json="{}", created_at=now,
-                    delete_at=now + timedelta(days=30)))
+                db.add(
+                    MessageAttachment(
+                        raw_message_id=rows[3].id,
+                        group_id=group_id,
+                        source_revision=1,
+                        kind="document",
+                        stable_file_id="f",
+                        telegram_file_id="tf",
+                        file_name="x.pdf",
+                        created_at=now,
+                        delete_at=now + timedelta(days=30),
+                    )
+                )
+                db.add(
+                    ShadowEvaluationRun(
+                        group_id=group_id,
+                        raw_message_id=rows[5].id,
+                        source_revision=1,
+                        analysis_generation=rows[5].analysis_generation,
+                        source_snapshot_sha256="c" * 64,
+                        engine_version="cplus-shadow-1",
+                        state="completed",
+                        metrics_json="{}",
+                        created_at=now,
+                        delete_at=now + timedelta(days=30),
+                    )
+                )
                 await db.commit()
             async with AsyncSession(engine) as db:
                 before = await db.scalar(select(func.count()).select_from(ShadowEvaluationRun))

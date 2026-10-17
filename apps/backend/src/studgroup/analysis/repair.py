@@ -125,9 +125,7 @@ def build_request(analysis_input, candidates, sources_by_id) -> PreparedRequest:
 
 def estimate_cost(request: PreparedRequest, cost_fn) -> Decimal:
     """Conservative upper bound: ~2 characters per prompt token, full output allowance."""
-    chars = len(request.system_prompt) + len(
-        json.dumps(request.user_payload, ensure_ascii=False)
-    )
+    chars = len(request.system_prompt) + len(json.dumps(request.user_payload, ensure_ascii=False))
     return cost_fn(
         ProviderUsage(prompt_tokens=chars // 2 + 1, completion_tokens=request.max_output_tokens)
     )
@@ -316,9 +314,7 @@ def apply_repair(validation, repair: RepairResult):
         if item.proposal_ordinal in repair.repaired:
             continue
         outcome = repair.outcomes.get(item.proposal_ordinal)
-        rejected.append(
-            item.model_copy(update={"repair_outcome": outcome}) if outcome else item
-        )
+        rejected.append(item.model_copy(update={"repair_outcome": outcome}) if outcome else item)
     return validation.model_copy(
         update={
             "accepted": [item for _ordinal, item in pairs],

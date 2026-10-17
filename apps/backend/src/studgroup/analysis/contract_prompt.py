@@ -66,28 +66,26 @@ DEADLINE_RULES = (
     (
         "deadline.at is an ISO-8601 datetime in group_timezone (an offset-less value is read in "
         "that timezone); deadline.date_only=true means only the calendar date is known: write at as "
-        "that date, e.g. \"2026-10-15\" or midnight local time."
+        'that date, e.g. "2026-10-15" or midnight local time.'
     ),
     (
         "deadline.basis is explicit only when the message text writes a calendar date or a "
         "calendar word you can resolve from that message's local_date and local_weekday "
-        "(\"завтра\", \"послезавтра\", \"в пятницу\"). A reference to the next lesson "
-        "(\"к следующей паре\", \"к следующему занятию\", \"на следующей неделе\") is NOT a "
+        '("завтра", "послезавтра", "в пятницу"). A reference to the next lesson '
+        '("к следующей паре", "к следующему занятию", "на следующей неделе") is NOT a '
         "date: use unknown with at=null, never compute a date from a guessed timetable. "
         "schedule_inferred only when trusted context supplies the date, ambiguous_range for a "
         "range of dates, otherwise unknown."
     ),
     (
         "basis explicit or schedule_inferred REQUIRES a non-null at; date_only=true REQUIRES a "
-        "non-null at. When no date is stated use exactly {\"at\": null, \"date_only\": false, "
-        "\"basis\": \"unknown\"}. Never guess a date to fill a gap."
+        'non-null at. When no date is stated use exactly {"at": null, "date_only": false, '
+        '"basis": "unknown"}. Never guess a date to fill a gap.'
     ),
 )
 
 PROPOSAL_RULES = (
-    (
-        "destination is task for semantic_kind homework and deadline for every other semantic_kind."
-    ),
+    ("destination is task for semantic_kind homework and deadline for every other semantic_kind."),
     (
         "action=create requires existing_item_id and expected_item_revision to be null. update, "
         "reschedule and cancel require both, copied exactly from trusted existing_items; if the "
@@ -130,7 +128,9 @@ def _example_output() -> dict:
             at=datetime(2026, 10, 20, 0, 0, tzinfo=tz), date_only=True, basis="explicit"
         ),
         confidence=85,
-        evidence=[EvidenceRef(telegram_message_id=102, revision=1, fact_paths=["title", "deadline"])],
+        evidence=[
+            EvidenceRef(telegram_message_id=102, revision=1, fact_paths=["title", "deadline"])
+        ],
     )
     timed = ProposedAcademicItem(
         destination="task",
@@ -165,8 +165,8 @@ def contract_block() -> str:
         "Return JSON only, exactly this contract (generated from the backend models; `?` marks "
         "an optional key, keys not listed are forbidden):\n"
         f"{render_contract()}\n"
-        f"Copy schema_version \"{ANALYSIS_SCHEMA_VERSION}\", engine_version "
-        f"\"{ANALYSIS_ENGINE_VERSION}\" and source_revision exactly from the request. With no "
+        f'Copy schema_version "{ANALYSIS_SCHEMA_VERSION}", engine_version '
+        f'"{ANALYSIS_ENGINE_VERSION}" and source_revision exactly from the request. With no '
         "academic items return proposals [] and explicit_empty true; otherwise explicit_empty "
         "false.\n"
         f"Rules:\n{rules}\n"

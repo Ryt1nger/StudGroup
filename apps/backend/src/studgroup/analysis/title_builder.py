@@ -43,7 +43,9 @@ MODAL = re.compile(
     r"будем|будет нужно|не забудьте|обязательно)\s+",
     re.IGNORECASE,
 )
-SUBJECT_PREFIX = re.compile(r"^по\s+[а-яёa-z\-]+(?:\s+[а-яёa-z\-]+)?\s*(?=[,:\-–—]|нужно|надо)", re.IGNORECASE)
+SUBJECT_PREFIX = re.compile(
+    r"^по\s+[а-яёa-z\-]+(?:\s+[а-яёa-z\-]+)?\s*(?=[,:\-–—]|нужно|надо)", re.IGNORECASE
+)
 COLLECTIVE_VERB = re.compile(
     r"^(?:каждый|каждому|все|всем|вся группа)\s+(?:студент\w*\s+)?"
     r"(?P<verb>делает|делаем|готовит|готовим|пишет|пишем|решает|решаем|выполняет|выполняем|"
@@ -138,10 +140,13 @@ def action_clause(text):
         parts = [action_clause(ENUM_MARKER.sub("", line)) for line in items[:3]]
         parts = [part[:1].lower() + part[1:] for part in parts if part]
         if parts:
-            return clean_title((parts[0][:1].upper() + parts[0][1:]) + "".join(
-                f"{' и ' if index == len(parts) - 1 else ', '}{part}"
-                for index, part in enumerate(parts[1:], 1)
-            ))
+            return clean_title(
+                (parts[0][:1].upper() + parts[0][1:])
+                + "".join(
+                    f"{' и ' if index == len(parts) - 1 else ', '}{part}"
+                    for index, part in enumerate(parts[1:], 1)
+                )
+            )
         return None
     sentence = _strip_fillers(" ".join((announce or lines[0]).split()))
     sentence = ENUM_MARKER.sub("", sentence)
@@ -157,9 +162,11 @@ def action_clause(text):
     sentence = _strip_fillers(sentence)
     clause = CONDITION_SPLIT.split(sentence, maxsplit=1)[0].strip(" ,:-–—")
     # A leading "по <предмету>" fragment that survived is not part of the action.
-    clause = re.sub(r"^по\s+[а-яёa-z\-]+\s+", "", clause, flags=re.IGNORECASE) if not INFINITIVE.match(
-        clause
-    ) and WORK_NOUNS.search(clause) is None else clause
+    clause = (
+        re.sub(r"^по\s+[а-яёa-z\-]+\s+", "", clause, flags=re.IGNORECASE)
+        if not INFINITIVE.match(clause) and WORK_NOUNS.search(clause) is None
+        else clause
+    )
     if len(clause) < 6 or not re.search(r"[а-яёa-z]{3}", clause, re.IGNORECASE):
         return None
     title = clean_title(_verb_normalised(clause))
