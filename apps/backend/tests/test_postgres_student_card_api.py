@@ -116,9 +116,9 @@ def test_postgres_published_card_sources_materials_shadow_isolation_and_completi
     student_cards.test_published_canonical_card_reaches_student_api_without_shadow_or_private_file_ids(
         postgres_client
     )
-    card_id = postgres_client.get(
-        "/v1/homework", headers={"Authorization": "Bearer valid"}
-    ).json()["items"][0]["id"]
+    card_id = postgres_client.get("/v1/homework", headers={"Authorization": "Bearer valid"}).json()[
+        "items"
+    ][0]["id"]
     undone = postgres_client.put(
         f"/v1/homework/{card_id}/completion",
         headers={"Authorization": "Bearer valid"},
@@ -153,9 +153,12 @@ def test_postgres_telegram_init_data_bootstrap_and_tamper_rejection(postgres_cli
     assert response.status_code == 200
     assert response.json()["session"]["access_state"] == "active"
     credential = response.json()["access_token"]
-    assert postgres_client.get(
-        "/v1/subjects", headers={"Authorization": f"Bearer {credential}"}
-    ).status_code == 200
+    assert (
+        postgres_client.get(
+            "/v1/subjects", headers={"Authorization": f"Bearer {credential}"}
+        ).status_code
+        == 200
+    )
 
     tampered = valid[:-1] + ("0" if valid[-1] != "0" else "1")
     rejected = postgres_client.post("/v1/session/bootstrap", json={"init_data": tampered})
