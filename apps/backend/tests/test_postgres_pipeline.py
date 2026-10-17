@@ -366,3 +366,32 @@ def test_postgres_shadow_budget_reservation_is_atomic_under_concurrency():
         await engine.dispose()
 
     asyncio.run(run())
+
+
+def test_postgres_missing_budget_row_is_created_once_under_concurrency():
+    """Two workers meeting an absent ai_control row must not both insert id=1."""
+    from studgroup.models import AIControl
+    from studgroup.processing import ensure_ai_control
+
+    async def run():
+        engine = create_async_engine(os.environ["POSTGRES_TEST_URL"], poolclass=NullPool)
+
+        async def worker():
+            async with AsyncSession(engine) as db:
+                control_id = (await ensure_ai_control(db)).id
+                await asyncio.sleep(0.05)  # hold the row lock so the other worker must wait
+                await db.commit()
+                return control_id
+
+        try:
+            for _ in range(5):
+                async with AsyncSession(engine) as db:
+                    await db.execute(delete(AIControl))
+                    await db.commit()
+                assert await asyncio.gather(worker(), worker(), worker()) == [1, 1, 1]
+                async with AsyncSession(engine) as db:
+                    assert await db.scalar(select(func.count()).select_from(AIControl)) == 1
+        finally:
+            await engine.dispose()
+
+    asyncio.run(run())

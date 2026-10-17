@@ -308,6 +308,24 @@ async def incident_once(db, code, now, detail=None):
     return await incident(db, code, now, detail=detail)
 
 
+async def ensure_ai_control(db):
+    """The locked budget singleton; created race-safely when it is missing.
+
+    Production migrations seed the row, but create_all tests and local previews do not. A plain
+    "select, then add if missing" lets two workers both insert id=1, so the insert is
+    ``ON CONFLICT DO NOTHING`` and the row is always read back under ``FOR UPDATE``.
+    """
+    control = await db.scalar(select(AIControl).where(AIControl.id == 1).with_for_update())
+    if control is None:
+        await db.execute(
+            insert(AIControl)
+            .values(id=1, spent_usd=Decimal(0), provider_failure_streak=0)
+            .on_conflict_do_nothing(index_elements=[AIControl.id])
+        )
+        control = await db.scalar(select(AIControl).where(AIControl.id == 1).with_for_update())
+    return control
+
+
 async def claim(engine, settings, now, *, writer="legacy"):
     filter_started = monotonic()
     filtered_sources = {}
@@ -323,12 +341,7 @@ async def claim(engine, settings, now, *, writer="legacy"):
         slot, _close, extended = timing
     async with AsyncSession(engine, expire_on_commit=False) as db:
         # Singleton lock serializes budget reservations across groups/workers.
-        control = await db.scalar(select(AIControl).where(AIControl.id == 1).with_for_update())
-        if control is None:
-            # create_all tests/local previews; production migration seeds it.
-            control = AIControl(id=1, spent_usd=Decimal(0), provider_failure_streak=0)
-            db.add(control)
-            await db.flush()
+        control = await ensure_ai_control(db)
         if control.provider_circuit_open_until is not None:
             if utc(control.provider_circuit_open_until) > now:
                 await db.commit()
