@@ -39,7 +39,6 @@ from studgroup.analysis.subject_catalog import (
     catalog_summary,
     with_catalog,
 )
-from studgroup.analysis.subject_identity import subject_key, subject_uuid
 from studgroup.main import Settings
 from studgroup.models import (
     CanonicalAcademicItem,
@@ -50,28 +49,33 @@ from studgroup.models import (
     ShadowEvaluationRun,
 )
 from studgroup.processing import context_for
+from studgroup.subject_identity import subject_uuid
 
 pytest_plugins = ["test_schedule_api"]
 
 
-def codex_normalized(value):
-    """Verbatim ``normalized`` of Codex's studgroup/subjects.py (codex/cplus-student-api-integration)."""
-    return " ".join(value.casefold().replace("ё", "е").split())
+def legacy_id(group, name):
+    """The formula every writer on main uses: casefold only (no e/yo folding, no spacing change)."""
+    return uuid.uuid5(group, name.casefold())
 
 
 # -- stable identity ----------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "name", ["Математический анализ", "математический  анализ", "МАТЕМАТИЧЕСКИЙ АНАЛИЗ ", "Учёт", "учет"]
+    "name",
+    ["Математический анализ", "математический  анализ", "МАТЕМАТИЧЕСКИЙ АНАЛИЗ ", "Учёт", "учет"],
 )
-def test_subject_id_is_the_codex_formula(name):
-    assert subject_key(name) == codex_normalized(name)
-    assert subject_uuid(GROUP, name) == uuid.uuid5(GROUP, codex_normalized(name))
+def test_subject_id_is_the_legacy_casefold_formula(name):
+    assert subject_uuid(GROUP, name) == legacy_id(GROUP, name)
 
 
-def test_spelling_variants_share_one_id_and_groups_never_do():
-    assert subject_uuid(GROUP, "Учёт") == subject_uuid(GROUP, " учет ")
+def test_only_case_is_folded_and_groups_never_share_an_id():
+    assert subject_uuid(GROUP, "ФИЗИКА") == subject_uuid(GROUP, "физика")
+    # ё/е, spacing and rename are different ids: nothing is merged automatically
+    assert subject_uuid(GROUP, "Учёт") != subject_uuid(GROUP, "Учет")
+    assert subject_uuid(GROUP, "Учёт") != subject_uuid(GROUP, " учёт ")
+    assert subject_uuid(GROUP, "Физика  X") != subject_uuid(GROUP, "Физика X")
     assert subject_uuid(GROUP, "Физика") != subject_uuid(uuid.UUID(int=7), "Физика")
     assert subject_uuid(GROUP, "Физика") != subject_uuid(GROUP, "Физика (лекции)")
 
@@ -86,7 +90,7 @@ def test_catalog_ids_do_not_depend_on_row_order_or_spelling():
     second = build_catalog(GROUP, list(reversed(rows)))
     assert first == second and len(first.subjects) == 2
     assert {e.id for e in first.subjects} == {
-        str(uuid.uuid5(GROUP, codex_normalized(n))) for n in ("физика", "математический анализ")
+        str(legacy_id(GROUP, n)) for n in ("физика", "математический анализ")
     }
     assert catalog_fingerprint(first) == catalog_fingerprint(second)
 
@@ -95,10 +99,16 @@ def test_fingerprint_follows_content_not_labels():
     base = build_catalog(GROUP, _rows(("Физика", None), ("Алгебра", None)))
     relabelled = base.model_copy(update={"version": "another-label"})
     reordered = base.model_copy(update={"subjects": list(reversed(base.subjects))})
-    assert catalog_fingerprint(base) == catalog_fingerprint(relabelled) == catalog_fingerprint(reordered)
+    assert (
+        catalog_fingerprint(base)
+        == catalog_fingerprint(relabelled)
+        == catalog_fingerprint(reordered)
+    )
     changed = build_catalog(GROUP, _rows(("Физика", None), ("Алгебра", None), ("Химия", None)))
     assert catalog_fingerprint(changed) != catalog_fingerprint(base)
-    assert catalog_fingerprint(base.model_copy(update={"complete": True})) != catalog_fingerprint(base)
+    assert catalog_fingerprint(base.model_copy(update={"complete": True})) != catalog_fingerprint(
+        base
+    )
     teacher = build_catalog(GROUP, _rows(("Физика", "Смит"), ("Алгебра", None)))
     assert catalog_fingerprint(teacher) != catalog_fingerprint(base)
     assert catalog_summary(None) == {"present": False}
@@ -123,7 +133,9 @@ def test_projected_card_and_catalog_use_the_same_subject_id(client):
                 db, group_id=group.id, proposal=proposal, edited_card=card, now=RESOLVER_NOW
             )
             await db.flush()
-            await project_item(db, created.item, RESOLVER_NOW, writer_mode="new", emit_notifications=False)
+            await project_item(
+                db, created.item, RESOLVER_NOW, writer_mode="new", emit_notifications=False
+            )
             await db.commit()
             homework = await db.scalar(select(Homework))
             return entry.id, str(homework.subject_id), homework.subject_name
@@ -195,8 +207,14 @@ def analyse(client):
     schedule(client, "Физика", "Алгебра")
     settings = Settings(ai_enabled=False, ai_shadow_enabled=True)
     provider = HybridProvider()
-    assert asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW)) == "shadow_queued"
-    assert asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW)) == "shadow_completed"
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW))
+        == "shadow_queued"
+    )
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW))
+        == "shadow_completed"
+    )
     return provider
 
 
@@ -204,8 +222,14 @@ def test_the_run_records_the_catalog_it_was_analysed_with(client):
     analyse(client)
     (row,) = runs(client)
     data = AnalysisInput.model_validate_json(row.input_json)
-    assert {e.name for e in data.subject_catalog.subjects} == {"Математика", "Физика", "Алгебра"}  # + the fixture's own
-    assert data.subject_catalog.subjects[0].id == str(subject_uuid(data.group_id, data.subject_catalog.subjects[0].name))
+    assert {e.name for e in data.subject_catalog.subjects} == {
+        "Математика",
+        "Физика",
+        "Алгебра",
+    }  # + the fixture's own
+    assert data.subject_catalog.subjects[0].id == str(
+        subject_uuid(data.group_id, data.subject_catalog.subjects[0].name)
+    )
     recorded = json.loads(row.metrics_json)["subject_catalog"]
     assert recorded["fingerprint"] == catalog_fingerprint(data.subject_catalog)
     assert recorded["complete"] is False and recorded["subjects"] == 3
@@ -261,7 +285,12 @@ def test_an_owner_requeue_uses_the_current_catalog_and_keeps_the_old_outcome(cli
     (after,) = runs(client)
     assert after.id == before.id and after.state == "queued"
     data = AnalysisInput.model_validate_json(after.input_json)
-    assert {e.name for e in data.subject_catalog.subjects} == {"Математика", "Физика", "Алгебра", "Химия"}
+    assert {e.name for e in data.subject_catalog.subjects} == {
+        "Математика",
+        "Физика",
+        "Алгебра",
+        "Химия",
+    }
     assert data.messages == old_messages  # only the reference data moved
     history = json.loads(after.metrics_json)["history"]
     assert history[-1]["metrics"]["subject_catalog"]["fingerprint"] == old_fingerprint
@@ -288,26 +317,39 @@ def _shadow(catalog_value):
 
 def test_same_messages_under_a_changed_catalog_give_a_traceable_difference():
     with_physics = lambda g: SubjectCatalog(
-        group_id=g, complete=True, subjects=[SubjectEntry(id=str(subject_uuid(g, "Физика")), name="Физика")]
+        group_id=g,
+        complete=True,
+        subjects=[SubjectEntry(id=str(subject_uuid(g, "Физика")), name="Физика")],
     )
     without = lambda g: SubjectCatalog(
-        group_id=g, complete=True, subjects=[SubjectEntry(id=str(subject_uuid(g, "Алгебра")), name="Алгебра")]
+        group_id=g,
+        complete=True,
+        subjects=[SubjectEntry(id=str(subject_uuid(g, "Алгебра")), name="Алгебра")],
     )
     data_a, result_a = _shadow(with_physics)
     data_b, result_b = _shadow(without)
     assert source_snapshot_sha256(data_a) == source_snapshot_sha256(data_b)  # same source
-    assert catalog_fingerprint(data_a.subject_catalog) != catalog_fingerprint(data_b.subject_catalog)
-    assert result_a.accepted[0].subject == "Физика" and result_a.accepted[0].subject_source == "catalog"
+    assert catalog_fingerprint(data_a.subject_catalog) != catalog_fingerprint(
+        data_b.subject_catalog
+    )
+    assert (
+        result_a.accepted[0].subject == "Физика"
+        and result_a.accepted[0].subject_source == "catalog"
+    )
     assert result_b.accepted[0].subject is None  # the outcome differs and the fingerprint says why
 
 
 def test_the_same_catalog_twice_is_deterministic():
     make = lambda g: SubjectCatalog(
-        group_id=g, complete=True, subjects=[SubjectEntry(id=str(subject_uuid(g, "Физика")), name="Физика")]
+        group_id=g,
+        complete=True,
+        subjects=[SubjectEntry(id=str(subject_uuid(g, "Физика")), name="Физика")],
     )
     first_data, first = _shadow(make)
     second_data, second = _shadow(make)
-    assert catalog_fingerprint(first_data.subject_catalog) == catalog_fingerprint(second_data.subject_catalog)
+    assert catalog_fingerprint(first_data.subject_catalog) == catalog_fingerprint(
+        second_data.subject_catalog
+    )
     assert first.model_dump_json() == second.model_dump_json()
 
 
@@ -320,7 +362,9 @@ def test_old_snapshots_and_results_without_catalog_fields_still_read():
     old_input = json.loads(base.model_dump_json())
     old_input.pop("subject_catalog")
     data = AnalysisInput.model_validate_json(json.dumps(old_input))
-    assert data.subject_catalog is None and source_snapshot_sha256(data) == source_snapshot_sha256(base)
+    assert data.subject_catalog is None and source_snapshot_sha256(data) == source_snapshot_sha256(
+        base
+    )
     assert catalog_summary(data.subject_catalog) == {"present": False}
 
     result = asyncio.run(run_shadow(TwoPassProvider(envelope([good])), base, [])).validation
@@ -384,3 +428,34 @@ def test_a_confirmed_subject_is_not_erased(client, later_item):
 
     action, subject = asyncio.run(go())
     assert action == "update" and subject == "Математический анализ"
+
+
+def test_spelling_variants_stay_separate_catalog_subjects():
+    rows = _rows(("Учёт", None), ("Учет", None), ("УЧЁТ", None))
+    catalog = build_catalog(GROUP, rows)
+    # "Учёт" and "УЧЁТ" differ only by case (one subject); "Учет" is another one
+    assert len(catalog.subjects) == 2
+    assert {e.id for e in catalog.subjects} == {
+        str(legacy_id(GROUP, "Учёт")),
+        str(legacy_id(GROUP, "Учет")),
+    }
+
+
+def test_a_fact_attaches_by_exact_name_or_to_the_single_similar_subject_only():
+    from types import SimpleNamespace
+
+    def fact(subject, alias):
+        return SimpleNamespace(
+            group_id=GROUP,
+            status="verified",
+            fact_type="subject_alias",
+            value_json=json.dumps({"subject": subject, "alias": alias}, ensure_ascii=False),
+        )
+
+    single = build_catalog(GROUP, _rows(("Учёт", None)), [fact("учет", "бух")])
+    assert single.subjects[0].aliases == ["бух"]  # one similar subject: unambiguous
+    both = _rows(("Учёт", None), ("Учет", None))
+    exact = build_catalog(GROUP, both, [fact("учёт", "бух")])
+    assert {e.name: e.aliases for e in exact.subjects} == {"Учёт": ["бух"], "Учет": []}
+    vague = build_catalog(GROUP, both, [fact("учёт.", "бух")])  # matches both: attach to none
+    assert all(entry.aliases == [] for entry in vague.subjects)

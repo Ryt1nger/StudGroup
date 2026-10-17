@@ -341,8 +341,8 @@ or empty catalog is ignored. `resolver` stores `edited_card.subject` and never e
 subject. Counters: `subject_confirmed_by_catalog`, `subject_canonicalised`, `subject_id_unknown`,
 `subject_not_in_catalog`, `subject_ambiguous_in_catalog`, `subject_catalog_ignored_*`. Contract and
 what Codex still has to plug in: `docs/architecture/subject-catalog-contract.md`.
-05A: subject ids are `uuid5(group_id, normalized_name)` (`analysis/subject_identity.py`, same as
-`studgroup/subjects.py`); the catalog is not part of run identity or the source hash, its
+05A: subject ids are `uuid5(group_id, name.casefold())` (`studgroup/subject_identity.py`, the one
+formula of every writer and of the student API; similar names are never merged); the catalog is not part of run identity or the source hash, its
 `fingerprint` is recorded in `metrics.subject_catalog` (and per wave in `wave_results`), and an
 owner requeue refreshes the stored catalog. New reasons: `subject_id_mismatch`.
 

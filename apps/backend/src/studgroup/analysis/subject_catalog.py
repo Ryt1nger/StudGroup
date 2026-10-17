@@ -14,7 +14,8 @@ What the code does (deterministic, and only this)
 Where the catalog comes from (integration point for Codex)
     ``load_subject_catalog`` is the single place that builds it. Today it derives it from
     ``SchedulePattern`` rows and verified ``subject_alias``/``subject_teacher`` memory facts. Ids are
-    the shared ``subject_identity.subject_uuid`` (the formula of ``studgroup.subjects``). When Codex
+    the shared ``studgroup.subject_identity.subject_uuid`` (the casefold-only formula of every
+    writer). When Codex
     exposes an authoritative subject source, only the body of that function changes (authoritative
     ``complete`` flag, version); the contract below and everything downstream stay as they are.
 
@@ -35,8 +36,8 @@ from dataclasses import dataclass
 from sqlalchemy import select
 
 from studgroup.analysis.contracts import AnalysisInput, SubjectCatalog, SubjectEntry
-from studgroup.analysis.subject_identity import subject_key, subject_uuid
 from studgroup.models import SchedulePattern
+from studgroup.subject_identity import match_key, subject_uuid
 
 MAX_ALIASES = 20
 MAX_TEACHERS = 10
@@ -47,6 +48,11 @@ def label_key(text):
     """Comparison form of a label: casefolded, ё folded, punctuation and spacing collapsed."""
     value = re.sub(r"[^\w]+", " ", (text or "").casefold().replace("ё", "е"))
     return " ".join(value.split())
+
+
+def exact_key(name):
+    """Grouping key of the catalog: exactly the identity formula, so no two spellings are merged."""
+    return (name or "").casefold()
 
 
 @dataclass(frozen=True)
@@ -169,7 +175,7 @@ def build_catalog(group_id, patterns, facts=()):
     spellings: dict[str, Counter] = {}
     teachers: dict[str, list[str]] = {}
     for row in patterns:
-        key = subject_key(row.subject)
+        key = exact_key(row.subject.strip())
         if not key:
             continue
         spellings.setdefault(key, Counter())[row.subject.strip()] += 1
@@ -178,6 +184,16 @@ def build_catalog(group_id, patterns, facts=()):
             if row.teacher.strip() not in names:
                 names.append(row.teacher.strip())
     aliases: dict[str, list[str]] = {}
+
+    def known_key(subject):
+        """Catalog key a fact refers to: the exact spelling, else the one subject that only differs
+        in e/yo, punctuation or spacing. Several candidates means ambiguous: attach to none."""
+        key = exact_key((subject or "").strip())
+        if key in spellings:
+            return key
+        similar = [other for other in spellings if match_key(other) == match_key(subject)]
+        return similar[0] if len(similar) == 1 and match_key(subject) else None
+
     for fact in facts:
         if fact.group_id != group_id or fact.status != "verified":
             continue
@@ -186,17 +202,17 @@ def build_catalog(group_id, patterns, facts=()):
         except (TypeError, ValueError):
             continue
         if fact.fact_type == "subject_alias" and isinstance(value, dict):
-            key, alias = subject_key(value.get("subject")), (value.get("alias") or "").strip()
+            key, alias = known_key(value.get("subject")), (value.get("alias") or "").strip()
             if (
-                key in spellings
+                key is not None
                 and alias
-                and subject_key(alias) != key
+                and exact_key(alias) != key
                 and alias not in aliases.setdefault(key, [])
             ):
                 aliases[key].append(alias)
         elif fact.fact_type == "subject_teacher" and isinstance(value, dict):
-            key, teacher = subject_key(value.get("subject")), (value.get("teacher") or "").strip()
-            if key in spellings and teacher and teacher not in teachers.setdefault(key, []):
+            key, teacher = known_key(value.get("subject")), (value.get("teacher") or "").strip()
+            if key is not None and teacher and teacher not in teachers.setdefault(key, []):
                 teachers[key].append(teacher)
     entries = []
     for key in sorted(spellings):

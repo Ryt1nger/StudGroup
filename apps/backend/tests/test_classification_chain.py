@@ -42,38 +42,59 @@ TEXT = "Квиз по цивилизациям в среду. В четверг 
 
 def structured_answer(message_id, revision):
     def cite(*ids):
-        return [{"telegram_message_id": i, "revision": revision, "fact_paths": ["description"]} for i in ids]
+        return [
+            {"telegram_message_id": i, "revision": revision, "fact_paths": ["description"]}
+            for i in ids
+        ]
 
     return {
         "schema_version": ANALYSIS_SCHEMA_VERSION,
         "engine_version": ANALYSIS_ENGINE_VERSION,
         "source_revision": revision,
         "proposals": [
-            {   # the model's own word for a quiz: a synonym of the published kind "test"
-                "semantic_kind": "Квиз", "subject": None, "title": "Квиз по цивилизациям",
-                "description": "Квиз по цивилизациям в среду.", "confidence": 90,
+            {  # the model's own word for a quiz: a synonym of the published kind "test"
+                "semantic_kind": "Квиз",
+                "subject": None,
+                "title": "Квиз по цивилизациям",
+                "description": "Квиз по цивилизациям в среду.",
+                "confidence": 90,
                 "audience": {"scope": "group", "label": None},
                 "deadline": {"at": None, "date_only": False, "basis": "unknown"},
                 "evidence": cite(message_id),
             },
-            {   # a value the contract does not know and nobody may guess
-                "semantic_kind": "лекция", "title": "Лекция по физике",
-                "description": "Лекция по физике.", "confidence": 70, "evidence": cite(message_id),
+            {  # a value the contract does not know and nobody may guess
+                "semantic_kind": "лекция",
+                "title": "Лекция по физике",
+                "description": "Лекция по физике.",
+                "confidence": 70,
+                "evidence": cite(message_id),
             },
         ],
         "candidates": [
             {
-                "category": "event", "title": "Встреча с выпускниками",
+                "category": "event",
+                "title": "Встреча с выпускниками",
                 "description": "Встреча студентов с выпускниками после пар.",
-                "when_text": "в четверг после пар", "reason": "Встреча, не учебное задание",
-                "confidence": 85, "evidence": cite(message_id),
+                "when_text": "в четверг после пар",
+                "reason": "Встреча, не учебное задание",
+                "confidence": 85,
+                "evidence": cite(message_id),
             },
-            {   # cites a message that does not exist
-                "category": "event", "title": "Экскурсия на завод", "when_text": "в пятницу",
-                "reason": "Событие", "confidence": 60, "evidence": cite(424242),
+            {  # cites a message that does not exist
+                "category": "event",
+                "title": "Экскурсия на завод",
+                "when_text": "в пятницу",
+                "reason": "Событие",
+                "confidence": 60,
+                "evidence": cite(424242),
             },
-            {"category": "organizational", "title": "Принести копии паспортов",
-             "description": "Принести копии паспортов.", "confidence": 75, "evidence": cite(message_id)},
+            {
+                "category": "organizational",
+                "title": "Принести копии паспортов",
+                "description": "Принести копии паспортов.",
+                "confidence": 75,
+                "evidence": cite(message_id),
+            },
         ],
         "explicit_empty": False,
     }
@@ -101,8 +122,14 @@ def run_chain(client):
     provider = StructuredProvider()
     settings = Settings(ai_enabled=False, ai_shadow_enabled=True)
     before = product_snapshot(client)
-    assert asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW)) == "shadow_queued"
-    assert asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW)) == "shadow_completed"
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW))
+        == "shadow_queued"
+    )
+    assert (
+        asyncio.run(dispatch_next(client.app.state.engine, settings, provider, NOW))
+        == "shadow_completed"
+    )
     assert product_snapshot(client) == before  # shadow writes nothing to the product
     return provider
 

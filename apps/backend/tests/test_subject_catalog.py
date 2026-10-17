@@ -29,8 +29,8 @@ from studgroup.analysis.resolver import resolve_proposal
 from studgroup.analysis.shadow import run_shadow, source_snapshot_sha256
 from studgroup.analysis.stored import effective_validation
 from studgroup.analysis.subject_catalog import build_catalog, label_key
-from studgroup.analysis.subject_identity import subject_uuid
 from studgroup.models import CanonicalAcademicItem, Group
+from studgroup.subject_identity import subject_uuid
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -410,7 +410,7 @@ def test_a_repair_may_confirm_the_same_subject_but_not_swap_it():
 def test_catalog_built_from_the_schedule_and_verified_facts():
     rows = [
         SimpleNamespace(subject="Математический анализ", teacher="Иванова И. И."),
-        SimpleNamespace(subject="математический  анализ", teacher="Иванова И. И."),
+        SimpleNamespace(subject="математический анализ", teacher="Иванова И. И."),
         SimpleNamespace(subject="Физика", teacher=None),
     ]
     facts = [

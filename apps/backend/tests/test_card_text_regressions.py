@@ -56,7 +56,10 @@ def _task_item(**patch):
 
 
 def _reconciled(reply_text):
-    messages = [msg(1, TASK, role="headman"), msg(2, reply_text, minutes=300, reply=1, role="headman")]
+    messages = [
+        msg(1, TASK, role="headman"),
+        msg(2, reply_text, minutes=300, reply=1, role="headman"),
+    ]
     data = AnalysisInput(
         group_id=GROUP,
         group_timezone="Europe/Moscow",
@@ -149,8 +152,7 @@ def _supplement_case(client, reply_text):
             )
             validation = validate_extraction_adapted(envelope([raw]), data).result
             raw_by_id = {
-                row.telegram_message_id: row
-                for row in (await db.scalars(select(RawMessage))).all()
+                row.telegram_message_id: row for row in (await db.scalars(select(RawMessage))).all()
             }
             updated = await with_supplement_updates(db, group.id, validation, data, raw_by_id)
             return created.item, updated
@@ -219,7 +221,9 @@ def _resolve_twice(client, first_card, second_card):
 
 
 def test_failed_description_does_not_overwrite_the_accepted_one(client):
-    good = EditedCard(title="Решить задачи 1–3", description="Решить задачи 1–3.", visibility="normal")
+    good = EditedCard(
+        title="Решить задачи 1–3", description="Решить задачи 1–3.", visibility="normal"
+    )
     item, result = _resolve_twice(client, good, _pending_card("Решить задачи 1–3"))
     assert result.item.description == "Решить задачи 1–3."
     assert "description_pending_ai" in json.loads(result.item.attention_reasons)  # not "confirmed"
@@ -227,7 +231,9 @@ def test_failed_description_does_not_overwrite_the_accepted_one(client):
 
 
 def test_failed_title_does_not_overwrite_the_accepted_one(client):
-    good = EditedCard(title="Решить задачи 1–3", description="Решить задачи 1–3.", visibility="normal")
+    good = EditedCard(
+        title="Решить задачи 1–3", description="Решить задачи 1–3.", visibility="normal"
+    )
     weak = EditedCard(
         title=f"Задание: {INSUFFICIENT}",
         description="Решить задачи 1–3.",
@@ -242,7 +248,9 @@ def test_failed_title_does_not_overwrite_the_accepted_one(client):
 
 def test_a_placeholder_is_replaced_by_the_first_sound_text(client):
     first = _pending_card(f"Задание: {INSUFFICIENT}", attention_reasons=["description_pending_ai"])
-    better = EditedCard(title="Решить задачи 1–3", description="Решить задачи 1–3.", visibility="normal")
+    better = EditedCard(
+        title="Решить задачи 1–3", description="Решить задачи 1–3.", visibility="normal"
+    )
     _, result = _resolve_twice(client, first, better)
     assert result.item.description == "Решить задачи 1–3."
     assert result.item.title == "Решить задачи 1–3"
@@ -285,7 +293,9 @@ def _project(client, cards):
                     existing_item_id=item.id,
                     expected_item_revision=item.revision,
                 )
-                await project_item(db, result.item, NOW + timedelta(minutes=step), writer_mode="new")
+                await project_item(
+                    db, result.item, NOW + timedelta(minutes=step), writer_mode="new"
+                )
                 await db.commit()
                 row = (await db.scalars(select(Homework))).one()
                 await db.refresh(row)
@@ -336,9 +346,13 @@ def test_lagging_description_says_so_and_the_note_goes_away_after_integration(cl
 
 
 def test_a_plain_card_gets_no_note(client):
-    plain = EditedCard(title="Решить задачи 1–3", description="Решить задачи 1–3.", visibility="normal")
+    plain = EditedCard(
+        title="Решить задачи 1–3", description="Решить задачи 1–3.", visibility="normal"
+    )
     (row,) = _project(client, [plain])
-    assert row.description == "Решить задачи 1–3." and row.verification_state == "from_group_message"
+    assert (
+        row.description == "Решить задачи 1–3." and row.verification_state == "from_group_message"
+    )
 
 
 # -- 5. only serious doubts hide a card ---------------------------------------------------------
@@ -346,13 +360,12 @@ def test_a_plain_card_gets_no_note(client):
 
 def test_text_fallbacks_alone_never_hold_a_card_but_a_material_doubt_does():
     source = [msg(1, "Решить задачи 1–3")]
-    soft = edit_card(
-        _task_item_proposal(description="Решить задачи 1–7 на 99 страницах"), source
+    soft = edit_card(_task_item_proposal(description="Решить задачи 1–7 на 99 страницах"), source)
+    assert (
+        soft.visibility == "headman_attention"
+        and "description_pending_ai" in soft.attention_reasons
     )
-    assert soft.visibility == "headman_attention" and "description_pending_ai" in soft.attention_reasons
-    hard = edit_card(
-        _task_item_proposal(attention_reasons=["material_conflict"]), source
-    )
+    hard = edit_card(_task_item_proposal(attention_reasons=["material_conflict"]), source)
     assert hard.visibility == "held"
 
 
