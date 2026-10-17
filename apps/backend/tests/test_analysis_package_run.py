@@ -202,6 +202,22 @@ def test_failed_package_is_not_analysed_and_never_empty():
     assert guard.spent_usd > 0 and guard.spent_usd <= guard.cap_usd
 
 
+def test_unreachable_provider_charges_nothing_but_unknown_failure_charges_worst_case():
+    class Unreachable(Provider):
+        async def complete(self, request):
+            raise ProviderFailure("provider_unreachable", True, reservation_releasable=True)
+
+    class Unknown(Provider):
+        async def complete(self, request):
+            raise ProviderFailure("provider_timeout", True)
+
+    packages = plan(max_targets=25)[:1]
+    _, free = asyncio.run(run_packages(Unreachable(), packages, cap_usd="1", max_attempts=1))
+    _, paid = asyncio.run(run_packages(Unknown(), packages, cap_usd="1", max_attempts=1))
+    assert free.spent_usd == 0 and free.calls == 1
+    assert paid.spent_usd > 0
+
+
 def test_defaulted_candidate_attributes_no_target():
     ref = SimpleNamespace(telegram_message_id=3)
     validation = SimpleNamespace(

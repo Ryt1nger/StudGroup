@@ -189,8 +189,9 @@ class BudgetGuard:
         except ProviderFailure as error:
             if error.usage is not None:
                 self.spent_usd += usage_cost_usd(error.usage)
-            else:
-                # Unknown usage: keep the call's whole worst case as the conservative charge.
+            elif not error.reservation_releasable:
+                # Unknown usage and the request may have run: keep the worst case as the charge.
+                # A releasable failure (provider unreachable, not configured) proves no spend.
                 self.spent_usd += worst_case_call_usd(request)
             raise
         self.spent_usd += usage_cost_usd(response.usage)
