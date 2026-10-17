@@ -26,6 +26,26 @@ SHADOW_EXPORT_MAX_STORED_BYTES = 8 * 1024 * 1024
 SHADOW_EXPORT_MAX_JSON_BYTES = 16 * 1024 * 1024
 SHADOW_EXPORT_MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 SHADOW_EXPORT_ACTIVE_WINDOW = timedelta(minutes=15)
+LOGGER = logging.getLogger(__name__)
+# Reasons that may be logged verbatim: fixed codes, never text taken from stored or private data.
+SHADOW_EXPORT_SAFE_REASONS = {
+    "shadow_wave_not_found",
+    "shadow_wave_group_ambiguous",
+    "shadow_wave_group_missing",
+    "shadow_wave_group_mismatch",
+    "shadow_wave_sources_unavailable",
+    "shadow_wave_group_boundary_unavailable",
+    "shadow_wave_too_many_runs",
+    "shadow_wave_stored_data_too_large",
+    "shadow_export_json_too_large",
+    "shadow_export_document_too_large",
+}
+
+
+def shadow_export_reason(error):
+    """Operator-visible reason for a failed export: a known code, else only the exception type."""
+    text = str(error)
+    return text if text in SHADOW_EXPORT_SAFE_REASONS else type(error).__name__
 
 
 def enqueue(db, method, payload, dedup_key=None):
@@ -735,6 +755,7 @@ async def deliver_shadow_export(db, row, settings):
         counts = bundle["counts"]
         digest = hashlib.sha256(document).hexdigest()
     except ShadowWaveUnavailable as error:
+        LOGGER.warning("shadow export not sent: %s", shadow_export_reason(error))
         failure = (
             "Экспорт не отправлен: сохранённая волна отсутствует или больше не связана "
             "с подтверждённой группой."
@@ -749,9 +770,11 @@ async def deliver_shadow_export(db, row, settings):
             }
             else "Экспорт не отправлен: сохранённые данные превышают безопасный лимит."
         )
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as error:
+        LOGGER.warning("shadow export not sent: %s", shadow_export_reason(error))
         failure = "Экспорт не отправлен: размер файла превышает безопасный лимит."
-    except Exception:  # noqa: BLE001 -- never expose private validation/parser details
+    except Exception as error:  # noqa: BLE001 -- never expose private validation/parser details
+        LOGGER.warning("shadow export not sent: %s", shadow_export_reason(error))
         failure = "Экспорт не отправлен: сохранённые данные не удалось безопасно подготовить."
     finally:
         # Read-only export generation is never allowed to commit preview-side effects.
@@ -771,7 +794,13 @@ async def deliver_shadow_export(db, row, settings):
                 ),
             )
             sent = result.get("ok") is True
-        except Exception:  # noqa: BLE001 -- ambiguous delivery is at-most-once
+            if not sent:
+                LOGGER.warning(
+                    "shadow export upload rejected by Telegram: error_code=%s",
+                    result.get("error_code"),
+                )
+        except Exception as error:  # noqa: BLE001 -- ambiguous delivery is at-most-once
+            LOGGER.warning("shadow export upload outcome unknown: %s", type(error).__name__)
             # Telegram may have accepted the upload before the connection failed.
             # Mark failed and require a fresh owner confirmation instead of retrying.
             sent = False
@@ -782,6 +811,8 @@ async def deliver_shadow_export(db, row, settings):
         except Exception:  # noqa: BLE001, S110 -- export remains failed without retry
             pass
 
+    if sent:
+        LOGGER.info("shadow export sent: runs=%s cards=%s", counts["runs"], counts["preview_cards"])
     current = await db.get(BotOutbox, row_id)
     current.state = "sent" if sent else "failed"
     current.lease_until = None

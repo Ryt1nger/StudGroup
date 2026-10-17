@@ -408,3 +408,18 @@ def test_shadow_export_rejects_tampered_recipient_and_never_retries_uncertain_up
     assert len(calls) == 1
     asyncio.run(bot_admin.deliver(client.app.state.engine, client.app.state.settings))
     assert len(calls) == 1
+
+
+def test_shadow_export_failure_reason_is_logged_without_private_text():
+    from studgroup.bot_admin import shadow_export_reason
+    from studgroup.export_shadow_wave import ShadowWaveUnavailable
+
+    assert shadow_export_reason(ShadowWaveUnavailable("shadow_wave_not_found")) == (
+        "shadow_wave_not_found"
+    )
+    assert shadow_export_reason(ValueError("shadow_export_json_too_large")) == (
+        "shadow_export_json_too_large"
+    )
+    # anything else may carry stored message text: only the exception type is exposed
+    assert shadow_export_reason(ValueError("секретный текст сообщения")) == "ValueError"
+    assert shadow_export_reason(KeyError("secret")) == "KeyError"
