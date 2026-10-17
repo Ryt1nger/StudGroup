@@ -255,3 +255,45 @@ def test_defaulted_candidate_attributes_no_target():
     package = SimpleNamespace(target_ids=(3, 4, 5))
     per_target, unattributed = attribute_targets(package, validation)
     assert per_target == {3: "empty", 4: "candidate", 5: "empty"} and unattributed == 1
+
+
+def test_outage_pauses_between_retries_and_leaves_the_rest_resumable():
+    class Unreachable(Provider):
+        async def complete(self, request):
+            raise ProviderFailure("provider_unreachable", True, reservation_releasable=True)
+
+    pauses = []
+
+    async def fake_sleep(seconds):
+        pauses.append(seconds)
+
+    packages = plan(max_targets=5)
+    assert len(packages) > 4
+    outcomes, guard = asyncio.run(
+        run_packages(
+            Unreachable(), packages, cap_usd="1", max_attempts=2, outage_limit=3, sleep=fake_sleep
+        )
+    )
+    states = [row.state for row in outcomes]
+    assert states[:3] == ["failed"] * 3
+    assert set(states[3:]) == {"not_run_outage"}
+    assert pauses == [5, 5, 5]  # one pause before each of the three retries
+    assert guard.calls == 6 and guard.spent_usd == 0
+    assert summarize(outcomes, guard)["not_run_outage"] == len(packages) - 3
+
+
+def test_failed_package_keeps_raw_answers_for_private_diagnosis():
+    class BadContext(Provider):
+        async def complete(self, request):
+            return ProviderResponse(
+                content="not json at all",
+                usage=ProviderUsage(prompt_tokens=10, completion_tokens=3),
+                model="fake",
+                finish_reason="stop",
+                payload_sha256="0" * 64,
+            )
+
+    [package] = plan(max_targets=25)[:1]
+    [outcome], _ = asyncio.run(run_packages(BadContext(), [package], cap_usd="1", max_attempts=1))
+    assert outcome.state == "failed"
+    assert outcome.raw_results == ("not json at all",)

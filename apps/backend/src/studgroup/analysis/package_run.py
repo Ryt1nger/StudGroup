@@ -12,6 +12,7 @@ target by code (``defaulted_to_target``); it never attributes anything and is on
 A target of a failed package is ``not_analysed``, never ``empty``.
 """
 
+import asyncio
 import hashlib
 import json
 from collections import Counter
@@ -53,7 +54,7 @@ class Package:
 class PackageOutcome:
     sequence: int
     target_ids: tuple[int, ...]
-    state: str  # completed | failed | not_run_budget
+    state: str  # completed | failed | not_run_budget | not_run_outage
     cost_usd: Decimal = Decimal(0)
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -65,6 +66,8 @@ class PackageOutcome:
     unattributed_candidates: int = 0
     validation: object = None
     context: object = None
+    # Raw pass answers of a failed package, for private diagnosis; never written by this module.
+    raw_results: tuple = ()
 
 
 def _size(message):
@@ -231,13 +234,27 @@ async def run_packages(
     repair_enabled=False,
     max_attempts=2,
     on_outcome=None,
+    outage_limit=3,
+    backoff_seconds=(5, 20, 60),
+    sleep=asyncio.sleep,
 ):
-    """Run packages in order; stop spending before a package that cannot fit the remaining cap."""
+    """Run packages in order; stop spending before a package that cannot fit the remaining cap.
+
+    A provider that stays unreachable is an outage, not a package defect: retries wait with a
+    growing pause, and after ``outage_limit`` packages in a row the rest are left unrun
+    (``not_run_outage``, resumable) instead of being failed in a burst.
+    """
     guard = BudgetGuard(provider, cap_usd)
     outcomes = []
+    outage_streak = 0
     for package in packages:
         outcome = PackageOutcome(package.sequence, package.target_ids, "not_run_budget")
         outcomes.append(outcome)
+        if outage_streak >= outage_limit:
+            outcome.state = "not_run_outage"
+            if on_outcome:
+                on_outcome(outcome)
+            continue
         if guard.spent_usd + estimate_package_usd(package, memory) > guard.cap_usd:
             if on_outcome:
                 on_outcome(outcome)
@@ -256,10 +273,13 @@ async def run_packages(
                 outcome.prompt_tokens += error.usage.prompt_tokens
                 outcome.completion_tokens += error.usage.completion_tokens
                 outcome.prompt_cache_hit_tokens += error.usage.prompt_cache_hit_tokens
+                outcome.raw_results = error.raw_results
                 if not error.retryable:
                     break
                 if guard.spent_usd + estimate_package_usd(package, memory) > guard.cap_usd:
                     break
+                if attempt < max_attempts and error.code.endswith("_provider_unreachable"):
+                    await sleep(backoff_seconds[min(attempt - 1, len(backoff_seconds) - 1)])
                 continue
             outcome.state = "completed"
             outcome.error = None
@@ -276,6 +296,10 @@ async def run_packages(
         outcome.latency_ms = round((monotonic() - started) * 1000)
         if outcome.state != "completed":
             outcome.per_target = {target: "not_analysed" for target in package.target_ids}
+        unreachable = outcome.state == "failed" and (outcome.error or "").endswith(
+            "_provider_unreachable"
+        )
+        outage_streak = outage_streak + 1 if unreachable else 0
         if on_outcome:
             on_outcome(outcome)
     return outcomes, guard
@@ -290,8 +314,8 @@ def summarize(outcomes, guard=None):
     raw = accepted = unattributed = 0
     for row in outcomes:
         targets.update(row.per_target.values())
-        if row.state == "not_run_budget":
-            targets["not_run_budget"] += len(row.target_ids)
+        if row.state in {"not_run_budget", "not_run_outage"}:
+            targets[row.state] += len(row.target_ids)
         unattributed += row.unattributed_candidates
         if row.validation is not None:
             raw += row.validation.raw_proposal_count
@@ -305,6 +329,7 @@ def summarize(outcomes, guard=None):
         "completed": sum(row.state == "completed" for row in outcomes),
         "failed": sum(row.state == "failed" for row in outcomes),
         "not_run_budget": sum(row.state == "not_run_budget" for row in outcomes),
+        "not_run_outage": sum(row.state == "not_run_outage" for row in outcomes),
         "targets": dict(sorted(targets.items())),
         "raw_proposals": raw,
         "accepted_proposals": accepted,
