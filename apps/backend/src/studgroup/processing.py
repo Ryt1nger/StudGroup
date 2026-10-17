@@ -47,6 +47,7 @@ from studgroup.models import (
     User,
 )
 from studgroup.notifications import record_change
+from studgroup.subject_identity import subject_uuid
 
 MAX_ATTEMPTS = 2
 HOSTED_AI_EMERGENCY_STOP = False
@@ -1058,7 +1059,7 @@ async def publish(db, raw, extraction, now, statistics=None):
             return False
         values = {
             "subject_name": extraction.subject,
-            "subject_id": uuid.uuid5(raw.group_id, extraction.subject.casefold()),
+            "subject_id": subject_uuid(raw.group_id, extraction.subject),
             "title": extraction.title,
             "description": extraction.description,
             "deadline_at": deadline,

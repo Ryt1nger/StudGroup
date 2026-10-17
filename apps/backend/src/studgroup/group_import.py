@@ -28,6 +28,7 @@ from studgroup.models import (
     User,
 )
 from studgroup.postgres_transfer import utc_values
+from studgroup.subject_identity import subject_uuid
 
 
 async def import_group(db, messages, reviewed, chat_id, user_id, name):
@@ -132,7 +133,7 @@ async def import_group(db, messages, reviewed, chat_id, user_id, name):
                     raise ValueError("review_source_missing_from_export")
                 row["raw_message_id"] = mapped
             if model is Homework:
-                row["subject_id"] = uuid.uuid5(group_id, row["subject_name"].casefold())
+                row["subject_id"] = subject_uuid(group_id, row["subject_name"])
                 row["significant_updated_at"] = None  # baseline import is not a live amendment
                 homework_ids[original["id"]] = row["id"]
             records.append(row)

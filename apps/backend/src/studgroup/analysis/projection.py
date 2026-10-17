@@ -15,6 +15,7 @@ from studgroup.models import (
     Notification,
     RawMessage,
 )
+from studgroup.subject_identity import subject_uuid
 
 
 @dataclass(frozen=True)
@@ -117,7 +118,7 @@ async def project_item(db, item, now, *, writer_mode="shadow", emit_notification
             row = Homework(
                 group_id=item.group_id,
                 raw_message_id=source.id,
-                subject_id=uuid.uuid5(item.group_id, (item.subject or "unknown").casefold()),
+                subject_id=subject_uuid(item.group_id, item.subject or "unknown"),
                 created_at=now,
                 revision=1,
             )

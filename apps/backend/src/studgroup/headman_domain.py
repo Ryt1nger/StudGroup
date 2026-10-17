@@ -30,6 +30,7 @@ from studgroup.models import (
     User,
 )
 from studgroup.security import token_hash
+from studgroup.subject_identity import subject_uuid
 
 MODELS = {
     "h": Homework,
@@ -359,7 +360,7 @@ async def create_card(db, group, user, member, kind, values, source_date=None):
     if kind == "h":
         row = Homework(
             group_id=group.id,
-            subject_id=uuid.uuid5(group.id, values["subject"].casefold()),
+            subject_id=subject_uuid(group.id, values["subject"]),
             subject_name=values["subject"],
             title=values["title"],
             description=values["description"],
