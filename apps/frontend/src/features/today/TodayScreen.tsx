@@ -135,7 +135,7 @@ export function TodayScreen() {
 
         {nextLesson ? (
           <div className={styles.banner}>
-            <NextClassCard view={{ ...nextLesson, onOpen: () => void navigate(`/subjects/lessons/${encodeURIComponent(data!.next_lesson!.lesson.id)}`, { state: { backTo: tomorrow ? '/today?day=tomorrow' : '/today' } }) }} />
+            <NextClassCard view={{ ...nextLesson, onOpen: () => void navigate(`/schedule/lesson/${encodeURIComponent(data!.next_lesson!.lesson.id)}`, { state: { lesson: data!.next_lesson!.lesson, timeZone: data!.group_timezone } }) }} />
           </div>
         ) : null}
 

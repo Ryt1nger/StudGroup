@@ -41,8 +41,9 @@ function dayHeading(key: string, nowMs: number, timeZone: string): string {
 
 /**
  * Maps the generated `ScheduleResponse` to display-ready props. Lessons are grouped by the
- * group's calendar day in the order the backend returned them (starts_at, id); the client does
- * not re-sort, filter or infer anything the contract does not state.
+ * group's calendar day in the order the backend returned them (starts_at, id); days are listed
+ * chronologically and the current day is added empty when it has no lessons. The client does not
+ * filter or infer anything else the contract does not state.
  */
 export function mapSchedule(
   data: ScheduleResponse,
@@ -56,10 +57,17 @@ export function mapSchedule(
     items.push(lessonItem(lesson, nowMs, data.group_timezone, onOpen));
     groups.set(key, items);
   }
-  const days: ScheduleDayView[] = [...groups.entries()].map(([key, items]) => ({
-    heading: dayHeading(key, nowMs, data.group_timezone),
-    items,
-  }));
+  // An empty current-day section is the entry-scroll anchor for a free day (see scheduleAnchor);
+  // it does not invent lessons or lesson metadata.
+  const today = dayKey(nowMs, data.group_timezone);
+  if (today >= data.start && today <= data.end && !groups.has(today)) groups.set(today, []);
+  const days: ScheduleDayView[] = [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, items]) => ({
+      date: key,
+      heading: dayHeading(key, nowMs, data.group_timezone),
+      items,
+    }));
   const weekLabel =
     data.selected_week === 'first'
       ? ru.schedule.weekFirst
