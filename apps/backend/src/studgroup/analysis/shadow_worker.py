@@ -18,6 +18,7 @@ from studgroup.analysis.shadow import (
     source_snapshot_sha256,
     usage_cost_usd,
 )
+from studgroup.analysis.subject_catalog import catalog_summary, load_subject_catalog
 from studgroup.models import (
     Group,
     GroupAnalysisSettings,
@@ -105,21 +106,18 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
         )
         for row in context
     ]
+    facts = (
+        await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
+    ).all()
     analysis_input = AnalysisInput(
         group_id=group.id,
         group_timezone=group.timezone,
         source_revision=raw.revision,
         target_message_ids=[raw.telegram_message_id],
         messages=messages,
+        subject_catalog=await load_subject_catalog(db, group.id, facts),
     )
-    facts = (
-        await db.scalars(
-            select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id)
-        )
-    ).all()
-    memory = assemble_memory_context(
-        group.id, " ".join(row.text for row in messages), facts
-    )
+    memory = assemble_memory_context(group.id, " ".join(row.text for row in messages), facts)
     selected = sampled(group.id, sample_key, route.shadow_sample_percent)
     row = ShadowEvaluationRun(
         group_id=group.id,
@@ -238,9 +236,7 @@ async def enqueue_next_shadow(
         group = await db.get(Group, raw.group_id)
         from studgroup.processing import context_for
 
-        context, _schedule = await context_for(
-            db, raw, group, now, semantic_neighborhood=True
-        )
+        context, _schedule = await context_for(db, raw, group, now, semantic_neighborhood=True)
         row = await enqueue_shadow(
             db,
             group=group,
@@ -343,10 +339,7 @@ async def _claim(engine, now, *, canary_only=False):
                     ShadowEvaluationRun.state.in_(["queued", "retry", "budget_deferred"])
                     & (ShadowEvaluationRun.available_at <= now)
                 ),
-                (
-                    ShadowEvaluationRun.state == "running"
-                )
-                & (ShadowEvaluationRun.lease_until <= now),
+                (ShadowEvaluationRun.state == "running") & (ShadowEvaluationRun.lease_until <= now),
             )
         )
         row = await db.scalar(
@@ -388,9 +381,7 @@ async def _claim(engine, now, *, canary_only=False):
             )
         )
         committed = Decimal(charged or 0) + Decimal(reserved_elsewhere or 0)
-        if committed + SHADOW_RESERVATION_USD > Decimal(
-            route_row.shadow_daily_budget_usd
-        ):
+        if committed + SHADOW_RESERVATION_USD > Decimal(route_row.shadow_daily_budget_usd):
             row.state = "budget_deferred"
             row.last_error = "shadow_budget_exhausted"
             row.available_at = day_start + timedelta(days=1)
@@ -465,9 +456,7 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
         failure = ShadowPassFailure("shadow_pipeline_error", True)
     async with AsyncSession(engine) as db:
         row = await db.scalar(
-            select(ShadowEvaluationRun)
-            .where(ShadowEvaluationRun.id == run_id)
-            .with_for_update()
+            select(ShadowEvaluationRun).where(ShadowEvaluationRun.id == run_id).with_for_update()
         )
         if row.state != "running" or row.attempts != generation:
             return "superseded"
@@ -492,6 +481,7 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
                     "raw_proposal_count": result.validation.raw_proposal_count,
                     "adapter_actions": result.validation.adapter_actions,
                     "repair": result.repair,
+                    "subject_catalog": catalog_summary(analysis_input.subject_catalog),
                 },
                 sort_keys=True,
             )
@@ -502,11 +492,7 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
             return "completed"
         # If the provider did not report usage, keep the full reservation as a
         # conservative charge unless it explicitly proved that no request ran.
-        row.charged_usd += (
-            actual
-            if failure.usage_complete
-            else max(actual, SHADOW_RESERVATION_USD)
-        )
+        row.charged_usd += actual if failure.usage_complete else max(actual, SHADOW_RESERVATION_USD)
         row.provider_payload_hashes = json.dumps(failure.hashes)
         if failure.raw_results:
             row.context_result_json = failure.raw_results[0]

@@ -29,6 +29,7 @@ from studgroup.models import (
     RawMessage,
     User,
 )
+from studgroup.subject_identity import subject_uuid
 
 
 def payload(session):
@@ -1029,7 +1030,7 @@ async def typed(db, session, group, user, member, data, text, message):
             raise domain.StError("Предмет/название — до 255 символов.")
         patch = {"subject_name" if kind == "h" and name == "subject" else name: text}
         if kind == "h" and name == "subject":
-            patch["subject_id"] = str(uuid.uuid5(group.id, text.casefold()))
+            patch["subject_id"] = str(subject_uuid(group.id, text))
         await preview(
             db,
             session,

@@ -679,9 +679,7 @@ merely because no single due date is given. Preserve task content and topics.
             raw_content = body["choices"][0]["message"]["content"].strip()
             diagnostics: dict[str, int] = {}
             rejected_proposals: list[RejectedProposal] = []
-            stored_raw_content = self._combined_raw_responses(
-                initial_raw_content, raw_content
-            )
+            stored_raw_content = self._combined_raw_responses(initial_raw_content, raw_content)
             payload_hash = hashlib.sha256(stored_raw_content.encode("utf-8")).hexdigest()
             if repair_attempted:
                 diagnostics["technical_repair_attempted"] = 1
@@ -777,10 +775,7 @@ merely because no single due date is given. Preserve task content and topics.
                     subject
                     for subject in known
                     if normalized(subject) in {topic_key, canonical}
-                    or (
-                        len(normalized(subject)) >= 4
-                        and normalized(subject) in topic_key
-                    )
+                    or (len(normalized(subject)) >= 4 and normalized(subject) in topic_key)
                 ]
                 return matches[0] if len(set(matches)) == 1 else None
 
@@ -936,9 +931,7 @@ merely because no single due date is given. Preserve task content and topics.
             )
             return BatchResult(
                 batch=batch,
-                usage=self._combined_usage(
-                    initial_usage, TokenUsage.model_validate(body["usage"])
-                ),
+                usage=self._combined_usage(initial_usage, TokenUsage.model_validate(body["usage"])),
                 model=body["model"],
                 diagnostics=diagnostics,
                 raw_proposal_count=len(raw_assignments) + len(raw_online_lessons),
@@ -958,9 +951,7 @@ merely because no single due date is given. Preserve task content and topics.
             raise ProviderFailure(
                 "invalid_provider_output",
                 False,
-                usage=self._combined_usage(
-                    initial_usage, TokenUsage.model_validate(body["usage"])
-                ),
+                usage=self._combined_usage(initial_usage, TokenUsage.model_validate(body["usage"])),
                 raw_provider_response=self._combined_raw_responses(
                     initial_raw_content, locals().get("raw_content")
                 ),
@@ -1074,9 +1065,7 @@ merely because no single due date is given. Preserve task content and topics.
                     "incomplete_output",
                     False,
                     usage=usage,
-                    raw_provider_response=raw_content
-                    if isinstance(raw_content, str)
-                    else None,
+                    raw_provider_response=raw_content if isinstance(raw_content, str) else None,
                 )
             TokenUsage.model_validate(body["usage"])
             return body

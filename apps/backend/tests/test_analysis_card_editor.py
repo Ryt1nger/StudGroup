@@ -69,9 +69,7 @@ def test_meaningful_ai_display_is_primary_path_and_preserves_complex_details():
 
 
 def test_invented_page_triggers_evidence_only_fallback_for_headman_attention():
-    card = edit_card(
-        proposal(description="Решить номера 10–16 на страницах 43–99."), [source()]
-    )
+    card = edit_card(proposal(description="Решить номера 10–16 на страницах 43–99."), [source()])
     assert card.used_fallback
     assert card.visibility == "headman_attention"
     assert "unsupported_numeric_fact" in card.attention_reasons
@@ -99,21 +97,15 @@ def test_unverified_subject_is_removed_from_fallback_not_invented():
 
 
 def test_serious_conflict_is_held_while_minor_uncertainty_is_only_attention():
-    held = edit_card(
-        proposal(attention_reasons=["conflicting_deadlines"]), [source()]
-    )
-    attention = edit_card(
-        proposal(attention_reasons=["wording_uncertain"]), [source()]
-    )
+    held = edit_card(proposal(attention_reasons=["conflicting_deadlines"]), [source()])
+    attention = edit_card(proposal(attention_reasons=["wording_uncertain"]), [source()])
     assert held.visibility == "held"
     assert attention.visibility == "headman_attention"
     assert not attention.used_fallback
 
 
 def test_personal_item_is_never_group_publishable():
-    card = edit_card(
-        proposal(audience={"scope": "personal", "label": "Иван"}), [source()]
-    )
+    card = edit_card(proposal(audience={"scope": "personal", "label": "Иван"}), [source()])
     assert card.visibility == "held"
     assert "personal_not_group_publishable" in card.attention_reasons
 

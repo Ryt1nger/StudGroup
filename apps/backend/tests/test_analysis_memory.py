@@ -122,7 +122,9 @@ def test_context_is_group_isolated_bounded_and_deterministic():
         Fact(group_id, "#русский", "proposed", {"subject": "Русский язык"}),
     ]
     first = assemble_memory_context(group_id, "задача по матану", facts, max_bytes=300)
-    second = assemble_memory_context(group_id, "задача по матану", list(reversed(facts)), max_bytes=300)
+    second = assemble_memory_context(
+        group_id, "задача по матану", list(reversed(facts)), max_bytes=300
+    )
     assert first == second
     assert first[0]["key"] == "#матан"
     assert len(json.dumps(first, ensure_ascii=False).encode()) <= 300

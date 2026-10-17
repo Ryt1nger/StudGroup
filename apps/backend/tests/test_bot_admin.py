@@ -415,8 +415,11 @@ def test_shadowcards_goes_only_to_the_owner_with_sources_and_links(client, monke
     _mark_bot_added(client)
 
     async def fake_preview(db, **kwargs):
-        return {"cards": [_preview_card(4000 + i) for i in range(7)], "outcomes": {},
-                "review_marks": [{"target_message_id": 4100, "reason": "proposal_schema_invalid"}]}
+        return {
+            "cards": [_preview_card(4000 + i) for i in range(7)],
+            "outcomes": {},
+            "review_marks": [{"target_message_id": 4100, "reason": "proposal_schema_invalid"}],
+        }
 
     monkeypatch.setattr(preview_module, "build_preview", fake_preview)
     private(client, "/shadowcards", uid=2)

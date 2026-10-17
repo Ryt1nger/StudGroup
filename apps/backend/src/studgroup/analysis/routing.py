@@ -41,9 +41,7 @@ def route_from_settings(settings):
         shadow_runs=mode == AnalysisMode.SHADOW,
         new_writes=mode == AnalysisMode.NEW,
         engine_version=settings.engine_version if settings else ANALYSIS_ENGINE_VERSION,
-        shadow_daily_budget_usd=(
-            settings.shadow_daily_budget_usd if settings else Decimal(0)
-        ),
+        shadow_daily_budget_usd=(settings.shadow_daily_budget_usd if settings else Decimal(0)),
         shadow_sample_percent=settings.shadow_sample_percent if settings else 0,
     )
 
@@ -57,10 +55,13 @@ def sampled(group_id, sample_key, percent):
         return False
     if percent >= 100:
         return True
-    bucket = int(
-        hashlib.sha256(f"{group_id}:{sample_key}".encode()).hexdigest()[:8],
-        16,
-    ) % 100
+    bucket = (
+        int(
+            hashlib.sha256(f"{group_id}:{sample_key}".encode()).hexdigest()[:8],
+            16,
+        )
+        % 100
+    )
     return bucket < percent
 
 

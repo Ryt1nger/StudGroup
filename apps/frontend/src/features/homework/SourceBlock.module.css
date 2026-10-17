@@ -10,6 +10,20 @@
   line-height: 22px;
   font-weight: 700;
 }
+.sourceList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sourceItem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sourceItem + .sourceItem {
+  padding-top: 12px;
+  border-top: 1px solid var(--sg-color-border);
+}
 .row {
   display: flex;
   align-items: center;
@@ -23,11 +37,52 @@
   text-align: left;
   cursor: pointer;
 }
-.rowText { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.rowTitle { font-size: var(--sg-type-body-strong-size); font-weight: var(--sg-type-body-strong-weight); line-height: var(--sg-type-body-strong-lh); }
-.rowHint { font-size: var(--sg-type-meta-size); line-height: var(--sg-type-meta-lh); color: var(--sg-color-primary-text); font-weight: var(--sg-type-meta-weight); }
-.external { flex: none; color: var(--sg-color-primary-text); }
-.unavailable { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.reason { margin: 0; color: var(--sg-color-text-secondary-strong); }
-.facts { margin: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--sg-type-meta-size); line-height: var(--sg-type-meta-lh); color: var(--sg-color-text-secondary-strong); }
-.facts dd { margin: 0; }
+.rowText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rowTitle {
+  font-size: var(--sg-type-body-strong-size);
+  font-weight: var(--sg-type-body-strong-weight);
+  line-height: var(--sg-type-body-strong-lh);
+}
+.rowHint {
+  font-size: var(--sg-type-meta-size);
+  line-height: var(--sg-type-meta-lh);
+  color: var(--sg-color-primary-text);
+  font-weight: var(--sg-type-meta-weight);
+}
+.external {
+  flex: none;
+  color: var(--sg-color-primary-text);
+}
+.unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.reason {
+  margin: 0;
+  color: var(--sg-color-text-secondary-strong);
+}
+.facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--sg-type-meta-size);
+  line-height: var(--sg-type-meta-lh);
+  color: var(--sg-color-text-secondary-strong);
+}
+.facts dd {
+  margin: 0;
+}
+.date {
+  margin: 0 0 0 2px;
+  color: var(--sg-color-text-secondary-strong);
+  font-size: var(--sg-type-meta-size);
+  line-height: var(--sg-type-meta-lh);
+}

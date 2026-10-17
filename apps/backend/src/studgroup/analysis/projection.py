@@ -7,6 +7,8 @@ from datetime import UTC, timedelta
 
 from sqlalchemy import exists, select
 
+from studgroup.analysis.card_editor import DESCRIPTION_ATTACHMENT_ONLY, DESCRIPTION_PENDING
+from studgroup.analysis.linking import PENDING_INTEGRATION
 from studgroup.models import (
     AcademicDeadline,
     CanonicalItemEvidence,
@@ -15,6 +17,7 @@ from studgroup.models import (
     Notification,
     RawMessage,
 )
+from studgroup.subject_identity import subject_uuid
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,23 @@ def visible_title(item):
     if item.audience_scope == "subgroup" and item.audience_label:
         return f"[{item.audience_label}] {item.title}"[:255]
     return item.title
+
+
+# A student does not see the "needs clarification" state, so a description that may lag behind the
+# chat says so in its own text. The note states no fact; it points to the cited messages and
+# disappears on its own when the AI integrates the clarification (the reasons are replaced).
+LAGGING_NOTE = "В чате есть уточнение к этому заданию, которого пока нет в описании: смотрите исходные сообщения."
+LAGGING_REASONS = {PENDING_INTEGRATION, "description_pending_ai"}
+
+
+def visible_description(item):
+    description = item.description or ""
+    if description in {
+        DESCRIPTION_PENDING,
+        DESCRIPTION_ATTACHMENT_ONLY,
+    } or not LAGGING_REASONS & set(json.loads(item.attention_reasons)):
+        return description
+    return f"{description[: 8000 - len(LAGGING_NOTE) - 2]}\n\n{LAGGING_NOTE}"
 
 
 async def source_rows(db, item):
@@ -64,15 +84,15 @@ async def canonical_notification(db, item, entity_type, entity_id, now):
     if await db.get(Notification, notification_id) is None:
         db.add(
             Notification(
-            id=uuid.uuid5(uuid.NAMESPACE_URL, key),
-            group_id=item.group_id,
-            event_key=key,
-            title=item.subject or visible_title(item),
-            body=visible_title(item)[:1000],
-            entity_type=entity_type,
-            entity_id=entity_id,
-            created_at=now,
-            delete_at=now + timedelta(days=90),
+                id=uuid.uuid5(uuid.NAMESPACE_URL, key),
+                group_id=item.group_id,
+                event_key=key,
+                title=item.subject or visible_title(item),
+                body=visible_title(item)[:1000],
+                entity_type=entity_type,
+                entity_id=entity_id,
+                created_at=now,
+                delete_at=now + timedelta(days=90),
             )
         )
 
@@ -117,7 +137,7 @@ async def project_item(db, item, now, *, writer_mode="shadow", emit_notification
             row = Homework(
                 group_id=item.group_id,
                 raw_message_id=source.id,
-                subject_id=uuid.uuid5(item.group_id, (item.subject or "unknown").casefold()),
+                subject_id=subject_uuid(item.group_id, item.subject or "unknown"),
                 created_at=now,
                 revision=1,
             )
@@ -126,7 +146,7 @@ async def project_item(db, item, now, *, writer_mode="shadow", emit_notification
             row.revision += 1
         row.subject_name = item.subject or "Предмет не указан"
         row.title = title
-        row.description = item.description
+        row.description = visible_description(item)
         row.deadline_at = item.deadline_at
         row.deadline_date_only = item.deadline_date_only
         row.status = "cancelled" if item.state == "cancelled" else "published"
@@ -180,16 +200,14 @@ async def project_item(db, item, now, *, writer_mode="shadow", emit_notification
         row.kind = item.semantic_kind
         row.subject = item.subject or "Предмет не указан"
         row.title = title
-        row.description = item.description
+        row.description = visible_description(item)
         row.deadline_at = item.deadline_at
         row.date_only = item.deadline_date_only
         row.window_start = None
         row.window_end = None
         row.date_hint = None
         row.needs_clarification = bool(json.loads(item.attention_reasons))
-        row.source_message_ids = json.dumps(
-            [source.telegram_message_id for source in sources]
-        )
+        row.source_message_ids = json.dumps([source.telegram_message_id for source in sources])
         row.cancelled_at = now if item.state == "cancelled" else None
         row.delete_at = max(utc(source.delete_at), utc(now) + timedelta(days=90))
         entity_type = "deadline"

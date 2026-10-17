@@ -47,6 +47,7 @@ from studgroup.models import (
     User,
 )
 from studgroup.notifications import record_change
+from studgroup.subject_identity import subject_uuid
 
 MAX_ATTEMPTS = 2
 HOSTED_AI_EMERGENCY_STOP = False
@@ -153,9 +154,7 @@ async def purge_expired_analysis_outcomes(engine, now=None):
     cutoff = utc(now or datetime.now(UTC))
     async with AsyncSession(engine) as db:
         result = await db.execute(
-            delete(AnalysisApplicationOutcome).where(
-                AnalysisApplicationOutcome.delete_at <= cutoff
-            )
+            delete(AnalysisApplicationOutcome).where(AnalysisApplicationOutcome.delete_at <= cutoff)
         )
         await db.commit()
         return result.rowcount or 0
@@ -309,6 +308,24 @@ async def incident_once(db, code, now, detail=None):
     return await incident(db, code, now, detail=detail)
 
 
+async def ensure_ai_control(db):
+    """The locked budget singleton; created race-safely when it is missing.
+
+    Production migrations seed the row, but create_all tests and local previews do not. A plain
+    "select, then add if missing" lets two workers both insert id=1, so the insert is
+    ``ON CONFLICT DO NOTHING`` and the row is always read back under ``FOR UPDATE``.
+    """
+    control = await db.scalar(select(AIControl).where(AIControl.id == 1).with_for_update())
+    if control is None:
+        await db.execute(
+            insert(AIControl)
+            .values(id=1, spent_usd=Decimal(0), provider_failure_streak=0)
+            .on_conflict_do_nothing(index_elements=[AIControl.id])
+        )
+        control = await db.scalar(select(AIControl).where(AIControl.id == 1).with_for_update())
+    return control
+
+
 async def claim(engine, settings, now, *, writer="legacy"):
     filter_started = monotonic()
     filtered_sources = {}
@@ -324,12 +341,7 @@ async def claim(engine, settings, now, *, writer="legacy"):
         slot, _close, extended = timing
     async with AsyncSession(engine, expire_on_commit=False) as db:
         # Singleton lock serializes budget reservations across groups/workers.
-        control = await db.scalar(select(AIControl).where(AIControl.id == 1).with_for_update())
-        if control is None:
-            # create_all tests/local previews; production migration seeds it.
-            control = AIControl(id=1, spent_usd=Decimal(0), provider_failure_streak=0)
-            db.add(control)
-            await db.flush()
+        control = await ensure_ai_control(db)
         if control.provider_circuit_open_until is not None:
             if utc(control.provider_circuit_open_until) > now:
                 await db.commit()
@@ -678,9 +690,7 @@ async def claim(engine, settings, now, *, writer="legacy"):
                 )
             )
             reservation = (
-                REPAIR_RESERVATION
-                if settings.ai_technical_repair_enabled
-                else RESERVATION
+                REPAIR_RESERVATION if settings.ai_technical_repair_enabled else RESERVATION
             )
             total_limit = Decimal(str(settings.ai_total_budget_usd))
             daily_limit = Decimal(str(settings.ai_daily_group_budget_usd))
@@ -1058,7 +1068,7 @@ async def publish(db, raw, extraction, now, statistics=None):
             return False
         values = {
             "subject_name": extraction.subject,
-            "subject_id": uuid.uuid5(raw.group_id, extraction.subject.casefold()),
+            "subject_id": subject_uuid(raw.group_id, extraction.subject),
             "title": extraction.title,
             "description": extraction.description,
             "deadline_at": deadline,
@@ -1473,9 +1483,7 @@ async def process_next(engine, settings, provider=None, now=None):
                     stage="screen",
                     technical_status="parsed",
                     academic_status="signal" if screen_result.decision.signal else "no_signal",
-                    application_status="deep_queued"
-                    if screen_result.decision.signal
-                    else "none",
+                    application_status="deep_queued" if screen_result.decision.signal else "none",
                     reason_code="screen_signal"
                     if screen_result.decision.signal
                     else "screen_no_signal",
@@ -1531,9 +1539,7 @@ async def process_next(engine, settings, provider=None, now=None):
                     )
                     db.add(candidate)
                     candidates.append(candidate)
-                accepted_total = len(result.batch.assignments) + len(
-                    result.batch.online_lessons
-                )
+                accepted_total = len(result.batch.assignments) + len(result.batch.online_lessons)
                 all_items_rejected = result.raw_proposal_count > 0 and accepted_total == 0
                 if all_items_rejected:
                     raw.processing_state = "needs_context"

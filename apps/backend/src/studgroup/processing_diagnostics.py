@@ -80,9 +80,7 @@ def _canary_envelope(row):
     # separate upper bound treats every prepared byte as one token and permits
     # bounded expansion when pass-one JSON is parsed and embedded in pass two.
     estimated_prompt_tokens = (
-        math.ceil(context_bytes / 3)
-        + math.ceil(extraction_base_bytes / 3)
-        + context_output_cap
+        math.ceil(context_bytes / 3) + math.ceil(extraction_base_bytes / 3) + context_output_cap
     )
     prompt_token_upper_bound = (
         context_bytes

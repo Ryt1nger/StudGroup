@@ -50,7 +50,14 @@ describe('session and access', () => {
 
   it('treats a 401 on a data request as an ended session', async () => {
     useScenario();
-    server.use(http.get(`${API}/today`, () => HttpResponse.json({ error: { code: 'session_expired', message: 'x', correlation_id: 'c', retryable: false } }, { status: 401 })));
+    server.use(
+      http.get(`${API}/today`, () =>
+        HttpResponse.json(
+          { error: { code: 'session_expired', message: 'x', correlation_id: 'c', retryable: false } },
+          { status: 401 },
+        ),
+      ),
+    );
     renderApp();
     expect(await screen.findByText('Сессия истекла')).toBeInTheDocument();
   });
@@ -61,7 +68,9 @@ describe('Today', () => {
     useScenario();
     renderApp();
     await userEvent.click(await screen.findByRole('button', { name: /Следующая пара:/ }));
-    expect(await screen.findByRole('heading', { name: 'Математический анализ', level: 1 })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Математический анализ', level: 1 }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Домашние задания' })).toBeInTheDocument();
     expect(screen.getByText('События и КТ пока не подключены.')).toBeInTheDocument();
     expect(screen.getByText('Материалы пока не подключены.')).toBeInTheDocument();
@@ -70,12 +79,16 @@ describe('Today', () => {
   });
   it('shows the finished-day notice and never substitutes a tomorrow lesson', async () => {
     useScenario();
-    server.use(http.get(`${API}/today`, () => HttpResponse.json({
-      ...contractExamples.TodayPopulated,
-      server_time: '2026-10-05T15:00:00+03:00',
-      day_lessons_state: 'finished',
-      next_lesson: buildNextLesson(Date.parse('2026-10-06T06:00:00Z'), 'upcoming'),
-    })));
+    server.use(
+      http.get(`${API}/today`, () =>
+        HttpResponse.json({
+          ...contractExamples.TodayPopulated,
+          server_time: '2026-10-05T15:00:00+03:00',
+          day_lessons_state: 'finished',
+          next_lesson: buildNextLesson(Date.parse('2026-10-06T06:00:00Z'), 'upcoming'),
+        }),
+      ),
+    );
     renderApp();
     expect(await screen.findByText('На сегодня пары закончились')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Следующая пара:/ })).not.toBeInTheDocument();
@@ -128,7 +141,9 @@ describe('Today', () => {
   it('shows the delayed-processing text without inventing cards', async () => {
     useScenario('delayed');
     renderApp();
-    expect(await screen.findByText('Обработка информации задерживается. Данные появятся автоматически')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Обработка информации задерживается. Данные появятся автоматически'),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Данные могли устареть · обновлено в/)).toBeInTheDocument();
     expect(screen.queryByText('На сегодня заданий нет')).not.toBeInTheDocument();
   });
@@ -156,11 +171,13 @@ describe('Today', () => {
   });
 });
 
-describe('prepared sections', () => {
-  it.each(['/subjects'])('%s says «Раздел готовится»', async (route) => {
+describe('subjects', () => {
+  it('shows the published subject overview', async () => {
     useScenario();
-    renderApp({ route });
-    expect(await screen.findByText('Раздел готовится')).toBeInTheDocument();
+    renderApp({ route: '/subjects' });
+    expect(await screen.findByRole('heading', { name: 'Предметы' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Математический анализ' })).toBeInTheDocument();
+    expect(screen.queryByText('Раздел готовится')).not.toBeInTheDocument();
   });
 });
 
@@ -176,7 +193,10 @@ describe('homework detail and source', () => {
     // Source details are collapsed behind the info button in the hero card.
     const info = screen.getByRole('button', { name: 'Информация об источнике' });
     expect(info).toHaveAttribute('aria-expanded', 'false');
-    expect(document.getElementById(info.getAttribute('aria-controls')!)).toHaveAttribute('aria-hidden', 'true');
+    expect(document.getElementById(info.getAttribute('aria-controls')!)).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
     await userEvent.click(info);
     expect(info).toHaveAttribute('aria-expanded', 'true');
     const panel = document.getElementById(info.getAttribute('aria-controls')!)!;
@@ -200,14 +220,26 @@ describe('homework detail and source', () => {
     renderApp({ route: `/homework/${HW_UNAVAILABLE}` });
     expect(await screen.findByText('Подготовить презентацию')).toBeInTheDocument();
     expect(screen.getByText('Источник недоступен')).toBeInTheDocument();
-    expect(screen.getAllByText('Срок уточняется').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Срок не указан').length).toBeGreaterThan(0);
     expect(screen.getByText('Требует уточнения')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('never opens a non-t.me URL even if the backend returns one', async () => {
     useScenario();
-    const bad = { ...(contractExamples.HomeworkDetailAvailable as object), source_detail: { ...contractExamples.HomeworkDetailAvailable.source_detail, action: { type: 'open_telegram_link', url: 'https://evil.example/x' } } };
+    const evilAction = { type: 'open_telegram_link', url: 'https://evil.example/x' };
+    const bad = {
+      ...(contractExamples.HomeworkDetailAvailable as object),
+      source_detail: {
+        ...contractExamples.HomeworkDetailAvailable.source_detail,
+        action: evilAction,
+      },
+      // The screen renders `sources`, so the hostile URL must be present there as well.
+      sources: contractExamples.HomeworkDetailAvailable.sources.map((source) => ({
+        ...source,
+        action: evilAction,
+      })),
+    };
     server.use(http.get(`${API}/homework/${HW}`, () => HttpResponse.json(bad)));
     const { adapter } = renderApp({ route: `/homework/${HW}` });
     expect(await screen.findByText('Источник недоступен')).toBeInTheDocument();
@@ -258,7 +290,9 @@ describe('personal completion «Выполнено мной»', () => {
   it('hides the action without the backend permission', async () => {
     useScenario();
     server.use(
-      http.get(`${API}/homework/${HW}`, () => HttpResponse.json({ ...contractExamples.HomeworkDetailAvailable, permissions: ['homework.read'] })),
+      http.get(`${API}/homework/${HW}`, () =>
+        HttpResponse.json({ ...contractExamples.HomeworkDetailAvailable, permissions: ['homework.read'] }),
+      ),
     );
     renderApp({ route: `/homework/${HW}` });
     await screen.findByText('Что нужно сделать');

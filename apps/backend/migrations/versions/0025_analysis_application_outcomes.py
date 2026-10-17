@@ -50,14 +50,21 @@ def upgrade():
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("delete_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint(
-            "attempt_id", "stage", "proposal_kind", "proposal_ordinal",
+            "attempt_id",
+            "stage",
+            "proposal_kind",
+            "proposal_ordinal",
             name="uq_analysis_outcome_attempt_proposal",
         ),
     )
-    op.create_index("ix_analysis_outcomes_attempt_id", "analysis_application_outcomes", ["attempt_id"])
+    op.create_index(
+        "ix_analysis_outcomes_attempt_id", "analysis_application_outcomes", ["attempt_id"]
+    )
     op.create_index("ix_analysis_outcomes_job_id", "analysis_application_outcomes", ["job_id"])
     op.create_index("ix_analysis_outcomes_group_id", "analysis_application_outcomes", ["group_id"])
-    op.create_index("ix_analysis_outcomes_delete_at", "analysis_application_outcomes", ["delete_at"])
+    op.create_index(
+        "ix_analysis_outcomes_delete_at", "analysis_application_outcomes", ["delete_at"]
+    )
 
 
 def downgrade():

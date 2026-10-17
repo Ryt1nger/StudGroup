@@ -143,7 +143,12 @@ def test_corpus_case(case):
 def test_corpus_covers_every_card_type_and_enough_negatives():
     kinds = {gold["kind"] for row in CASES for gold in row["accepted"]}
     assert kinds == {
-        "homework", "test", "control_point", "assessment", "credit", "exam",
+        "homework",
+        "test",
+        "control_point",
+        "assessment",
+        "credit",
+        "exam",
         "other_academic_deadline",
     }
     actions = {gold["action"] for row in CASES for gold in row["accepted"]}
@@ -187,7 +192,9 @@ def test_original_defect_strict_path_rejected_valid_deadline_json():
 
 def test_value_error_is_reported_with_our_rule_code_not_provider_text():
     proposal = {
-        "destination": "task", "semantic_kind": "homework", "confidence": 90,
+        "destination": "task",
+        "semantic_kind": "homework",
+        "confidence": 90,
         "deadline": {"at": None, "date_only": True, "basis": "unknown"},
         "evidence": [{"telegram_message_id": 10, "revision": 1, "fact_paths": ["title"]}],
         "title": "PRIVATE TITLE",
@@ -211,7 +218,9 @@ def test_each_deadline_value_error_rule_has_a_distinct_code(deadline):
     from studgroup.analysis.contracts import CONTRACT_RULE_CODES
 
     proposal = {
-        "destination": "task", "semantic_kind": "homework", "confidence": 90,
+        "destination": "task",
+        "semantic_kind": "homework",
+        "confidence": 90,
         "deadline": deadline,
         "evidence": [{"telegram_message_id": 10, "revision": 1, "fact_paths": ["title"]}],
     }
@@ -249,15 +258,36 @@ def test_generated_examples_pass_the_production_path():
 def test_prompt_lists_every_contract_field_and_literal():
     signature = render_contract()
     for name in (
-        *ProposedAcademicItem.model_fields,
-        "at", "date_only", "basis", "scope", "label",
-        "telegram_message_id", "revision", "fact_paths",
+        *(name for name in ProposedAcademicItem.model_fields if name != "subject_source"),
+        "at",
+        "date_only",
+        "basis",
+        "scope",
+        "label",
+        "telegram_message_id",
+        "revision",
+        "fact_paths",
     ):
         assert name in signature
     for literal in (
-        "homework", "test", "control_point", "assessment", "credit", "exam",
-        "other_academic_deadline", "explicit", "schedule_inferred", "ambiguous_range", "unknown",
-        "group", "subgroup", "personal", "create", "update", "reschedule", "cancel",
+        "homework",
+        "test",
+        "control_point",
+        "assessment",
+        "credit",
+        "exam",
+        "other_academic_deadline",
+        "explicit",
+        "schedule_inferred",
+        "ambiguous_range",
+        "unknown",
+        "group",
+        "subgroup",
+        "personal",
+        "create",
+        "update",
+        "reschedule",
+        "cancel",
     ):
         assert f'"{literal}"' in signature
     assert "REQUIRES a non-null at" in EXTRACTION_SYSTEM_PROMPT
@@ -384,19 +414,29 @@ def test_repair_request_contains_only_cited_context_and_no_value_leaks_in_issues
 @pytest.mark.parametrize(
     ("mutate", "outcome"),
     [
-        (lambda p: p["deadline"].update(at="2026-10-15T18:00:00+03:00", basis="explicit"),
-         "repair_invented_deadline"),
+        (
+            lambda p: p["deadline"].update(at="2026-10-15T18:00:00+03:00", basis="explicit"),
+            "repair_invented_deadline",
+        ),
         (lambda p: p.update(title="Совсем другое задание"), "repair_changed_text"),
         (lambda p: p.update(description=None), "repair_changed_text"),
-        (lambda p: p.update(evidence=[{"telegram_message_id": 10, "revision": 1,
-                                        "fact_paths": ["title"]},
-                                       {"telegram_message_id": 11, "revision": 1,
-                                        "fact_paths": ["title"]}]),
-         "repair_changed_sources"),
-        (lambda p: p.update(semantic_kind="exam", destination="deadline"),
-         "repair_changed_classification_fact"),
-        (lambda p: p.update(audience={"scope": "personal", "label": None}),
-         "repair_changed_audience"),
+        (
+            lambda p: p.update(
+                evidence=[
+                    {"telegram_message_id": 10, "revision": 1, "fact_paths": ["title"]},
+                    {"telegram_message_id": 11, "revision": 1, "fact_paths": ["title"]},
+                ]
+            ),
+            "repair_changed_sources",
+        ),
+        (
+            lambda p: p.update(semantic_kind="exam", destination="deadline"),
+            "repair_changed_classification_fact",
+        ),
+        (
+            lambda p: p.update(audience={"scope": "personal", "label": None}),
+            "repair_changed_audience",
+        ),
         (lambda p: p.update(confidence=1000), "repair_still_invalid"),
     ],
 )
@@ -479,8 +519,11 @@ def test_repair_reclassification_is_flagged_for_attention():
 
     def fix(request):
         return [
-            {"ordinal": entry["ordinal"],
-             "proposal": entry["original"] | {"semantic_kind": "test", "destination": "deadline"}}
+            {
+                "ordinal": entry["ordinal"],
+                "proposal": entry["original"]
+                | {"semantic_kind": "test", "destination": "deadline"},
+            }
             for entry in request.user_payload["items"]
         ]
 
@@ -502,11 +545,15 @@ class TwoPassProvider:
 
     async def complete(self, request):
         self.requests.append(request)
-        message_ids = [row["telegram_message_id"] for row in request.user_payload["messages"]] \
-            if "messages" in request.user_payload else []
+        message_ids = (
+            [row["telegram_message_id"] for row in request.user_payload["messages"]]
+            if "messages" in request.user_payload
+            else []
+        )
         if request.prompt_version == "cplus-context-1":
-            content = json.dumps(context_payload(relevant_source_ids=message_ids[-1:],
-                                                 discussion_facts=[]))
+            content = json.dumps(
+                context_payload(relevant_source_ids=message_ids[-1:], discussion_facts=[])
+            )
             usage = (300, 100)
         elif request.prompt_version == EXTRACTION_PROMPT_VERSION:
             content, usage = self.extraction, self.extraction_usage
@@ -529,8 +576,11 @@ def shadow_case():
         ],
     }
     good = {
-        "semantic_kind": "homework", "subject": "Физика", "title": "Конспект параграфа",
-        "description": "Подготовить конспект параграфа.", "confidence": 90,
+        "semantic_kind": "homework",
+        "subject": "Физика",
+        "title": "Конспект параграфа",
+        "description": "Подготовить конспект параграфа.",
+        "confidence": 90,
         "deadline": {"at": "2026-10-15T23:59:00+03:00", "date_only": False, "basis": "explicit"},
         "evidence": [{"telegram_message_id": 10, "revision": 1, "fact_paths": ["description"]}],
     }
@@ -557,15 +607,15 @@ def test_run_shadow_repair_enabled_recovers_card_and_charges_within_cap():
     assert result.repair["applied"] == 1 and result.repair["outcomes"] == {"repair_applied": 1}
     assert result.prompt_tokens == 300 + 500 + 200 and result.completion_tokens == 100 + 400 + 100
     assert len(result.provider_payload_hashes) == 3
-    usage = ProviderUsage(prompt_tokens=result.prompt_tokens,
-                          completion_tokens=result.completion_tokens)
+    usage = ProviderUsage(
+        prompt_tokens=result.prompt_tokens, completion_tokens=result.completion_tokens
+    )
     assert usage_cost_usd(usage) < SHADOW_PACKAGE_CAP_USD
 
 
 def test_run_shadow_repair_skipped_when_pass_costs_leave_no_room():
     case, good, bad = shadow_case()
-    provider = TwoPassProvider(envelope([good, bad]), drop_claim,
-                               extraction_usage=(10_000, 30_000))
+    provider = TwoPassProvider(envelope([good, bad]), drop_claim, extraction_usage=(10_000, 30_000))
     result = asyncio.run(run_shadow(provider, build_input(case), [], repair_enabled=True))
     assert [r.prompt_version for r in provider.requests].count(REPAIR_PROMPT_VERSION) == 0
     assert result.repair["skipped"] == "budget"
@@ -606,12 +656,26 @@ def test_shadow_e2e_accepts_real_shaped_output_and_never_touches_product_data(cl
                 message = request.user_payload["messages"][-1]
                 self.extraction = envelope(
                     [
-                        good | {"evidence": [{"telegram_message_id": message["telegram_message_id"],
-                                              "revision": message["revision"],
-                                              "fact_paths": ["description", "deadline"]}]},
-                        bad | {"evidence": [{"telegram_message_id": message["telegram_message_id"],
-                                             "revision": message["revision"],
-                                             "fact_paths": ["description"]}]},
+                        good
+                        | {
+                            "evidence": [
+                                {
+                                    "telegram_message_id": message["telegram_message_id"],
+                                    "revision": message["revision"],
+                                    "fact_paths": ["description", "deadline"],
+                                }
+                            ]
+                        },
+                        bad
+                        | {
+                            "evidence": [
+                                {
+                                    "telegram_message_id": message["telegram_message_id"],
+                                    "revision": message["revision"],
+                                    "fact_paths": ["description"],
+                                }
+                            ]
+                        },
                     ],
                     source_revision=request.user_payload["source_revision"],
                 )
@@ -634,7 +698,8 @@ def test_shadow_e2e_accepts_real_shaped_output_and_never_touches_product_data(cl
             assert metrics["repair"]["applied"] == 1
             assert "adapter_actions" in metrics
             assert [p["deadline"]["basis"] for p in validation["accepted"]] == [
-                "explicit", "unknown",
+                "explicit",
+                "unknown",
             ]
             assert row.reserved_usd == 0
             assert row.charged_usd > 0 and row.charged_usd < SHADOW_PACKAGE_CAP_USD
@@ -659,11 +724,24 @@ def test_render_cards_is_bounded_and_links_supergroup_sources():
     assert telegram_link(-1004421204622, 7) == "https://t.me/c/4421204622/7"
     assert telegram_link(-5, 7) is None
     card = {
-        "kind": "homework", "subject": None, "title": "T", "description": "d" * 2000,
-        "deadline_at": None, "deadline_date_only": False, "deadline_basis": "unknown",
-        "audience": {"scope": "group"}, "visibility": "visible", "attention_reasons": [],
-        "sources": [{"telegram_message_id": 1, "message_date": datetime(2026, 10, 10, tzinfo=UTC),
-                     "text": "x" * 5000, "fact_paths": []}],
+        "kind": "homework",
+        "subject": None,
+        "title": "T",
+        "description": "d" * 2000,
+        "deadline_at": None,
+        "deadline_date_only": False,
+        "deadline_basis": "unknown",
+        "audience": {"scope": "group"},
+        "visibility": "visible",
+        "attention_reasons": [],
+        "sources": [
+            {
+                "telegram_message_id": 1,
+                "message_date": datetime(2026, 10, 10, tzinfo=UTC),
+                "text": "x" * 5000,
+                "fact_paths": [],
+            }
+        ],
     }
     chunks = render_cards([card] * 6, -1004421204622)
     assert chunks and all(len(c) <= MAX_CHUNK for c in chunks)
@@ -688,8 +766,10 @@ def test_collective_address_becomes_group_and_the_ai_title_survives():
 
 
 def test_genuine_personal_instructions_stay_personal_and_held():
-    for case_id in ("personal_instruction_is_held",
-                    "collective_address_with_named_person_stays_personal"):
+    for case_id in (
+        "personal_instruction_is_held",
+        "collective_address_with_named_person_stays_personal",
+    ):
         data, result = _adapted(case_id)
         (proposal,) = result.accepted
         assert proposal.audience.scope == "personal"

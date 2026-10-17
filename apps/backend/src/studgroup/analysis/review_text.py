@@ -66,8 +66,12 @@ REASON_TEXT = {
     "personal_not_group_publishable": "личное поручение — не публикуется группе",
     "service_tag_not_subject": "служебный тег не считается предметом",
     "unsupported_subject": "предмет не подтверждён сообщениями",
+    "subject_not_in_catalog": "предмета нет в списке предметов группы — не назначен",
+    "subject_id_unknown": "модель назвала несуществующий id предмета — не принят",
+    "subject_id_mismatch": "id предмета и название указывают на разные предметы — не назначен",
+    "subject_ambiguous": "название подходит к нескольким предметам — не назначен",
     "title_insufficient_data": "данных для точного заголовка недостаточно — нейтральный заголовок",
-    "noisy_title": "заголовок модели начинался с обращения — перестроен",
+    "noisy_title": "заголовок модели был фразой из чата — перестроен",
     "foreign_source_attached": "к карточке присоединено несвязанное сообщение — проверить",
     "possible_missing_supplement": "рядом есть возможное дополнение, не включённое в карточку",
     "supplement_ambiguous": "дополнение подходит к нескольким заданиям — не присоединено",
@@ -75,6 +79,13 @@ REASON_TEXT = {
     "unsupported_numeric_fact": "в тексте есть число, которого нет в источнике",
     "unsupported_critical_fact": "в тексте есть факт, которого нет в источнике",
     "unsupported_explicit_deadline": "срок помечен явным без подтверждения в тексте",
+    "unsupported_date_fact": "в тексте есть день или дата, которых нет в источнике",
+    "unsupported_audience_fact": "в тексте есть уточнение аудитории, которого нет в источнике",
+    "title_too_long": "заголовок модели слишком длинный",
+    "description_trimmed": "из описания убрано то, чего нет в сообщениях",
+    "description_pending_ai": "новое описание не подтверждено сообщениями — показано прежнее или нейтральное, ждёт повторного разбора",
+    "supplement_pending_integration": "в чате есть уточнение, которого нет в описании — оно добавлено источником, описание может быть неполным",
+    "missing_display_text": "модель не дала заголовок или описание",
 }
 ROLE_TEXT = {"headman": "староста", "deputy": "заместитель", "student": "студент"}
 PREVIEW_DESCRIPTION_LIMIT = 700
@@ -108,7 +119,9 @@ def render_preview_card(index, card, chat_id):
     if card["materials"]:
         lines.append(f"Материалы: {summary_label(card['materials'])}")
         for item in card["materials"][:6]:
-            target = item.get("url") or item.get("telegram_link") or f"сообщение №{item['message_id']}"
+            target = (
+                item.get("url") or item.get("telegram_link") or f"сообщение №{item['message_id']}"
+            )
             lines.append(f"  • {item['title']} — {target}")
         lines.append("  (содержимое файлов C+ не читал)")
     if card["candidates"]:
@@ -120,7 +133,8 @@ def render_preview_card(index, card, chat_id):
         lines.append(
             "История: "
             + "; ".join(
-                f"v{rev} {REVISION_ACTIONS.get(action, action)}" for rev, action in card["revisions"]
+                f"v{rev} {REVISION_ACTIONS.get(action, action)}"
+                for rev, action in card["revisions"]
             )
         )
     lines.append("Источники:")
@@ -135,16 +149,50 @@ def render_preview_card(index, card, chat_id):
     return "\n".join(lines)
 
 
+CATEGORY_TEXT = {
+    "homework": "возможное ДЗ",
+    "check": "возможная проверочная",
+    "event": "событие",
+    "organizational": "организационное",
+    "information": "информация",
+    "other": "прочее",
+}
+
+
+def render_held_candidates(held, limit=12):
+    """Owner-only footer: what the AI found but deliberately did not turn into a card."""
+    lines = [f"Не карточки, сохранены для проверки ({len(held)}), студентам не показываются:"]
+    for item in held[:limit]:
+        label = item["title"] or _clip(item["description"] or "", 80)
+        lines.append(
+            f"  • {CATEGORY_TEXT.get(item['category'], item['category'])}: {label}"
+            + f" (№{', №'.join(str(i) for i in item['cited'][:3])})"
+            + (
+                " — источник не подтверждён моделью"
+                if item.get("source_status", "verified") != "verified"
+                else ""
+            )
+        )
+    if len(held) > limit:
+        lines.append(f"  … и ещё {len(held) - limit}")
+    return "\n".join(lines)
+
+
 def render_preview(preview, chat_id, offset, size):
     """Chunks for one page of cards plus the owner-only footer for possible changes."""
     page = preview["cards"][offset : offset + size]
-    blocks = [render_preview_card(offset + i, card, chat_id)[:MAX_CHUNK] for i, card in enumerate(page, 1)]
+    blocks = [
+        render_preview_card(offset + i, card, chat_id)[:MAX_CHUNK] for i, card in enumerate(page, 1)
+    ]
     if offset + size >= len(preview["cards"]) and preview["review_marks"]:
         ids = sorted({mark["target_message_id"] for mark in preview["review_marks"]})
         blocks.append(
             "Отклонено валидацией, возможно изменение или отмена (проверить вручную): "
             + ", ".join(f"№{i}" for i in ids[:30])
         )
+    held = preview.get("held_candidates") or []
+    if offset + size >= len(preview["cards"]) and held:
+        blocks.append(render_held_candidates(held))
     chunks, current = [], ""
     for block in blocks:
         if current and len(current) + len(block) + 2 > MAX_CHUNK:

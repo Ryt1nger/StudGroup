@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from studgroup.analysis.contracts import AnalysisInput, ValidationResult
 from studgroup.analysis.routing import get_route
 from studgroup.analysis.stored import effective_validation
+from studgroup.analysis.subject_catalog import load_current_catalog, with_catalog
 from studgroup.analysis.writer import apply_validated_batch
 from studgroup.models import (
     CanonicalAcademicItem,
@@ -283,7 +284,15 @@ async def requeue_failed(
     ).all()
     picked = [row for row in rows if _requeue_candidate(row, include_rejected, force)][:limit]
     if apply:
+        # A requeue is an explicit re-analysis: it uses the group's subjects as they are now (the
+        # messages stay frozen). The superseded outcome keeps its own catalog fingerprint in
+        # ``history.metrics``. Run identity is unchanged, so no second run or card appears.
+        catalog = await load_current_catalog(db, group_id) if picked else None
         for row in picked:
+            if row.input_json:
+                refreshed = with_catalog(row.input_json, catalog)
+                if refreshed is not None:
+                    row.input_json = refreshed
             metrics = _metrics(row)
             history = list(metrics.get("history", []))
             history.append(
@@ -369,8 +378,9 @@ async def review(db, *, group_id, since, now, limit=50):
         data = AnalysisInput.model_validate_json(run.input_json)
         validation = effective_validation(validation, data.messages, group.timezone)
         by_id = {row.telegram_message_id: row for row in data.messages}
-        for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted,
-                                     strict=True):
+        for ordinal, proposal in zip(
+            validation.accepted_ordinals, validation.accepted, strict=True
+        ):
             card = edit_card(proposal, data.messages)
             out.append(
                 {
@@ -423,17 +433,21 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
     """A card that only clarifies an existing item (provable reply) becomes an update of it.
 
     Runs after the cross-run state is visible (earlier runs applied first), so a supplement from
-    its own later run never becomes a second card. Only the description (verbatim supplement)
-    and the evidence change; title, deadline, audience and subject stay the item's own.
+    its own later run never becomes a second card. Only the evidence changes (the clarification
+    joins as a cited source marked ``supplement_reply``); title, description, deadline, audience and
+    subject stay the item's own. The item is flagged ``supplement_pending_integration`` only when
+    the clarification says something the card does not already say.
     """
+    from studgroup.analysis.card_editor import supplement_adds_information
     from studgroup.analysis.contracts import Audience, DeadlineValue, EvidenceRef
     from studgroup.analysis.linking import (
+        PENDING_INTEGRATION,
         STRONG,
+        SUPPLEMENT_PATH,
         _has_text,
         _text_supplement_ok,
         link_candidates,
     )
-    from studgroup.analysis.text_hygiene import clean_text
 
     by_id = {row.telegram_message_id: row for row in data.messages}
     strong = {}
@@ -466,7 +480,9 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
         items = (
             await db.scalars(
                 select(CanonicalAcademicItem)
-                .join(CanonicalItemEvidence, CanonicalItemEvidence.item_id == CanonicalAcademicItem.id)
+                .join(
+                    CanonicalItemEvidence, CanonicalItemEvidence.item_id == CanonicalAcademicItem.id
+                )
                 .where(
                     CanonicalAcademicItem.group_id == group_id,
                     CanonicalAcademicItem.state == "active",
@@ -482,10 +498,15 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
         if len(items) != 1:
             continue
         item = items[0]
-        text = clean_text(" ".join(by_id[r.telegram_message_id].text for r in proposal.evidence))
-        description = item.description
-        if text and text not in description:
-            description = (description + "\n\nДополнение: " + text[:1500])[:8000]
+        # The supplement joins the item as a cited source only; its raw text is not pasted into
+        # the description. The item is flagged until the AI integrates the clarification.
+        reasons = json.loads(item.attention_reasons)
+        known = f"{item.title}\n{item.description}"
+        if PENDING_INTEGRATION not in reasons and any(
+            supplement_adds_information(known, by_id[ref.telegram_message_id].text or "")
+            for ref in proposal.evidence
+        ):
+            reasons.append(PENDING_INTEGRATION)
         anchor = by_id[anchor_id]
         replaced[ordinal] = proposal.model_copy(
             update={
@@ -493,7 +514,7 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
                 "existing_item_id": item.id,
                 "expected_item_revision": item.revision,
                 "title": item.title,
-                "description": description,
+                "description": item.description,
                 "subject": item.subject,
                 "deadline": DeadlineValue(
                     at=item.deadline_at,
@@ -501,14 +522,21 @@ async def with_supplement_updates(db, group_id, validation, data, raw_by_id):
                     basis=item.deadline_basis,
                 ),
                 "audience": Audience(scope=item.audience_scope, label=item.audience_label),
-                "attention_reasons": json.loads(item.attention_reasons),
+                "attention_reasons": reasons,
                 "evidence": [
                     EvidenceRef(
                         telegram_message_id=anchor_id,
                         revision=anchor.revision,
                         fact_paths=["description"],
                     ),
-                    *proposal.evidence,
+                    *[
+                        EvidenceRef(
+                            telegram_message_id=ref.telegram_message_id,
+                            revision=ref.revision,
+                            fact_paths=sorted({*ref.fact_paths, SUPPLEMENT_PATH}),
+                        )
+                        for ref in proposal.evidence
+                    ],
                 ],
             }
         )
@@ -548,7 +576,9 @@ async def _links(db, group_id, validation, raw_by_telegram_id):
         items = (
             await db.scalars(
                 select(CanonicalAcademicItem)
-                .join(CanonicalItemEvidence, CanonicalItemEvidence.item_id == CanonicalAcademicItem.id)
+                .join(
+                    CanonicalItemEvidence, CanonicalItemEvidence.item_id == CanonicalAcademicItem.id
+                )
                 .where(
                     CanonicalAcademicItem.group_id == group_id,
                     CanonicalAcademicItem.state == "active",

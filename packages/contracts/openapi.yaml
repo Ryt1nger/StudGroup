@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.8.0
+  version: 0.9.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -22,31 +22,31 @@ paths:
       operationId: listNotifications
       summary: Real retained notifications for the active group and current user
       responses:
-        '200':
+        "200":
           description: Notification inbox
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NotificationInbox'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/NotificationInbox"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /notifications/read-all:
     post:
       operationId: readAllNotifications
       summary: Mark current user's visible group notifications read
       responses:
-        '200':
+        "200":
           description: Updated notification inbox
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NotificationInbox'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                $ref: "#/components/schemas/NotificationInbox"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /schedule:
     get:
       tags: [Schedule]
@@ -56,35 +56,35 @@ paths:
         - name: start
           in: query
           required: true
-          schema: {type: string, format: date}
+          schema: { type: string, format: date }
         - name: end
           in: query
           required: true
-          schema: {type: string, format: date}
+          schema: { type: string, format: date }
       responses:
-        '200':
+        "200":
           description: Up to 32 calendar days; unresolved alternating patterns are omitted explicitly
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ScheduleResponse'
+                $ref: "#/components/schemas/ScheduleResponse"
               examples:
                 populated:
-                  $ref: '#/components/examples/SchedulePopulated'
+                  $ref: "#/components/examples/SchedulePopulated"
                 empty:
-                  $ref: '#/components/examples/ScheduleEmpty'
+                  $ref: "#/components/examples/ScheduleEmpty"
                 needsClarification:
-                  $ref: '#/components/examples/ScheduleNeedsClarification'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
+                  $ref: "#/components/examples/ScheduleNeedsClarification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
           description: Invalid date range
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
   /session/bootstrap:
     post:
       tags: [Session]
@@ -96,23 +96,23 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SessionBootstrapRequest'
+              $ref: "#/components/schemas/SessionBootstrapRequest"
       responses:
-        '200':
+        "200":
           description: Authenticated session, including a possible access gate
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SessionBootstrapResponse'
+                $ref: "#/components/schemas/SessionBootstrapResponse"
               examples:
                 active:
-                  $ref: '#/components/examples/SessionActive'
+                  $ref: "#/components/examples/SessionActive"
                 noActiveGroup:
-                  $ref: '#/components/examples/SessionNoActiveGroup'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/RateLimited'
+                  $ref: "#/components/examples/SessionNoActiveGroup"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /today:
     get:
       tags: [Today]
@@ -121,28 +121,28 @@ paths:
       parameters:
         - in: query
           name: day
-          schema: {type: string, enum: [today, tomorrow], default: today}
+          schema: { type: string, enum: [today, tomorrow], default: today }
           description: Tomorrow selects known deadlines on the next calendar day in the group timezone and the first lesson of that day. Unknown deadlines and other days are omitted. Server time remains the actual current time; response shape is unchanged.
       responses:
-        '200':
+        "200":
           description: Today feed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TodayResponse'
+                $ref: "#/components/schemas/TodayResponse"
               examples:
                 populated:
-                  $ref: '#/components/examples/TodayPopulated'
+                  $ref: "#/components/examples/TodayPopulated"
                 empty:
-                  $ref: '#/components/examples/TodayEmpty'
+                  $ref: "#/components/examples/TodayEmpty"
                 delayed:
-                  $ref: '#/components/examples/TodayDelayed'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+                  $ref: "#/components/examples/TodayDelayed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /lessons/{lesson_id}/subject:
     get:
       tags: [Subjects]
@@ -153,16 +153,32 @@ paths:
         - in: path
           name: lesson_id
           required: true
-          schema: {type: string, maxLength: 64}
+          schema: { type: string, maxLength: 64 }
       responses:
-        '200':
+        "200":
           description: Subject context
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/LessonSubjectResponse'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '404': {$ref: '#/components/responses/NotFound'}
+              schema: { $ref: "#/components/schemas/LessonSubjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /subjects:
+    get:
+      tags: [Subjects]
+      operationId: listSubjects
+      summary: Active-group subject overview from published learning data and the timetable
+      description: >-
+        Uses only the active group's retained schedule, published homework and published
+        academic deadlines. Shadow and review-only analysis rows are never queried.
+      responses:
+        "200":
+          description: Stable subject identities and published item counts
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubjectListResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /deadlines:
     get:
       tags: [Deadlines]
@@ -171,9 +187,9 @@ paths:
       parameters:
         - in: query
           name: archive
-          schema: {type: boolean, default: false}
+          schema: { type: boolean, default: false }
       responses:
-        '200':
+        "200":
           description: Active or archived retained deadlines for the active group
           content:
             application/json:
@@ -181,13 +197,13 @@ paths:
                 type: object
                 required: [generated_at, group_timezone, items]
                 properties:
-                  generated_at: {type: string, format: date-time}
-                  group_timezone: {type: string}
+                  generated_at: { type: string, format: date-time }
+                  group_timezone: { type: string }
                   items:
                     type: array
-                    items: {$ref: '#/components/schemas/AcademicDeadline'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '403': {$ref: '#/components/responses/Forbidden'}
+                    items: { $ref: "#/components/schemas/AcademicDeadline" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /deadlines/{deadline_id}:
     get:
       tags: [Deadlines]
@@ -197,9 +213,9 @@ paths:
         - in: path
           name: deadline_id
           required: true
-          schema: {type: string, format: uuid}
+          schema: { type: string, format: uuid }
       responses:
-        '200':
+        "200":
           description: Subject, task and source-derived date or date window; includes archived events
           content:
             application/json:
@@ -207,12 +223,12 @@ paths:
                 type: object
                 required: [generated_at, group_timezone, item]
                 properties:
-                  generated_at: {type: string, format: date-time}
-                  group_timezone: {type: string}
-                  item: {$ref: '#/components/schemas/AcademicDeadline'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
-        '403': {$ref: '#/components/responses/Forbidden'}
-        '404': {$ref: '#/components/responses/NotFound'}
+                  generated_at: { type: string, format: date-time }
+                  group_timezone: { type: string }
+                  item: { $ref: "#/components/schemas/AcademicDeadline" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /homework:
     get:
       tags: [Homework]
@@ -230,7 +246,12 @@ paths:
       parameters:
         - name: filter
           in: query
-          schema: {type: string, enum: [all, today, week, mine, archive], default: all}
+          schema:
+            {
+              type: string,
+              enum: [all, today, week, mine, archive],
+              default: all,
+            }
           description: >-
             all includes active items, including personally completed; mine is active personal completion.
             today excludes completed and selects active deadlines on the group's current calendar day.
@@ -239,60 +260,60 @@ paths:
             Unknown deadlines never archive automatically unless cancelled.
         - name: limit
           in: query
-          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
         - name: cursor
           in: query
-          schema: {type: string, maxLength: 2048}
+          schema: { type: string, maxLength: 2048 }
       responses:
-        '200':
+        "200":
           description: One page; empty items do not imply an empty full list when a cursor was used
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HomeworkListResponse'
+                $ref: "#/components/schemas/HomeworkListResponse"
               examples:
                 empty:
-                  $ref: '#/components/examples/HomeworkListEmpty'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '422':
+                  $ref: "#/components/examples/HomeworkListEmpty"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
           description: Invalid filter, page size, expired cursor or cursor from another session/group/filter
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
   /homework/{homework_id}:
     parameters:
-      - $ref: '#/components/parameters/HomeworkId'
+      - $ref: "#/components/parameters/HomeworkId"
     get:
       tags: [Homework]
       summary: Get one homework card with source details
       operationId: getHomework
       responses:
-        '200':
+        "200":
           description: Homework detail
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HomeworkDetail'
+                $ref: "#/components/schemas/HomeworkDetail"
               examples:
                 availableSource:
-                  $ref: '#/components/examples/HomeworkDetailAvailable'
+                  $ref: "#/components/examples/HomeworkDetailAvailable"
                 unknownDeadlineUnavailableSource:
-                  $ref: '#/components/examples/HomeworkDetailUnavailable'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '410':
-          $ref: '#/components/responses/Gone'
+                  $ref: "#/components/examples/HomeworkDetailUnavailable"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/Gone"
   /homework/{homework_id}/completion:
     parameters:
-      - $ref: '#/components/parameters/HomeworkId'
+      - $ref: "#/components/parameters/HomeworkId"
     put:
       tags: [Homework]
       summary: Set or undo the current student's completion mark
@@ -302,40 +323,40 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SetCompletionRequest'
+              $ref: "#/components/schemas/SetCompletionRequest"
       responses:
-        '200':
+        "200":
           description: Updated homework state
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HomeworkDetail'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          $ref: '#/components/responses/RevisionConflict'
-        '410':
-          $ref: '#/components/responses/Gone'
+                $ref: "#/components/schemas/HomeworkDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/RevisionConflict"
+        "410":
+          $ref: "#/components/responses/Gone"
   /membership/recheck:
     post:
       tags: [Membership]
       summary: Recheck Telegram membership after an access gate
       operationId: recheckMembership
       responses:
-        '200':
+        "200":
           description: Current session access state
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SessionContext'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/RateLimited'
+                $ref: "#/components/schemas/SessionContext"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 components:
   securitySchemes:
     bearerAuth:
@@ -357,7 +378,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
           examples:
             sessionExpired:
               value:
@@ -371,7 +392,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
           examples:
             membershipSuspended:
               value:
@@ -385,13 +406,13 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
     Gone:
       description: Resource existed but is no longer retained
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
           examples:
             dataExpired:
               value:
@@ -405,7 +426,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
           examples:
             staleHomework:
               value:
@@ -424,56 +445,57 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
     ServiceUnavailable:
       description: A transient dependency or server failure
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: "#/components/schemas/ErrorResponse"
   examples:
     HomeworkListEmpty:
       value:
-        server_time: '2026-10-05T06:00:00Z'
-        generated_at: '2026-10-05T06:00:00Z'
+        server_time: "2026-10-05T06:00:00Z"
+        generated_at: "2026-10-05T06:00:00Z"
         group_timezone: Europe/Moscow
-        freshness: {last_successful_sync_at: '2026-10-05T06:00:00Z', stale: false}
-        processing: {state: idle, retry_after_seconds: null}
+        freshness:
+          { last_successful_sync_at: "2026-10-05T06:00:00Z", stale: false }
+        processing: { state: idle, retry_after_seconds: null }
         items: []
         next_cursor: null
     SchedulePopulated:
       value:
-        generated_at: '2026-10-05T06:00:00Z'
+        generated_at: "2026-10-05T06:00:00Z"
         group_timezone: Europe/Moscow
-        start: '2026-10-05'
-        end: '2026-10-11'
+        start: "2026-10-05"
+        end: "2026-10-11"
         week_state: ready
-        first_week_anchor: '2026-10-05'
+        first_week_anchor: "2026-10-05"
         selected_week: first
         lessons:
-          - id: '55555555-5555-4555-8555-555555555555:2026-10-05'
+          - id: "55555555-5555-4555-8555-555555555555:2026-10-05"
             subject: Математический анализ
-            starts_at: '2026-10-05T09:00:00+03:00'
-            ends_at: '2026-10-05T10:30:00+03:00'
+            starts_at: "2026-10-05T09:00:00+03:00"
+            ends_at: "2026-10-05T10:30:00+03:00"
             teacher: Иванов А. С.
             location: Ауд. 320
             status: scheduled
     ScheduleEmpty:
       value:
-        generated_at: '2026-10-05T06:00:00Z'
+        generated_at: "2026-10-05T06:00:00Z"
         group_timezone: Europe/Moscow
-        start: '2026-10-05'
-        end: '2026-10-11'
+        start: "2026-10-05"
+        end: "2026-10-11"
         week_state: ready
         first_week_anchor: null
         selected_week: null
         lessons: []
     ScheduleNeedsClarification:
       value:
-        generated_at: '2026-10-05T06:00:00Z'
+        generated_at: "2026-10-05T06:00:00Z"
         group_timezone: Europe/Moscow
-        start: '2026-10-05'
-        end: '2026-10-11'
+        start: "2026-10-05"
+        end: "2026-10-11"
         week_state: needs_clarification
         first_week_anchor: null
         selected_week: null
@@ -483,7 +505,7 @@ components:
       value:
         access_token: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
         token_type: Bearer
-        expires_at: '2026-10-05T00:00:00Z'
+        expires_at: "2026-10-05T00:00:00Z"
         session:
           user:
             id: 11111111-1111-4111-8111-111111111111
@@ -503,14 +525,20 @@ components:
             timezone: Europe/Moscow
             status: active
             pilot_authorized: true
-          permissions: [today.read, homework.read, homework.completion.write, schedule.read]
-          server_time: '2026-10-04T12:00:00Z'
+          permissions:
+            [
+              today.read,
+              homework.read,
+              homework.completion.write,
+              schedule.read,
+            ]
+          server_time: "2026-10-04T12:00:00Z"
     SessionNoActiveGroup:
       summary: Authenticated user without an activated group
       value:
         access_token: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
         token_type: Bearer
-        expires_at: '2026-10-05T00:00:00Z'
+        expires_at: "2026-10-05T00:00:00Z"
         session:
           user:
             id: 11111111-1111-4111-8111-111111111111
@@ -521,25 +549,25 @@ components:
           membership: null
           group: null
           permissions: []
-          server_time: '2026-10-04T12:00:00Z'
+          server_time: "2026-10-04T12:00:00Z"
     TodayPopulated:
       summary: One due-today homework card
       value:
-        generated_at: '2026-10-04T12:00:00Z'
-        server_time: '2026-10-04T12:00:00Z'
+        generated_at: "2026-10-04T12:00:00Z"
+        server_time: "2026-10-04T12:00:00Z"
         group_timezone: Europe/Moscow
         next_lesson:
           state: upcoming
           lesson:
-            id: '55555555-5555-4555-8555-555555555555:2026-10-05'
+            id: "55555555-5555-4555-8555-555555555555:2026-10-05"
             subject: Математический анализ
-            starts_at: '2026-10-05T09:00:00+03:00'
-            ends_at: '2026-10-05T10:30:00+03:00'
+            starts_at: "2026-10-05T09:00:00+03:00"
+            ends_at: "2026-10-05T10:30:00+03:00"
             teacher: Иванов А. С.
             location: Ауд. 320
             status: scheduled
         freshness:
-          last_successful_sync_at: '2026-10-04T11:58:00Z'
+          last_successful_sync_at: "2026-10-04T11:58:00Z"
           stale: false
         processing:
           state: idle
@@ -550,15 +578,21 @@ components:
             items:
               - id: 44444444-4444-4444-8444-444444444444
                 type: homework
+                card_kind: homework
                 title: ДЗ №12–140
                 subject:
+                  id: 55555555-5555-4555-8555-555555555555
+                  name: Математический анализ
+                confirmed_subject:
                   id: 55555555-5555-4555-8555-555555555555
                   name: Математический анализ
                 summary: Решить задания из методички
                 deadline:
                   state: known
-                  at: '2026-10-04T20:59:00Z'
+                  at: "2026-10-04T20:59:00Z"
                   date_only: false
+                  certainty: from_source
+                  origin: explicit_message
                 status: published
                 urgency: urgent
                 visibility: group
@@ -579,16 +613,16 @@ components:
                   completion: pending
                   completed_at: null
                   completed_revision: null
-                created_at: '2026-10-04T09:20:00Z'
-                updated_at: '2026-10-04T09:20:00Z'
+                created_at: "2026-10-04T09:20:00Z"
+                updated_at: "2026-10-04T09:20:00Z"
     TodayEmpty:
       summary: Successfully loaded empty feed
       value:
-        generated_at: '2026-10-04T12:00:00Z'
-        server_time: '2026-10-04T12:00:00Z'
+        generated_at: "2026-10-04T12:00:00Z"
+        server_time: "2026-10-04T12:00:00Z"
         group_timezone: Europe/Moscow
         freshness:
-          last_successful_sync_at: '2026-10-04T11:58:00Z'
+          last_successful_sync_at: "2026-10-04T11:58:00Z"
           stale: false
         processing:
           state: idle
@@ -598,11 +632,11 @@ components:
     TodayDelayed:
       summary: Feed update is delayed without a fictitious card
       value:
-        generated_at: '2026-10-04T12:00:00Z'
-        server_time: '2026-10-04T12:00:00Z'
+        generated_at: "2026-10-04T12:00:00Z"
+        server_time: "2026-10-04T12:00:00Z"
         group_timezone: Europe/Moscow
         freshness:
-          last_successful_sync_at: '2026-10-04T11:40:00Z'
+          last_successful_sync_at: "2026-10-04T11:40:00Z"
           stale: true
         processing:
           state: delayed
@@ -614,15 +648,21 @@ components:
       value:
         id: 44444444-4444-4444-8444-444444444444
         type: homework
+        card_kind: homework
         title: ДЗ №12–140
         subject:
+          id: 55555555-5555-4555-8555-555555555555
+          name: Математический анализ
+        confirmed_subject:
           id: 55555555-5555-4555-8555-555555555555
           name: Математический анализ
         summary: Решить задания из методички
         deadline:
           state: known
-          at: '2026-10-04T20:59:00Z'
+          at: "2026-10-04T20:59:00Z"
           date_only: false
+          certainty: from_source
+          origin: explicit_message
         status: published
         urgency: urgent
         visibility: group
@@ -643,8 +683,8 @@ components:
           completion: pending
           completed_at: null
           completed_revision: null
-        created_at: '2026-10-04T09:20:00Z'
-        updated_at: '2026-10-04T09:20:00Z'
+        created_at: "2026-10-04T09:20:00Z"
+        updated_at: "2026-10-04T09:20:00Z"
         description: Решить задания №12–140 и оформить ответ в PDF.
         source_detail:
           kind: telegram_group_message
@@ -652,27 +692,40 @@ components:
           availability:
             state: available
             reason: null
-          message_date: '2026-10-04T09:15:00Z'
+          message_date: "2026-10-04T09:15:00Z"
           excerpt: По матану решаем номера 12–140.
           action:
             type: open_telegram_link
             url: https://t.me/c/1234567890/42
+        sources:
+          - kind: telegram_group_message
+            imported: false
+            availability: { state: available, reason: null }
+            message_date: "2026-10-04T09:15:00Z"
+            excerpt: По матану решаем номера 12–140.
+            action:
+              { type: open_telegram_link, url: "https://t.me/c/1234567890/42" }
+        updates: []
         permissions: [homework.read, homework.completion.write]
-        generated_at: '2026-10-04T12:00:00Z'
+        generated_at: "2026-10-04T12:00:00Z"
     HomeworkDetailUnavailable:
       summary: Imported homework with unknown deadline and unavailable source
       value:
         id: 66666666-6666-4666-8666-666666666666
         type: homework
+        card_kind: homework
         title: Подготовить презентацию
         subject:
           id: 77777777-7777-4777-8777-777777777777
           name: Маркетинг
+        confirmed_subject: null
         summary: Точная дата уточняется
         deadline:
           state: unknown
           at: null
           date_only: false
+          certainty: unknown
+          origin: imported
         status: needs_clarification
         urgency: normal
         visibility: group
@@ -693,8 +746,8 @@ components:
           completion: pending
           completed_at: null
           completed_revision: null
-        created_at: '2026-09-20T10:00:00Z'
-        updated_at: '2026-09-20T10:00:00Z'
+        created_at: "2026-09-20T10:00:00Z"
+        updated_at: "2026-09-20T10:00:00Z"
         description: Подготовить презентацию; срок в исходной переписке не указан.
         source_detail:
           kind: imported_history
@@ -702,63 +755,83 @@ components:
           availability:
             state: unavailable
             reason: imported_without_link
-          message_date: '2026-09-20T09:55:00Z'
+          message_date: "2026-09-20T09:55:00Z"
           excerpt: null
           action:
             type: none
             url: null
+        sources:
+          - kind: imported_history
+            imported: true
+            availability: { state: unavailable, reason: imported_without_link }
+            message_date: "2026-09-20T09:55:00Z"
+            excerpt: null
+            action: { type: none, url: null }
+        updates: []
         permissions: [homework.read, homework.completion.write]
-        generated_at: '2026-10-04T12:00:00Z'
+        generated_at: "2026-10-04T12:00:00Z"
   schemas:
     NotificationInbox:
       type: object
       required: [items, unread_count, generated_at]
       properties:
-        generated_at: {type: string, format: date-time}
-        unread_count: {type: integer, minimum: 0}
+        generated_at: { type: string, format: date-time }
+        unread_count: { type: integer, minimum: 0 }
         items:
           type: array
           items:
             type: object
-            required: [id, title, body, entity_type, entity_id, created_at, read]
+            required:
+              [id, title, body, entity_type, entity_id, created_at, read]
             properties:
-              id: {type: string, format: uuid}
-              title: {type: string}
-              body: {type: string}
-              entity_type: {type: string, enum: [homework, deadline, schedule]}
-              entity_id: {type: string, format: uuid}
-              created_at: {type: string, format: date-time}
-              read: {type: boolean}
+              id: { type: string, format: uuid }
+              title: { type: string }
+              body: { type: string }
+              entity_type:
+                { type: string, enum: [homework, deadline, schedule] }
+              entity_id: { type: string, format: uuid }
+              created_at: { type: string, format: date-time }
+              read: { type: boolean }
     ScheduleResponse:
       type: object
-      required: [generated_at, group_timezone, start, end, week_state, first_week_anchor, selected_week, lessons]
+      required:
+        [
+          generated_at,
+          group_timezone,
+          start,
+          end,
+          week_state,
+          first_week_anchor,
+          selected_week,
+          lessons,
+        ]
       properties:
-        generated_at: {type: string, format: date-time}
-        group_timezone: {type: string}
-        start: {type: string, format: date}
-        end: {type: string, format: date}
-        week_state: {type: string, enum: [ready, needs_clarification]}
-        first_week_anchor: {type: [string, 'null'], format: date}
-        selected_week: {type: [string, 'null'], enum: [first, second, null]}
+        generated_at: { type: string, format: date-time }
+        group_timezone: { type: string }
+        start: { type: string, format: date }
+        end: { type: string, format: date }
+        week_state: { type: string, enum: [ready, needs_clarification] }
+        first_week_anchor: { type: [string, "null"], format: date }
+        selected_week: { type: [string, "null"], enum: [first, second, null] }
         lessons:
           type: array
           items:
-            $ref: '#/components/schemas/LessonOccurrence'
+            $ref: "#/components/schemas/LessonOccurrence"
     LessonOccurrence:
       type: object
       required: [id, subject, starts_at, ends_at, teacher, location, status]
       properties:
-        id: {type: string}
-        subject: {type: string}
-        starts_at: {type: string, format: date-time}
-        ends_at: {type: string, format: date-time}
-        teacher: {type: [string, 'null']}
+        id: { type: string }
+        subject: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        teacher: { type: [string, "null"] }
         location:
-          type: [string, 'null']
+          type: [string, "null"]
           description: Display-ready location text, e.g. «Ауд. 320» or «Зал 2». Clients render it as supplied without adding a prefix.
-        status: {type: string, enum: [scheduled, cancelled]}
+        status: { type: string, enum: [scheduled, cancelled] }
         online_url:
-          type: [string, 'null']
+          type: [string, "null"]
           format: uri
           description: Optional HTTPS joining URL scoped to this group lesson; not a homework/material link. The external platform may require its own login.
     SessionBootstrapRequest:
@@ -779,7 +852,7 @@ components:
           type: string
           minLength: 43
           maxLength: 43
-          pattern: '^[A-Za-z0-9_-]{43}$'
+          pattern: "^[A-Za-z0-9_-]{43}$"
           description: Unpadded base64url encoding of 32 random bytes; never a JWT.
         token_type:
           type: string
@@ -788,29 +861,29 @@ components:
           type: string
           format: date-time
         session:
-          $ref: '#/components/schemas/SessionContext'
+          $ref: "#/components/schemas/SessionContext"
     SessionContext:
       type: object
       additionalProperties: false
       required: [user, access_state, permissions, server_time]
       properties:
         user:
-          $ref: '#/components/schemas/User'
+          $ref: "#/components/schemas/User"
         access_state:
-          $ref: '#/components/schemas/AccessState'
+          $ref: "#/components/schemas/AccessState"
         membership:
           oneOf:
-            - $ref: '#/components/schemas/Membership'
-            - type: 'null'
+            - $ref: "#/components/schemas/Membership"
+            - type: "null"
         group:
           oneOf:
-            - $ref: '#/components/schemas/Group'
-            - type: 'null'
+            - $ref: "#/components/schemas/Group"
+            - type: "null"
         permissions:
           type: array
           uniqueItems: true
           items:
-            $ref: '#/components/schemas/Permission'
+            $ref: "#/components/schemas/Permission"
         server_time:
           type: string
           format: date-time
@@ -828,7 +901,7 @@ components:
         display_name:
           type: string
         username:
-          type: [string, 'null']
+          type: [string, "null"]
     Membership:
       type: object
       additionalProperties: false
@@ -838,12 +911,12 @@ components:
           type: string
           format: uuid
         role:
-          $ref: '#/components/schemas/MemberRole'
+          $ref: "#/components/schemas/MemberRole"
         status:
           type: string
           enum: [active, suspended, left]
         next_check_at:
-          type: [string, 'null']
+          type: [string, "null"]
           format: date-time
         can_recheck:
           type: boolean
@@ -887,7 +960,16 @@ components:
     HomeworkListResponse:
       type: object
       additionalProperties: false
-      required: [server_time, generated_at, group_timezone, freshness, processing, items, next_cursor]
+      required:
+        [
+          server_time,
+          generated_at,
+          group_timezone,
+          freshness,
+          processing,
+          items,
+          next_cursor,
+        ]
       properties:
         server_time:
           type: string
@@ -899,15 +981,15 @@ components:
         group_timezone:
           type: string
         freshness:
-          $ref: '#/components/schemas/Freshness'
+          $ref: "#/components/schemas/Freshness"
         processing:
-          $ref: '#/components/schemas/FeedProcessing'
+          $ref: "#/components/schemas/FeedProcessing"
         items:
           type: array
           items:
-            $ref: '#/components/schemas/HomeworkSummary'
+            $ref: "#/components/schemas/HomeworkSummary"
         next_cursor:
-          type: [string, 'null']
+          type: [string, "null"]
           description: Pass unchanged with the same filter and session; null means no further page.
     TodayResponse:
       type: object
@@ -924,8 +1006,8 @@ components:
         next_lesson:
           description: Backend-selected current or next group lesson within 32 days; null if none.
           oneOf:
-            - $ref: '#/components/schemas/NextLesson'
-            - type: 'null'
+            - $ref: "#/components/schemas/NextLesson"
+            - type: "null"
         day_lessons_state:
           type: string
           enum: [scheduled, finished, empty, unknown]
@@ -940,16 +1022,16 @@ components:
           type: string
           example: Europe/Moscow
         freshness:
-          $ref: '#/components/schemas/Freshness'
+          $ref: "#/components/schemas/Freshness"
         processing:
-          $ref: '#/components/schemas/FeedProcessing'
+          $ref: "#/components/schemas/FeedProcessing"
         empty:
           type: boolean
         sections:
           type: array
           description: Ordered by backend (due_today, new_or_changed, upcoming); the client preserves order. new_or_changed contains only existing assignments with a significant update within the last 24 hours, not newly created or imported assignments. Import normalization and initial inferred timetable dates do not count as live updates. Personally completed items with a known active deadline remain eligible in their normal sections with my_state preserved; completed items without a known deadline are excluded. Cancelled and past-deadline items are archived and excluded immediately; date-only deadlines remain active through their group calendar day. Empty sections are omitted. These display rules do not delete stored homework. Legacy overdue section kind remains accepted but is no longer returned.
           items:
-            $ref: '#/components/schemas/TodaySection'
+            $ref: "#/components/schemas/TodaySection"
     TodaySection:
       type: object
       additionalProperties: false
@@ -961,46 +1043,145 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/HomeworkSummary'
+            $ref: "#/components/schemas/HomeworkSummary"
     AcademicDeadline:
       type: object
       additionalProperties: false
-      required: [id, kind, subject, title, description, deadline_at, date_only, window_start, window_end, date_hint, needs_clarification, source_message_ids]
+      required:
+        [
+          id,
+          kind,
+          subject,
+          title,
+          description,
+          deadline_at,
+          date_only,
+          window_start,
+          window_end,
+          date_hint,
+          needs_clarification,
+          source_message_ids,
+        ]
       properties:
-        id: {type: string, format: uuid}
-        kind: {type: string, enum: [control_point, assessment, test]}
-        subject: {type: string}
-        title: {type: string}
-        description: {type: string}
-        deadline_at: {type: [string, 'null'], format: date-time}
-        date_only: {type: boolean}
-        window_start: {type: [string, 'null'], format: date-time}
-        window_end: {type: [string, 'null'], format: date-time}
-        date_hint: {type: [string, 'null']}
-        needs_clarification: {type: boolean}
-        source_message_ids: {type: array, items: {type: integer}}
-        revision: {type: integer, minimum: 1}
-        cancelled_at: {type: [string, 'null'], format: date-time}
-        materials: {type: array, items: {$ref: '#/components/schemas/MaterialLink'}}
+        id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum:
+            [
+              control_point,
+              assessment,
+              test,
+              credit,
+              exam,
+              other_academic_deadline,
+            ]
+        card_kind: { $ref: "#/components/schemas/LearningCardKind" }
+        subject: { type: string }
+        confirmed_subject:
+          oneOf:
+            - $ref: "#/components/schemas/SubjectRef"
+            - type: "null"
+        title: { type: string }
+        description: { type: string }
+        deadline_at: { type: [string, "null"], format: date-time }
+        date_only: { type: boolean }
+        deadline_certainty:
+          type: string
+          enum: [confirmed, from_source, inferred, needs_clarification, unknown]
+        deadline_origin:
+          type: string
+          enum:
+            [
+              explicit_message,
+              schedule_inferred,
+              ambiguous_message,
+              manual,
+              imported,
+              unknown,
+            ]
+        window_start: { type: [string, "null"], format: date-time }
+        window_end: { type: [string, "null"], format: date-time }
+        date_hint: { type: [string, "null"] }
+        needs_clarification: { type: boolean }
+        source_message_ids: { type: array, items: { type: integer } }
+        sources:
+          {
+            type: array,
+            minItems: 1,
+            items: { $ref: "#/components/schemas/SourceDetail" },
+          }
+        updates:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/LearningCardUpdate" },
+          }
+        revision: { type: integer, minimum: 1 }
+        cancelled_at: { type: [string, "null"], format: date-time }
+        materials:
+          { type: array, items: { $ref: "#/components/schemas/MaterialLink" } }
     MaterialLink:
       type: object
       required: [id, title, url]
       properties:
-        id: {type: string, format: uuid}
-        title: {type: string}
-        url: {type: string, format: uri}
+        id: { type: string, format: uuid }
+        title: { type: string }
+        url: { type: string, format: uri }
+        kind:
+          type: string
+          enum: [link, photo, document, video, audio, voice, animation]
+          default: link
+        file_name: { type: [string, "null"] }
+        mime_type: { type: [string, "null"] }
+        size_bytes: { type: [integer, "null"], minimum: 0 }
+    LearningCardUpdate:
+      type: object
+      additionalProperties: false
+      required: [id, kind, text, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [supplement, change, cancellation] }
+        text: { type: string }
+        created_at: { type: string, format: date-time }
+    SubjectListResponse:
+      type: object
+      additionalProperties: false
+      required: [generated_at, group_timezone, items]
+      properties:
+        generated_at: { type: string, format: date-time }
+        group_timezone: { type: string }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SubjectOverview" }
+    SubjectOverview:
+      type: object
+      additionalProperties: false
+      required: [id, name, homework_count, deadline_count]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        homework_count: { type: integer, minimum: 0 }
+        deadline_count: { type: integer, minimum: 0 }
     LessonSubjectResponse:
       type: object
       additionalProperties: false
-      required: [generated_at, group_timezone, lesson, homework, homework_total, events_state, materials_state]
+      required:
+        [
+          generated_at,
+          group_timezone,
+          lesson,
+          homework,
+          homework_total,
+          events_state,
+          materials_state,
+        ]
       properties:
-        generated_at: {type: string, format: date-time}
-        group_timezone: {type: string}
-        lesson: {$ref: '#/components/schemas/LessonOccurrence'}
+        generated_at: { type: string, format: date-time }
+        group_timezone: { type: string }
+        lesson: { $ref: "#/components/schemas/LessonOccurrence" }
         homework:
           type: array
           maxItems: 100
-          items: {$ref: '#/components/schemas/HomeworkSummary'}
+          items: { $ref: "#/components/schemas/HomeworkSummary" }
         homework_total:
           type: integer
           minimum: 0
@@ -1011,20 +1192,21 @@ components:
           description: Ready indicates connected academic deadlines. Do not infer classification from the homework title on the client.
         events:
           type: array
-          items: {$ref: '#/components/schemas/AcademicDeadline'}
+          items: { $ref: "#/components/schemas/AcademicDeadline" }
         materials_state:
           type: string
           enum: [not_connected, ready]
           description: Ready means group-scoped manually added material links are connected.
-        materials: {type: array, items: {$ref: '#/components/schemas/MaterialLink'}}
+        materials:
+          { type: array, items: { $ref: "#/components/schemas/MaterialLink" } }
     NextLesson:
       type: object
       additionalProperties: false
       required: [state, lesson]
       properties:
-        state: {type: string, enum: [current, upcoming]}
+        state: { type: string, enum: [current, upcoming] }
         lesson:
-          $ref: '#/components/schemas/LessonOccurrence'
+          $ref: "#/components/schemas/LessonOccurrence"
     Freshness:
       type: object
       additionalProperties: false
@@ -1045,7 +1227,7 @@ components:
           type: string
           enum: [idle, updating, delayed]
         retry_after_seconds:
-          type: [integer, 'null']
+          type: [integer, "null"]
           minimum: 1
     HomeworkSummary:
       type: object
@@ -1067,48 +1249,58 @@ components:
         - created_at
         - updated_at
       properties:
-        materials: {type: array, items: {$ref: '#/components/schemas/MaterialLink'}}
+        materials:
+          { type: array, items: { $ref: "#/components/schemas/MaterialLink" } }
         id:
           type: string
           format: uuid
         type:
           type: string
           const: homework
+        card_kind:
+          $ref: "#/components/schemas/LearningCardKind"
         title:
           type: string
         subject:
-          $ref: '#/components/schemas/SubjectRef'
+          $ref: "#/components/schemas/SubjectRef"
+        confirmed_subject:
+          description: >-
+            Confirmed subject for new clients. Null means that publication did not establish a
+            subject. The legacy subject field remains populated during the compatibility window.
+          oneOf:
+            - $ref: "#/components/schemas/SubjectRef"
+            - type: "null"
         summary:
-          type: [string, 'null']
+          type: [string, "null"]
         deadline:
-          $ref: '#/components/schemas/Deadline'
+          $ref: "#/components/schemas/Deadline"
         status:
-          $ref: '#/components/schemas/HomeworkStatus'
+          $ref: "#/components/schemas/HomeworkStatus"
         urgency:
-          $ref: '#/components/schemas/Urgency'
+          $ref: "#/components/schemas/Urgency"
         visibility:
-          $ref: '#/components/schemas/Visibility'
+          $ref: "#/components/schemas/Visibility"
         verification_state:
-          $ref: '#/components/schemas/VerificationState'
+          $ref: "#/components/schemas/VerificationState"
         revision:
           type: integer
           minimum: 1
           description: Group-card revision; personal completion never increments it.
         source:
-          $ref: '#/components/schemas/SourceSummary'
+          $ref: "#/components/schemas/SourceSummary"
         processing:
-          $ref: '#/components/schemas/ItemProcessing'
+          $ref: "#/components/schemas/ItemProcessing"
         significant_update:
           type: boolean
         significant_updated_at:
-          type: [string, 'null']
+          type: [string, "null"]
           format: date-time
         cancelled_at:
-          type: [string, 'null']
+          type: [string, "null"]
           format: date-time
           description: Time cancellation took effect; later edits do not reset it. Cancelled items appear immediately in the archive regardless of whether this timestamp is known. No deletion.
         my_state:
-          $ref: '#/components/schemas/MyHomeworkState'
+          $ref: "#/components/schemas/MyHomeworkState"
         created_at:
           type: string
           format: date-time
@@ -1117,19 +1309,29 @@ components:
           format: date-time
     HomeworkDetail:
       allOf:
-        - $ref: '#/components/schemas/HomeworkSummary'
+        - $ref: "#/components/schemas/HomeworkSummary"
         - type: object
           required: [description, source_detail, permissions, generated_at]
           properties:
             description:
-              type: [string, 'null']
+              type: [string, "null"]
             source_detail:
-              $ref: '#/components/schemas/SourceDetail'
+              $ref: "#/components/schemas/SourceDetail"
+            sources:
+              type: array
+              minItems: 1
+              items: { $ref: "#/components/schemas/SourceDetail" }
+              description: >-
+                Evidence for the currently published projection revision. source_detail is kept
+                as the first item for old clients.
+            updates:
+              type: array
+              items: { $ref: "#/components/schemas/LearningCardUpdate" }
             permissions:
               type: array
               uniqueItems: true
               items:
-                $ref: '#/components/schemas/Permission'
+                $ref: "#/components/schemas/Permission"
             generated_at:
               type: string
               format: date-time
@@ -1152,12 +1354,43 @@ components:
           type: string
           enum: [known, unknown]
         at:
-          type: [string, 'null']
+          type: [string, "null"]
           format: date-time
           description: Null when state is unknown.
         date_only:
           type: boolean
           description: True when no exact time was established.
+        certainty:
+          type: string
+          enum: [confirmed, from_source, inferred, needs_clarification, unknown]
+          description: Confidence of this deadline only; never inferred from whole-card status by clients.
+        origin:
+          type: string
+          enum:
+            [
+              explicit_message,
+              schedule_inferred,
+              ambiguous_message,
+              manual,
+              imported,
+              unknown,
+            ]
+          description: Student-safe origin; no model confidence, prompt or internal evidence metadata.
+    LearningCardKind:
+      type: string
+      description: >-
+        Exhaustive canonical semantic kinds. The current writer projects homework to Homework;
+        all other values are projected to AcademicDeadline and cannot use personal completion.
+      enum:
+        [
+          homework,
+          test,
+          control_point,
+          assessment,
+          credit,
+          exam,
+          other_academic_deadline,
+        ]
     HomeworkStatus:
       type: string
       description: detected and incomplete_hidden are internal and never returned.
@@ -1183,24 +1416,31 @@ components:
       required: [kind, imported, availability]
       properties:
         kind:
-          $ref: '#/components/schemas/SourceKind'
+          $ref: "#/components/schemas/SourceKind"
         imported:
           type: boolean
         availability:
-          $ref: '#/components/schemas/SourceAvailability'
+          $ref: "#/components/schemas/SourceAvailability"
     SourceDetail:
       allOf:
-        - $ref: '#/components/schemas/SourceSummary'
+        - $ref: "#/components/schemas/SourceSummary"
         - type: object
           required: [message_date, excerpt, action]
           properties:
+            id:
+              type: [string, "null"]
+              format: uuid
+              description: Stable retained source id when available.
+            telegram_message_id:
+              type: [integer, "null"]
+              description: Group-local Telegram message id; not a credential.
             message_date:
-              type: [string, 'null']
+              type: [string, "null"]
               format: date-time
             excerpt:
-              type: [string, 'null']
+              type: [string, "null"]
             action:
-              $ref: '#/components/schemas/SourceAction'
+              $ref: "#/components/schemas/SourceAction"
     SourceKind:
       type: string
       enum:
@@ -1217,7 +1457,7 @@ components:
           type: string
           enum: [available, unavailable]
         reason:
-          type: [string, 'null']
+          type: [string, "null"]
           enum:
             - retention_expired
             - no_deep_link
@@ -1235,7 +1475,7 @@ components:
           type: string
           enum: [open_telegram_link, none]
         url:
-          type: [string, 'null']
+          type: [string, "null"]
           format: uri
           pattern: '^https://t\.me/'
           description: Backend-built Telegram message URL; only the https://t.me host is allowed.
@@ -1248,7 +1488,7 @@ components:
           type: string
           enum: [none, reanalyzing, delayed]
         retry_after_seconds:
-          type: [integer, 'null']
+          type: [integer, "null"]
           minimum: 1
     MyHomeworkState:
       type: object
@@ -1259,10 +1499,10 @@ components:
           type: string
           enum: [pending, completed]
         completed_at:
-          type: [string, 'null']
+          type: [string, "null"]
           format: date-time
         completed_revision:
-          type: [integer, 'null']
+          type: [integer, "null"]
           minimum: 1
     SetCompletionRequest:
       type: object
@@ -1280,7 +1520,7 @@ components:
       required: [error]
       properties:
         error:
-          $ref: '#/components/schemas/ApiError'
+          $ref: "#/components/schemas/ApiError"
     ApiError:
       type: object
       additionalProperties: false
@@ -1316,11 +1556,11 @@ components:
         retryable:
           type: boolean
         retry_after_seconds:
-          type: [integer, 'null']
+          type: [integer, "null"]
           minimum: 1
         field_path:
-          type: [string, 'null']
+          type: [string, "null"]
           description: JSON Pointer to an invalid request field when applicable.
         details:
-          type: [object, 'null']
+          type: [object, "null"]
           additionalProperties: true

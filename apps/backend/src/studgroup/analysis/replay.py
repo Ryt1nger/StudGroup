@@ -51,9 +51,7 @@ class ReplayResult(BaseModel):
 
 
 async def replay(envelope: ReplayEnvelope, mode=ReplayMode.VALIDATE_ONLY):
-    allowed = {
-        row.telegram_message_id: row.revision for row in envelope.analysis_input.messages
-    }
+    allowed = {row.telegram_message_id: row.revision for row in envelope.analysis_input.messages}
     validation = validate_provider_content(
         envelope.provider_content,
         allowed_sources=allowed,

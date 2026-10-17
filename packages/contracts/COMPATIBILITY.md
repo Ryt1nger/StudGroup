@@ -227,6 +227,32 @@ sections. Pagination can be added only with an explicit section-merge contract.
   generic application error.
 - `source.action.url` is backend-built and, in Slice 1, may use only an HTTPS URL
   on the exact `t.me` host. Redirector and arbitrary external hosts are rejected.
+
+## Published C+ card projection
+
+The public enrichment boundary is `canonical_projection_links`, not the presence of a
+canonical or shadow analysis row. Student endpoints may read canonical metadata and evidence
+only through a link whose entity type/id matches the already-visible retained Homework or
+AcademicDeadline row and whose group matches the active session. A shadow-only, held or
+review-only item has no such link and cannot enrich or create a public response.
+
+Homework keeps the legacy `type=homework`, non-null `subject` and singular `source_detail` so
+older clients continue to render. New clients use `card_kind`, `confirmed_subject`, `sources[]`,
+deadline `certainty`/`origin`, typed materials and `updates[]`. `confirmed_subject=null` is the
+only new-client representation of a subject that was not established; the old placeholder
+subject is compatibility data and must not be displayed by a new client.
+
+Canonical semantic kinds are `homework`, `test`, `control_point`, `assessment`, `credit`,
+`exam` and `other_academic_deadline`. The current writer maps only `homework` to Homework.
+Every other kind remains an AcademicDeadline and does not gain personal completion semantics.
+Lesson, announcement and material are not canonical card kinds and are not added to the enum.
+
+`sources[]` contains evidence from exactly the currently projected canonical revision and keeps
+`source_detail` equal to the first source. Attachment content is never fetched or analyzed.
+Metadata-only attachments open the retained Telegram source message; no Telegram file id or
+private file URL is exposed. `updates[]` is sanitized presentation metadata for the current
+published revision, not AI reasoning or a shadow audit log.
+
 # 0.4.1 — Today / Tomorrow switch
 
 `GET /today?day=tomorrow` adds an optional, backward-compatible day selection.
@@ -236,6 +262,7 @@ and that day's first scheduled lesson. Unknown deadlines are not assigned a day.
 `due_today` is the existing section key for the selected day's deadlines; render
 it as «Срок завтра» in tomorrow mode. Server timestamps remain actual current
 timestamps, never a simulated future clock. No storage or archive rules change.
+
 # 0.4.2 — Selected-day lesson state
 
 Optional `TodayResponse.day_lessons_state` distinguishes `scheduled`, `finished`,
@@ -244,6 +271,7 @@ Only a covered, resolved calendar with past scheduled lessons can be `finished`.
 Today no longer presents tomorrow's lesson as today's class: the UI renders the
 finished notice and leaves tomorrow's classes on the Tomorrow switch. `next_lesson`
 keeps its existing shape/range for compatibility. Missing coverage is not an empty day.
+
 # 0.5.0 — Subject page for a lesson
 
 Adds `GET /lessons/{lesson_id}/subject`, keyed by the existing occurrence ID
@@ -254,6 +282,7 @@ Past/cancelled homework is excluded; future known deadlines after the selected
 lesson day are omitted. Events/control points and materials explicitly report
 `not_connected`; the frontend must not claim these collections are empty or invent
 their contents. This additive route does not replace the schedule/list endpoints.
+
 # 0.6.0 — Important deadlines are not homework
 
 Adds `GET /deadlines?archive=false|true` and `AcademicDeadline` with separate
@@ -265,6 +294,7 @@ synonymous with urgent/red. Subject pages can now return `events_state=ready`
 and a typed `events` array; `not_connected` is retained for older servers/mocks.
 Migration 0007 adds independent persistence; local reclassification preserves old
 source records and personal marks without destructive deletion.
+
 # 0.7.0 — Real notification inbox
 
 Adds authenticated active-group `GET /notifications` and `POST /notifications/read-all`.

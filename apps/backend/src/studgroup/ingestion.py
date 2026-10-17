@@ -275,9 +275,7 @@ async def store_message(db, group, message, *, imported=False):
         if version > saved_version:
             reply_id = message.reply_to_message.message_id if message.reply_to_message else None
             supplied_attachments = attachment_metadata(message)
-            attachment_changed = await attachments_differ(
-                db, row.id, supplied_attachments
-            )
+            attachment_changed = await attachments_differ(db, row.id, supplied_attachments)
             if (
                 row.text == message.text
                 and row.reply_to_message_id == reply_id

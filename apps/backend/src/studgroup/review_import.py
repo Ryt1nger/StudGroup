@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import json
-import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -12,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.chat_export import read_html_export
 from studgroup.models import AcademicDeadline, Base, Group, Homework, RawMessage, SchedulePattern
+from studgroup.subject_identity import subject_uuid
 
 
 async def run(directory: Path, archive: Path):
@@ -59,7 +59,7 @@ async def run(directory: Path, archive: Path):
             for card in homeworks:
                 if card.subject_name in aliases:
                     card.subject_name = aliases[card.subject_name]
-                    card.subject_id = uuid.uuid5(group.id, card.subject_name.casefold())
+                    card.subject_id = subject_uuid(group.id, card.subject_name)
                     card.revision += 1
                     card.updated_at = now
 
@@ -104,7 +104,7 @@ async def run(directory: Path, archive: Path):
                             Homework(
                                 group_id=group.id,
                                 raw_message_id=raw.id,
-                                subject_id=uuid.uuid5(group.id, entry["subject"].casefold()),
+                                subject_id=subject_uuid(group.id, entry["subject"]),
                                 subject_name=entry["subject"],
                                 title=entry["title"],
                                 description=description,

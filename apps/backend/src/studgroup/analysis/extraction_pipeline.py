@@ -12,6 +12,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from studgroup.analysis.candidates import MAX_CANDIDATES, parse_model_candidates, salvage_rejected
 from studgroup.analysis.contracts import (
     ANALYSIS_ENGINE_VERSION,
     ANALYSIS_SCHEMA_VERSION,
@@ -24,6 +25,7 @@ from studgroup.analysis.contracts import (
 )
 from studgroup.analysis.linking import reconcile_validation
 from studgroup.analysis.output_adapter import adapt_proposal
+from studgroup.analysis.subject_catalog import usable_catalog
 from studgroup.analysis.validation import _safe_schema_issues
 
 MAX_PROPOSALS = 40
@@ -53,6 +55,7 @@ def source_maps(analysis_input: AnalysisInput):
 def validate_single(ordinal, raw, analysis_input, *, existing_items=None):
     """Return (accepted_item|None, rejected|None, repairable, actions)."""
     messages, allowed = source_maps(analysis_input)
+    catalog, _why = usable_catalog(analysis_input.subject_catalog, analysis_input.group_id)
     adapted = adapt_proposal(
         ordinal,
         raw,
@@ -60,6 +63,7 @@ def validate_single(ordinal, raw, analysis_input, *, existing_items=None):
         messages=messages,
         allowed_sources=allowed,
         existing_items=existing_items,
+        subject_catalog=catalog,
     )
     if not adapted.ok:
         rejected = RejectedItem(
@@ -122,11 +126,46 @@ def parse_envelope(content, analysis_input: AnalysisInput, actions: Counter):
     return payload, raw
 
 
+NOT_SALVAGED = {"duplicate_proposal", "proposal_overflow"}
+
+
+def _held_candidates(payload, raw, rejected, accepted, analysis_input, actions):
+    held = []
+    for item in rejected:
+        if item.reason_code in NOT_SALVAGED or item.proposal_ordinal >= len(raw):
+            continue
+        built = salvage_rejected(
+            item.proposal_ordinal,
+            raw[item.proposal_ordinal],
+            item.schema_issues[0].error_type if item.schema_issues else item.reason_code,
+            item.schema_issues,
+            analysis_input,
+            actions,
+        )
+        if built is not None:
+            held.append(built)
+    card_sources = [{ref.telegram_message_id for ref in card.evidence} for card in accepted]
+    for candidate in parse_model_candidates(payload.get("candidates"), analysis_input, actions):
+        cited = {ref.telegram_message_id for ref in candidate.evidence}
+        # The same item reported twice (as a card and as a candidate) stays a card only.
+        if candidate.category in {"homework", "check"} and any(
+            cited <= ids for ids in card_sources
+        ):
+            actions["candidate_duplicates_card_discarded"] += 1
+            continue
+        held.append(candidate)
+    return held[:MAX_CANDIDATES]
+
+
 def adapt_and_validate(
     content, analysis_input: AnalysisInput, *, existing_items=None
 ) -> AdaptedValidation:
     actions: Counter = Counter()
     payload, raw = parse_envelope(content, analysis_input, actions)
+    if analysis_input.subject_catalog is not None:
+        _usable, why_not = usable_catalog(analysis_input.subject_catalog, analysis_input.group_id)
+        if why_not:
+            actions[f"subject_catalog_ignored_{why_not}"] += 1
     accepted, ordinals, rejected, candidates = [], [], [], []
     seen = set()
     for ordinal, item in enumerate(raw[:MAX_PROPOSALS]):
@@ -141,7 +180,9 @@ def adapt_and_validate(
             continue
         signature = proposal.model_dump_json()
         if signature in seen:
-            rejected.append(RejectedItem(proposal_ordinal=ordinal, reason_code="duplicate_proposal"))
+            rejected.append(
+                RejectedItem(proposal_ordinal=ordinal, reason_code="duplicate_proposal")
+            )
             continue
         seen.add(signature)
         accepted.append(proposal)
@@ -150,6 +191,19 @@ def adapt_and_validate(
         RejectedItem(proposal_ordinal=ordinal, reason_code="proposal_overflow")
         for ordinal in range(MAX_PROPOSALS, len(raw))
     )
+    # Free discovery is kept apart from publication: what the strict contract rejected and what the
+    # model itself flagged as "not a card" stay as stored, non-publishable candidates.
+    held = _held_candidates(payload, raw, rejected, accepted, analysis_input, actions)
+    rejected = [
+        item.model_copy(update={"salvaged": True})
+        if any(
+            c.proposal_ordinal == item.proposal_ordinal
+            for c in held
+            if c.origin == "rejected_proposal"
+        )
+        else item
+        for item in rejected
+    ]
     # explicit_empty is fully derived from the proposal list; a wrong flag cannot create a card.
     declared = payload.get("explicit_empty")
     explicit_empty = not raw
@@ -163,6 +217,7 @@ def adapt_and_validate(
         raw_proposal_count=len(raw),
         explicit_empty=explicit_empty,
         adapter_actions=dict(sorted(actions.items())),
+        candidates=held,
     )
     result = reconcile_validation(result, analysis_input.messages)
     return AdaptedValidation(result, candidates)

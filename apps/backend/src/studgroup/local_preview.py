@@ -32,6 +32,7 @@ from studgroup.models import (
     WebSession,
 )
 from studgroup.security import issue_token
+from studgroup.subject_identity import subject_uuid
 
 
 async def seed(directory: Path, archive: Path):
@@ -96,7 +97,7 @@ async def seed(directory: Path, archive: Path):
                     Homework(
                         group_id=group.id,
                         raw_message_id=raw.id,
-                        subject_id=uuid.uuid5(group.id, subject.casefold()),
+                        subject_id=subject_uuid(group.id, subject),
                         subject_name=subject,
                         title=candidate["title"],
                         description=candidate.get("description"),

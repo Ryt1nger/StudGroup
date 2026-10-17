@@ -26,6 +26,7 @@ from studgroup.models import (
 from studgroup.pagination import decode_cursor, encode_cursor
 from studgroup.schedule import next_lesson
 from studgroup.security import token_hash
+from studgroup.student_cards import enrich_homework
 
 router = APIRouter(prefix="/v1")
 Database = Annotated[AsyncSession, Depends(database)]
@@ -42,25 +43,14 @@ async def user_id(db, authorization):
 
 
 async def representation(db, row, user, now):
-    raw = await db.get(RawMessage, row.raw_message_id) if row.raw_message_id else None
     completed = await db.scalar(
         select(PersonalCompletion).where(
             PersonalCompletion.homework_id == row.id, PersonalCompletion.user_id == user
         )
     )
-    available = raw is not None and utc(raw.delete_at) > now
     group = await db.get(Group, row.group_id)
-    chat_id = str(group.telegram_chat_id)
-    url = (
-        f"https://t.me/c/{chat_id[4:]}/{raw.telegram_message_id}"
-        if available and chat_id.startswith("-100")
-        else None
-    )
-    availability = {
-        "state": "available" if url else "unavailable",
-        "reason": None if url else "retention_expired" if not available else "no_deep_link",
-    }
-    imported = bool(raw and raw.imported)
+    enrichment = await enrich_homework(db, group, row, now)
+    source_detail = enrichment["sources"][0]
     membership = await db.scalar(
         select(Membership).where(
             Membership.user_id == user,
@@ -73,27 +63,23 @@ async def representation(db, row, user, now):
         membership is None or membership.role not in {"headman", "deputy"}
     ):
         verification_state = "from_group_message"
-    source = {
-        "kind": "manual_entry"
-        if row.raw_message_id is None
-        else "imported_history"
-        if imported
-        else "telegram_group_message",
-        "imported": imported,
-        "availability": availability,
-    }
+    source = {key: source_detail[key] for key in ("kind", "imported", "availability")}
     return {
         "id": row.id,
-        "materials": await links(db, row.group_id, [f"h:{row.id}"]),
+        "materials": enrichment["materials"],
         "type": "homework",
+        "card_kind": enrichment["card_kind"],
         "title": row.title,
         "subject": {"id": row.subject_id, "name": row.subject_name},
+        "confirmed_subject": enrichment["confirmed_subject"],
         "summary": row.description,
         "description": row.description,
         "deadline": {
             "state": "known" if row.deadline_at else "unknown",
             "at": utc(row.deadline_at) if row.deadline_at else None,
             "date_only": row.deadline_date_only,
+            "certainty": enrichment["deadline_certainty"],
+            "origin": enrichment["deadline_origin"],
         },
         "status": row.status,
         "urgency": row.urgency,
@@ -101,12 +87,9 @@ async def representation(db, row, user, now):
         "verification_state": verification_state,
         "revision": row.revision,
         "source": source,
-        "source_detail": {
-            **source,
-            "message_date": utc(raw.message_date) if raw else None,
-            "excerpt": raw.text[:1000] if available else None,
-            "action": {"type": "open_telegram_link" if url else "none", "url": url},
-        },
+        "source_detail": source_detail,
+        "sources": enrichment["sources"],
+        "updates": enrichment["updates"],
         "processing": {"state": "none", "retry_after_seconds": None},
         "cancelled_at": utc(row.cancelled_at) if row.cancelled_at else None,
         "significant_update": row.significant_updated_at is not None,
@@ -240,7 +223,14 @@ async def homework_list(
     items = []
     for row in rows[:limit]:
         card = await representation(db, row, user, generated)
-        for detail_field in ("description", "source_detail", "generated_at", "permissions"):
+        for detail_field in (
+            "description",
+            "source_detail",
+            "sources",
+            "updates",
+            "generated_at",
+            "permissions",
+        ):
             card.pop(detail_field)
         items.append(card)
     next_cursor = None

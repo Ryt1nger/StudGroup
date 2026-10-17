@@ -21,7 +21,8 @@ from studgroup.analysis.contracts import (
     ProposedAcademicItem,
 )
 
-_PROPOSAL_FIELDS = frozenset(ProposedAcademicItem.model_fields)
+# ``subject_source`` is set by code after the catalog check; a model never supplies it.
+_PROPOSAL_FIELDS = frozenset(ProposedAcademicItem.model_fields) - {"subject_source"}
 # Purely explanatory keys: dropping them cannot change any academic fact.
 INFORMATIONAL_KEYS = frozenset(
     {"quote", "quotes", "reasoning", "explanation", "rationale", "notes", "comment", "comments"}
@@ -29,14 +30,49 @@ INFORMATIONAL_KEYS = frozenset(
 EVIDENCE_ALIASES = {"message_id": "telegram_message_id", "source_id": "telegram_message_id"}
 EVIDENCE_INFORMATIONAL_KEYS = frozenset({"quote", "text", "excerpt"})
 # Placeholders copied from historic prompt examples mean "no value".
-NULL_STRINGS = frozenset({"null", "none", "n/a", "subject or null", "short specific title or null",
-                          "clear evidenced actions or null"})
+NULL_STRINGS = frozenset(
+    {
+        "null",
+        "none",
+        "n/a",
+        "subject or null",
+        "short specific title or null",
+        "clear evidenced actions or null",
+    }
+)
 FACT_PATH_ROOTS = frozenset(
-    {"subject", "title", "description", "deadline", "audience", "semantic_kind", "destination",
-     "action"}
+    {
+        "subject",
+        "title",
+        "description",
+        "deadline",
+        "audience",
+        "semantic_kind",
+        "destination",
+        "action",
+    }
 )
 
 ACTIONS = frozenset(get_args(ProposedAcademicItem.model_fields["action"].annotation))
+# Obvious spelling/language variants of the published kinds, matched on the whole label only (never
+# a substring, never a guess): "quiz" is a test, "самостоятельная" an assessment. Labels that are
+# unknown or ambiguous ("проверочная", "опрос", "lecture") are not here: they stay rejected and are
+# kept as held candidates. Applied before strict validation, so sources, audience and every other
+# check still run on the normalised proposal.
+SEMANTIC_KIND_SYNONYMS = {
+    "test": ("quiz", "quizz", "квиз", "тест", "тестирование"),
+    "assessment": (
+        "самостоятельная", "самостоятельная_работа", "independent_work", "контрольная",
+        "контрольная_работа", "control_work",
+    ),
+    "control_point": ("кт", "контрольная_точка", "checkpoint"),
+    "credit": ("зачет",),
+    "exam": ("экзамен",),
+    "homework": ("дз", "домашнее_задание", "домашка", "домашняя_работа"),
+}  # fmt: skip
+KIND_SYNONYM_LOOKUP = {
+    label: kind for kind, labels in SEMANTIC_KIND_SYNONYMS.items() for label in labels
+}
 DESTINATIONS = frozenset(get_args(ProposedAcademicItem.model_fields["destination"].annotation))
 SEMANTIC_KINDS = frozenset(get_args(ProposedAcademicItem.model_fields["semantic_kind"].annotation))
 BASES = frozenset(get_args(DeadlineValue.model_fields["basis"].annotation))
@@ -54,11 +90,23 @@ FAR_FUTURE_DAYS = 400
 
 
 _MONTHS = {
-    "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
-    "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
+    "января": 1,
+    "февраля": 2,
+    "марта": 3,
+    "апреля": 4,
+    "мая": 5,
+    "июня": 6,
+    "июля": 7,
+    "августа": 8,
+    "сентября": 9,
+    "октября": 10,
+    "ноября": 11,
+    "декабря": 12,
 }
 _NUMERIC_DATE = re.compile(r"(?<![\d.,])(\d{1,2})[./](\d{2})(?![\d])(?![.,]\d)")
-_NAMED_DATE = re.compile(r"(?<!\d)(\d{1,2})\s+(" + "|".join(_MONTHS) + r")(?![а-яё])", re.IGNORECASE)
+_NAMED_DATE = re.compile(
+    r"(?<!\d)(\d{1,2})\s+(" + "|".join(_MONTHS) + r")(?![а-яё])", re.IGNORECASE
+)
 
 
 def explicit_source_dates(text):
@@ -96,15 +144,22 @@ def collective_address_only(texts):
         folded = _fold(text)
         collective = collective or bool(_COLLECTIVE.search(folded))
         named = _NAME_ADDRESS.match(text)
-        personal = personal or bool(_PERSONAL_ADDRESS.search(folded)) or bool(
-            named and not _COLLECTIVE.search(_fold(named.group(0)))
+        personal = (
+            personal
+            or bool(_PERSONAL_ADDRESS.search(folded))
+            or bool(named and not _COLLECTIVE.search(_fold(named.group(0))))
         )
     return collective and not personal
 
 
 _WEEKDAY_WORDS = (
-    r"понедельник\w*", r"вторник\w*", r"сред(?:а|е|у|ы)", r"четверг\w*", r"пятниц\w*",
-    r"суббот\w*", r"воскресень\w*",
+    r"понедельник\w*",
+    r"вторник\w*",
+    r"сред(?:а|е|у|ы)",
+    r"четверг\w*",
+    r"пятниц\w*",
+    r"суббот\w*",
+    r"воскресень\w*",
 )
 UNRESOLVED_RELATIVE_BASES = frozenset(
     {"next_subject_lesson_reference", "unresolved_explicit_deadline", "ambiguous_weekday"}
@@ -178,8 +233,18 @@ def _reject(code, path, value=None, *, expected="valid_value", repairable=True):
 
 
 class _Normalizer:
-    def __init__(self, ordinal, *, group_timezone, messages, allowed_sources, existing_items):
+    def __init__(
+        self,
+        ordinal,
+        *,
+        group_timezone,
+        messages,
+        allowed_sources,
+        existing_items,
+        subject_catalog=None,
+    ):
         self.ordinal = ordinal
+        self.catalog = subject_catalog  # already checked with usable_catalog, or None
         self.tz = ZoneInfo(group_timezone)
         self.messages = messages  # {telegram_message_id: SourceMessage}
         self.allowed_sources = allowed_sources
@@ -273,8 +338,9 @@ class _Normalizer:
         if extra:
             _reject("deadline_field_not_allowed", path, raw, expected="field_not_allowed")
         raw_at = raw.get("at")
-        if isinstance(raw_at, str) and (not raw_at.strip() or raw_at.strip().casefold() in
-                                        NULL_STRINGS):
+        if isinstance(raw_at, str) and (
+            not raw_at.strip() or raw_at.strip().casefold() in NULL_STRINGS
+        ):
             raw_at = None
             self.note("blank_text_to_null")
         date_only = raw.get("date_only", False)
@@ -301,8 +367,7 @@ class _Normalizer:
                 at = at.astimezone(self.tz).replace(hour=0, minute=0, second=0, microsecond=0)
         if basis_raw is None:
             if at is not None:
-                _reject("deadline_basis_missing", "deadline.basis", None,
-                        expected="required_field")
+                _reject("deadline_basis_missing", "deadline.basis", None, expected="required_field")
             basis = "unknown"
             self.note("basis_defaulted_unknown")
         else:
@@ -312,8 +377,7 @@ class _Normalizer:
                 self.note("date_only_cleared_without_value")
                 date_only = False
             if basis in {"explicit", "schedule_inferred"}:
-                _reject("deadline_basis_requires_value", "deadline", raw,
-                        expected="valid_value")
+                _reject("deadline_basis_requires_value", "deadline", raw, expected="valid_value")
         else:
             self.sanity_flags(at, base)
         return {"at": at, "date_only": date_only, "basis": basis}
@@ -338,8 +402,9 @@ class _Normalizer:
         """
         if deadline["at"] is None or deadline["basis"] != "explicit":
             return deadline
-        ordered = sorted((self.messages[i] for i in base if i in self.messages),
-                         key=lambda row: row.message_date)
+        ordered = sorted(
+            (self.messages[i] for i in base if i in self.messages), key=lambda row: row.message_date
+        )
         local = deadline["at"].astimezone(self.tz)
         literal = set()
         for source in ordered:
@@ -425,8 +490,13 @@ class _Normalizer:
             if set(entry) - {"telegram_message_id", "revision", "fact_paths"}:
                 _reject("evidence_field_not_allowed", path, entry, expected="field_not_allowed")
             if entry.get("telegram_message_id") is None:
-                _reject("evidence_message_id_missing", path, None, expected="required_field",
-                        repairable=False)
+                _reject(
+                    "evidence_message_id_missing",
+                    path,
+                    None,
+                    expected="required_field",
+                    repairable=False,
+                )
             message_id = self.integer(entry["telegram_message_id"], "evidence.telegram_message_id")
             if entry.get("revision") is not None:
                 revision = self.integer(entry["revision"], "evidence.revision")
@@ -434,8 +504,13 @@ class _Normalizer:
                 revision = self.allowed_sources[message_id]
                 self.note("revision_looked_up")
             else:
-                _reject("evidence_revision_missing", path, None, expected="required_field",
-                        repairable=False)
+                _reject(
+                    "evidence_revision_missing",
+                    path,
+                    None,
+                    expected="required_field",
+                    repairable=False,
+                )
             result.append((entry.get("fact_paths"), message_id, revision))
         return result
 
@@ -458,6 +533,54 @@ class _Normalizer:
             self.note("service_tag_subject_cleared")
         return value
 
+    def catalog_subject(self, value, raw_id):
+        """Tie the model's subject to the group's trusted catalog (or refuse to confirm it).
+
+        Confirmed: the id (or, failing that, the exact name/alias) is in the catalog; the wording
+        becomes the canonical name. Never confirmed: an unknown id, an ambiguous label, anything
+        outside a complete catalog. Without a usable catalog the old text rule stays in charge.
+        """
+        value["subject_id"] = None
+        value["subject_source"] = None
+        if raw_id is not None and not isinstance(raw_id, str):
+            raw_id = None
+            self.note("subject_id_ignored_not_text")
+        if self.catalog is None:
+            if raw_id and raw_id.strip():
+                self.note("subject_id_without_catalog")
+            return
+        from studgroup.analysis.subject_catalog import label_key, resolve_subject
+
+        result = resolve_subject(self.catalog, raw_id, value.get("subject"))
+        if result.id_was_unknown:
+            self.note("subject_id_unknown")
+            self.extra_reasons.append("subject_id_unknown")
+        if result.entry is not None:
+            if label_key(value.get("subject")) != label_key(result.entry.name):
+                self.note("subject_canonicalised")
+            value["subject"] = result.entry.name
+            value["subject_id"] = result.entry.id
+            value["subject_source"] = "catalog"
+            self.note("subject_confirmed_by_catalog")
+            return
+        if result.status == "mismatch":
+            value["subject"] = None
+            self.note("subject_id_name_mismatch")
+            self.extra_reasons.append("subject_id_mismatch")
+        elif result.status == "ambiguous":
+            value["subject"] = None
+            self.note("subject_ambiguous_in_catalog")
+            self.extra_reasons.append("subject_ambiguous")
+        elif result.status in {"not_in_catalog", "unknown_id"} and value.get("subject"):
+            if self.catalog.complete:
+                value["subject"] = None
+                self.note("subject_not_in_catalog")
+                self.extra_reasons.append("subject_not_in_catalog")
+            else:
+                self.note("subject_outside_incomplete_catalog")
+        elif result.status == "unknown_id":
+            value["subject"] = None
+
     # -- proposal -------------------------------------------------------------------------
     def proposal(self, raw):
         if not isinstance(raw, dict):
@@ -466,12 +589,15 @@ class _Normalizer:
         for key in INFORMATIONAL_KEYS & set(raw):
             raw.pop(key)
             self.note("informational_key_dropped")
+        if raw.get("subject_source") is None:
+            raw.pop("subject_source", None)  # a copied null is harmless; a value is not allowed
         unknown = set(raw) - _PROPOSAL_FIELDS
         if unknown:
             _reject("proposal_field_not_allowed", "proposal", raw, expected="field_not_allowed")
         value = {}
         value["action"] = (
-            self.enum(raw["action"], ACTIONS, "action") if raw.get("action") is not None
+            self.enum(raw["action"], ACTIONS, "action")
+            if raw.get("action") is not None
             else "create"
         )
         if raw.get("action") is None:
@@ -499,16 +625,31 @@ class _Normalizer:
                 self.extra_reasons.append(UNCONFIRMED_CHANGE_REASON)
                 self.note("change_without_identity_held")
             elif value["existing_item_id"] is None or value["expected_item_revision"] is None:
-                _reject("mutation_identity_missing", "existing_item_id", None,
-                        expected="required_field", repairable=False)
+                _reject(
+                    "mutation_identity_missing",
+                    "existing_item_id",
+                    None,
+                    expected="required_field",
+                    repairable=False,
+                )
             if self.existing_items is not None and (
-                self.existing_items.get(value["existing_item_id"]) != value["expected_item_revision"]
+                self.existing_items.get(value["existing_item_id"])
+                != value["expected_item_revision"]
             ):
-                _reject("existing_item_not_in_trusted_context", "existing_item_id", None,
-                        repairable=False)
+                _reject(
+                    "existing_item_not_in_trusted_context",
+                    "existing_item_id",
+                    None,
+                    repairable=False,
+                )
         kind = raw.get("semantic_kind")
         if kind is None:
             _reject("semantic_kind_missing", "semantic_kind", None, expected="required_field")
+        if isinstance(kind, str):
+            label = "_".join(kind.strip().casefold().replace("ё", "е").replace("-", " ").split())
+            if label not in SEMANTIC_KINDS and label in KIND_SYNONYM_LOOKUP:
+                kind = KIND_SYNONYM_LOOKUP[label]
+                self.note("semantic_kind_synonym_normalized")
         value["semantic_kind"] = self.enum(kind, SEMANTIC_KINDS, "semantic_kind")
         derived = "task" if value["semantic_kind"] == "homework" else "deadline"
         if raw.get("destination") is None:
@@ -518,6 +659,7 @@ class _Normalizer:
             value["destination"] = self.enum(raw["destination"], DESTINATIONS, "destination")
         for name in ("subject", "title", "description"):
             value[name] = self.optional_text(raw.get(name), name)
+        self.catalog_subject(value, raw.get("subject_id"))
         confidence = raw.get("confidence")
         if confidence is None:
             _reject("confidence_missing", "confidence", None, expected="required_field")
@@ -529,8 +671,9 @@ class _Normalizer:
             self.note("audience_defaulted_group")
         elif isinstance(audience, dict):
             if set(audience) - {"scope", "label"}:
-                _reject("audience_field_not_allowed", "audience", audience,
-                        expected="field_not_allowed")
+                _reject(
+                    "audience_field_not_allowed", "audience", audience, expected="field_not_allowed"
+                )
             scope = audience.get("scope")
             value["audience"] = {
                 "scope": "group" if scope is None else self.enum(scope, SCOPES, "audience.scope"),
@@ -578,6 +721,7 @@ def adapt_proposal(
     messages,
     allowed_sources,
     existing_items=None,
+    subject_catalog=None,
 ) -> AdaptedProposal:
     """Normalize one provider proposal; failure never affects sibling proposals."""
     normalizer = _Normalizer(
@@ -586,6 +730,7 @@ def adapt_proposal(
         messages=messages,
         allowed_sources=allowed_sources,
         existing_items=existing_items,
+        subject_catalog=subject_catalog,
     )
     try:
         value = normalizer.proposal(raw)

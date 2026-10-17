@@ -36,7 +36,9 @@ def upgrade():
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
-    op.create_index("ix_canonical_academic_items_group_id", "canonical_academic_items", ["group_id"])
+    op.create_index(
+        "ix_canonical_academic_items_group_id", "canonical_academic_items", ["group_id"]
+    )
     op.create_index(
         "ix_canonical_academic_items_active",
         "canonical_academic_items",
@@ -87,9 +89,7 @@ def upgrade():
         sa.Column("actor", sa.String(24), nullable=False),
         sa.Column("snapshot_json", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint(
-            "item_id", "item_revision", name="uq_canonical_item_revision"
-        ),
+        sa.UniqueConstraint("item_id", "item_revision", name="uq_canonical_item_revision"),
     )
     op.create_index("ix_canonical_item_revisions_item_id", "canonical_item_revisions", ["item_id"])
 

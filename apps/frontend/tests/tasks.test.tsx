@@ -151,9 +151,11 @@ describe('Tasks screen', () => {
     expect(await screen.findByText('Реферат по социологии')).toBeInTheDocument();
     expect(screen.getByText('Доклад по экологии')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Отменено' })).toBeInTheDocument();
+    // Owner decision (DESIGN_HANDOFF «Архив»): archived cards are neutral, the cancellation status
+    // is shown in the detail, not as a badge on the archive card.
     expect(
-      within(screen.getByRole('link', { name: /Открыть задание: Доклад по экологии/ })).getByText('Отменено'),
-    ).toBeInTheDocument();
+      within(screen.getByRole('link', { name: /Открыть задание: Доклад по экологии/ })).queryByText('Отменено'),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Срок сегодня' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Загрузить ещё' })).not.toBeInTheDocument();
   });
@@ -343,15 +345,24 @@ describe('completion sync', () => {
     expect(urls.every((u) => !u.searchParams.get('cursor'))).toBe(true);
   });
 
-  it('completing a Today card removes it from Today and lists it in Tasks', async () => {
+  it('completing a Today card keeps a known-deadline card on Today with the mark and lists it in Tasks', async () => {
     const { router } = renderApp({ route: '/today' });
     await userEvent.click(await screen.findByRole('link', { name: /Открыть задание: ДЗ №12–140/ }));
     await userEvent.click(await screen.findByRole('button', { name: 'Выполнено мной' }));
     await screen.findByRole('button', { name: /Снять отметку/ });
     await router.navigate('/today');
-    await waitFor(() => expect(screen.queryByText('ДЗ №12–140')).not.toBeInTheDocument());
+    // Owner update (DESIGN_HANDOFF «Сегодня»): a personal completion does not hide a card whose
+    // deadline is known and current; it stays in its ordinary section with the completion mark.
+    // The Today list is invalidated, not awaited: wait for the refetched card to carry the mark.
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('link', { name: /Открыть задание: ДЗ №12–140/ })).getByText('Выполнено мной'),
+      ).toBeInTheDocument(),
+    );
     await router.navigate('/tasks?filter=mine');
-    expect(await screen.findByText('ДЗ №12–140')).toBeInTheDocument();
+    // The first paint can come from the cache and is replaced when the refetch lands, so assert
+    // on a fresh query until it settles (and allow for a slow CI machine).
+    await waitFor(() => expect(screen.getByText('ДЗ №12–140')).toBeInTheDocument(), { timeout: 5000 });
   });
 
   it('a revision conflict also restarts the list', async () => {

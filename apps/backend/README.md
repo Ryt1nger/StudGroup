@@ -2,6 +2,26 @@
 
 Owner: Codex.
 
+## Private read-only shadow wave export
+
+To export stored C+ results without another provider call, set `DATABASE_URL` through the
+normal secret mechanism and run:
+
+```bash
+uv run python -m studgroup.export_shadow_wave \
+  --wave wave-a-spread-1 \
+  --output tmp/private/studgroup_cplus_wave_a.json
+```
+
+The exporter only reads stored shadow rows. The existing preview path uses a savepoint that is
+always rolled back. The resulting JSON contains private Telegram text and must remain under the
+Git-ignored `tmp/` directory; do not attach it to issues, commits, CI artifacts, or application
+logs. Use the bundle only with an explicitly approved offline review workflow.
+
+The bundle distinguishes stored validation, the current deterministic `effective_validation`,
+card-editor output before cross-run merging, and the final owner preview. Raw provider responses
+are explicitly marked unavailable because successful shadow responses were not retained.
+
 ## Explicit two-pass export probe
 
 `python -m studgroup.two_pass_probe ARCHIVE PRIVATE_REPORT --as-of ISO_TIMESTAMP`

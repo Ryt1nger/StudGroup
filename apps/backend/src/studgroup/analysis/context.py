@@ -21,7 +21,12 @@ def assemble_memory_context(group_id, query, facts, *, max_bytes=4000):
         value = json.loads(fact.value_json)
         serialized = json.dumps(value, ensure_ascii=False, sort_keys=True)
         overlap = len(query_tokens & tokens(f"{fact.normalized_key} {serialized}"))
-        rank = (0 if fact.status == "verified" else 1, -overlap, fact.fact_type, fact.normalized_key)
+        rank = (
+            0 if fact.status == "verified" else 1,
+            -overlap,
+            fact.fact_type,
+            fact.normalized_key,
+        )
         candidates.append((rank, fact, value))
     selected = []
     used = 2

@@ -11,6 +11,7 @@ import { AlertCircle, CheckCircle, ChevronRight, Clock, Refresh } from '../../ui
 import { cardStatus, showUrgent, type CardStatus } from './cardStatus';
 import { urgencyBadge } from './homeworkBadges';
 import styles from './HomeworkCard.module.css';
+import { confirmedSubject } from '../homework/confirmedSubject';
 
 interface Props {
   item: HomeworkSummary;
@@ -56,6 +57,7 @@ export function HomeworkCard({ item, nowMs, timeZone, archived = false }: Props)
   const urgent = showUrgent(item);
   const cancelled = status === 'cancelled';
   const completed = item.my_state.completion === 'completed';
+  const subject = confirmedSubject(item);
 
   return (
     <Link
@@ -64,12 +66,16 @@ export function HomeworkCard({ item, nowMs, timeZone, archived = false }: Props)
       aria-label={`${ru.card.open}: ${item.title}`}
     >
       <ThemedImage
-        asset={homeworkTileAsset({ urgent: !archived && urgent, completed: !archived && completed, cancelled })}
+        asset={homeworkTileAsset({
+          urgent: !archived && urgent,
+          completed: !archived && completed,
+          cancelled,
+        })}
         className={clsx(styles.tile, !archived && urgent && !completed && styles.tileUrgent)}
       />
       <span className={styles.body}>
         <span className={styles.title}>{item.title}</span>
-        <span className={styles.subject}>{item.subject.name}</span>
+        {subject ? <span className={styles.subject}>{subject.name}</span> : null}
         <span className={styles.meta}>
           <Clock className={styles.metaIcon} size={14} />
           <span>{deadline ?? ru.card.deadlineUnknown}</span>

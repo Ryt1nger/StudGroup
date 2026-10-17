@@ -51,6 +51,7 @@ def edited(item, visibility="normal"):
         title=item.title,
         description=item.description,
         visibility=visibility,
+        subject=item.subject,
     )
 
 

@@ -102,14 +102,13 @@ def _sum_usage(*rows):
     return ProviderUsage(
         prompt_tokens=sum(row.prompt_tokens for row in rows if row is not None),
         completion_tokens=sum(row.completion_tokens for row in rows if row is not None),
-        prompt_cache_hit_tokens=sum(
-            row.prompt_cache_hit_tokens for row in rows if row is not None
-        ),
+        prompt_cache_hit_tokens=sum(row.prompt_cache_hit_tokens for row in rows if row is not None),
     )
 
 
 def source_snapshot_sha256(analysis_input):
-    payload = analysis_input.model_dump(mode="json")
+    # The subject catalog is reference data, not source: the snapshot hash stays what it was.
+    payload = analysis_input.model_dump(mode="json", exclude={"subject_catalog"})
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
     ).hexdigest()

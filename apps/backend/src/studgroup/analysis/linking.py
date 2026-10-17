@@ -17,6 +17,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
+from studgroup.analysis.card_editor import supplement_adds_information
 from studgroup.analysis.contracts import EvidenceRef, RejectedItem
 from studgroup.analysis.text_hygiene import clean_text
 
@@ -24,7 +25,9 @@ STRONG, MEDIUM, WEAK = "strong", "medium", "weak"
 RANK = {STRONG: 0, MEDIUM: 1, WEAK: 2}
 MAX_PAYLOAD_LINKS = 40
 STAFF_ROLES = {"headman", "deputy"}
-ENUMERATION_START = re.compile(r"^\s*(?:\d{1,2}[).]|[-•*–—]|темы\b|варианты\b|список\b)", re.IGNORECASE)
+ENUMERATION_START = re.compile(
+    r"^\s*(?:\d{1,2}[).]|[-•*–—]|темы\b|варианты\b|список\b)", re.IGNORECASE
+)
 CONTINUATION_START = re.compile(
     r"^\s*(?:и\s+ещ[её]|а\s+также|ещ[её]\b|кстати|добавлю|добавляю|дополнени\w+|уточнени\w+|"
     r"уточняю|забыл\w*|и\s+\w+\s+тоже|нет[,\s])",
@@ -41,7 +44,10 @@ NEW_TASK = re.compile(
     r"составить|сдать)\b",
     re.IGNORECASE,
 )
-APPEND_LIMIT = 1500
+PENDING_INTEGRATION = "supplement_pending_integration"
+# Marks a cited source as a clarification reply that is kept as evidence for the card. It is the
+# structured hand-over to the next AI pass: the item's sources say where the unintegrated text is.
+SUPPLEMENT_PATH = "supplement_reply"
 
 
 @dataclass(frozen=True)
@@ -174,11 +180,11 @@ def _text_supplement_ok(anchor, member, link):
     )
 
 
-def _ref(message):
+def _ref(message, *, supplement=False):
     return EvidenceRef(
         telegram_message_id=message.telegram_message_id,
         revision=message.revision,
-        fact_paths=["description"],
+        fact_paths=["description", SUPPLEMENT_PATH] if supplement else ["description"],
     )
 
 
@@ -217,7 +223,9 @@ def reconcile_validation(validation, messages):
         evidence = [*host.evidence, *[r for r in candidate.evidence if r not in host.evidence]]
         description = host.description
         if description and candidate.description and candidate.description not in description:
-            description = (description + "\n\nДополнение: " + clean_text(candidate.description))[:8000]
+            description = (description + "\n\nДополнение: " + clean_text(candidate.description))[
+                :8000
+            ]
         items[host_index] = (
             items[host_index][0],
             host.model_copy(update={"evidence": evidence, "description": description}),
@@ -236,9 +244,11 @@ def reconcile_validation(validation, messages):
         evidence = list(proposal.evidence)
         description = proposal.description
         reasons = list(proposal.attention_reasons)
-        others = set().union(*(c for k, c in enumerate(cited_all) if k != position)) if len(
-            cited_all
-        ) > 1 else set()
+        others = (
+            set().union(*(c for k, c in enumerate(cited_all) if k != position))
+            if len(cited_all) > 1
+            else set()
+        )
         queue = sorted(own)
         visited = set()
         while queue:
@@ -265,14 +275,17 @@ def reconcile_validation(validation, messages):
                     queue.append(link.member)  # siblings of an album join the same card
                     actions["supplement_source_added"] += 1
                 elif _text_supplement_ok(anchor, member, link):
-                    evidence.append(_ref(member))
+                    # The clarification stays a cited source (marked as a supplement reply). Its
+                    # raw chat text is never pasted into the description. Only a clarification
+                    # that says something new flags the card as awaiting integration; a reply that
+                    # repeats the card changes nothing the student sees.
+                    evidence.append(_ref(member, supplement=True))
                     own.add(link.member)
                     actions["supplement_source_added"] += 1
-                    if description:
-                        description = (
-                            description + "\n\nДополнение: " + clean_text(member.text)[:APPEND_LIMIT]
-                        )[:8000]
-                        actions["supplement_text_appended"] += 1
+                    known = f"{proposal.title or ''}\n{description or ''}"
+                    if supplement_adds_information(known, member.text or ""):
+                        reasons = _with_reason(reasons, PENDING_INTEGRATION)
+                        actions["supplement_pending_integration"] += 1
                 elif CONTENT_SIGNAL.search(member.text or ""):
                     reasons = _with_reason(reasons, "possible_missing_supplement")
                     actions["possible_missing_supplement_flagged"] += 1

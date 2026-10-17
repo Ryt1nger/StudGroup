@@ -29,7 +29,10 @@ def validate_fact_value(fact_type, value, confidence):
         not isinstance(value, dict)
         or not value
         or set(value) - allowed
-        or any(not isinstance(item, str) or not item.strip() or len(item) > 255 for item in value.values())
+        or any(
+            not isinstance(item, str) or not item.strip() or len(item) > 255
+            for item in value.values()
+        )
     ):
         raise ValueError("invalid_structured_knowledge_value")
 
@@ -74,7 +77,11 @@ async def propose_fact(
         .with_for_update()
     )
     value_json = json.dumps(value, ensure_ascii=False, sort_keys=True)
-    if previous and previous.value_json == value_json and previous.status in {"proposed", "verified"}:
+    if (
+        previous
+        and previous.value_json == value_json
+        and previous.status in {"proposed", "verified"}
+    ):
         return previous
     fact = GroupKnowledgeFact(
         group_id=group_id,

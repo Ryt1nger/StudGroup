@@ -185,9 +185,7 @@ def test_pilot_transition_and_rollback_preserve_product_rows(client):
             await db.commit()
             assert legacy.legacy_writes and not legacy.new_writes
             assert await db.scalar(select(func.count()).select_from(Homework)) == 1
-            assert await db.scalar(
-                select(func.count()).select_from(GroupAnalysisModeHistory)
-            ) == 3
+            assert await db.scalar(select(func.count()).select_from(GroupAnalysisModeHistory)) == 3
 
     asyncio.run(run())
 

@@ -273,9 +273,7 @@ def test_context_diagnostics_report_structure_without_values():
             "discussion_facts": [
                 {
                     "summary": "anonymized fact",
-                    "evidence": [
-                        {"source_id": 10, "revision": 1, "quote": "anonymized"}
-                    ],
+                    "evidence": [{"source_id": 10, "revision": 1, "quote": "anonymized"}],
                 }
             ],
             "conflicts": [],
@@ -435,12 +433,16 @@ def test_shadow_postgres_e2e_preserves_multiple_proposals_without_product_writes
                 )
             else:
                 first = proposal().model_dump(mode="json")
-                second = proposal().model_copy(
-                    update={
-                        "title": "Подготовить определение",
-                        "description": "Подготовить определение функции.",
-                    }
-                ).model_dump(mode="json")
+                second = (
+                    proposal()
+                    .model_copy(
+                        update={
+                            "title": "Подготовить определение",
+                            "description": "Подготовить определение функции.",
+                        }
+                    )
+                    .model_dump(mode="json")
+                )
                 payload = extraction_payload() | {"proposals": [first, second]}
             return ProviderResponse(
                 content=json.dumps(payload),
@@ -614,12 +616,10 @@ def test_one_time_canary_preparation_is_idempotent_and_leaves_one_queued_run(cli
     before = product_snapshot(client)
 
     assert (
-        asyncio.run(prepare_shadow_canary(client.app.state.engine, settings))
-        == "prepared_queued"
+        asyncio.run(prepare_shadow_canary(client.app.state.engine, settings)) == "prepared_queued"
     )
     assert (
-        asyncio.run(prepare_shadow_canary(client.app.state.engine, settings))
-        == "prepared_existing"
+        asyncio.run(prepare_shadow_canary(client.app.state.engine, settings)) == "prepared_existing"
     )
     assert product_snapshot(client) == before
 
@@ -631,9 +631,7 @@ def test_one_time_canary_preparation_is_idempotent_and_leaves_one_queued_run(cli
             assert rows[0].attempts == 0
             assert rows[0].lease_until is None
             assert rows[0].reserved_usd == 0
-            assert json.loads(rows[0].metrics_json) == {
-                "preparation_key": "canary-test"
-            }
+            assert json.loads(rows[0].metrics_json) == {"preparation_key": "canary-test"}
 
     asyncio.run(inspect())
 
@@ -680,8 +678,7 @@ def test_canary_only_claims_the_single_prepared_run_without_enqueuing_another(cl
     provider = HybridProvider()
 
     assert (
-        asyncio.run(prepare_shadow_canary(client.app.state.engine, disabled))
-        == "prepared_queued"
+        asyncio.run(prepare_shadow_canary(client.app.state.engine, disabled)) == "prepared_queued"
     )
     assert (
         asyncio.run(dispatch_next(client.app.state.engine, enabled, provider, datetime.now(UTC)))
@@ -730,10 +727,7 @@ def test_shadow_canary_recovers_only_one_stranded_run_and_does_not_enqueue(clien
         asyncio.run(dispatch_next(client.app.state.engine, canary, provider, NOW))
         == "shadow_completed"
     )
-    assert (
-        asyncio.run(dispatch_next(client.app.state.engine, canary, provider, NOW))
-        == "disabled"
-    )
+    assert asyncio.run(dispatch_next(client.app.state.engine, canary, provider, NOW)) == "disabled"
     assert product_snapshot(client) == before
     assert len(provider.requests) == 2
 
@@ -925,8 +919,9 @@ def test_owner_chosen_canary_message_overrides_the_newer_than_switch_window(clie
         status = await prepare_shadow_canary(client.app.state.engine, settings)
         async with AsyncSession(client.app.state.engine) as db:
             row = await db.scalar(
-                select(RawMessage.telegram_message_id)
-                .join(ShadowEvaluationRun, ShadowEvaluationRun.raw_message_id == RawMessage.id)
+                select(RawMessage.telegram_message_id).join(
+                    ShadowEvaluationRun, ShadowEvaluationRun.raw_message_id == RawMessage.id
+                )
             )
         return status, row
 
@@ -939,7 +934,9 @@ def test_owner_chosen_canary_message_overrides_the_newer_than_switch_window(clie
     again = asyncio.run(
         prepare_shadow_canary(
             client.app.state.engine,
-            Settings(**base, ai_shadow_prepare_once_key="target-1", ai_shadow_prepare_message_id=81),
+            Settings(
+                **base, ai_shadow_prepare_once_key="target-1", ai_shadow_prepare_message_id=81
+            ),
         )
     )
     assert again == "prepared_existing"  # idempotent: no second package

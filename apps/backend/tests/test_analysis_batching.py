@@ -127,9 +127,7 @@ def test_segment_persistence_is_idempotent_and_edit_creates_new_version(client):
             second = await persist_segment_plans(db, group.id, edited, BASE + timedelta(minutes=1))
             await db.commit()
             assert second[0].version == 2
-            assert (
-                await db.scalar(select(func.count()).select_from(ConversationSegment)) == 2
-            )
+            assert await db.scalar(select(func.count()).select_from(ConversationSegment)) == 2
             assert await db.scalar(select(func.count()).select_from(SegmentSourceLink)) == 2
 
     import asyncio

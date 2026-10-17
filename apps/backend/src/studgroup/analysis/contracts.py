@@ -77,6 +77,43 @@ class SourceMessage(StrictDTO):
         return self
 
 
+class SubjectEntry(StrictDTO):
+    """One real subject of a group, as the trusted catalog states it."""
+
+    id: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=255)
+    aliases: list[str] = Field(default_factory=list, max_length=20)
+    teachers: list[str] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def validate_labels(self):
+        if not self.name.strip() or any(
+            not item.strip() or len(item) > 255 for item in [*self.aliases, *self.teachers]
+        ):
+            raise ValueError("blank_or_long_catalog_label")
+        return self
+
+
+class SubjectCatalog(StrictDTO):
+    """Trusted list of the real subjects of ONE group (internal contract, see subject_catalog.py).
+
+    ``complete`` is true only when the source guarantees that no subject of the group is missing;
+    an incomplete catalog never makes a subject outside it wrong, only unconfirmed.
+    """
+
+    group_id: UUID
+    version: str | None = Field(default=None, max_length=64)
+    complete: bool = False
+    subjects: list[SubjectEntry] = Field(default_factory=list, max_length=80)
+
+    @model_validator(mode="after")
+    def validate_unique_ids(self):
+        ids = [row.id for row in self.subjects]
+        if len(ids) != len(set(ids)):
+            raise ValueError("duplicate_subject_id")
+        return self
+
+
 class AnalysisInput(StrictDTO):
     schema_version: Literal[ANALYSIS_SCHEMA_VERSION] = ANALYSIS_SCHEMA_VERSION
     engine_version: Literal[ANALYSIS_ENGINE_VERSION] = ANALYSIS_ENGINE_VERSION
@@ -85,6 +122,9 @@ class AnalysisInput(StrictDTO):
     source_revision: int = Field(ge=1)
     target_message_ids: list[int] = Field(min_length=1, max_length=80)
     messages: list[SourceMessage] = Field(min_length=1, max_length=80)
+    # Not part of the source snapshot (see shadow.source_snapshot_sha256): reference data the
+    # frozen run was analysed with. Absent on every run created before the catalog existed.
+    subject_catalog: SubjectCatalog | None = None
 
     @model_validator(mode="after")
     def validate_scope(self):
@@ -173,6 +213,13 @@ class ProposedAcademicItem(StrictDTO):
         "other_academic_deadline",
     ]
     subject: str | None = Field(default=None, max_length=255)
+    # The model may name a catalog subject by id. The adapter checks it against the group's trusted
+    # catalog and keeps it only when it is there; ``subject_source`` is set by code alone (never
+    # accepted from the model) and says the subject was confirmed by that catalog.
+    subject_id: str | None = Field(default=None, max_length=64)
+    subject_source: Literal["catalog"] | None = Field(
+        default=None, json_schema_extra={"internal": True}
+    )
     title: str | None = Field(default=None, max_length=255)
     description: str | None = Field(default=None, max_length=8000)
     deadline: DeadlineValue = Field(default_factory=DeadlineValue)
@@ -207,30 +254,116 @@ class ProposalSchemaIssue(StrictDTO):
         pattern=r"^[A-Za-z0-9_<>.\[\]*-]+$",
     )
     error_type: str = Field(max_length=64, pattern=r"^[a-z][a-z0-9_]{0,63}$")
-    expected: Literal[
-        "required_field",
-        "field_not_allowed",
-        "string",
-        "integer",
-        "boolean",
-        "array",
-        "object",
-        "allowed_literal",
-        "timezone_aware_datetime",
-        "valid_identifier",
-        "valid_value",
-    ] | None = None
-    received_type: Literal[
-        "missing",
-        "null",
-        "string",
-        "integer",
-        "number",
-        "boolean",
-        "array",
-        "object",
-        "other",
-    ] | None = None
+    expected: (
+        Literal[
+            "required_field",
+            "field_not_allowed",
+            "string",
+            "integer",
+            "boolean",
+            "array",
+            "object",
+            "allowed_literal",
+            "timezone_aware_datetime",
+            "valid_identifier",
+            "valid_value",
+        ]
+        | None
+    ) = None
+    received_type: (
+        Literal[
+            "missing",
+            "null",
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "array",
+            "object",
+            "other",
+        ]
+        | None
+    ) = None
+
+
+# The three product categories and how the published contract maps onto them. A proposal is only
+# ever a "homework" (destination task) or a "check" (destination deadline); events and everything
+# else the model finds travel as UnpublishedCandidate and are never shown to students.
+PRODUCT_CATEGORY = {
+    "homework": "homework",
+    "test": "check",
+    "control_point": "check",
+    "assessment": "check",
+    "credit": "check",
+    "exam": "check",
+    "other_academic_deadline": "other_deadline",
+}
+
+
+class CandidateProposal(StrictDTO):
+    """What the model may report besides publishable proposals (never published).
+
+    Free discovery: an event, an organisational instruction, other useful information or an item
+    the model cannot confidently categorise. It must still be supported by cited messages.
+    """
+
+    category: Literal["homework", "check", "event", "organizational", "information", "other"]
+    title: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=8000)
+    subject: str | None = Field(default=None, max_length=255)
+    when_text: str | None = Field(default=None, max_length=255)
+    reason: str | None = Field(default=None, max_length=300)
+    audience: Audience = Field(default_factory=Audience)
+    confidence: int = Field(default=50, ge=0, le=100)
+    evidence: list[EvidenceRef] = Field(min_length=1, max_length=24)
+
+
+class UnpublishedCandidate(CandidateProposal):
+    """A stored, non-publishable finding. The fields below are set by code, never by the model.
+
+    It keeps the content (not just a reason code) of anything that is not a card so it can be
+    reviewed or re-evaluated later: model candidates, and proposals the strict contract rejected
+    (for example an unknown kind). Nothing here is applied, projected or shown to students.
+    """
+
+    hold_code: str = Field(default="category_not_published", max_length=64)
+    # How far the cited sources are confirmed: verified = every cited message exists in the request
+    # at the cited revision; partially_verified = some claimed ids were unusable and dropped;
+    # defaulted_to_target = none was usable, the evidence below is the run's target message put
+    # there by code and is NOT a source the model confirmed (claimed_source_ids is what it cited).
+    source_status: Literal["verified", "partially_verified", "defaulted_to_target"] = "verified"
+    claimed_source_ids: list[int] = Field(default_factory=list, max_length=24)
+    origin: Literal["model_candidate", "rejected_proposal"] = "model_candidate"
+    model_label: str | None = Field(default=None, max_length=64)
+    proposal_ordinal: int | None = Field(default=None, ge=0)
+    issues: list[ProposalSchemaIssue] = Field(default_factory=list, max_length=12)
+    attention_reasons: list[str] = Field(default_factory=list, max_length=20)
+
+
+class EventRecord(StrictDTO):
+    """A stored event finding as a self-contained structured record (never published).
+
+    Built from a held candidate of category ``event`` by ``candidates.event_records``; everything a
+    future Mini App event needs is here, so nothing has to re-read the chat. ``when_text`` is the
+    date/time as the messages worded it (no computed date). ``promotion_blockers`` lists why the
+    record must not be published as it stands; an empty list means the data is complete, not that
+    publishing is approved.
+    """
+
+    record_type: Literal["event"] = "event"
+    fingerprint: str = Field(min_length=64, max_length=64)
+    title: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=8000)
+    when_text: str | None = Field(default=None, max_length=255)
+    classification_reason: str | None = Field(default=None, max_length=300)
+    audience: Audience = Field(default_factory=Audience)
+    confidence: int = Field(ge=0, le=100)
+    source_message_ids: list[int] = Field(min_length=1, max_length=24)
+    evidence: list[EvidenceRef] = Field(min_length=1, max_length=24)
+    source_status: Literal["verified", "partially_verified", "defaulted_to_target"]
+    origin: Literal["model_candidate", "rejected_proposal"]
+    published: Literal[False] = False
+    promotion_blockers: list[str] = Field(default_factory=list, max_length=8)
 
 
 class RejectedItem(StrictDTO):
@@ -239,6 +372,8 @@ class RejectedItem(StrictDTO):
     schema_issues: list[ProposalSchemaIssue] = Field(default_factory=list, max_length=12)
     schema_issues_truncated: bool = False
     repair_outcome: str | None = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    # True when the rejected proposal's content was kept as an UnpublishedCandidate.
+    salvaged: bool = False
 
 
 class AnalysisOutput(StrictDTO):
@@ -246,6 +381,7 @@ class AnalysisOutput(StrictDTO):
     engine_version: Literal[ANALYSIS_ENGINE_VERSION] = ANALYSIS_ENGINE_VERSION
     source_revision: int = Field(ge=1)
     proposals: list[ProposedAcademicItem] = Field(default_factory=list, max_length=40)
+    candidates: list[CandidateProposal] = Field(default_factory=list, max_length=40)
     explicit_empty: bool = False
 
     @model_validator(mode="after")
@@ -264,6 +400,8 @@ class ValidationResult(StrictDTO):
     explicit_empty: bool
     # Value-free counters of deterministic normalizations applied before strict validation.
     adapter_actions: dict[str, int] = Field(default_factory=dict)
+    # Non-publishable findings kept for review/re-evaluation (older stored results have none).
+    candidates: list[UnpublishedCandidate] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_accepted_ordinals(self):

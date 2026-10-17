@@ -14,6 +14,7 @@ from studgroup.analysis.contracts import (
     ANALYSIS_SCHEMA_VERSION,
     AnalysisOutput,
     Audience,
+    CandidateProposal,
     DeadlineValue,
     EvidenceRef,
     ProposedAcademicItem,
@@ -41,6 +42,7 @@ def _render(node, defs):
         fields = ", ".join(
             f"{name}{'' if name in required else '?'}: {_render(child, defs)}"
             for name, child in node.get("properties", {}).items()
+            if not child.get("internal")  # code-set fields are not part of the model's contract
         )
         return "{" + fields + "}"
     if kind == "array":
@@ -66,28 +68,36 @@ DEADLINE_RULES = (
     (
         "deadline.at is an ISO-8601 datetime in group_timezone (an offset-less value is read in "
         "that timezone); deadline.date_only=true means only the calendar date is known: write at as "
-        "that date, e.g. \"2026-10-15\" or midnight local time."
+        'that date, e.g. "2026-10-15" or midnight local time.'
     ),
     (
         "deadline.basis is explicit only when the message text writes a calendar date or a "
         "calendar word you can resolve from that message's local_date and local_weekday "
-        "(\"завтра\", \"послезавтра\", \"в пятницу\"). A reference to the next lesson "
-        "(\"к следующей паре\", \"к следующему занятию\", \"на следующей неделе\") is NOT a "
+        '("завтра", "послезавтра", "в пятницу"). A reference to the next lesson '
+        '("к следующей паре", "к следующему занятию", "на следующей неделе") is NOT a '
         "date: use unknown with at=null, never compute a date from a guessed timetable. "
         "schedule_inferred only when trusted context supplies the date, ambiguous_range for a "
         "range of dates, otherwise unknown."
     ),
     (
         "basis explicit or schedule_inferred REQUIRES a non-null at; date_only=true REQUIRES a "
-        "non-null at. When no date is stated use exactly {\"at\": null, \"date_only\": false, "
-        "\"basis\": \"unknown\"}. Never guess a date to fill a gap."
+        'non-null at. When no date is stated use exactly {"at": null, "date_only": false, '
+        '"basis": "unknown"}. Never guess a date to fill a gap.'
+    ),
+)
+
+CANDIDATE_RULES = (
+    (
+        "candidates is optional (omit it or use [] when there are none). A candidate is something "
+        "useful that is NOT a published card: category event, organizational, information or other, "
+        "or a doubtful homework or check. It needs category and evidence (telegram_message_id and "
+        "revision copied from the supplied messages); title, description, subject, when_text, "
+        "reason, audience and confidence are optional. A candidate is never published."
     ),
 )
 
 PROPOSAL_RULES = (
-    (
-        "destination is task for semantic_kind homework and deadline for every other semantic_kind."
-    ),
+    ("destination is task for semantic_kind homework and deadline for every other semantic_kind."),
     (
         "action=create requires existing_item_id and expected_item_revision to be null. update, "
         "reschedule and cancel require both, copied exactly from trusted existing_items; if the "
@@ -130,7 +140,9 @@ def _example_output() -> dict:
             at=datetime(2026, 10, 20, 0, 0, tzinfo=tz), date_only=True, basis="explicit"
         ),
         confidence=85,
-        evidence=[EvidenceRef(telegram_message_id=102, revision=1, fact_paths=["title", "deadline"])],
+        evidence=[
+            EvidenceRef(telegram_message_id=102, revision=1, fact_paths=["title", "deadline"])
+        ],
     )
     timed = ProposedAcademicItem(
         destination="task",
@@ -147,10 +159,22 @@ def _example_output() -> dict:
             EvidenceRef(telegram_message_id=104, revision=1, fact_paths=["deadline"]),
         ],
     )
-    output = AnalysisOutput(
-        source_revision=1, proposals=[homework, dated, timed], explicit_empty=False
+    event = CandidateProposal(
+        category="event",
+        title="Встреча студентов с выпускниками",
+        description="Встреча студентов с выпускниками кафедры.",
+        when_text="в четверг после пар",
+        reason="Событие: карточки событий пока не публикуются.",
+        confidence=80,
+        evidence=[EvidenceRef(telegram_message_id=105, revision=1, fact_paths=["description"])],
     )
-    return output.model_dump(mode="json")
+    output = AnalysisOutput(
+        source_revision=1,
+        proposals=[homework, dated, timed],
+        candidates=[event],
+        explicit_empty=False,
+    )
+    return output.model_dump(mode="json", exclude={"proposals": {"__all__": {"subject_source"}}})
 
 
 def example_output() -> dict:
@@ -160,15 +184,15 @@ def example_output() -> dict:
 
 def contract_block() -> str:
     example = json.dumps(_example_output(), ensure_ascii=False, separators=(",", ":"))
-    rules = "\n".join(f"- {rule}" for rule in (*PROPOSAL_RULES, *DEADLINE_RULES))
+    rules = "\n".join(f"- {rule}" for rule in (*PROPOSAL_RULES, *CANDIDATE_RULES, *DEADLINE_RULES))
     return (
         "Return JSON only, exactly this contract (generated from the backend models; `?` marks "
         "an optional key, keys not listed are forbidden):\n"
         f"{render_contract()}\n"
-        f"Copy schema_version \"{ANALYSIS_SCHEMA_VERSION}\", engine_version "
-        f"\"{ANALYSIS_ENGINE_VERSION}\" and source_revision exactly from the request. With no "
-        "academic items return proposals [] and explicit_empty true; otherwise explicit_empty "
-        "false.\n"
+        f'Copy schema_version "{ANALYSIS_SCHEMA_VERSION}", engine_version '
+        f'"{ANALYSIS_ENGINE_VERSION}" and source_revision exactly from the request. With no '
+        "publishable proposals return proposals [] and explicit_empty true (candidates may still "
+        "be listed); otherwise explicit_empty false.\n"
         f"Rules:\n{rules}\n"
         "Valid example (ids, subjects and dates are illustrative only; never copy them):\n"
         f"{example}"

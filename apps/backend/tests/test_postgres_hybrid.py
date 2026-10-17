@@ -61,19 +61,30 @@ class RealShapedProvider(HybridProvider):
         if request.prompt_version == EXTRACTION_PROMPT_VERSION:
             self.requests.append(request)
             message = next(
-                row for row in request.user_payload["messages"]
+                row
+                for row in request.user_payload["messages"]
                 if row["telegram_message_id"] == self.target
             )
             revision = request.user_payload["source_revision"]
             if "конспект" in message["text"]:
-                ref = [{"telegram_message_id": message["telegram_message_id"],
-                        "revision": message["revision"], "fact_paths": ["description"]}]
+                ref = [
+                    {
+                        "telegram_message_id": message["telegram_message_id"],
+                        "revision": message["revision"],
+                        "fact_paths": ["description"],
+                    }
+                ]
                 good = {
-                    "semantic_kind": "homework", "subject": "Физика",
+                    "semantic_kind": "homework",
+                    "subject": "Физика",
                     "title": "Конспект параграфа",
-                    "description": "Подготовить конспект параграфа.", "confidence": 90,
-                    "deadline": {"at": "2026-10-15T23:59:00+03:00", "date_only": False,
-                                 "basis": "explicit"},
+                    "description": "Подготовить конспект параграфа.",
+                    "confidence": 90,
+                    "deadline": {
+                        "at": "2026-10-15T23:59:00+03:00",
+                        "date_only": False,
+                        "basis": "explicit",
+                    },
                     "evidence": ref,
                 }
                 bad = good | {

@@ -19,10 +19,20 @@ import { RequestError } from '../../ui/RequestError';
 import { Skeleton } from '../../ui/Skeleton';
 import { ThemedImage } from '../../ui/ThemedImage';
 import { AlertCircle, ChevronLeft, Clock, Refresh } from '../../ui/icons';
-import { changedAfterCompletion, needsClarification, visibleClarification, showUrgent } from '../today/cardStatus';
+import {
+  changedAfterCompletion,
+  needsClarification,
+  visibleClarification,
+  showUrgent,
+} from '../today/cardStatus';
 import { processingBadge, urgencyBadge, verificationBadge, sourceLabel } from '../today/homeworkBadges';
 import { CompletionBar } from './CompletionBar';
 import { SourceBlock } from './SourceBlock';
+import {
+  toHomeworkCardViewModel,
+  type HomeworkCardViewModel,
+  type LearningCardUpdateView,
+} from './cardViewModel';
 import styles from './HomeworkScreen.module.css';
 
 function Loading() {
@@ -42,7 +52,19 @@ interface InfoToggle {
   onToggle: () => void;
 }
 
-function Hero({ detail, nowMs, timeZone, info }: { detail: HomeworkDetail; nowMs: number; timeZone: string; info: InfoToggle | null }) {
+function Hero({
+  detail,
+  view,
+  nowMs,
+  timeZone,
+  info,
+}: {
+  detail: HomeworkDetail;
+  view: HomeworkCardViewModel;
+  nowMs: number;
+  timeZone: string;
+  info: InfoToggle | null;
+}) {
   const urgent = showUrgent(detail);
   const known = detail.deadline.state === 'known' && detail.deadline.at;
   const tile = known ? formatDateTile(detail.deadline.at as string, timeZone) : null;
@@ -75,13 +97,58 @@ function Hero({ detail, nowMs, timeZone, info }: { detail: HomeworkDetail; nowMs
         <h2 className={styles.heroTitle}>{detail.title}</h2>
         <p className={styles.heroDeadline}>
           <Clock size={14} />
-          <span>{deadline ? `${ru.detail.deadlinePrefix}: ${deadline}` : ru.card.deadlineUnknown}</span>
+          <span>{deadline ? `${ru.detail.deadlinePrefix}: ${deadline}` : ru.card.deadlineAbsent}</span>
         </p>
+        <p className={styles.certainty}>{ru.card.deadlineCertainty[view.deadlineCertainty]}</p>
         <div className={styles.heroBadges}>
-          <Badge tone="primary">{ru.card.homeworkChip}</Badge>
+          <Badge tone="primary">{ru.card.kind[view.kind]}</Badge>
+          {detail.status === 'published' ? <Badge tone="success">{ru.card.published}</Badge> : null}
+          {detail.status === 'cancelled' ? <Badge tone="neutral">{ru.card.cancelled}</Badge> : null}
           {urgent ? urgencyBadge(detail.urgency) : null}
         </div>
       </div>
+    </section>
+  );
+}
+
+function UpdatesBlock({
+  detail,
+  items,
+  timeZone,
+}: {
+  detail: HomeworkDetail;
+  items: LearningCardUpdateView[];
+  timeZone: string;
+}) {
+  if (!items.length && !detail.significant_update) return null;
+  const visible = items.length
+    ? items
+    : [
+        {
+          id: 'significant-update',
+          kind: 'change' as const,
+          text: ru.detail.cardUpdated,
+          createdAt: detail.significant_updated_at ?? detail.updated_at,
+        },
+      ];
+  return (
+    <section className={styles.card} aria-labelledby="updates-title">
+      <h2 id="updates-title" className={styles.cardTitle}>
+        {ru.detail.updates}
+      </h2>
+      <ul className={styles.updates}>
+        {visible.map((item) => (
+          <li key={item.id} className={styles.updateItem}>
+            <span className={styles.updateKind}>{ru.detail.updateKind[item.kind]}</span>
+            <span>{item.text}</span>
+            {item.createdAt ? (
+              <time dateTime={item.createdAt}>
+                {formatShortDate(item.createdAt, timeZone)} · {formatTime(item.createdAt, timeZone)}
+              </time>
+            ) : null}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -98,7 +165,11 @@ function AlertsBlock({ detail }: { detail: HomeworkDetail }) {
     <section className={styles.card}>
       <div className={styles.statusRow}>
         {cancelled ? <Badge tone="neutral">{ru.card.cancelled}</Badge> : null}
-        {changed ? <Badge tone="warning" icon={<Refresh />}>{ru.card.updatedCheck}</Badge> : null}
+        {changed ? (
+          <Badge tone="warning" icon={<Refresh />}>
+            {ru.card.updatedCheck}
+          </Badge>
+        ) : null}
         {clarify ? verificationBadge(detail) : null}
         {delayed ? processingBadge(detail.processing.state) : null}
       </div>
@@ -135,7 +206,12 @@ function infoContent(detail: HomeworkDetail, timeZone: string) {
 /** Smoothly expanding card: the height animates via grid rows, content is inert while collapsed. */
 function InfoPanel({ id, expanded, children }: { id: string; expanded: boolean; children: ReactNode }) {
   return (
-    <div id={id} className={clsx(styles.infoWrap, expanded && styles.infoOpen)} aria-hidden={!expanded} inert={!expanded}>
+    <div
+      id={id}
+      className={clsx(styles.infoWrap, expanded && styles.infoOpen)}
+      aria-hidden={!expanded}
+      inert={!expanded}
+    >
       <div className={styles.infoClip}>
         <section className={clsx(styles.card, styles.infoCard)}>{children}</section>
       </div>
@@ -148,10 +224,12 @@ export function HomeworkScreen() {
   const navigate = useNavigate();
   const query = useHomeworkQuery(homeworkId);
   const detail = query.data;
+  const subject = detail ? toHomeworkCardViewModel(detail).subject : null;
   const nowMs = useServerNow(detail?.generated_at, query.dataUpdatedAt);
 
   const goBack = useCallback(() => {
-    if (window.history.state && typeof window.history.state.idx === 'number' && window.history.state.idx > 0) void navigate(-1);
+    if (window.history.state && typeof window.history.state.idx === 'number' && window.history.state.idx > 0)
+      void navigate(-1);
     else void navigate('/today', { replace: true });
   }, [navigate]);
   const nativeBack = useBackButton(goBack);
@@ -169,15 +247,25 @@ export function HomeworkScreen() {
         ) : (
           <span className={styles.backSpacer} />
         )}
-        <h1 className={styles.headerTitle}>{detail ? detail.subject.name : <Skeleton height={20} width={160} />}</h1>
+        <h1 className={styles.headerTitle}>
+          {detail ? (subject?.name ?? 'Без предмета') : <Skeleton height={20} width={160} />}
+        </h1>
         <span className={styles.backSpacer} />
       </header>
 
       {query.isPending ? <Loading /> : null}
-      {query.isError && !detail ? <RequestError error={query.error} onRetry={() => void query.refetch()} homeLink /> : null}
+      {query.isError && !detail ? (
+        <RequestError error={query.error} onRetry={() => void query.refetch()} homeLink />
+      ) : null}
 
       {detail ? (
-        <DetailBody detail={detail} nowMs={nowMs} gaveUp={gaveUp} restart={restart} refreshing={query.isFetching} />
+        <DetailBody
+          detail={detail}
+          nowMs={nowMs}
+          gaveUp={gaveUp}
+          restart={restart}
+          refreshing={query.isFetching}
+        />
       ) : null}
     </div>
   );
@@ -199,6 +287,7 @@ function DetailBody({
   // HomeworkDetail carries no timezone; the group timezone comes from the session.
   const timeZone = useGroupTimeZone();
   const description = detail.description ?? detail.summary ?? null;
+  const view = toHomeworkCardViewModel(detail);
   const [infoOpen, setInfoOpen] = useState(false);
   const panelId = useId();
   const info = infoContent(detail, timeZone);
@@ -215,31 +304,48 @@ function DetailBody({
         </Banner>
       ) : null}
       {detail.processing.state !== 'none' && gaveUp ? (
-        <Banner tone="info" action={<Button variant="secondary" onClick={restart}>{ru.today.recheck}</Button>}>
+        <Banner
+          tone="info"
+          action={
+            <Button variant="secondary" onClick={restart}>
+              {ru.today.recheck}
+            </Button>
+          }
+        >
           {ru.today.pollStopped}
         </Banner>
       ) : null}
 
       <Hero
         detail={detail}
+        view={view}
         nowMs={nowMs}
         timeZone={timeZone}
         info={info ? { expanded: infoOpen, panelId, onToggle: () => setInfoOpen((v) => !v) } : null}
       />
-      {info ? <InfoPanel id={panelId} expanded={infoOpen}>{info}</InfoPanel> : null}
+      {info ? (
+        <InfoPanel id={panelId} expanded={infoOpen}>
+          {info}
+        </InfoPanel>
+      ) : null}
       <AlertsBlock detail={detail} />
 
       <section className={styles.card} aria-labelledby="todo-title">
         <h2 id="todo-title" className={styles.cardTitle}>
           {ru.detail.whatToDo}
         </h2>
-        <p className={clsx(styles.description, !description && styles.muted)}>{description ?? ru.detail.noDescription}</p>
+        <p className={clsx(styles.description, !description && styles.muted)}>
+          {description ?? ru.detail.noDescription}
+        </p>
       </section>
 
-      <SourceBlock detail={detail} />
+      <UpdatesBlock detail={detail} items={view.updates} timeZone={timeZone} />
+      <SourceBlock sources={view.sources} timeZone={timeZone} />
       <section className={styles.card} aria-labelledby="homework-materials">
-        <h2 id="homework-materials" className={styles.cardTitle}>Материалы</h2>
-        <MaterialLinks items={detail.materials} />
+        <h2 id="homework-materials" className={styles.cardTitle}>
+          Материалы
+        </h2>
+        <MaterialLinks items={view.materials} />
       </section>
       <div className={styles.ctaSpace} />
       <CompletionBar detail={detail} refreshing={refreshing} />

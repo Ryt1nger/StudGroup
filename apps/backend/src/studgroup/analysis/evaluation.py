@@ -13,10 +13,7 @@ class EntityMatch:
 
 
 def evidence_ids(item):
-    return {
-        evidence.telegram_message_id
-        for evidence in item.evidence
-    }
+    return {evidence.telegram_message_id for evidence in item.evidence}
 
 
 def overlap(left, right):
@@ -41,9 +38,7 @@ def match_entities(reference, candidate):
             continue
         used_reference.add(reference_index)
         used_candidate.add(candidate_index)
-        matches.append(
-            EntityMatch(reference_index, candidate_index, -negative_score)
-        )
+        matches.append(EntityMatch(reference_index, candidate_index, -negative_score))
     return matches
 
 
@@ -65,8 +60,7 @@ def compare_entities(reference, candidate, *, reference_actions=None, candidate_
         kind_matches += expected.semantic_kind == actual.semantic_kind
         if reference_actions is not None and candidate_actions is not None:
             action_matches += (
-                reference_actions[match.reference_index]
-                == candidate_actions[match.candidate_index]
+                reference_actions[match.reference_index] == candidate_actions[match.candidate_index]
             )
     reference_sources = [evidence_ids(item) for item in reference]
     candidate_sources = [evidence_ids(item) for item in candidate]
@@ -110,12 +104,8 @@ def aggregate_display_reviews(reviews):
         "factual_consistency": safe_ratio(
             sum(review["factually_consistent"] for review in reviews), len(reviews)
         ),
-        "completeness_mean": statistics.mean(
-            review["completeness"] for review in reviews
-        ),
-        "readability_mean": statistics.mean(
-            review["readability"] for review in reviews
-        ),
+        "completeness_mean": statistics.mean(review["completeness"] for review in reviews),
+        "readability_mean": statistics.mean(review["readability"] for review in reviews),
     }
 
 

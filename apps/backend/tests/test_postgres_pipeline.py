@@ -162,9 +162,7 @@ def test_postgres_telegram_worker_router_shadow_e2e_is_read_only():
                     counts[model.__tablename__] = await db.scalar(
                         select(func.count()).select_from(model).where(model.group_id == group_id)
                     )
-                counts["bot_outbox"] = await db.scalar(
-                    select(func.count()).select_from(BotOutbox)
-                )
+                counts["bot_outbox"] = await db.scalar(select(func.count()).select_from(BotOutbox))
                 return homework, counts
         finally:
             await engine.dispose()
@@ -214,9 +212,7 @@ def test_postgres_telegram_worker_router_shadow_e2e_is_read_only():
         assert client.post("/v1/telegram/webhook", json=payload, headers=headers).status_code == 200
         # Telegram retries are acknowledged idempotently.
         assert client.post("/v1/telegram/webhook", json=payload, headers=headers).status_code == 200
-        statuses = [
-            asyncio.run(sweep_once(config, provider))["status"] for _ in range(3)
-        ]
+        statuses = [asyncio.run(sweep_once(config, provider))["status"] for _ in range(3)]
         assert statuses == ["structure_mapped", "shadow_completed", "completed"]
         stable = asyncio.run(snapshot(url, group_id))
         row = asyncio.run(shadow_row(url, group_id))
@@ -354,17 +350,12 @@ def test_postgres_shadow_budget_reservation_is_atomic_under_concurrency():
             process_shadow_next(engine, settings, provider, now),
         )
         assert sorted(outcomes) == ["completed", "idle"]
-        assert (
-            await process_shadow_next(engine, settings, provider, now)
-            == "budget_deferred"
-        )
+        assert await process_shadow_next(engine, settings, provider, now) == "budget_deferred"
         assert len(provider.requests) == 2
         async with AsyncSession(engine) as db:
             rows = (
                 await db.scalars(
-                    select(ShadowEvaluationRun).where(
-                        ShadowEvaluationRun.group_id == group_id
-                    )
+                    select(ShadowEvaluationRun).where(ShadowEvaluationRun.group_id == group_id)
                 )
             ).all()
             assert sorted(row.state for row in rows) == ["budget_deferred", "completed"]
@@ -373,5 +364,34 @@ def test_postgres_shadow_budget_reservation_is_atomic_under_concurrency():
             group.pilot_authorized = False
             await db.commit()
         await engine.dispose()
+
+    asyncio.run(run())
+
+
+def test_postgres_missing_budget_row_is_created_once_under_concurrency():
+    """Two workers meeting an absent ai_control row must not both insert id=1."""
+    from studgroup.models import AIControl
+    from studgroup.processing import ensure_ai_control
+
+    async def run():
+        engine = create_async_engine(os.environ["POSTGRES_TEST_URL"], poolclass=NullPool)
+
+        async def worker():
+            async with AsyncSession(engine) as db:
+                control_id = (await ensure_ai_control(db)).id
+                await asyncio.sleep(0.05)  # hold the row lock so the other worker must wait
+                await db.commit()
+                return control_id
+
+        try:
+            for _ in range(5):
+                async with AsyncSession(engine) as db:
+                    await db.execute(delete(AIControl))
+                    await db.commit()
+                assert await asyncio.gather(worker(), worker(), worker()) == [1, 1, 1]
+                async with AsyncSession(engine) as db:
+                    assert await db.scalar(select(func.count()).select_from(AIControl)) == 1
+        finally:
+            await engine.dispose()
 
     asyncio.run(run())

@@ -58,15 +58,9 @@ def upgrade():
         sa.Column("completed_at", sa.DateTime(timezone=True)),
         sa.Column("delete_at", sa.DateTime(timezone=True), nullable=False),
     )
-    op.create_index(
-        "ix_shadow_evaluation_runs_group_id", "shadow_evaluation_runs", ["group_id"]
-    )
-    op.create_index(
-        "ix_shadow_evaluation_runs_batch_id", "shadow_evaluation_runs", ["batch_id"]
-    )
-    op.create_index(
-        "ix_shadow_evaluation_runs_delete_at", "shadow_evaluation_runs", ["delete_at"]
-    )
+    op.create_index("ix_shadow_evaluation_runs_group_id", "shadow_evaluation_runs", ["group_id"])
+    op.create_index("ix_shadow_evaluation_runs_batch_id", "shadow_evaluation_runs", ["batch_id"])
+    op.create_index("ix_shadow_evaluation_runs_delete_at", "shadow_evaluation_runs", ["delete_at"])
 
 
 def downgrade():

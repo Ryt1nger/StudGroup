@@ -56,7 +56,9 @@ def upgrade():
         "shadow_evaluation_runs",
         ["raw_message_id"],
     )
-    op.create_unique_constraint("uq_shadow_evaluation_runs_job_id", "shadow_evaluation_runs", ["job_id"])
+    op.create_unique_constraint(
+        "uq_shadow_evaluation_runs_job_id", "shadow_evaluation_runs", ["job_id"]
+    )
     op.create_unique_constraint(
         "uq_shadow_evaluation_runs_source_revision",
         "shadow_evaluation_runs",
@@ -78,7 +80,9 @@ def downgrade():
         "shadow_evaluation_runs",
         type_="foreignkey",
     )
-    op.drop_constraint("fk_shadow_evaluation_runs_job_id", "shadow_evaluation_runs", type_="foreignkey")
+    op.drop_constraint(
+        "fk_shadow_evaluation_runs_job_id", "shadow_evaluation_runs", type_="foreignkey"
+    )
     for name in (
         "reserved_usd",
         "prompt_cache_hit_tokens",

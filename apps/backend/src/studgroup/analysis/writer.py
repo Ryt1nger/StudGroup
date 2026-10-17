@@ -45,9 +45,7 @@ async def apply_validated_batch(
                 reason_code=rejected.reason_code,
             )
         )
-    for ordinal, proposal in zip(
-        validation.accepted_ordinals, validation.accepted, strict=True
-    ):
+    for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted, strict=True):
         card = edit_card(proposal, messages, verified_subjects=verified_subjects)
         resolution = await resolve_proposal(
             db,
@@ -65,9 +63,7 @@ async def apply_validated_batch(
                 ApplicationOutcome(
                     source_revision=validation.source_revision,
                     proposal_ordinal=ordinal,
-                    technical_status=(
-                        "stale" if resolution.action == "stale" else "parsed"
-                    ),
+                    technical_status=("stale" if resolution.action == "stale" else "parsed"),
                     application_status=resolution.action,
                     reason_code=resolution.reason_code,
                 )

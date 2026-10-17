@@ -55,9 +55,7 @@ def test_context_exposes_only_pseudonym_and_attachment_kinds():
     context = build_context(messages, 1)
     assert context[0]["author_alias"] == "member-deadbeef"
     assert context[0]["attachment_kinds"] == ["photo"]
-    assert context[0]["attachments"] == [
-        {"kind": "photo", "processing_state": "metadata_only"}
-    ]
+    assert context[0]["attachments"] == [{"kind": "photo", "processing_state": "metadata_only"}]
 
 
 def test_topic_target_can_use_explicit_cross_topic_subject_or_reply():
