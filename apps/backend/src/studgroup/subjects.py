@@ -1,6 +1,5 @@
 """Subject overview derived from active-group published data; no separate subject store."""
 
-import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Annotated
@@ -14,12 +13,21 @@ from studgroup.academic_deadlines import archived as deadline_archived
 from studgroup.api import active_group, database
 from studgroup.homework import archived_condition
 from studgroup.models import AcademicDeadline, Group, Homework, SchedulePattern
+from studgroup.subject_identity import match_key, subject_uuid
 
 router = APIRouter(prefix="/v1")
 
 
-def normalized(value):
-    return " ".join(value.casefold().replace("ё", "е").split())
+PLACEHOLDER_SUBJECTS = {"предмет не указан", "неизвестно"}
+
+
+def is_placeholder(value):
+    return match_key(value) in PLACEHOLDER_SUBJECTS
+
+
+def subject_key(value):
+    # Exactly the identity formula: names that differ by ё/е or by spacing stay separate.
+    return value.casefold()
 
 
 @router.get("/subjects")
@@ -43,7 +51,7 @@ async def subjects(
         )
     ).all()
     for row in patterns:
-        key = normalized(row.subject)
+        key = subject_key(row.subject)
         names.setdefault(key, row.subject)
 
     homeworks = (
@@ -57,9 +65,9 @@ async def subjects(
         )
     ).all()
     for row in homeworks:
-        if normalized(row.subject_name) in {"предмет не указан", "неизвестно"}:
+        if is_placeholder(row.subject_name):
             continue
-        key = normalized(row.subject_name)
+        key = subject_key(row.subject_name)
         names.setdefault(key, row.subject_name)
         ids[key].append(row.subject_id)
         homework_count[key] += 1
@@ -75,15 +83,15 @@ async def subjects(
     for row in deadlines:
         if deadline_archived(row, now, group.timezone):
             continue
-        if normalized(row.subject) in {"предмет не указан", "неизвестно"}:
+        if is_placeholder(row.subject):
             continue
-        key = normalized(row.subject)
+        key = subject_key(row.subject)
         names.setdefault(key, row.subject)
         deadline_count[key] += 1
 
     items = []
     for key, name in sorted(names.items(), key=lambda item: item[1].casefold()):
-        stable_id = min(ids[key], key=str) if ids[key] else uuid.uuid5(group.id, key)
+        stable_id = min(ids[key], key=str) if ids[key] else subject_uuid(group.id, name)
         items.append(
             {
                 "id": stable_id,

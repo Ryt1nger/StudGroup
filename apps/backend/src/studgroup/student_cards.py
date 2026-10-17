@@ -5,7 +5,6 @@ evaluation results and never makes a canonical item public by itself.
 """
 
 import json
-import uuid
 from datetime import UTC
 
 from sqlalchemy import select
@@ -22,6 +21,7 @@ from studgroup.models import (
     MessageAttachment,
     RawMessage,
 )
+from studgroup.subject_identity import subject_uuid
 
 CARD_KINDS = {
     "homework",
@@ -355,9 +355,7 @@ async def enrich_deadline(db, group, row: AcademicDeadline, now):
         kind = item.semantic_kind if item.semantic_kind in CARD_KINDS else row.kind
         subject = (
             {
-                "id": uuid.uuid5(
-                    group.id, " ".join(item.subject.casefold().replace("ё", "е").split())
-                ),
+                "id": subject_uuid(group.id, item.subject),
                 "name": item.subject,
             }
             if item.subject
@@ -379,9 +377,7 @@ async def enrich_deadline(db, group, row: AcademicDeadline, now):
             None
             if row.subject.strip().casefold() in {"предмет не указан", "неизвестно"}
             else {
-                "id": uuid.uuid5(
-                    group.id, " ".join(row.subject.casefold().replace("ё", "е").split())
-                ),
+                "id": subject_uuid(group.id, row.subject),
                 "name": row.subject,
             }
         )

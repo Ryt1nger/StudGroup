@@ -165,7 +165,8 @@ def test_same_name_in_two_groups_is_two_subjects():
 
 def test_no_second_formula_in_the_source_tree():
     """Every subject id is built by studgroup.subject_identity.subject_uuid, nowhere else."""
-    pattern = re.compile(r"uuid5\([^)\n]*casefold\(\)")
+    # Also catches calls split over several lines and the old "normalized" (ё->е) variant.
+    pattern = re.compile(r"uuid5\((?:(?!\n\n)[\s\S]){0,160}?(?:casefold\(\)|replace\(\"ё\")")
     offenders = [
         str(path.relative_to(SRC))
         for path in SRC.rglob("*.py")
