@@ -82,12 +82,13 @@ def _window(stream, index, chunk, overlap):
     return sorted(selected.values(), key=lambda row: (row.message_date, row.telegram_message_id))
 
 
-def package_key(target_ids, revisions, source_revision):
+def package_key(target_ids, revisions, source_revision, catalog_version=None):
     payload = [
         sorted((i, revisions[i]) for i in target_ids),
         source_revision,
         CONTEXT_PROMPT_VERSION,
         EXTRACTION_PROMPT_VERSION,
+        catalog_version,
     ]
     return hashlib.sha256(json.dumps(payload).encode()).hexdigest()
 
@@ -103,8 +104,13 @@ def plan_packages(
     max_messages=MAX_MESSAGES,
     max_bytes=DEFAULT_MAX_BYTES,
     source_revision=1,
+    subject_catalog=None,
 ):
-    """Cut the chronological stream into packages; deterministic and idempotent."""
+    """Cut the chronological stream into packages; deterministic and idempotent.
+
+    ``subject_catalog`` (trusted reference data, see subject_catalog.py) is shared by every
+    package; its version is part of the package key because it changes what the model may say.
+    """
     if not (1 <= max_targets <= 80 and overlap >= 0 and 1 <= max_messages <= MAX_MESSAGES):
         raise ValueError("package_limits_invalid")
     stream = sorted(messages, key=lambda row: (row.message_date, row.telegram_message_id))
@@ -142,8 +148,14 @@ def plan_packages(
                     source_revision=source_revision,
                     target_message_ids=list(ids),
                     messages=window,
+                    subject_catalog=subject_catalog,
                 ),
-                key=package_key(ids, revisions, source_revision),
+                key=package_key(
+                    ids,
+                    revisions,
+                    source_revision,
+                    None if subject_catalog is None else subject_catalog.version,
+                ),
                 message_bytes=used,
             )
         )

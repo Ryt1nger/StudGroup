@@ -16,6 +16,7 @@ from studgroup.analysis.contracts import (
     ANALYSIS_SCHEMA_VERSION,
     SourceMessage,
 )
+from studgroup.analysis.extraction_strategy import prepare_extraction_request
 from studgroup.analysis.package_run import (
     BudgetGuard,
     attribute_targets,
@@ -114,6 +115,28 @@ def test_plan_covers_every_target_once_with_read_only_edges():
     ids = [row.telegram_message_id for row in second.messages]
     assert ids == list(range(18, 44)) and second.target_message_ids == list(range(21, 41))
     assert len(second.messages) <= 80
+
+
+def test_catalog_reaches_every_package_and_changes_the_key():
+    from types import SimpleNamespace as NS
+
+    from studgroup.analysis.subject_catalog import build_catalog
+
+    rows = [
+        NS(subject="Математический анализ", teacher=None),
+        NS(subject="История России", teacher=None),
+    ]
+    catalog = build_catalog(GROUP, rows)
+    with_catalog, without = plan(max_targets=20, subject_catalog=catalog), plan(max_targets=20)
+    assert all(p.analysis_input.subject_catalog == catalog for p in with_catalog)
+    assert [p.key for p in with_catalog] != [p.key for p in without]
+    payload = prepare_extraction_request(with_catalog[0].analysis_input, {}).user_payload
+    names = [row["name"] for row in payload["subject_catalog"]["subjects"]]
+    assert sorted(names) == ["История России", "Математический анализ"]
+    assert (
+        "subject_catalog"
+        not in prepare_extraction_request(without[0].analysis_input, {}).user_payload
+    )
 
 
 def test_plan_is_deterministic_and_keys_are_per_package():
