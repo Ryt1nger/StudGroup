@@ -32,6 +32,7 @@ def proposal(
     audience_scope="group",
     audience_label=None,
     attention_reasons=(),
+    deadline_at=datetime(2026, 10, 15, tzinfo=UTC),
 ):
     return ProposedAcademicItem(
         destination=destination,
@@ -40,7 +41,7 @@ def proposal(
         title=title,
         description=title,
         deadline={
-            "at": datetime(2026, 10, 15, tzinfo=UTC),
+            "at": deadline_at,
             "date_only": True,
             "basis": "schedule_inferred",
         },
@@ -214,6 +215,8 @@ def test_manual_lock_blocks_projection(client):
 
 
 def test_inferred_and_attention_markers_are_hidden_from_students(client):
+    future_deadline = datetime.now(UTC) + timedelta(days=3)
+
     async def run():
         async with AsyncSession(client.app.state.engine) as db:
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
@@ -222,7 +225,11 @@ def test_inferred_and_attention_markers_are_hidden_from_students(client):
                 ("Расчётный срок", ()),
                 ("Нужно внимание", ("minor_ambiguity",)),
             ):
-                value = proposal(title=title, attention_reasons=reasons)
+                value = proposal(
+                    title=title,
+                    attention_reasons=reasons,
+                    deadline_at=future_deadline,
+                )
                 item = (await resolve(db, group, value)).item
                 await project_item(db, item, NOW, writer_mode="new")
             await db.commit()
