@@ -227,12 +227,18 @@ describe('homework detail and source', () => {
 
   it('never opens a non-t.me URL even if the backend returns one', async () => {
     useScenario();
+    const evilAction = { type: 'open_telegram_link', url: 'https://evil.example/x' };
     const bad = {
       ...(contractExamples.HomeworkDetailAvailable as object),
       source_detail: {
         ...contractExamples.HomeworkDetailAvailable.source_detail,
-        action: { type: 'open_telegram_link', url: 'https://evil.example/x' },
+        action: evilAction,
       },
+      // The screen renders `sources`, so the hostile URL must be present there as well.
+      sources: contractExamples.HomeworkDetailAvailable.sources.map((source) => ({
+        ...source,
+        action: evilAction,
+      })),
     };
     server.use(http.get(`${API}/homework/${HW}`, () => HttpResponse.json(bad)));
     const { adapter } = renderApp({ route: `/homework/${HW}` });
