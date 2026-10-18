@@ -191,3 +191,18 @@ def archive_instant(decision, timezone):
         return decision.at
     day = decision.at.astimezone(ZoneInfo(timezone)).date() + timedelta(days=1)
     return datetime.combine(day, time.min, ZoneInfo(timezone))
+
+
+def headman_request(decision, kind):
+    """What the headman is asked to do about the deadline; the card itself is always published.
+
+    * control point / event without a found date: published at once and sent to the headman to set
+      the deadline (owner decision, 18 Oct 2026); such kinds are never dated by the timetable;
+    * homework dated by the timetable: the headman is asked to confirm it (spec 3.4);
+    * everything else: no request.
+    """
+    if decision.at is None and kind != "homework":
+        return "set_deadline"
+    if decision.inferred:
+        return "confirm_inferred_deadline"
+    return None

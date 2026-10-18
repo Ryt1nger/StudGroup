@@ -8,6 +8,7 @@ import pytest
 from studgroup.analysis.deadline_policy import (
     archive_instant,
     decide_deadline,
+    headman_request,
     staff_note,
     student_label,
 )
@@ -253,3 +254,27 @@ def test_several_literal_dates_need_the_model_to_pick_one_otherwise_unknown():
 
 def test_an_impossible_calendar_date_is_ignored():
     assert homework("сдать до 31.02", msk(15), schedule=None).at is None
+
+
+@pytest.mark.parametrize("kind", ["control_point", "test", "assessment", "credit", "exam"])
+def test_an_event_without_a_found_date_is_published_and_the_headman_sets_the_deadline(kind):
+    result = decide_deadline(
+        kind=kind,
+        sources=[("будет контрольная", msk(13))],
+        timezone=TZ,
+        subject=MATAN,
+        schedule=WEEK,
+    )
+    assert result.at is None
+    assert headman_request(result, kind) == "set_deadline"
+
+
+def test_headman_requests_for_homework_and_dated_events():
+    inferred = homework("номер 5 письменно", msk(13), schedule=WEEK)
+    assert headman_request(inferred, "homework") == "confirm_inferred_deadline"
+    unknown = homework("номер 5 письменно", msk(13), schedule=None)
+    assert headman_request(unknown, "homework") is None  # shown as "Срок уточняется"
+    dated = decide_deadline(
+        kind="control_point", sources=[("контрольная 20.10", msk(13))], timezone=TZ, subject=MATAN
+    )
+    assert headman_request(dated, "control_point") is None
