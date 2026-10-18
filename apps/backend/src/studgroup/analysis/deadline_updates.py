@@ -103,3 +103,48 @@ def apply_field_locks(current, proposed, locked):
             continue
         merged[field] = value
     return merged, sorted(blocked)
+
+
+@dataclass(frozen=True)
+class DeadlineRebuild:
+    card_id: object
+    old_at: object
+    new_at: object
+    basis: str
+    reason: str
+
+
+def rebuild_inferred_deadlines(
+    cards, *, now, timezone, schedule, no_lesson_days=(), skip_card_ids=frozenset()
+):
+    """Recompute timetable-derived deadlines after the headman changed the schedule (owner, 18 Oct).
+
+    ``schedule`` must already be expanded from the NEW timetable with the group's two-week cycle
+    (first/second week from the anchor), so a change to one week's pattern moves only the cards whose
+    next lesson falls in that week. Only cards still showing ``schedule_inferred`` are touched; a card
+    with a locked deadline, a confirmed/explicit/relative one, or one whose deadline already passed
+    (archived) is never changed. Every change keeps the old value for the card's history.
+
+    ``cards`` = dicts with ``id, kind, subject, sources, basis, at, locked_fields``.
+    """
+    changes = []
+    for card in cards:
+        if card["basis"] != "schedule_inferred" or card["id"] in skip_card_ids:
+            continue
+        if "deadline" in card.get("locked_fields", ()) or card["at"] is None or card["at"] <= now:
+            continue
+        decision = decide_deadline(
+            kind=card["kind"],
+            sources=card["sources"],
+            timezone=timezone,
+            subject=card["subject"],
+            schedule=schedule,
+            no_lesson_days=frozenset(no_lesson_days),
+        )
+        if decision.at != card["at"] or decision.basis != card["basis"]:
+            changes.append(
+                DeadlineRebuild(
+                    card["id"], card["at"], decision.at, decision.basis, decision.reason
+                )
+            )
+    return changes
