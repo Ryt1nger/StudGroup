@@ -97,8 +97,27 @@ async def rebuild_after_schedule_change(db, group, now):
         elif request == "confirm_inferred_deadline":
             reasons.append(REASON_CONFIRM_DEADLINE)
         item.attention_reasons = json.dumps(reasons, ensure_ascii=False)
+        previous = item.revision
         item.revision += 1
         item.updated_at = now
+        # the card keeps showing the same sources: carry the evidence over to the new revision
+        for evidence in (
+            await db.scalars(
+                select(CanonicalItemEvidence).where(
+                    CanonicalItemEvidence.item_id == item.id,
+                    CanonicalItemEvidence.item_revision == previous,
+                )
+            )
+        ).all():
+            db.add(
+                CanonicalItemEvidence(
+                    item_id=item.id,
+                    item_revision=item.revision,
+                    raw_message_id=evidence.raw_message_id,
+                    source_revision=evidence.source_revision,
+                    fact_path=evidence.fact_path,
+                )
+            )
         db.add(
             CanonicalDeadlineHistory(
                 item_id=item.id,

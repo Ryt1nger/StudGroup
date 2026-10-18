@@ -10,7 +10,12 @@ from test_deadline_application_db import MSK, SENT, proposal, run_one, seed
 
 from studgroup.analysis.card_editor import EditedCard  # noqa: F401  (shared helpers use it)
 from studgroup.deadline_rebuild import rebuild_after_schedule_change
-from studgroup.models import CanonicalDeadlineHistory, CanonicalItemRevision, SchedulePattern
+from studgroup.models import (
+    CanonicalDeadlineHistory,
+    CanonicalItemEvidence,
+    CanonicalItemRevision,
+    SchedulePattern,
+)
 
 pytest_plugins = ["test_schedule_api"]
 NOW = SENT.astimezone(UTC)
@@ -37,6 +42,10 @@ def test_moving_the_second_week_lesson_moves_the_inferred_deadline_and_keeps_his
             assert sorted(row.item_revision for row in history) == [1, 2]
             actions = (await db.scalars(select(CanonicalItemRevision.action))).all()
             assert "schedule_change" in actions
+            evidence = (await db.scalars(select(CanonicalItemEvidence))).all()
+            first = [e for e in evidence if e.item_revision == 1]
+            second = [e for e in evidence if e.item_revision == 2]
+            assert first and len(first) == len(second)  # the card keeps its sources
 
     asyncio.run(run())
 
