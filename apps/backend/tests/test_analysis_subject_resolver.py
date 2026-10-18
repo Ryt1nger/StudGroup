@@ -70,3 +70,22 @@ def test_card_majority_by_schedule_and_coverage_window():
         messages, LESSONS, NAMES, timezone=TZ, covered_from=date(2026, 10, 19)
     )
     assert outside.subject is None
+
+
+def test_alternating_weeks_use_the_matching_week_pattern():
+    lessons = [
+        Lesson(2, time(9, 0), time(10, 20), "Основы информатики", week="first"),
+        Lesson(2, time(10, 40), time(12, 0), "Математический анализ", week="second"),
+    ]
+    anchor = date(2026, 10, 5)  # Monday of a "first" week
+    first_wed = datetime(2026, 10, 7, 6, 30, tzinfo=UTC)  # 09:30 Moscow, first week
+    second_wed = datetime(2026, 10, 14, 8, 0, tzinfo=UTC)  # 11:00 Moscow, second week
+    third_wed = datetime(2026, 10, 21, 6, 30, tzinfo=UTC)  # 09:30 Moscow, first week again
+    kwargs = {"timezone": TZ, "first_week_anchor": anchor}
+    assert schedule_subject(first_wed, lessons, **kwargs) == "Основы информатики"
+    assert schedule_subject(second_wed, lessons, **kwargs) == "Математический анализ"
+    assert schedule_subject(third_wed, lessons, **kwargs) == "Основы информатики"
+    assert (
+        schedule_subject(second_wed, lessons, timezone=TZ, first_week_anchor=date(2026, 10, 12))
+        is None
+    )
