@@ -135,6 +135,7 @@ def deadline_metadata(row, item):
     if item is not None:
         mapping = {
             "explicit": ("from_source", "explicit_message"),
+            "relative_resolved": ("from_source", "explicit_message"),
             "schedule_inferred": ("inferred", "schedule_inferred"),
             "ambiguous_range": ("needs_clarification", "ambiguous_message"),
             "unknown": ("unknown", "unknown"),

@@ -27,6 +27,12 @@ from studgroup.analysis.output_adapter import explicit_source_dates
 from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, deadline_evidence_text
 from studgroup.subject_identity import match_key
 
+# The stored/API vocabulary of ``deadline_basis`` (spec section 4, owner decision 18 Oct 2026). The
+# model-facing contract (``DeadlineValue``) is unchanged: the model still says ``explicit`` and the
+# backend derives ``relative_resolved`` itself. ``ambiguous_range`` survives only in rows written
+# before this vocabulary and is read as "needs clarification".
+DEADLINE_BASES = frozenset({"explicit", "relative_resolved", "schedule_inferred", "unknown"})
+
 _EXPLICIT = {"explicit_source_date", "explicit_source_date_inferred_clock"}
 _RELATIVE = {
     "relative_message_date",
