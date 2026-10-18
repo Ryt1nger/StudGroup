@@ -20,9 +20,10 @@ Basis vocabulary (spec section 4): ``explicit``, ``relative_resolved``, ``schedu
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from studgroup.analysis.output_adapter import explicit_source_dates
 from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, deadline_evidence_text
 from studgroup.subject_identity import match_key
 
@@ -70,6 +71,7 @@ def decide_deadline(
     subject=None,
     schedule: ScheduleDeadlineContext | None = None,
     model_deadline=None,
+    no_lesson_days=frozenset(),
 ):
     """``sources`` = ``[(text, sent_at), ...]`` of one card; ``model_deadline`` = ``(at, date_only)``."""
     if not sources or any(stamp.utcoffset() is None for _, stamp in sources):
@@ -87,6 +89,9 @@ def decide_deadline(
         return DeadlineDecision(found.at, found.date_only, "relative_resolved", basis)
     if basis in _NOT_A_DATE:
         return _unknown(basis)
+    literal = _literal_date(ordered, timezone, model_deadline)
+    if literal is not None:
+        return literal
     joined = "\n".join(deadline_evidence_text(text) for text, _ in ordered)
     if model_deadline and model_deadline[0] is not None and _DATE_SIGNAL.search(joined):
         at, date_only = model_deadline
@@ -97,10 +102,42 @@ def decide_deadline(
         return _unknown(basis)  # the text names a deadline we could not read: never guess
     if kind != "homework":
         return _unknown("not_inferable_for_kind")
-    return _next_lesson(ordered, timezone, subject, schedule)
+    return _next_lesson(ordered, timezone, subject, schedule, no_lesson_days)
 
 
-def _next_lesson(ordered, timezone, subject, schedule):
+def _literal_date(ordered, timezone, model_deadline):
+    """A day and month written in the text ("22.10", "22 октября"): the text wins (Q3).
+
+    ``contextual_deadline`` does not read such dates, so they are resolved here. Exactly one
+    distinct date is accepted; with several, only the one the model also names; otherwise unknown.
+    """
+    zone = ZoneInfo(timezone)
+    first_day = ordered[0][1].astimezone(zone).date()
+    found = set()
+    for text, _ in ordered:
+        for day, month in explicit_source_dates(deadline_evidence_text(text)):
+            for year in (first_day.year, first_day.year + 1):
+                try:
+                    candidate = date(year, month, day)
+                except ValueError:
+                    continue
+                if candidate >= first_day - timedelta(days=60):
+                    found.add(candidate)
+                    break
+    if not found:
+        return None
+    if len(found) > 1 and model_deadline and model_deadline[0] is not None:
+        named = model_deadline[0].astimezone(zone).date()
+        found = {day for day in found if day == named} or found
+    if len(found) != 1:
+        return _unknown("several_dates_in_text")
+    (day,) = found
+    return DeadlineDecision(
+        datetime.combine(day, time.min, zone), True, "explicit", "explicit_source_date_literal"
+    )
+
+
+def _next_lesson(ordered, timezone, subject, schedule, no_lesson_days):
     if not subject:
         return _unknown("subject_unknown")
     if schedule is None or not schedule.ready:
@@ -110,20 +147,26 @@ def _next_lesson(ordered, timezone, subject, schedule):
     if not schedule.covered_from <= reference_day <= schedule.covered_until:
         return _unknown("schedule_does_not_cover_source_date")
     wanted = match_key(subject)
-    candidates = []
+    upcoming = []
     for lesson in schedule.lessons:
         starts = datetime.fromisoformat(lesson["starts_at"])
         local_day = starts.astimezone(zone).date()
         if (
             match_key(lesson["subject"]) == wanted
-            and lesson.get("status", "scheduled") == "scheduled"
             and local_day > reference_day  # never the day of the source message
             and schedule.covered_from <= local_day <= schedule.covered_until
         ):
-            candidates.append(starts)
-    if not candidates:
+            upcoming.append((starts, local_day, lesson.get("status", "scheduled")))
+    if not upcoming:
         return _unknown("next_subject_lesson_unknown")
-    return DeadlineDecision(min(candidates), False, "schedule_inferred", "next_subject_lesson")
+    starts, local_day, status = min(upcoming)
+    # Owner decision (Q2): the timetable is trusted only while the window from the source day to
+    # the chosen lesson holds no cancelled lesson and no day without lessons.
+    if status != "scheduled":
+        return _unknown("cancelled_lesson_in_window")
+    if any(reference_day < day <= local_day for day in no_lesson_days):
+        return _unknown("no_lesson_day_in_window")
+    return DeadlineDecision(starts, False, "schedule_inferred", "next_subject_lesson")
 
 
 def student_label(decision):

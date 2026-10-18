@@ -92,7 +92,7 @@ def test_a_lesson_on_the_same_calendar_day_is_excluded():
         (None, "schedule_unavailable"),
         (schedule(lesson(14, 10), ready=False), "schedule_unavailable"),
         (schedule(lesson(14, 10), start=date(2026, 10, 14)), "schedule_does_not_cover_source_date"),
-        (schedule(lesson(14, 10, status="cancelled")), "next_subject_lesson_unknown"),
+        (schedule(lesson(14, 10, status="cancelled")), "cancelled_lesson_in_window"),
         (schedule(lesson(15, 10, subject="История России")), "next_subject_lesson_unknown"),
         (schedule(lesson(30, 10), end=date(2026, 10, 25)), "next_subject_lesson_unknown"),
     ],
@@ -214,3 +214,42 @@ def test_text_date_always_wins_over_a_different_model_date():
         model_deadline=(msk(12), True),
     )
     assert agree.basis == "relative_resolved"
+
+
+def test_a_cancelled_lesson_in_the_window_makes_the_timetable_unreliable():
+    cancelled = schedule(lesson(14, 10, status="cancelled"), lesson(21, 10))
+    result = homework("номер 5 письменно", msk(13), schedule=cancelled)
+    assert (result.at, result.basis, result.reason) == (
+        None,
+        "unknown",
+        "cancelled_lesson_in_window",
+    )
+
+
+def test_a_day_without_lessons_in_the_window_makes_the_timetable_unreliable():
+    holiday = {date(2026, 10, 14)}
+    result = homework("номер 5 письменно", msk(13), schedule=WEEK, no_lesson_days=holiday)
+    assert result.reason == "no_lesson_day_in_window"
+    later = {date(2026, 10, 30)}
+    ok = homework("номер 5 письменно", msk(13), schedule=WEEK, no_lesson_days=later)
+    assert ok.basis == "schedule_inferred"
+
+
+@pytest.mark.parametrize("text", ["сдать до 22.10", "сдать до 22 октября", "сдать 22/10"])
+def test_a_literal_day_and_month_in_the_text_is_an_explicit_date_only_deadline(text):
+    result = homework(text, msk(15), schedule=WEEK, model_deadline=(msk(29), True))
+    assert (result.basis, result.date_only) == ("explicit", True)
+    assert result.reason in {"explicit_source_date", "explicit_source_date_literal"}
+    assert result.at.astimezone(MOSCOW).date() == date(2026, 10, 22)  # the text beats the model
+
+
+def test_several_literal_dates_need_the_model_to_pick_one_otherwise_unknown():
+    text = "лекция 14.10, сдать до 22.10"
+    unknown = homework(text, msk(13), schedule=WEEK)
+    assert (unknown.at, unknown.reason) == (None, "several_dates_in_text")
+    picked = homework(text, msk(13), schedule=WEEK, model_deadline=(msk(22), True))
+    assert picked.at.astimezone(MOSCOW).date() == date(2026, 10, 22)
+
+
+def test_an_impossible_calendar_date_is_ignored():
+    assert homework("сдать до 31.02", msk(15), schedule=None).at is None
