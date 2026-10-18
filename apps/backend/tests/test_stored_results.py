@@ -178,7 +178,7 @@ def test_genuine_old_personal_assignment_and_real_dates_are_left_alone():
     assert item.deadline.basis == "explicit"
 
 
-def test_validation_is_not_weakened_conflicting_literal_date_is_still_serious():
+def test_conflicting_literal_date_is_corrected_from_the_text_and_flagged_not_held():
     wrong = stored(
         3,
         "Сдать отчёт до 20.10",
@@ -194,8 +194,12 @@ def test_validation_is_not_weakened_conflicting_literal_date_is_still_serious():
         ),
     )
     (item,) = effective_validation(wrong[1], wrong[0].messages, "Europe/Moscow").accepted
-    assert "conflicting_deadlines" in item.attention_reasons
-    assert edit_card(item, wrong[0].messages).visibility == "held"
+    # owner decision 18 Oct 2026: the date written in the text wins; the card is published with a
+    # note for the headman instead of being held
+    assert item.deadline.at == datetime(2026, 10, 20, 0, 0, tzinfo=MSK)
+    assert item.deadline.basis == "explicit"
+    assert "deadline_corrected_from_text" in item.attention_reasons
+    assert edit_card(item, wrong[0].messages).visibility == "headman_attention"
 
 
 def test_effective_view_is_idempotent_and_keeps_sources():

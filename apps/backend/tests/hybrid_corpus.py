@@ -452,7 +452,7 @@ CASES = [
         ],
     ),
     case(
-        "date_ignoring_every_literal_source_date_is_held",
+        "date_ignoring_every_literal_source_date_is_corrected_from_the_text",
         [msg(10, "Химия: решить задачи до 14.10")],
         [
             item(
@@ -466,13 +466,13 @@ CASES = [
             accepted(
                 "Химия",
                 "homework",
-                "2026-10-20T00:00",
+                "2026-10-14T00:00",
                 date_only=True,
                 basis="explicit",
-                visibility="held",
+                visibility="headman_attention",
             )
         ],
-        reasons={0: "conflicting_deadlines"},
+        reasons={0: "deadline_corrected_from_text"},
     ),
     case(
         "model_reports_conflict_without_date",
