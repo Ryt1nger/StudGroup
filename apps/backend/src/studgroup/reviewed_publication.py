@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.ai import SourcedExtraction
+from studgroup.deadline_rebuild import rebuild_after_schedule_change
 from studgroup.deadlines import canonical_subject, resolve_deadline
 from studgroup.homework import archived_condition
 from studgroup.ingestion import Chat, Message, ReplyReference, store_message
@@ -97,6 +98,9 @@ async def apply(db, settings, payload, identity, now):
             pattern.valid_until = end
             pattern.revision += 1
             extended += 1
+        if extended:
+            await db.flush()
+            await rebuild_after_schedule_change(db, group, now)
     source_map = {}
     for source in payload["sources"]:
         stamp = datetime.fromisoformat(source["message_date"])
