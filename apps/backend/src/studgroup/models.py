@@ -482,10 +482,17 @@ class CanonicalAcademicItem(Base):
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deadline_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
     deadline_basis: Mapped[str] = mapped_column(String(32), default="unknown")
+    # Explanation and timezone confidence are persisted with the decision, rather than inferred
+    # from the current schedule when the card is read later.
+    deadline_reason: Mapped[str] = mapped_column(String(64), default="unknown")
+    timezone_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     audience_scope: Mapped[str] = mapped_column(String(24), default="group")
     audience_label: Mapped[str | None] = mapped_column(String(255))
     state: Mapped[str] = mapped_column(String(24), default="active")
     attention_reasons: Mapped[str] = mapped_column(Text, default="[]")
+    # JSON array of fields locked by a headman/deputy. ``manual_lock`` remains temporarily for
+    # backward compatibility with the current resolver and is retired when field locks are wired.
+    locked_fields: Mapped[str] = mapped_column(Text, default="[]")
     manual_lock: Mapped[bool] = mapped_column(Boolean, default=False)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -523,6 +530,31 @@ class CanonicalItemRevision(Base):
     actor: Mapped[str] = mapped_column(String(24))
     snapshot_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CanonicalDeadlineHistory(Base):
+    """Immutable deadline snapshot for one canonical item revision.
+
+    Telegram IDs are copied rather than foreign-keyed so the audit trail remains explainable after
+    retained source content expires. They are scoped by ``item_id``'s group.
+    """
+
+    __tablename__ = "canonical_deadline_history"
+    __table_args__ = (UniqueConstraint("item_id", "item_revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("canonical_academic_items.id", ondelete="CASCADE"), index=True
+    )
+    item_revision: Mapped[int] = mapped_column(Integer)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deadline_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    deadline_basis: Mapped[str] = mapped_column(String(32))
+    deadline_reason: Mapped[str] = mapped_column(String(64))
+    timezone_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    source_reply_to_message_id: Mapped[int | None] = mapped_column(BigInteger)
+    source_revision: Mapped[int | None] = mapped_column(Integer)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class CanonicalProjectionLink(Base):
@@ -797,6 +829,38 @@ class ScheduleException(Base):
     online_url: Mapped[str | None] = mapped_column(String(2048))
     cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
     revision: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class GroupNoLessonDay(Base):
+    __tablename__ = "group_no_lesson_days"
+    __table_args__ = (UniqueConstraint("group_id", "day"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    day: Mapped[date] = mapped_column(Date)
+    reason: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ScheduleChange(Base):
+    """Audit metadata for a schedule edit; timetable data stays in patterns/exceptions only."""
+
+    __tablename__ = "schedule_changes"
+    __table_args__ = (
+        CheckConstraint("scope IN ('group', 'personal')", name="schedule_change_scope"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    actor_role: Mapped[str | None] = mapped_column(String(16))
+    input_method: Mapped[str] = mapped_column(String(32))
+    scope: Mapped[str] = mapped_column(String(16))
+    schedule_version: Mapped[int] = mapped_column(Integer)
+    operation: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class LessonOnlineLink(Base):

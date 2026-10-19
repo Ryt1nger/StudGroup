@@ -141,7 +141,7 @@ def archived_condition(now, timezone):
             Homework.deadline_at <= now,
         ),
         and_(
-            or_(Homework.deadline_at.is_(None), Homework.verification_state == "inferred"),
+            Homework.deadline_at.is_(None),
             func.coalesce(
                 Homework.source_message_at,
                 select(RawMessage.message_date)

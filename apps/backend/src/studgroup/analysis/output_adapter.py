@@ -83,7 +83,10 @@ SCOPES = frozenset(
 )
 
 # Deadline sanity flags are attention reasons, not rejections.
-SERIOUS_CONFLICT_REASON = "conflicting_deadlines"
+SERIOUS_CONFLICT_REASON = "conflicting_deadlines"  # still emitted by the model itself
+# Owner decision (18 Oct 2026): when the model's date contradicts the date written in the cited
+# text, the text wins and the card is published with this note for the headman (never held).
+DEADLINE_CORRECTED_REASON = "deadline_corrected_from_text"
 PAST_DEADLINE_REASON = "deadline_before_source"
 FAR_FUTURE_REASON = "deadline_far_future"
 FAR_FUTURE_DAYS = 400
@@ -392,6 +395,28 @@ class _Normalizer:
         elif at > latest + timedelta(days=FAR_FUTURE_DAYS):
             self.extra_reasons.append(FAR_FUTURE_REASON)
 
+    def corrected_from_literal(self, deadline, literal, ordered):
+        """The model's day is not among the days the text writes: the text decides.
+
+        One written day replaces the model's date; several written days leave the deadline unknown
+        (the model may only choose among them, and it did not), always with a note for the headman.
+        """
+        self.extra_reasons.append(DEADLINE_CORRECTED_REASON)
+        self.note("deadline_corrected_from_text")
+        if len(literal) != 1:
+            return {"at": None, "date_only": False, "basis": "unknown"}
+        ((day, month),) = literal
+        first = ordered[0].message_date.astimezone(self.tz).date()
+        for year in (first.year, first.year + 1):
+            try:
+                chosen = date(year, month, day)
+            except ValueError:
+                continue
+            if chosen >= first - timedelta(days=60):
+                at = datetime.combine(chosen, time.min, self.tz)
+                return {"at": at, "date_only": True, "basis": "explicit"}
+        return {"at": None, "date_only": False, "basis": "unknown"}
+
     def deterministic_conflict(self, deadline, base):
         """Verify the origin of an ``explicit`` date; flag a contradiction, clear a guess.
 
@@ -412,7 +437,7 @@ class _Normalizer:
         if literal:
             # A proposal that ignores every written date is held for review, not published.
             if (local.day, local.month) not in literal:
-                self.extra_reasons.append(SERIOUS_CONFLICT_REASON)
+                return self.corrected_from_literal(deadline, literal, ordered)
             return deadline
         from studgroup.deadlines import contextual_deadline
 
@@ -431,7 +456,9 @@ class _Normalizer:
                 unresolved_basis = candidate.basis
         if resolved is not None:
             if resolved.at.astimezone(self.tz).date() != local.date():
-                self.extra_reasons.append(SERIOUS_CONFLICT_REASON)
+                self.extra_reasons.append(DEADLINE_CORRECTED_REASON)
+                self.note("deadline_corrected_from_text")
+                return {"at": resolved.at, "date_only": resolved.date_only, "basis": "explicit"}
             return deadline
         if ordered and weekday_supports(
             [row.text for row in ordered], local, ordered[0].message_date.astimezone(self.tz)

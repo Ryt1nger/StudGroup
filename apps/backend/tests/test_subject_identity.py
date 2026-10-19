@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_analysis_resolver import NOW, proposal, seed_source
 from test_headman import actor, run
+from test_headman import foreman as foreman  # noqa: PLC0414 -- expose imported pytest fixture
 
 from studgroup import headman_domain as domain
 from studgroup.analysis.card_editor import EditedCard
@@ -22,7 +23,7 @@ from studgroup.analysis.projection import project_item
 from studgroup.analysis.resolver import resolve_proposal
 from studgroup.models import Group, Homework
 
-pytest_plugins = ["test_schedule_api", "test_headman"]  # the latter provides `foreman`
+pytest_plugins = ["test_schedule_api"]
 SRC = Path(__file__).resolve().parents[1] / "src" / "studgroup"
 
 

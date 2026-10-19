@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from studgroup.analysis.card_editor import edit_card
 from studgroup.analysis.contracts import ApplicationOutcome
+from studgroup.analysis.deadline_application import apply_policy
 from studgroup.analysis.projection import project_item
 from studgroup.analysis.resolver import resolve_proposal
 from studgroup.analysis.stored import effective_validation
@@ -26,6 +27,7 @@ async def apply_validated_batch(
     now,
     verified_subjects=(),
     emit_notifications=True,
+    deadline_context=None,
 ):
     # Defence in depth: whatever produced the validation (live adapter or an older stored run),
     # the same source-checked rules decide audience and date origin before anything is written.
@@ -47,12 +49,18 @@ async def apply_validated_batch(
         )
     for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted, strict=True):
         card = edit_card(proposal, messages, verified_subjects=verified_subjects)
+        applied = (
+            apply_policy(proposal, messages, card.subject, deadline_context)
+            if deadline_context is not None
+            else None
+        )
         resolution = await resolve_proposal(
             db,
             group_id=group_id,
             proposal=proposal,
             edited_card=card,
             now=now,
+            deadline=applied,
         )
         if resolution.item is None or resolution.action in {
             "review",

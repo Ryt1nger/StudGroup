@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 
 from studgroup.api import schedule_data
+from studgroup.deadline_rebuild import rebuild_after_schedule_change
 from studgroup.headman_domain import (
     StError,
     entity,
@@ -78,7 +79,9 @@ async def change(db, group, user, member, ident, pattern_revision, override_revi
         pattern.revision += 1
         await db.flush()
         await lock_decision(db, group, user, member, key, pattern)
-        return await save_audit(db, group, user, "schedule", before, [(key, "p", pattern)])
+        saved = await save_audit(db, group, user, "schedule", before, [(key, "p", pattern)])
+        await rebuild_after_schedule_change(db, group, datetime.now(UTC))
+        return saved
     if scope != "once":
         raise StError("Выбери разовую правку или изменение всего правила.")
     if override:
@@ -109,7 +112,9 @@ async def change(db, group, user, member, ident, pattern_revision, override_revi
     override.revision += 1
     await db.flush()
     await lock_decision(db, group, user, member, key, override)
-    return await save_audit(db, group, user, "schedule", before, [(key, "x", override)])
+    saved = await save_audit(db, group, user, "schedule", before, [(key, "x", override)])
+    await rebuild_after_schedule_change(db, group, datetime.now(UTC))
+    return saved
 
 
 async def add(db, group, user, member, subject, starts, ends, location):
@@ -133,4 +138,6 @@ async def add(db, group, user, member, subject, starts, ends, location):
     await db.flush()
     key = f"p:{row.id}"
     await lock_decision(db, group, user, member, key, row)
-    return await save_audit(db, group, user, "schedule_add", {key: None}, [(key, "p", row)])
+    saved = await save_audit(db, group, user, "schedule_add", {key: None}, [(key, "p", row)])
+    await rebuild_after_schedule_change(db, group, datetime.now(UTC))
+    return saved

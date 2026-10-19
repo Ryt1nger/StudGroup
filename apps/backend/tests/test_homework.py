@@ -20,7 +20,16 @@ def lesson_id(client):
     return response.json()["lessons"][0]["id"]
 
 
-def test_subject_page_has_related_homework_and_explicit_unconnected_sections(client):
+class FrozenDatetime(datetime):
+    """The subject page asks "what is still active now"; pin now to the day before the lesson."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 10, 11, 13, tzinfo=UTC).astimezone(tz)
+
+
+def test_subject_page_has_related_homework_and_explicit_unconnected_sections(client, monkeypatch):
+    monkeypatch.setattr("studgroup.homework.datetime", FrozenDatetime)
     card = seed_card(client, source_time=datetime(2026, 10, 11, 12, tzinfo=UTC))
     response = client.get(
         f"/v1/lessons/{lesson_id(client)}/subject", headers={"Authorization": "Bearer valid"}
@@ -185,9 +194,9 @@ def seed_card(client, *, source_time: datetime | None = None):
 
 @pytest.mark.parametrize(
     "age,kind,visible",
-    [(6, "unknown", True), (8, "unknown", False), (8, "inferred", False), (8, "explicit", True)],
+    [(6, "unknown", True), (8, "unknown", False), (8, "inferred", True), (8, "explicit", True)],
 )
-def test_source_age_archives_only_undated_or_inferred_homework(client, age, kind, visible):
+def test_source_age_archives_only_undated_homework(client, age, kind, visible):
     card_id = seed_card(client)
 
     async def update():

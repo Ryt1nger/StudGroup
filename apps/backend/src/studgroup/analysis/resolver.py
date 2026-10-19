@@ -6,10 +6,16 @@ from dataclasses import dataclass
 from sqlalchemy import select
 
 from studgroup.analysis.card_editor import DESCRIPTION_ATTACHMENT_ONLY, DESCRIPTION_PENDING
+from studgroup.analysis.deadline_updates import apply_field_locks
 from studgroup.analysis.entities import item_snapshot
 from studgroup.analysis.evidence import add_item_evidence, resolve_evidence
 from studgroup.analysis.title_builder import INSUFFICIENT
-from studgroup.models import CanonicalAcademicItem, CanonicalItemEvidence, CanonicalItemRevision
+from studgroup.models import (
+    CanonicalAcademicItem,
+    CanonicalDeadlineHistory,
+    CanonicalItemEvidence,
+    CanonicalItemRevision,
+)
 
 
 def _kept_texts(item, edited_card):
@@ -37,6 +43,59 @@ def _kept_texts(item, edited_card):
     ):
         description = item.description
     return title, description
+
+
+def _locked_fields(item):
+    try:
+        return set(json.loads(item.locked_fields or "[]"))
+    except ValueError:
+        return set()
+
+
+def _deadline_tuple(item):
+    return (item.deadline_at, item.deadline_date_only, item.deadline_basis, item.deadline_reason)
+
+
+def _record_deadline_history(db, item, proposal, sources, now):
+    """Keep every shown deadline with the message it came from; never overwrite older rows."""
+    cited = [(sources[row.telegram_message_id], row.revision) for row in proposal.evidence]
+    cited.sort(key=lambda pair: (pair[0].message_date, pair[0].telegram_message_id))
+    raw, revision = cited[-1]
+    db.add(
+        CanonicalDeadlineHistory(
+            item_id=item.id,
+            item_revision=item.revision,
+            deadline_at=item.deadline_at,
+            deadline_date_only=item.deadline_date_only,
+            deadline_basis=item.deadline_basis,
+            deadline_reason=item.deadline_reason,
+            timezone_confirmed=item.timezone_confirmed,
+            source_telegram_message_id=raw.telegram_message_id,
+            source_reply_to_message_id=raw.reply_to_message_id,
+            source_revision=revision,
+            changed_at=now,
+        )
+    )
+
+
+@dataclass(frozen=True)
+class _Shown:
+    at: object
+    date_only: bool
+    basis: str
+    reason: str
+
+
+def _shown_deadline(proposal, edited_card, applied):
+    """The deadline the card will show: the policy's decision, or the legacy proposal value."""
+    if applied is None:
+        value = proposal.deadline
+        shown = _Shown(value.at, value.date_only, value.basis, "unknown")
+        return shown, False, list(edited_card.attention_reasons)
+    decision = applied.decision
+    shown = _Shown(decision.at, decision.date_only, decision.basis, decision.reason)
+    reasons = list(dict.fromkeys([*edited_card.attention_reasons, *applied.reasons]))
+    return shown, applied.timezone_confirmed, reasons
 
 
 async def _record_missing_evidence(db, item, proposal, sources):
@@ -84,6 +143,7 @@ async def resolve_proposal(
     action=None,
     existing_item_id=None,
     expected_item_revision=None,
+    deadline=None,
 ):
     action = action or proposal.action
     if existing_item_id is None:
@@ -106,6 +166,10 @@ async def resolve_proposal(
         return Resolution("review", None, "explicit_item_identity_required")
     if item is not None and proposal.destination != item.destination:
         return Resolution("review", item, "destination_change_requires_new_item")
+    shown, timezone_confirmed, card_reasons = _shown_deadline(proposal, edited_card, deadline)
+    if deadline is not None and action == "reschedule" and shown.at is None:
+        # Q4: only an unambiguous move changes a card; anything else waits for the headman.
+        return Resolution("review", item, "reschedule_not_unambiguous")
     if item is None:
         item = CanonicalAcademicItem(
             group_id=group_id,
@@ -115,13 +179,16 @@ async def resolve_proposal(
             subject=edited_card.subject,
             title=edited_card.title,
             description=edited_card.description,
-            deadline_at=proposal.deadline.at,
-            deadline_date_only=proposal.deadline.date_only,
-            deadline_basis=proposal.deadline.basis,
+            deadline_at=shown.at,
+            deadline_date_only=shown.date_only,
+            deadline_basis=shown.basis,
+            deadline_reason=shown.reason,
+            timezone_confirmed=timezone_confirmed,
             audience_scope=proposal.audience.scope,
             audience_label=proposal.audience.label,
             state="active",
-            attention_reasons=json.dumps(edited_card.attention_reasons, ensure_ascii=False),
+            attention_reasons=json.dumps(card_reasons, ensure_ascii=False),
+            locked_fields="[]",
             manual_lock=False,
             revision=1,
             created_at=now,
@@ -130,24 +197,49 @@ async def resolve_proposal(
         db.add(item)
         await db.flush()
         resolved_action = "create"
+        before_deadline = None
     else:
         before = item_snapshot(item)
+        before_deadline = _deadline_tuple(item)
         if action == "cancel":
             item.state = "cancelled"
         else:
             item.destination = proposal.destination
-            item.semantic_kind = proposal.semantic_kind
+            title, description = _kept_texts(item, edited_card)
             # a confirmed subject replaces the old one; a failed or silent re-analysis never
             # erases the subject the card already has
-            if edited_card.subject is not None:
-                item.subject = edited_card.subject
-            item.title, item.description = _kept_texts(item, edited_card)
-            item.deadline_at = proposal.deadline.at
-            item.deadline_date_only = proposal.deadline.date_only
-            item.deadline_basis = proposal.deadline.basis
+            subject = edited_card.subject if edited_card.subject is not None else item.subject
+            current = {
+                "deadline": _deadline_tuple(item),
+                "subject": item.subject,
+                "kind": item.semantic_kind,
+                "title": item.title,
+                "description": item.description,
+            }
+            proposed = {
+                "deadline": (shown.at, shown.date_only, shown.basis, shown.reason),
+                "subject": subject,
+                "kind": proposal.semantic_kind,
+                "title": title,
+                "description": description,
+            }
+            merged, blocked = apply_field_locks(current, proposed, _locked_fields(item))
+            if blocked:  # the AI wanted to change a field the headman locked: keep and flag it
+                card_reasons = [*card_reasons, "ai_change_blocked_by_lock"]
+            item.semantic_kind = merged["kind"]
+            item.subject = merged["subject"]
+            item.title, item.description = merged["title"], merged["description"]
+            (
+                item.deadline_at,
+                item.deadline_date_only,
+                item.deadline_basis,
+                item.deadline_reason,
+            ) = merged["deadline"]
+            if "deadline" not in blocked:
+                item.timezone_confirmed = timezone_confirmed
             item.audience_scope = proposal.audience.scope
             item.audience_label = proposal.audience.label
-            item.attention_reasons = json.dumps(edited_card.attention_reasons, ensure_ascii=False)
+            item.attention_reasons = json.dumps(card_reasons, ensure_ascii=False)
         item.updated_at = now
         after_without_revision = item_snapshot(item)
         if before == after_without_revision:
@@ -156,6 +248,10 @@ async def resolve_proposal(
         item.revision += 1
         resolved_action = "cancel" if action == "cancel" else "update"
     add_item_evidence(db, item, proposal, sources)
+    if resolved_action in {"create", "update"} and (
+        resolved_action == "create" or _deadline_tuple(item) != before_deadline
+    ):
+        _record_deadline_history(db, item, proposal, sources, now)
     db.add(
         CanonicalItemRevision(
             item_id=item.id,

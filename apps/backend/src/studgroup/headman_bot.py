@@ -13,6 +13,7 @@ from studgroup import headman_domain as domain
 from studgroup import headman_schedule
 from studgroup.api import schedule_data
 from studgroup.bot_admin import enqueue, say
+from studgroup.deadline_rebuild import rebuild_after_schedule_change
 from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, resolve_deadline
 from studgroup.homework import utc
 from studgroup.models import (
@@ -1298,6 +1299,9 @@ async def apply(db, session, group, user, member, data, settings):
         if group.timezone != data["expected"]:
             raise domain.StError("Часовой пояс уже изменён. Открой настройки заново.")
         group.timezone = data["timezone"]
+        await db.flush()
+        # Derived deadlines depend on the group's calendar day, so the zone change rebuilds them.
+        await rebuild_after_schedule_change(db, group, datetime.now(UTC))
     else:
         raise domain.StError("Неизвестное действие.")
     await db.flush()
