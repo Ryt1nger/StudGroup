@@ -177,6 +177,13 @@ async def flush_incidents(engine, config, transport=None):
             if pair is None:
                 continue
             row, current = pair
+            if (
+                row.opening_pending
+                and row.opening_notified_at is not None
+                and row.occurrences > config.ai_circuit_failure_threshold
+            ):
+                # The error was already announced ai_circuit_failure_threshold times.
+                row.opening_pending = False
             for event, field, notified in [
                 ("opened", "opening_pending", "opening_notified_at"),
                 ("recovered", "recovery_pending", "recovery_notified_at"),

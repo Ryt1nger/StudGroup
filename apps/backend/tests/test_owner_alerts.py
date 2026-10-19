@@ -195,3 +195,76 @@ def test_recovery_before_delivery_does_not_erase_initial_error_notice(client):
     assert len(sent) == 2
     assert "К моменту отправки уже устранена" in sent[0]
     assert "восстановлена" in sent[1]
+
+
+def sender():
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content)["text"])
+        return httpx.Response(200, json={"ok": True})
+
+    return sent, httpx.MockTransport(handler)
+
+
+def test_budget_limit_flapping_sends_one_alert_and_one_recovery_after_quiet_period(client):
+    from datetime import UTC, datetime, timedelta
+
+    sent, transport = sender()
+    start = datetime.now(UTC)
+
+    async def step(offset_seconds, recover=False):
+        async with AsyncSession(client.app.state.engine) as db:
+            await incident(
+                db,
+                "ai_hourly_safety_limit",
+                start + timedelta(seconds=offset_seconds),
+                recover=recover,
+            )
+            await db.commit()
+        await flush_incidents(client.app.state.engine, config(), transport)
+
+    async def scenario():
+        for offset in (0, 20, 40, 60):
+            await step(offset)
+            await step(offset + 5, recover=True)
+        assert len(sent) == 1
+        assert "лимит" in sent[0]
+        await step(60 + 9 * 60, recover=True)
+        assert len(sent) == 1
+        await step(60 + 10 * 60, recover=True)
+        assert len(sent) == 2
+        assert "восстановлена" in sent[1]
+        await step(60 + 11 * 60)
+        assert len(sent) == 3
+        async with AsyncSession(client.app.state.engine) as db:
+            episodes = (await db.scalars(select(OwnerIncidentEpisode))).all()
+        assert len(episodes) == 2
+        assert episodes[0].occurrences == 4
+
+    asyncio.run(scenario())
+
+
+def test_error_alerts_stop_after_the_circuit_failure_threshold_then_recovery_is_sent(client):
+    from datetime import UTC, datetime
+
+    sent, transport = sender()
+    settings = config()
+    assert settings.ai_circuit_failure_threshold == 3
+
+    async def report(recover=False):
+        async with AsyncSession(client.app.state.engine) as db:
+            await incident(db, "provider_unreachable", datetime.now(UTC), recover=recover)
+            await db.commit()
+        await flush_incidents(client.app.state.engine, settings, transport)
+
+    async def scenario():
+        for _ in range(6):
+            await report()
+        assert len(sent) == 3
+        assert "Учтено проявлений в этом случае: 3" in sent[2]
+        await report(recover=True)
+        assert len(sent) == 4
+        assert "восстановлена" in sent[3]
+
+    asyncio.run(scenario())
