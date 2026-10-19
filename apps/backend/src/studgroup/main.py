@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     ai_output_repair_enabled: bool = False
     ai_schedule_timezone: str = "Europe/Moscow"
     processing_mode: Literal["external", "embedded"] = "external"
+    ai_loop_pause_seconds: float = Field(default=4, ge=0, le=60)
     owner_telegram_user_id: int | None = None
     owner_update_notifications_enabled: bool = False
     owner_update_notifications_since: datetime | None = None
