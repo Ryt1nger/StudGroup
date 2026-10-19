@@ -38,6 +38,7 @@ from studgroup.analysis.shadow_worker import (
     attempt_base,
 )
 from studgroup.analysis.subject_catalog import catalog_summary, load_subject_catalog
+from studgroup.analysis.subject_resolver import Lesson
 from studgroup.deadline_context import build_deadline_context
 from studgroup.models import (
     CanonicalAcademicItem,
@@ -363,6 +364,33 @@ async def _existing_items(db, group_id, now):
     ]
 
 
+async def _subject_context(db, group):
+    """The group's timetable in the shape the subject resolver needs (None without patterns)."""
+    patterns = (
+        await db.scalars(select(SchedulePattern).where(SchedulePattern.group_id == group.id))
+    ).all()
+    if not patterns:
+        return None
+    lessons = [
+        Lesson(
+            row.weekday,
+            row.starts,
+            row.ends,
+            row.subject,
+            None if row.week in (None, "all") else row.week,
+        )
+        for row in patterns
+    ]
+    return {
+        "lessons": lessons,
+        "names": sorted({row.subject for row in patterns}),
+        "timezone": group.timezone,
+        "covered_from": min(row.valid_from for row in patterns),
+        "covered_to": max(row.valid_until for row in patterns),
+        "first_week_anchor": group.first_week_anchor,
+    }
+
+
 def _targets(row):
     package = _metrics(row).get("package") or {}
     targets = package.get("targets")
@@ -489,6 +517,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
                     emit_notifications=settings.new_engine_notifications,
                     verified_subjects=tuple(subjects),
                     deadline_context=await build_deadline_context(db, group),
+                    subject_context=await _subject_context(db, group),
                 )
                 if promoted != "runs_promoted":
                     # Evidence changed after the run: keep the validated proposals on the run for

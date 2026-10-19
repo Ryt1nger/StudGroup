@@ -614,6 +614,7 @@ async def promote_run(
     outcomes=None,
     verified_subjects=(),
     deadline_context=None,
+    subject_context=None,
 ):
     """Apply one completed run's accepted proposals; returns the totals key for the run.
 
@@ -677,6 +678,7 @@ async def promote_run(
                 verified_subjects=verified_subjects,
                 emit_notifications=emit_notifications,
                 deadline_context=deadline_context,
+                subject_context=subject_context,
             )
             for outcome in result.outcomes:
                 outcomes[outcome.application_status] += 1
