@@ -5,6 +5,10 @@
     python -m studgroup.analysis_backfill requeue --group-id UUID --since 2026-10-08 --limit 50
     python -m studgroup.analysis_backfill review  --group-id UUID --since 2026-10-08
     python -m studgroup.analysis_backfill promote --group-id UUID --since 2026-10-08 --limit 10
+    python -m studgroup.analysis_backfill reopen  --group-id UUID --since 2026-10-08 [--apply]
+
+``reopen`` (group in mode ``new`` only) sets the stored live messages of the window back to
+``pending`` so the package worker analyses them again; it never deletes or edits any card.
 
 ``review`` prints private chat text to the operator's terminal; never paste it into Git, logs
 or tickets. None of these commands calls the AI provider; the shadow worker does, within the
@@ -56,6 +60,8 @@ async def run(args):
                 )
             elif args.command == "review":
                 result = await backfill.review(db, **common, limit=args.limit)
+            elif args.command == "reopen":
+                result = await backfill.reopen_window(db, **common, apply=args.apply)
             else:
                 result = await backfill.promote(
                     db,
@@ -76,7 +82,9 @@ async def run(args):
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    result.add_argument("command", choices=["plan", "enqueue", "requeue", "review", "promote"])
+    result.add_argument(
+        "command", choices=["plan", "enqueue", "requeue", "review", "promote", "reopen"]
+    )
     result.add_argument("--group-id", type=uuid.UUID, required=True)
     result.add_argument("--since", default="2026-10-08", help="YYYY-MM-DD in the group timezone")
     result.add_argument("--limit", type=int, default=20)

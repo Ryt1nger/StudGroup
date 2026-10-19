@@ -320,7 +320,10 @@ async def prepare_backfill_wave(engine, settings, now=None):
         return f"wave_prepared_{result['enqueued']}"
 
 
-async def _claim(engine, now, *, canary_only=False):
+async def _claim(engine, now, *, canary_only=False, mode="shadow"):
+    # Per-message shadow runs name their raw message; package runs of the live ``new`` writer
+    # cover several targets and have none, so the two queues never pick each other's rows.
+    only_packages = [ShadowEvaluationRun.raw_message_id.is_(None)] if mode == "new" else []
     async with AsyncSession(engine) as db:
         eligible_state = (
             or_(
@@ -349,9 +352,10 @@ async def _claim(engine, now, *, canary_only=False):
                 GroupAnalysisSettings.group_id == ShadowEvaluationRun.group_id,
             )
             .where(
-                GroupAnalysisSettings.analysis_mode == "shadow",
+                GroupAnalysisSettings.analysis_mode == mode,
                 ShadowEvaluationRun.delete_at > now,
                 eligible_state,
+                *only_packages,
             )
             .order_by(ShadowEvaluationRun.created_at, ShadowEvaluationRun.id)
             .with_for_update(skip_locked=True)
