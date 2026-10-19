@@ -78,11 +78,7 @@ async def bootstrap(
         )
     )
     await db.commit()
-    permissions = (
-        ["today.read", "homework.read", "homework.completion.write", "schedule.read"]
-        if member
-        else []
-    )
+    permissions = role_permissions(member.role) if member else []
     return {
         "access_token": token,
         "token_type": "Bearer",
@@ -118,9 +114,27 @@ async def bootstrap(
     }
 
 
+STUDENT_PERMISSIONS = ["today.read", "homework.read", "homework.completion.write", "schedule.read"]
+# Deputies follow the headman bot rules: timetable and card deadlines yes, group settings no.
+STAFF_PERMISSIONS = {
+    "deputy": ["schedule.write", "deadline.manage"],
+    "headman": ["schedule.write", "deadline.manage", "group.settings.write"],
+}
+
+
+def role_permissions(role):
+    return STUDENT_PERMISSIONS + STAFF_PERMISSIONS.get(role, [])
+
+
 async def active_group(
     db: Annotated[AsyncSession, Depends(database)], authorization: str | None = Header(None)
 ):
+    group, _ = await active_membership(db, authorization)
+    return group
+
+
+async def active_membership(db, authorization):
+    """The bearer session's active group and membership; every route re-checks it per request."""
     if not authorization or not authorization.startswith("Bearer "):
         raise ApiError("unauthenticated", "Откройте приложение из Telegram")
     credential = await db.get(WebSession, token_hash(authorization[7:]))
@@ -141,7 +155,7 @@ async def active_group(
         raise ApiError("no_active_group", "Нет активной группы", 403)
     if not group.pilot_authorized or group.status != "active":
         raise ApiError("permission_denied", "Доступ к группе недоступен", 403)
-    return group
+    return group, member
 
 
 @router.get("/schedule")

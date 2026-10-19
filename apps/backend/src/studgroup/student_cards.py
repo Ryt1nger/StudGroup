@@ -9,6 +9,7 @@ from datetime import UTC
 
 from sqlalchemy import select
 
+from studgroup.analysis.deadline_policy import DeadlineDecision, student_label
 from studgroup.materials import links
 from studgroup.models import (
     AcademicDeadline,
@@ -131,8 +132,36 @@ async def projected_sources(db, group, row, now, link):
     return [source_detail(group, raw, now, revision) for raw, revision in unique.values()]
 
 
+def locked_fields(item):
+    try:
+        return set(json.loads(getattr(item, "locked_fields", None) or "[]"))
+    except ValueError:
+        return set()
+
+
+def deadline_decision(item):
+    return DeadlineDecision(
+        item.deadline_at, item.deadline_date_only, item.deadline_basis, item.deadline_reason
+    )
+
+
+def deadline_label(row, item):
+    """Neutral student wording (spec 3.4); a deadline the headman set or confirmed needs none."""
+    if item is not None:
+        if "deadline" in locked_fields(item):
+            return None if item.deadline_at else "Срок уточняется"
+        return student_label(deadline_decision(item))
+    if row.deadline_at is None:
+        return "Срок уточняется"
+    if getattr(row, "verification_state", None) == "inferred":
+        return "К следующему занятию"
+    return None
+
+
 def deadline_metadata(row, item):
     if item is not None:
+        if "deadline" in locked_fields(item):  # set or confirmed by the headman/deputy
+            return "confirmed", "manual"
         mapping = {
             "explicit": ("from_source", "explicit_message"),
             "relative_resolved": ("from_source", "explicit_message"),
@@ -293,6 +322,7 @@ async def enrich_homework(db, group, row, now):
         "confirmed_subject": confirmed_subject(row, item),
         "deadline_certainty": certainty,
         "deadline_origin": origin,
+        "deadline_label": deadline_label(row, item),
         "sources": sources,
         "materials": await projected_materials(db, row.group_id, f"h:{row.id}", now, sources),
         "updates": await projected_updates(db, link),
@@ -387,6 +417,7 @@ async def enrich_deadline(db, group, row: AcademicDeadline, now):
         "confirmed_subject": subject,
         "deadline_certainty": certainty,
         "deadline_origin": origin,
+        "deadline_label": deadline_label(row, item),
         "sources": sources,
         "materials": await projected_materials(db, row.group_id, f"e:{row.id}", now, sources),
         "updates": await projected_updates(db, link),

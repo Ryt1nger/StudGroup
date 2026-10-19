@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses } from './types.gen';
+import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -146,4 +146,139 @@ export const recheckMembership = <ThrowOnError extends boolean = false>(options?
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/membership/recheck',
     ...options
+});
+
+/**
+ * Group timetable with the revisions the editor needs and days without lessons
+ */
+export const getStaffSchedule = <ThrowOnError extends boolean = false>(options: Options<GetStaffScheduleData, ThrowOnError>): RequestResult<GetStaffScheduleResponses, GetStaffScheduleErrors, ThrowOnError> => (options.client ?? client).get<GetStaffScheduleResponses, GetStaffScheduleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/schedule',
+    ...options
+});
+
+/**
+ * Add a one-off group lesson
+ *
+ * Recomputes timetable-derived deadlines in the same transaction. No notification.
+ */
+export const createStaffLesson = <ThrowOnError extends boolean = false>(options: Options<CreateStaffLessonData, ThrowOnError>): RequestResult<CreateStaffLessonResponses, CreateStaffLessonErrors, ThrowOnError> => (options.client ?? client).post<CreateStaffLessonResponses, CreateStaffLessonErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/schedule/lessons',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Move, relocate or cancel one occurrence or the whole recurring rule
+ *
+ * Only fields present in the body change; starts_at and ends_at come together. Revisions come from StaffScheduleResponse.lesson_edits. Timetable-derived deadlines are recomputed in the same transaction; locked, explicit and past deadlines never change.
+ */
+export const changeStaffLesson = <ThrowOnError extends boolean = false>(options: Options<ChangeStaffLessonData, ThrowOnError>): RequestResult<ChangeStaffLessonResponses, ChangeStaffLessonErrors, ThrowOnError> => (options.client ?? client).patch<ChangeStaffLessonResponses, ChangeStaffLessonErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/schedule/lessons/{lesson_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Days without lessons, optionally within a date range
+ */
+export const listNoLessonDays = <ThrowOnError extends boolean = false>(options?: Options<ListNoLessonDaysData, ThrowOnError>): RequestResult<ListNoLessonDaysResponses, ListNoLessonDaysErrors, ThrowOnError> => (options?.client ?? client).get<ListNoLessonDaysResponses, ListNoLessonDaysErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/no-lesson-days',
+    ...options
+});
+
+/**
+ * Mark a day without lessons for the whole group
+ *
+ * Timetable-derived deadlines whose window crosses this day become unknown and are sent to the headman. The student schedule still lists the lessons of that day in this version.
+ */
+export const addNoLessonDay = <ThrowOnError extends boolean = false>(options: Options<AddNoLessonDayData, ThrowOnError>): RequestResult<AddNoLessonDayResponses, AddNoLessonDayErrors, ThrowOnError> => (options.client ?? client).post<AddNoLessonDayResponses, AddNoLessonDayErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/no-lesson-days',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove a day without lessons
+ */
+export const removeNoLessonDay = <ThrowOnError extends boolean = false>(options: Options<RemoveNoLessonDayData, ThrowOnError>): RequestResult<RemoveNoLessonDayResponses, RemoveNoLessonDayErrors, ThrowOnError> => (options.client ?? client).delete<RemoveNoLessonDayResponses, RemoveNoLessonDayErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/no-lesson-days/{day}',
+    ...options
+});
+
+/**
+ * Change the group timezone or first-week anchor (headman only)
+ *
+ * Guarded by schedule_version. Deputies receive 403. Timetable-derived deadlines are recomputed because both values change the group's calendar.
+ */
+export const changeGroupSettings = <ThrowOnError extends boolean = false>(options: Options<ChangeGroupSettingsData, ThrowOnError>): RequestResult<ChangeGroupSettingsResponses, ChangeGroupSettingsErrors, ThrowOnError> => (options.client ?? client).patch<ChangeGroupSettingsResponses, ChangeGroupSettingsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/group/settings',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Active cards waiting for the headman to set or confirm a deadline
+ */
+export const getDeadlineQueue = <ThrowOnError extends boolean = false>(options?: Options<GetDeadlineQueueData, ThrowOnError>): RequestResult<GetDeadlineQueueResponses, GetDeadlineQueueErrors, ThrowOnError> => (options?.client ?? client).get<GetDeadlineQueueResponses, GetDeadlineQueueErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/deadline-queue',
+    ...options
+});
+
+/**
+ * One card with staff-only deadline explanation and field locks
+ */
+export const getStaffItem = <ThrowOnError extends boolean = false>(options: Options<GetStaffItemData, ThrowOnError>): RequestResult<GetStaffItemResponses, GetStaffItemErrors, ThrowOnError> => (options.client ?? client).get<GetStaffItemResponses, GetStaffItemErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/items/{item_id}',
+    ...options
+});
+
+/**
+ * Set or confirm a card deadline
+ *
+ * Both actions lock the deadline field (AI and timetable rebuilds no longer change it), remove the deadline request from attention_reasons and create a new revision with history. `set` stores basis `explicit` with reason `headman_set`; a date_only value is normalised to the start of that day in the group timezone. `confirm` keeps the shown date and stores reason `headman_confirmed`. No notification is sent.
+ */
+export const decideItemDeadline = <ThrowOnError extends boolean = false>(options: Options<DecideItemDeadlineData, ThrowOnError>): RequestResult<DecideItemDeadlineResponses, DecideItemDeadlineErrors, ThrowOnError> => (options.client ?? client).post<DecideItemDeadlineResponses, DecideItemDeadlineErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/items/{item_id}/deadline',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Replace the set of fields the AI may not overwrite
+ *
+ * Send the full list; an empty list releases every lock.
+ */
+export const setItemLocks = <ThrowOnError extends boolean = false>(options: Options<SetItemLocksData, ThrowOnError>): RequestResult<SetItemLocksResponses, SetItemLocksErrors, ThrowOnError> => (options.client ?? client).put<SetItemLocksResponses, SetItemLocksErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/items/{item_id}/locks',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });

@@ -97,27 +97,45 @@ async def rebuild_after_schedule_change(db, group, now):
         elif request == "confirm_inferred_deadline":
             reasons.append(REASON_CONFIRM_DEADLINE)
         item.attention_reasons = json.dumps(reasons, ensure_ascii=False)
-        previous = item.revision
-        item.revision += 1
-        item.updated_at = now
-        # the card keeps showing the same sources: carry the evidence over to the new revision
-        for evidence in (
-            await db.scalars(
-                select(CanonicalItemEvidence).where(
-                    CanonicalItemEvidence.item_id == item.id,
-                    CanonicalItemEvidence.item_revision == previous,
-                )
+        await commit_item_revision(
+            db,
+            item,
+            now,
+            action="schedule_change",
+            actor="schedule_change",
+            timezone_confirmed=context.timezone_confirmed,
+        )
+    return changes
+
+
+async def commit_item_revision(db, item, now, *, action, actor, timezone_confirmed=None):
+    """Publish an edited canonical item as its next revision without asking for notifications.
+
+    The card keeps its sources (evidence is carried over), the shown deadline is appended to the
+    deadline history when ``timezone_confirmed`` is given, and an already projected card is
+    re-projected so students see the change.
+    """
+    previous = item.revision
+    item.revision += 1
+    item.updated_at = now
+    for evidence in (
+        await db.scalars(
+            select(CanonicalItemEvidence).where(
+                CanonicalItemEvidence.item_id == item.id,
+                CanonicalItemEvidence.item_revision == previous,
             )
-        ).all():
-            db.add(
-                CanonicalItemEvidence(
-                    item_id=item.id,
-                    item_revision=item.revision,
-                    raw_message_id=evidence.raw_message_id,
-                    source_revision=evidence.source_revision,
-                    fact_path=evidence.fact_path,
-                )
+        )
+    ).all():
+        db.add(
+            CanonicalItemEvidence(
+                item_id=item.id,
+                item_revision=item.revision,
+                raw_message_id=evidence.raw_message_id,
+                source_revision=evidence.source_revision,
+                fact_path=evidence.fact_path,
             )
+        )
+    if timezone_confirmed is not None:
         db.add(
             CanonicalDeadlineHistory(
                 item_id=item.id,
@@ -126,24 +144,23 @@ async def rebuild_after_schedule_change(db, group, now):
                 deadline_date_only=item.deadline_date_only,
                 deadline_basis=item.deadline_basis,
                 deadline_reason=item.deadline_reason,
-                timezone_confirmed=context.timezone_confirmed,
+                timezone_confirmed=timezone_confirmed,
                 changed_at=now,
             )
         )
-        db.add(
-            CanonicalItemRevision(
-                item_id=item.id,
-                item_revision=item.revision,
-                action="schedule_change",
-                actor="schedule_change",
-                snapshot_json=item_snapshot(item),
-                created_at=now,
-            )
+    db.add(
+        CanonicalItemRevision(
+            item_id=item.id,
+            item_revision=item.revision,
+            action=action,
+            actor=actor,
+            snapshot_json=item_snapshot(item),
+            created_at=now,
         )
-        await db.flush()
-        if await db.get(CanonicalProjectionLink, item.id):
-            await project_item(db, item, now, writer_mode="new", emit_notifications=False)
-    return changes
+    )
+    await db.flush()
+    if await db.get(CanonicalProjectionLink, item.id):
+        await project_item(db, item, now, writer_mode="new", emit_notifications=False)
 
 
 def _decision(change):

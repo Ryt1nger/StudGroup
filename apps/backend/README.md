@@ -255,6 +255,22 @@ Question delivery uses the existing web process, so a sleeping free Render insta
 catches up on waking; it is not a guaranteed always-on scheduler. Questions are off
 by default; no production role or notification preference is enabled automatically.
 
+## Cabinet API /v1/staff (contract 0.10.0)
+
+HTTP entry point to the same headman/deputy rules for the Mini App cabinet. Apply
+migration 0035 (`groups.schedule_version`) before startup. Every route re-reads and
+locks the membership; students get 403. Deputies can edit lessons, days without lessons
+and card deadlines; timezone and first-week anchor are headman-only, as in `/st`.
+
+Every group timetable change from the bot, the cabinet, undo or reviewed publication goes
+through `schedule_audit.schedule_changed`: one `schedule_changes` row, a new
+`schedule_version`, then `rebuild_after_schedule_change` in the same transaction. Setting
+or confirming a card deadline locks the `deadline` field and clears the deadline request;
+`PUT /items/{id}/locks` replaces the locked field set. No notifications are sent.
+
+Not in this release: schedule import, personal (per-student) schedule, rollback journal
+in the cabinet, and showing days without lessons on the student schedule.
+
 ## Profile, inbox and private bot administration (contract 0.7.0)
 
 The production header reads the authenticated session, not demo data. Its profile

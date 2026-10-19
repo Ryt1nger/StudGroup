@@ -13,7 +13,6 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from studgroup.academic_deadlines import archived
-from studgroup.deadline_rebuild import rebuild_after_schedule_change
 from studgroup.homework import archived_condition, utc
 from studgroup.models import (
     AcademicDeadline,
@@ -646,7 +645,9 @@ async def undo(db, group, user, member, audit_id):
     saved = await save_audit(db, group, user, "undo", inverse, rows)
     if any(kind in {"p", "x"} for _, kind, _ in rows):
         # Restoring a lesson changes the timetable, so derived deadlines follow it like an edit.
-        await rebuild_after_schedule_change(db, group, datetime.now(UTC))
+        from studgroup.schedule_audit import schedule_changed  # late: headman_schedule imports us
+
+        await schedule_changed(db, group, method="bot", operation="undo", user=user, member=member)
     return saved
 
 

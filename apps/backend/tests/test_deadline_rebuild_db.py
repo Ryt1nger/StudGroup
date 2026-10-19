@@ -113,14 +113,13 @@ def test_a_card_whose_deadline_already_passed_is_not_rebuilt(client):
 
 
 def test_undoing_a_schedule_edit_restores_the_inferred_deadline(client, monkeypatch):
-    from studgroup import headman_domain, headman_schedule
-    from studgroup.models import Membership, User
+    from studgroup import headman_domain, headman_schedule, schedule_audit
+    from studgroup.models import Group, Membership, ScheduleChange, User
 
     async def at_now(db, group, _now):  # the edit and the undo run at the test's clock
         return await rebuild_after_schedule_change(db, group, NOW + timedelta(minutes=5))
 
-    monkeypatch.setattr(headman_schedule, "rebuild_after_schedule_change", at_now)
-    monkeypatch.setattr(headman_domain, "rebuild_after_schedule_change", at_now)
+    monkeypatch.setattr(schedule_audit, "rebuild_after_schedule_change", at_now)
 
     async def run():
         async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
@@ -151,5 +150,13 @@ def test_undoing_a_schedule_edit_restores_the_inferred_deadline(client, monkeypa
             assert item.deadline_at.astimezone(MSK).date() == date(2026, 10, 14)
             history = (await db.scalars(select(CanonicalDeadlineHistory))).all()
             assert sorted(row.item_revision for row in history) == [1, 2, 3]
+            changes = (
+                await db.scalars(select(ScheduleChange).order_by(ScheduleChange.schedule_version))
+            ).all()
+            assert [(c.operation, c.schedule_version, c.actor_role) for c in changes] == [
+                ("lesson_recurring", 1, "headman"),
+                ("undo", 2, "headman"),
+            ]
+            assert (await db.get(Group, group.id)).schedule_version == 2
 
     asyncio.run(run())

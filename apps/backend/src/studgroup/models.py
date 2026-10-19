@@ -33,6 +33,8 @@ class Group(Base):
     name: Mapped[str] = mapped_column(String(255))
     timezone: Mapped[str] = mapped_column(String(64))
     first_week_anchor: Mapped[date | None] = mapped_column(Date)
+    # Bumped by every group timetable change; schedule_changes rows record the value they produced.
+    schedule_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     status: Mapped[str] = mapped_column(String(32), default="active")
     pilot_authorized: Mapped[bool] = mapped_column(Boolean, default=False)
     bot_added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
