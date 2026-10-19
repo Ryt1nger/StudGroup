@@ -278,3 +278,11 @@ def test_headman_requests_for_homework_and_dated_events():
         kind="control_point", sources=[("контрольная 20.10", msk(13))], timezone=TZ, subject=MATAN
     )
     assert headman_request(dated, "control_point") is None
+
+
+def test_deadline_tied_to_a_lesson_ends_with_that_lesson():
+    ending = dict(lesson(14, 10), ends_at=datetime(2026, 10, 14, 12, 10, tzinfo=MOSCOW).isoformat())
+    result = homework("номер 5 письменно", msk(13), schedule=schedule(ending))
+    assert result.basis == "schedule_inferred"
+    assert result.at == datetime(2026, 10, 14, 12, 10, tzinfo=MOSCOW)
+    assert archive_instant(result, TZ) == result.at

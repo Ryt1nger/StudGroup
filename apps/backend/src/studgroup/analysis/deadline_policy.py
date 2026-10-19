@@ -162,17 +162,20 @@ def _next_lesson(ordered, timezone, subject, schedule, no_lesson_days):
             and local_day > reference_day  # never the day of the source message
             and schedule.covered_from <= local_day <= schedule.covered_until
         ):
-            upcoming.append((starts, local_day, lesson.get("status", "scheduled")))
+            ends = datetime.fromisoformat(lesson["ends_at"]) if lesson.get("ends_at") else starts
+            upcoming.append((starts, local_day, lesson.get("status", "scheduled"), ends))
     if not upcoming:
         return _unknown("next_subject_lesson_unknown")
-    starts, local_day, status = min(upcoming)
+    starts, local_day, status, ends = min(upcoming)
     # Owner decision (Q2): the timetable is trusted only while the window from the source day to
     # the chosen lesson holds no cancelled lesson and no day without lessons.
     if status != "scheduled":
         return _unknown("cancelled_lesson_in_window")
     if any(reference_day < day <= local_day for day in no_lesson_days):
         return _unknown("no_lesson_day_in_window")
-    return DeadlineDecision(starts, False, "schedule_inferred", "next_subject_lesson")
+    # Owner decision (19.10): a deadline tied to a lesson ends with that lesson, so the stored
+    # moment is the lesson end and the card leaves the active list when the lesson is over.
+    return DeadlineDecision(ends, False, "schedule_inferred", "next_subject_lesson")
 
 
 def student_label(decision):

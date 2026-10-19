@@ -185,9 +185,9 @@ def seed_card(client, *, source_time: datetime | None = None):
 
 @pytest.mark.parametrize(
     "age,kind,visible",
-    [(6, "unknown", True), (8, "unknown", False), (8, "inferred", False), (8, "explicit", True)],
+    [(6, "unknown", True), (8, "unknown", False), (8, "inferred", True), (8, "explicit", True)],
 )
-def test_source_age_archives_only_undated_or_inferred_homework(client, age, kind, visible):
+def test_source_age_archives_only_undated_homework(client, age, kind, visible):
     card_id = seed_card(client)
 
     async def update():
