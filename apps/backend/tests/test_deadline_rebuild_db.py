@@ -110,3 +110,46 @@ def test_a_card_whose_deadline_already_passed_is_not_rebuilt(client):
             assert created.item.deadline_at.astimezone(MSK).date() == date(2026, 10, 14)
 
     asyncio.run(run())
+
+
+def test_undoing_a_schedule_edit_restores_the_inferred_deadline(client, monkeypatch):
+    from studgroup import headman_domain, headman_schedule
+    from studgroup.models import Membership, User
+
+    async def at_now(db, group, _now):  # the edit and the undo run at the test's clock
+        return await rebuild_after_schedule_change(db, group, NOW + timedelta(minutes=5))
+
+    monkeypatch.setattr(headman_schedule, "rebuild_after_schedule_change", at_now)
+    monkeypatch.setattr(headman_domain, "rebuild_after_schedule_change", at_now)
+
+    async def run():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await seed(db, "номер 5 письменно")
+            item = (await run_one(db, group, "номер 5 письменно", proposal())).item
+            assert item.deadline_at.astimezone(MSK).date() == date(2026, 10, 14)
+            member = await db.scalar(select(Membership).where(Membership.group_id == group.id))
+            member.role = "headman"
+            user = await db.get(User, member.user_id)
+            lesson = await pattern(db, group)
+            aid = await headman_schedule.change(
+                db,
+                group,
+                user,
+                member,
+                f"{lesson.id}:2026-10-14",
+                lesson.revision,
+                0,
+                "recurring",
+                {
+                    "starts_at": datetime(2026, 10, 15, 10, 40, tzinfo=MSK),
+                    "ends_at": datetime(2026, 10, 15, 12, 10, tzinfo=MSK),
+                },
+            )
+            assert item.deadline_at.astimezone(MSK).date() == date(2026, 10, 15)
+            await headman_domain.undo(db, group, user, member, aid)
+            assert lesson.weekday == 2
+            assert item.deadline_at.astimezone(MSK).date() == date(2026, 10, 14)
+            history = (await db.scalars(select(CanonicalDeadlineHistory))).all()
+            assert sorted(row.item_revision for row in history) == [1, 2, 3]
+
+    asyncio.run(run())
