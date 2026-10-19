@@ -686,6 +686,11 @@ async def promote_run(
                     "at": now.isoformat(),
                     "actor": actor[:64],
                     "statuses": dict(Counter(o.application_status for o in result.outcomes)),
+                    # why each proposal ended the way it did (codes only, no text), so a held or
+                    # stale proposal is never unexplained
+                    "reasons": dict(
+                        Counter(f"{o.application_status}:{o.reason_code}" for o in result.outcomes)
+                    ),
                 }
                 run.metrics_json = json.dumps(metrics, sort_keys=True)
             else:

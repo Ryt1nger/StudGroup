@@ -210,6 +210,8 @@ def test_one_package_two_provider_calls_one_card_for_two_mentions(client):
     assert (state, raw_id) == ("completed", None)
     assert metrics["package"]["targets"] == [31, 32, 33]
     assert "promotion" in metrics
+    # every proposal's outcome is explained by a reason code
+    assert metrics["promotion"]["reasons"] == {"created:projection_created": 1}
 
 
 def test_a_second_pass_does_nothing_and_never_publishes_twice(client):
