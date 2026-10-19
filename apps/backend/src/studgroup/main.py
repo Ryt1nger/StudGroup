@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     # Hard lock: the legacy per-message engine never writes cards unless this is set explicitly
     # (LEGACY_ENGINE_ENABLED=true). AI_ENABLED alone no longer wakes it up.
     legacy_engine_enabled: bool = False
+    # New (package) engine: live writer for groups whose analysis mode is ``new``. Off by default;
+    # the daily spend cap is the group's ``shadow_daily_budget_usd`` setting (shared with shadow).
+    new_engine_enabled: bool = False
+    new_engine_enabled_until: datetime | None = None
+    # Student notifications for cards the new engine creates; keep off while backfilling history.
+    new_engine_notifications: bool = False
     ai_enabled_until: datetime | None = None
     ai_shadow_enabled: bool = False
     ai_shadow_enabled_until: datetime | None = None
@@ -82,7 +88,9 @@ class Settings(BaseSettings):
                 return "postgresql+asyncpg://" + value[len(prefix) :]
         return value
 
-    @field_validator("ai_enabled_until", "ai_shadow_enabled_until", mode="before")
+    @field_validator(
+        "ai_enabled_until", "ai_shadow_enabled_until", "new_engine_enabled_until", mode="before"
+    )
     @classmethod
     def empty_cutoff(cls, value):
         return None if value == "" else value
@@ -108,7 +116,10 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "ai_enabled_until", "ai_shadow_enabled_until", "owner_update_notifications_since"
+        "ai_enabled_until",
+        "ai_shadow_enabled_until",
+        "new_engine_enabled_until",
+        "owner_update_notifications_since",
     )
     @classmethod
     def deadline_requires_timezone(cls, value):

@@ -366,3 +366,27 @@ It is used by `backfill.review`, `backfill.promote`, `/shadowcards` preview and,
 depth, by `apply_validated_batch` itself, so no path (preview, promote, live writer, Mini App
 projection) can read the old values. Idempotent; sources are never replaced; literal-date
 conflicts stay serious; no AI call.
+
+
+## New (package) engine for groups in mode `new`
+
+The worker lives in `analysis/package_worker.py` and is reached through `dispatch_next`. It serves
+only groups whose `analysis_mode` is `new`; the legacy engine never sees them and the worker never
+touches `legacy`/`shadow` groups (one writer per group).
+
+- Flags (all default off): `NEW_ENGINE_ENABLED`, optional absolute `NEW_ENGINE_ENABLED_UNTIL`,
+  `NEW_ENGINE_NOTIFICATIONS` (student pushes for new cards). The group's `shadow_daily_budget_usd`
+  is the daily spend cap; `AI_LOOP_PAUSE_SECONDS` and the hourly schedule apply as before.
+- Per iteration: one package (up to 24 target messages with read-only context) -> one durable
+  `shadow_evaluation_runs` row without a raw message -> two provider passes under a reservation ->
+  in the same transaction the accepted proposals go through the canonical resolver with the
+  timetable subjects and the intelligent-deadline context, and the targets become `completed`.
+  A lost lease re-runs the package; the resolver is idempotent. Failures retry (3 attempts) and then
+  park the targets as `failed`.
+- The model receives the group's recent active cards (`existing_items`: id + revision), so a later
+  mention updates the same card instead of creating another.
+- Owner re-analysis of a window: `python -m studgroup.analysis_backfill reopen --group-id UUID
+  --since 2026-10-08` (dry-run; `--apply` sets the stored live messages `pending` again with a new
+  generation). It changes no card; clean up legacy-written cards separately and deliberately.
+- Switching a group: `shadow -> new` needs the explicit gate approval (`transition_mode`); rollback
+  is `emergency_rollback` back to `legacy`, which keeps all product rows.

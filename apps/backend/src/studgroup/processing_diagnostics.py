@@ -350,6 +350,7 @@ async def snapshot(db, settings, now):
     result = {
         "ai_enabled": settings.ai_enabled,
         "legacy_engine_enabled": settings.legacy_engine_enabled,
+        "new_engine_enabled": settings.new_engine_enabled,
         "ai_shadow_enabled": settings.ai_shadow_enabled,
         "ai_shadow_canary_only": settings.ai_shadow_canary_only,
         "ai_shadow_enabled_until": settings.ai_shadow_enabled_until.isoformat()
