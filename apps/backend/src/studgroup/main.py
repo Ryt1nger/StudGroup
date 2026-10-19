@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     ai_circuit_cooldown_seconds: int = 300
     ai_max_recoverable_attempts_per_stage: int = 8
     ai_enabled: bool = False
+    # Hard lock: the legacy per-message engine never writes cards unless this is set explicitly
+    # (LEGACY_ENGINE_ENABLED=true). AI_ENABLED alone no longer wakes it up.
+    legacy_engine_enabled: bool = False
     ai_enabled_until: datetime | None = None
     ai_shadow_enabled: bool = False
     ai_shadow_enabled_until: datetime | None = None

@@ -81,6 +81,9 @@ Pipeline: RawMessage -> context -> Pass 1 -> Pass 2 (`cplus-extraction-2`) -> Py
 strict validation -> optional single AI Repair -> shadow row. Shadow rows are the only product of
 these steps; students see cards only after `promote --apply`.
 
+The old per-message engine is hard-locked: it publishes cards only when `LEGACY_ENGINE_ENABLED=true`
+(default false); `AI_ENABLED` alone no longer wakes it up. Leave it false while a group is on the new engine.
+
 Settings (all default off): `AI_ENABLED=false`, `AI_SHADOW_ENABLED=true` with an absolute
 `AI_SHADOW_ENABLED_UNTIL`, `AI_SHADOW_CANARY_ONLY=true` for the first run, and
 `AI_OUTPUT_REPAIR_ENABLED=false` until paid repair is separately approved. A single package
