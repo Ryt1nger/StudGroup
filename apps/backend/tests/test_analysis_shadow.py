@@ -218,7 +218,7 @@ def dispatch(client, provider, now=None):
     return asyncio.run(
         dispatch_next(
             client.app.state.engine,
-            Settings(ai_enabled=True),
+            Settings(ai_enabled=True, legacy_engine_enabled=True),
             provider=provider,
             now=now,
         )

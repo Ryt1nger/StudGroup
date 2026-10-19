@@ -15,12 +15,18 @@ async def dispatch_next(engine, settings, provider=None, now=None):
     writer remains unavailable here until its PostgreSQL E2E gate is complete, so a
     mistakenly configured new group is safely left queued instead of being published by
     both engines.
+
+    The legacy engine is locked by default: it runs only when ``legacy_engine_enabled`` is
+    explicitly true, so ``AI_ENABLED`` alone cannot make it publish cards.
     """
     await purge_expired_shadow_runs(engine, now=now)
     shadow_status = await process_shadow_next(engine, settings, provider=provider, now=now)
     if shadow_status != "idle":
         return f"shadow_{shadow_status}"
-    legacy_status = await process_next(engine, settings, provider=provider, now=now)
+    if settings.legacy_engine_enabled:
+        legacy_status = await process_next(engine, settings, provider=provider, now=now)
+    else:
+        legacy_status = "disabled"
     enqueued = (
         None if settings.ai_shadow_canary_only else await enqueue_next_shadow(engine, now=now)
     )
