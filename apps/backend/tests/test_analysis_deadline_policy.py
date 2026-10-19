@@ -168,7 +168,7 @@ def test_model_deadline_is_kept_only_when_the_source_carries_a_date_signal():
 
 def test_naive_timestamps_are_rejected():
     with pytest.raises(ValueError, match="source_timestamp_requires_offset"):
-        decide_deadline(kind="homework", sources=[("x", datetime(2026, 10, 13, 12))], timezone=TZ)
+        decide_deadline(kind="homework", sources=[("x", datetime(2026, 10, 13, 12))], timezone=TZ)  # noqa: DTZ001 - naive on purpose
 
 
 def test_archive_is_immediate_for_exact_time_and_end_of_day_for_date_only():
