@@ -73,7 +73,39 @@ def prepare_context_request(analysis_input: AnalysisInput, memory_context):
     )
 
 
-def validate_context(content, analysis_input):
+def _drop_outside_envelope(result, allowed):
+    """Lenient mode: keep only what points inside the package (ids, and facts' evidence).
+
+    The context is advisory input for the extraction pass, so a reference to a message that is not
+    in the package (typically the parent of a reply that precedes the window) removes that
+    reference, and a fact left without evidence, instead of failing the whole package.
+    """
+
+    def inside(evidence):
+        return (
+            evidence.telegram_message_id in allowed
+            and allowed[evidence.telegram_message_id] == evidence.revision
+        )
+
+    def keep(items):
+        kept = []
+        for item in items:
+            evidence = [row for row in item.evidence if inside(row)]
+            if evidence:
+                kept.append(item.model_copy(update={"evidence": evidence}))
+        return kept
+
+    return result.model_copy(
+        update={
+            "relevant_source_ids": [i for i in result.relevant_source_ids if i in allowed],
+            "discussion_facts": keep(result.discussion_facts),
+            "conflicts": keep(result.conflicts),
+            "memory_proposals": keep(result.memory_proposals),
+        }
+    )
+
+
+def validate_context(content, analysis_input, *, lenient=False):
     try:
         payload = json.loads(content)
     except (TypeError, ValueError):
@@ -87,6 +119,8 @@ def validate_context(content, analysis_input):
     if result.source_revision != analysis_input.source_revision:
         raise ValueError("context_source_revision_mismatch")
     allowed = {row.telegram_message_id: row.revision for row in analysis_input.messages}
+    if lenient:
+        result = _drop_outside_envelope(result, allowed)
     if any(message_id not in allowed for message_id in result.relevant_source_ids):
         raise ValueError("context_source_outside_envelope")
     cited = [
