@@ -305,3 +305,6 @@ section { padding: clamp(64px, 9vw, 120px) 0; }
 .sheet .stamp { background: rgba(255, 255, 255, 0.08); }
 .v-card .stamp { color: #4fe0a8; } .v-ask .stamp { color: #ffb347; } .v-skip .stamp { color: #aab0e0; } .v-rev .stamp { color: var(--glow); }
 .arrow-left { background: #aab0e0; } .arrow-left::before { border-color: #aab0e0; }
+
+/* Задержка: телефон остаётся на месте ещё около полэкрана после последнего шага */
+@media (min-width: 961px) { .day-steps::after { content: ""; display: block; height: 55vh; } }
