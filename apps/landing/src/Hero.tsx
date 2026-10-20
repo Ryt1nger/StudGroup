@@ -1,40 +1,51 @@
-import { useEffect, useState } from "react";
-import { chat, CONNECT_URL } from "./content";
+import { useEffect, useRef } from "react";
+import { CONNECT_URL } from "./content";
 import { reducedMotion } from "./hooks";
 import { Mark, TgIcon } from "./ui";
 import calendar from "./assets/calendar.dark.png";
+import appToday from "./assets/app-today.webp";
+import appTasks from "./assets/app-tasks.webp";
+import appSchedule from "./assets/app-schedule.webp";
 
-const TICK = 1500;
-const HOLD = 4; // тиков паузы после последнего сообщения
-
-const hue = (s: string) => {
-  let h = 0;
-  for (const c of s) h = (h * 31 + c.charCodeAt(0)) % 360;
-  return h;
-};
-
-function useChatLoop() {
-  const total = chat.length;
-  const [shown, setShown] = useState(reducedMotion() ? total + 2 : 0);
-  useEffect(() => {
-    if (reducedMotion()) return;
-    const id = setInterval(() => setShown((n) => (n >= total + HOLD ? 0 : n + 1)), TICK);
-    return () => clearInterval(id);
-  }, [total]);
-  return shown;
-}
+// Стена чата: шум тускнеет, учебное (a) горит фирменным фиолетовым.
+const rows: { t: string; a?: boolean }[][] = [
+  [{ t: "кто на кофе" }, { t: "К четвергу задачи 4–9", a: true }, { t: "😂😂" }, { t: "скинь мем про сессию" }, { t: "я проспал" }, { t: "Матан → 14:30, ауд. 214", a: true }, { t: "ку-ку" }, { t: "а во сколько?" }],
+  [{ t: "норм" }, { t: "ржу" }, { t: "В пятницу контрольная по истории", a: true }, { t: "кто сдал?" }, { t: "+" }, { t: "ой всё" }, { t: "Физру отменили", a: true }, { t: "стикер" }],
+  [{ t: "а завтра точно пара?" }, { t: "Староста: сбор в 9:00", a: true }, { t: "ребят, привет" }, { t: "👍" }, { t: "скиньте конспект" }, { t: "Химия: лаба №3 до чт", a: true }, { t: "хм" }, { t: "го в 5" }],
+  [{ t: "ща" }, { t: "Зачёт по английскому — в среду", a: true }, { t: "лол" }, { t: "кто в столовку" }, { t: "ааааа" }, { t: "Лекция в ауд. 214", a: true }, { t: "ну ок" }, { t: "я не понял" }],
+  [{ t: "точно?" }, { t: "Деканат: справки до пт", a: true }, { t: "стикер" }, { t: "ржу" }, { t: "ребят, а ссылка на зум?" }, { t: "Новая методичка", a: true }, { t: "ну ок" }, { t: "норм" }],
+];
 
 export function Hero() {
-  const shown = useChatLoop();
-  // сообщение «размечается» через тик после появления
-  const marked = (i: number) => i <= shown - 2;
-  const visible = chat.map((m, i) => ({ m, i })).filter(({ i }) => i < shown);
-  const window6 = visible.slice(-5);
-  const cards = chat.map((m, i) => ({ m, i })).filter(({ m, i }) => m.card && marked(i));
-  const read = Math.min(shown, chat.length);
+  const stage = useRef<HTMLDivElement>(null);
+
+  // лёгкий параллакс веера телефонов за курсором
+  useEffect(() => {
+    const el = stage.current;
+    if (!el || reducedMotion()) return;
+    const move = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      el.style.setProperty("--mx", ((e.clientX / window.innerWidth - 0.5) * 2).toFixed(3));
+      el.style.setProperty("--my", ((e.clientY / window.innerHeight - 0.5) * 2).toFixed(3));
+    };
+    window.addEventListener("pointermove", move, { passive: true });
+    return () => window.removeEventListener("pointermove", move);
+  }, []);
 
   return (
     <section className="hero night" id="top">
+      <div className="wall" aria-hidden="true">
+        {rows.map((r, i) => (
+          <div key={i} className={`wall-row ${i % 2 ? "rev" : ""}`} style={{ ["--d" as string]: `${70 + i * 9}s` }}>
+            {[0, 1].map((k) => (
+              <div className="wall-track" key={k}>
+                {r.map((m, j) => <span key={j} className={`wb ${m.a ? "wb-a" : ""}`}>{m.t}</span>)}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
       <div className="wrap hero-grid">
         <div className="hero-copy">
           <h1 className="display">
@@ -52,44 +63,13 @@ export function Hero() {
           </div>
         </div>
 
-        <div className="hero-stage" aria-label="Пример: как StudGroup разбирает чат группы">
-          <img className="hero-ill ill-cal" src={calendar} alt="" width={120} />
-          <div className="tg">
-            <div className="tg-head">
-              <span className="tg-ava" aria-hidden="true">21</span>
-              <div>
-                <b>Группа 21-Б</b>
-                <small>пример чата</small>
-              </div>
-            </div>
-            <ol className="tg-body" >
-              {window6.map(({ m, i }) => (
-                <li key={i} className={`msg k-${m.k} ${marked(i) ? "marked" : ""}`}>
-                  <span className="who" style={{ color: `hsl(${hue(m.who)} 85% 72%)` }}>{m.who}</span>
-                  <span className="txt mk-inline">{m.text}</span>
-                  {marked(i) && m.k === "q" && <span className="stamp-q">вопрос, пропускаю</span>}
-                  {marked(i) && m.k === "a" && m.card && <span className="stamp-a">{m.card.tag}</span>}
-                </li>
-              ))}
-            </ol>
-          </div>
-
-          <div className="tray" aria-label="Карточки, которые собрал StudGroup">
-            <div className="tray-head">
-              <b>Сегодня в приложении</b>
-              <span>{read} прочитано → {cards.length} {cards.length === 1 ? "карточка" : cards.length >= 2 && cards.length <= 4 ? "карточки" : "карточек"}</span>
-            </div>
-            <ul>
-              {cards.length === 0 && <li className="tray-empty">Пока пусто — ждём важное сообщение</li>}
-              {cards.map(({ m, i }) => (
-                <li key={i} className="tcard">
-                  <em>{m.card!.tag}</em>
-                  <strong>{m.card!.title}</strong>
-                  <small>{m.card!.when}</small>
-                </li>
-              ))}
-            </ul>
-          </div>
+        <div className="fan" ref={stage} aria-label="Экраны приложения StudGroup">
+          <img className="fan-glass" src={calendar} alt="" width={150} />
+          <div className="fan-ph f-l"><img src={appSchedule} alt="Расписание в приложении StudGroup" width={390} height={844} /></div>
+          <div className="fan-ph f-r"><img src={appTasks} alt="Задания в приложении StudGroup" width={390} height={844} /></div>
+          <div className="fan-ph f-c"><img src={appToday} alt="Экран «Сегодня» в приложении StudGroup" width={390} height={844} /></div>
+          <div className="push p1"><b>Новое задание</b><span>Физика, задачи 4–9 — к четвергу</span></div>
+          <div className="push p2"><b>Перенос пары</b><span>Матан в среду → 14:30, ауд. 214</span></div>
         </div>
       </div>
     </section>

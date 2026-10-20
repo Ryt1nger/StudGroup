@@ -37,6 +37,7 @@ export function App() {
         <Hero />
         <Sweep />
         <Demo />
+        <Countdown />
         <Day />
         <Rules />
         <Plans />

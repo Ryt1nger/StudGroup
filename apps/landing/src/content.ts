@@ -26,19 +26,6 @@ export const nav = [
   { label: "Вопросы", href: "#faq" },
 ] as const;
 
-// ——— Живой чат в hero. k: noise — болтовня, q — вопрос (не правка), a — учебное сообщение → карточка.
-export type ChatMsg = { who: string; text: string; k: "noise" | "q" | "a"; card?: { tag: string; title: string; when: string } };
-export const chat: ChatMsg[] = [
-  { who: "Лёша", text: "кто вчера был на физике? что вообще было", k: "q" },
-  { who: "Макс", text: "скинь мем про сессию 😂", k: "noise" },
-  { who: "Даша · староста", text: "К четвергу решить задачи 4–9 из сборника, сдаём на паре", k: "a", card: { tag: "Домашка", title: "Физика — задачи 4–9", when: "к четвергу" } },
-  { who: "Тимур", text: "кто на кофе", k: "noise" },
-  { who: "Оля", text: "а завтра точно будет пара?", k: "q" },
-  { who: "Даша · староста", text: "Матан в среду переносится на 14:30, аудитория 214", k: "a", card: { tag: "Перенос", title: "Матан → 14:30, ауд. 214", when: "в среду" } },
-  { who: "Макс", text: "я проспал, всё норм?", k: "noise" },
-  { who: "Даша · староста", text: "В пятницу контрольная по истории, темы 1–3", k: "a", card: { tag: "Контрольная", title: "История, темы 1–3", when: "в пятницу" } },
-];
-
 // ——— Интерактивная «проверка сообщений». Правила взяты из docs/product/module-0-domain-rules.md.
 export type Verdict = "card" | "ask" | "skip" | "rev";
 export const probes: {
