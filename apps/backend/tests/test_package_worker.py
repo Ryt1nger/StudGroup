@@ -833,3 +833,66 @@ def test_a_package_under_the_hourly_cap_is_not_held_back(client):
     make_new(client, budget="5.00")
     spend_in_the_last_hour(client, "0.10")
     assert step(client, PackageProvider()) == "completed"
+
+
+def owner_messages(client):
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            return [
+                json.loads(row.payload)
+                for row in (
+                    await db.scalars(
+                        select(BotOutbox).where(BotOutbox.dedup_key.like("owner-test:%:package:%"))
+                    )
+                ).all()
+            ]
+
+    return asyncio.run(run())
+
+
+def owner_settings(**patch):
+    return settings(owner_telegram_user_id=4242, owner_update_notifications_enabled=True, **patch)
+
+
+def test_the_owner_gets_one_short_message_after_a_package_that_changed_something(client):
+    seed(client)
+    make_new(client)
+    assert step(client, PackageProvider(), owner_settings()) == "completed"
+    messages = owner_messages(client)
+    assert len(messages) == 1
+    assert messages[0]["chat_id"] == 4242
+    text = messages[0]["text"]
+    assert "создано карточек: 1" in text and "из 3 сообщений" in text and "$" in text
+    assert "математике" not in text  # counts and cost only, never chat text
+
+
+def test_a_package_that_changed_nothing_sends_the_owner_nothing(client):
+    seed(client)
+    make_new(client)
+    assert step(client, PackageProvider(propose=False), owner_settings()) == "completed"
+    assert owner_messages(client) == []
+
+
+def test_without_the_owner_feed_no_message_is_queued(client):
+    seed(client)
+    make_new(client)
+    assert step(client, PackageProvider()) == "completed"  # default settings: no owner configured
+    assert owner_messages(client) == []
+    assert step(client, PackageProvider(), settings(owner_telegram_user_id=4242)) == "idle"
+    assert owner_messages(client) == []
+
+
+def test_every_changing_package_gets_its_own_message_and_an_update_is_reported(client):
+    seed(client)
+    make_new(client)
+    assert step(client, PackageProvider(), owner_settings()) == "completed"
+    source(client, mid=34, text="по математике добавили задачу 4", when=BASE + timedelta(minutes=5))
+    follow_up = PackageProvider(cited=(34,), update_existing=True)
+    assert (
+        step(client, follow_up, owner_settings(), now=datetime.now(UTC) + timedelta(hours=1))
+        == "completed"
+    )
+    texts = [message["text"] for message in owner_messages(client)]
+    assert len(texts) == 2
+    assert any("создано карточек: 1" in text for text in texts)
+    assert any("обновлено: 1" in text for text in texts)
