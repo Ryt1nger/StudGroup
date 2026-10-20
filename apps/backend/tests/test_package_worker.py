@@ -750,3 +750,86 @@ def test_a_cut_off_old_name_never_becomes_the_subject_of_a_card(client):
     item, homework = first_item(client)
     assert item.subject == "Русский язык как иностранный"
     assert homework.subject_name == "Русский язык как иностранный"
+
+
+def spend_in_the_last_hour(client, usd):
+    """A package run that already charged ``usd`` within the last hour."""
+    from decimal import Decimal
+
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            now = datetime.now(UTC)
+            db.add(
+                ShadowEvaluationRun(
+                    group_id=group.id,
+                    raw_message_id=None,
+                    source_revision=1,
+                    source_snapshot_sha256="spent" * 12 + "0000",
+                    engine_version="cplus-shadow-1",
+                    state="completed",
+                    charged_usd=Decimal(str(usd)),
+                    reserved_usd=Decimal(0),
+                    created_at=now,
+                    completed_at=now,
+                    delete_at=now + timedelta(days=30),
+                )
+            )
+            await db.commit()
+
+    asyncio.run(run())
+
+
+def last_error_of_the_open_run(client):
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (
+                await db.scalars(
+                    select(ShadowEvaluationRun).where(ShadowEvaluationRun.state != "completed")
+                )
+            ).all()
+            return [(row.state, row.last_error) for row in rows]
+
+    return asyncio.run(run())
+
+
+def test_the_hourly_cap_holds_a_package_back_without_calling_the_provider(client):
+    seed(client)
+    make_new(client, budget="5.00")  # a roomy daily cap: only the hourly cap decides here
+    spend_in_the_last_hour(client, "0.49")
+    provider = PackageProvider()
+    assert step(client, provider) == "budget_deferred"
+    assert provider.requests == []
+    assert set(states(client).values()) == {"pending"}
+    assert last_error_of_the_open_run(client) == [
+        ("budget_deferred", "shadow_hourly_budget_exhausted")
+    ]
+
+
+def test_the_package_runs_again_once_the_hour_has_passed(client):
+    seed(client)
+    make_new(client, budget="5.00")
+    spend_in_the_last_hour(client, "0.49")
+    provider = PackageProvider()
+    now = datetime.now(UTC)
+    assert step(client, provider, now=now) == "budget_deferred"
+    assert step(client, provider, now=now + timedelta(hours=1, minutes=5)) == "completed"
+    assert set(states(client).values()) == {"completed"}
+    assert len(provider.requests) == 2
+
+
+def test_the_hourly_cap_is_configurable_and_defaults_to_fifty_cents():
+    from studgroup.main import Settings
+
+    assert Settings(_env_file=None).new_engine_hourly_budget_usd == 0.50
+    assert (
+        Settings(_env_file=None, new_engine_hourly_budget_usd=0.2).new_engine_hourly_budget_usd
+        == 0.2
+    )
+
+
+def test_a_package_under_the_hourly_cap_is_not_held_back(client):
+    seed(client)
+    make_new(client, budget="5.00")
+    spend_in_the_last_hour(client, "0.10")
+    assert step(client, PackageProvider()) == "completed"
