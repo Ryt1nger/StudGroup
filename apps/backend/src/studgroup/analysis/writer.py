@@ -8,6 +8,7 @@ from studgroup.analysis.deadline_application import apply_policy
 from studgroup.analysis.projection import project_item
 from studgroup.analysis.resolver import resolve_proposal
 from studgroup.analysis.stored import effective_validation
+from studgroup.analysis.subject_resolver import resolve_card_subject
 from studgroup.models import Group
 
 
@@ -28,6 +29,7 @@ async def apply_validated_batch(
     verified_subjects=(),
     emit_notifications=True,
     deadline_context=None,
+    subject_context=None,
 ):
     # Defence in depth: whatever produced the validation (live adapter or an older stored run),
     # the same source-checked rules decide audience and date origin before anything is written.
@@ -49,6 +51,17 @@ async def apply_validated_batch(
         )
     for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted, strict=True):
         card = edit_card(proposal, messages, verified_subjects=verified_subjects)
+        if card.subject is None and subject_context is not None:
+            # No source-backed subject: take it from the timetable (hashtag, or the lesson running
+            # when the messages were sent). Always one of the timetable names, never invented, and
+            # a split vote leaves the subject empty.
+            cited = {ref.telegram_message_id for ref in proposal.evidence}
+            found = resolve_card_subject(
+                [(m.message_date, m.text) for m in messages if m.telegram_message_id in cited],
+                **subject_context,
+            )
+            if found.subject:
+                card = card.model_copy(update={"subject": found.subject})
         applied = (
             apply_policy(proposal, messages, card.subject, deadline_context)
             if deadline_context is not None

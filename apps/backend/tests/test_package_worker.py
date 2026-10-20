@@ -38,7 +38,10 @@ BASE = datetime.now(UTC) - timedelta(hours=3)
 class PackageProvider:
     """Answers both passes of a package; the second pass proposes one card citing two sources."""
 
-    def __init__(self, *, failure=None, cited=(31, 33), propose=True, update_existing=False):
+    def __init__(
+        self, *, failure=None, cited=(31, 33), propose=True, update_existing=False, subject=None
+    ):
+        self.subject = subject
         self.requests = []
         self.failure = failure
         self.cited = cited
@@ -62,6 +65,8 @@ class PackageProvider:
             self.offered = request.user_payload.get("existing_items", [])
             if self.propose:
                 item = proposal(source_id=self.cited[0]).model_dump(mode="json")
+                if self.subject is not None:
+                    item["subject"] = self.subject
                 if self.update_existing and self.offered:
                     # What the real model is told to do: copy the trusted id and revision.
                     item["action"] = "update"
@@ -210,6 +215,8 @@ def test_one_package_two_provider_calls_one_card_for_two_mentions(client):
     assert (state, raw_id) == ("completed", None)
     assert metrics["package"]["targets"] == [31, 32, 33]
     assert "promotion" in metrics
+    # every proposal's outcome is explained by a reason code
+    assert metrics["promotion"]["reasons"] == {"created:projection_created": 1}
 
 
 def test_a_second_pass_does_nothing_and_never_publishes_twice(client):
@@ -276,12 +283,19 @@ def test_daily_budget_defers_the_package_without_calling_the_provider(client):
 
 
 def test_hourly_schedule_only_takes_messages_received_before_the_slot(client):
-    seed(client)
+    # Fixed 12:20-12:22 Moscow on a Monday, so the messages can never straddle a slot boundary.
+    arrival = datetime(2026, 10, 19, 9, 22, tzinfo=UTC)
+    for index in range(3):
+        source(
+            client,
+            mid=31 + index,
+            text="по математике задачи 1–3",
+            when=arrival - timedelta(minutes=2 - index),
+        )
     make_new(client)
     provider = PackageProvider()
     cfg = settings(ai_schedule_enabled=True)
     # Inside the slot in which the messages arrived, nothing is taken yet.
-    arrival = BASE + timedelta(minutes=2)
     assert step(client, provider, cfg, now=arrival + timedelta(minutes=1)) in {"idle", "settled"}
     assert provider.requests == []
     next_slot = arrival.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1, minutes=1)
@@ -503,3 +517,85 @@ def test_reopen_refuses_a_group_that_is_not_in_new_mode(client):
         assert str(error) == "reopen_requires_new_mode"
     else:
         raise AssertionError("reopen must require mode new")
+
+
+def test_the_lesson_running_when_the_message_was_sent_gives_the_subject(client):
+    # 12:00 Moscow on a Monday: the Mathematics lesson (10:40-12:10) is running; the model named a
+    # subject that is not in the timetable, so the card editor drops it and the timetable decides.
+    seed_fixed(client, ["решить задачи 1–3", "ок", "напоминаю про задачи 1–3"])
+    seed_timetable(client)
+    make_new(client)
+    provider = PackageProvider(subject="Физика")
+    assert step(client, provider, now=MONDAY + timedelta(hours=1)) == "completed"
+    item, homework = first_item(client)
+    assert item.subject == "Математика"
+    assert homework.subject_name == "Математика"
+
+
+def test_a_message_outside_any_lesson_never_gets_a_guessed_subject(client):
+    evening = MONDAY + timedelta(hours=9)  # 21:00 Moscow, no lesson
+    for index, text in enumerate(["решить задачи 1–3", "ок", "напоминаю про задачи 1–3"]):
+        source(client, mid=31 + index, text=text, when=evening + timedelta(minutes=index))
+    seed_timetable(client)
+    make_new(client)
+    provider = PackageProvider(subject="Физика")
+    assert step(client, provider, now=evening + timedelta(hours=2)) == "completed"
+    item, _homework = first_item(client)
+    assert item.subject is None
+
+
+def test_an_unambiguous_hashtag_beats_the_lesson_that_happened_to_be_running(client):
+    seed_fixed(client, ["#матан решить задачи 1–3", "ок", "напоминаю про задачи 1–3"])
+    seed_timetable(client, subject="Математический анализ")
+    make_new(client)
+    provider = PackageProvider(subject="Физика")
+    assert step(client, provider, now=MONDAY + timedelta(hours=1)) == "completed"
+    item, _homework = first_item(client)
+    assert item.subject == "Математический анализ"
+
+
+def source_raw(client, mid, text, when, *, thread=None, sender=None):
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            if group.bot_added_at is None:
+                group.bot_added_at = when
+            db.add(
+                RawMessage(
+                    group_id=group.id,
+                    telegram_message_id=mid,
+                    sender_id=sender,
+                    message_thread_id=thread,
+                    text=text,
+                    message_date=when,
+                    version_date=when,
+                    revision=1,
+                    delete_at=when + timedelta(days=30),
+                    live_received_at=when,
+                )
+            )
+            await db.commit()
+
+    asyncio.run(run())
+
+
+def test_a_card_citing_an_unlinked_message_is_published_with_a_flag_not_held(client):
+    # The model cites two messages with no reply, topic or author link between them.
+    source_raw(client, 31, "По математике решить задачи 1–3", BASE, sender=1)
+    source_raw(
+        client,
+        32,
+        "Математика, те же задачи 1–3",
+        BASE + timedelta(minutes=300),
+        thread=7,
+        sender=2,
+    )
+    source_raw(client, 33, "ок", BASE + timedelta(minutes=301), sender=1)
+    make_new(client)
+    provider = PackageProvider(cited=(31, 32))
+    assert step(client, provider, now=BASE + timedelta(hours=8)) == "completed"
+    item, homework = first_item(client)
+    assert homework is not None and item is not None
+    assert "foreign_source_attached" in json.loads(item.attention_reasons)
+    assert item.state == "active"
+    assert count(client, Homework) == 1

@@ -78,6 +78,21 @@ def _record_deadline_history(db, item, proposal, sources, now):
     )
 
 
+_BASIS_RANK = {"explicit": 3, "relative_resolved": 2, "schedule_inferred": 1, "unknown": 0}
+_DEADLINE_REQUESTS = {"deadline_needs_headman", "deadline_inferred_confirm"}
+
+
+def _keeps_known_deadline(item, shown):
+    """An update that knows less about the date than the card never erases or downgrades it.
+
+    A later message that names no date (or only a lesson-derived one) must not wipe a date the card
+    already has from the text; only a better-grounded date or an explicit withdrawal changes it.
+    """
+    if item.deadline_at is None or shown.reason == "withdrawn_deadline":
+        return False
+    return _BASIS_RANK.get(shown.basis, 0) < _BASIS_RANK.get(item.deadline_basis, 0)
+
+
 @dataclass(frozen=True)
 class _Shown:
     at: object
@@ -216,8 +231,22 @@ async def resolve_proposal(
                 "title": item.title,
                 "description": item.description,
             }
+            keeps_deadline = action == "update" and _keeps_known_deadline(item, shown)
+            if keeps_deadline:
+                # The date stays, so the policy's "set/confirm the date" requests for the date-less
+                # message do not apply; the card keeps the requests it already carried.
+                card_reasons = [
+                    *(r for r in card_reasons if r not in _DEADLINE_REQUESTS),
+                    *(
+                        r
+                        for r in json.loads(item.attention_reasons or "[]")
+                        if r in _DEADLINE_REQUESTS
+                    ),
+                ]
             proposed = {
-                "deadline": (shown.at, shown.date_only, shown.basis, shown.reason),
+                "deadline": current["deadline"]
+                if keeps_deadline
+                else (shown.at, shown.date_only, shown.basis, shown.reason),
                 "subject": subject,
                 "kind": proposal.semantic_kind,
                 "title": title,
