@@ -2,11 +2,15 @@ name: Keep the Render API awake
 
 # The API runs on Render Free, which puts a web service to sleep after 15 minutes without inbound
 # requests. The analysis worker is embedded in that process, so a sleeping service pauses the
-# hourly runs. A health-check request every 10 minutes keeps it awake. Remove this workflow if the
+# hourly runs. A health-check request every ~10 minutes keeps it awake. Remove this workflow if the
 # service moves to a paid plan.
+#
+# GitHub runs `schedule` triggers on a best-effort basis and drops many of the ones that fall on
+# round minutes (the first version used */10 and never fired once in 3.5 hours). The cron below uses
+# off-peak minutes, and the `workflow_dispatch` trigger stays for manual runs.
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "7,17,27,37,47,57 * * * *"
   workflow_dispatch:
 
 permissions: {}

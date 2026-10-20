@@ -492,7 +492,12 @@ async def process_package_next(engine, settings, provider=None, now=None):
     if not _gate(settings, now):
         return "disabled"
     queued = await enqueue_next_package(engine, settings, now)
-    claimed = await _claim(engine, now, mode="new")
+    claimed = await _claim(
+        engine,
+        now,
+        mode="new",
+        hourly_cap=Decimal(str(settings.new_engine_hourly_budget_usd)),
+    )
     if claimed is None:
         return "idle" if queued in {"idle", "settled"} else queued
     if isinstance(claimed, str):

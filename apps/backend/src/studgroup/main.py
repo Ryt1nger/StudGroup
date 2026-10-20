@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     new_engine_enabled_until: datetime | None = None
     # Student notifications for cards the new engine creates; keep off while backfilling history.
     new_engine_notifications: bool = False
+    # Rolling one-hour spend cap of the new engine, on top of the group's daily cap.
+    new_engine_hourly_budget_usd: float = Field(default=0.50, ge=0)
     ai_enabled_until: datetime | None = None
     ai_shadow_enabled: bool = False
     ai_shadow_enabled_until: datetime | None = None

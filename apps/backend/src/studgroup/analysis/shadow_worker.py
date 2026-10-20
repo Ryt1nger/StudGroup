@@ -320,7 +320,7 @@ async def prepare_backfill_wave(engine, settings, now=None):
         return f"wave_prepared_{result['enqueued']}"
 
 
-async def _claim(engine, now, *, canary_only=False, mode="shadow"):
+async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=None):
     # Per-message shadow runs name their raw message; package runs of the live ``new`` writer
     # cover several targets and have none, so the two queues never pick each other's rows.
     only_packages = [ShadowEvaluationRun.raw_message_id.is_(None)] if mode == "new" else []
@@ -393,6 +393,33 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow"):
             row.reserved_usd = Decimal(0)
             await db.commit()
             return "budget_deferred"
+        if hourly_cap is not None:
+            # Rolling one-hour safety cap (live ``new`` writer only): what the group's runs created in
+            # the last hour already charged, plus every reservation, plus this one.
+            hour_start = _utc(now) - timedelta(hours=1)
+            hour_charged = await db.scalar(
+                select(func.coalesce(func.sum(ShadowEvaluationRun.charged_usd), 0)).where(
+                    ShadowEvaluationRun.group_id == row.group_id,
+                    ShadowEvaluationRun.created_at >= hour_start,
+                )
+            )
+            hour_reserved = await db.scalar(
+                select(func.coalesce(func.sum(ShadowEvaluationRun.reserved_usd), 0)).where(
+                    ShadowEvaluationRun.group_id == row.group_id,
+                    ShadowEvaluationRun.created_at >= hour_start,
+                    ShadowEvaluationRun.id != row.id,
+                )
+            )
+            if Decimal(hour_charged or 0) + Decimal(
+                hour_reserved or 0
+            ) + SHADOW_RESERVATION_USD > Decimal(hourly_cap):
+                row.state = "budget_deferred"
+                row.last_error = "shadow_hourly_budget_exhausted"
+                row.available_at = _utc(now) + timedelta(minutes=10)
+                row.lease_until = None
+                row.reserved_usd = Decimal(0)
+                await db.commit()
+                return "budget_deferred"
         row.state = "running"
         row.attempts += 1
         row.available_at = now
