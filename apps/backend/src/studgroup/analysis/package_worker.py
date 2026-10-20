@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.ai import ProviderFailure
 from studgroup.ai_schedule import window
+from studgroup.analysis import duplicate_guard
 from studgroup.analysis.backfill import promote_run
 from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
@@ -47,6 +48,7 @@ from studgroup.analysis.subject_resolver import Lesson
 from studgroup.deadline_context import build_deadline_context
 from studgroup.models import (
     CanonicalAcademicItem,
+    CanonicalItemEvidence,
     Group,
     GroupAnalysisSettings,
     GroupKnowledgeFact,
@@ -396,6 +398,29 @@ async def _subject_context(db, group):
     }
 
 
+async def _watch_duplicates(db, row, group, now):
+    """Second line against duplicate cards: report, never merge (see duplicate_guard)."""
+    touched = (
+        await db.scalars(
+            select(CanonicalItemEvidence.item_id)
+            .join(RawMessage, RawMessage.id == CanonicalItemEvidence.raw_message_id)
+            .where(
+                RawMessage.group_id == group.id,
+                RawMessage.telegram_message_id.in_(_targets(row)),
+            )
+            .distinct()
+        )
+    ).all()
+    pairs = await duplicate_guard.watch(db, group.id, touched) if touched else []
+    if pairs:
+        metrics = _metrics(row)
+        metrics["duplicate_watch"] = [list(pair) for pair in pairs[:20]]
+        row.metrics_json = json.dumps(metrics, sort_keys=True)
+        await incident(db, "possible_duplicate_cards", now, detail=f"pairs={len(pairs)}")
+    else:
+        await incident(db, "possible_duplicate_cards", now, recover=True)
+
+
 def _targets(row):
     package = _metrics(row).get("package") or {}
     targets = package.get("targets")
@@ -531,6 +556,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
                     metrics["promotion_skipped"] = promoted
                     row.metrics_json = json.dumps(metrics, sort_keys=True)
             await _finish_targets(db, row, "completed")
+            await _watch_duplicates(db, row, group, now)
             await incident(db, "ai_daily_group_budget_limit", now, recover=True)
             await db.commit()
             return "completed"

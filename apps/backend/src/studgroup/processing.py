@@ -253,6 +253,8 @@ BUDGET_INCIDENT_CODES = frozenset(
         "ai_daily_group_budget_limit",
         "ai_total_budget_limit",
         "ai_hourly_safety_limit",
+        # the duplicate watchdog's finding: one alert per episode, closed after a quiet period
+        "possible_duplicate_cards",
     }
 )
 BUDGET_INCIDENT_QUIET = timedelta(minutes=10)
