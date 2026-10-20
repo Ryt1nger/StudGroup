@@ -421,6 +421,29 @@ async def _watch_duplicates(db, row, group, now):
         await incident(db, "possible_duplicate_cards", now, recover=True)
 
 
+def _package_line(row, outcome, *, result=None, failure=None):
+    """One line per package for the operator: counts and codes only, never message text.
+
+    Built BEFORE the commit (the row's attributes expire on commit) and printed after it.
+    """
+    statuses = (_metrics(row).get("promotion") or {}).get("statuses", {})
+    return "PACKAGE_RESULT " + json.dumps(
+        {
+            "outcome": outcome,
+            "targets": len(_targets(row)),
+            "attempt": row.attempts,
+            "accepted": 0 if result is None else len(result.validation.accepted),
+            "rejected": 0 if result is None else len(result.validation.rejected),
+            "created": statuses.get("created", 0),
+            "updated": statuses.get("updated", 0),
+            "held": statuses.get("review", 0),
+            "error": None if failure is None else failure.code,
+            "charged_usd": str(row.charged_usd),
+        },
+        sort_keys=True,
+    )
+
+
 def _targets(row):
     package = _metrics(row).get("package") or {}
     targets = package.get("targets")
@@ -560,7 +583,9 @@ async def process_package_next(engine, settings, provider=None, now=None):
             await _finish_targets(db, row, "completed")
             await _watch_duplicates(db, row, group, now)
             await incident(db, "ai_daily_group_budget_limit", now, recover=True)
+            line = _package_line(row, "completed", result=result)
             await db.commit()
+            print(line, flush=True)
             return "completed"
         # If the provider did not report usage, keep the full reservation as a
         # conservative charge unless it explicitly proved that no request ran.
@@ -585,5 +610,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
             await _finish_targets(db, row, "failed")
             await incident_once(db, "processing_exhausted", now, detail=failure.code)
             outcome = "failed"
+        line = _package_line(row, outcome, failure=failure)
         await db.commit()
+        print(line, flush=True)
         return outcome
