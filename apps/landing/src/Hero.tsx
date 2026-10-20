@@ -62,7 +62,7 @@ export function Hero() {
                 <small>пример чата</small>
               </div>
             </div>
-            <ol className="tg-body" aria-live="off">
+            <ol className="tg-body" >
               {window6.map(({ m, i }) => (
                 <li key={i} className={`msg k-${m.k} ${marked(i) ? "marked" : ""}`}>
                   <span className="who" style={{ color: `hsl(${hue(m.who)} 85% 72%)` }}>{m.who}</span>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CONNECT_URL, nav } from "./content";
 import { Hero } from "./Hero";
 import { Sweep } from "./Sweep";
+import { Countdown } from "./Countdown";
 import { Demo } from "./Demo";
 import { Day } from "./Day";
 import { Rules, Plans, Faq, Cta, Footer, logoDark } from "./Rest";
@@ -38,6 +39,7 @@ export function App() {
         <Demo />
         <Day />
         <Rules />
+        <Countdown />
         <Plans />
         <Faq />
         <Cta />

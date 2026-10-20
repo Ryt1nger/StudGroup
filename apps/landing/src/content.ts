@@ -15,7 +15,11 @@ export const CONNECT_URL = botLink("connect");
 // TODO(owner): в макете 499 ₽, а docs/product/module-0-domain-rules.md §15 утверждает 599 ₽ / 30 дней. Решение: оставить как в макете.
 export const GROUP_PRICE = "499";
 
+// Релиз: 1 ноября 2026, 00:00 по Москве.
+export const RELEASE_AT = new Date("2026-11-01T00:00:00+03:00").getTime();
+
 export const nav = [
+  { label: "Релиз", href: "#release" },
   { label: "Как работает", href: "#demo" },
   { label: "Правила бота", href: "#rules" },
   { label: "Тарифы", href: "#plans" },
