@@ -28,7 +28,12 @@ from studgroup.analysis.backfill import promote_run
 from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
 from studgroup.analysis.package_run import DEFAULT_MAX_TARGETS, plan_packages
-from studgroup.analysis.shadow import ShadowPassFailure, run_shadow, usage_cost_usd
+from studgroup.analysis.shadow import (
+    ShadowPassFailure,
+    failure_stage,
+    run_shadow,
+    usage_cost_usd,
+)
 from studgroup.analysis.shadow_worker import (
     SHADOW_MAX_ATTEMPTS,
     SHADOW_RESERVATION_USD,
@@ -355,8 +360,8 @@ async def _existing_items(db, group_id, now):
             "revision": row.revision,
             "semantic_kind": row.semantic_kind,
             "subject": row.subject,
-            "title": row.title[:160],
-            "description": (row.description or "")[:300],
+            "title": row.title[:200],
+            "description": (row.description or "")[:600],
             "deadline_at": _utc(row.deadline_at).isoformat() if row.deadline_at else None,
             "deadline_basis": row.deadline_basis,
         }
@@ -538,7 +543,11 @@ async def process_package_next(engine, settings, provider=None, now=None):
         if len(failure.raw_results) > 1:
             row.validation_result_json = failure.raw_results[1]
         row.last_error = failure.code
-        if failure.retryable and row.attempts - attempt_base(row) < SHADOW_MAX_ATTEMPTS:
+        # A malformed or schema-invalid model answer is a bad sample, not a defect of the package:
+        # the next attempt is usually valid, and giving up would park the whole package (up to 24
+        # messages) as failed. Both kinds are retried within the attempt limit.
+        retryable = failure.retryable or failure_stage(failure.code) == "validation"
+        if retryable and row.attempts - attempt_base(row) < SHADOW_MAX_ATTEMPTS:
             row.state = "retry"
             row.available_at = now + timedelta(seconds=15 * 2 ** (row.attempts - 1))
             outcome = "retry"

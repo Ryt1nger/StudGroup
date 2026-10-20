@@ -39,8 +39,16 @@ class PackageProvider:
     """Answers both passes of a package; the second pass proposes one card citing two sources."""
 
     def __init__(
-        self, *, failure=None, cited=(31, 33), propose=True, update_existing=False, subject=None
+        self,
+        *,
+        failure=None,
+        cited=(31, 33),
+        propose=True,
+        update_existing=False,
+        subject=None,
+        garbage_first=0,
     ):
+        self.garbage_first = garbage_first  # this many context answers are not valid JSON
         self.subject = subject
         self.requests = []
         self.failure = failure
@@ -55,6 +63,15 @@ class PackageProvider:
         if self.failure:
             raise ProviderFailure(self.failure, True)
         revision = request.user_payload["source_revision"]
+        if request.prompt_version == "cplus-context-1" and self.garbage_first > 0:
+            self.garbage_first -= 1
+            return ProviderResponse(
+                content="это не JSON",
+                usage=ProviderUsage(prompt_tokens=10, completion_tokens=5),
+                model="fake",
+                finish_reason="stop",
+                payload_sha256=str(len(self.requests)).zfill(64),
+            )
         if request.prompt_version == "cplus-context-1":
             self.targets = list(request.user_payload["target_message_ids"])
             payload = context_payload(
@@ -599,3 +616,26 @@ def test_a_card_citing_an_unlinked_message_is_published_with_a_flag_not_held(cli
     assert "foreign_source_attached" in json.loads(item.attention_reasons)
     assert item.state == "active"
     assert count(client, Homework) == 1
+
+
+def test_a_malformed_model_answer_is_retried_instead_of_parking_the_whole_package(client):
+    seed(client)
+    make_new(client)
+    provider = PackageProvider(garbage_first=1)
+    now = datetime.now(UTC)
+    assert step(client, provider, now=now) == "retry"
+    assert set(states(client).values()) == {"pending"}
+    assert step(client, provider, now=now + timedelta(hours=1)) == "completed"
+    assert set(states(client).values()) == {"completed"}
+    assert count(client, Homework) == 1
+
+
+def test_a_model_that_keeps_answering_garbage_ends_in_failed_after_the_attempt_limit(client):
+    seed(client)
+    make_new(client)
+    provider = PackageProvider(garbage_first=99)
+    now = datetime.now(UTC)
+    outcomes = [step(client, provider, now=now + timedelta(hours=hour)) for hour in range(1, 5)]
+    assert outcomes[:2] == ["retry", "retry"]
+    assert "failed" in outcomes
+    assert set(states(client).values()) == {"failed"}
