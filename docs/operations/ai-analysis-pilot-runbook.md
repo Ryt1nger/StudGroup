@@ -235,7 +235,7 @@ change. Telegram file ids stay server-side; the client only gets `t.me` links.
   verbatim as `Дополнение: …`. A separate model card that only clarifies another card is merged
   (`merged_supplement`). Ambiguous (one reply, several tasks) -> `supplement_ambiguous`;
   doubtful medium/student replies -> `possible_missing_supplement`; a cited message with no
-  structural tie to the others -> `foreign_source_attached` (held). Cross-run: in preview/promote
+  structural tie to the others -> `foreign_source_attached` (flagged for the headman; published, no longer held - owner decision 20 Oct 2026). Cross-run: in preview/promote
   `with_supplement_updates` turns a card that merely clarifies an already-built item into an
   update of that item. Old stored shadow results get the same treatment when reviewed.
 

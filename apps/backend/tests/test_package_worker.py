@@ -552,3 +552,50 @@ def test_an_unambiguous_hashtag_beats_the_lesson_that_happened_to_be_running(cli
     assert step(client, provider, now=MONDAY + timedelta(hours=1)) == "completed"
     item, _homework = first_item(client)
     assert item.subject == "Математический анализ"
+
+
+def source_raw(client, mid, text, when, *, thread=None, sender=None):
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            if group.bot_added_at is None:
+                group.bot_added_at = when
+            db.add(
+                RawMessage(
+                    group_id=group.id,
+                    telegram_message_id=mid,
+                    sender_id=sender,
+                    message_thread_id=thread,
+                    text=text,
+                    message_date=when,
+                    version_date=when,
+                    revision=1,
+                    delete_at=when + timedelta(days=30),
+                    live_received_at=when,
+                )
+            )
+            await db.commit()
+
+    asyncio.run(run())
+
+
+def test_a_card_citing_an_unlinked_message_is_published_with_a_flag_not_held(client):
+    # The model cites two messages with no reply, topic or author link between them.
+    source_raw(client, 31, "По математике решить задачи 1–3", BASE, sender=1)
+    source_raw(
+        client,
+        32,
+        "Математика, те же задачи 1–3",
+        BASE + timedelta(minutes=300),
+        thread=7,
+        sender=2,
+    )
+    source_raw(client, 33, "ок", BASE + timedelta(minutes=301), sender=1)
+    make_new(client)
+    provider = PackageProvider(cited=(31, 32))
+    assert step(client, provider, now=BASE + timedelta(hours=8)) == "completed"
+    item, homework = first_item(client)
+    assert homework is not None and item is not None
+    assert "foreign_source_attached" in json.loads(item.attention_reasons)
+    assert item.state == "active"
+    assert count(client, Homework) == 1

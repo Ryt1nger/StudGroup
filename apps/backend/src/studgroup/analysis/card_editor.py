@@ -39,8 +39,11 @@ SERIOUS_REASONS = {
     "conflicting_deadlines",
     "deadline_before_source",
     "unconfirmed_change",
-    "foreign_source_attached",
 }
+# ``foreign_source_attached`` (a cited message with no structural tie to the others) used to be
+# serious and held the card. Owner decision (20 Oct 2026): the card is published for the headman
+# with the flag instead, because real chats discuss one task across unlinked messages and holding
+# lost cards the reviewed demo shows. The flag stays on the card so the headman can check it.
 DEADLINE_LABELS = {
     "test": "Тест",
     "control_point": "Контрольная точка",
