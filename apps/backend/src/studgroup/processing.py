@@ -245,6 +245,19 @@ async def adopt_incident_episode(db, row):
     return episode
 
 
+# Spend limits clear on their own and flap at the edge of the limit; one alert per episode,
+# closed only after a quiet period, instead of an open/recover pair on every other call.
+BUDGET_INCIDENT_CODES = frozenset(
+    {
+        "ai_budget_limit",
+        "ai_daily_group_budget_limit",
+        "ai_total_budget_limit",
+        "ai_hourly_safety_limit",
+    }
+)
+BUDGET_INCIDENT_QUIET = timedelta(minutes=10)
+
+
 async def incident(db, code, now, recover=False, detail=None):
     inserted = None
     if not recover:
@@ -267,6 +280,11 @@ async def incident(db, code, now, recover=False, detail=None):
     if recover:
         if row and row.active:
             if utc(now) < utc(episode.last_seen_at):
+                return episode.id
+            if (
+                code in BUDGET_INCIDENT_CODES
+                and utc(now) - utc(episode.last_seen_at) < BUDGET_INCIDENT_QUIET
+            ):
                 return episode.id
             row.active = False
             row.recovered_at = max(utc(now), utc(episode.last_seen_at))
@@ -297,6 +315,11 @@ async def incident(db, code, now, recover=False, detail=None):
         episode.last_seen_at = max(utc(now), utc(episode.last_seen_at))
         if detail:
             episode.last_detail = detail
+        if code not in BUDGET_INCIDENT_CODES:
+            # Each repeat of an error is announced again; flush_incidents stops after
+            # ai_circuit_failure_threshold occurrences.
+            episode.opening_pending = True
+            row.notification_pending = True
     return episode.id
 
 
