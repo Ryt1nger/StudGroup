@@ -39,8 +39,8 @@ export function App() {
         <Demo />
         <Day />
         <Rules />
-        <Countdown />
         <Plans />
+        <Countdown />
         <Faq />
         <Cta />
       </main>

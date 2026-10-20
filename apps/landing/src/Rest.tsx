@@ -12,6 +12,7 @@ export { logoDark, logoLight };
 export function Rules() {
   return (
     <section className="rules night" id="rules">
+      <img className="glass g-rules" src={folder} alt="" width={240} />
       <div className="wrap rules-grid">
         <div>
           <h2 className="h2">Бот не выдумывает. <Mark>Он ищет доказательства.</Mark></h2>
@@ -108,6 +109,7 @@ function QA({ q, a }: { q: string; a: string }) {
 export function Faq() {
   return (
     <section className="faq paper-2" id="faq">
+      <img className="glass g-faq" src={calendar} alt="" width={170} />
       <div className="wrap faq-wrap">
         <header className="sec-head">
           <h2 className="h2">Спросите бота</h2>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CONNECT_URL, RELEASE_AT } from "./content";
 import calendar from "./assets/calendar.dark.png";
+import folder from "./assets/folder.dark.png";
 import { TgIcon } from "./ui";
 
 const plural = (n: number, f: [string, string, string]) => {
@@ -33,14 +34,15 @@ export function Countdown() {
   const t = left(now);
   const label = t.done
     ? "StudGroup запущен"
-    : `До релиза осталось ${t.d} ${plural(t.d, ["день", "дня", "дней"])}, ${t.h} ${plural(t.h, ["час", "часа", "часов"])}`;
+    : `До запуска осталось ${t.d} ${plural(t.d, ["день", "дня", "дней"])}, ${t.h} ${plural(t.h, ["час", "часа", "часов"])}`;
 
   return (
-    <section className="release" id="release" aria-label="Обратный отсчёт до релиза">
+    <section className="release" id="release" aria-label="Обратный отсчёт до запуска">
       <img className="rel-ill" src={calendar} alt="" width={200} />
+      <img className="rel-ill rel-ill2" src={folder} alt="" width={200} />
       <div className="wrap rel-in">
-        <h2 className="h2 rel-h">{t.done ? "StudGroup запущен" : "Релиз 1 ноября"}</h2>
-        <p className="lead">{t.done ? "Подключайте группу — бот уже ждёт в Telegram." : "До запуска осталось:"}</p>
+        <h2 className="h2 rel-h">{t.done ? "StudGroup запущен" : "До запуска осталось"}</h2>
+        {t.done && <p className="lead">Подключайте группу — бот уже ждёт в Telegram.</p>}
         {!t.done && (
           <div className="cd" role="timer" aria-label={label}>
             <Cell value={String(t.d)} label={plural(t.d, ["день", "дня", "дней"])} />

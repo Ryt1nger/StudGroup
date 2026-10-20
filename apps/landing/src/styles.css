@@ -266,16 +266,37 @@ section { padding: clamp(64px, 9vw, 120px) 0; }
 @media (max-width: 640px) { .sweep-foot p { display: none; } .sweep-foot { justify-content: center; } }
 
 /* ——— Обратный отсчёт до релиза */
-.release { position: relative; overflow: hidden; color: #fff; text-align: center; background: linear-gradient(135deg, #7c5cff 0%, #425bff 100%); }
-.release::before { content: ""; position: absolute; inset: 0; background: radial-gradient(50% 60% at 15% 0%, rgba(255, 255, 255, 0.25), transparent), radial-gradient(40% 50% at 90% 100%, rgba(12, 15, 44, 0.45), transparent); pointer-events: none; }
+.release { position: relative; overflow: hidden; color: #fff; text-align: center; background: linear-gradient(160deg, #0c0f2c 0%, #1b1470 55%, #2b1d9a 100%); }
+.release::before { content: ""; position: absolute; inset: 0; background: radial-gradient(45% 55% at 12% 0%, rgba(124, 92, 255, 0.55), transparent), radial-gradient(40% 50% at 92% 100%, rgba(66, 91, 255, 0.5), transparent); pointer-events: none; }
 .rel-in { position: relative; display: grid; justify-items: center; gap: 22px; }
 .rel-h { max-width: none; font-size: clamp(2rem, 5vw, 3.6rem); }
+.rel-ill2 { right: auto; left: 6%; top: auto; bottom: 12%; animation-delay: -4s; }
 .rel-ill { position: absolute; width: clamp(90px, 12vw, 170px); right: 6%; top: 12%; filter: drop-shadow(0 20px 40px rgba(12, 15, 44, 0.5)); animation: bob 8s ease-in-out infinite; }
 .cd { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(10px, 2vw, 22px); width: min(780px, 100%); margin: 10px 0 14px; }
-.cd-cell { display: grid; gap: 6px; padding: clamp(16px, 3vw, 30px) 8px clamp(12px, 2vw, 20px); border-radius: 28px; background: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.28); backdrop-filter: blur(8px); box-shadow: 0 20px 50px rgba(12, 15, 44, 0.25); overflow: hidden; }
+.cd-cell { display: grid; gap: 6px; padding: clamp(16px, 3vw, 30px) 8px clamp(12px, 2vw, 20px); border-radius: 28px; background: linear-gradient(160deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04)); border: 1px solid rgba(255, 255, 255, 0.25); backdrop-filter: blur(14px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 24px 60px rgba(0, 0, 0, 0.45); overflow: hidden; }
 .cd-num { font: 700 clamp(2.2rem, 8vw, 5.4rem)/1 var(--display); letter-spacing: -0.05em; font-variant-numeric: tabular-nums; animation: tick 0.45s var(--ease); }
 .cd-cell small { font-size: clamp(0.78rem, 1.6vw, 1rem); opacity: 0.8; }
 @keyframes tick { from { opacity: 0; transform: translateY(-40%); } }
-.btn-white { background: #fff; color: var(--indigo); box-shadow: 0 10px 28px rgba(12, 15, 44, 0.3); }
+.btn-white { background: #fff; color: var(--indigo); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4); }
 .btn-white:hover { transform: translateY(-2px); }
-@media (max-width: 560px) { .rel-ill { display: none; } }
+@media (max-width: 760px) { .rel-ill { display: none; } }
+
+/* ——— Стеклянные 3D-элементы и тёмные акценты */
+.glass { position: absolute; pointer-events: none; filter: drop-shadow(0 24px 50px rgba(91, 77, 255, 0.55)); animation: bob 9s ease-in-out infinite; }
+.rules, .faq { overflow: hidden; position: relative; }
+.g-rules { width: clamp(110px, 12vw, 190px); right: 3%; top: 9%; z-index: 0; opacity: 0.95; }
+.g-faq { width: clamp(100px, 12vw, 170px); right: 6%; top: 10%; }
+.rules-grid, .faq-wrap { position: relative; z-index: 1; }
+@media (max-width: 960px) { .g-rules, .g-faq { opacity: 0.35; } }
+.idc:nth-child(3) { background: linear-gradient(160deg, #1a1d4f, #0c0f2c); color: #eef0ff; box-shadow: 0 24px 60px rgba(12, 15, 44, 0.5); border: 1px solid rgba(255, 255, 255, 0.14); }
+.idc:nth-child(3) .hole { background: var(--paper); }
+.idc:nth-child(3) .btn-line:hover { background: #fff; color: var(--ink); }
+.idc:nth-child(3) li::before { border-color: var(--glow); }
+.paper { background: radial-gradient(50% 40% at 0% 0%, rgba(124, 92, 255, 0.18), transparent), #ebeafa; }
+.sheet { background: linear-gradient(160deg, #1a1d4f, #0c0f2c); color: #eef0ff; box-shadow: 0 24px 60px rgba(12, 15, 44, 0.45); border: 1px solid rgba(255, 255, 255, 0.12); }
+.sheet-in dl div { background: rgba(255, 255, 255, 0.08); }
+.sheet-in dt, .sheet-empty { color: #aab0e0; }
+.sheet-in h3 { color: #fff; }
+.sheet .stamp { background: rgba(255, 255, 255, 0.08); }
+.v-card .stamp { color: #4fe0a8; } .v-ask .stamp { color: #ffb347; } .v-skip .stamp { color: #aab0e0; } .v-rev .stamp { color: var(--glow); }
+.arrow-left { background: #aab0e0; } .arrow-left::before { border-color: #aab0e0; }
