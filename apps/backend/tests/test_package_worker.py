@@ -97,7 +97,8 @@ class PackageProvider:
             if self.propose:
                 item = proposal(source_id=self.cited[0]).model_dump(mode="json")
                 if self.subject is not None:
-                    item["subject"] = self.subject
+                    # "" means: the model named no subject at all
+                    item["subject"] = self.subject or None
                 if self.update_existing and self.offered:
                     # What the real model is told to do: copy the trusted id and revision.
                     item["action"] = "update"
@@ -550,17 +551,31 @@ def test_reopen_refuses_a_group_that_is_not_in_new_mode(client):
         raise AssertionError("reopen must require mode new")
 
 
-def test_the_lesson_running_when_the_message_was_sent_gives_the_subject(client):
-    # 12:00 Moscow on a Monday: the Mathematics lesson (10:40-12:10) is running; the model named a
-    # subject that is not in the timetable, so the card editor drops it and the timetable decides.
+def test_a_card_the_model_gave_no_subject_gets_the_lesson_running_when_it_was_sent(client):
+    # 12:00 Moscow on a Monday: the Mathematics lesson (10:40-12:10) is running.
+    seed_fixed(client, ["решить задачи 1–3", "ок", "напоминаю про задачи 1–3"])
+    seed_timetable(client)
+    make_new(client)
+    provider = PackageProvider(subject="")
+    assert step(client, provider, now=MONDAY + timedelta(hours=1)) == "completed"
+    item, homework = first_item(client)
+    assert item.subject == "Математика"
+    assert homework.subject_name == "Математика"
+
+
+def test_a_subject_the_model_named_but_the_sources_do_not_support_is_not_replaced_by_a_guess(
+    client,
+):
+    # The model said "Физика" (not in the timetable); the Mathematics lesson merely happened to be
+    # running. That says nothing about the card, so the subject stays empty instead of a wrong one.
     seed_fixed(client, ["решить задачи 1–3", "ок", "напоминаю про задачи 1–3"])
     seed_timetable(client)
     make_new(client)
     provider = PackageProvider(subject="Физика")
     assert step(client, provider, now=MONDAY + timedelta(hours=1)) == "completed"
     item, homework = first_item(client)
-    assert item.subject == "Математика"
-    assert homework.subject_name == "Математика"
+    assert item.subject is None
+    assert homework.subject_name != "Математика"
 
 
 def test_a_message_outside_any_lesson_never_gets_a_guessed_subject(client):
@@ -676,3 +691,62 @@ def test_each_package_logs_one_line_with_counts_and_no_text(client, capsys):
     data = json.loads(lines[0].removeprefix("PACKAGE_RESULT "))
     assert data["outcome"] == "completed" and data["targets"] == 3 and data["created"] == 1
     assert "математике" not in lines[0]  # counts and codes only, never chat text
+
+
+def test_cut_off_timetable_names_are_expanded_to_the_full_name():
+    from studgroup.analysis.package_worker import _full_names
+
+    mapping = _full_names(
+        {
+            "Русский язык как…",
+            "Русский язык как иностранный",
+            "Линейная алгебра и…",
+            "Линейная алгебра и аналитическая геометрия",
+            "Элективные дисциплины…",  # no full name anywhere: kept as it is
+            "Математика",
+        }
+    )
+    assert mapping["Русский язык как…"] == "Русский язык как иностранный"
+    assert mapping["Линейная алгебра и…"] == "Линейная алгебра и аналитическая геометрия"
+    assert mapping["Элективные дисциплины…"] == "Элективные дисциплины…"
+    assert mapping["Математика"] == "Математика"
+    ambiguous = _full_names({"Русский…", "Русский язык", "Русская литература"})
+    assert ambiguous["Русский…"] == "Русский язык"
+    clash = _full_names({"Рус…", "Русский язык", "Русская литература"})
+    assert clash["Рус…"] == "Рус…"  # two possible full names: never guess
+
+
+def test_a_cut_off_old_name_never_becomes_the_subject_of_a_card(client):
+    seed_fixed(client, ["решить задачи 1–3", "ок", "напоминаю про задачи 1–3"])
+
+    async def timetable():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            await db.execute(
+                SchedulePattern.__table__.delete().where(SchedulePattern.group_id == group.id)
+            )
+            for name, valid_from, valid_until in (
+                ("Русский язык как…", date(2026, 10, 5), date(2026, 10, 18)),
+                ("Русский язык как иностранный", date(2026, 10, 19), date(2026, 12, 27)),
+            ):
+                for weekday in range(7):
+                    db.add(
+                        SchedulePattern(
+                            group_id=group.id,
+                            subject=name,
+                            weekday=weekday,
+                            starts=time(10, 40),
+                            ends=time(12, 10),
+                            valid_from=valid_from,
+                            valid_until=valid_until,
+                            week="all",
+                        )
+                    )
+            await db.commit()
+
+    asyncio.run(timetable())
+    make_new(client)
+    assert step(client, PackageProvider(subject=""), now=MONDAY + timedelta(hours=1)) == "completed"
+    item, homework = first_item(client)
+    assert item.subject == "Русский язык как иностранный"
+    assert homework.subject_name == "Русский язык как иностранный"

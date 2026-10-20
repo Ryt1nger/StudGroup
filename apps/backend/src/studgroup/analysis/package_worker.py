@@ -371,6 +371,28 @@ async def _existing_items(db, group_id, now):
     ]
 
 
+def _full_names(subjects):
+    """Map every timetable name to its full form.
+
+    Old timetables carry names cut off with an ellipsis ("Русский язык как…"). A cut-off name is
+    expanded to the one full name it is a prefix of; with no unique full name it is kept as it is.
+    """
+    full = {name for name in subjects if not name.endswith("…")}
+    mapping = {}
+    for name in subjects:
+        if name in full:
+            mapping[name] = name
+            continue
+        prefix = " ".join(name.rstrip("…").casefold().replace("ё", "е").split())
+        hits = {
+            candidate
+            for candidate in full
+            if " ".join(candidate.casefold().replace("ё", "е").split()).startswith(prefix)
+        }
+        mapping[name] = next(iter(hits)) if len(hits) == 1 else name
+    return mapping
+
+
 async def _subject_context(db, group):
     """The group's timetable in the shape the subject resolver needs (None without patterns)."""
     patterns = (
@@ -378,19 +400,20 @@ async def _subject_context(db, group):
     ).all()
     if not patterns:
         return None
+    names = _full_names({row.subject for row in patterns})
     lessons = [
         Lesson(
             row.weekday,
             row.starts,
             row.ends,
-            row.subject,
+            names[row.subject],
             None if row.week in (None, "all") else row.week,
         )
         for row in patterns
     ]
     return {
         "lessons": lessons,
-        "names": sorted({row.subject for row in patterns}),
+        "names": sorted(set(names.values())),
         "timezone": group.timezone,
         "covered_from": min(row.valid_from for row in patterns),
         "covered_to": max(row.valid_until for row in patterns),

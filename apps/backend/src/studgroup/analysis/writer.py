@@ -8,7 +8,7 @@ from studgroup.analysis.deadline_application import apply_policy
 from studgroup.analysis.projection import project_item
 from studgroup.analysis.resolver import resolve_proposal
 from studgroup.analysis.stored import effective_validation
-from studgroup.analysis.subject_resolver import resolve_card_subject
+from studgroup.analysis.subject_resolver import hashtag_subject, resolve_card_subject
 from studgroup.models import Group
 
 
@@ -52,16 +52,22 @@ async def apply_validated_batch(
     for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted, strict=True):
         card = edit_card(proposal, messages, verified_subjects=verified_subjects)
         if card.subject is None and subject_context is not None:
-            # No source-backed subject: take it from the timetable (hashtag, or the lesson running
-            # when the messages were sent). Always one of the timetable names, never invented, and
-            # a split vote leaves the subject empty.
+            # No source-backed subject: take it from the timetable. Always one of the timetable
+            # names, never invented; a split vote leaves the subject empty.
             cited = {ref.telegram_message_id for ref in proposal.evidence}
-            found = resolve_card_subject(
-                [(m.message_date, m.text) for m in messages if m.telegram_message_id in cited],
-                **subject_context,
-            )
-            if found.subject:
-                card = card.model_copy(update={"subject": found.subject})
+            texts = [(m.message_date, m.text) for m in messages if m.telegram_message_id in cited]
+            if proposal.subject:
+                # The model NAMED a subject the sources do not support (e.g. a subject that is not
+                # in the timetable). The lesson that happened to be running says nothing about it,
+                # so only an unambiguous hashtag may replace it; otherwise the subject stays empty.
+                tagged = {hashtag_subject(text, subject_context["names"]) for _, text in texts}
+                tagged.discard(None)
+                found_subject = next(iter(tagged)) if len(tagged) == 1 else None
+            else:
+                # The model named none: hashtag, or the lesson running when the messages were sent.
+                found_subject = resolve_card_subject(texts, **subject_context).subject
+            if found_subject:
+                card = card.model_copy(update={"subject": found_subject})
         applied = (
             apply_policy(proposal, messages, card.subject, deadline_context)
             if deadline_context is not None
