@@ -47,7 +47,9 @@ class PackageProvider:
         update_existing=False,
         subject=None,
         garbage_first=0,
+        outside_context=False,
     ):
+        self.outside_context = outside_context
         self.garbage_first = garbage_first  # this many context answers are not valid JSON
         self.subject = subject
         self.requests = []
@@ -75,8 +77,20 @@ class PackageProvider:
         if request.prompt_version == "cplus-context-1":
             self.targets = list(request.user_payload["target_message_ids"])
             payload = context_payload(
-                source_revision=revision, relevant_source_ids=self.targets, discussion_facts=[]
+                source_revision=revision,
+                relevant_source_ids=[*self.targets, 9999] if self.outside_context else self.targets,
+                discussion_facts=[],
             )
+            if self.outside_context:
+                # a reply parent that precedes the window: the model cites a message not in it
+                payload["discussion_facts"] = [
+                    {
+                        "fact": "Ответ на сообщение вне окна",
+                        "evidence": [
+                            {"telegram_message_id": 9999, "revision": 1, "fact_paths": ["subject"]}
+                        ],
+                    }
+                ]
         else:
             items = []
             self.offered = request.user_payload.get("existing_items", [])
@@ -639,3 +653,13 @@ def test_a_model_that_keeps_answering_garbage_ends_in_failed_after_the_attempt_l
     assert outcomes[:2] == ["retry", "retry"]
     assert "failed" in outcomes
     assert set(states(client).values()) == {"failed"}
+
+
+def test_a_context_reference_outside_the_package_does_not_lose_the_package(client):
+    seed(client)
+    make_new(client)
+    provider = PackageProvider(outside_context=True)
+    assert step(client, provider) == "completed"
+    assert set(states(client).values()) == {"completed"}
+    assert count(client, Homework) == 1
+    assert len(provider.requests) == 2  # no retry was needed

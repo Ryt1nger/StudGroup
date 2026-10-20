@@ -121,6 +121,7 @@ async def run_shadow(
     *,
     repair_enabled=False,
     existing_items=None,
+    lenient_context=False,
 ):
     started = monotonic()
     try:
@@ -136,7 +137,9 @@ async def run_shadow(
             reservation_releasable=error.reservation_releasable,
         ) from None
     try:
-        context = validate_context(context_response.content, analysis_input)
+        context = validate_context(
+            context_response.content, analysis_input, lenient=lenient_context
+        )
     except (ValueError, TypeError) as error:
         code = str(error)
         if code not in {

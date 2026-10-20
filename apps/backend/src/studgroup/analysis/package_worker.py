@@ -476,6 +476,8 @@ async def process_package_next(engine, settings, provider=None, now=None):
             memory,
             repair_enabled=getattr(settings, "ai_output_repair_enabled", False),
             existing_items=existing_items,
+            # an out-of-window reference in the advisory context must not lose a 24-message package
+            lenient_context=True,
         )
     except ShadowPassFailure as error:
         failure = error
