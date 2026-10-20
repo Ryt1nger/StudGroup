@@ -60,6 +60,7 @@ from studgroup.models import (
     ShadowEvaluationRun,
     User,
 )
+from studgroup.owner_updates import queue as queue_owner_message
 from studgroup.processing import incident, incident_once
 
 OPEN_STATES = ("queued", "running", "retry", "budget_deferred")
@@ -444,6 +445,37 @@ async def _watch_duplicates(db, row, group, now):
         await incident(db, "possible_duplicate_cards", now, recover=True)
 
 
+HELD_STATUSES = ("review", "blocked_by_lock", "stale")
+
+
+async def _tell_the_owner(db, settings, row, group):
+    """One short private message after a package that CHANGED something; silence otherwise.
+
+    Counts and cost only, never chat text. Skipped unless the owner feed is configured. The outbox
+    key is the run id, so a retried commit can never send it twice.
+    """
+    if not settings.owner_update_notifications_enabled or not settings.owner_telegram_user_id:
+        return
+    statuses = (_metrics(row).get("promotion") or {}).get("statuses", {})
+    created, updated = statuses.get("created", 0), statuses.get("updated", 0)
+    held = sum(statuses.get(name, 0) for name in HELD_STATUSES)
+    if created + updated + held == 0:
+        return
+    parts = []
+    if created:
+        parts.append(f"создано карточек: {created}")
+    if updated:
+        parts.append(f"обновлено: {updated}")
+    if held:
+        parts.append(f"ждут проверки: {held}")
+    text = (
+        f"Новый движок: пакет из {len(_targets(row))} сообщений разобран, "
+        + ", ".join(parts)
+        + f". Расход ${Decimal(row.charged_usd):.4f}."
+    )
+    await queue_owner_message(db, settings, f"package:{row.id}", group, text)
+
+
 def _package_line(row, outcome, *, result=None, failure=None):
     """One line per package for the operator: counts and codes only, never message text.
 
@@ -610,6 +642,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
                     row.metrics_json = json.dumps(metrics, sort_keys=True)
             await _finish_targets(db, row, "completed")
             await _watch_duplicates(db, row, group, now)
+            await _tell_the_owner(db, settings, row, group)
             await incident(db, "ai_daily_group_budget_limit", now, recover=True)
             line = _package_line(row, "completed", result=result)
             await db.commit()
