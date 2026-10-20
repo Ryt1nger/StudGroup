@@ -663,3 +663,16 @@ def test_a_context_reference_outside_the_package_does_not_lose_the_package(clien
     assert set(states(client).values()) == {"completed"}
     assert count(client, Homework) == 1
     assert len(provider.requests) == 2  # no retry was needed
+
+
+def test_each_package_logs_one_line_with_counts_and_no_text(client, capsys):
+    seed(client)
+    make_new(client)
+    assert step(client, PackageProvider()) == "completed"
+    lines = [
+        line for line in capsys.readouterr().out.splitlines() if line.startswith("PACKAGE_RESULT ")
+    ]
+    assert len(lines) == 1
+    data = json.loads(lines[0].removeprefix("PACKAGE_RESULT "))
+    assert data["outcome"] == "completed" and data["targets"] == 3 and data["created"] == 1
+    assert "математике" not in lines[0]  # counts and codes only, never chat text
