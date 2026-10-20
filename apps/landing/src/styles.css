@@ -86,8 +86,8 @@ section { padding: clamp(64px, 9vw, 120px) 0; }
 .hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: clamp(24px, 4vw, 64px); align-items: end; min-height: calc(100vh - 120px); }
 .hero-copy { display: grid; gap: 28px; align-self: center; padding-bottom: 8vh; }
 .hero-cta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
-.display { text-shadow: 0 6px 40px rgba(12, 15, 44, 0.8); }
-.lead { text-shadow: 0 2px 20px rgba(12, 15, 44, 0.9); }
+.hero .display { text-shadow: 0 6px 40px rgba(12, 15, 44, 0.8); }
+.hero .lead { text-shadow: 0 2px 20px rgba(12, 15, 44, 0.9); }
 
 .fan { --mx: 0; --my: 0; position: relative; height: min(78vh, 760px); align-self: end; }
 .fan-ph { position: absolute; bottom: -110px; width: min(300px, 46%); padding: 9px; border-radius: 42px; background: var(--night); box-shadow: 0 40px 90px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.12); transition: transform 0.2s linear; }
