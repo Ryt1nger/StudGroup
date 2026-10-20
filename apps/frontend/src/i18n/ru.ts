@@ -95,6 +95,8 @@ export const ru = {
     noDescription: 'Описание не указано', // proposal
     source: 'Источник',
     sources: 'Источники',
+    sourcesShow: 'Показать источники',
+    sourcesHide: 'Скрыть источники',
     updates: 'Дополнения и изменения',
     cardUpdated: 'Условия задания изменились. Проверьте актуальную карточку.',
     updateKind: {
