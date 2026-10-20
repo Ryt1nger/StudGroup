@@ -21,19 +21,17 @@ from studgroup.models import (
 def _kept_texts(item, edited_card):
     """Title and description for an update, never worse than what the item already shows.
 
-    A display field the card editor had to replace (fallback) is a placeholder or a salvaged
-    fragment. It must not overwrite a title or description the item already carries from an earlier
+    A display field the card editor had to replace (fallback) is a placeholder, a title rebuilt from
+    the update's own fragments or a salvaged fragment. It must not overwrite a title or description the item already carries from an earlier
     accepted pass: the previous text stays, and the card keeps the reasons that mark it unconfirmed.
     A previous placeholder is replaced by anything better.
     """
     title, description = edited_card.title, edited_card.description
     fallback = set(edited_card.fallback_fields)
-    if (
-        "title" in fallback
-        and "title_insufficient_data" in edited_card.attention_reasons
-        and item.title
-        and not item.title.endswith(INSUFFICIENT)
-    ):
+    # An update usually cites only the new clarifying messages, which cannot support the card's
+    # whole title, so the editor rebuilds it from those fragments (e.g. "Быть минимум 2 источника
+    # указано"). Any rebuilt title keeps the real title the item already has.
+    if "title" in fallback and item.title and not item.title.endswith(INSUFFICIENT):
         title = item.title
     if (
         "description" in fallback

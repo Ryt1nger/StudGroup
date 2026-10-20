@@ -99,7 +99,11 @@ action=update with that item's existing_item_id and expected_item_revision copie
 new messages as evidence and merge the new facts into the description; never create a second card
 for the same assignment, and keep the existing item's kind and destination unless the messages say
 the assignment itself changed type. Create a new item only when the task is clearly different
-(other subject or other content). A later message does not cancel an earlier one without an explicit cancel
+(other subject or other content). An update keeps what the card already says: the title keeps
+naming the assignment itself (what, in which subject) and changes only when the assignment is renamed
+or the old title is a placeholder; new details (format, file type, volume, criteria, deadline) go into the
+description, which must contain everything the existing description says plus the new facts
+(copy and extend, never shorten or replace it by the latest clarification). A later message does not cancel an earlier one without an explicit cancel
 or change statement. Conflicting or doubtful links are an attention reason, never a guess.
 link_candidates lists structurally provable or plausible links between messages (both earlier
 and later ones) with relation, strength and timing. strong = reply to the item or one album;
