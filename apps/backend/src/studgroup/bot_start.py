@@ -14,6 +14,7 @@ codes but no partner model exists to record them.
 import json
 import re
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
@@ -129,8 +130,8 @@ async def home(db, session, settings, telegram_id):
     )
 
 
-async def headman_prompt(db, session, settings, notice=None):
-    """«Я староста»: the claim waits here until the bot is added to a new group."""
+async def headman_prompt(db, session, settings, notice=None, groups=()):
+    """«Я староста»: the claim waits here for the bot to be added, or for a pick among `groups`."""
     name = (settings.bot_username or "").lstrip("@")
     text = (
         "Подключение группы\n\n"
@@ -138,8 +139,13 @@ async def headman_prompt(db, session, settings, notice=None):
         "2. Сделайте бота администратором: так он видит сообщения группы и может проверить, "
         "что вы её администратор.\n"
         "3. Я напишу вам здесь, и вы станете старостой этой группы.\n\n"
-        "Подключить можно только группу, которой ещё нет в StudGroup."
+        "Старостой можно стать только в группе, где староста ещё не выбран."
     )
+    if groups:
+        text = (
+            "Бот уже подключён к группам, где староста не выбран и где вы администратор. "
+            "Выберите свою или добавьте бота в новую.\n\n" + text
+        )
     if name:
         text += f"\nЕсли ничего не происходит, отправьте в группе /start@{name}."
     if notice:
@@ -149,8 +155,27 @@ async def headman_prompt(db, session, settings, notice=None):
         rows.append(
             [{"text": "Добавить бота в группу", "url": f"https://t.me/{name}?startgroup=connect"}]
         )
+    rows[:0] = [[(f"Стать старостой: {g.name[:40]}", f"pick{n}")] for n, g in enumerate(groups)]
     rows.append([("‹ Назад", "home")])
-    await screen(db, session, text, rows, "headman", minutes=CLAIM_HOURS * 60)
+    await screen(
+        db,
+        session,
+        text,
+        rows,
+        "headman",
+        {"groups": [str(g.id) for g in groups]},
+        minutes=CLAIM_HOURS * 60,
+    )
+
+
+async def headman_entry(db, session, settings, telegram_id):
+    from studgroup import bot_connect  # late: bot_connect imports this module
+
+    if await current_membership(db, telegram_id):
+        await home(db, session, settings, telegram_id)
+        return
+    groups = await bot_connect.candidates(db, settings, telegram_id)
+    await headman_prompt(db, session, settings, groups=groups)
 
 
 async def connected(db, session, settings, group):
@@ -319,7 +344,9 @@ async def handle(db, update, settings):
         parts = text.split(maxsplit=1)
         if parts and parts[0].split("@")[0] == "/start":
             argument = parts[1].strip() if len(parts) == 2 else ""
-            if argument.startswith("invite_"):
+            if argument == "headman":  # the button under the bot's note in the group chat
+                await headman_entry(db, session, settings, sender.id)
+            elif argument.startswith("invite_"):
                 await forget(db, chat, message)  # the code is a secret: never leave it in the chat
                 await redeem(db, session, settings, sender.id, extract_code(argument), typed=False)
             else:
@@ -341,10 +368,20 @@ async def handle(db, update, settings):
     elif action == "enter_code":
         await code_prompt(db, session)
     elif action == "headman":
-        if await current_membership(db, sender.id):
-            await home(db, session, settings, sender.id)
+        await headman_entry(db, session, settings, sender.id)
+    elif action.startswith("pick") and session.step == "headman":
+        from studgroup import bot_connect
+
+        try:
+            group = await db.get(
+                Group, uuid.UUID(json.loads(session.payload)["groups"][int(action[4:])])
+            )
+        except (KeyError, IndexError, ValueError):
+            group = None
+        if group is None:
+            await headman_entry(db, session, settings, sender.id)
         else:
-            await headman_prompt(db, session, settings)
+            await bot_connect.claim_headman(db, settings, session, group, sender.id)
     elif action == "invite":
         await invite(db, session, settings, sender.id)
     elif action == "cabinet":

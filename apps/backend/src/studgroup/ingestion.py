@@ -178,6 +178,13 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
             await bot_connect.on_group_message(db, settings, update.message)
         await db.commit()
         return {"ok": True}
+    if (
+        update.message is not None
+        and (update.message.text or "").lstrip().startswith("/start")
+        and not await bot_connect.has_headman(db, group.id)
+    ):
+        # A headman-less group: an administrator typing /start in it can finish a pending claim.
+        await bot_connect.on_group_message(db, settings, update.message)
 
     # Persist the exact paid-history boundary when Telegram tells this bot that it
     # joined. Older installations are backfilled by migration from the first live

@@ -11,7 +11,7 @@ from test_ingestion import send
 
 from studgroup import bot_admin
 from studgroup import headman_domain as domain
-from studgroup.models import Group, GroupAIProfile, Membership, User
+from studgroup.models import BotOutbox, Group, GroupAIProfile, Membership, User
 
 pytest_plugins = ["test_schedule_api"]
 CLAIMANT = 77
@@ -32,6 +32,21 @@ def setup_bot(client, monkeypatch, statuses, username="studgroup_rf_bot"):
         return {"ok": True, "result": {"status": status}}
 
     monkeypatch.setattr(bot_admin, "telegram_request", request)
+
+
+def panel(client):
+    """The newest panel frame, ignoring plain messages such as the note posted in the group."""
+
+    async def read(db):
+        row = await db.scalar(
+            select(BotOutbox)
+            .where(BotOutbox.method == "renderPanel")
+            .order_by(BotOutbox.available_at.desc())
+            .limit(1)
+        )
+        return json.loads(row.payload)
+
+    return run(client, read)
 
 
 def claim(client, uid=CLAIMANT):
@@ -121,8 +136,8 @@ def test_a_bot_that_is_not_yet_admin_waits_and_connects_after_promotion(foreman,
     setup_bot(foreman, monkeypatch, statuses)
     claim(foreman)
     added_to_chat(foreman, status="member")
-    assert new_group(foreman) is None
-    assert "не администратор" in last(foreman)["text"]
+    assert new_group(foreman)[1] == []  # the group exists, nobody is its headman yet
+    assert "не администратор" in panel(foreman)["text"]
     statuses[(NEW_CHAT, 999)] = "administrator"
     added_to_chat(foreman, status="administrator")
     assert new_group(foreman)[1] == [("headman", CLAIMANT)]
@@ -134,17 +149,117 @@ def test_a_person_who_is_not_a_telegram_admin_cannot_connect_the_group(foreman, 
     )
     claim(foreman)
     added_to_chat(foreman)
-    assert new_group(foreman) is None
-    assert "только её администратор" in last(foreman)["text"]
+    assert new_group(foreman)[1] == []
+    assert "только администратор этой группы" in panel(foreman)["text"]
 
 
-def test_nobody_is_made_headman_without_having_asked(foreman, monkeypatch):
+def test_adding_the_bot_without_a_claim_still_creates_the_group_with_no_headman(
+    foreman, monkeypatch
+):
     setup_bot(
         foreman, monkeypatch, {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "creator"}
     )
     before = group_count(foreman)
     added_to_chat(foreman)  # CLAIMANT never pressed «Я староста»
-    assert group_count(foreman) == before
+    group, members = new_group(foreman)
+    assert group_count(foreman) == before + 1 and members == []
+    assert group.pilot_authorized and group.status == "active"
+
+    async def environment(db):
+        return await db.get(GroupAIProfile, group.id), (
+            await db.scalars(select(BotOutbox).where(BotOutbox.method == "sendMessage"))
+        ).all()
+
+    profile, sent = run(foreman, environment)
+    assert profile is not None
+    hint = [json.loads(m.payload) for m in sent if json.loads(m.payload)["chat_id"] == NEW_CHAT]
+    assert len(hint) == 1 and "Староста пока не выбран" in hint[0]["text"]
+    button = hint[0]["reply_markup"]["inline_keyboard"][0][0]
+    assert button["url"] == "https://t.me/studgroup_rf_bot?start=headman"
+    added_to_chat(foreman)  # a repeated event neither duplicates the group nor repeats the note
+    assert group_count(foreman) == before + 1
+    assert len(run(foreman, environment)[1]) == len(sent)
+
+
+def test_a_group_without_a_headman_is_marked_in_the_owner_list(foreman, monkeypatch):
+    from test_bot_admin import private
+
+    setup_bot(foreman, monkeypatch, {})
+    added_to_chat(foreman)
+    foreman.app.state.settings.bot_admin_user_id = 9001
+    private(foreman, "/admin", uid=9001, update=900)
+    markup = last(foreman)["reply_markup"]["inline_keyboard"]
+    names = [button["text"] for row in markup for button in row]
+    assert any(name.startswith("ИВТ-21") and "староста не выбран" in name for name in names)
+    assert any(name == "Группа" for name in names)  # the pilot group has its headman
+
+
+def test_an_administrator_picks_a_headmanless_group_later(foreman, monkeypatch):
+    statuses = {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "creator"}
+    setup_bot(foreman, monkeypatch, statuses)
+    added_to_chat(foreman, by=555)  # someone else added the bot; the group has no headman
+    assert new_group(foreman)[1] == []
+    deliver(foreman, "/start", uid=CLAIMANT)
+    tap(foreman, "Я староста", uid=CLAIMANT)
+    assert "Стать старостой: ИВТ-21" in labels(foreman)
+    tap(foreman, "Стать старостой", uid=CLAIMANT)
+    assert new_group(foreman)[1] == [("headman", CLAIMANT)]
+    assert "Группа «ИВТ-21» подключена" in last(foreman)["text"]
+
+
+def test_only_groups_the_person_administers_are_offered(foreman, monkeypatch):
+    setup_bot(
+        foreman, monkeypatch, {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "member"}
+    )
+    added_to_chat(foreman, by=555)
+    claim(foreman)
+    assert not any("ИВТ-21" in label for label in labels(foreman))
+    assert "ИВТ-21" not in last(foreman)["text"]
+
+
+def test_a_second_claimant_cannot_take_a_group_that_got_a_headman(foreman, monkeypatch):
+    statuses = {
+        (NEW_CHAT, 999): "administrator",
+        (NEW_CHAT, CLAIMANT): "creator",
+        (NEW_CHAT, 78): "administrator",
+    }
+    setup_bot(foreman, monkeypatch, statuses)
+    claim(foreman, uid=78)
+    added_to_chat(foreman, by=555)
+    deliver(foreman, "/start", uid=CLAIMANT)
+    tap(foreman, "Я староста", uid=CLAIMANT)
+    tap(foreman, "Стать старостой", uid=CLAIMANT)
+    assert new_group(foreman)[1] == [("headman", CLAIMANT)]
+    # the stale pick of the other person is refused: the group is no longer headman-less
+    deliver(foreman, "/start", uid=78)
+    assert "Я студент" in labels(foreman)  # still no group of their own
+
+
+def test_a_headmanless_group_is_finished_by_start_typed_in_the_group(foreman, monkeypatch):
+    statuses = {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "creator"}
+    setup_bot(foreman, monkeypatch, statuses)
+    added_to_chat(foreman, by=555)
+    claim(foreman)
+    foreman.app.state._st_test_update += 1
+    body = {
+        "update_id": foreman.app.state._st_test_update,
+        "message": {
+            "message_id": 9,
+            "date": int(datetime.now(UTC).timestamp()),
+            "chat": {"id": NEW_CHAT, "type": "supergroup", "title": "ИВТ-21"},
+            "from": {"id": CLAIMANT},
+            "text": "/start@studgroup_rf_bot",
+        },
+    }
+    assert send(foreman, body).status_code == 200
+    assert new_group(foreman)[1] == [("headman", CLAIMANT)]
+
+
+def test_the_deep_link_from_the_group_note_opens_the_headman_screen(foreman, monkeypatch):
+    setup_bot(foreman, monkeypatch, {})
+    deliver(foreman, "/start headman", uid=CLAIMANT)
+    assert "Подключение группы" in last(foreman)["text"]
+    assert "Добавить бота в группу" in json.dumps(last(foreman), ensure_ascii=False)
 
 
 def test_a_group_already_in_the_database_cannot_be_taken_over(foreman, monkeypatch):
@@ -157,7 +272,7 @@ def test_a_group_already_in_the_database_cannot_be_taken_over(foreman, monkeypat
         return sorted(rows.scalars())
 
     assert run(foreman, roles) == ["headman"]  # the pilot group's own headman, nobody else
-    assert "уже есть в StudGroup" in last(foreman)["text"]
+    assert "уже есть староста" in last(foreman)["text"]
 
 
 def test_a_person_who_joined_a_group_after_claiming_cannot_connect_another(foreman, monkeypatch):
@@ -175,8 +290,8 @@ def test_a_person_who_joined_a_group_after_claiming_cannot_connect_another(forem
 
     run(foreman, join_pilot_group)
     added_to_chat(foreman)
-    assert new_group(foreman) is None
-    assert "Один человек может быть только в одной группе" in last(foreman)["text"]
+    assert new_group(foreman)[1] == []
+    assert "Один человек может быть только в одной группе" in panel(foreman)["text"]
 
 
 def test_a_start_command_in_the_group_is_a_fallback_trigger(foreman, monkeypatch):

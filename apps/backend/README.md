@@ -271,15 +271,24 @@ tap-to-join links `https://t.me/<bot>?start=invite_<code>`; unset, it shows the 
 
 ### Connecting a new group (`bot_connect.py`)
 
-«Я староста» leaves a claim (valid 24 h). When the bot is then added to a Telegram group that
-is not in the database in any state, the claimant becomes its single headman and the group
-starts at once (`pilot_authorized`, bot-added boundary now, timezone Europe/Moscow until changed
-in `/st`). No approval. Guards: Telegram must report the claimant as creator/administrator and
-the bot as administrator; a person already connected to a group cannot connect another; an
-existing group can never be taken over; the unique chat id makes the creation race-safe.
-Triggers: `my_chat_member` (the webhook must deliver it; it is part of Telegram's default
-update set), the new-members service message, or `/start` typed in the group as a fallback.
+Adding the bot to a Telegram group is enough: the bot creates the group and its environment
+(group row with `pilot_authorized`, bot-added boundary now, timezone Europe/Moscow until changed
+in the cabinet, AI profile) and starts at once, with no approval. The headman is a separate fact.
+«Я староста» leaves a claim (valid 24 h); if the person who added the bot holds one, they become
+the single headman immediately. Otherwise the group exists with «староста не выбран»: the bot
+posts one note in the group with a «Я староста» button (`?start=headman`), the owner's `/admin`
+list marks the group, and any administrator of that chat can take the role later, by picking the
+group on the «Я староста» screen or typing `/start` in the group.
+
+Guards: Telegram must report the claimant as creator/administrator and the bot as administrator;
+a group that already has a headman can never be claimed; a person in another group cannot claim
+this one; the role is assigned under a lock on the group row. Names of groups the person does not
+administer are never shown. Triggers: `my_chat_member` (the webhook must deliver it; it is part of
+Telegram's default update set), the new-members service message, or `/start` typed in the group.
 The owner's `/admin` assignment also refuses a second active headman in one group.
+
+Cost note: every group the bot is added to now starts AI analysis, and several owner tools
+(`/explain`, `/shadowstatus`, the first-run preview) still assume exactly one authorized group.
 
 ### Headman cabinet by buttons
 

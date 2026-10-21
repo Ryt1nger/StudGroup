@@ -170,11 +170,25 @@ async def handle(db, update, settings):
                 .limit(40)
             )
         ).all()
+        from studgroup.bot_connect import NO_HEADMAN, headmanless_group_ids
+
+        without = await headmanless_group_ids(db)
         await say(
             db,
             chat,
             "Выбери группу:" if groups else "Нет подключённых групп.",
-            buttons(session, [[(g.name[:50], "g" + g.id.hex)] for g in groups]),
+            buttons(
+                session,
+                [
+                    [
+                        (
+                            g.name[:36] + (f" · {NO_HEADMAN}" if g.id in without else ""),
+                            "g" + g.id.hex,
+                        )
+                    ]
+                    for g in groups
+                ],
+            ),
         )
         return True
     if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/explain":
