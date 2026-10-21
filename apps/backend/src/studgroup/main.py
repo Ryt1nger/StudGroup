@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     owner_update_notifications_since: datetime | None = None
     bot_admin_user_id: int | None = None
     support_contact: str = ""
+    bot_username: str = ""  # without @; builds t.me invitation links, else code text is shown
 
     @field_validator("database_url", mode="before")
     @classmethod

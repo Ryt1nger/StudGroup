@@ -278,7 +278,7 @@ def test_invite_membership_check_and_single_use(foreman, monkeypatch):
 
     monkeypatch.setattr(domain, "telegram_member", yes)
     deliver(foreman, "/start invite_" + code, uid=33)
-    assert "подключён" in last(foreman)["text"]
+    assert "Вы подключены" in last(foreman)["text"]
     deliver(foreman, "/start invite_" + code, uid=34)
     assert "использовано" in last(foreman)["text"]
     assert (

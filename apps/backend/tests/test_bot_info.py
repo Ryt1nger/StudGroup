@@ -98,13 +98,31 @@ def test_support_contact_comes_from_settings(client):
     assert "@studgroup_support" in sent(client)[-1]["text"]
 
 
+def panel_frames(client):
+    async def read():
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (
+                await db.scalars(
+                    select(BotOutbox)
+                    .where(BotOutbox.method == "renderPanel")
+                    .order_by(BotOutbox.available_at)
+                )
+            ).all()
+            return [json.loads(r.payload) for r in rows]
+
+    return asyncio.run(read())
+
+
 def test_invite_codes_are_not_swallowed(client):
-    private(client, "/start invite_nonexistent", uid=2)
-    replies = sent(client)
-    assert replies and "Команды:" not in replies[-1]["text"]
+    private(client, "/start invite_" + "x" * 32, uid=2)
+    frames = panel_frames(client)
+    assert frames and "Команды:" not in frames[-1]["text"]
+    assert "Приглашение использовано, отозвано или истекло" in frames[-1]["text"]
 
 
-def test_bare_start_still_opens_the_app(client):
+def test_bare_start_opens_the_welcome_panel_with_buttons(client):
     private(client, "/start", uid=2)
-    reply = sent(client)[-1]
-    assert reply["text"] == "Открой StudGroup через кнопку ниже."
+    frame = panel_frames(client)[-1]
+    labels = [b["text"] for row in frame["reply_markup"]["inline_keyboard"] for b in row]
+    assert "Я студент" in labels and "Я староста" in labels
+    assert "Команды:" not in frame["text"]

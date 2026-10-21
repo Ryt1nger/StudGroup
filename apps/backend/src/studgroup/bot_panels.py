@@ -16,13 +16,15 @@ from studgroup.models import (
     BotPanel,
     BotPanelMessage,
     HeadmanSession,
+    StartSession,
 )
 
 scope = ContextVar("bot_panel_scope", default=None)
+SESSION_MODELS = {"admin": BotAdminSession, "st": HeadmanSession, "start": StartSession}
 
 
 async def panel(db, chat, mode):
-    assert mode in {"admin", "st"} and chat > 0
+    assert mode in {"admin", "st", "start"} and chat > 0
     await db.execute(
         insert(BotPanel)
         .values(id=uuid.uuid4(), chat_id=chat, mode=mode, generation=1, revision=0)
@@ -243,7 +245,7 @@ async def execute(db, row, settings, request):
 
 
 async def dispatch(db, update_value, settings):
-    from studgroup import bot_admin, bot_info, headman_bot
+    from studgroup import bot_admin, bot_info, bot_start, headman_bot
 
     callback = update_value.callback_query
     message = callback.message if callback else update_value.message
@@ -261,11 +263,20 @@ async def dispatch(db, update_value, settings):
     route = await db.get(BotDialogRoute, chat)
     mode = None
     start = not callback and command == "/start"
-    if callback:
+    routed = route.mode if route else None
+    if routed == "start" and not await bot_start.awaiting_input(db, chat):
+        routed = None  # the walkthrough only owns plain text while it waits for a code
+    if start:
+        # Every /start gets a fresh screen: the old one and the person's messages are removed.
+        mode = "start"
+        owner = await panel(db, chat, mode)
+        await reset(db, owner)
+        await track(db, owner, message.message_id, "command")
+    elif callback:
         parts = (callback.data or "").split(":", 2)
-        mode = "admin" if parts[0] == "a" else "st" if parts[0] == "s" else None
+        mode = {"a": "admin", "s": "st", "t": "start"}.get(parts[0])
         if mode:
-            session = await db.get(BotAdminSession if mode == "admin" else HeadmanSession, chat)
+            session = await db.get(SESSION_MODELS[mode], chat)
             if (
                 not session
                 or len(parts) != 3
@@ -277,7 +288,9 @@ async def dispatch(db, update_value, settings):
                     "answerCallbackQuery",
                     {
                         "callback_query_id": callback.id,
-                        "text": "Кнопка устарела. Открой команду заново.",
+                        "text": "Кнопка устарела. Отправь /start заново."
+                        if mode == "start"
+                        else "Кнопка устарела. Открой команду заново.",
                     },
                 )
                 return True
@@ -307,7 +320,7 @@ async def dispatch(db, update_value, settings):
                     },
                 )
                 return True
-    elif not start:
+    else:
         if command in {"/admin", "/st"}:
             mode = command[1:]
             owner = await panel(db, chat, mode)
@@ -325,7 +338,7 @@ async def dispatch(db, update_value, settings):
         elif command == "/st_cancel":
             mode = "st"
         elif command == "/cancel" or text == "Отмена":
-            mode = route.mode if route else "admin"
+            mode = routed or "admin"
             if mode == "st":
                 update_value = update_value.model_copy(deep=True)
                 update_value.message.text = "/st_cancel"
@@ -336,12 +349,10 @@ async def dispatch(db, update_value, settings):
                 if admin
                 and admin.step == "pick"
                 and admin.request_id == message.users_shared.request_id
-                else route.mode
-                if route
-                else None
+                else routed
             )
         else:
-            mode = route.mode if route else "st" if message.forward_origin else None
+            mode = routed or ("st" if message.forward_origin else None)
         if message.reply_to_message:
             recorded = await db.scalar(
                 select(BotPanelMessage)
@@ -363,6 +374,8 @@ async def dispatch(db, update_value, settings):
             handled = await bot_admin.handle(db, update_value, settings)
         elif mode == "st":
             handled = await headman_bot.handle(db, update_value, settings)
+        elif mode == "start":
+            handled = await bot_start.handle(db, update_value, settings)
         else:
             handled = await headman_bot.handle(db, update_value, settings)
             if not handled:

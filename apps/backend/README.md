@@ -255,6 +255,24 @@ Question delivery uses the existing web process, so a sleeping free Render insta
 catches up on waking; it is not a guaranteed always-on scheduler. Questions are off
 by default; no production role or notification preference is enabled automatically.
 
+## Private /start walkthrough (migration 0036)
+
+`/start` opens a button-only panel (`bot_start.py`, callback prefix `t`) built on the same
+durable panel mechanism as `/st` and `/admin`: one message edited in place, every new `/start`
+removes the previous screen and the person's own messages, buttons go stale with their screen.
+Student path: welcome -> «Я студент» -> «Ввести код» -> paste a code -> «Готово» with the app
+button. A wrong typed code keeps the panel waiting for another try. A person who is already
+connected sees their group and the app button instead of the role question. Info topics
+(how it works, FAQ, support) are buttons on the welcome screen; the old commands still work.
+
+Invitation codes are secrets: the message carrying one (typed code or `/start invite_<code>`)
+is deleted at once. Set `BOT_USERNAME` (without `@`) so the headman's «Создать приглашения» shows
+tap-to-join links `https://t.me/<bot>?start=invite_<code>`; unset, it shows the old command text.
+
+Not built yet: the «Я староста» branch is a placeholder until group connection through the bot
+exists, and the promo-code step from the flow diagram (no partner model to record the code).
+Headmen and deputies still open the cabinet with `/st`.
+
 ## Cabinet API /v1/staff (contract 0.10.0)
 
 HTTP entry point to the same headman/deputy rules for the Mini App cabinet. Apply

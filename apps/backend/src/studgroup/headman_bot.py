@@ -9,8 +9,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 
+from studgroup import bot_start, headman_schedule
 from studgroup import headman_domain as domain
-from studgroup import headman_schedule
 from studgroup.api import schedule_data
 from studgroup.bot_admin import enqueue, say
 from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, resolve_deadline
@@ -465,25 +465,6 @@ async def handle(db, update, settings):
     if not message or not sender or message.chat.type != "private" or message.chat.id != sender.id:
         return False
     text = (message.text or "").strip()
-    if not callback and text.startswith("/start invite_"):
-        try:
-            async with db.begin_nested():
-                group = await domain.redeem_invite(
-                    db, settings, sender.id, text.split("invite_", 1)[1]
-                )
-            await say(
-                db,
-                sender.id,
-                f"Ты подключён к «{group.name}». Открой приложение заново.",
-                {
-                    "inline_keyboard": [
-                        [{"text": "Открыть StudGroup", "web_app": {"url": settings.webapp_origin}}]
-                    ]
-                },
-            )
-        except domain.StError as error:
-            await say(db, sender.id, str(error))
-        return True
     session = await db.scalar(
         select(HeadmanSession).where(HeadmanSession.telegram_user_id == sender.id).with_for_update()
     )
@@ -1249,8 +1230,9 @@ async def apply(db, session, group, user, member, data, settings):
         await screen(
             db,
             session,
-            "Одноразовые коды (24 часа). Передай участникам: отправить боту /start invite_КОД.\n\n"
-            + "\n".join(f"/start invite_{code}" for code in codes),
+            "Одноразовые приглашения на 24 часа. Перешли каждую ссылку одному студенту: "
+            "достаточно нажать на неё в Telegram.\n\n"
+            + "\n".join(bot_start.invite_link(settings, code) for code in codes),
             [back()],
         )
         return

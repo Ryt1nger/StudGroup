@@ -719,6 +719,17 @@ class BotAdminSession(Base):
     candidate_role: Mapped[str] = mapped_column(String(16), default="student")
 
 
+class StartSession(Base):
+    """Where a person is in the private /start walkthrough; buttons carry this row's nonce."""
+
+    __tablename__ = "start_sessions"
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nonce: Mapped[str] = mapped_column(String(24))
+    step: Mapped[str] = mapped_column(String(24))
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class BotOutbox(Base):
     __tablename__ = "bot_outbox"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

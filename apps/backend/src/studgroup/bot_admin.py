@@ -141,18 +141,6 @@ async def handle(db, update, settings):
     if callback:
         enqueue(db, "answerCallbackQuery", {"callback_query_id": callback.id})
     text = message.text or ""
-    if not callback and text.split("@")[0].strip() == "/start":
-        await say(
-            db,
-            chat,
-            "Открой StudGroup через кнопку ниже.",
-            {
-                "inline_keyboard": [
-                    [{"text": "Открыть StudGroup", "web_app": {"url": settings.webapp_origin}}]
-                ]
-            },
-        )
-        return True
     if sender.id != settings.bot_admin_user_id or chat != sender.id:
         if text.startswith("/admin"):
             await say(db, chat, "Админ-панель недоступна для этого аккаунта.")
