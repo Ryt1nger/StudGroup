@@ -22,7 +22,7 @@ from studgroup import bot_info, bot_panels
 from studgroup import headman_domain as domain
 from studgroup.bot_admin import enqueue, say
 from studgroup.homework import utc
-from studgroup.models import Group, Membership, StartSession, User
+from studgroup.models import Group, HeadmanSession, Membership, StartSession, User
 
 SESSION_MINUTES = 30
 CLAIM_HOURS = 24  # how long «Я староста» waits for the bot to be added to a group
@@ -113,10 +113,10 @@ async def home(db, session, settings, telegram_id):
         member, group = found
         text = f"Вы подключены к «{group.name}»."
         rows = [[app_button(settings)]]
-        if member.role == "headman":
-            rows.insert(0, [("Создать приглашение", "invite")])
         if member.role in {"headman", "deputy"}:
-            text += "\n\nКабинет старосты пока открывается командой /st."
+            rows.insert(0, [("Кабинет старосты", "cabinet")])
+        if member.role == "headman":
+            rows.insert(1, [("Создать приглашение", "invite")])
         await screen(db, session, text, [*rows, *info_row()], "home")
         return
     await screen(
@@ -158,9 +158,13 @@ async def connected(db, session, settings, group):
         db,
         session,
         f"Готово! Группа «{group.name}» подключена, вы её староста.\n\n"
-        "Часовой пояс группы по умолчанию: Москва. Изменить его можно в кабинете (/st).\n\n"
+        "Часовой пояс группы по умолчанию: Москва. Изменить его можно в кабинете.\n\n"
         "Теперь пригласите студентов.",
-        [[("Создать приглашение", "invite")], [app_button(settings)]],
+        [
+            [("Создать приглашение", "invite")],
+            [("Кабинет старосты", "cabinet")],
+            [app_button(settings)],
+        ],
         "connected",
     )
 
@@ -186,6 +190,62 @@ async def invite(db, session, settings, telegram_id):
         [[("Создать ещё", "invite")], [("‹ Назад", "home")]],
         "invite",
     )
+
+
+async def switch_panel(db, chat, leaving, entering):
+    """Hand the chat from one panel to another: the old screen disappears, the new one is sent."""
+    for mode in (leaving, entering):
+        await bot_panels.reset(db, await bot_panels.panel(db, chat, mode))
+    await bot_panels.activate(db, chat, entering)
+
+
+async def open_cabinet(db, telegram_id):
+    """«Кабинет старосты»: the same cabinet /st opens, reached by a button and one tap shorter."""
+    from studgroup import headman_bot  # late: headman_bot imports this module
+
+    if not await domain.memberships(db, telegram_id):
+        return False
+    await switch_panel(db, telegram_id, "start", "st")
+    session = await db.scalar(
+        select(HeadmanSession)
+        .where(HeadmanSession.telegram_user_id == telegram_id)
+        .with_for_update()
+    )
+    if session is None:
+        session = HeadmanSession(
+            telegram_user_id=telegram_id,
+            nonce="",
+            step="groups",
+            payload="{}",
+            expires_at=datetime.now(UTC),
+        )
+        db.add(session)
+    token = bot_panels.scope.set((telegram_id, "st"))
+    try:
+        await headman_bot.enter(db, session)
+    finally:
+        bot_panels.scope.reset(token)
+    return True
+
+
+async def open_start(db, settings, telegram_id):
+    """Back from the cabinet to the start screen."""
+    await switch_panel(db, telegram_id, "st", "start")
+    session = await get_session(db, telegram_id)
+    if session is None:
+        session = StartSession(
+            telegram_user_id=telegram_id,
+            nonce="",
+            step="home",
+            payload="{}",
+            expires_at=datetime.now(UTC),
+        )
+        db.add(session)
+    token = bot_panels.scope.set((telegram_id, "start"))
+    try:
+        await home(db, session, settings, telegram_id)
+    finally:
+        bot_panels.scope.reset(token)
 
 
 async def join(db, session, notice=None):
@@ -287,6 +347,9 @@ async def handle(db, update, settings):
             await headman_prompt(db, session, settings)
     elif action == "invite":
         await invite(db, session, settings, sender.id)
+    elif action == "cabinet":
+        if not await open_cabinet(db, sender.id):
+            await home(db, session, settings, sender.id)
     elif action in INFO_TOPICS:
         body = bot_info.render(INFO_TOPICS[action], settings.support_contact, footer=False)
         await screen(db, session, body, [[("‹ Назад", "home")]], "info")

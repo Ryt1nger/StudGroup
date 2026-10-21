@@ -289,7 +289,7 @@ async def dispatch(db, update_value, settings):
                     {
                         "callback_query_id": callback.id,
                         "text": "Кнопка устарела. Отправь /start заново."
-                        if mode == "start"
+                        if mode in {"start", "st"}
                         else "Кнопка устарела. Открой команду заново.",
                     },
                 )
@@ -316,7 +316,9 @@ async def dispatch(db, update_value, settings):
                     "answerCallbackQuery",
                     {
                         "callback_query_id": callback.id,
-                        "text": "Это предыдущая панель. Открой новую команду.",
+                        "text": "Это предыдущий экран. Используйте последнее сообщение бота."
+                        if mode in {"start", "st"}
+                        else "Это предыдущая панель. Открой новую команду.",
                     },
                 )
                 return True

@@ -281,10 +281,18 @@ Triggers: `my_chat_member` (the webhook must deliver it; it is part of Telegram'
 update set), the new-members service message, or `/start` typed in the group as a fallback.
 The owner's `/admin` assignment also refuses a second active headman in one group.
 
-Not built yet: the promo-code step from the flow diagram (no partner model to record the code)
-and the cabinet on buttons. Headmen and deputies still open the cabinet with `/st`. There is no
-database-level unique index on one active headman per group; add it once production data is
-checked for duplicates.
+### Headman cabinet by buttons
+
+Headmen and deputies see «Кабинет старосты» on the start screen (and after connecting a group).
+It opens the same cabinet `/st` opens, straight into the main menu for the usual single group:
+the start screen is removed and the cabinet takes its place; «‹ В начало» in the cabinet menu
+returns the other way. Cabinet texts no longer ask people to type commands; the `/st` command
+still works as a shortcut. A stale button or expired session now re-opens a fresh menu or says
+to use the latest message. Text input steps (titles, dates, links) remain typed by nature.
+
+Not built yet: the promo-code step from the flow diagram (no partner model to record the code).
+There is no database-level unique index on one active headman per group; add it once production
+data is checked for duplicates.
 
 ## Cabinet API /v1/staff (contract 0.10.0)
 

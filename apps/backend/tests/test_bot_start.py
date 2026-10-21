@@ -139,8 +139,8 @@ def test_buttons_of_an_older_screen_stop_working_after_a_new_start(foreman):
 def test_a_connected_person_sees_the_app_and_staff_a_pointer_to_the_cabinet(foreman):
     deliver(foreman, "/start", uid=1)  # uid 1 is the pilot group's headman
     text = last(foreman)["text"]
-    assert text.startswith("Вы подключены к «Группа»") and "/st" in text
-    assert "Открыть StudGroup" in labels(foreman)
+    assert text.startswith("Вы подключены к «Группа»") and "/" not in text
+    assert {"Кабинет старосты", "Создать приглашение", "Открыть StudGroup"} <= set(labels(foreman))
 
 
 def test_plain_text_outside_the_code_step_still_reaches_the_headman_flow(foreman):
@@ -179,3 +179,40 @@ def test_start_panel_edits_one_message_and_a_new_start_replaces_it(transport):
     deleted = {d["message_id"] for m, d in calls if m == "deleteMessage"}
     assert first in deleted and 300 in deleted
     assert current(client, "start")[0] != first
+
+
+def test_the_cabinet_opens_by_a_button_straight_into_the_main_menu_and_back(foreman):
+    deliver(foreman, "/start", uid=1)
+    tap(foreman, "Кабинет старосты", uid=1)
+    assert last(foreman)["text"].startswith("Староста · Группа")
+    assert {"Домашние задания", "Расписание", "‹ В начало"} <= set(labels(foreman))
+    tap(foreman, "Расписание", uid=1)
+    assert "‹ Главное меню" in labels(foreman)
+    tap(foreman, "Главное меню", uid=1)
+    tap(foreman, "В начало", uid=1)
+    assert last(foreman)["text"].startswith("Вы подключены к «Группа»")
+
+
+def test_opening_the_cabinet_replaces_the_start_screen_instead_of_adding_one(transport):
+    client, calls = transport
+    input_message(client, 400, "/start")
+    drain(client)
+    start_mid, _ = current(client, "start")
+    press(client, "start", "Кабинет старосты", 401)
+    cabinet_mid, frame = current(client, "st")
+    assert cabinet_mid != start_mid and frame["text"].startswith("Староста · Группа")
+    assert start_mid in {d["message_id"] for m, d in calls if m == "deleteMessage"}
+    press(client, "st", "В начало", 402)
+    assert cabinet_mid in {d["message_id"] for m, d in calls if m == "deleteMessage"}
+    assert current(client, "start")[0] not in {start_mid, cabinet_mid}
+
+
+def test_no_screen_of_the_cabinet_menu_tells_people_to_type_a_command(foreman):
+    deliver(foreman, "/start", uid=1)
+    tap(foreman, "Кабинет старосты", uid=1)
+    seen = [last(foreman)["text"]]
+    for label in ["Участники", "Настройки", "Журнал", "Сводка"]:
+        tap(foreman, label, uid=1)
+        seen.append(last(foreman)["text"])
+        tap(foreman, "Главное меню", uid=1)
+    assert not [text for text in seen if " /" in text or text.startswith("/")]
