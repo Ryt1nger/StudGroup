@@ -11,7 +11,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.academic_deadlines import items as deadline_items
-from studgroup.api import ApiError, active_group, database, schedule_data
+from studgroup.api import ApiError, active_group, database, edit_permissions, schedule_data
 from studgroup.materials import links
 from studgroup.models import (
     Group,
@@ -106,7 +106,11 @@ async def representation(db, row, user, now):
         "created_at": utc(row.created_at),
         "updated_at": utc(row.updated_at),
         "generated_at": now,
-        "permissions": ["homework.read", "homework.completion.write"],
+        "permissions": [
+            "homework.read",
+            "homework.completion.write",
+            *(await edit_permissions(db, row.group_id, user)),
+        ],
     }
 
 

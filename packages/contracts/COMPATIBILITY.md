@@ -1,5 +1,13 @@
 # Contract compatibility
 
+## Card editing by the headman (0.10.0)
+
+Additive only. New operations `editHomework` and `editAcademicDeadline` (PATCH), new permission values
+and an optional `permissions` array on the academic-event detail. Clients built against 0.9.0 keep
+working: they ignore the new array and never call the new operations. A client MUST NOT treat the
+permissions as authorization; the backend decides on every request (403 for students, 409 when the
+card changed, 422 for invalid values).
+
 ## AI uncertainty visibility (2026-10-10)
 
 No new response field is added. A complete AI proposal is published even when its

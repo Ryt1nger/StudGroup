@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.9.0
+  version: 0.10.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -226,9 +226,58 @@ paths:
                   generated_at: { type: string, format: date-time }
                   group_timezone: { type: string }
                   item: { $ref: "#/components/schemas/AcademicDeadline" }
+                  permissions:
+                    type: array
+                    description: Card-editing permissions of the caller (headman/deputy only); a UI hint, every edit is re-checked by the server.
+                    items: { $ref: "#/components/schemas/Permission" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Deadlines]
+      operationId: editAcademicDeadline
+      summary: Headman or deputy edits any field of a graded event
+      description: >-
+        Same rules as an edit through the Telegram bot: revision-checked, audited, undoable, locks the
+        card against AI overwrites. Only fields present in the body change. A date without time
+        (`deadline.date_only`) keeps the whole day; `deadline: null` clears the date.
+      parameters:
+        - in: path
+          name: deadline_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EditAcademicDeadlineRequest" }
+            examples:
+              retitleAndRedate:
+                value:
+                  expected_revision: 2
+                  kind: test
+                  title: Тест по пределам
+                  deadline: { at: "2026-11-05T00:00:00+03:00", date_only: true }
+      responses:
+        "200":
+          description: Updated event
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, group_timezone, item, permissions]
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  group_timezone: { type: string }
+                  item: { $ref: "#/components/schemas/AcademicDeadline" }
+                  permissions:
+                    type: array
+                    items: { $ref: "#/components/schemas/Permission" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RevisionConflict" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
   /homework:
     get:
       tags: [Homework]
@@ -311,6 +360,47 @@ paths:
           $ref: "#/components/responses/NotFound"
         "410":
           $ref: "#/components/responses/Gone"
+    patch:
+      tags: [Homework]
+      summary: Headman or deputy edits any field of a homework card
+      operationId: editHomework
+      description: >-
+        Same rules as an edit through the Telegram bot: revision-checked, audited, undoable, locks the
+        card against AI overwrites. Only fields present in the body change. `description: ""` removes
+        the description; `deadline: null` clears the date. A date-only deadline resolves to the subject's
+        lesson that day, as in the bot. Students receive 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditHomeworkRequest"
+            examples:
+              retitleAndRedate:
+                value:
+                  expected_revision: 3
+                  title: Задачи по пределам
+                  description: Решить номера 1–5
+                  deadline: { at: "2026-11-02T10:00:00+03:00", date_only: false }
+      responses:
+        "200":
+          description: Updated homework detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeworkDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/RevisionConflict"
+        "410":
+          $ref: "#/components/responses/Gone"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
   /homework/{homework_id}/completion:
     parameters:
       - $ref: "#/components/parameters/HomeworkId"
@@ -421,6 +511,12 @@ components:
                   message: Эти данные больше не хранятся.
                   correlation_id: 01J9Z4A8Z1R9N2Y3P4Q5W6E7T8
                   retryable: false
+    InvalidRequest:
+      description: The request body is malformed or a value is not allowed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     RevisionConflict:
       description: The resource changed after the client last read it
       content:
@@ -957,6 +1053,8 @@ components:
         - today.read
         - homework.read
         - homework.completion.write
+        - homework.edit
+        - homework.material.write
     HomeworkListResponse:
       type: object
       additionalProperties: false
@@ -1504,6 +1602,43 @@ components:
         completed_revision:
           type: [integer, "null"]
           minimum: 1
+    DeadlineInput:
+      type: object
+      additionalProperties: false
+      description: Offset-aware instant; `date_only` keeps the whole day. Omit `at` (or send null) to clear.
+      properties:
+        at: { type: [string, "null"], format: date-time }
+        date_only: { type: boolean, default: false }
+    EditHomeworkRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision]
+      properties:
+        expected_revision: { type: integer, minimum: 1 }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: [string, "null"], maxLength: 8000 }
+        subject_name: { type: string, minLength: 1, maxLength: 255 }
+        deadline:
+          oneOf:
+            - $ref: "#/components/schemas/DeadlineInput"
+            - type: "null"
+    EditAcademicDeadlineRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_revision]
+      properties:
+        expected_revision: { type: integer, minimum: 1 }
+        kind:
+          type: string
+          enum: [control_point, assessment, test, credit, exam, other_academic_deadline]
+        title: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: [string, "null"], maxLength: 8000 }
+        subject: { type: string, minLength: 1, maxLength: 255 }
+        deadline:
+          oneOf:
+            - $ref: "#/components/schemas/DeadlineInput"
+            - type: "null"
+        date_hint: { type: [string, "null"], maxLength: 1000 }
     SetCompletionRequest:
       type: object
       additionalProperties: false

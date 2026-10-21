@@ -102,7 +102,7 @@ export type AccessState = 'active' | 'no_active_group' | 'membership_suspended' 
 
 export type MemberRole = 'student' | 'deputy' | 'headman';
 
-export type Permission = 'schedule.read' | 'today.read' | 'homework.read' | 'homework.completion.write';
+export type Permission = 'schedule.read' | 'today.read' | 'homework.read' | 'homework.completion.write' | 'homework.edit' | 'homework.material.write';
 
 export type HomeworkListResponse = {
     /**
@@ -376,6 +376,32 @@ export type MyHomeworkState = {
     completion: 'pending' | 'completed';
     completed_at?: string | null;
     completed_revision?: number | null;
+};
+
+/**
+ * Offset-aware instant; `date_only` keeps the whole day. Omit `at` (or send null) to clear.
+ */
+export type DeadlineInput = {
+    at?: string | null;
+    date_only?: boolean;
+};
+
+export type EditHomeworkRequest = {
+    expected_revision: number;
+    title?: string;
+    description?: string | null;
+    subject_name?: string;
+    deadline?: DeadlineInput | null;
+};
+
+export type EditAcademicDeadlineRequest = {
+    expected_revision: number;
+    kind?: 'control_point' | 'assessment' | 'test' | 'credit' | 'exam' | 'other_academic_deadline';
+    title?: string;
+    description?: string | null;
+    subject?: string;
+    deadline?: DeadlineInput | null;
+    date_hint?: string | null;
 };
 
 export type SetCompletionRequest = {
@@ -698,10 +724,62 @@ export type GetAcademicDeadlineResponses = {
         generated_at: string;
         group_timezone: string;
         item: AcademicDeadline;
+        /**
+         * Card-editing permissions of the caller (headman/deputy only); a UI hint, every edit is re-checked by the server.
+         */
+        permissions?: Array<Permission>;
     };
 };
 
 export type GetAcademicDeadlineResponse = GetAcademicDeadlineResponses[keyof GetAcademicDeadlineResponses];
+
+export type EditAcademicDeadlineData = {
+    body: EditAcademicDeadlineRequest;
+    path: {
+        deadline_id: string;
+    };
+    query?: never;
+    url: '/deadlines/{deadline_id}';
+};
+
+export type EditAcademicDeadlineErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type EditAcademicDeadlineError = EditAcademicDeadlineErrors[keyof EditAcademicDeadlineErrors];
+
+export type EditAcademicDeadlineResponses = {
+    /**
+     * Updated event
+     */
+    200: {
+        generated_at: string;
+        group_timezone: string;
+        item: AcademicDeadline;
+        permissions: Array<Permission>;
+    };
+};
+
+export type EditAcademicDeadlineResponse = EditAcademicDeadlineResponses[keyof EditAcademicDeadlineResponses];
 
 export type ListHomeworkData = {
     body?: never;
@@ -781,6 +859,53 @@ export type GetHomeworkResponses = {
 };
 
 export type GetHomeworkResponse = GetHomeworkResponses[keyof GetHomeworkResponses];
+
+export type EditHomeworkData = {
+    body: EditHomeworkRequest;
+    path: {
+        homework_id: string;
+    };
+    query?: never;
+    url: '/homework/{homework_id}';
+};
+
+export type EditHomeworkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * Resource existed but is no longer retained
+     */
+    410: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type EditHomeworkError = EditHomeworkErrors[keyof EditHomeworkErrors];
+
+export type EditHomeworkResponses = {
+    /**
+     * Updated homework detail
+     */
+    200: HomeworkDetail;
+};
+
+export type EditHomeworkResponse = EditHomeworkResponses[keyof EditHomeworkResponses];
 
 export type SetHomeworkCompletionData = {
     body: SetCompletionRequest;

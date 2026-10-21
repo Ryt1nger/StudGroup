@@ -13,6 +13,7 @@ import layout from '../homework/HomeworkScreen.module.css';
 import { SourceBlock } from '../homework/SourceBlock';
 import { formatShortDate, formatTime } from '../../lib/format';
 import { ru } from '../../i18n/ru';
+import { EventEditor } from '../cardEdit/CardEditor';
 
 export function AcademicDeadlineScreen() {
   const { deadlineId = '' } = useParams();
@@ -85,6 +86,12 @@ export function AcademicDeadlineScreen() {
             </h2>
             <p>{item.description}</p>
           </section>
+          <EventEditor
+            key={item.revision}
+            item={item}
+            allowed={data.permissions?.includes('homework.edit') ?? false}
+            timeZone={data.group_timezone}
+          />
           <section className={styles.card} aria-labelledby="event-materials">
             <h2 id="event-materials" className={styles.detailTask}>
               Материалы

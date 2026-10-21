@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses } from './types.gen';
+import type { BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -107,6 +107,21 @@ export const getAcademicDeadline = <ThrowOnError extends boolean = false>(option
 });
 
 /**
+ * Headman or deputy edits any field of a graded event
+ *
+ * Same rules as an edit through the Telegram bot: revision-checked, audited, undoable, locks the card against AI overwrites. Only fields present in the body change. A date without time (`deadline.date_only`) keeps the whole day; `deadline: null` clears the date.
+ */
+export const editAcademicDeadline = <ThrowOnError extends boolean = false>(options: Options<EditAcademicDeadlineData, ThrowOnError>): RequestResult<EditAcademicDeadlineResponses, EditAcademicDeadlineErrors, ThrowOnError> => (options.client ?? client).patch<EditAcademicDeadlineResponses, EditAcademicDeadlineErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/deadlines/{deadline_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Full retained homework list for the current student and active group
  *
  * Active filters exclude archived items. Archive contains cancelled items immediately and items whose known deadline has passed, regardless of personal completion. A timed deadline archives at deadline <= current server time; a date-only deadline archives at the next calendar day in the group's timezone. Never deletes stored homework. Ordering is created_at ascending then id ascending. Cursors are opaque, bound to the current session, group and filter, expire in 15 minutes and freeze selection time. This is not an immutable snapshot; changes to item state can affect later pages. Restart pagination after mutations.
@@ -124,6 +139,21 @@ export const getHomework = <ThrowOnError extends boolean = false>(options: Optio
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/homework/{homework_id}',
     ...options
+});
+
+/**
+ * Headman or deputy edits any field of a homework card
+ *
+ * Same rules as an edit through the Telegram bot: revision-checked, audited, undoable, locks the card against AI overwrites. Only fields present in the body change. `description: ""` removes the description; `deadline: null` clears the date. A date-only deadline resolves to the subject's lesson that day, as in the bot. Students receive 403.
+ */
+export const editHomework = <ThrowOnError extends boolean = false>(options: Options<EditHomeworkData, ThrowOnError>): RequestResult<EditHomeworkResponses, EditHomeworkErrors, ThrowOnError> => (options.client ?? client).patch<EditHomeworkResponses, EditHomeworkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/homework/{homework_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

@@ -8,8 +8,12 @@ import {
   listSubjects,
   listAcademicDeadlines,
   getAcademicDeadline,
+  editHomework,
+  editAcademicDeadline,
   recheckMembership,
   setHomeworkCompletion,
+  type EditAcademicDeadlineRequest,
+  type EditHomeworkRequest,
   type HomeworkDetail,
   type HomeworkListResponse,
   type ScheduleResponse,
@@ -46,6 +50,10 @@ export const api = {
   listHomework: (filter: HomeworkListFilter, cursor?: string): Promise<HomeworkListResponse> =>
     unwrap(listHomework({ query: { filter, limit: HOMEWORK_PAGE_SIZE, ...(cursor ? { cursor } : {}) } })),
   homework: (id: string): Promise<HomeworkDetail> => unwrap(getHomework({ path: { homework_id: id } })),
+  editHomework: (id: string, body: EditHomeworkRequest): Promise<HomeworkDetail> =>
+    unwrap(editHomework({ path: { homework_id: id }, body })),
+  editEvent: (id: string, body: EditAcademicDeadlineRequest) =>
+    unwrap(editAcademicDeadline({ path: { deadline_id: id }, body })),
   setCompletion: (id: string, completed: boolean, expectedRevision: number): Promise<HomeworkDetail> =>
     unwrap(
       setHomeworkCompletion({
@@ -151,6 +159,48 @@ export function useCompletionMutation(id: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.lessonSubjects });
       // Cursors are not valid across mutations: drop every loaded page and restart from the first.
       restartHomeworkLists(queryClient);
+    },
+  });
+}
+
+/**
+ * Headman/deputy edit of a homework card. The server decides (403 for students, 409 when the card
+ * changed); on a conflict the card is refetched so the user sees the current data before retrying.
+ */
+export function useEditHomeworkMutation(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: EditHomeworkRequest) => api.editHomework(id, body),
+    onError: async (error) => {
+      if (isApiRequestError(error) && error.code === 'revision_conflict') {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.homework(id) });
+      }
+    },
+    onSuccess: (detail) => {
+      queryClient.setQueryData(queryKeys.homework(id), detail);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lessonSubjects });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
+      restartHomeworkLists(queryClient);
+    },
+  });
+}
+
+/** Headman/deputy edit of an academic event (test, control point, ...). */
+export function useEditEventMutation(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: EditAcademicDeadlineRequest) => api.editEvent(id, body),
+    onError: async (error) => {
+      if (isApiRequestError(error) && error.code === 'revision_conflict') {
+        await queryClient.invalidateQueries({ queryKey: ['academic-deadline', id] });
+      }
+    },
+    onSuccess: (response) => {
+      queryClient.setQueryData(['academic-deadline', id], response);
+      void queryClient.invalidateQueries({ queryKey: ['academic-deadlines'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
     },
   });
 }

@@ -23,6 +23,23 @@ class ApiError(Exception):
         self.code, self.message, self.status = code, message, status
 
 
+EDIT_PERMISSIONS = ["homework.edit", "homework.material.write"]
+
+
+async def edit_permissions(db, group_id, user_id):
+    """Card-editing permissions of the caller in the group (headman/deputy only); a UI hint,
+    every edit request re-checks the role on the server."""
+    allowed = await db.scalar(
+        select(Membership.id).where(
+            Membership.user_id == user_id,
+            Membership.group_id == group_id,
+            Membership.status == "active",
+            Membership.role.in_(["headman", "deputy"]),
+        )
+    )
+    return list(EDIT_PERMISSIONS) if allowed is not None else []
+
+
 async def database(request: Request):
     async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session:
         yield session
