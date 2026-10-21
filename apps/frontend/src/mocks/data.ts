@@ -189,8 +189,8 @@ export function buildWorld(now: number = Date.now()): MockWorld {
     sections: [
       { kind: 'due_today', ids: [dueTodayId] },
       { kind: 'overdue', ids: [overdueId] },
-      { kind: 'new_or_changed', ids: [clarifyId, reanalyzingId] },
       { kind: 'upcoming', ids: [upcomingId] },
+      { kind: 'new_or_changed', ids: [clarifyId, reanalyzingId] },
     ],
   };
 }

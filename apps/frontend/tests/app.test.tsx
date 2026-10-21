@@ -114,7 +114,7 @@ describe('Today', () => {
     renderApp();
     await screen.findByText('ДЗ №12–140');
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(['Срок сегодня', 'Новое и изменённое', 'Ближайшие']);
+    expect(headings).toEqual(['Срок сегодня', 'Ближайшие', 'Изменённое']);
     // urgent badge appears for urgent/super_urgent cards only
     expect(screen.getAllByText('Срочно')).toHaveLength(1);
     expect(screen.queryByText(/Найти или спросить/)).not.toBeInTheDocument();

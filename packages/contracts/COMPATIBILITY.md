@@ -311,3 +311,12 @@ do not create fake new notifications. This is the in-app inbox for actual card c
 scheduled Telegram reminders/digests remain outside this slice. Existing endpoints and
 session/profile fields are unchanged. `/admin` is an owner-only private bot workflow,
 not a frontend endpoint and does not confer headman rights on participants.
+
+## Today order and changed window (owner decision, 2026-10-21)
+
+Section order becomes due_today, upcoming, new_or_changed. The changed window shrinks
+from 24 to 5 hours, and assignments created within the last 5 hours are treated as new
+and never listed in new_or_changed. After the window the card leaves that section only;
+Tasks and detail are unaffected. No schema or enum change; clients that preserve server
+order need no update. Example: an assignment created 3 days ago and edited 1 hour ago
+→ new_or_changed; edited 6 hours ago → upcoming (if due within 7 days) or absent.

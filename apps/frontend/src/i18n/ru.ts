@@ -17,8 +17,8 @@ export const ru = {
     sections: {
       overdue: 'Просрочено',
       due_today: 'Срок сегодня',
-      new_or_changed: 'Новое и изменённое',
       upcoming: 'Ближайшие',
+      new_or_changed: 'Изменённое',
     },
     emptyTitle: 'На сегодня заданий нет', // proposal
     emptyBody: 'Когда в группе появится новое задание, оно отобразится здесь.', // proposal
