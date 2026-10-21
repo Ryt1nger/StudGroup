@@ -269,9 +269,22 @@ Invitation codes are secrets: the message carrying one (typed code or `/start in
 is deleted at once. Set `BOT_USERNAME` (without `@`) so the headman's «Создать приглашения» shows
 tap-to-join links `https://t.me/<bot>?start=invite_<code>`; unset, it shows the old command text.
 
-Not built yet: the «Я староста» branch is a placeholder until group connection through the bot
-exists, and the promo-code step from the flow diagram (no partner model to record the code).
-Headmen and deputies still open the cabinet with `/st`.
+### Connecting a new group (`bot_connect.py`)
+
+«Я староста» leaves a claim (valid 24 h). When the bot is then added to a Telegram group that
+is not in the database in any state, the claimant becomes its single headman and the group
+starts at once (`pilot_authorized`, bot-added boundary now, timezone Europe/Moscow until changed
+in `/st`). No approval. Guards: Telegram must report the claimant as creator/administrator and
+the bot as administrator; a person already connected to a group cannot connect another; an
+existing group can never be taken over; the unique chat id makes the creation race-safe.
+Triggers: `my_chat_member` (the webhook must deliver it; it is part of Telegram's default
+update set), the new-members service message, or `/start` typed in the group as a fallback.
+The owner's `/admin` assignment also refuses a second active headman in one group.
+
+Not built yet: the promo-code step from the flow diagram (no partner model to record the code)
+and the cabinet on buttons. Headmen and deputies still open the cabinet with `/st`. There is no
+database-level unique index on one active headman per group; add it once production data is
+checked for duplicates.
 
 ## Cabinet API /v1/staff (contract 0.10.0)
 

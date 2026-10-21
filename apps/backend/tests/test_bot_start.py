@@ -143,13 +143,6 @@ def test_a_connected_person_sees_the_app_and_staff_a_pointer_to_the_cabinet(fore
     assert "Открыть StudGroup" in labels(foreman)
 
 
-def test_the_headman_button_is_an_honest_placeholder(foreman):
-    deliver(foreman, "/start", uid=33)
-    tap(foreman, "Я староста")
-    assert "появится в ближайшее время" in last(foreman)["text"]
-    assert labels(foreman) == ["‹ Назад"]
-
-
 def test_plain_text_outside_the_code_step_still_reaches_the_headman_flow(foreman):
     deliver(foreman, "/start", uid=1)
     sent = datetime.now(UTC) - timedelta(days=1)

@@ -597,6 +597,24 @@ async def handle(db, update, settings):
             if not group or not group.pilot_authorized or group.status != "active":
                 return True
             target = session.candidate_id
+            if session.candidate_role == "headman" and await db.scalar(
+                select(Membership.id)
+                .join(User, User.id == Membership.user_id)
+                .where(
+                    Membership.group_id == group.id,
+                    Membership.role == "headman",
+                    Membership.status == "active",
+                    User.telegram_user_id != target,
+                )
+            ):
+                await say(
+                    db,
+                    chat,
+                    f"В «{group.name}» уже есть староста: он может быть только один. "
+                    "Сначала смените роль действующему старосте.",
+                    {"remove_keyboard": True},
+                )
+                return True
             await db.execute(
                 insert(User)
                 .values(id=uuid.uuid4(), telegram_user_id=target, display_name="Участник")

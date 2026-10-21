@@ -6,9 +6,9 @@ the user's own messages, buttons carry a per-screen nonce and go stale when the 
 Nothing here decides authorization: joining a group is ``headman_domain.redeem_invite``.
 
 Student path: welcome -> "Я студент" -> join -> paste a code (or tap an invitation link) -> done.
-The headman path is a placeholder until group connection through the bot exists. The promo-code
-step from the flow diagram is not built: Module 0 describes partner codes but no partner model
-exists to record them.
+Headman path: «Я староста» leaves a claim that ``bot_connect`` fulfils when the bot is added to a
+new group. The promo-code step from the flow diagram is not built: Module 0 describes partner
+codes but no partner model exists to record them.
 """
 
 import json
@@ -25,6 +25,7 @@ from studgroup.homework import utc
 from studgroup.models import Group, Membership, StartSession, User
 
 SESSION_MINUTES = 30
+CLAIM_HOURS = 24  # how long «Я староста» waits for the bot to be added to a group
 INFO_TOPICS = {"info_howto": "howto", "info_faq": "faq", "info_support": "support"}
 _LINK_CODE = re.compile(r"invite_([A-Za-z0-9_-]{20,64})")
 _BARE_CODE = re.compile(r"[A-Za-z0-9_-]{20,64}")
@@ -61,11 +62,11 @@ async def awaiting_input(db, chat):
     return bool(session and session.step == "code" and utc(session.expires_at) > datetime.now(UTC))
 
 
-async def screen(db, session, text, rows, step, data=None):
+async def screen(db, session, text, rows, step, data=None, minutes=SESSION_MINUTES):
     session.nonce = secrets.token_hex(6)
     session.step = step
     session.payload = json.dumps(data or {})
-    session.expires_at = datetime.now(UTC) + timedelta(minutes=SESSION_MINUTES)
+    session.expires_at = datetime.now(UTC) + timedelta(minutes=minutes)
     keyboard = {
         "inline_keyboard": [
             [
@@ -111,9 +112,12 @@ async def home(db, session, settings, telegram_id):
     if found:
         member, group = found
         text = f"Вы подключены к «{group.name}»."
+        rows = [[app_button(settings)]]
+        if member.role == "headman":
+            rows.insert(0, [("Создать приглашение", "invite")])
         if member.role in {"headman", "deputy"}:
             text += "\n\nКабинет старосты пока открывается командой /st."
-        await screen(db, session, text, [[app_button(settings)], *info_row()], "home")
+        await screen(db, session, text, [*rows, *info_row()], "home")
         return
     await screen(
         db,
@@ -122,6 +126,65 @@ async def home(db, session, settings, telegram_id):
         "группы и показывает их в приложении прямо в Telegram.\n\nКто вы?",
         [[("Я студент", "student"), ("Я староста", "headman")], *info_row()],
         "home",
+    )
+
+
+async def headman_prompt(db, session, settings, notice=None):
+    """«Я староста»: the claim waits here until the bot is added to a new group."""
+    name = (settings.bot_username or "").lstrip("@")
+    text = (
+        "Подключение группы\n\n"
+        "1. Добавьте бота в чат вашей группы.\n"
+        "2. Сделайте бота администратором: так он видит сообщения группы и может проверить, "
+        "что вы её администратор.\n"
+        "3. Я напишу вам здесь, и вы станете старостой этой группы.\n\n"
+        "Подключить можно только группу, которой ещё нет в StudGroup."
+    )
+    if name:
+        text += f"\nЕсли ничего не происходит, отправьте в группе /start@{name}."
+    if notice:
+        text = f"{notice}\n\n{text}"
+    rows = []
+    if name:
+        rows.append(
+            [{"text": "Добавить бота в группу", "url": f"https://t.me/{name}?startgroup=connect"}]
+        )
+    rows.append([("‹ Назад", "home")])
+    await screen(db, session, text, rows, "headman", minutes=CLAIM_HOURS * 60)
+
+
+async def connected(db, session, settings, group):
+    await screen(
+        db,
+        session,
+        f"Готово! Группа «{group.name}» подключена, вы её староста.\n\n"
+        "Часовой пояс группы по умолчанию: Москва. Изменить его можно в кабинете (/st).\n\n"
+        "Теперь пригласите студентов.",
+        [[("Создать приглашение", "invite")], [app_button(settings)]],
+        "connected",
+    )
+
+
+async def invite(db, session, settings, telegram_id):
+    found = await current_membership(db, telegram_id)
+    if not found or found[0].role != "headman":
+        await home(db, session, settings, telegram_id)
+        return
+    member, group = found
+    try:
+        code = (await domain.issue_invites(db, group, member, 1))[0]
+    except domain.StError as error:
+        await screen(db, session, str(error), [[("‹ Назад", "home")]], "invite")
+        return
+    await screen(
+        db,
+        session,
+        "Приглашение для студента\n\n"
+        f"{invite_link(settings, code)}\n\n"
+        "Перешлите это одному студенту: достаточно нажать на ссылку. Она действует 24 часа и "
+        "срабатывает один раз.",
+        [[("Создать ещё", "invite")], [("‹ Назад", "home")]],
+        "invite",
     )
 
 
@@ -218,16 +281,12 @@ async def handle(db, update, settings):
     elif action == "enter_code":
         await code_prompt(db, session)
     elif action == "headman":
-        contact = (settings.support_contact or "").strip()
-        await screen(
-            db,
-            session,
-            "Подключение группы\n\nПодключение группы старостой прямо в боте появится в "
-            "ближайшее время. Пока доступ согласуется с командой проекта."
-            + (f" Напишите нам: {contact}" if contact else ""),
-            [[("‹ Назад", "home")]],
-            "headman",
-        )
+        if await current_membership(db, sender.id):
+            await home(db, session, settings, sender.id)
+        else:
+            await headman_prompt(db, session, settings)
+    elif action == "invite":
+        await invite(db, session, settings, sender.id)
     elif action in INFO_TOPICS:
         body = bot_info.render(INFO_TOPICS[action], settings.support_contact, footer=False)
         await screen(db, session, body, [[("‹ Назад", "home")]], "info")
