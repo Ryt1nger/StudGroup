@@ -17,6 +17,7 @@ from studgroup.models import (
     CanonicalItemRevision,
     CanonicalProjectionLink,
     Group,
+    HeadmanDecision,
     Homework,
     MessageAttachment,
     RawMessage,
@@ -131,7 +132,18 @@ async def projected_sources(db, group, row, now, link):
     return [source_detail(group, raw, now, revision) for raw, revision in unique.values()]
 
 
-def deadline_metadata(row, item):
+async def headman_resolved(db, key):
+    """True once the headman or deputy has confirmed or edited the card (it is locked for the AI)."""
+    decision = await db.get(HeadmanDecision, key)
+    return decision is not None and decision.locked
+
+
+def deadline_metadata(row, item, resolved=False):
+    if resolved and (
+        getattr(row, "deadline_at", None) is not None or getattr(row, "window_start", None)
+    ):
+        # A person decided: the earlier "needs clarification" of the model no longer applies.
+        return "confirmed", "manual"
     if item is not None:
         mapping = {
             "explicit": ("from_source", "explicit_message"),
@@ -234,7 +246,7 @@ async def projected_updates(db, link):
 
 async def projected_materials(db, group_id, entity_key, now, sources):
     result = [
-        {**item, "kind": "link", "file_name": None, "mime_type": None, "size_bytes": None}
+        {"kind": "link", "file_name": None, "mime_type": None, "size_bytes": None, **item}
         for item in await links(db, group_id, [entity_key])
     ]
     source_urls = {
@@ -285,7 +297,7 @@ async def projected_materials(db, group_id, entity_key, now, sources):
 async def enrich_homework(db, group, row, now):
     link, item = await published_projection(db, row)
     sources = await projected_sources(db, group, row, now, link)
-    certainty, origin = deadline_metadata(row, item)
+    certainty, origin = deadline_metadata(row, item, await headman_resolved(db, f"h:{row.id}"))
     return {
         "card_kind": (
             item.semantic_kind if item and item.semantic_kind in CARD_KINDS else "homework"
@@ -352,7 +364,7 @@ async def enrich_deadline(db, group, row: AcademicDeadline, now):
         raw = await db.get(RawMessage, row.raw_message_id) if row.raw_message_id else None
         sources = [source_detail(group, raw, now)]
     if item:
-        certainty, origin = deadline_metadata(row, item)
+        certainty, origin = deadline_metadata(row, item, await headman_resolved(db, f"e:{row.id}"))
         kind = item.semantic_kind if item.semantic_kind in CARD_KINDS else row.kind
         subject = (
             {
@@ -363,16 +375,19 @@ async def enrich_deadline(db, group, row: AcademicDeadline, now):
             else None
         )
     else:
-        certainty = (
-            "needs_clarification"
-            if row.needs_clarification
-            else ("from_source" if row.deadline_at else "unknown")
-        )
-        origin = (
-            "ambiguous_message"
-            if row.needs_clarification
-            else ("explicit_message" if row.deadline_at else "unknown")
-        )
+        resolved = await headman_resolved(db, f"e:{row.id}")
+        certainty, origin = deadline_metadata(row, None, resolved) if resolved else (None, None)
+        if certainty is None:
+            certainty = (
+                "needs_clarification"
+                if row.needs_clarification
+                else ("from_source" if row.deadline_at else "unknown")
+            )
+            origin = (
+                "ambiguous_message"
+                if row.needs_clarification
+                else ("explicit_message" if row.deadline_at else "unknown")
+            )
         kind = row.kind if row.kind in CARD_KINDS else "other_academic_deadline"
         subject = (
             None

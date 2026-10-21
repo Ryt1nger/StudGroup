@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses } from './types.gen';
+import type { BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -94,6 +94,26 @@ export const listSubjects = <ThrowOnError extends boolean = false>(options?: Opt
 export const listAcademicDeadlines = <ThrowOnError extends boolean = false>(options?: Options<ListAcademicDeadlinesData, ThrowOnError>): RequestResult<ListAcademicDeadlinesResponses, ListAcademicDeadlinesErrors, ThrowOnError> => (options?.client ?? client).get<ListAcademicDeadlinesResponses, ListAcademicDeadlinesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/deadlines',
+    ...options
+});
+
+/**
+ * Telegram deep link where an editor sends a file for this card
+ *
+ * Headman or deputy only. The link opens the bot, which waits for one file (up to 20 MB) and, after the headman confirms, attaches it to the card as a material. The file stays in Telegram.
+ */
+export const getHomeworkFileLink = <ThrowOnError extends boolean = false>(options: Options<GetHomeworkFileLinkData, ThrowOnError>): RequestResult<GetHomeworkFileLinkResponses, GetHomeworkFileLinkErrors, ThrowOnError> => (options.client ?? client).get<GetHomeworkFileLinkResponses, GetHomeworkFileLinkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/homework/{homework_id}/file-link',
+    ...options
+});
+
+/**
+ * Telegram deep link where an editor sends a file for this event
+ */
+export const getDeadlineFileLink = <ThrowOnError extends boolean = false>(options: Options<GetDeadlineFileLinkData, ThrowOnError>): RequestResult<GetDeadlineFileLinkResponses, GetDeadlineFileLinkErrors, ThrowOnError> => (options.client ?? client).get<GetDeadlineFileLinkResponses, GetDeadlineFileLinkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/deadlines/{deadline_id}/file-link',
     ...options
 });
 

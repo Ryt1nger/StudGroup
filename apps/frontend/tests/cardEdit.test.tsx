@@ -34,6 +34,29 @@ const eventResponse = (permissions: string[], item = event) => ({
 });
 
 describe('headman card editing', () => {
+  it('opens the edit form on its own page and returns to the card after saving', async () => {
+    useScenario();
+    server.use(
+      http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
+      http.patch(`${API}/homework/${HW}`, () => HttpResponse.json({ ...editable, title: 'Другое название' })),
+    );
+    const { router } = renderApp({ route: `/homework/${HW}` });
+    await userEvent.click(await screen.findByRole('button', { name: 'Редактировать' }));
+    expect(router.state.location.pathname).toBe(`/homework/${HW}/edit`);
+    expect(await screen.findByRole('heading', { name: 'Редактирование', level: 1 })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Название'), '!');
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/homework/${HW}`));
+  });
+
+  it('shows no form on the edit page to a student who opens the address directly', async () => {
+    useScenario();
+    server.use(http.get(`${API}/homework/${HW}`, () => HttpResponse.json(base)));
+    renderApp({ route: `/homework/${HW}/edit` });
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Сохранить' })).not.toBeInTheDocument();
+  });
+
   it('hides the edit button from a student', async () => {
     useScenario();
     server.use(http.get(`${API}/homework/${HW}`, () => HttpResponse.json(base)));
@@ -154,5 +177,56 @@ describe('headman card editing', () => {
     renderApp({ route: `/deadlines/${EV}` });
     await screen.findAllByText('КТ 1: эссе');
     expect(screen.queryByRole('button', { name: 'Редактировать' })).not.toBeInTheDocument();
+  });
+
+  it('opens the bot to send a file, and hides the button from students', async () => {
+    useScenario();
+    server.use(
+      http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
+      http.get(`${API}/homework/${HW}/file-link`, () =>
+        HttpResponse.json({ url: `https://t.me/studgroup_rf_bot?start=file_h_${HW}` }),
+      ),
+    );
+    const { adapter } = renderApp({ route: `/homework/${HW}` });
+    await userEvent.click(await screen.findByRole('button', { name: 'Добавить файл' }));
+    await waitFor(() =>
+      expect(adapter?.openTelegramLink).toHaveBeenCalledWith(
+        `https://t.me/studgroup_rf_bot?start=file_h_${HW}`,
+      ),
+    );
+  });
+
+  it('refuses to open a deep link that is not on t.me', async () => {
+    useScenario();
+    server.use(
+      http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
+      http.get(`${API}/homework/${HW}/file-link`, () => HttpResponse.json({ url: 'https://evil.example/x' })),
+    );
+    const { adapter } = renderApp({ route: `/homework/${HW}` });
+    await userEvent.click(await screen.findByRole('button', { name: 'Добавить файл' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Добавить файл' })).toBeEnabled());
+    expect(adapter?.openTelegramLink).not.toHaveBeenCalled();
+  });
+
+  it('opens a Telegram-kept file through the API origin and never as a relative page link', async () => {
+    useScenario();
+    const withFile = {
+      ...base,
+      materials: [
+        {
+          id: 'm1',
+          title: 'Лекция 3.pdf',
+          url: '/v1/files/m1?exp=1&sig=abc',
+          kind: 'document',
+          file_name: 'Лекция 3.pdf',
+          mime_type: 'application/pdf',
+          size_bytes: 1000,
+        },
+      ],
+    };
+    server.use(http.get(`${API}/homework/${HW}`, () => HttpResponse.json(withFile)));
+    renderApp({ route: `/homework/${HW}` });
+    const link = await screen.findByRole('link', { name: 'Лекция 3.pdf' });
+    expect(link).toHaveAttribute('href', 'https://api.studgroup.example/v1/files/m1?exp=1&sig=abc');
   });
 });

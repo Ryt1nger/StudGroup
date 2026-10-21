@@ -25,6 +25,8 @@ from studgroup.homework import router as homework_router
 from studgroup.ingestion import router as ingestion_router
 from studgroup.notifications import router as notifications_router
 from studgroup.subjects import router as subjects_router
+from studgroup.telegram_files import configure as configure_file_links
+from studgroup.telegram_files import router as files_router
 
 
 class Settings(BaseSettings):
@@ -285,10 +287,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="StudGroup", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    configure_file_links(settings.telegram_webhook_secret)
     app.include_router(router)
     app.include_router(ingestion_router)
     app.include_router(homework_router)
     app.include_router(card_edit_router)
+    app.include_router(files_router)
     app.include_router(subjects_router)
     app.include_router(deadlines_router)
     app.include_router(notifications_router)

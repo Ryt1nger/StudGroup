@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.10.0
+  version: 0.11.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -204,6 +204,49 @@ paths:
                     items: { $ref: "#/components/schemas/AcademicDeadline" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /homework/{homework_id}/file-link:
+    get:
+      tags: [Homework]
+      operationId: getHomeworkFileLink
+      summary: Telegram deep link where an editor sends a file for this card
+      description: >-
+        Headman or deputy only. The link opens the bot, which waits for one file (up to 20 MB) and,
+        after the headman confirms, attaches it to the card as a material. The file stays in Telegram.
+      parameters:
+        - in: path
+          name: homework_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Deep link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileUploadLink" }
+              examples:
+                link: { value: { url: "https://t.me/studgroup_rf_bot?start=file_h_6d1c0d52-0000-4000-8000-000000000001" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /deadlines/{deadline_id}/file-link:
+    get:
+      tags: [Deadlines]
+      operationId: getDeadlineFileLink
+      summary: Telegram deep link where an editor sends a file for this event
+      parameters:
+        - in: path
+          name: deadline_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Deep link
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileUploadLink" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /deadlines/{deadline_id}:
     get:
       tags: [Deadlines]
@@ -1217,13 +1260,24 @@ components:
         cancelled_at: { type: [string, "null"], format: date-time }
         materials:
           { type: array, items: { $ref: "#/components/schemas/MaterialLink" } }
+    FileUploadLink:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url: { type: string, format: uri }
     MaterialLink:
       type: object
       required: [id, title, url]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
-        url: { type: string, format: uri }
+        url:
+          type: string
+          description: >-
+            An absolute https link, or, for a file kept in Telegram (`kind` other than `link`), an
+            API-relative signed path `/v1/files/{id}?exp=..&sig=..` valid for 6 hours. Resolve it against
+            the API base URL; it needs no Authorization header.
         kind:
           type: string
           enum: [link, photo, document, video, audio, voice, animation]

@@ -170,9 +170,16 @@ export type AcademicDeadline = {
     materials?: Array<MaterialLink>;
 };
 
+export type FileUploadLink = {
+    url: string;
+};
+
 export type MaterialLink = {
     id: string;
     title: string;
+    /**
+     * An absolute https link, or, for a file kept in Telegram (`kind` other than `link`), an API-relative signed path `/v1/files/{id}?exp=..&sig=..` valid for 6 hours. Resolve it against the API base URL; it needs no Authorization header.
+     */
     url: string;
     kind?: 'link' | 'photo' | 'document' | 'video' | 'audio' | 'voice' | 'animation';
     file_name?: string | null;
@@ -689,6 +696,76 @@ export type ListAcademicDeadlinesResponses = {
 };
 
 export type ListAcademicDeadlinesResponse = ListAcademicDeadlinesResponses[keyof ListAcademicDeadlinesResponses];
+
+export type GetHomeworkFileLinkData = {
+    body?: never;
+    path: {
+        homework_id: string;
+    };
+    query?: never;
+    url: '/homework/{homework_id}/file-link';
+};
+
+export type GetHomeworkFileLinkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type GetHomeworkFileLinkError = GetHomeworkFileLinkErrors[keyof GetHomeworkFileLinkErrors];
+
+export type GetHomeworkFileLinkResponses = {
+    /**
+     * Deep link
+     */
+    200: FileUploadLink;
+};
+
+export type GetHomeworkFileLinkResponse = GetHomeworkFileLinkResponses[keyof GetHomeworkFileLinkResponses];
+
+export type GetDeadlineFileLinkData = {
+    body?: never;
+    path: {
+        deadline_id: string;
+    };
+    query?: never;
+    url: '/deadlines/{deadline_id}/file-link';
+};
+
+export type GetDeadlineFileLinkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type GetDeadlineFileLinkError = GetDeadlineFileLinkErrors[keyof GetDeadlineFileLinkErrors];
+
+export type GetDeadlineFileLinkResponses = {
+    /**
+     * Deep link
+     */
+    200: FileUploadLink;
+};
+
+export type GetDeadlineFileLinkResponse = GetDeadlineFileLinkResponses[keyof GetDeadlineFileLinkResponses];
 
 export type GetAcademicDeadlineData = {
     body?: never;

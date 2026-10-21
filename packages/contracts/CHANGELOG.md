@@ -1,5 +1,13 @@
 # Contract changelog
 
+## 0.11.0 — 2026-10-21
+
+- Files that stay in Telegram: a card material with `kind` other than `link` may now carry an
+  API-relative signed `url` (`/v1/files/{id}?exp=..&sig=..`, valid 6 hours, no Authorization header).
+  Clients must resolve it against the API base URL. Absolute https links are unchanged.
+- Added `GET /homework/{id}/file-link` and `GET /deadlines/{id}/file-link` (headman/deputy only): a
+  `t.me` deep link where the editor sends the file to the bot.
+
 ## 0.10.0 — 2026-10-21
 
 - Added `PATCH /homework/{id}` and `PATCH /deadlines/{id}`: a headman or deputy edits title,
