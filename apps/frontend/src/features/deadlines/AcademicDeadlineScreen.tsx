@@ -8,6 +8,8 @@ import { Skeleton } from '../../ui/Skeleton';
 import { ChevronLeft, Clock } from '../../ui/icons';
 import { formatEventDate } from './formatEventDate';
 import styles from './Deadlines.module.css';
+import { photoMaterials, remainingMaterials } from '../../lib/photoMaterials';
+import { CardPhotos } from '../../ui/CardPhotos';
 import { MaterialLinks } from '../../ui/MaterialLinks';
 import layout from '../homework/HomeworkScreen.module.css';
 import { SourceBlock } from '../homework/SourceBlock';
@@ -84,7 +86,11 @@ export function AcademicDeadlineScreen() {
             <h2 id="event-task" className={styles.detailTask}>
               Что нужно сделать
             </h2>
-            <p>{item.description}</p>
+            {photoMaterials(item.materials).length ? (
+              <CardPhotos items={photoMaterials(item.materials)} alt={item.title} />
+            ) : (
+              <p>{item.description}</p>
+            )}
           </section>
           <EditActions
             allowed={(data.permissions?.includes('homework.edit') ?? false) && item.revision !== undefined}
@@ -94,7 +100,7 @@ export function AcademicDeadlineScreen() {
             <h2 id="event-materials" className={styles.detailTask}>
               Материалы
             </h2>
-            <MaterialLinks items={item.materials} />
+            <MaterialLinks items={remainingMaterials(item.materials)} />
           </section>
           {item.updates?.length ? (
             <section className={styles.card} aria-labelledby="event-updates">

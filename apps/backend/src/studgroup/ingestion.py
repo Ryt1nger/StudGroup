@@ -344,11 +344,16 @@ def attachment_metadata(message):
             key=lambda item: (item.file_size or 0, (item.width or 0) * (item.height or 0)),
         )
         files.append(("photo", photo))
-    files.extend(
-        (kind, item)
-        for kind in ("document", "video", "audio", "voice", "animation")
-        if (item := getattr(message, kind)) is not None
-    )
+    # Only photos and files are study material. GIFs, stickers, video and voice are skipped
+    # entirely; Telegram sends a GIF with BOTH `animation` and `document`, so a document that
+    # accompanies an animation (or is a GIF) is not a file either.
+    document = message.document
+    if (
+        document is not None
+        and message.animation is None
+        and (document.mime_type or "").lower() != "image/gif"
+    ):
+        files.append(("document", document))
     return [
         {
             "kind": kind,

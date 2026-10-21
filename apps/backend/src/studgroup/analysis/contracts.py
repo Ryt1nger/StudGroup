@@ -50,8 +50,8 @@ class SourceAttachment(StrictDTO):
     mime_type: str | None = Field(default=None, max_length=255)
     size_bytes: int | None = Field(default=None, ge=0)
     media_group_id: str | None = Field(default=None, max_length=255)
-    processing_state: Literal["metadata_only", "ready", "failed"] = "metadata_only"
-    # Metadata only: C+ never reads file contents. Optional for old frozen snapshots.
+    processing_state: Literal["metadata_only", "ready", "failed", "irrelevant"] = "metadata_only"
+    # Metadata only (what the vision pass read on a photo goes into the message text). Optional for old frozen snapshots.
     file_name: str | None = Field(default=None, max_length=255)
 
 

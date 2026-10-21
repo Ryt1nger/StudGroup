@@ -106,6 +106,33 @@ def test_no_caption_photo_is_persisted_as_metadata_only_source(client):
     assert saved_attachment.source_revision == 1
 
 
+def test_gifs_stickers_video_and_voice_are_skipped_but_photos_and_files_are_kept(client):
+    gif = {"file_id": "gif", "file_unique_id": "gif-u", "mime_type": "video/mp4"}
+    # Telegram sends a GIF with both `animation` and `document`
+    payload = delivery(update_id=901, text=None)
+    payload["message"]["animation"] = gif
+    payload["message"]["document"] = gif
+    assert send(client, payload).status_code == 200
+    payload = delivery(update_id=902, text=None)
+    payload["message"]["message_id"] = 2
+    payload["message"]["sticker"] = {"file_id": "st", "file_unique_id": "st-u"}
+    payload["message"]["video"] = {"file_id": "v", "file_unique_id": "v-u"}
+    payload["message"]["voice"] = {"file_id": "vo", "file_unique_id": "vo-u"}
+    assert send(client, payload).status_code == 200
+    assert rows(client) == [] and attachments(client) == []
+
+    payload = delivery(update_id=903, text=None)
+    payload["message"]["message_id"] = 3
+    payload["message"]["document"] = {
+        "file_id": "pdf",
+        "file_unique_id": "pdf-u",
+        "file_name": "задачи.pdf",
+        "mime_type": "application/pdf",
+    }
+    assert send(client, payload).status_code == 200
+    assert [item.kind for item in attachments(client)] == ["document"]
+
+
 def test_attachment_edit_revisions_metadata_without_duplicate_active_rows(client):
     original = delivery(text=None)
     original["message"]["document"] = {

@@ -141,6 +141,10 @@ class MessageAttachment(Base):
     height: Mapped[int | None] = mapped_column(Integer)
     media_group_id: Mapped[str | None] = mapped_column(String(255))
     processing_state: Mapped[str] = mapped_column(String(24), default="metadata_only")
+    # Photos only: what the vision model read (``processing_state`` ready) or nothing (failed).
+    photo_text: Mapped[str | None] = mapped_column(Text)
+    photo_summary: Mapped[str | None] = mapped_column(String(500))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

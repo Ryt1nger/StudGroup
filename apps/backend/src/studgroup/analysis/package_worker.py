@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.ai import ProviderFailure
 from studgroup.ai_schedule import window
-from studgroup.analysis import duplicate_guard
+from studgroup.analysis import duplicate_guard, photo_reading
 from studgroup.analysis.backfill import promote_run
 from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
@@ -79,11 +79,14 @@ def _gate(settings, now):
 
 
 def _source_message(row, *, roles, topics, attachments):
+    items = attachments.get(row.id, [])
     return SourceMessage(
         telegram_message_id=row.telegram_message_id,
         revision=row.revision,
         message_date=_utc(row.message_date),
-        text=row.text,
+        # What the vision pass read on a photo is part of the message for both model passes, the
+        # card editor and the deadline policy; the stored RawMessage text is never changed.
+        text=photo_reading.enriched_text(row.text, items),
         reply_to_message_id=row.reply_to_message_id,
         topic_id=row.message_thread_id,
         topic_name=topics.get(row.message_thread_id),
@@ -93,7 +96,10 @@ def _source_message(row, *, roles, topics, attachments):
             else None
         ),
         author_role=roles.get(row.sender_id),
-        attachments=attachments.get(row.id, []),
+        attachments=[
+            {key: value for key, value in item.items() if not key.startswith("photo_")}
+            for item in items
+        ],
     )
 
 
@@ -115,6 +121,8 @@ async def _source_messages(db, group, rows):
                 "media_group_id": attachment.media_group_id,
                 "processing_state": attachment.processing_state,
                 "file_name": (attachment.file_name or None) and attachment.file_name[:255],
+                "photo_summary": attachment.photo_summary,
+                "photo_text": attachment.photo_text,
             }
         )
     topics = {
@@ -164,7 +172,70 @@ def _eligible(group, settings, now):
     return filters
 
 
-async def _plan_next(db, group, route, settings, now):
+async def _read_pending_photos(db, group, rows, settings, provider, transport, now):
+    """Read the unread photos of these messages; returns (cost in USD, retry_later).
+
+    One try per photo: a photo that cannot be downloaded or read is marked ``failed`` and the
+    package goes on without it. A temporary provider fault (rate limit, network) returns
+    ``retry_later`` so the package is not frozen without a photo that would be readable a minute
+    later. Cost is returned so the package run carries it in the budget.
+    """
+    if not settings.photo_reading_enabled or not rows:
+        return Decimal(0), False
+    pending = (
+        await db.scalars(
+            select(MessageAttachment)
+            .where(
+                MessageAttachment.raw_message_id.in_([row.id for row in rows]),
+                MessageAttachment.kind == "photo",
+                MessageAttachment.active.is_(True),
+                MessageAttachment.processing_state == "metadata_only",
+            )
+            .order_by(MessageAttachment.created_at, MessageAttachment.id)
+            .limit(photo_reading.MAX_PHOTOS_PER_PACKAGE)
+        )
+    ).all()
+    if not pending:
+        return Decimal(0), False
+    if provider is None:
+        from studgroup.ai import DeepSeekProvider
+
+        provider = DeepSeekProvider(
+            settings.deepseek_api_key.get_secret_value(),
+            model=settings.deepseek_model,
+            base_url=settings.deepseek_base_url,
+        )
+    captions = {row.id: row.text for row in rows}
+    cost = Decimal(0)
+    for attachment in pending:
+        attachment.read_at = now
+        image = await photo_reading.download_telegram_file(
+            settings.telegram_bot_token, attachment.telegram_file_id, transport=transport
+        )
+        mime = photo_reading.sniff_mime(image) if image else None
+        if mime is None:
+            attachment.processing_state = "failed"
+            continue
+        try:
+            reading = await photo_reading.read_photo(
+                provider, image, mime, captions.get(attachment.raw_message_id, "")
+            )
+        except ProviderFailure as error:
+            if error.usage is not None:
+                cost += usage_cost_usd(error.usage)
+            if error.retryable:
+                attachment.read_at = None
+                return cost, True
+            attachment.processing_state = "failed"
+            continue
+        cost += usage_cost_usd(reading.usage)
+        attachment.photo_summary = reading.summary or None
+        attachment.photo_text = reading.text or None
+        attachment.processing_state = "irrelevant" if reading.relevance == "irrelevant" else "ready"
+    return cost, False
+
+
+async def _plan_next(db, group, route, settings, now, provider=None, transport=None):
     filters = _eligible(group, settings, now)
     if filters is None:
         return None
@@ -208,6 +279,12 @@ async def _plan_next(db, group, route, settings, now):
         )
     ).all()
     rows = {row.id: row for row in [*before, *middle, *after]}
+    photo_cost, retry_later = await _read_pending_photos(
+        db, group, list(rows.values()), settings, provider, transport, now
+    )
+    if retry_later:
+        await db.commit()  # keep the cost and the photos already read
+        return "photo_retry"
     messages = await _source_messages(db, group, list(rows.values()))
     facts = (
         await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
@@ -229,10 +306,10 @@ async def _plan_next(db, group, route, settings, now):
     )
     run_key = hashlib.sha256(f"{package.key}:{generation}".encode()).hexdigest()
     memory = assemble_memory_context(group.id, " ".join(row.text for row in messages), facts)
-    return package, memory, revision, run_key, generation
+    return package, memory, revision, run_key, generation, photo_cost
 
 
-async def enqueue_next_package(engine, settings, now=None):
+async def enqueue_next_package(engine, settings, now=None, provider=None, transport=None):
     """Create the next package run of one ``new`` group; at most one open run per group."""
     now = _utc(now or datetime.now(UTC))
     async with AsyncSession(engine) as db:
@@ -267,10 +344,12 @@ async def enqueue_next_package(engine, settings, now=None):
             )
             if open_run is not None:
                 continue
-            planned = await _plan_next(db, group, route, settings, now)
+            planned = await _plan_next(db, group, route, settings, now, provider, transport)
             if planned is None:
                 continue
-            package, memory, revision, run_key, generation = planned
+            if planned == "photo_retry":
+                return "photo_retry"
+            package, memory, revision, run_key, generation, photo_cost = planned
             existing = await db.scalar(
                 select(ShadowEvaluationRun).where(
                     ShadowEvaluationRun.group_id == group.id,
@@ -329,7 +408,7 @@ async def enqueue_next_package(engine, settings, now=None):
                     completion_tokens=0,
                     prompt_cache_hit_tokens=0,
                     reserved_usd=Decimal(0),
-                    charged_usd=Decimal(0),
+                    charged_usd=photo_cost,
                     created_at=now,
                     delete_at=now + RUN_RETENTION,
                 )
@@ -523,7 +602,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
     now = _utc(now or datetime.now(UTC))
     if not _gate(settings, now):
         return "disabled"
-    queued = await enqueue_next_package(engine, settings, now)
+    queued = await enqueue_next_package(engine, settings, now, provider)
     claimed = await _claim(
         engine,
         now,

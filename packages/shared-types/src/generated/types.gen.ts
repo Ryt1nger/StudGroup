@@ -192,6 +192,11 @@ export type MaterialLink = {
     file_name?: string | null;
     mime_type?: string | null;
     size_bytes?: number | null;
+    /**
+     * True for a photo that is itself the task (read as study material, posted with at most a short caption). The client shows this image instead of the text description.
+     *
+     */
+    replaces_description?: boolean;
 };
 
 export type LearningCardUpdate = {
@@ -1147,6 +1152,45 @@ export type EditHomeworkResponses = {
 };
 
 export type EditHomeworkResponse = EditHomeworkResponses[keyof EditHomeworkResponses];
+
+export type GetAttachmentImageData = {
+    body?: never;
+    path: {
+        attachment_id: string;
+    };
+    query?: never;
+    url: '/attachments/{attachment_id}/image';
+};
+
+export type GetAttachmentImageErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * Telegram cannot deliver the photo right now; retry later
+     */
+    503: unknown;
+};
+
+export type GetAttachmentImageError = GetAttachmentImageErrors[keyof GetAttachmentImageErrors];
+
+export type GetAttachmentImageResponses = {
+    /**
+     * Image bytes (JPEG, PNG, WebP or GIF)
+     */
+    200: Blob | File;
+};
+
+export type GetAttachmentImageResponse = GetAttachmentImageResponses[keyof GetAttachmentImageResponses];
 
 export type SetHomeworkCompletionData = {
     body: SetCompletionRequest;

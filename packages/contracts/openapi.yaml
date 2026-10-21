@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.12.0
+  version: 0.13.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -446,6 +446,40 @@ paths:
           $ref: "#/components/responses/Gone"
         "422":
           $ref: "#/components/responses/InvalidRequest"
+  /attachments/{attachment_id}/image:
+    parameters:
+      - name: attachment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Homework]
+      summary: Get the image of a photo material of a card
+      description: >
+        Streams the photo from Telegram on demand. Only photos of the caller's active group are
+        served; the id is the `id` of a `MaterialLink` with `kind` photo. Send the bearer token:
+        fetch the bytes with the client and show them through an object URL.
+      operationId: getAttachmentImage
+      responses:
+        "200":
+          description: Image bytes (JPEG, PNG, WebP or GIF)
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          description: Telegram cannot deliver the photo right now; retry later
   /homework/{homework_id}/completion:
     parameters:
       - $ref: "#/components/parameters/HomeworkId"
@@ -1694,6 +1728,12 @@ components:
         file_name: { type: [string, "null"] }
         mime_type: { type: [string, "null"] }
         size_bytes: { type: [integer, "null"], minimum: 0 }
+        replaces_description:
+          type: boolean
+          default: false
+          description: >
+            True for a photo that is itself the task (read as study material, posted with at most
+            a short caption). The client shows this image instead of the text description.
     LearningCardUpdate:
       type: object
       additionalProperties: false

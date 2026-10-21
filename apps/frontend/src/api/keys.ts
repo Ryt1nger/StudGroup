@@ -8,4 +8,5 @@ export const queryKeys = {
   homeworkList: ['homework-list'] as const,
   homeworkListFor: (filter: string) => ['homework-list', filter] as const,
   homework: (id: string) => ['homework', id] as const,
+  attachmentImage: (id: string) => ['attachment-image', id] as const,
 };
