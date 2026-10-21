@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -252,3 +252,58 @@ async def edit_deadline(
         "item": item,
         "permissions": list(EDIT_PERMISSIONS),
     }
+
+
+_bot_username = None
+
+
+async def bot_username(settings):
+    """The bot's @name, asked from Telegram once per process."""
+    global _bot_username
+    if _bot_username is None:
+        from studgroup.bot_admin import telegram_request
+
+        info = await telegram_request(settings, "getMe", {})
+        name = info.get("result", {}).get("username") if info.get("ok") else None
+        if not name:
+            raise ApiError("service_unavailable", "Бот временно недоступен", 503)
+        _bot_username = name
+    return _bot_username
+
+
+async def upload_link(request, db, group, authorization, key):
+    await editor(db, group, authorization)
+    name = await bot_username(request.app.state.settings)
+    return {"url": f"https://t.me/{name}?start=file_{key.replace(':', '_')}"}
+
+
+@router.get("/homework/{homework_id}/file-link")
+async def homework_file_link(
+    homework_id: uuid.UUID,
+    request: Request,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    row = await find_card(db, group, homework_id)
+    return await upload_link(request, db, group, authorization, f"h:{row.id}")
+
+
+@router.get("/deadlines/{deadline_id}/file-link")
+async def deadline_file_link(
+    deadline_id: uuid.UUID,
+    request: Request,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    row = await db.scalar(
+        select(AcademicDeadline).where(
+            AcademicDeadline.id == deadline_id,
+            AcademicDeadline.group_id == group.id,
+            AcademicDeadline.delete_at > datetime.now(UTC),
+        )
+    )
+    if row is None:
+        raise ApiError("not_found", "Событие не найдено", 404)
+    return await upload_link(request, db, group, authorization, f"e:{row.id}")

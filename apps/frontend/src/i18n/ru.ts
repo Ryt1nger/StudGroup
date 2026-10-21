@@ -218,6 +218,7 @@ export const ru = {
   },
   edit: {
     open: 'Редактировать',
+    addFile: 'Добавить файл',
     heading: 'Редактирование карточки',
     title: 'Название',
     subject: 'Предмет',
@@ -243,6 +244,7 @@ export const ru = {
       other_academic_deadline: 'Учебное событие',
     },
     errors: {
+      fileLink: 'Не удалось открыть бота. Попробуйте ещё раз.',
       titleRequired: 'Укажите название',
       subjectRequired: 'Укажите предмет',
       dateRequired: 'Выберите дату',

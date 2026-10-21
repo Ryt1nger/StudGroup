@@ -1,6 +1,7 @@
 from sqlalchemy import select
 
 from studgroup.models import MaterialLink
+from studgroup.telegram_files import present
 
 
 async def links(db, group_id, keys):
@@ -11,4 +12,4 @@ async def links(db, group_id, keys):
             .order_by(MaterialLink.title, MaterialLink.id)
         )
     ).all()
-    return [{"id": r.id, "title": r.title, "url": r.url} for r in rows]
+    return [present(r) for r in rows]

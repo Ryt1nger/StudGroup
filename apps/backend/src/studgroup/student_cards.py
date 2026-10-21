@@ -234,7 +234,7 @@ async def projected_updates(db, link):
 
 async def projected_materials(db, group_id, entity_key, now, sources):
     result = [
-        {**item, "kind": "link", "file_name": None, "mime_type": None, "size_bytes": None}
+        {"kind": "link", "file_name": None, "mime_type": None, "size_bytes": None, **item}
         for item in await links(db, group_id, [entity_key])
     ]
     source_urls = {

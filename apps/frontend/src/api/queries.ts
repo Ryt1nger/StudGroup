@@ -9,6 +9,8 @@ import {
   listAcademicDeadlines,
   getAcademicDeadline,
   editHomework,
+  getHomeworkFileLink,
+  getDeadlineFileLink,
   editAcademicDeadline,
   recheckMembership,
   setHomeworkCompletion,
@@ -52,6 +54,10 @@ export const api = {
   homework: (id: string): Promise<HomeworkDetail> => unwrap(getHomework({ path: { homework_id: id } })),
   editHomework: (id: string, body: EditHomeworkRequest): Promise<HomeworkDetail> =>
     unwrap(editHomework({ path: { homework_id: id }, body })),
+  homeworkFileLink: (id: string): Promise<string> =>
+    unwrap(getHomeworkFileLink({ path: { homework_id: id } })).then((r) => r.url),
+  eventFileLink: (id: string): Promise<string> =>
+    unwrap(getDeadlineFileLink({ path: { deadline_id: id } })).then((r) => r.url),
   editEvent: (id: string, body: EditAcademicDeadlineRequest) =>
     unwrap(editAcademicDeadline({ path: { deadline_id: id }, body })),
   setCompletion: (id: string, completed: boolean, expectedRevision: number): Promise<HomeworkDetail> =>

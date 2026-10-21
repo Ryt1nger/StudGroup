@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
+from studgroup import telegram_files
 from studgroup.academic_deadlines import archived
 from studgroup.homework import archived_condition, utc
 from studgroup.models import (
@@ -107,6 +108,11 @@ def dumps(value):
         ensure_ascii=False,
         default=lambda x: x.isoformat() if hasattr(x, "isoformat") else str(x),
     )
+
+
+def material_url(value):
+    """An ordinary HTTPS link, or a Telegram file reference built by the bot itself."""
+    return value if telegram_files.decode(value) else safe_url(value)
 
 
 def safe_url(value):
@@ -463,8 +469,10 @@ async def add_material(db, group, user, member, key, expected, title, url):
         )
         >= 20
     ):
-        raise StError("В карточке уже 20 ссылок.")
-    db.add(MaterialLink(group_id=group.id, entity_key=key, title=title[:255], url=safe_url(url)))
+        raise StError("В карточке уже 20 материалов.")
+    db.add(
+        MaterialLink(group_id=group.id, entity_key=key, title=title[:255], url=material_url(url))
+    )
     row.revision += 1
     await db.flush()
     return await save_audit(db, group, user, "material", before, [(key, kind, row)], False)

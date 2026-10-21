@@ -155,4 +155,55 @@ describe('headman card editing', () => {
     await screen.findAllByText('КТ 1: эссе');
     expect(screen.queryByRole('button', { name: 'Редактировать' })).not.toBeInTheDocument();
   });
+
+  it('opens the bot to send a file, and hides the button from students', async () => {
+    useScenario();
+    server.use(
+      http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
+      http.get(`${API}/homework/${HW}/file-link`, () =>
+        HttpResponse.json({ url: `https://t.me/studgroup_rf_bot?start=file_h_${HW}` }),
+      ),
+    );
+    const { adapter } = renderApp({ route: `/homework/${HW}` });
+    await userEvent.click(await screen.findByRole('button', { name: 'Добавить файл' }));
+    await waitFor(() =>
+      expect(adapter?.openTelegramLink).toHaveBeenCalledWith(
+        `https://t.me/studgroup_rf_bot?start=file_h_${HW}`,
+      ),
+    );
+  });
+
+  it('refuses to open a deep link that is not on t.me', async () => {
+    useScenario();
+    server.use(
+      http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
+      http.get(`${API}/homework/${HW}/file-link`, () => HttpResponse.json({ url: 'https://evil.example/x' })),
+    );
+    const { adapter } = renderApp({ route: `/homework/${HW}` });
+    await userEvent.click(await screen.findByRole('button', { name: 'Добавить файл' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Добавить файл' })).toBeEnabled());
+    expect(adapter?.openTelegramLink).not.toHaveBeenCalled();
+  });
+
+  it('opens a Telegram-kept file through the API origin and never as a relative page link', async () => {
+    useScenario();
+    const withFile = {
+      ...base,
+      materials: [
+        {
+          id: 'm1',
+          title: 'Лекция 3.pdf',
+          url: '/v1/files/m1?exp=1&sig=abc',
+          kind: 'document',
+          file_name: 'Лекция 3.pdf',
+          mime_type: 'application/pdf',
+          size_bytes: 1000,
+        },
+      ],
+    };
+    server.use(http.get(`${API}/homework/${HW}`, () => HttpResponse.json(withFile)));
+    renderApp({ route: `/homework/${HW}` });
+    const link = await screen.findByRole('link', { name: 'Лекция 3.pdf' });
+    expect(link).toHaveAttribute('href', 'https://api.studgroup.example/v1/files/m1?exp=1&sig=abc');
+  });
 });

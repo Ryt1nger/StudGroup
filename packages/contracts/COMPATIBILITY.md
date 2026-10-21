@@ -1,5 +1,13 @@
 # Contract compatibility
 
+## Files that stay in Telegram (0.11.0)
+
+Additive. A material with a `kind` other than `link` may carry an API-relative signed `url`
+(`/v1/files/...`). A 0.10.0 client that requires absolute https links simply hides such a material;
+nothing else changes. New read-only operations `getHomeworkFileLink` / `getDeadlineFileLink`
+(headman/deputy only; students get 403). The signed path expires after 6 hours; re-reading the card
+returns a fresh one.
+
 ## Card editing by the headman (0.10.0)
 
 Additive only. New operations `editHomework` and `editAcademicDeadline` (PATCH), new permission values
