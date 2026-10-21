@@ -37,6 +37,7 @@ INCIDENT_LABELS = {
     "ai_hourly_safety_limit": "Сработал часовой предохранитель расходов ИИ; очередь продолжится автоматически.",
     "ai_circuit_open": "Серия ошибок открыла временный предохранитель DeepSeek; будет автоматическая проба после охлаждения.",
     "processing_exhausted": "Один этап исчерпал безопасное число повторов и изолирован от остальной очереди.",
+    "possible_duplicate_cards": "Две активные карточки похожи на одно и то же задание (общие источники или похожий текст). Карточки не менялись: проверьте и объедините вручную.",
     "pipeline_error": "В обработчике ИИ произошла внутренняя ошибка.",
     "invalid_source_reference": "Ответ ИИ отклонён: он ссылается на сообщение вне переданного контекста. Это не падение API.",
     "invalid_date_only": "Ответ ИИ отклонён: дата без времени содержит ненулевое время. Это не падение API.",
@@ -62,6 +63,8 @@ def incident_text(row, event="opened", sent_at=None):
         if event == "recovered"
         else "лимит"
         if row.code in budget_codes
+        else "возможные дубли карточек"
+        if row.code == "possible_duplicate_cards"
         else "ошибка проверки ответа ИИ"
         if row.code
         in {
@@ -81,7 +84,13 @@ def incident_text(row, event="opened", sent_at=None):
     else:
         header += "\n" + INCIDENT_LABELS.get(row.code, "Ошибка разбора/обработчика ИИ.")
         if row.first_detail:
-            label = "Параметры лимита" if row.code in budget_codes else "Технический тип"
+            label = (
+                "Параметры лимита"
+                if row.code in budget_codes
+                else "Сколько пар"
+                if row.code == "possible_duplicate_cards"
+                else "Технический тип"
+            )
             header += f"\n{label}: {row.first_detail}"
     last_seen = (
         "до обновления не сохранялось"
@@ -177,6 +186,13 @@ async def flush_incidents(engine, config, transport=None):
             if pair is None:
                 continue
             row, current = pair
+            if (
+                row.opening_pending
+                and row.opening_notified_at is not None
+                and row.occurrences > config.ai_circuit_failure_threshold
+            ):
+                # The error was already announced ai_circuit_failure_threshold times.
+                row.opening_pending = False
             for event, field, notified in [
                 ("opened", "opening_pending", "opening_notified_at"),
                 ("recovered", "recovery_pending", "recovery_notified_at"),

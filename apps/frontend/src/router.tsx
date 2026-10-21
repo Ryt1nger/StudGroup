@@ -11,6 +11,7 @@ import { LessonScreen } from './features/schedule/LessonScreen';
 import { SubjectsScreen } from './features/subjects/SubjectsScreen';
 import { LessonSubjectScreen } from './features/subjects/LessonSubjectScreen';
 import { DeadlinesScreen } from './features/deadlines/DeadlinesScreen';
+import { EventEditScreen, HomeworkEditScreen } from './features/cardEdit/EditCardScreens';
 import { AcademicDeadlineScreen } from './features/deadlines/AcademicDeadlineScreen';
 import { StateView } from './ui/StateView';
 import { Button } from './ui/Button';
@@ -57,6 +58,7 @@ export function appRoutes(startParam: string | null) {
         { index: true, element: <Navigate to={deepLinkId ? `/homework/${deepLinkId}` : '/today'} replace /> },
         { path: 'today', Component: TodayScreen },
         { path: 'homework/:homeworkId', Component: HomeworkScreen },
+        { path: 'homework/:homeworkId/edit', Component: HomeworkEditScreen },
         { path: 'tasks', Component: TasksScreen },
         { path: 'schedule', Component: ScheduleScreen },
         { path: 'schedule/lesson/:lessonId', Component: LessonScreen },
@@ -64,6 +66,7 @@ export function appRoutes(startParam: string | null) {
         { path: 'subjects/lessons/:lessonId', Component: LessonSubjectScreen },
         { path: 'deadlines', Component: DeadlinesScreen },
         { path: 'deadlines/:deadlineId', Component: AcademicDeadlineScreen },
+        { path: 'deadlines/:deadlineId/edit', Component: EventEditScreen },
         ...devRoutes,
         { path: '*', Component: NotFound },
       ],

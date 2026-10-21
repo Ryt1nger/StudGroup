@@ -5,15 +5,47 @@
   box-shadow: var(--sg-shadow-card);
 }
 .title {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 16px;
   line-height: 22px;
   font-weight: 700;
 }
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chevron {
+  flex: none;
+  color: var(--sg-color-text-secondary-strong);
+  transition: transform 160ms ease;
+}
+.chevronOpen {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
 .sourceList {
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.sourceList[hidden] {
+  display: none;
 }
 .sourceItem {
   display: flex;

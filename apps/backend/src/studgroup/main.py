@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -20,11 +20,14 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from studgroup.academic_deadlines import router as deadlines_router
 from studgroup.api import ApiError, router
+from studgroup.card_edit import router as card_edit_router
 from studgroup.homework import router as homework_router
 from studgroup.ingestion import router as ingestion_router
 from studgroup.notifications import router as notifications_router
 from studgroup.staff_api import router as staff_router
 from studgroup.subjects import router as subjects_router
+from studgroup.telegram_files import configure as configure_file_links
+from studgroup.telegram_files import router as files_router
 
 
 class Settings(BaseSettings):
@@ -44,6 +47,17 @@ class Settings(BaseSettings):
     ai_circuit_cooldown_seconds: int = 300
     ai_max_recoverable_attempts_per_stage: int = 8
     ai_enabled: bool = False
+    # Hard lock: the legacy per-message engine never writes cards unless this is set explicitly
+    # (LEGACY_ENGINE_ENABLED=true). AI_ENABLED alone no longer wakes it up.
+    legacy_engine_enabled: bool = False
+    # New (package) engine: live writer for groups whose analysis mode is ``new``. Off by default;
+    # the daily spend cap is the group's ``shadow_daily_budget_usd`` setting (shared with shadow).
+    new_engine_enabled: bool = False
+    new_engine_enabled_until: datetime | None = None
+    # Student notifications for cards the new engine creates; keep off while backfilling history.
+    new_engine_notifications: bool = False
+    # Rolling one-hour spend cap of the new engine, on top of the group's daily cap.
+    new_engine_hourly_budget_usd: float = Field(default=0.50, ge=0)
     ai_enabled_until: datetime | None = None
     ai_shadow_enabled: bool = False
     ai_shadow_enabled_until: datetime | None = None
@@ -65,6 +79,7 @@ class Settings(BaseSettings):
     ai_output_repair_enabled: bool = False
     ai_schedule_timezone: str = "Europe/Moscow"
     processing_mode: Literal["external", "embedded"] = "external"
+    ai_loop_pause_seconds: float = Field(default=4, ge=0, le=60)
     owner_telegram_user_id: int | None = None
     owner_update_notifications_enabled: bool = False
     owner_update_notifications_since: datetime | None = None
@@ -80,7 +95,9 @@ class Settings(BaseSettings):
                 return "postgresql+asyncpg://" + value[len(prefix) :]
         return value
 
-    @field_validator("ai_enabled_until", "ai_shadow_enabled_until", mode="before")
+    @field_validator(
+        "ai_enabled_until", "ai_shadow_enabled_until", "new_engine_enabled_until", mode="before"
+    )
     @classmethod
     def empty_cutoff(cls, value):
         return None if value == "" else value
@@ -106,7 +123,10 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "ai_enabled_until", "ai_shadow_enabled_until", "owner_update_notifications_since"
+        "ai_enabled_until",
+        "ai_shadow_enabled_until",
+        "new_engine_enabled_until",
+        "owner_update_notifications_since",
     )
     @classmethod
     def deadline_requires_timezone(cls, value):
@@ -269,9 +289,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="StudGroup", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    configure_file_links(settings.telegram_webhook_secret)
     app.include_router(router)
     app.include_router(ingestion_router)
     app.include_router(homework_router)
+    app.include_router(card_edit_router)
+    app.include_router(files_router)
     app.include_router(subjects_router)
     app.include_router(deadlines_router)
     app.include_router(notifications_router)

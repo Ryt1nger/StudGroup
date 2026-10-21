@@ -224,3 +224,74 @@ def test_a_reschedule_without_an_unambiguous_new_date_goes_to_review(client):
             assert (result.action, result.reason_code) == ("review", "reschedule_not_unambiguous")
 
     asyncio.run(run())
+
+
+async def update_item(db, group, created, text, kind="homework"):
+    again = proposal(
+        kind, action="update", existing=created.item.id, revision=created.item.revision
+    )
+    return await run_one(
+        db,
+        group,
+        text,
+        again,
+        action="update",
+        existing_item_id=created.item.id,
+        expected_item_revision=created.item.revision,
+    )
+
+
+def test_a_dateless_update_never_erases_a_date_the_card_already_has(client):
+    async def run():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await seed(db, "сдать до 20 октября")
+            created = await run_one(db, group, "сдать до 20 октября", proposal("control_point"))
+            before = (created.item.deadline_at, created.item.deadline_basis)
+            assert before[0] is not None and before[1] != "unknown"
+            # a later message about the same item names no date and a control point is never
+            # dated by the timetable: the policy says "unknown", the card keeps its date
+            updated = await update_item(
+                db, group, created, "будет контрольная, готовьтесь", "control_point"
+            )
+            assert (updated.item.deadline_at, updated.item.deadline_basis) == before
+            assert updated.item.deadline_reason != "not_inferable_for_kind"
+
+    asyncio.run(run())
+
+
+def test_a_lesson_derived_date_never_replaces_a_date_from_the_text(client):
+    async def run():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await seed(db, "сдать до 20 октября")
+            created = await run_one(db, group, "сдать до 20 октября", proposal())
+            before = (created.item.deadline_at, created.item.deadline_basis)
+            updated = await update_item(db, group, created, "номер 5 письменно")
+            assert (updated.item.deadline_at, updated.item.deadline_basis) == before
+
+    asyncio.run(run())
+
+
+def test_a_better_grounded_date_still_replaces_a_lesson_derived_one(client):
+    async def run():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await seed(db, "номер 5 письменно")
+            created = await run_one(db, group, "номер 5 письменно", proposal())
+            assert created.item.deadline_basis == "schedule_inferred"
+            updated = await update_item(db, group, created, "сдать до 25 октября")
+            assert updated.item.deadline_basis in {"explicit", "relative_resolved"}
+            assert updated.item.deadline_at.astimezone(MSK).date() == date(2026, 10, 25)
+
+    asyncio.run(run())
+
+
+def test_an_explicit_withdrawal_still_clears_the_date(client):
+    async def run():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await seed(db, "сдать до 20 октября")
+            created = await run_one(db, group, "сдать до 20 октября", proposal())
+            assert created.item.deadline_at is not None
+            updated = await update_item(db, group, created, "это не на завтра")
+            assert updated.item.deadline_at is None
+            assert updated.item.deadline_reason == "withdrawn_deadline"
+
+    asyncio.run(run())

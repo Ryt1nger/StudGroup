@@ -223,7 +223,12 @@ def test_new_mode_cannot_fall_through_to_legacy_worker(client):
         provider = ForbiddenProvider()
         status = await dispatch_next(
             client.app.state.engine,
-            Settings(ai_enabled=True, ai_total_budget_usd=100, ai_daily_group_budget_usd=1),
+            Settings(
+                ai_enabled=True,
+                legacy_engine_enabled=True,
+                ai_total_budget_usd=100,
+                ai_daily_group_budget_usd=1,
+            ),
             provider,
             now=NOW,
         )

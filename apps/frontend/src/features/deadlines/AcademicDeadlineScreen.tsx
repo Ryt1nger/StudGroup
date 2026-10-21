@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
-import { useAcademicDeadlineQuery } from '../../api/queries';
+import { api, useAcademicDeadlineQuery } from '../../api/queries';
 import { useIsHeadman } from '../../session/SessionProvider';
 import { useBackButton } from '../../shell/useBackButton';
 import { RequestError } from '../../ui/RequestError';
@@ -13,6 +13,7 @@ import layout from '../homework/HomeworkScreen.module.css';
 import { SourceBlock } from '../homework/SourceBlock';
 import { formatShortDate, formatTime } from '../../lib/format';
 import { ru } from '../../i18n/ru';
+import { EditActions } from '../cardEdit/CardEditor';
 
 export function AcademicDeadlineScreen() {
   const { deadlineId = '' } = useParams();
@@ -85,6 +86,10 @@ export function AcademicDeadlineScreen() {
             </h2>
             <p>{item.description}</p>
           </section>
+          <EditActions
+            allowed={(data.permissions?.includes('homework.edit') ?? false) && item.revision !== undefined}
+            fetchFileLink={() => api.eventFileLink(item.id)}
+          />
           <section className={styles.card} aria-labelledby="event-materials">
             <h2 id="event-materials" className={styles.detailTask}>
               Материалы

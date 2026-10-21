@@ -11,7 +11,7 @@ from collections import Counter
 from datetime import UTC, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from studgroup.analysis.contracts import AnalysisInput, ValidationResult
 from studgroup.analysis.routing import get_route
@@ -600,6 +600,109 @@ async def _links(db, group_id, validation, raw_by_telegram_id):
     return links, blocked
 
 
+async def promote_run(
+    db,
+    *,
+    group,
+    run,
+    validation,
+    now,
+    include_expired=False,
+    apply=False,
+    actor="owner",
+    emit_notifications=False,
+    outcomes=None,
+    verified_subjects=(),
+    deadline_context=None,
+    subject_context=None,
+):
+    """Apply one completed run's accepted proposals; returns the totals key for the run.
+
+    Atomic per run (savepoint). ``verified_subjects`` and ``deadline_context`` are forwarded to the
+    writer so the live path gets the same timetable-backed subject check and intelligent deadline
+    policy; the owner CLI keeps its previous behaviour when they are not given.
+    """
+    outcomes = Counter() if outcomes is None else outcomes
+    group_id = group.id
+    data = AnalysisInput.model_validate_json(run.input_json)
+    validation = effective_validation(validation, data.messages, group.timezone)
+    try:
+        async with db.begin_nested() as savepoint:
+            raw_rows = (
+                await db.scalars(
+                    select(RawMessage).where(
+                        RawMessage.group_id == group_id,
+                        RawMessage.telegram_message_id.in_(
+                            {row.telegram_message_id for row in data.messages}
+                        ),
+                    )
+                )
+            ).all()
+            raw_by_id = {row.telegram_message_id: row for row in raw_rows}
+            validation = await with_supplement_updates(db, group_id, validation, data, raw_by_id)
+            links, blocked = await _links(db, group_id, validation, raw_by_id)
+            kept, kept_ordinals = [], []
+            for ordinal, proposal in zip(
+                validation.accepted_ordinals, validation.accepted, strict=True
+            ):
+                if ordinal in blocked:
+                    outcomes["blocked_ambiguous_existing_item"] += 1
+                    continue
+                if not include_expired and _expired(proposal, now):
+                    outcomes["skipped_expired"] += 1
+                    continue
+                item = links.get(ordinal)
+                if item is not None:
+                    proposal = proposal.model_copy(
+                        update={
+                            "action": "update",
+                            "existing_item_id": item.id,
+                            "expected_item_revision": item.revision,
+                        }
+                    )
+                    outcomes["linked_to_existing_item"] += 1
+                kept.append(proposal)
+                kept_ordinals.append(ordinal)
+            result = await apply_validated_batch(
+                db,
+                group_id=group_id,
+                validation=validation.model_copy(
+                    update={
+                        "accepted": kept,
+                        "accepted_ordinals": kept_ordinals,
+                        "rejected": [],
+                    }
+                ),
+                messages=data.messages,
+                now=now,
+                verified_subjects=verified_subjects,
+                emit_notifications=emit_notifications,
+                deadline_context=deadline_context,
+                subject_context=subject_context,
+            )
+            for outcome in result.outcomes:
+                outcomes[outcome.application_status] += 1
+            if apply:
+                metrics = json.loads(run.metrics_json or "{}")
+                metrics["promotion"] = {
+                    "at": now.isoformat(),
+                    "actor": actor[:64],
+                    "statuses": dict(Counter(o.application_status for o in result.outcomes)),
+                    # why each proposal ended the way it did (codes only, no text), so a held or
+                    # stale proposal is never unexplained
+                    "reasons": dict(
+                        Counter(f"{o.application_status}:{o.reason_code}" for o in result.outcomes)
+                    ),
+                }
+                run.metrics_json = json.dumps(metrics, sort_keys=True)
+            else:
+                await savepoint.rollback()
+    except ValueError as error:
+        # Stale or missing evidence (a source was edited/deleted after the run).
+        return "runs_skipped_" + str(error)[:40]
+    return "runs_promoted" if apply else "runs_would_promote"
+
+
 async def promote(
     db,
     *,
@@ -632,75 +735,56 @@ async def promote(
         if totals["runs_considered"] >= limit:
             break
         totals["runs_considered"] += 1
-        data = AnalysisInput.model_validate_json(run.input_json)
-        validation = effective_validation(validation, data.messages, group.timezone)
-        try:
-            async with db.begin_nested() as savepoint:
-                raw_rows = (
-                    await db.scalars(
-                        select(RawMessage).where(
-                            RawMessage.group_id == group_id,
-                            RawMessage.telegram_message_id.in_(
-                                {row.telegram_message_id for row in data.messages}
-                            ),
-                        )
-                    )
-                ).all()
-                raw_by_id = {row.telegram_message_id: row for row in raw_rows}
-                validation = await with_supplement_updates(
-                    db, group_id, validation, data, raw_by_id
-                )
-                links, blocked = await _links(db, group_id, validation, raw_by_id)
-                kept, kept_ordinals = [], []
-                for ordinal, proposal in zip(
-                    validation.accepted_ordinals, validation.accepted, strict=True
-                ):
-                    if ordinal in blocked:
-                        outcomes["blocked_ambiguous_existing_item"] += 1
-                        continue
-                    if not include_expired and _expired(proposal, now):
-                        outcomes["skipped_expired"] += 1
-                        continue
-                    item = links.get(ordinal)
-                    if item is not None:
-                        proposal = proposal.model_copy(
-                            update={
-                                "action": "update",
-                                "existing_item_id": item.id,
-                                "expected_item_revision": item.revision,
-                            }
-                        )
-                        outcomes["linked_to_existing_item"] += 1
-                    kept.append(proposal)
-                    kept_ordinals.append(ordinal)
-                result = await apply_validated_batch(
-                    db,
-                    group_id=group_id,
-                    validation=validation.model_copy(
-                        update={
-                            "accepted": kept,
-                            "accepted_ordinals": kept_ordinals,
-                            "rejected": [],
-                        }
-                    ),
-                    messages=data.messages,
-                    now=now,
-                    emit_notifications=emit_notifications,
-                )
-                for outcome in result.outcomes:
-                    outcomes[outcome.application_status] += 1
-                if apply:
-                    metrics = json.loads(run.metrics_json or "{}")
-                    metrics["promotion"] = {
-                        "at": now.isoformat(),
-                        "actor": actor[:64],
-                        "statuses": dict(Counter(o.application_status for o in result.outcomes)),
-                    }
-                    run.metrics_json = json.dumps(metrics, sort_keys=True)
-                else:
-                    await savepoint.rollback()
-            totals["runs_promoted" if apply else "runs_would_promote"] += 1
-        except ValueError as error:
-            # Stale or missing evidence (a source was edited/deleted after the run).
-            totals["runs_skipped_" + str(error)[:40]] += 1
+        key = await promote_run(
+            db,
+            group=group,
+            run=run,
+            validation=validation,
+            now=now,
+            include_expired=include_expired,
+            apply=apply,
+            actor=actor,
+            emit_notifications=emit_notifications,
+            outcomes=outcomes,
+        )
+        totals[key] += 1
     return {"totals": dict(totals), "outcomes": dict(sorted(outcomes.items())), "applied": apply}
+
+
+async def reopen_window(db, *, group_id, since, now, apply=False):
+    """Queue the already-stored live messages of a ``new`` group for a fresh package analysis.
+
+    Only the processing state and generation of RawMessage rows change (``pending`` again, so the
+    next package gets a new run key); no card, canonical
+    item or notification is touched or deleted. Imported history and rows already expired by
+    retention are never reopened. Dry-run unless ``apply``.
+    """
+    group = await db.get(Group, group_id)
+    if group is None:
+        raise ValueError("analysis_group_not_found")
+    if (await get_route(db, group_id)).mode.value != "new":
+        raise ValueError("reopen_requires_new_mode")
+    lower, now = _window(group, since, now)
+    scope = (
+        *_eligible_raw(group_id, lower, now),
+        RawMessage.imported.is_(False),
+        RawMessage.processing_state.in_(["completed", "failed", "needs_context"]),
+    )
+    rows = (
+        await db.execute(
+            select(RawMessage.processing_state, func.count())
+            .where(*scope)
+            .group_by(RawMessage.processing_state)
+        )
+    ).all()
+    counts = {state: number for state, number in rows}
+    if apply and counts:
+        await db.execute(
+            update(RawMessage)
+            .where(*scope)
+            .values(
+                processing_state="pending",
+                analysis_generation=RawMessage.analysis_generation + 1,
+            )
+        )
+    return {"would_reopen": counts, "reopened": apply and sum(counts.values()) or 0}

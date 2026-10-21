@@ -21,19 +21,17 @@ from studgroup.models import (
 def _kept_texts(item, edited_card):
     """Title and description for an update, never worse than what the item already shows.
 
-    A display field the card editor had to replace (fallback) is a placeholder or a salvaged
-    fragment. It must not overwrite a title or description the item already carries from an earlier
+    A display field the card editor had to replace (fallback) is a placeholder, a title rebuilt from
+    the update's own fragments or a salvaged fragment. It must not overwrite a title or description the item already carries from an earlier
     accepted pass: the previous text stays, and the card keeps the reasons that mark it unconfirmed.
     A previous placeholder is replaced by anything better.
     """
     title, description = edited_card.title, edited_card.description
     fallback = set(edited_card.fallback_fields)
-    if (
-        "title" in fallback
-        and "title_insufficient_data" in edited_card.attention_reasons
-        and item.title
-        and not item.title.endswith(INSUFFICIENT)
-    ):
+    # An update usually cites only the new clarifying messages, which cannot support the card's
+    # whole title, so the editor rebuilds it from those fragments (e.g. "Быть минимум 2 источника
+    # указано"). Any rebuilt title keeps the real title the item already has.
+    if "title" in fallback and item.title and not item.title.endswith(INSUFFICIENT):
         title = item.title
     if (
         "description" in fallback
@@ -76,6 +74,21 @@ def _record_deadline_history(db, item, proposal, sources, now):
             changed_at=now,
         )
     )
+
+
+_BASIS_RANK = {"explicit": 3, "relative_resolved": 2, "schedule_inferred": 1, "unknown": 0}
+_DEADLINE_REQUESTS = {"deadline_needs_headman", "deadline_inferred_confirm"}
+
+
+def _keeps_known_deadline(item, shown):
+    """An update that knows less about the date than the card never erases or downgrades it.
+
+    A later message that names no date (or only a lesson-derived one) must not wipe a date the card
+    already has from the text; only a better-grounded date or an explicit withdrawal changes it.
+    """
+    if item.deadline_at is None or shown.reason == "withdrawn_deadline":
+        return False
+    return _BASIS_RANK.get(shown.basis, 0) < _BASIS_RANK.get(item.deadline_basis, 0)
 
 
 @dataclass(frozen=True)
@@ -216,8 +229,22 @@ async def resolve_proposal(
                 "title": item.title,
                 "description": item.description,
             }
+            keeps_deadline = action == "update" and _keeps_known_deadline(item, shown)
+            if keeps_deadline:
+                # The date stays, so the policy's "set/confirm the date" requests for the date-less
+                # message do not apply; the card keeps the requests it already carried.
+                card_reasons = [
+                    *(r for r in card_reasons if r not in _DEADLINE_REQUESTS),
+                    *(
+                        r
+                        for r in json.loads(item.attention_reasons or "[]")
+                        if r in _DEADLINE_REQUESTS
+                    ),
+                ]
             proposed = {
-                "deadline": (shown.at, shown.date_only, shown.basis, shown.reason),
+                "deadline": current["deadline"]
+                if keeps_deadline
+                else (shown.at, shown.date_only, shown.basis, shown.reason),
                 "subject": subject,
                 "kind": proposal.semantic_kind,
                 "title": title,

@@ -195,7 +195,7 @@ def test_enumeration_without_reply_is_only_a_review_hint():
     assert edit_card(card, messages).visibility == "headman_attention"
 
 
-def test_foreign_message_attached_by_the_model_is_held_not_merged():
+def test_foreign_message_attached_by_the_model_is_flagged_for_the_headman_not_held():
     messages = [
         msg(1, TASK),
         msg(2, "Физика: лабораторная до пятницы", minutes=300, topic=7, who="z", role="student"),
@@ -203,7 +203,10 @@ def test_foreign_message_attached_by_the_model_is_held_not_merged():
     result, _ = run([raw([1, 2])], messages)
     (card,) = result.accepted
     assert "foreign_source_attached" in card.attention_reasons
-    assert edit_card(card, messages).visibility == "held"
+    # published with a flag for the headman (owner decision, 20 Oct 2026), no longer held
+    assert edit_card(card, messages).visibility == "headman_attention"
+    # and the foreign message is still not merged into the card's text
+    assert "Физика" not in (card.description or "")
 
 
 def test_adjacent_date_fragment_is_not_called_foreign():

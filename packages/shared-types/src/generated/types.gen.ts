@@ -103,9 +103,9 @@ export type AccessState = 'active' | 'no_active_group' | 'membership_suspended' 
 export type MemberRole = 'student' | 'deputy' | 'headman';
 
 /**
- * Staff permissions are a UI hint for headman (all three) and deputy (schedule.write, deadline.manage). The backend re-checks the role on every staff request.
+ * Staff permissions are a UI hint: headman gets schedule.write, deadline.manage and group.settings.write, deputy the first two. The backend re-checks the role on every request.
  */
-export type Permission = 'schedule.read' | 'today.read' | 'homework.read' | 'homework.completion.write' | 'schedule.write' | 'deadline.manage' | 'group.settings.write';
+export type Permission = 'schedule.read' | 'today.read' | 'homework.read' | 'homework.completion.write' | 'homework.edit' | 'homework.material.write' | 'schedule.write' | 'deadline.manage' | 'group.settings.write';
 
 export type HomeworkListResponse = {
     /**
@@ -139,7 +139,7 @@ export type TodayResponse = {
     processing: FeedProcessing;
     empty: boolean;
     /**
-     * Ordered by backend (due_today, new_or_changed, upcoming); the client preserves order. new_or_changed contains only existing assignments with a significant update within the last 24 hours, not newly created or imported assignments. Import normalization and initial inferred timetable dates do not count as live updates. Personally completed items with a known active deadline remain eligible in their normal sections with my_state preserved; completed items without a known deadline are excluded. Cancelled and past-deadline items are archived and excluded immediately; date-only deadlines remain active through their group calendar day. Empty sections are omitted. These display rules do not delete stored homework. Legacy overdue section kind remains accepted but is no longer returned.
+     * Ordered by backend (due_today, upcoming, new_or_changed); the client preserves order. new_or_changed contains only existing assignments with a significant update within the last 5 hours; assignments created within the last 5 hours count as new and are never listed there, nor are imported assignments. Import normalization and initial inferred timetable dates do not count as live updates. Personally completed items with a known active deadline remain eligible in their normal sections with my_state preserved; completed items without a known deadline are excluded. Cancelled and past-deadline items are archived and excluded immediately; date-only deadlines remain active through their group calendar day. Empty sections are omitted. These display rules do not delete stored homework. Legacy overdue section kind remains accepted but is no longer returned.
      */
     sections: Array<TodaySection>;
 };
@@ -177,9 +177,16 @@ export type AcademicDeadline = {
     materials?: Array<MaterialLink>;
 };
 
+export type FileUploadLink = {
+    url: string;
+};
+
 export type MaterialLink = {
     id: string;
     title: string;
+    /**
+     * An absolute https link, or, for a file kept in Telegram (`kind` other than `link`), an API-relative signed path `/v1/files/{id}?exp=..&sig=..` valid for 6 hours. Resolve it against the API base URL; it needs no Authorization header.
+     */
     url: string;
     kind?: 'link' | 'photo' | 'document' | 'video' | 'audio' | 'voice' | 'animation';
     file_name?: string | null;
@@ -387,6 +394,32 @@ export type MyHomeworkState = {
     completion: 'pending' | 'completed';
     completed_at?: string | null;
     completed_revision?: number | null;
+};
+
+/**
+ * Offset-aware instant; `date_only` keeps the whole day. Omit `at` (or send null) to clear.
+ */
+export type DeadlineInput = {
+    at?: string | null;
+    date_only?: boolean;
+};
+
+export type EditHomeworkRequest = {
+    expected_revision: number;
+    title?: string;
+    description?: string | null;
+    subject_name?: string;
+    deadline?: DeadlineInput | null;
+};
+
+export type EditAcademicDeadlineRequest = {
+    expected_revision: number;
+    kind?: 'control_point' | 'assessment' | 'test' | 'credit' | 'exam' | 'other_academic_deadline';
+    title?: string;
+    description?: string | null;
+    subject?: string;
+    deadline?: DeadlineInput | null;
+    date_hint?: string | null;
 };
 
 export type SetCompletionRequest = {
@@ -828,6 +861,76 @@ export type ListAcademicDeadlinesResponses = {
 
 export type ListAcademicDeadlinesResponse = ListAcademicDeadlinesResponses[keyof ListAcademicDeadlinesResponses];
 
+export type GetHomeworkFileLinkData = {
+    body?: never;
+    path: {
+        homework_id: string;
+    };
+    query?: never;
+    url: '/homework/{homework_id}/file-link';
+};
+
+export type GetHomeworkFileLinkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type GetHomeworkFileLinkError = GetHomeworkFileLinkErrors[keyof GetHomeworkFileLinkErrors];
+
+export type GetHomeworkFileLinkResponses = {
+    /**
+     * Deep link
+     */
+    200: FileUploadLink;
+};
+
+export type GetHomeworkFileLinkResponse = GetHomeworkFileLinkResponses[keyof GetHomeworkFileLinkResponses];
+
+export type GetDeadlineFileLinkData = {
+    body?: never;
+    path: {
+        deadline_id: string;
+    };
+    query?: never;
+    url: '/deadlines/{deadline_id}/file-link';
+};
+
+export type GetDeadlineFileLinkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type GetDeadlineFileLinkError = GetDeadlineFileLinkErrors[keyof GetDeadlineFileLinkErrors];
+
+export type GetDeadlineFileLinkResponses = {
+    /**
+     * Deep link
+     */
+    200: FileUploadLink;
+};
+
+export type GetDeadlineFileLinkResponse = GetDeadlineFileLinkResponses[keyof GetDeadlineFileLinkResponses];
+
 export type GetAcademicDeadlineData = {
     body?: never;
     path: {
@@ -862,10 +965,62 @@ export type GetAcademicDeadlineResponses = {
         generated_at: string;
         group_timezone: string;
         item: AcademicDeadline;
+        /**
+         * Card-editing permissions of the caller (headman/deputy only); a UI hint, every edit is re-checked by the server.
+         */
+        permissions?: Array<Permission>;
     };
 };
 
 export type GetAcademicDeadlineResponse = GetAcademicDeadlineResponses[keyof GetAcademicDeadlineResponses];
+
+export type EditAcademicDeadlineData = {
+    body: EditAcademicDeadlineRequest;
+    path: {
+        deadline_id: string;
+    };
+    query?: never;
+    url: '/deadlines/{deadline_id}';
+};
+
+export type EditAcademicDeadlineErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type EditAcademicDeadlineError = EditAcademicDeadlineErrors[keyof EditAcademicDeadlineErrors];
+
+export type EditAcademicDeadlineResponses = {
+    /**
+     * Updated event
+     */
+    200: {
+        generated_at: string;
+        group_timezone: string;
+        item: AcademicDeadline;
+        permissions: Array<Permission>;
+    };
+};
+
+export type EditAcademicDeadlineResponse = EditAcademicDeadlineResponses[keyof EditAcademicDeadlineResponses];
 
 export type ListHomeworkData = {
     body?: never;
@@ -945,6 +1100,53 @@ export type GetHomeworkResponses = {
 };
 
 export type GetHomeworkResponse = GetHomeworkResponses[keyof GetHomeworkResponses];
+
+export type EditHomeworkData = {
+    body: EditHomeworkRequest;
+    path: {
+        homework_id: string;
+    };
+    query?: never;
+    url: '/homework/{homework_id}';
+};
+
+export type EditHomeworkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * Resource existed but is no longer retained
+     */
+    410: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type EditHomeworkError = EditHomeworkErrors[keyof EditHomeworkErrors];
+
+export type EditHomeworkResponses = {
+    /**
+     * Updated homework detail
+     */
+    200: HomeworkDetail;
+};
+
+export type EditHomeworkResponse = EditHomeworkResponses[keyof EditHomeworkResponses];
 
 export type SetHomeworkCompletionData = {
     body: SetCompletionRequest;
@@ -1038,7 +1240,7 @@ export type GetStaffScheduleErrors = {
      */
     403: ErrorResponse;
     /**
-     * Request fields are missing, malformed or inconsistent
+     * The request body is malformed or a value is not allowed
      */
     422: ErrorResponse;
 };
@@ -1075,7 +1277,7 @@ export type CreateStaffLessonErrors = {
      */
     409: ErrorResponse;
     /**
-     * Request fields are missing, malformed or inconsistent
+     * The request body is malformed or a value is not allowed
      */
     422: ErrorResponse;
 };
@@ -1117,7 +1319,7 @@ export type ChangeStaffLessonErrors = {
      */
     409: ErrorResponse;
     /**
-     * Request fields are missing, malformed or inconsistent
+     * The request body is malformed or a value is not allowed
      */
     422: ErrorResponse;
 };
@@ -1186,7 +1388,7 @@ export type AddNoLessonDayErrors = {
      */
     409: ErrorResponse;
     /**
-     * Request fields are missing, malformed or inconsistent
+     * The request body is malformed or a value is not allowed
      */
     422: ErrorResponse;
 };
@@ -1258,7 +1460,7 @@ export type ChangeGroupSettingsErrors = {
      */
     409: ErrorResponse;
     /**
-     * Request fields are missing, malformed or inconsistent
+     * The request body is malformed or a value is not allowed
      */
     422: ErrorResponse;
 };
@@ -1371,7 +1573,7 @@ export type DecideItemDeadlineErrors = {
      */
     409: ErrorResponse;
     /**
-     * Request fields are missing, malformed or inconsistent
+     * The request body is malformed or a value is not allowed
      */
     422: ErrorResponse;
 };
@@ -1417,7 +1619,7 @@ export type SetItemLocksErrors = {
      */
     409: ErrorResponse;
     /**
-     * Request fields are missing, malformed or inconsistent
+     * The request body is malformed or a value is not allowed
      */
     422: ErrorResponse;
 };

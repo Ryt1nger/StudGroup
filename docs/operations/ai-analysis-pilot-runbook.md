@@ -81,6 +81,9 @@ Pipeline: RawMessage -> context -> Pass 1 -> Pass 2 (`cplus-extraction-2`) -> Py
 strict validation -> optional single AI Repair -> shadow row. Shadow rows are the only product of
 these steps; students see cards only after `promote --apply`.
 
+The old per-message engine is hard-locked: it publishes cards only when `LEGACY_ENGINE_ENABLED=true`
+(default false); `AI_ENABLED` alone no longer wakes it up. Leave it false while a group is on the new engine.
+
 Settings (all default off): `AI_ENABLED=false`, `AI_SHADOW_ENABLED=true` with an absolute
 `AI_SHADOW_ENABLED_UNTIL`, `AI_SHADOW_CANARY_ONLY=true` for the first run, and
 `AI_OUTPUT_REPAIR_ENABLED=false` until paid repair is separately approved. A single package
@@ -232,7 +235,7 @@ change. Telegram file ids stay server-side; the client only gets `t.me` links.
   verbatim as `Дополнение: …`. A separate model card that only clarifies another card is merged
   (`merged_supplement`). Ambiguous (one reply, several tasks) -> `supplement_ambiguous`;
   doubtful medium/student replies -> `possible_missing_supplement`; a cited message with no
-  structural tie to the others -> `foreign_source_attached` (held). Cross-run: in preview/promote
+  structural tie to the others -> `foreign_source_attached` (flagged for the headman; published, no longer held - owner decision 20 Oct 2026). Cross-run: in preview/promote
   `with_supplement_updates` turns a card that merely clarifies an already-built item into an
   update of that item. Old stored shadow results get the same treatment when reviewed.
 
@@ -363,3 +366,27 @@ It is used by `backfill.review`, `backfill.promote`, `/shadowcards` preview and,
 depth, by `apply_validated_batch` itself, so no path (preview, promote, live writer, Mini App
 projection) can read the old values. Idempotent; sources are never replaced; literal-date
 conflicts stay serious; no AI call.
+
+
+## New (package) engine for groups in mode `new`
+
+The worker lives in `analysis/package_worker.py` and is reached through `dispatch_next`. It serves
+only groups whose `analysis_mode` is `new`; the legacy engine never sees them and the worker never
+touches `legacy`/`shadow` groups (one writer per group).
+
+- Flags (all default off): `NEW_ENGINE_ENABLED`, optional absolute `NEW_ENGINE_ENABLED_UNTIL`,
+  `NEW_ENGINE_NOTIFICATIONS` (student pushes for new cards). The group's `shadow_daily_budget_usd`
+  is the daily spend cap; `AI_LOOP_PAUSE_SECONDS` and the hourly schedule apply as before.
+- Per iteration: one package (up to 24 target messages with read-only context) -> one durable
+  `shadow_evaluation_runs` row without a raw message -> two provider passes under a reservation ->
+  in the same transaction the accepted proposals go through the canonical resolver with the
+  timetable subjects and the intelligent-deadline context, and the targets become `completed`.
+  A lost lease re-runs the package; the resolver is idempotent. Failures retry (3 attempts) and then
+  park the targets as `failed`.
+- The model receives the group's recent active cards (`existing_items`: id + revision), so a later
+  mention updates the same card instead of creating another.
+- Owner re-analysis of a window: `python -m studgroup.analysis_backfill reopen --group-id UUID
+  --since 2026-10-08` (dry-run; `--apply` sets the stored live messages `pending` again with a new
+  generation). It changes no card; clean up legacy-written cards separately and deliberately.
+- Switching a group: `shadow -> new` needs the explicit gate approval (`transition_mode`); rollback
+  is `emergency_rollback` back to `legacy`, which keeps all product rows.

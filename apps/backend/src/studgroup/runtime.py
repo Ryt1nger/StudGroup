@@ -10,7 +10,8 @@ from studgroup.analysis.dispatch import dispatch_next
 from studgroup.processing import incident
 
 
-async def processing_loop(engine, settings, pause=5):
+async def processing_loop(engine, settings, pause=None):
+    pause = settings.ai_loop_pause_seconds if pause is None else pause
     from studgroup.worker import flush_incidents
 
     logger = logging.getLogger(__name__)

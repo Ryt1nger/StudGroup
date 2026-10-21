@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses } from './types.gen';
+import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -98,12 +98,47 @@ export const listAcademicDeadlines = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
+ * Telegram deep link where an editor sends a file for this card
+ *
+ * Headman or deputy only. The link opens the bot, which waits for one file (up to 20 MB) and, after the headman confirms, attaches it to the card as a material. The file stays in Telegram.
+ */
+export const getHomeworkFileLink = <ThrowOnError extends boolean = false>(options: Options<GetHomeworkFileLinkData, ThrowOnError>): RequestResult<GetHomeworkFileLinkResponses, GetHomeworkFileLinkErrors, ThrowOnError> => (options.client ?? client).get<GetHomeworkFileLinkResponses, GetHomeworkFileLinkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/homework/{homework_id}/file-link',
+    ...options
+});
+
+/**
+ * Telegram deep link where an editor sends a file for this event
+ */
+export const getDeadlineFileLink = <ThrowOnError extends boolean = false>(options: Options<GetDeadlineFileLinkData, ThrowOnError>): RequestResult<GetDeadlineFileLinkResponses, GetDeadlineFileLinkErrors, ThrowOnError> => (options.client ?? client).get<GetDeadlineFileLinkResponses, GetDeadlineFileLinkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/deadlines/{deadline_id}/file-link',
+    ...options
+});
+
+/**
  * Retained event details for the active group
  */
 export const getAcademicDeadline = <ThrowOnError extends boolean = false>(options: Options<GetAcademicDeadlineData, ThrowOnError>): RequestResult<GetAcademicDeadlineResponses, GetAcademicDeadlineErrors, ThrowOnError> => (options.client ?? client).get<GetAcademicDeadlineResponses, GetAcademicDeadlineErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/deadlines/{deadline_id}',
     ...options
+});
+
+/**
+ * Headman or deputy edits any field of a graded event
+ *
+ * Same rules as an edit through the Telegram bot: revision-checked, audited, undoable, locks the card against AI overwrites. Only fields present in the body change. A date without time (`deadline.date_only`) keeps the whole day; `deadline: null` clears the date.
+ */
+export const editAcademicDeadline = <ThrowOnError extends boolean = false>(options: Options<EditAcademicDeadlineData, ThrowOnError>): RequestResult<EditAcademicDeadlineResponses, EditAcademicDeadlineErrors, ThrowOnError> => (options.client ?? client).patch<EditAcademicDeadlineResponses, EditAcademicDeadlineErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/deadlines/{deadline_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**
@@ -124,6 +159,21 @@ export const getHomework = <ThrowOnError extends boolean = false>(options: Optio
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/homework/{homework_id}',
     ...options
+});
+
+/**
+ * Headman or deputy edits any field of a homework card
+ *
+ * Same rules as an edit through the Telegram bot: revision-checked, audited, undoable, locks the card against AI overwrites. Only fields present in the body change. `description: ""` removes the description; `deadline: null` clears the date. A date-only deadline resolves to the subject's lesson that day, as in the bot. Students receive 403.
+ */
+export const editHomework = <ThrowOnError extends boolean = false>(options: Options<EditHomeworkData, ThrowOnError>): RequestResult<EditHomeworkResponses, EditHomeworkErrors, ThrowOnError> => (options.client ?? client).patch<EditHomeworkResponses, EditHomeworkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/homework/{homework_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

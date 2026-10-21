@@ -266,7 +266,9 @@ async def dispatch(db, update_value, settings):
     routed = route.mode if route else None
     if routed == "start" and not await bot_start.awaiting_input(db, chat):
         routed = None  # the walkthrough only owns plain text while it waits for a code
-    if start:
+    # A card-file deep link from the Mini App belongs to the headman flow, not to the walkthrough.
+    file_link = start and headman_bot.FILE_LINK.fullmatch(text) is not None
+    if start and not file_link:
         # Every /start gets a fresh screen: the old one and the person's messages are removed.
         mode = "start"
         owner = await panel(db, chat, mode)
@@ -322,7 +324,7 @@ async def dispatch(db, update_value, settings):
                     },
                 )
                 return True
-    else:
+    elif not start:
         if command in {"/admin", "/st"}:
             mode = command[1:]
             owner = await panel(db, chat, mode)

@@ -8,7 +8,7 @@
 1. При постановке shadow-запуска (`shadow_worker.enqueue_shadow`) каталог группы кладётся в
    замороженный вход `AnalysisInput.subject_catalog` (без миграций; он не входит в
    `source_snapshot_sha256`, старые входы без него читаются как «каталога нет»).
-2. Вызов Pass 2 (`cplus-extraction-8`) получает `user_payload.subject_catalog`
+2. Вызов Pass 2 (`cplus-extraction-9`) получает `user_payload.subject_catalog`
    (`id`, `name`, `aliases`, `teachers`, `complete`, `version`) рядом с сообщениями. Модель решает
    предмет **по смыслу** (тема, преподаватель в соседних сообщениях, как группа называет предмет) и
    возвращает `subject_id` и каноническое `subject`; при нехватке контекста — `null`.

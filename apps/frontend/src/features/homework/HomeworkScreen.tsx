@@ -2,7 +2,7 @@ import type { HomeworkDetail } from '@studgroup/shared-types';
 import clsx from 'clsx';
 import { useCallback, useId, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { useHomeworkQuery } from '../../api/queries';
+import { api, useHomeworkQuery } from '../../api/queries';
 import { assets } from '../../assets';
 import { ru } from '../../i18n/ru';
 import { formatDateTile, formatDeadline, formatShortDate, formatTime } from '../../lib/format';
@@ -26,6 +26,7 @@ import {
   showUrgent,
 } from '../today/cardStatus';
 import { processingBadge, urgencyBadge, verificationBadge, sourceLabel } from '../today/homeworkBadges';
+import { EditActions } from '../cardEdit/CardEditor';
 import { CompletionBar } from './CompletionBar';
 import { SourceBlock } from './SourceBlock';
 import {
@@ -339,6 +340,10 @@ function DetailBody({
         </p>
       </section>
 
+      <EditActions
+        allowed={detail.permissions.includes('homework.edit')}
+        fetchFileLink={() => api.homeworkFileLink(detail.id)}
+      />
       <UpdatesBlock detail={detail} items={view.updates} timeZone={timeZone} />
       <SourceBlock sources={view.sources} timeZone={timeZone} />
       <section className={styles.card} aria-labelledby="homework-materials">

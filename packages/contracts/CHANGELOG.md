@@ -1,6 +1,6 @@
 # Contract changelog
 
-## 0.10.0 — 2026-10-19
+## 0.12.0 — 2026-10-21
 
 - Added the headman/deputy cabinet API under `/staff` (tag `Staff`): timetable view with editor
   revisions, add/change/cancel lessons, days without lessons, group timezone and first-week
@@ -13,6 +13,24 @@
   student wording for uncertain deadlines.
 - A deadline set or confirmed by the headman/deputy is reported as certainty `confirmed`,
   origin `manual`.
+
+## 0.11.0 — 2026-10-21
+
+- Files that stay in Telegram: a card material with `kind` other than `link` may now carry an
+  API-relative signed `url` (`/v1/files/{id}?exp=..&sig=..`, valid 6 hours, no Authorization header).
+  Clients must resolve it against the API base URL. Absolute https links are unchanged.
+- Added `GET /homework/{id}/file-link` and `GET /deadlines/{id}/file-link` (headman/deputy only): a
+  `t.me` deep link where the editor sends the file to the bot.
+
+## 0.10.0 — 2026-10-21
+
+- Added `PATCH /homework/{id}` and `PATCH /deadlines/{id}`: a headman or deputy edits title,
+  description, subject, deadline (and the event kind / date hint of an academic event) from the
+  Mini App. Same rules as the Telegram bot: `expected_revision` guard (409 `revision_conflict`),
+  audit and undo data, AI lock; students receive 403 `permission_denied`.
+- Added the `InvalidRequest` (422) response and the `homework.edit` / `homework.material.write`
+  permissions. The card `permissions` array now contains them for a headman/deputy; the academic-event
+  detail gained an optional `permissions` array. Both are UI hints, the server re-checks every request.
 
 ## 0.9.0 — 2026-10-14
 

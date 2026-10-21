@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 
-from studgroup import bot_start, headman_schedule
+from studgroup import bot_start, headman_schedule, telegram_files
 from studgroup import headman_domain as domain
 from studgroup.api import schedule_data
 from studgroup.bot_admin import enqueue, say
@@ -271,7 +271,7 @@ async def detail(db, session, group, key):
             [("Подтвердить", "confirm")],
             [("Предмет", "edit_subject"), ("Название", "edit_title")],
             [("Описание", "edit_description"), ("Срок", "edit_deadline")],
-            [("Добавить материал-ссылку", "material")],
+            [("Добавить материал-ссылку", "material"), ("Добавить файл", "file")],
             [("Это КТ" if kind == "h" else "Это ДЗ", "convert"), ("Объединить", "merge")],
             [("Отменить", "cancel"), ("Не задание", "reject")],
             [("Вернуться позже", "defer")],
@@ -481,6 +481,8 @@ async def handle(db, update, settings):
     session = await db.scalar(
         select(HeadmanSession).where(HeadmanSession.telegram_user_id == sender.id).with_for_update()
     )
+    if not callback and (link := FILE_LINK.fullmatch(text)):
+        return await file_link(db, session, sender.id, f"{link['kind']}:{link['id']}")
     command = text.split("@")[0]
     requested = not callback and command in {"/st", "/st_cancel"}
     own_callback = callback and (callback.data or "").startswith("s:")
@@ -647,6 +649,8 @@ async def handle(db, update, settings):
                 await ask(
                     db, session, f"Новое значение: {field}. Отправь текст.", data, "edit_" + field
                 )
+        elif session.step == "detail" and action == "file":
+            await ask_file(db, session, data)
         elif session.step == "detail" and action == "material":
             await ask(
                 db,
@@ -989,8 +993,87 @@ async def handle(db, update, settings):
     return True
 
 
+def sent_file(message):
+    """(kind, file, title) of the single file in a message, or None; the largest photo size wins."""
+    for kind in ("document", "video", "audio", "voice", "animation"):
+        file = getattr(message, kind)
+        if file is not None:
+            return kind, file, file.file_name or message.caption
+    if message.photo:
+        return "photo", max(message.photo, key=lambda p: p.file_size or 0), message.caption
+    return None
+
+
+FILE_LINK = re.compile(
+    r"/start(?:@\w+)? file_(?P<kind>[he])_(?P<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+)
+
+
+async def file_link(db, session, telegram_id, key):
+    """Deep link from the Mini App: open the card in the bot and wait for the file."""
+    for _, _, group in await domain.memberships(db, telegram_id):
+        try:
+            _, _, group = await domain.access(db, telegram_id, group.id)
+            _, row = await domain.entity(db, group, key)
+        except domain.StError:
+            continue
+        if session is None:
+            session = HeadmanSession(
+                telegram_user_id=telegram_id,
+                nonce="",
+                step="groups",
+                payload="{}",
+                expires_at=datetime.now(UTC),
+            )
+            db.add(session)
+        session.group_id = group.id
+        await ask_file(db, session, {"key": key, "revision": row.revision})
+        return True
+    await say(db, telegram_id, "Карточка недоступна или у тебя нет прав старосты в её группе.")
+    return True
+
+
+async def ask_file(db, session, data):
+    await screen(
+        db,
+        session,
+        "Пришли файл одним сообщением: документ, фото, видео или аудио до 20 МБ. "
+        "Подпись к файлу станет названием материала. Сам файл останется в Telegram.",
+        [back()],
+        "text",
+        {"key": data["key"], "revision": data["revision"], "field": "file"},
+    )
+
+
+async def file_received(db, session, data, message):
+    found = sent_file(message)
+    if found is None:
+        raise domain.StError("Жду файл: документ, фото, видео или аудио.")
+    kind, file, name = found
+    if file.file_size and file.file_size > telegram_files.MAX_BYTES:
+        raise domain.StError(
+            "Файл больше 20 МБ: Telegram не отдаёт такие ботам. Сожми или раздели его."
+        )
+    default = {"photo": "Фото", "video": "Видео", "audio": "Аудио", "voice": "Голосовое сообщение"}
+    title_text = (name or default.get(kind) or "Файл").strip().splitlines()[0][:255]
+    await preview(
+        db,
+        session,
+        f"Файл «{title_text}» прикрепится к карточке. Он останется в Telegram, студенты откроют его по ссылке в карточке.",
+        {
+            "action": "material",
+            "key": data["key"],
+            "revision": data["revision"],
+            "title": title_text,
+            "url": telegram_files.encode(kind, file.file_size, file.file_id),
+        },
+    )
+
+
 async def typed(db, session, group, user, member, data, text, message):
     field = data["field"]
+    if field == "file":
+        return await file_received(db, session, data, message)
     if not text or len(text) > 12000:
         raise domain.StError("Нужен текст до 12 000 символов.")
     if field == "search":

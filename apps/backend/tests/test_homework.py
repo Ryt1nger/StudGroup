@@ -260,10 +260,17 @@ def test_backfill_corrects_inferred_dates_from_source_without_resetting_age(clie
 
 
 @pytest.mark.parametrize(
-    "edited,age_hours,expected",
-    [(False, 0, "upcoming"), (True, 1, "new_or_changed"), (True, 25, "upcoming")],
+    "edited,age_hours,created_hours,expected",
+    [
+        (False, 0, 0, "upcoming"),
+        (True, 1, 72, "new_or_changed"),
+        (True, 6, 72, "upcoming"),
+        (True, 1, 3, "upcoming"),
+    ],
 )
-def test_today_updates_requires_real_recent_edit_not_creation(client, edited, age_hours, expected):
+def test_today_updates_requires_real_recent_edit_not_creation(
+    client, edited, age_hours, created_hours, expected
+):
     card_id = seed_card(client)
     now = datetime.now(UTC)
 
@@ -271,7 +278,7 @@ def test_today_updates_requires_real_recent_edit_not_creation(client, edited, ag
         async with AsyncSession(client.app.state.engine) as db:
             card = await db.get(Homework, uuid.UUID(card_id))
             card.deadline_at = now + timedelta(days=2)
-            card.created_at = now - timedelta(days=3) if edited else now
+            card.created_at = now - timedelta(hours=created_hours)
             card.revision = 2 if edited else 1
             card.significant_updated_at = now - timedelta(hours=age_hours) if edited else None
             await db.commit()
@@ -363,6 +370,7 @@ def test_completed_unknown_deadline_stays_out_of_today(client):
     async def update_card():
         async with AsyncSession(client.app.state.engine) as db:
             card = await db.get(Homework, uuid.UUID(card_id))
+            card.created_at = completed_at - timedelta(days=1)
             card.revision = 2
             card.significant_updated_at = completed_at + timedelta(seconds=1)
             await db.commit()

@@ -185,6 +185,7 @@ def test_postgres_telegram_worker_router_shadow_e2e_is_read_only():
         database_url=url,
         telegram_webhook_secret="shadow-e2e-secret",
         ai_enabled=True,
+        legacy_engine_enabled=True,
         ai_total_budget_usd=100,
         ai_daily_group_budget_usd=1,
     )

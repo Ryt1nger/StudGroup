@@ -11,7 +11,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.academic_deadlines import items as deadline_items
-from studgroup.api import ApiError, active_group, database, schedule_data
+from studgroup.api import ApiError, active_group, database, edit_permissions, schedule_data
 from studgroup.materials import links
 from studgroup.models import (
     Group,
@@ -31,6 +31,10 @@ from studgroup.student_cards import enrich_homework
 router = APIRouter(prefix="/v1")
 Database = Annotated[AsyncSession, Depends(database)]
 CurrentGroup = Annotated[Group, Depends(active_group)]
+
+
+# Changed cards stay on Today for five hours; cards created inside the window count as new.
+CHANGED_WINDOW = timedelta(hours=5)
 
 
 def utc(value):
@@ -107,7 +111,11 @@ async def representation(db, row, user, now):
         "created_at": utc(row.created_at),
         "updated_at": utc(row.updated_at),
         "generated_at": now,
-        "permissions": ["homework.read", "homework.completion.write"],
+        "permissions": [
+            "homework.read",
+            "homework.completion.write",
+            *(await edit_permissions(db, row.group_id, user)),
+        ],
     }
 
 
@@ -409,7 +417,8 @@ async def today(
             )
         )
     ).all()
-    buckets = {"due_today": [], "new_or_changed": [], "upcoming": []}
+    # Display order: today's homework, then nearest, then recent changes (owner, 2026-10-21).
+    buckets = {"due_today": [], "upcoming": [], "new_or_changed": []}
     candidates = []
     for row in rows:
         card = await representation(db, row, user, now)
@@ -426,7 +435,8 @@ async def today(
             row.revision > 1
             and row.significant_updated_at
             and utc(row.significant_updated_at) > utc(row.created_at)
-            and utc(row.significant_updated_at) >= now - timedelta(hours=24)
+            and utc(row.created_at) < now - CHANGED_WINDOW
+            and utc(row.significant_updated_at) >= now - CHANGED_WINDOW
         ):
             buckets["new_or_changed"].append(card)
         elif deadline and deadline <= now + timedelta(days=7):

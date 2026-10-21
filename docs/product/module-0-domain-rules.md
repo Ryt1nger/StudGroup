@@ -322,7 +322,12 @@ Telegram username is used only to start deputy appointment. The stable identity 
 
 ### Today feed display rule (owner update, 2026-10-05)
 
-Today sections are ordered: due_today, new_or_changed, upcoming.
+Today sections are ordered: due_today, upcoming, new_or_changed (owner update,
+2026-10-21). On the client, academic deadlines are shown right after due_today,
+before upcoming. new_or_changed shows only changed homework: a card stays there for
+5 hours after its significant update and then leaves Today's changed section (it is
+not hidden elsewhere). Homework created within the last 5 hours is new and never
+appears in new_or_changed.
 Tasks has an Archive filter. Cancelled homework immediately appears only in
 Archive. Known timed deadlines archive at deadline <= server time; date-only
 deadlines archive on the next group calendar day. Archived items are excluded
