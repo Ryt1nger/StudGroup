@@ -26,6 +26,7 @@ import {
   showUrgent,
 } from '../today/cardStatus';
 import { processingBadge, urgencyBadge, verificationBadge, sourceLabel } from '../today/homeworkBadges';
+import { HomeworkEditor } from '../cardEdit/CardEditor';
 import { CompletionBar } from './CompletionBar';
 import { SourceBlock } from './SourceBlock';
 import {
@@ -339,6 +340,7 @@ function DetailBody({
         </p>
       </section>
 
+      <HomeworkEditor key={detail.revision} detail={detail} timeZone={timeZone} />
       <UpdatesBlock detail={detail} items={view.updates} timeZone={timeZone} />
       <SourceBlock sources={view.sources} timeZone={timeZone} />
       <section className={styles.card} aria-labelledby="homework-materials">

@@ -6,12 +6,13 @@ from datetime import UTC, datetime
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.api import ApiError, active_group, database
-from studgroup.models import AcademicDeadline, Group
+from studgroup.api import ApiError, active_group, database, edit_permissions
+from studgroup.models import AcademicDeadline, Group, WebSession
+from studgroup.security import token_hash
 from studgroup.student_cards import enrich_deadline
 
 router = APIRouter(prefix="/v1")
@@ -114,6 +115,7 @@ async def get_deadline(
     deadline_id: uuid.UUID,
     group: Annotated[Group, Depends(active_group)],
     db: Annotated[AsyncSession, Depends(database)],
+    authorization: str = Header(),
 ):
     now = datetime.now(UTC)
     row = await db.scalar(
@@ -126,4 +128,10 @@ async def get_deadline(
     if row is None:
         raise ApiError("not_found", "Событие не найдено", 404)
     item = await representation(db, group, row, now)
-    return {"generated_at": now, "group_timezone": group.timezone, "item": item}
+    session = await db.get(WebSession, token_hash(authorization[7:]))
+    return {
+        "generated_at": now,
+        "group_timezone": group.timezone,
+        "item": item,
+        "permissions": await edit_permissions(db, group.id, session.user_id),
+    }

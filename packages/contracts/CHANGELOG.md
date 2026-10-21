@@ -1,5 +1,15 @@
 # Contract changelog
 
+## 0.10.0 — 2026-10-21
+
+- Added `PATCH /homework/{id}` and `PATCH /deadlines/{id}`: a headman or deputy edits title,
+  description, subject, deadline (and the event kind / date hint of an academic event) from the
+  Mini App. Same rules as the Telegram bot: `expected_revision` guard (409 `revision_conflict`),
+  audit and undo data, AI lock; students receive 403 `permission_denied`.
+- Added the `InvalidRequest` (422) response and the `homework.edit` / `homework.material.write`
+  permissions. The card `permissions` array now contains them for a headman/deputy; the academic-event
+  detail gained an optional `permissions` array. Both are UI hints, the server re-checks every request.
+
 ## 0.9.0 — 2026-10-14
 
 - Added student-safe published-card metadata to homework: canonical `card_kind`, nullable
