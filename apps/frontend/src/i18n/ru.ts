@@ -220,6 +220,7 @@ export const ru = {
     open: 'Редактировать',
     addFile: 'Добавить файл',
     heading: 'Редактирование карточки',
+    pageTitle: 'Редактирование',
     title: 'Название',
     subject: 'Предмет',
     description: 'Описание',

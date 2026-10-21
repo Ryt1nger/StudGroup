@@ -322,3 +322,52 @@ def test_a_student_cannot_edit_a_deadline_and_an_unknown_kind_is_rejected(client
         headers=HEADERS,
     )
     assert stale.status_code == 409
+
+
+def test_an_edit_clears_the_clarification_mark_for_good(client):
+    set_role(client, "headman")
+    card = seed_card(client)
+
+    async def unsettle():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.get(Homework, uuid.UUID(card))
+            row.status, row.verification_state = "needs_clarification", "needs_clarification"
+            await db.commit()
+
+    asyncio.run(unsettle())
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).json()["verification_state"] == (
+        "needs_clarification"
+    )
+    deadline = {"at": "2026-11-05T10:00:00+03:00", "date_only": False}
+    response = client.patch(
+        f"/v1/homework/{card}",
+        json={"expected_revision": 1, "deadline": deadline},
+        headers=HEADERS,
+    )
+    body = response.json()
+    assert response.status_code == 200
+    assert (
+        body["verification_state"] == "manual_confirmed" and body["status"] != "needs_clarification"
+    )
+    assert body["deadline"]["certainty"] == "confirmed" and body["deadline"]["origin"] == "manual"
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).json()["deadline"]["certainty"] == (
+        "confirmed"
+    )
+
+
+def test_an_event_edit_clears_its_clarification_mark(client):
+    set_role(client, "headman")
+    event = seed_deadline(client)
+    first = client.get(f"/v1/deadlines/{event}", headers=HEADERS).json()["item"]
+    assert first["needs_clarification"] is True
+    response = client.patch(
+        f"/v1/deadlines/{event}",
+        json={
+            "expected_revision": 1,
+            "deadline": {"at": "2026-11-05T00:00:00+03:00", "date_only": True},
+        },
+        headers=HEADERS,
+    )
+    item = response.json()["item"]
+    assert item["needs_clarification"] is False
+    assert item["deadline_certainty"] == "confirmed" and item["deadline_origin"] == "manual"

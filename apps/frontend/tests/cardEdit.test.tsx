@@ -34,6 +34,29 @@ const eventResponse = (permissions: string[], item = event) => ({
 });
 
 describe('headman card editing', () => {
+  it('opens the edit form on its own page and returns to the card after saving', async () => {
+    useScenario();
+    server.use(
+      http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
+      http.patch(`${API}/homework/${HW}`, () => HttpResponse.json({ ...editable, title: 'Другое название' })),
+    );
+    const { router } = renderApp({ route: `/homework/${HW}` });
+    await userEvent.click(await screen.findByRole('button', { name: 'Редактировать' }));
+    expect(router.state.location.pathname).toBe(`/homework/${HW}/edit`);
+    expect(await screen.findByRole('heading', { name: 'Редактирование', level: 1 })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Название'), '!');
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/homework/${HW}`));
+  });
+
+  it('shows no form on the edit page to a student who opens the address directly', async () => {
+    useScenario();
+    server.use(http.get(`${API}/homework/${HW}`, () => HttpResponse.json(base)));
+    renderApp({ route: `/homework/${HW}/edit` });
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Сохранить' })).not.toBeInTheDocument();
+  });
+
   it('hides the edit button from a student', async () => {
     useScenario();
     server.use(http.get(`${API}/homework/${HW}`, () => HttpResponse.json(base)));

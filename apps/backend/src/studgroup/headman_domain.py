@@ -428,6 +428,8 @@ async def mutate(db, group, user, member, key, expected, operation, values=None)
             raise StError("Для пары используется изменение расписания.")
     if kind == "h" and operation != "defer":
         row.verification_state = "manual_confirmed"
+        if row.status == "needs_clarification" and operation not in {"cancel", "reject"}:
+            row.status = "published"  # a person has settled it; only a new conflict may reopen it
         row.updated_at = now
         if operation not in {"confirm", "material"}:
             row.significant_updated_at = now
