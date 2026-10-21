@@ -11,7 +11,7 @@ from test_ingestion import send
 
 from studgroup import bot_admin
 from studgroup import headman_domain as domain
-from studgroup.models import Group, Membership, User
+from studgroup.models import Group, GroupAIProfile, Membership, User
 
 pytest_plugins = ["test_schedule_api"]
 CLAIMANT = 77
@@ -102,6 +102,12 @@ def test_adding_the_bot_as_admin_creates_the_group_and_makes_the_claimant_its_he
     assert group.name == "ИВТ-21" and group.pilot_authorized and group.status == "active"
     assert group.bot_added_at is not None
     assert members == [("headman", CLAIMANT)]
+
+    async def profile(db):
+        return await db.get(GroupAIProfile, group.id)
+
+    ready = run(foreman, profile)
+    assert ready is not None and ready.state == "mapping"
     frame = last(foreman)
     assert "Группа «ИВТ-21» подключена" in frame["text"]
     assert "Создать приглашение" in labels(foreman)

@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from studgroup import bot_admin, bot_panels, bot_start
+from studgroup.group_structure import ensure_profile
 from studgroup.homework import utc
 from studgroup.models import Group, Membership, User
 
@@ -142,4 +143,6 @@ async def _connect(db, settings, claim, chat_id, title, sender_id):
         )
     )
     await db.flush()
+    # The bot sets the group's whole working environment up now rather than on its first message.
+    await ensure_profile(db, group.id, now)
     await bot_start.connected(db, claim, settings, group)
