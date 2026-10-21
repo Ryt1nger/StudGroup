@@ -219,8 +219,10 @@ def test_setting_a_date_only_deadline_locks_it_against_a_schedule_rebuild(client
 
     async def check(db):
         item = await db.get(CanonicalAcademicItem, item_id)
-        assert item.deadline_at.astimezone(MSK).date() == date(2026, 10, 20)
-        assert item.deadline_at.astimezone(MSK).hour == 0
+        # SQLite hands back a naive wall-clock value; PostgreSQL an aware one. Read both as Moscow.
+        stored = item.deadline_at
+        local = stored.astimezone(MSK) if stored.tzinfo else stored.replace(tzinfo=MSK)
+        assert local.date() == date(2026, 10, 20) and local.hour == 0
         assert json.loads(item.locked_fields) == ["deadline"]
         return item.deadline_at
 
