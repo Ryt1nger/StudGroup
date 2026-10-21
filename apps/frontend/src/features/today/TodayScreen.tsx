@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import type { HomeworkSummary, TodayResponse } from '@studgroup/shared-types';
 import { STALE_AFTER_MS } from '../../api/cachePolicy';
@@ -41,10 +41,14 @@ function Loading() {
   );
 }
 
-function Sections({ data, nowMs, tomorrow }: { data: TodayResponse; nowMs: number; tomorrow: boolean }) {
-  return (
-    <>
-      {data.sections.map((section) => {
+// Deadlines sit right after today's homework, before the nearest and changed cards.
+const TODAY_KINDS = new Set(['overdue', 'due_today']);
+
+function Sections({ data, nowMs, tomorrow, deadlines }: { data: TodayResponse; nowMs: number; tomorrow: boolean; deadlines: ReactNode }) {
+  const split = data.sections.findIndex((section) => !TODAY_KINDS.has(section.kind));
+  const at = split === -1 ? data.sections.length : split;
+  const render = (sections: TodayResponse['sections']) =>
+    sections.map((section) => {
         // Unknown future section kinds are skipped, never guessed.
         const title = tomorrow && section.kind === 'due_today' ? 'Срок завтра' : (ru.today.sections as Record<string, string | undefined>)[section.kind];
         const items = section.items.filter((item) => (item.my_state.completion !== 'completed' || item.deadline.state === 'known') && !isHomeworkArchived(item, nowMs, data.group_timezone));
@@ -61,7 +65,12 @@ function Sections({ data, nowMs, tomorrow }: { data: TodayResponse; nowMs: numbe
             </div>
           </section>
         );
-      })}
+      });
+  return (
+    <>
+      {render(data.sections.slice(0, at))}
+      {deadlines}
+      {render(data.sections.slice(at))}
     </>
   );
 }
@@ -94,6 +103,7 @@ export function TodayScreen() {
   const selectedDay = data ? addDays(dayKey(nowMs, data.group_timezone), tomorrow ? 1 : 0) : null;
   const lessonInSelectedDay = data?.next_lesson && dayKey(data.next_lesson.lesson.starts_at, data.group_timezone) === selectedDay;
   const nextLesson = data && lessonInSelectedDay ? mapNextLesson(data.next_lesson, nowMs, data.group_timezone) : null;
+  const deadlinesSection = deadlines.data && soonDeadlines.length ? <section className={styles.section} aria-labelledby="important-deadlines"><h2 id="important-deadlines" className={styles.sectionTitle}>Дедлайны</h2><div className={styles.list}>{soonDeadlines.slice(0, 3).map((item) => <AcademicDeadlineCard key={item.id} item={item} timeZone={deadlines.data!.group_timezone} />)}</div><Link className={styles.allDeadlines} to="/deadlines" viewTransition><span>Все дедлайны</span><ChevronRight size={20} /></Link></section> : null;
   const hasCards = data ? data.sections.some((s) => s.items.some((item) => (item.my_state.completion !== 'completed' || item.deadline.state === 'known') && !isHomeworkArchived(item, nowMs, data.group_timezone))) : false;
 
   return (
@@ -148,12 +158,12 @@ export function TodayScreen() {
 
         {query.isPending ? <Loading /> : null}
         {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
-        {data && hasCards ? <Sections data={data} nowMs={nowMs} tomorrow={tomorrow} /> : null}
+        {data && hasCards ? <Sections data={data} nowMs={nowMs} tomorrow={tomorrow} deadlines={deadlinesSection} /> : null}
         {data && !hasCards && data.processing.state === 'idle' ? (
           <StateView illustration={<ThemedImage asset={emptyIllustrations.noTasks} />} title={tomorrow ? 'На завтра заданий нет' : ru.today.emptyTitle} body={tomorrow ? 'Задания с известным сроком на завтра появятся здесь.' : ru.today.emptyBody} />
         ) : null}
+        {!(data && hasCards) ? deadlinesSection : null}
         {deadlines.isError ? <Banner tone="warning">Не удалось загрузить дедлайны. <Link to="/deadlines">Повторить</Link></Banner> : null}
-        {deadlines.data && soonDeadlines.length ? <section className={styles.section} aria-labelledby="important-deadlines"><h2 id="important-deadlines" className={styles.sectionTitle}>Дедлайны</h2><div className={styles.list}>{soonDeadlines.slice(0, 3).map((item) => <AcademicDeadlineCard key={item.id} item={item} timeZone={deadlines.data.group_timezone} />)}</div><Link className={styles.allDeadlines} to="/deadlines" viewTransition><span>Все дедлайны</span><ChevronRight size={20} /></Link></section> : null}
       </div>
     </>
   );
