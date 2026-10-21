@@ -205,8 +205,31 @@ describe('homework detail and source', () => {
     expect(within(panel).getByText(/Получено/)).toBeInTheDocument();
     await userEvent.click(info);
     expect(info).toHaveAttribute('aria-expanded', 'false');
+    // The «Источник» section is collapsed by default and opens with its arrow.
+    const toggle = screen.getByRole('button', { name: /^Источник:/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /Сообщение учебной группы/ })).toBeNull();
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await userEvent.click(screen.getByRole('button', { name: /Сообщение учебной группы/ }));
     expect(adapter?.openTelegramLink).toHaveBeenCalledWith('https://t.me/c/1234567890/42');
+  });
+
+  it('collapses and expands the sources section with the arrow', async () => {
+    useScenario();
+    renderApp({ route: `/homework/${HW}` });
+    const toggle = await screen.findByRole('button', { name: /^Источник:/ });
+    const list = document.getElementById(toggle.getAttribute('aria-controls')!)!;
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(list).toHaveAttribute('hidden');
+    expect(toggle).toHaveAccessibleName('Источник: Показать источники');
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(list).not.toHaveAttribute('hidden');
+    expect(toggle).toHaveAccessibleName('Источник: Скрыть источники');
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(list).toHaveAttribute('hidden');
   });
 
   it('opens a card directly from a deep link start_param', async () => {

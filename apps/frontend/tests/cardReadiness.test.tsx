@@ -62,8 +62,11 @@ describe('published learning card readiness', () => {
     expect(within(materials).getByText('Фотография')).toBeInTheDocument();
     expect(within(materials).getByText('Документ')).toBeInTheDocument();
 
-    expect(screen.getByRole('heading', { name: 'Источники' })).toBeInTheDocument();
-    expect(screen.getByText('У вас нет доступа к исходному сообщению.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Источники/ })).toBeInTheDocument();
+    // collapsed by default: the unavailable-source explanation is hidden until the arrow is used
+    expect(screen.getByText('У вас нет доступа к исходному сообщению.')).not.toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: /^Источники:/ }));
+    expect(screen.getByText('У вас нет доступа к исходному сообщению.')).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: /Сообщение учебной группы/ }));
     expect(adapter?.openTelegramLink).toHaveBeenCalledWith('https://t.me/c/1234567890/42');
     expect(screen.queryByText('needs_clarification')).not.toBeInTheDocument();
