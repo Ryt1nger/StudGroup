@@ -13,6 +13,7 @@ from test_package_worker import (
     count,
     make_new,
     settings,
+    states,
     step,
 )
 from test_processing import source
@@ -222,3 +223,75 @@ def test_image_endpoint_serves_the_photo_to_a_member_and_hides_unknown_ones(clie
     assert client.get(f"/v1/attachments/{attachment}/image").status_code == 401
     allow_download(monkeypatch, image=None)
     assert client.get(f"/v1/attachments/{attachment}/image", headers=headers).status_code == 503
+
+
+def completed_photo_message(client, mid, when):
+    source(client, mid=mid, text="", when=when)
+
+    async def attach():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == mid))
+            raw.processing_state = "completed"
+            db.add(
+                MessageAttachment(
+                    raw_message_id=raw.id,
+                    group_id=raw.group_id,
+                    source_revision=1,
+                    kind="photo",
+                    stable_file_id=f"u{mid}",
+                    telegram_file_id=f"f{mid}",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    active=True,
+                    created_at=when,
+                    delete_at=when + timedelta(days=30),
+                )
+            )
+            await db.commit()
+
+    asyncio.run(attach())
+
+
+def test_backfill_reopens_unread_photo_messages_once_and_reads_them(client, monkeypatch):
+    allow_download(monkeypatch)
+    # a text message that was already analysed and has no photo must stay untouched
+    source(client, mid=30, text="по алгебре решить задачи", when=BASE - timedelta(minutes=5))
+    completed_photo_message(client, 31, BASE)
+    completed_photo_message(client, 32, BASE + timedelta(minutes=1))
+
+    async def settle_text():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 30))
+            raw.processing_state = "completed"
+            await db.commit()
+
+    asyncio.run(settle_text())
+    make_new(client)
+    provider = VisionProvider(reading(), cited=(31,))
+    since = BASE - timedelta(hours=1)
+    cfg = photo_settings(photo_backfill_since=since)
+    assert step(client, provider, cfg) == "completed"
+    assert len(provider.vision) == 2
+    first = states(client)
+    assert first == {30: "completed", 31: "completed", 32: "completed"}
+    # a second iteration finds nothing to reopen: no new package, no second read
+    assert step(client, provider, cfg) == "idle"
+    assert len(provider.vision) == 2
+
+
+def test_backfill_needs_photo_reading_and_respects_the_start(client, monkeypatch):
+    allow_download(monkeypatch)
+    completed_photo_message(client, 31, BASE)
+    make_new(client)
+    provider = VisionProvider(reading(), cited=(31,))
+    # photo reading off: nothing is reopened even with a start moment
+    assert (
+        step(client, provider, settings(photo_backfill_since=BASE - timedelta(hours=1))) == "idle"
+    )
+    assert provider.vision == []
+    # a start after the message: it stays settled
+    assert (
+        step(client, provider, photo_settings(photo_backfill_since=BASE + timedelta(hours=1)))
+        == "idle"
+    )
+    assert provider.vision == []

@@ -53,6 +53,11 @@ def test_postgres_preview_merges_supplements_and_materials_without_writing():
     exam_sent = now - timedelta(hours=8) + timedelta(minutes=330)
     resolved = contextual_deadline("Контрольная в среду", exam_sent, "Europe/Moscow")
     wednesday = resolved.at.astimezone(MSK)
+    # "пятницу" is the next Friday after the moved-to message, not always two days after the
+    # Wednesday: resolve it with the same rule so the test does not depend on the weekday it runs.
+    friday = contextual_deadline(
+        "Перенесли на пятницу", exam_sent + timedelta(minutes=10), "Europe/Moscow"
+    ).at.astimezone(MSK)
 
     # id, minutes after the first message, text, sender, reply_to, attachments
     rows = [
@@ -148,7 +153,7 @@ def test_postgres_preview_merges_supplements_and_materials_without_writing():
             "Контрольная перенесена",
             "Перенесли на пятницу.",
             [9207, 9208],
-            at=(wednesday + timedelta(days=2)).isoformat(),
+            at=friday.isoformat(),
             kind="test",
         )
         | {"action": "reschedule"}
@@ -353,10 +358,7 @@ def test_postgres_preview_merges_supplements_and_materials_without_writing():
             change = next(c for c in cards if "unconfirmed_change" in c["reasons"])
             assert change["status"].startswith("удержана")
             assert {s["telegram_message_id"] for s in change["sources"]} == {9207, 9208}
-            assert (
-                change["deadline_at"].astimezone(MSK).date()
-                == (wednesday + timedelta(days=2)).date()
-            )
+            assert change["deadline_at"].astimezone(MSK).date() == friday.date()
             assert exam["deadline_at"].astimezone(MSK).date() == wednesday.date()
 
             # the event is reported for the owner but is neither a card nor a product write
