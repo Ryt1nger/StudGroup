@@ -356,6 +356,27 @@ class DeepSeekProvider:
             payload_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
         )
 
+    async def complete_vision(self, *, system_prompt, user_text, image_data_url, max_output_tokens):
+        """One chat completion with a single image in the user message (no JSON mode)."""
+        return await self._complete(
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": user_text},
+                            {"type": "image_url", "image_url": {"url": image_data_url}},
+                        ],
+                    },
+                ],
+                "thinking": {"type": "disabled"},
+                "max_tokens": max_output_tokens,
+                "stream": False,
+            }
+        )
+
     async def screen_batch(self, messages, timezone, target_message_id):
         """High-recall semantic screening of every new target, not keyword filtering."""
         ZoneInfo(timezone)

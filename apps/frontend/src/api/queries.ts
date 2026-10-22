@@ -1,5 +1,6 @@
 import {
   bootstrapSession,
+  getAttachmentImage,
   getHomework,
   getSchedule,
   listHomework,
@@ -51,6 +52,8 @@ export const api = {
     unwrap(getSchedule({ query: { start, end } })),
   listHomework: (filter: HomeworkListFilter, cursor?: string): Promise<HomeworkListResponse> =>
     unwrap(listHomework({ query: { filter, limit: HOMEWORK_PAGE_SIZE, ...(cursor ? { cursor } : {}) } })),
+  attachmentImage: (id: string): Promise<Blob> =>
+    unwrap(getAttachmentImage({ path: { attachment_id: id }, parseAs: 'blob' })) as Promise<Blob>,
   homework: (id: string): Promise<HomeworkDetail> => unwrap(getHomework({ path: { homework_id: id } })),
   editHomework: (id: string, body: EditHomeworkRequest): Promise<HomeworkDetail> =>
     unwrap(editHomework({ path: { homework_id: id }, body })),
@@ -111,6 +114,16 @@ export function useScheduleQuery(start: string, end: string, enabled = true) {
     queryFn: () => api.schedule(start, end),
     enabled,
     ...scheduleQueryOptions,
+  });
+}
+
+/** The bytes of a photo material; the object URL is created and revoked by the component. */
+export function useAttachmentImageQuery(id: string) {
+  return useQuery({
+    queryKey: queryKeys.attachmentImage(id),
+    queryFn: () => api.attachmentImage(id),
+    staleTime: 30 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
 }
 

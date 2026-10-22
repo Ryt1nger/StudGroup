@@ -89,6 +89,10 @@ export const ru = {
     deadlineUnknown: 'Срок уточняется',
     deadlineAbsent: 'Срок не указан',
     open: 'Открыть задание',
+    photoOpen: 'Открыть фото на весь экран',
+    photoClose: 'Закрыть фото',
+    photoUnavailable: 'Фото сейчас недоступно',
+    photoRetry: 'Повторить',
   },
   detail: {
     whatToDo: 'Что нужно сделать',

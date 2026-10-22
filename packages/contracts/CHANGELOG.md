@@ -1,5 +1,12 @@
 # Contract changelog
 
+## 0.13.0 — 2026-10-22
+
+- Added `GET /attachments/{attachment_id}/image`: the photo of a card, streamed from Telegram for
+  members of the owning group. Added optional `MaterialLink.replaces_description` (default false):
+  when true on a `kind: photo` material the client shows that image instead of the text
+  description (the description is still sent as a text fallback). Additive; nothing else changed.
+
 ## 0.12.0 — 2026-10-21
 
 - Added the headman/deputy cabinet API under `/staff` (tag `Staff`): timetable view with editor

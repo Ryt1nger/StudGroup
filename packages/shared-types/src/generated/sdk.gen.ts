@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses } from './types.gen';
+import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetAttachmentImageData, GetAttachmentImageErrors, GetAttachmentImageResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -174,6 +174,18 @@ export const editHomework = <ThrowOnError extends boolean = false>(options: Opti
         'Content-Type': 'application/json',
         ...options.headers
     }
+});
+
+/**
+ * Get the image of a photo material of a card
+ *
+ * Streams the photo from Telegram on demand. Only photos of the caller's active group are served; the id is the `id` of a `MaterialLink` with `kind` photo. Send the bearer token: fetch the bytes with the client and show them through an object URL.
+ *
+ */
+export const getAttachmentImage = <ThrowOnError extends boolean = false>(options: Options<GetAttachmentImageData, ThrowOnError>): RequestResult<GetAttachmentImageResponses, GetAttachmentImageErrors, ThrowOnError> => (options.client ?? client).get<GetAttachmentImageResponses, GetAttachmentImageErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/attachments/{attachment_id}/image',
+    ...options
 });
 
 /**

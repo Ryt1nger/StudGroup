@@ -34,6 +34,7 @@ CARD_KINDS = {
     "exam",
     "other_academic_deadline",
 }
+PHOTO_CARD_MAX_CAPTION = 120
 ATTACHMENT_KINDS = {"photo", "document", "video", "audio", "voice", "animation"}
 ATTACHMENT_TITLES = {
     "photo": "Фотография",
@@ -275,7 +276,14 @@ async def projected_updates(db, link):
 
 async def projected_materials(db, group_id, entity_key, now, sources):
     result = [
-        {"kind": "link", "file_name": None, "mime_type": None, "size_bytes": None, **item}
+        {
+            "kind": "link",
+            "file_name": None,
+            "mime_type": None,
+            "size_bytes": None,
+            "replaces_description": False,
+            **item,
+        }
         for item in await links(db, group_id, [entity_key])
     ]
     source_urls = {
@@ -303,6 +311,14 @@ async def projected_materials(db, group_id, entity_key, now, sources):
             str(attachment.id),
         )
     )
+    captions = {
+        raw_id: text or ""
+        for raw_id, text in (
+            await db.execute(
+                select(RawMessage.id, RawMessage.text).where(RawMessage.id.in_(source_urls))
+            )
+        ).all()
+    }
     for attachment in attachments:
         if attachment.kind not in ATTACHMENT_KINDS:
             continue
@@ -311,6 +327,14 @@ async def projected_materials(db, group_id, entity_key, now, sources):
             continue
         result.append(
             {
+                # A photo the vision pass read as study material, posted with at most a short
+                # caption, IS the task: the card shows it instead of a text description.
+                "replaces_description": (
+                    attachment.kind == "photo"
+                    and attachment.processing_state == "ready"
+                    and len(captions.get(attachment.raw_message_id, "").strip())
+                    <= PHOTO_CARD_MAX_CAPTION
+                ),
                 "id": attachment.id,
                 "title": attachment.file_name or ATTACHMENT_TITLES[attachment.kind],
                 "url": url,

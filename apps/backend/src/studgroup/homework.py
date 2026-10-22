@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from studgroup.models import (
     Group,
     Homework,
     Membership,
+    MessageAttachment,
     PersonalCompletion,
     RawMessage,
     ScheduleException,
@@ -273,6 +274,37 @@ async def detail(
 ):
     row = await find_card(db, group, homework_id)
     return await representation(db, row, await user_id(db, authorization), datetime.now(UTC))
+
+
+@router.get("/attachments/{attachment_id}/image")
+async def attachment_image(
+    attachment_id: UUID, group: CurrentGroup, db: Database, request: Request
+):
+    """The photo of a card, fetched from Telegram on demand; only for members of its own group."""
+    from studgroup.analysis.photo_reading import download_telegram_file, sniff_mime
+
+    row = await db.scalar(
+        select(MessageAttachment).where(
+            MessageAttachment.id == attachment_id,
+            MessageAttachment.group_id == group.id,
+            MessageAttachment.kind == "photo",
+            MessageAttachment.active.is_(True),
+            MessageAttachment.delete_at > datetime.now(UTC),
+        )
+    )
+    if row is None:
+        raise ApiError("not_found", "Фото не найдено", 404)
+    image = await download_telegram_file(
+        request.app.state.settings.telegram_bot_token, row.telegram_file_id
+    )
+    mime = sniff_mime(image) if image else None
+    if mime is None:
+        raise ApiError("photo_unavailable", "Фото сейчас недоступно", 503)
+    return Response(
+        content=image,
+        media_type=mime,
+        headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 class CompletionBody(BaseModel):

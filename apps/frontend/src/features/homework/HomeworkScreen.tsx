@@ -14,6 +14,8 @@ import { useBackButton } from '../../shell/useBackButton';
 import { Badge } from '../../ui/Badge';
 import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
+import { photoMaterials, remainingMaterials } from '../../lib/photoMaterials';
+import { CardPhotos } from '../../ui/CardPhotos';
 import { MaterialLinks } from '../../ui/MaterialLinks';
 import { RequestError } from '../../ui/RequestError';
 import { Skeleton } from '../../ui/Skeleton';
@@ -292,6 +294,7 @@ function DetailBody({
   const [infoOpen, setInfoOpen] = useState(false);
   const panelId = useId();
   const info = infoContent(detail, timeZone);
+  const photos = photoMaterials(view.materials);
   return (
     <div className={styles.stack}>
       {detail.processing.state === 'delayed' ? (
@@ -335,9 +338,13 @@ function DetailBody({
         <h2 id="todo-title" className={styles.cardTitle}>
           {ru.detail.whatToDo}
         </h2>
-        <p className={clsx(styles.description, !description && styles.muted)}>
-          {description ?? ru.detail.noDescription}
-        </p>
+        {photos.length ? (
+          <CardPhotos items={photos} alt={detail.title} />
+        ) : (
+          <p className={clsx(styles.description, !description && styles.muted)}>
+            {description ?? ru.detail.noDescription}
+          </p>
+        )}
       </section>
 
       <EditActions
@@ -350,7 +357,7 @@ function DetailBody({
         <h2 id="homework-materials" className={styles.cardTitle}>
           Материалы
         </h2>
-        <MaterialLinks items={view.materials} />
+        <MaterialLinks items={remainingMaterials(view.materials)} />
       </section>
       <div className={styles.ctaSpace} />
       <CompletionBar detail={detail} refreshing={refreshing} />
