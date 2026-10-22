@@ -1,4 +1,4 @@
-"""A headman connects a brand-new group by adding the bot; every other case is refused."""
+"""Adding the bot to a new group makes the adder its headman; the bot never writes in the group."""
 
 import json
 import uuid
@@ -14,17 +14,31 @@ from studgroup import headman_domain as domain
 from studgroup.models import BotOutbox, Group, GroupAIProfile, Membership, User
 
 pytest_plugins = ["test_schedule_api"]
-CLAIMANT = 77
+ADDER = 77
+OTHER = 78
 NEW_CHAT = -100777
+BOT = 999
 
 
-def setup_bot(client, monkeypatch, statuses, username="studgroup_rf_bot"):
-    """``statuses`` maps (chat, user) to the Telegram status getChatMember answers with."""
+def setup_bot(client, monkeypatch, statuses, *, list_works=True, username="studgroup_rf_bot"):
+    """``statuses`` maps (chat, user) to the Telegram status of that person in that chat.
+
+    ``list_works=False`` makes both lookups fail, as when Telegram cannot answer.
+    """
     settings = client.app.state.settings
-    settings.telegram_bot_token = "999:fake-no-network"
+    settings.telegram_bot_token = f"{BOT}:fake-no-network"
     settings.bot_username = username
 
     async def request(_settings, method, data):
+        if not list_works:
+            return {"ok": False, "description": "not available"}
+        if method == "getChatAdministrators":
+            admins = [
+                {"status": status, "user": {"id": user}}
+                for (chat, user), status in statuses.items()
+                if chat == data["chat_id"] and status in {"creator", "administrator"}
+            ]
+            return {"ok": True, "result": admins}
         assert method == "getChatMember"
         status = statuses.get((data["chat_id"], data["user_id"]))
         if status is None:
@@ -34,34 +48,62 @@ def setup_bot(client, monkeypatch, statuses, username="studgroup_rf_bot"):
     monkeypatch.setattr(bot_admin, "telegram_request", request)
 
 
-def panel(client):
-    """The newest panel frame, ignoring plain messages such as the note posted in the group."""
+def panel(client, user=None):
+    """The newest private panel frame (for ``user`` when given)."""
 
     async def read(db):
-        row = await db.scalar(
+        rows = await db.scalars(
             select(BotOutbox)
             .where(BotOutbox.method == "renderPanel")
             .order_by(BotOutbox.available_at.desc())
-            .limit(1)
         )
-        return json.loads(row.payload)
+        for row in rows:
+            data = json.loads(row.payload)
+            if user is None or data["chat_id"] == user:
+                return data
+        return None
 
     return run(client, read)
 
 
-def claim(client, uid=CLAIMANT):
-    deliver(client, "/start", uid=uid)
-    tap(client, "Я староста", uid=uid)
+def messages_to(client, chat):
+    """Every ordinary message the bot queued for this chat (a group chat must stay empty)."""
+
+    async def read(db):
+        rows = await db.scalars(select(BotOutbox).where(BotOutbox.method == "sendMessage"))
+        return [d for d in (json.loads(r.payload) for r in rows) if d.get("chat_id") == chat]
+
+    return run(client, read)
 
 
-def added_to_chat(client, chat=NEW_CHAT, by=CLAIMANT, status="administrator", title="ИВТ-21"):
+def next_update(client):
     client.app.state._st_test_update = getattr(client.app.state, "_st_test_update", 8000) + 1
+    return client.app.state._st_test_update
+
+
+def added_to_chat(client, chat=NEW_CHAT, by=ADDER, status="administrator", title="ИВТ-21"):
     body = {
-        "update_id": client.app.state._st_test_update,
+        "update_id": next_update(client),
         "my_chat_member": {
             "chat": {"id": chat, "type": "supergroup", "title": title},
             "from": {"id": by},
-            "new_chat_member": {"status": status, "user": {"id": 999, "is_bot": True}},
+            "new_chat_member": {"status": status, "user": {"id": BOT, "is_bot": True}},
+        },
+    }
+    assert send(client, body).status_code == 200
+
+
+def typed_in_chat(client, text, by, chat=NEW_CHAT, **extra):
+    ident = next_update(client)
+    body = {
+        "update_id": ident,
+        "message": {
+            "message_id": ident,
+            "date": int(datetime.now(UTC).timestamp()),
+            "chat": {"id": chat, "type": "supergroup", "title": "ИВТ-21"},
+            "from": {"id": by},
+            "text": text,
+            **extra,
         },
     }
     assert send(client, body).status_code == 200
@@ -86,105 +128,159 @@ def new_group(client):
     return run(client, read)
 
 
-def test_the_headman_screen_explains_the_steps_and_offers_the_add_to_group_button(
-    foreman, monkeypatch
-):
-    setup_bot(foreman, monkeypatch, {})
-    claim(foreman)
-    frame = last(foreman)
-    assert "Добавьте бота в чат вашей группы" in frame["text"]
-    assert "/start@studgroup_rf_bot" in frame["text"]
-    button = frame["reply_markup"]["inline_keyboard"][0][0]
-    assert button["url"] == "https://t.me/studgroup_rf_bot?startgroup=connect"
-    foreman.app.state.settings.bot_username = ""
-    claim(foreman, uid=78)
-    assert labels(foreman) == ["‹ Назад"]
-
-
-def test_adding_the_bot_as_admin_creates_the_group_and_makes_the_claimant_its_headman(
-    foreman, monkeypatch
-):
+def test_whoever_adds_the_bot_becomes_the_headman_and_the_bot_stays_silent(foreman, monkeypatch):
     setup_bot(
-        foreman,
-        monkeypatch,
-        {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "creator"},
+        foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"}
     )
-    claim(foreman)
     before = group_count(foreman)
-    added_to_chat(foreman)
+    added_to_chat(foreman)  # nobody pressed «Я староста» first: the adder is enough
     group, members = new_group(foreman)
     assert group_count(foreman) == before + 1
     assert group.name == "ИВТ-21" and group.pilot_authorized and group.status == "active"
     assert group.bot_added_at is not None
-    assert members == [("headman", CLAIMANT)]
+    assert members == [("headman", ADDER)]
+    assert messages_to(foreman, NEW_CHAT) == []  # not a word in the group
+    assert panel(foreman, ADDER)["text"].startswith("Готово! Группа «ИВТ-21» подключена")
+    assert "Создать приглашение" in json.dumps(panel(foreman, ADDER), ensure_ascii=False)
 
     async def profile(db):
         return await db.get(GroupAIProfile, group.id)
 
-    ready = run(foreman, profile)
-    assert ready is not None and ready.state == "mapping"
-    frame = last(foreman)
-    assert "Группа «ИВТ-21» подключена" in frame["text"]
-    assert "Создать приглашение" in labels(foreman)
-    # the claim is spent: a second event for the same chat cannot change anything
-    added_to_chat(foreman)
-    assert new_group(foreman)[1] == [("headman", CLAIMANT)]
+    assert run(foreman, profile) is not None  # the whole environment exists at once
+    added_to_chat(foreman)  # a repeated event changes nothing and says nothing
+    assert new_group(foreman)[1] == [("headman", ADDER)]
+    assert messages_to(foreman, NEW_CHAT) == []
 
 
-def test_a_bot_that_is_not_yet_admin_waits_and_connects_after_promotion(foreman, monkeypatch):
-    statuses = {(NEW_CHAT, 999): "member", (NEW_CHAT, CLAIMANT): "creator"}
-    setup_bot(foreman, monkeypatch, statuses)
-    claim(foreman)
-    added_to_chat(foreman, status="member")
-    assert new_group(foreman)[1] == []  # the group exists, nobody is its headman yet
-    assert "не администратор" in panel(foreman)["text"]
-    statuses[(NEW_CHAT, 999)] = "administrator"
-    added_to_chat(foreman, status="administrator")
-    assert new_group(foreman)[1] == [("headman", CLAIMANT)]
-
-
-def test_a_person_who_is_not_a_telegram_admin_cannot_connect_the_group(foreman, monkeypatch):
-    setup_bot(
-        foreman, monkeypatch, {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "member"}
-    )
-    claim(foreman)
-    added_to_chat(foreman)
-    assert new_group(foreman)[1] == []
-    assert "только администратор этой группы" in panel(foreman)["text"]
-
-
-def test_adding_the_bot_without_a_claim_still_creates_the_group_with_no_headman(
+def test_a_bot_that_is_not_an_administrator_still_connects_and_the_headman_is_told(
     foreman, monkeypatch
 ):
-    setup_bot(
-        foreman, monkeypatch, {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "creator"}
-    )
-    before = group_count(foreman)
-    added_to_chat(foreman)  # CLAIMANT never pressed «Я староста»
+    setup_bot(foreman, monkeypatch, {(NEW_CHAT, BOT): "member", (NEW_CHAT, ADDER): "creator"})
+    added_to_chat(foreman, status="member")
+    assert new_group(foreman)[1] == [("headman", ADDER)]
+    assert "Сделайте бота администратором" in panel(foreman, ADDER)["text"]
+    assert messages_to(foreman, NEW_CHAT) == []
+
+
+def test_the_service_message_about_the_new_member_names_the_adder(foreman, monkeypatch):
+    setup_bot(foreman, monkeypatch, {(NEW_CHAT, ADDER): "administrator"})
+    typed_in_chat(foreman, None, by=ADDER, new_chat_members=[{"id": BOT, "is_bot": True}])
+    assert new_group(foreman)[1] == [("headman", ADDER)]
+
+
+def test_an_ordinary_member_who_adds_the_bot_is_not_made_headman(foreman, monkeypatch):
+    setup_bot(foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "member"})
+    added_to_chat(foreman)
     group, members = new_group(foreman)
-    assert group_count(foreman) == before + 1 and members == []
-    assert group.pilot_authorized and group.status == "active"
+    assert group is not None and members == []  # the group waits for a real administrator
+    assert messages_to(foreman, NEW_CHAT) == []
+    assert panel(foreman, ADDER) is None
 
-    async def environment(db):
-        return await db.get(GroupAIProfile, group.id), (
-            await db.scalars(select(BotOutbox).where(BotOutbox.method == "sendMessage"))
-        ).all()
 
-    profile, sent = run(foreman, environment)
-    assert profile is not None
-    hint = [json.loads(m.payload) for m in sent if json.loads(m.payload)["chat_id"] == NEW_CHAT]
-    assert len(hint) == 1 and "Староста пока не выбран" in hint[0]["text"]
-    button = hint[0]["reply_markup"]["inline_keyboard"][0][0]
-    assert button["url"] == "https://t.me/studgroup_rf_bot?start=headman"
-    added_to_chat(foreman)  # a repeated event neither duplicates the group nor repeats the note
-    assert group_count(foreman) == before + 1
-    assert len(run(foreman, environment)[1]) == len(sent)
+def test_when_telegram_cannot_say_the_adder_is_trusted(foreman, monkeypatch):
+    setup_bot(foreman, monkeypatch, {}, list_works=False)
+    added_to_chat(foreman)
+    assert new_group(foreman)[1] == [("headman", ADDER)]
+
+
+def test_a_group_that_already_has_a_headman_is_never_touched(foreman, monkeypatch):
+    setup_bot(foreman, monkeypatch, {(-1001, BOT): "administrator", (-1001, ADDER): "creator"})
+    added_to_chat(foreman, chat=-1001, title="Группа")
+
+    async def roles(db):
+        rows = await db.execute(select(Membership.role))
+        return sorted(rows.scalars())
+
+    assert run(foreman, roles) == ["headman"]  # the pilot group's own headman, nobody else
+    assert messages_to(foreman, -1001) == []
+
+
+def test_a_person_who_already_belongs_to_a_group_is_not_made_headman_of_another(
+    foreman, monkeypatch
+):
+    setup_bot(foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, 1): "creator"})
+    added_to_chat(foreman, by=1)  # uid 1 is the pilot group's headman
+    group, members = new_group(foreman)
+    assert group is not None and members == []
+    assert messages_to(foreman, NEW_CHAT) == []
+
+
+def test_start_typed_in_a_headmanless_group_needs_a_confirmed_administrator(foreman, monkeypatch):
+    statuses = {
+        (NEW_CHAT, BOT): "administrator",
+        (NEW_CHAT, ADDER): "member",
+        (NEW_CHAT, OTHER): "creator",
+    }
+    setup_bot(foreman, monkeypatch, statuses)
+    added_to_chat(foreman)  # the adder is an ordinary member: no headman yet
+    assert new_group(foreman)[1] == []
+    typed_in_chat(foreman, "/start@studgroup_rf_bot", by=ADDER)
+    assert new_group(foreman)[1] == []  # a member typing a command proves nothing
+    typed_in_chat(foreman, "/start@studgroup_rf_bot", by=OTHER)
+    assert new_group(foreman)[1] == [("headman", OTHER)]
+    assert messages_to(foreman, NEW_CHAT) == []
+
+
+def test_start_typed_when_telegram_cannot_confirm_does_not_make_a_headman(foreman, monkeypatch):
+    setup_bot(foreman, monkeypatch, {}, list_works=False)
+    typed_in_chat(foreman, "/start@studgroup_rf_bot", by=ADDER)
+    group, members = new_group(foreman)
+    assert group is not None and members == []
+
+
+def test_an_administrator_takes_a_headmanless_group_with_the_start_screen(foreman, monkeypatch):
+    statuses = {
+        (NEW_CHAT, BOT): "administrator",
+        (NEW_CHAT, ADDER): "member",
+        (NEW_CHAT, OTHER): "creator",
+    }
+    setup_bot(foreman, monkeypatch, statuses)
+    added_to_chat(foreman)
+    assert new_group(foreman)[1] == []
+    deliver(foreman, "/start", uid=OTHER)
+    tap(foreman, "Я староста", uid=OTHER)
+    assert "Стать старостой: ИВТ-21" in labels(foreman)
+    tap(foreman, "Стать старостой", uid=OTHER)
+    assert new_group(foreman)[1] == [("headman", OTHER)]
+    assert "Группа «ИВТ-21» подключена" in last(foreman)["text"]
+
+
+def test_only_groups_the_person_administers_are_offered(foreman, monkeypatch):
+    setup_bot(foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "member"})
+    added_to_chat(foreman)
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    assert not any("ИВТ-21" in label for label in labels(foreman))
+    assert "ИВТ-21" not in last(foreman)["text"]
+
+
+def test_the_role_cannot_be_taken_twice_even_with_a_stale_button(foreman, monkeypatch):
+    statuses = {
+        (NEW_CHAT, BOT): "administrator",
+        (NEW_CHAT, ADDER): "member",
+        (NEW_CHAT, OTHER): "administrator",
+        (NEW_CHAT, 79): "administrator",
+    }
+    setup_bot(foreman, monkeypatch, statuses)
+    added_to_chat(foreman)
+    for uid in (OTHER, 79):
+        deliver(foreman, "/start", uid=uid)
+        tap(foreman, "Я староста", uid=uid)
+        assert "Стать старостой: ИВТ-21" in labels(foreman)  # both were offered the group
+    tap(foreman, "Стать старостой", uid=79)  # 79 picks first with the button they were shown
+    assert new_group(foreman)[1] == [("headman", 79)]
+    # OTHER presses the button that was valid a moment ago
+    markup = panel(foreman, OTHER)["reply_markup"]["inline_keyboard"]
+    stale = next(b for row in markup for b in row if "Стать старостой" in b["text"])
+    deliver(foreman, callback=stale["callback_data"], uid=OTHER)
+    assert new_group(foreman)[1] == [("headman", 79)]
+    assert "уже есть староста" in panel(foreman, OTHER)["text"]
 
 
 def test_a_group_without_a_headman_is_marked_in_the_owner_list(foreman, monkeypatch):
     from test_bot_admin import private
 
-    setup_bot(foreman, monkeypatch, {})
+    setup_bot(foreman, monkeypatch, {(NEW_CHAT, ADDER): "member"})
     added_to_chat(foreman)
     foreman.app.state.settings.bot_admin_user_id = 9001
     private(foreman, "/admin", uid=9001, update=900)
@@ -194,133 +290,34 @@ def test_a_group_without_a_headman_is_marked_in_the_owner_list(foreman, monkeypa
     assert any(name == "Группа" for name in names)  # the pilot group has its headman
 
 
-def test_an_administrator_picks_a_headmanless_group_later(foreman, monkeypatch):
-    statuses = {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "creator"}
-    setup_bot(foreman, monkeypatch, statuses)
-    added_to_chat(foreman, by=555)  # someone else added the bot; the group has no headman
-    assert new_group(foreman)[1] == []
-    deliver(foreman, "/start", uid=CLAIMANT)
-    tap(foreman, "Я староста", uid=CLAIMANT)
-    assert "Стать старостой: ИВТ-21" in labels(foreman)
-    tap(foreman, "Стать старостой", uid=CLAIMANT)
-    assert new_group(foreman)[1] == [("headman", CLAIMANT)]
-    assert "Группа «ИВТ-21» подключена" in last(foreman)["text"]
-
-
-def test_only_groups_the_person_administers_are_offered(foreman, monkeypatch):
-    setup_bot(
-        foreman, monkeypatch, {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "member"}
-    )
-    added_to_chat(foreman, by=555)
-    claim(foreman)
-    assert not any("ИВТ-21" in label for label in labels(foreman))
-    assert "ИВТ-21" not in last(foreman)["text"]
-
-
-def test_a_second_claimant_cannot_take_a_group_that_got_a_headman(foreman, monkeypatch):
-    statuses = {
-        (NEW_CHAT, 999): "administrator",
-        (NEW_CHAT, CLAIMANT): "creator",
-        (NEW_CHAT, 78): "administrator",
-    }
-    setup_bot(foreman, monkeypatch, statuses)
-    claim(foreman, uid=78)
-    added_to_chat(foreman, by=555)
-    deliver(foreman, "/start", uid=CLAIMANT)
-    tap(foreman, "Я староста", uid=CLAIMANT)
-    tap(foreman, "Стать старостой", uid=CLAIMANT)
-    assert new_group(foreman)[1] == [("headman", CLAIMANT)]
-    # the stale pick of the other person is refused: the group is no longer headman-less
-    deliver(foreman, "/start", uid=78)
-    assert "Я студент" in labels(foreman)  # still no group of their own
-
-
-def test_a_headmanless_group_is_finished_by_start_typed_in_the_group(foreman, monkeypatch):
-    statuses = {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "creator"}
-    setup_bot(foreman, monkeypatch, statuses)
-    added_to_chat(foreman, by=555)
-    claim(foreman)
-    foreman.app.state._st_test_update += 1
-    body = {
-        "update_id": foreman.app.state._st_test_update,
-        "message": {
-            "message_id": 9,
-            "date": int(datetime.now(UTC).timestamp()),
-            "chat": {"id": NEW_CHAT, "type": "supergroup", "title": "ИВТ-21"},
-            "from": {"id": CLAIMANT},
-            "text": "/start@studgroup_rf_bot",
-        },
-    }
-    assert send(foreman, body).status_code == 200
-    assert new_group(foreman)[1] == [("headman", CLAIMANT)]
-
-
-def test_the_deep_link_from_the_group_note_opens_the_headman_screen(foreman, monkeypatch):
+def test_the_headman_screen_explains_that_adding_the_bot_is_enough(foreman, monkeypatch):
     setup_bot(foreman, monkeypatch, {})
-    deliver(foreman, "/start headman", uid=CLAIMANT)
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    frame = last(foreman)
+    assert "тот, кто добавил бота, сразу становится" in frame["text"]
+    assert "Бот в группе ничего не пишет" in frame["text"]
+    assert frame["reply_markup"]["inline_keyboard"][0][0]["url"] == (
+        "https://t.me/studgroup_rf_bot?startgroup=connect"
+    )
+    foreman.app.state.settings.bot_username = ""
+    deliver(foreman, "/start", uid=OTHER)
+    tap(foreman, "Я староста", uid=OTHER)
+    assert labels(foreman) == ["‹ Назад"]
+
+
+def test_the_deep_link_opens_the_headman_screen(foreman, monkeypatch):
+    setup_bot(foreman, monkeypatch, {})
+    deliver(foreman, "/start headman", uid=ADDER)
     assert "Подключение группы" in last(foreman)["text"]
-    assert "Добавить бота в группу" in json.dumps(last(foreman), ensure_ascii=False)
-
-
-def test_a_group_already_in_the_database_cannot_be_taken_over(foreman, monkeypatch):
-    setup_bot(foreman, monkeypatch, {(-1001, 999): "administrator", (-1001, CLAIMANT): "creator"})
-    claim(foreman)
-    added_to_chat(foreman, chat=-1001, title="Группа")
-
-    async def roles(db):
-        rows = await db.execute(select(Membership.role))
-        return sorted(rows.scalars())
-
-    assert run(foreman, roles) == ["headman"]  # the pilot group's own headman, nobody else
-    assert "уже есть староста" in last(foreman)["text"]
-
-
-def test_a_person_who_joined_a_group_after_claiming_cannot_connect_another(foreman, monkeypatch):
-    setup_bot(
-        foreman, monkeypatch, {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "creator"}
-    )
-    claim(foreman)
-
-    async def join_pilot_group(db):
-        group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
-        user = User(id=uuid.uuid4(), telegram_user_id=CLAIMANT, display_name="Участник")
-        db.add(user)
-        await db.flush()
-        db.add(Membership(user_id=user.id, group_id=group.id, role="student", status="active"))
-
-    run(foreman, join_pilot_group)
-    added_to_chat(foreman)
-    assert new_group(foreman)[1] == []
-    assert "Один человек может быть только в одной группе" in panel(foreman)["text"]
-
-
-def test_a_start_command_in_the_group_is_a_fallback_trigger(foreman, monkeypatch):
-    setup_bot(
-        foreman, monkeypatch, {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "creator"}
-    )
-    claim(foreman)
-    foreman.app.state._st_test_update += 1
-    body = {
-        "update_id": foreman.app.state._st_test_update,
-        "message": {
-            "message_id": 5,
-            "date": int(datetime.now(UTC).timestamp()),
-            "chat": {"id": NEW_CHAT, "type": "supergroup", "title": "ИВТ-21"},
-            "from": {"id": CLAIMANT},
-            "text": "/start@studgroup_rf_bot connect",
-        },
-    }
-    assert send(foreman, body).status_code == 200
-    assert new_group(foreman)[1] == [("headman", CLAIMANT)]
 
 
 def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkeypatch):
     setup_bot(
-        foreman, monkeypatch, {(NEW_CHAT, 999): "administrator", (NEW_CHAT, CLAIMANT): "creator"}
+        foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"}
     )
-    claim(foreman)
     added_to_chat(foreman)
-    tap(foreman, "Создать приглашение", uid=CLAIMANT)
+    tap(foreman, "Создать приглашение", uid=ADDER)
     text = last(foreman)["text"]
     link = next(line for line in text.splitlines() if line.startswith("https://t.me/"))
     assert link.startswith("https://t.me/studgroup_rf_bot?start=invite_")
@@ -340,7 +337,7 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
     assert run(foreman, roles) == ["headman", "student"]
 
 
-def test_a_deputy_gets_no_invite_button(foreman, monkeypatch):
+def test_a_deputy_gets_no_invite_button(foreman):
     async def make_deputy(db):
         (await db.scalar(select(Membership))).role = "deputy"
 
@@ -348,3 +345,22 @@ def test_a_deputy_gets_no_invite_button(foreman, monkeypatch):
     deliver(foreman, "/start", uid=1)
     assert "Создать приглашение" not in labels(foreman)
     assert json.dumps(last(foreman)).count("invite") == 0
+
+
+def test_a_person_who_joined_a_group_is_not_asked_who_they_are(foreman, monkeypatch):
+    setup_bot(
+        foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, OTHER): "administrator"}
+    )
+    added_to_chat(foreman, by=555)  # an unconfirmed adder: the group stays headman-less
+
+    async def join_pilot_group(db):
+        group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+        user = User(id=uuid.uuid4(), telegram_user_id=OTHER, display_name="Участник")
+        db.add(user)
+        await db.flush()
+        db.add(Membership(user_id=user.id, group_id=group.id, role="student", status="active"))
+
+    run(foreman, join_pilot_group)
+    deliver(foreman, "/start", uid=OTHER)
+    assert "Я староста" not in labels(foreman)
+    assert new_group(foreman)[1] == []  # 555 is not an administrator, so nobody was assigned
