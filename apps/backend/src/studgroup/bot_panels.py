@@ -1,4 +1,4 @@
-"""Durable private panels. /admin and /st are independent; /start never joins a panel."""
+"""Durable private panels. /admin, /st and /start (with the info topics) are independent."""
 
 import json
 import secrets
@@ -255,14 +255,12 @@ async def dispatch(db, update_value, settings):
     chat = sender.id
     text = (message.text or "").strip()
     command = text.split()[0].split("@")[0] if text else ""
+    # Info commands and /start <topic> deep links (landing page) open the same single panel as
+    # /start does: the previous screen goes away, so nothing piles up in the chat.
     topic = None if callback else bot_info.topic_for(text)
-    if topic:
-        # Public info commands and /start <topic> deep links (landing page). Read-only.
-        await bot_info.reply(db, chat, topic, settings)
-        return True
     route = await db.get(BotDialogRoute, chat)
     mode = None
-    start = not callback and command == "/start"
+    start = not callback and (command == "/start" or topic is not None)
     routed = route.mode if route else None
     if routed == "start" and not await bot_start.awaiting_input(db, chat):
         routed = None  # the walkthrough only owns plain text while it waits for a code
@@ -379,7 +377,7 @@ async def dispatch(db, update_value, settings):
         elif mode == "st":
             handled = await headman_bot.handle(db, update_value, settings)
         elif mode == "start":
-            handled = await bot_start.handle(db, update_value, settings)
+            handled = await bot_start.handle(db, update_value, settings, topic=topic)
         else:
             handled = await headman_bot.handle(db, update_value, settings)
             if not handled:

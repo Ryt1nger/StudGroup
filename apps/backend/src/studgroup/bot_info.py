@@ -1,12 +1,11 @@
 """Public info topics: tariffs, how-to, connect, FAQ, support.
 
-Reachable by plain commands (/tariffs, /help, /connect, /faq, /support) and by
-Telegram deep links ``https://t.me/<bot>?start=<topic>`` used by the landing page.
-Read-only: no state, no authorization decisions. Deliberately contains no prices:
-tariffs are not published yet.
+Reachable from buttons of the /start panel, by the old commands (/tariffs, /help, /connect, /faq,
+/support) and by Telegram deep links ``https://t.me/<bot>?start=<topic>`` used by the landing page;
+the last two only select the topic, ``bot_start`` shows it inside the single /start panel so no
+loose messages pile up. Read-only: no state, no authorization decisions. Deliberately contains no
+prices: tariffs are not published yet. Texts never tell people to type a command.
 """
-
-from studgroup import bot_admin
 
 COMMANDS = {
     "/tariffs": "tariffs",
@@ -28,8 +27,6 @@ PAYLOADS = {
     "support": "support",
 }
 
-FOOTER = "\n\nКоманды: /help · /connect · /tariffs · /faq · /support"
-
 
 def topic_for(text):
     """Return the topic for a /start payload or an info command, otherwise None."""
@@ -42,7 +39,7 @@ def topic_for(text):
     return COMMANDS.get(head)
 
 
-def render(topic, support_contact="", footer=True):
+def render(topic, support_contact=""):
     contact = (support_contact or "").strip()
     if topic == "tariffs":
         body = (
@@ -69,7 +66,7 @@ def render(topic, support_contact="", footer=True):
             "Подключение группы\n\n"
             "Студент: возьмите у старосты ссылку-приглашение (она действует 24 часа и "
             "срабатывает один раз) и нажмите на неё. Подключиться можно только к одной группе.\n\n"
-            "Староста: отправьте боту /start, нажмите «Я староста» и добавьте бота "
+            "Староста: на стартовом экране бота нажмите «Я староста» и добавьте бота "
             "администратором в чат группы. Группа подключится сразу."
         )
         if contact:
@@ -84,9 +81,7 @@ def render(topic, support_contact="", footer=True):
             "Участники подключённой группы.\n\n"
             "Можно ли попробовать бесплатно?\n"
             "Сейчас идёт закрытый пилот, условия пробного доступа уточняются.\n\n"
-            "Сколько стоит? — /tariffs\n"
-            "Как подключиться? — /connect\n"
-            "Что-то не работает? — /support"
+            "Остальное — по кнопкам ниже."
         )
     else:  # support
         body = (
@@ -94,15 +89,4 @@ def render(topic, support_contact="", footer=True):
             if contact
             else "Поддержка\n\nКонтакты поддержки скоро появятся здесь."
         )
-    return body + FOOTER if footer else body
-
-
-async def reply(db, chat, topic, settings):
-    markup = None
-    if topic == "howto":
-        markup = {
-            "inline_keyboard": [
-                [{"text": "Открыть StudGroup", "web_app": {"url": settings.webapp_origin}}]
-            ]
-        }
-    await bot_admin.say(db, chat, render(topic, settings.support_contact), markup)
+    return body
