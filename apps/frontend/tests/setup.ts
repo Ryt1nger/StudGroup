@@ -1,8 +1,11 @@
 import '@testing-library/jest-dom/vitest';
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { server } from './helpers';
 
+// findBy*/waitFor give up after 1 s by default. On a busy machine the first render of a file (cold
+// module load) takes longer, so the whole suite flaked; a missing element still fails, only later.
+configure({ asyncUtilTimeout: 5000 });
 beforeAll(() => {
   // JSDOM has no layout/scroll implementation; route behavior is asserted separately.
   vi.stubGlobal('scrollTo', vi.fn());
