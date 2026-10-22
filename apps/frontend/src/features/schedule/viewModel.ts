@@ -13,6 +13,8 @@ export interface ScheduleBadgeView {
   kind: ScheduleBadgeKind;
   label: string;
   tone: BadgeTone | 'solid';
+  /** When set the badge is a link (the «Сейчас» badge of an online lesson opens the lesson). */
+  href?: string;
 }
 
 export type TimelineState = 'done' | 'current' | 'upcoming';

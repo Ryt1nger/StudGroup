@@ -1,4 +1,5 @@
 import { Badge } from '../../ui/Badge';
+import { useLessonLinkClick } from '../../ui/lessonLink';
 import { AlertCircle, CheckCircle, Refresh } from '../../ui/icons';
 import type { ScheduleBadgeView } from './viewModel';
 import styles from './ScheduleBadge.module.css';
@@ -11,7 +12,18 @@ function Play() {
   );
 }
 
+function NowLink({ badge, href }: { badge: ScheduleBadgeView; href: string }) {
+  const onClick = useLessonLinkClick(href);
+  return (
+    <a className={styles.solid} href={href} target="_blank" rel="noopener noreferrer" onClick={onClick}>
+      <Play />
+      {badge.label}
+    </a>
+  );
+}
+
 export function ScheduleBadge({ badge }: { badge: ScheduleBadgeView }) {
+  if (badge.kind === 'now' && badge.href) return <NowLink badge={badge} href={badge.href} />;
   if (badge.tone === 'solid') {
     return (
       <span className={styles.solid}>

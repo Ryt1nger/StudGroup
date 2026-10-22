@@ -19,28 +19,44 @@ function SubjectTile() {
 
 function Row({ item }: { item: ScheduleItemView }) {
   const Root = item.onOpen ? 'button' : 'div';
+  // The «Сейчас» badge of an online lesson is a link, and a link cannot sit inside the card's
+  // button: such a card becomes a div with a full-size button laid under its content.
+  const joinsNow = item.state === 'current' && !item.cancelled && item.badges.some((b) => b.href);
+  const content = (
+    <>
+      <SubjectTile />
+      <span className={styles.body}>
+        <span className={styles.title}>{item.title}</span>
+        <span className={styles.subtitle}>{item.subtitle}</span>
+        {item.badges.length > 0 ? (
+          <span className={styles.badges}>
+            {item.badges.map((b) => (
+              <ScheduleBadge key={b.kind + b.label} badge={b} />
+            ))}
+          </span>
+        ) : null}
+      </span>
+      {item.onOpen ? <ChevronRight className={styles.chevron} size={20} /> : null}
+    </>
+  );
+  const cardClass = clsx(styles.card, item.state === 'current' && styles.cardCurrent, item.cancelled && styles.cancelled);
   return (
     <li id={lessonAnchorId(item.id)} className={clsx(styles.item, styles[item.state])}>
       <span className={styles.time}>{item.time}</span>
       <span className={styles.node} aria-hidden="true">
         {item.state === 'done' ? <Check size={12} strokeWidth={3} /> : null}
       </span>
-      <Root className={clsx(styles.card, item.state === 'current' && styles.cardCurrent, item.cancelled && styles.cancelled)} type={item.onOpen ? 'button' : undefined} onClick={item.onOpen}>
-        <SubjectTile />
-        <span className={styles.body}>
-          <span className={styles.title}>{item.title}</span>
-          <span className={styles.subtitle}>{item.subtitle}</span>
-          {item.badges.length > 0 ? (
-            <span className={styles.badges}>
-              {item.badges.map((b) => (
-                <ScheduleBadge key={b.kind + b.label} badge={b} />
-              ))}
-            </span>
-          ) : null}
-        </span>
-        {item.onOpen ? <ChevronRight className={styles.chevron} size={20} /> : null}
-      </Root>
-      {item.onlineUrl && !item.cancelled && item.state !== 'done' ? <div className={styles.join}><JoinLessonLink url={item.onlineUrl} /></div> : null}
+      {joinsNow ? (
+        <div className={clsx(cardClass, styles.cardStretch)}>
+          {item.onOpen ? <button type="button" className={styles.hit} aria-label={item.title} onClick={item.onOpen} /> : null}
+          {content}
+        </div>
+      ) : (
+        <Root className={cardClass} type={item.onOpen ? 'button' : undefined} onClick={item.onOpen}>
+          {content}
+        </Root>
+      )}
+      {item.onlineUrl && !item.cancelled && item.state !== 'done' && !joinsNow ? <div className={styles.join}><JoinLessonLink url={item.onlineUrl} /></div> : null}
     </li>
   );
 }
