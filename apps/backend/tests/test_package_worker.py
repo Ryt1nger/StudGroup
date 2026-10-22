@@ -882,7 +882,7 @@ def test_without_the_owner_feed_no_message_is_queued(client):
     assert owner_messages(client) == []
 
 
-def test_every_changing_package_gets_its_own_message_and_an_update_is_reported(client):
+def test_an_update_that_only_touched_technical_fields_is_not_reported(client):
     seed(client)
     make_new(client)
     assert step(client, PackageProvider(), owner_settings()) == "completed"
@@ -893,6 +893,54 @@ def test_every_changing_package_gets_its_own_message_and_an_update_is_reported(c
         == "completed"
     )
     texts = [message["text"] for message in owner_messages(client)]
-    assert len(texts) == 2
-    assert any("создано карточек: 1" in text for text in texts)
-    assert any("обновлено: 1" in text for text in texts)
+    # The second package bumped the revision, but only the attention reasons changed: silence.
+    assert len(texts) == 1
+    assert "создано карточек: 1" in texts[0]
+    assert "• «Решить задачи 1–3» — новая" in texts[0]
+
+
+def test_a_visible_update_is_reported_with_the_card_title_and_the_changed_fields(client):
+    from types import SimpleNamespace
+
+    from studgroup.analysis.package_worker import _visible_changes
+    from studgroup.models import CanonicalItemRevision
+
+    seed(client)
+    make_new(client)
+    assert step(client, PackageProvider(), owner_settings()) == "completed"
+
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            item_id = (await db.scalar(select(CanonicalAcademicItem))).id
+            first = await db.scalar(
+                select(CanonicalItemRevision).where(CanonicalItemRevision.item_id == item_id)
+            )
+            snapshot = json.loads(first.snapshot_json)
+            technical = {**snapshot, "revision": 2, "attention_reasons": ["x"]}
+            visible = {
+                **technical,
+                "revision": 3,
+                "description": "Решить задачи 1–4.",
+                "deadline_at": "2026-10-30T09:00:00+00:00",
+            }
+            for number, data in ((2, technical), (3, visible)):
+                db.add(
+                    CanonicalItemRevision(
+                        item_id=item_id,
+                        item_revision=number,
+                        action="update",
+                        actor="ai_shadow",
+                        snapshot_json=json.dumps(data, ensure_ascii=False),
+                        created_at=datetime.now(UTC),
+                    )
+                )
+            await db.commit()
+            changes = [[str(item_id), 2, "updated"], [str(item_id), 3, "updated"]]
+            row = SimpleNamespace(
+                metrics_json=json.dumps({"promotion": {"changes": changes}}),
+            )
+            return await _visible_changes(db, row)
+
+    found = asyncio.run(run())
+    # revision 2 changed only technical fields and is dropped; revision 3 changed two visible ones
+    assert found == [("updated", "Решить задачи 1–3", ["описание", "срок"])]

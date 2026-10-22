@@ -688,6 +688,7 @@ async def promote_run(
                     "at": now.isoformat(),
                     "actor": actor[:64],
                     "statuses": dict(Counter(o.application_status for o in result.outcomes)),
+                    "changes": [list(change) for change in result.changes],
                     # why each proposal ended the way it did (codes only, no text), so a held or
                     # stale proposal is never unexplained
                     "reasons": dict(
