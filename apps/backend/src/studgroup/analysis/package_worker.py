@@ -49,6 +49,7 @@ from studgroup.deadline_context import build_deadline_context
 from studgroup.models import (
     CanonicalAcademicItem,
     CanonicalItemEvidence,
+    CanonicalItemRevision,
     Group,
     GroupAnalysisSettings,
     GroupKnowledgeFact,
@@ -569,16 +570,79 @@ async def _watch_duplicates(db, row, group, now):
 HELD_STATUSES = ("review", "blocked_by_lock", "stale")
 
 
+# What a student can see on a card. Everything else in a revision (attention reasons, why the
+# deadline was chosen, locks, timezone confirmation) is technical: a revision that changed only
+# those is not an update the owner needs to hear about.
+VISIBLE_FIELDS = {
+    "title": "заголовок",
+    "description": "описание",
+    "subject": "предмет",
+    "semantic_kind": "тип",
+    "deadline_at": "срок",
+    "deadline_date_only": "срок",
+    "deadline_basis": "срок",
+    "audience_scope": "аудитория",
+    "audience_label": "аудитория",
+    "state": "статус",
+}
+OWNER_LINES = 5
+
+
+async def _revision_snapshot(db, item_id, revision):
+    row = await db.scalar(
+        select(CanonicalItemRevision).where(
+            CanonicalItemRevision.item_id == item_id,
+            CanonicalItemRevision.item_revision == revision,
+        )
+    )
+    return json.loads(row.snapshot_json) if row else None
+
+
+async def _visible_changes(db, row):
+    """[(action, title, [changed visible fields])] of the cards this package wrote.
+
+    An update whose revision differs from the previous one only in technical fields is dropped.
+    """
+    found = []
+    for item_id, revision, action in (_metrics(row).get("promotion") or {}).get("changes", []):
+        item_id = uuid.UUID(item_id)
+        current = await _revision_snapshot(db, item_id, revision)
+        if current is None:
+            continue
+        title = current.get("title") or "Без названия"
+        if action == "created":
+            found.append(("created", title, []))
+            continue
+        previous = await _revision_snapshot(db, item_id, revision - 1)
+        if previous is None:
+            found.append(("updated", title, []))  # nothing to compare with: report, do not guess
+            continue
+        fields = list(
+            dict.fromkeys(
+                label
+                for key, label in VISIBLE_FIELDS.items()
+                if previous.get(key) != current.get(key)
+            )
+        )
+        if fields:
+            found.append(("updated", title, fields))
+    return found
+
+
 async def _tell_the_owner(db, settings, row, group):
     """One short private message after a package that CHANGED something; silence otherwise.
 
-    Counts and cost only, never chat text. Skipped unless the owner feed is configured. The outbox
-    key is the run id, so a retried commit can never send it twice.
+    Counts, cost and the titles of the cards it wrote (the owner's private channel only). An
+    "updated" card is counted only when a student-visible field changed. Skipped unless the
+    owner feed is configured. The outbox key is the run id, so a retried commit can never send
+    it twice.
     """
     if not settings.owner_update_notifications_enabled or not settings.owner_telegram_user_id:
         return
     statuses = (_metrics(row).get("promotion") or {}).get("statuses", {})
-    created, updated = statuses.get("created", 0), statuses.get("updated", 0)
+    changes = await _visible_changes(db, row)
+    created = sum(1 for action, _, _ in changes if action == "created")
+    updated = sum(1 for action, _, _ in changes if action == "updated")
     held = sum(statuses.get(name, 0) for name in HELD_STATUSES)
     if created + updated + held == 0:
         return
@@ -594,6 +658,14 @@ async def _tell_the_owner(db, settings, row, group):
         + ", ".join(parts)
         + f". Расход ${Decimal(row.charged_usd):.4f}."
     )
+    lines = [
+        f"• «{title[:80]}» — " + (", ".join(fields) if fields else "новая")
+        for _, title, fields in changes[:OWNER_LINES]
+    ]
+    if len(changes) > OWNER_LINES:
+        lines.append(f"и ещё {len(changes) - OWNER_LINES}")
+    if lines:
+        text += "\n" + "\n".join(lines)
     await queue_owner_message(db, settings, f"package:{row.id}", group, text)
 
 
