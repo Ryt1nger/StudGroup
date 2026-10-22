@@ -157,14 +157,13 @@ async def home(db, session, settings, telegram_id):
 
 
 async def headman_prompt(db, session, settings, notice=None, groups=()):
-    """«Я староста»: the claim waits here for the bot to be added, or for a pick among `groups`."""
+    """«Я староста»: how to connect a group, or a pick among headman-less groups the person runs."""
     name = (settings.bot_username or "").lstrip("@")
     text = (
         "Подключение группы\n\n"
-        "1. Добавьте бота в чат вашей группы.\n"
-        "2. Сделайте бота администратором: так он видит сообщения группы и может проверить, "
-        "что вы её администратор.\n"
-        "3. Я напишу вам здесь, и вы станете старостой этой группы.\n\n"
+        "Добавьте бота в чат вашей группы: тот, кто добавил бота, сразу становится её "
+        "старостой. Для этого нужно быть администратором чата. Бот в группе ничего не пишет.\n\n"
+        "Сделайте бота администратором группы, иначе он не увидит сообщения чата.\n\n"
         "Старостой можно стать только в группе, где староста ещё не выбран."
     )
     if groups:
@@ -204,11 +203,17 @@ async def headman_entry(db, session, settings, telegram_id):
     await headman_prompt(db, session, settings, groups=groups)
 
 
-async def connected(db, session, settings, group):
+async def connected(db, session, settings, group, bot_is_admin=True):
+    note = (
+        ""
+        if bot_is_admin
+        else "Сделайте бота администратором группы: иначе он не увидит сообщения чата.\n\n"
+    )
     await screen(
         db,
         session,
         f"Готово! Группа «{group.name}» подключена, вы её староста.\n\n"
+        f"{note}"
         "Часовой пояс группы по умолчанию: Москва. Изменить его можно в кабинете.\n\n"
         "Теперь пригласите студентов.",
         [

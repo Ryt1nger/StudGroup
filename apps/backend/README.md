@@ -273,19 +273,27 @@ tap-to-join links `https://t.me/<bot>?start=invite_<code>`; unset, it shows the 
 
 Adding the bot to a Telegram group is enough: the bot creates the group and its environment
 (group row with `pilot_authorized`, bot-added boundary now, timezone Europe/Moscow until changed
-in the cabinet, AI profile) and starts at once, with no approval. The headman is a separate fact.
-«Я староста» leaves a claim (valid 24 h); if the person who added the bot holds one, they become
-the single headman immediately. Otherwise the group exists with «староста не выбран»: the bot
-posts one note in the group with a «Я староста» button (`?start=headman`), the owner's `/admin`
-list marks the group, and any administrator of that chat can take the role later, by picking the
-group on the «Я староста» screen or typing `/start` in the group.
+in the cabinet, AI profile) and starts at once, with no approval, and **the person who added the
+bot becomes the group's single headman**. The bot never writes in the group; the new headman gets
+the «группа подключена» screen in private chat (it is only delivered if they ever opened the bot,
+and it warns when the bot is not a chat administrator and therefore cannot see messages).
 
-Guards: Telegram must report the claimant as creator/administrator and the bot as administrator;
-a group that already has a headman can never be claimed; a person in another group cannot claim
-this one; the role is assigned under a lock on the group row. Names of groups the person does not
-administer are never shown. Triggers: `my_chat_member` (the webhook must deliver it; it is part of
-Telegram's default update set), the new-members service message, or `/start` typed in the group.
-The owner's `/admin` assignment also refuses a second active headman in one group.
+The adder is named by `my_chat_member` or by the service message "X invited the bot"; they are
+made headman unless Telegram positively says they are only an ordinary member (if Telegram cannot
+say, they are trusted). `/start` typed in the group is a fallback for when those updates are not
+delivered and requires a confirmed administrator. The administrator list is read with
+`getChatAdministrators`, which works before the bot is made an administrator.
+
+If nobody qualified (an ordinary member added the bot, or the adder already belongs to another
+group) the group exists with «староста не выбран»; the owner's `/admin` list marks it and any
+administrator of that chat can take the role later on the «Я староста» screen (it lists only
+headman-less groups the person administers) or with `/start` in the group.
+
+Guards: a group that already has a headman is never changed; one person belongs to one group; the
+role is assigned under a lock on the group row, so two people cannot both win; names of groups the
+person does not administer are never shown. The webhook must deliver `my_chat_member` (part of
+Telegram's default update set). The owner's `/admin` assignment also refuses a second active
+headman in one group.
 
 Cost note: every group the bot is added to now starts AI analysis, and several owner tools
 (`/explain`, `/shadowstatus`, the first-run preview) still assume exactly one authorized group.
