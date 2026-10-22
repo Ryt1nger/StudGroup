@@ -120,6 +120,17 @@ export const Bell = (p: IconProps) => (
   </Svg>
 );
 
+export const Plus = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Svg>
+);
+export const Trash = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+  </Svg>
+);
+
 export const Close = (p: IconProps) => (
   <Svg {...p}>
     <path d="M6 6l12 12M18 6L6 18" />

@@ -4,6 +4,7 @@ import { isApiRequestError } from '../../api/errors';
 import { ru } from '../../i18n/ru';
 import { zonedParts, zonedToIso } from '../../lib/zoned';
 import { Button } from '../../ui/Button';
+import { Trash } from '../../ui/icons';
 import styles from './CardEditForm.module.css';
 
 type DeadlineMode = 'none' | 'date' | 'datetime';
@@ -31,6 +32,8 @@ export interface CardEditPatch {
 
 interface Props {
   variant: 'homework' | 'event';
+  /** `create` makes a new card (nothing to compare with, so even an empty patch is submitted). */
+  mode?: 'edit' | 'create';
   initial: CardEditValues;
   timeZone: string;
   subjectSuggestions: string[];
@@ -38,6 +41,21 @@ interface Props {
   error: unknown;
   onSave: (patch: CardEditPatch) => void;
   onCancel: () => void;
+  /** Edit mode only: removes the card for everyone after an inline confirmation. */
+  onDelete?: () => void;
+  deleting?: boolean;
+  deleteError?: unknown;
+}
+
+/** Why a removal failed, in words; never the wire code. */
+function removalFailure(error: unknown): string | null {
+  if (error == null) return null;
+  if (isApiRequestError(error)) {
+    if (error.code === 'revision_conflict') return ru.edit.remove.conflict;
+    if (error.status === 403) return ru.edit.errors.forbidden;
+    if (error.kind === 'network') return ru.edit.errors.network;
+  }
+  return ru.edit.remove.failed;
 }
 
 const KINDS: Exclude<LearningCardKind, 'homework'>[] = [
@@ -68,6 +86,7 @@ function failureMessage(error: unknown): string | null {
 
 export function CardEditForm({
   variant,
+  mode: formMode = 'edit',
   initial,
   timeZone,
   subjectSuggestions,
@@ -75,7 +94,12 @@ export function CardEditForm({
   error,
   onSave,
   onCancel,
+  onDelete,
+  deleting = false,
+  deleteError,
 }: Props) {
+  const creating = formMode === 'create';
+  const [confirming, setConfirming] = useState(false);
   const ids = {
     title: useId(),
     subject: useId(),
@@ -126,16 +150,17 @@ export function CardEditForm({
         new Date(before.at).getTime() === new Date(nextDeadline.at).getTime() &&
         before.date_only === nextDeadline.date_only);
     if (!same) patch.deadline = nextDeadline;
-    if (Object.keys(patch).length === 0) return onCancel();
+    if (!creating && Object.keys(patch).length === 0) return onCancel();
     onSave(patch);
   }
 
   const message = problem ?? failure;
+  const removalMessage = removalFailure(deleteError);
 
   return (
     <form className={styles.form} onSubmit={submit} aria-labelledby={`${ids.title}-heading`} noValidate>
       <h2 id={`${ids.title}-heading`} className={styles.heading}>
-        {ru.edit.heading}
+        {creating ? ru.edit.create.heading : ru.edit.heading}
       </h2>
 
       {variant === 'event' ? (
@@ -262,12 +287,52 @@ export function CardEditForm({
 
       <div className={styles.actions}>
         <Button type="submit" busy={saving}>
-          {saving ? ru.edit.saving : ru.edit.save}
+          {creating
+            ? saving
+              ? ru.edit.create.submitting
+              : ru.edit.create.submit
+            : saving
+              ? ru.edit.saving
+              : ru.edit.save}
         </Button>
         <Button variant="secondary" onClick={onCancel} disabled={saving}>
           {ru.edit.cancel}
         </Button>
       </div>
+
+      {!creating && onDelete ? (
+        <div className={styles.danger}>
+          {confirming ? (
+            <div role="alertdialog" aria-labelledby={`${ids.title}-remove`} className={styles.confirm}>
+              <strong id={`${ids.title}-remove`}>{ru.edit.remove.title}</strong>
+              <p>{ru.edit.remove.body}</p>
+              <div className={styles.actions}>
+                <Button className={styles.removeButton} onClick={onDelete} busy={deleting}>
+                  {deleting ? ru.edit.remove.deleting : ru.edit.remove.confirm}
+                </Button>
+                <Button variant="secondary" onClick={() => setConfirming(false)} disabled={deleting}>
+                  {ru.edit.remove.keep}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              variant="secondary"
+              className={styles.removeLink}
+              icon={<Trash size={18} />}
+              onClick={() => setConfirming(true)}
+              disabled={saving}
+            >
+              {ru.edit.remove.button}
+            </Button>
+          )}
+          {removalMessage ? (
+            <p className={styles.error} role="alert">
+              {removalMessage}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </form>
   );
 }

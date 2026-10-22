@@ -134,8 +134,8 @@ async def bootstrap(
 STUDENT_PERMISSIONS = ["today.read", "homework.read", "homework.completion.write", "schedule.read"]
 # Deputies follow the headman bot rules: timetable and card deadlines yes, group settings no.
 STAFF_PERMISSIONS = {
-    "deputy": ["schedule.write", "deadline.manage"],
-    "headman": ["schedule.write", "deadline.manage", "group.settings.write"],
+    "deputy": ["schedule.write", "deadline.manage", "homework.create"],
+    "headman": ["schedule.write", "deadline.manage", "homework.create", "group.settings.write"],
 }
 
 

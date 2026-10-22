@@ -1,0 +1,22 @@
+.types {
+  display: flex;
+  gap: 8px;
+}
+.type {
+  flex: 1;
+  min-height: var(--sg-hit-min);
+  padding: 10px 14px;
+  border: 1px solid var(--sg-color-border-control);
+  border-radius: var(--sg-radius-md);
+  background: var(--sg-color-surface);
+  color: var(--sg-color-text-secondary-strong);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.typeActive {
+  border-color: transparent;
+  background: var(--sg-tint-primary);
+  color: var(--sg-color-primary-text);
+  box-shadow: 0 0 0 1.5px var(--sg-color-primary);
+}

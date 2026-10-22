@@ -10,11 +10,17 @@ import {
   listAcademicDeadlines,
   getAcademicDeadline,
   editHomework,
+  createHomework,
+  deleteHomework,
+  createAcademicEvent,
+  deleteAcademicEvent,
   getHomeworkFileLink,
   getDeadlineFileLink,
   editAcademicDeadline,
   recheckMembership,
   setHomeworkCompletion,
+  type CreateAcademicEventRequest,
+  type CreateHomeworkRequest,
   type EditAcademicDeadlineRequest,
   type EditHomeworkRequest,
   type HomeworkDetail,
@@ -63,6 +69,14 @@ export const api = {
     unwrap(getDeadlineFileLink({ path: { deadline_id: id } })).then((r) => r.url),
   editEvent: (id: string, body: EditAcademicDeadlineRequest) =>
     unwrap(editAcademicDeadline({ path: { deadline_id: id }, body })),
+  createHomework: (body: CreateHomeworkRequest): Promise<HomeworkDetail> => unwrap(createHomework({ body })),
+  createEvent: (body: CreateAcademicEventRequest) => unwrap(createAcademicEvent({ body })),
+  deleteHomework: (id: string, expectedRevision: number): Promise<unknown> =>
+    unwrap(deleteHomework({ path: { homework_id: id }, query: { expected_revision: expectedRevision } })),
+  deleteEvent: (id: string, expectedRevision: number): Promise<unknown> =>
+    unwrap(
+      deleteAcademicEvent({ path: { deadline_id: id }, query: { expected_revision: expectedRevision } }),
+    ),
   setCompletion: (id: string, completed: boolean, expectedRevision: number): Promise<HomeworkDetail> =>
     unwrap(
       setHomeworkCompletion({
@@ -217,6 +231,74 @@ export function useEditEventMutation(id: string) {
     },
     onSuccess: (response) => {
       queryClient.setQueryData(['academic-deadline', id], response);
+      void queryClient.invalidateQueries({ queryKey: ['academic-deadlines'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
+    },
+  });
+}
+
+/** Headman/deputy creates a homework card; the lists and Today refetch so it shows up at once. */
+export function useCreateHomeworkMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateHomeworkRequest) => api.createHomework(body),
+    onSuccess: (detail) => {
+      queryClient.setQueryData(queryKeys.homework(detail.id), detail);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lessonSubjects });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
+      restartHomeworkLists(queryClient);
+    },
+  });
+}
+
+/** Headman/deputy creates a graded event (test, control point, ...). */
+export function useCreateEventMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateAcademicEventRequest) => api.createEvent(body),
+    onSuccess: (response) => {
+      queryClient.setQueryData(['academic-deadline', response.item.id], response);
+      void queryClient.invalidateQueries({ queryKey: ['academic-deadlines'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
+    },
+  });
+}
+
+/** Removes a homework card for everyone; a conflict refetches the card so the editor sees it. */
+export function useDeleteHomeworkMutation(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (expectedRevision: number) => api.deleteHomework(id, expectedRevision),
+    onError: async (error) => {
+      if (isApiRequestError(error) && error.code === 'revision_conflict') {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.homework(id) });
+      }
+    },
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: queryKeys.homework(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lessonSubjects });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
+      restartHomeworkLists(queryClient);
+    },
+  });
+}
+
+/** Removes an academic event for everyone. */
+export function useDeleteEventMutation(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (expectedRevision: number) => api.deleteEvent(id, expectedRevision),
+    onError: async (error) => {
+      if (isApiRequestError(error) && error.code === 'revision_conflict') {
+        await queryClient.invalidateQueries({ queryKey: ['academic-deadline', id] });
+      }
+    },
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ['academic-deadline', id] });
       void queryClient.invalidateQueries({ queryKey: ['academic-deadlines'] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.today });
       void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });

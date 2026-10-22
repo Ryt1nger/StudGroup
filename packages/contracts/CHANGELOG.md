@@ -1,5 +1,13 @@
 # Contract changelog
 
+## 0.14.0 — 2026-10-22
+
+- Added `POST /homework` and `POST /deadlines`: a headman or deputy creates a homework card or a
+  graded event in the Mini App (same rules, audit and announcement as creating one in the bot).
+- Added `DELETE /homework/{id}` and `DELETE /deadlines/{id}?expected_revision=`: the card is removed
+  for everyone at once without notifying students; the bot's correction journal can undo it.
+- Added permission `homework.create` to the session permissions of a headman and a deputy (UI hint).
+
 ## 0.13.0 — 2026-10-22
 
 - Added `GET /attachments/{attachment_id}/image`: the photo of a card, streamed from Telegram for

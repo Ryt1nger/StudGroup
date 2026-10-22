@@ -11,7 +11,7 @@ import { LessonScreen } from './features/schedule/LessonScreen';
 import { SubjectsScreen } from './features/subjects/SubjectsScreen';
 import { LessonSubjectScreen } from './features/subjects/LessonSubjectScreen';
 import { DeadlinesScreen } from './features/deadlines/DeadlinesScreen';
-import { EventEditScreen, HomeworkEditScreen } from './features/cardEdit/EditCardScreens';
+import { CreateCardScreen, EventEditScreen, HomeworkEditScreen } from './features/cardEdit/EditCardScreens';
 import { AcademicDeadlineScreen } from './features/deadlines/AcademicDeadlineScreen';
 import { StateView } from './ui/StateView';
 import { Button } from './ui/Button';
@@ -59,6 +59,7 @@ export function appRoutes(startParam: string | null) {
         { path: 'today', Component: TodayScreen },
         { path: 'homework/:homeworkId', Component: HomeworkScreen },
         { path: 'homework/:homeworkId/edit', Component: HomeworkEditScreen },
+        { path: 'cards/new', Component: CreateCardScreen },
         { path: 'tasks', Component: TasksScreen },
         { path: 'schedule', Component: ScheduleScreen },
         { path: 'schedule/lesson/:lessonId', Component: LessonScreen },

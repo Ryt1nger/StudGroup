@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.13.0
+  version: 0.14.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -206,6 +206,44 @@ paths:
                     items: { $ref: "#/components/schemas/AcademicDeadline" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Deadlines]
+      operationId: createAcademicEvent
+      summary: Headman or deputy creates a graded event (test, control point, ...) in the Mini App
+      description: >-
+        Same rules as creating one through the Telegram bot: audited, undoable, locked against AI
+        overwrites and announced to students. `deadline` is optional; a date without time
+        (`date_only`) keeps the whole day. Students receive 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAcademicEventRequest" }
+            examples:
+              test:
+                value:
+                  title: Тест по пределам
+                  subject: Математический анализ
+                  kind: test
+                  deadline: { at: "2026-11-05T00:00:00+03:00", date_only: true }
+      responses:
+        "201":
+          description: The created event
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, group_timezone, item, permissions]
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  group_timezone: { type: string }
+                  item: { $ref: "#/components/schemas/AcademicDeadline" }
+                  permissions:
+                    type: array
+                    items: { $ref: "#/components/schemas/Permission" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
   /homework/{homework_id}/file-link:
     get:
       tags: [Homework]
@@ -323,6 +361,30 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/RevisionConflict" }
         "422": { $ref: "#/components/responses/InvalidRequest" }
+    delete:
+      tags: [Deadlines]
+      operationId: deleteAcademicEvent
+      summary: Headman or deputy removes an event for everyone
+      description: >-
+        The event disappears from every list and detail at once and students are not notified. It is
+        audited and the headman bot's correction journal can undo it. `expected_revision` guards
+        against removing an event that changed meanwhile. Students receive 403.
+      parameters:
+        - in: path
+          name: deadline_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: expected_revision
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RevisionConflict" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
   /homework:
     get:
       tags: [Homework]
@@ -378,6 +440,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags: [Homework]
+      operationId: createHomework
+      summary: Headman or deputy creates a homework card in the Mini App
+      description: >-
+        Same rules as creating one through the Telegram bot: audited, undoable, locked against AI
+        overwrites and announced to students. A date-only deadline resolves to the subject's lesson that
+        day, as in the bot. Students receive 403.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHomeworkRequest"
+            examples:
+              withDeadline:
+                value:
+                  title: Номера 1–5
+                  subject: Математический анализ
+                  description: Решить письменно
+                  deadline: { at: "2026-11-02T10:00:00+03:00", date_only: false }
+      responses:
+        "201":
+          description: The created homework card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeworkDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
   /homework/{homework_id}:
     parameters:
       - $ref: "#/components/parameters/HomeworkId"
@@ -446,6 +542,32 @@ paths:
           $ref: "#/components/responses/Gone"
         "422":
           $ref: "#/components/responses/InvalidRequest"
+    delete:
+      tags: [Homework]
+      operationId: deleteHomework
+      summary: Headman or deputy removes a homework card for everyone
+      description: >-
+        The card disappears from every list and detail at once (including the archive) and students are
+        not notified. It is audited and the headman bot's correction journal can undo it.
+        `expected_revision` guards against removing a card that changed meanwhile. Students receive 403.
+      parameters:
+        - in: query
+          name: expected_revision
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "204":
+          description: Removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/RevisionConflict"
+        "410":
+          $ref: "#/components/responses/Gone"
   /attachments/{attachment_id}/image:
     parameters:
       - name: attachment_id
@@ -1532,12 +1654,13 @@ components:
         - homework.completion.write
         - homework.edit
         - homework.material.write
+        - homework.create
         - schedule.write
         - deadline.manage
         - group.settings.write
       description: >-
-        Staff permissions are a UI hint: headman gets schedule.write, deadline.manage and
-        group.settings.write, deputy the first two. The backend re-checks the role on every request.
+        Staff permissions are a UI hint: headman gets schedule.write, deadline.manage, homework.create
+        and group.settings.write, deputy all but the last. The backend re-checks the role on every request.
     HomeworkListResponse:
       type: object
       additionalProperties: false
@@ -2140,6 +2263,35 @@ components:
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: [string, "null"], maxLength: 8000 }
         subject: { type: string, minLength: 1, maxLength: 255 }
+        deadline:
+          oneOf:
+            - $ref: "#/components/schemas/DeadlineInput"
+            - type: "null"
+        date_hint: { type: [string, "null"], maxLength: 1000 }
+    CreateHomeworkRequest:
+      type: object
+      additionalProperties: false
+      required: [title, subject]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 255 }
+        subject: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: string, maxLength: 8000, default: "" }
+        deadline:
+          oneOf:
+            - $ref: "#/components/schemas/DeadlineInput"
+            - type: "null"
+    CreateAcademicEventRequest:
+      type: object
+      additionalProperties: false
+      required: [title, subject]
+      properties:
+        kind:
+          type: string
+          enum: [control_point, assessment, test, credit, exam, other_academic_deadline]
+          default: control_point
+        title: { type: string, minLength: 1, maxLength: 255 }
+        subject: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: string, maxLength: 8000, default: "" }
         deadline:
           oneOf:
             - $ref: "#/components/schemas/DeadlineInput"

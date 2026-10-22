@@ -1,0 +1,27 @@
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.add {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 12px 4px 0 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sg-gradient-primary);
+  color: var(--sg-color-on-primary);
+  box-shadow: 0 8px 20px rgba(91, 77, 255, 0.28);
+  cursor: pointer;
+}
+.add:active {
+  transform: scale(0.96);
+}
+.add:focus-visible {
+  outline: 2px solid var(--sg-color-primary);
+  outline-offset: 3px;
+}
