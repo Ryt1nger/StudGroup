@@ -38,6 +38,10 @@ interface Props {
   error: unknown;
   onSave: (patch: CardEditPatch) => void;
   onCancel: () => void;
+  /** When given, the page offers «Удалить карточку» with a confirmation step. */
+  onDelete?: () => void;
+  deleting?: boolean;
+  deleteError?: unknown;
 }
 
 const KINDS: Exclude<LearningCardKind, 'homework'>[] = [
@@ -52,6 +56,17 @@ const KINDS: Exclude<LearningCardKind, 'homework'>[] = [
 function modeOf(deadline: CardEditValues['deadline']): DeadlineMode {
   if (!deadline.at) return 'none';
   return deadline.dateOnly ? 'date' : 'datetime';
+}
+
+/** Failed deletion -> a calm message in Russian. */
+function deleteFailureMessage(error: unknown): string | null {
+  if (error == null) return null;
+  if (isApiRequestError(error)) {
+    if (error.code === 'revision_conflict') return ru.edit.deleteErrors.conflict;
+    if (error.code === 'permission_denied' || error.status === 403) return ru.edit.errors.forbidden;
+    if (error.kind === 'network') return ru.edit.errors.network;
+  }
+  return ru.edit.deleteErrors.generic;
 }
 
 /** Server error -> a calm message in Russian; never shows wire codes. */
@@ -75,7 +90,11 @@ export function CardEditForm({
   error,
   onSave,
   onCancel,
+  onDelete,
+  deleting = false,
+  deleteError,
 }: Props) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const ids = {
     title: useId(),
     subject: useId(),
@@ -264,10 +283,44 @@ export function CardEditForm({
         <Button type="submit" busy={saving}>
           {saving ? ru.edit.saving : ru.edit.save}
         </Button>
-        <Button variant="secondary" onClick={onCancel} disabled={saving}>
+        <Button variant="secondary" onClick={onCancel} disabled={saving || deleting}>
           {ru.edit.cancel}
         </Button>
       </div>
+
+      {onDelete ? (
+        <div className={styles.danger}>
+          {confirmingDelete ? (
+            <div role="alertdialog" aria-labelledby={`${ids.title}-delete`} className={styles.confirm}>
+              <p id={`${ids.title}-delete`} className={styles.confirmTitle}>
+                {ru.edit.deleteTitle}
+              </p>
+              <p className={styles.confirmBody}>{ru.edit.deleteBody}</p>
+              <div className={styles.actions}>
+                <Button variant="dangerSolid" busy={deleting} onClick={onDelete}>
+                  {deleting ? ru.edit.deleting : ru.edit.deleteConfirm}
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={deleting}
+                  onClick={() => setConfirmingDelete(false)}
+                >
+                  {ru.edit.deleteKeep}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button variant="danger" disabled={saving} onClick={() => setConfirmingDelete(true)}>
+              {ru.edit.delete}
+            </Button>
+          )}
+          {deleteFailureMessage(deleteError) ? (
+            <p className={styles.error} role="alert">
+              {deleteFailureMessage(deleteError)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </form>
   );
 }

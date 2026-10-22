@@ -42,3 +42,12 @@
 .busy {
   opacity: 0.8;
 }
+.danger {
+  background: var(--sg-tint-danger);
+  color: var(--sg-color-danger-text);
+}
+.dangerSolid {
+  /* a fixed deep red: white text keeps ≥4.5:1 in both themes (the themed danger tones do not) */
+  background: #c0362c;
+  color: #fff;
+}

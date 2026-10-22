@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.13.0
+  version: 0.14.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -323,6 +323,42 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/RevisionConflict" }
         "422": { $ref: "#/components/responses/InvalidRequest" }
+    delete:
+      tags: [Deadlines]
+      operationId: deleteAcademicDeadline
+      summary: Headman or deputy deletes a graded event
+      description: >-
+        Same semantics as `deleteHomework`: a cancellation with `cancelled_at` set, journalled and
+        undoable in the bot, idempotent on repeat. Students receive 403.
+      parameters:
+        - in: path
+          name: deadline_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: expected_revision
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The event, now cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [generated_at, group_timezone, item, permissions]
+                properties:
+                  generated_at: { type: string, format: date-time }
+                  group_timezone: { type: string }
+                  item: { $ref: "#/components/schemas/AcademicDeadline" }
+                  permissions:
+                    type: array
+                    items: { $ref: "#/components/schemas/Permission" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/RevisionConflict" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
   /homework:
     get:
       tags: [Homework]
@@ -430,6 +466,41 @@ paths:
       responses:
         "200":
           description: Updated homework detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeworkDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/RevisionConflict"
+        "410":
+          $ref: "#/components/responses/Gone"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+    delete:
+      tags: [Homework]
+      summary: Headman or deputy deletes a homework card
+      operationId: deleteHomework
+      description: >-
+        "Delete" is a cancellation, exactly as the bot's «Отменить»: the card leaves Today and the
+        active Tasks lists, stays in the archive with status `cancelled`, the AI can no longer bring
+        it back, and the change is journalled so the headman can undo it in the bot. Revision-checked
+        and permission-checked like an edit; repeating the request for an already deleted card
+        returns it unchanged. Students receive 403.
+      parameters:
+        - in: query
+          name: expected_revision
+          required: true
+          description: The revision the client last read; a mismatch is a 409 and nothing changes.
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The card, now cancelled
           content:
             application/json:
               schema:

@@ -9,6 +9,8 @@ import {
   listSubjects,
   listAcademicDeadlines,
   getAcademicDeadline,
+  deleteAcademicDeadline,
+  deleteHomework,
   editHomework,
   getHomeworkFileLink,
   getDeadlineFileLink,
@@ -61,6 +63,17 @@ export const api = {
     unwrap(getHomeworkFileLink({ path: { homework_id: id } })).then((r) => r.url),
   eventFileLink: (id: string): Promise<string> =>
     unwrap(getDeadlineFileLink({ path: { deadline_id: id } })).then((r) => r.url),
+  deleteHomework: (id: string, expectedRevision: number): Promise<HomeworkDetail> =>
+    unwrap(
+      deleteHomework({ path: { homework_id: id }, query: { expected_revision: expectedRevision } }),
+    ),
+  deleteEvent: (id: string, expectedRevision: number) =>
+    unwrap(
+      deleteAcademicDeadline({
+        path: { deadline_id: id },
+        query: { expected_revision: expectedRevision },
+      }),
+    ),
   editEvent: (id: string, body: EditAcademicDeadlineRequest) =>
     unwrap(editAcademicDeadline({ path: { deadline_id: id }, body })),
   setCompletion: (id: string, completed: boolean, expectedRevision: number): Promise<HomeworkDetail> =>
@@ -201,6 +214,48 @@ export function useEditHomeworkMutation(id: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.lessonSubjects });
       void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
       restartHomeworkLists(queryClient);
+    },
+  });
+}
+
+/**
+ * Headman/deputy deletes a homework card (the server cancels it: it leaves the active lists and the
+ * journal in the bot can undo it). The deleted card's cached page is dropped; lists restart.
+ */
+export function useDeleteHomeworkMutation(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (expectedRevision: number) => api.deleteHomework(id, expectedRevision),
+    onError: async (error) => {
+      if (isApiRequestError(error) && error.code === 'revision_conflict') {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.homework(id) });
+      }
+    },
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: queryKeys.homework(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lessonSubjects });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
+      restartHomeworkLists(queryClient);
+    },
+  });
+}
+
+/** Headman/deputy deletes an academic event; same meaning as for homework. */
+export function useDeleteEventMutation(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (expectedRevision: number) => api.deleteEvent(id, expectedRevision),
+    onError: async (error) => {
+      if (isApiRequestError(error) && error.code === 'revision_conflict') {
+        await queryClient.invalidateQueries({ queryKey: ['academic-deadline', id] });
+      }
+    },
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ['academic-deadline', id] });
+      void queryClient.invalidateQueries({ queryKey: ['academic-deadlines'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.today });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
     },
   });
 }

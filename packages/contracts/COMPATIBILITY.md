@@ -1,5 +1,14 @@
 # Contract compatibility
 
+## Deleting cards (0.14.0, 2026-10-22)
+
+Additive only: two new operations, `deleteHomework` and `deleteAcademicDeadline`. A client that never
+calls them is unaffected, and older clients keep working. The card is not erased: it becomes
+`cancelled` (homework `status`, event `cancelled_at`), so it appears in the archive and any client that
+already renders cancelled cards needs no change. Students receive a notification like for any other
+manual change. A client must not treat `permissions` as authorization: the server re-checks every
+request (403 for students, 409 when the card changed).
+
 ## Headman/deputy cabinet API (0.12.0, 2026-10-21)
 
 Additive only: existing student routes, fields and enums keep their meaning. New optional

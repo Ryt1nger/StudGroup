@@ -371,3 +371,129 @@ def test_an_event_edit_clears_its_clarification_mark(client):
     item = response.json()["item"]
     assert item["needs_clarification"] is False
     assert item["deadline_certainty"] == "confirmed" and item["deadline_origin"] == "manual"
+
+
+def listed(client, filter_):
+    response = client.get(f"/v1/homework?filter={filter_}", headers=HEADERS)
+    assert response.status_code == 200, response.text
+    return [item["id"] for item in response.json()["items"]]
+
+
+def test_a_student_cannot_delete_a_card_and_nothing_changes(client):
+    card = seed_card(client)
+    response = client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS)
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "permission_denied"
+    detail = client.get(f"/v1/homework/{card}", headers=HEADERS).json()
+    assert detail["status"] != "cancelled" and detail["revision"] == 1
+    assert count(client, HeadmanAudit) == 0
+
+
+def test_the_headman_deletes_a_card_it_leaves_the_active_lists_and_stays_in_the_archive(client):
+    card = seed_card(client)
+    assert card in listed(client, "all")
+    set_role(client, "headman")
+    response = client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "cancelled" and data["cancelled_at"] is not None
+    assert data["revision"] == 2
+    assert card not in listed(client, "all")
+    assert card in listed(client, "archive")
+
+    async def journal():
+        async with AsyncSession(client.app.state.engine) as db:
+            audit = await db.scalar(select(HeadmanAudit))
+            decision = await db.scalar(select(HeadmanDecision))
+            return audit.operation, decision.locked
+
+    # journalled like the bot's «Отменить», and locked so the AI cannot bring the card back
+    assert asyncio.run(journal()) == ("cancel", True)
+
+
+def test_deleting_twice_is_harmless_and_a_stale_revision_is_a_conflict(client):
+    card = seed_card(client)
+    set_role(client, "headman")
+    stale = client.delete(f"/v1/homework/{card}?expected_revision=7", headers=HEADERS)
+    assert stale.status_code == 409 and stale.json()["error"]["code"] == "revision_conflict"
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).json()["status"] != "cancelled"
+    first = client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS)
+    again = client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS)
+    assert first.status_code == again.status_code == 200
+    assert again.json()["revision"] == 2
+    assert count(client, HeadmanAudit) == 1
+    assert client.delete(f"/v1/homework/{card}", headers=HEADERS).status_code == 422
+
+
+def test_a_deputy_cannot_delete_a_decision_the_headman_confirmed(client):
+    card = seed_card(client)
+    set_role(client, "headman")
+    client.patch(
+        f"/v1/homework/{card}",
+        json={"expected_revision": 1, "title": "Решение старосты"},
+        headers=HEADERS,
+    )
+    set_role(client, "deputy")
+    blocked = client.delete(f"/v1/homework/{card}?expected_revision=2", headers=HEADERS)
+    assert blocked.status_code == 403
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).json()["status"] != "cancelled"
+
+
+def test_a_card_of_another_group_cannot_be_deleted(client):
+    card = seed_card(client)
+    set_role(client, "headman")
+
+    async def move():
+        async with AsyncSession(client.app.state.engine) as db:
+            other = await db.scalar(select(Group).where(Group.telegram_chat_id == -1002))
+            row = await db.get(Homework, uuid.UUID(card))
+            row.group_id = other.id
+            await db.commit()
+
+    asyncio.run(move())
+    response = client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS)
+    assert response.status_code == 404
+
+
+def test_the_journal_can_undo_a_deleted_card(client):
+    from studgroup import headman_domain as domain
+    from studgroup.models import User
+
+    card = seed_card(client)
+    set_role(client, "headman")
+    assert (
+        client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS).status_code
+        == 200
+    )
+
+    async def undo():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            audit = await db.scalar(select(HeadmanAudit))
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            member = await db.scalar(select(Membership))
+            user = await db.get(User, member.user_id)
+            await domain.undo(db, group, user, member, audit.id)
+            await db.commit()
+
+    asyncio.run(undo())
+    restored = client.get(f"/v1/homework/{card}", headers=HEADERS).json()
+    assert restored["status"] != "cancelled" and restored["cancelled_at"] is None
+    assert card in listed(client, "all")
+
+
+def test_the_headman_deletes_an_event_and_students_cannot(client):
+    deadline = seed_deadline(client)
+    assert (
+        client.delete(f"/v1/deadlines/{deadline}?expected_revision=1", headers=HEADERS).status_code
+        == 403
+    )
+    set_role(client, "headman")
+    stale = client.delete(f"/v1/deadlines/{deadline}?expected_revision=4", headers=HEADERS)
+    assert stale.status_code == 409
+    response = client.delete(f"/v1/deadlines/{deadline}?expected_revision=1", headers=HEADERS)
+    assert response.status_code == 200, response.text
+    item = response.json()["item"]
+    assert item["cancelled_at"] is not None and item["revision"] == 2
+    again = client.delete(f"/v1/deadlines/{deadline}?expected_revision=1", headers=HEADERS)
+    assert again.status_code == 200 and again.json()["item"]["revision"] == 2
+    assert count(client, HeadmanAudit) == 1

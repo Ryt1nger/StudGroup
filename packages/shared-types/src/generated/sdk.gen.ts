@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetAttachmentImageData, GetAttachmentImageErrors, GetAttachmentImageResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses } from './types.gen';
+import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, DeleteAcademicDeadlineData, DeleteAcademicDeadlineErrors, DeleteAcademicDeadlineResponses, DeleteHomeworkData, DeleteHomeworkErrors, DeleteHomeworkResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetAttachmentImageData, GetAttachmentImageErrors, GetAttachmentImageResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -118,6 +118,17 @@ export const getDeadlineFileLink = <ThrowOnError extends boolean = false>(option
 });
 
 /**
+ * Headman or deputy deletes a graded event
+ *
+ * Same semantics as `deleteHomework`: a cancellation with `cancelled_at` set, journalled and undoable in the bot, idempotent on repeat. Students receive 403.
+ */
+export const deleteAcademicDeadline = <ThrowOnError extends boolean = false>(options: Options<DeleteAcademicDeadlineData, ThrowOnError>): RequestResult<DeleteAcademicDeadlineResponses, DeleteAcademicDeadlineErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAcademicDeadlineResponses, DeleteAcademicDeadlineErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/deadlines/{deadline_id}',
+    ...options
+});
+
+/**
  * Retained event details for the active group
  */
 export const getAcademicDeadline = <ThrowOnError extends boolean = false>(options: Options<GetAcademicDeadlineData, ThrowOnError>): RequestResult<GetAcademicDeadlineResponses, GetAcademicDeadlineErrors, ThrowOnError> => (options.client ?? client).get<GetAcademicDeadlineResponses, GetAcademicDeadlineErrors, ThrowOnError>({
@@ -149,6 +160,17 @@ export const editAcademicDeadline = <ThrowOnError extends boolean = false>(optio
 export const listHomework = <ThrowOnError extends boolean = false>(options?: Options<ListHomeworkData, ThrowOnError>): RequestResult<ListHomeworkResponses, ListHomeworkErrors, ThrowOnError> => (options?.client ?? client).get<ListHomeworkResponses, ListHomeworkErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/homework',
+    ...options
+});
+
+/**
+ * Headman or deputy deletes a homework card
+ *
+ * "Delete" is a cancellation, exactly as the bot's «Отменить»: the card leaves Today and the active Tasks lists, stays in the archive with status `cancelled`, the AI can no longer bring it back, and the change is journalled so the headman can undo it in the bot. Revision-checked and permission-checked like an edit; repeating the request for an already deleted card returns it unchanged. Students receive 403.
+ */
+export const deleteHomework = <ThrowOnError extends boolean = false>(options: Options<DeleteHomeworkData, ThrowOnError>): RequestResult<DeleteHomeworkResponses, DeleteHomeworkErrors, ThrowOnError> => (options.client ?? client).delete<DeleteHomeworkResponses, DeleteHomeworkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/homework/{homework_id}',
     ...options
 });
 

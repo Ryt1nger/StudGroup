@@ -1,5 +1,13 @@
 # Contract changelog
 
+## 0.14.0 — 2026-10-22
+
+- Added `DELETE /homework/{id}` and `DELETE /deadlines/{id}` (query `expected_revision`): a headman or
+  deputy deletes a card from the Mini App. "Delete" is the bot's cancellation: the card leaves Today
+  and the active lists, stays in the archive as cancelled, the AI cannot bring it back, and the
+  headman can undo it from the bot's journal. Revision-checked (409), students get 403, repeating the
+  request is harmless. Additive; nothing else changed.
+
 ## 0.13.0 — 2026-10-22
 
 - Added `GET /attachments/{attachment_id}/image`: the photo of a card, streamed from Telegram for

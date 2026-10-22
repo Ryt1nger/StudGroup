@@ -936,6 +936,56 @@ export type GetDeadlineFileLinkResponses = {
 
 export type GetDeadlineFileLinkResponse = GetDeadlineFileLinkResponses[keyof GetDeadlineFileLinkResponses];
 
+export type DeleteAcademicDeadlineData = {
+    body?: never;
+    path: {
+        deadline_id: string;
+    };
+    query: {
+        expected_revision: number;
+    };
+    url: '/deadlines/{deadline_id}';
+};
+
+export type DeleteAcademicDeadlineErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type DeleteAcademicDeadlineError = DeleteAcademicDeadlineErrors[keyof DeleteAcademicDeadlineErrors];
+
+export type DeleteAcademicDeadlineResponses = {
+    /**
+     * The event, now cancelled
+     */
+    200: {
+        generated_at: string;
+        group_timezone: string;
+        item: AcademicDeadline;
+        permissions: Array<Permission>;
+    };
+};
+
+export type DeleteAcademicDeadlineResponse = DeleteAcademicDeadlineResponses[keyof DeleteAcademicDeadlineResponses];
+
 export type GetAcademicDeadlineData = {
     body?: never;
     path: {
@@ -1066,6 +1116,58 @@ export type ListHomeworkResponses = {
 };
 
 export type ListHomeworkResponse = ListHomeworkResponses[keyof ListHomeworkResponses];
+
+export type DeleteHomeworkData = {
+    body?: never;
+    path: {
+        homework_id: string;
+    };
+    query: {
+        /**
+         * The revision the client last read; a mismatch is a 409 and nothing changes.
+         */
+        expected_revision: number;
+    };
+    url: '/homework/{homework_id}';
+};
+
+export type DeleteHomeworkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * Resource existed but is no longer retained
+     */
+    410: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type DeleteHomeworkError = DeleteHomeworkErrors[keyof DeleteHomeworkErrors];
+
+export type DeleteHomeworkResponses = {
+    /**
+     * The card, now cancelled
+     */
+    200: HomeworkDetail;
+};
+
+export type DeleteHomeworkResponse = DeleteHomeworkResponses[keyof DeleteHomeworkResponses];
 
 export type GetHomeworkData = {
     body?: never;

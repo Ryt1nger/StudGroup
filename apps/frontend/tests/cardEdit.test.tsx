@@ -179,6 +179,90 @@ describe('headman card editing', () => {
     expect(screen.queryByRole('button', { name: 'Редактировать' })).not.toBeInTheDocument();
   });
 
+  describe('deleting a card', () => {
+    it('asks first, then deletes with the current revision and leaves for the Tasks list', async () => {
+      useScenario();
+      let query: URLSearchParams | null = null;
+      server.use(
+        http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
+        http.delete(`${API}/homework/${HW}`, ({ request }) => {
+          query = new URL(request.url).searchParams;
+          return HttpResponse.json({ ...editable, status: 'cancelled', revision: base.revision + 1 });
+        }),
+      );
+      const { router } = renderApp({ route: `/homework/${HW}` });
+      await userEvent.click(await screen.findByRole('button', { name: 'Редактировать' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Удалить карточку' }));
+      // nothing is sent before the confirmation
+      expect(query).toBeNull();
+      expect(screen.getByRole('alertdialog')).toHaveTextContent('Удалить карточку?');
+      await userEvent.click(screen.getByRole('button', { name: 'Не удалять' }));
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(query).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: 'Удалить карточку' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Да, удалить' }));
+      await waitFor(() => expect(router.state.location.pathname).toBe('/tasks'));
+      expect(query!.get('expected_revision')).toBe(String(base.revision));
+    });
+
+    it('explains a conflict in words, keeps the page and does not leave', async () => {
+      useScenario();
+      server.use(
+        http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
+        http.delete(`${API}/homework/${HW}`, () =>
+          HttpResponse.json(
+            {
+              error: {
+                code: 'revision_conflict',
+                message: 'x',
+                correlation_id: 'c',
+                retryable: false,
+                retry_after_seconds: null,
+                details: null,
+              },
+            },
+            { status: 409 },
+          ),
+        ),
+      );
+      const { router } = renderApp({ route: `/homework/${HW}` });
+      await userEvent.click(await screen.findByRole('button', { name: 'Редактировать' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Удалить карточку' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Да, удалить' }));
+      const alert = await screen.findByText(/уже изменили/);
+      expect(alert).not.toHaveTextContent('revision_conflict');
+      expect(router.state.location.pathname).toBe(`/homework/${HW}/edit`);
+    });
+
+    it('deletes an academic event and returns to the events list', async () => {
+      useScenario();
+      let query: URLSearchParams | null = null;
+      server.use(
+        http.get(`${API}/deadlines/${EV}`, () => HttpResponse.json(eventResponse(['homework.edit']))),
+        http.delete(`${API}/deadlines/${EV}`, ({ request }) => {
+          query = new URL(request.url).searchParams;
+          return HttpResponse.json(
+            eventResponse(['homework.edit'], { ...event, cancelled_at: new Date().toISOString(), revision: 4 } as typeof event),
+          );
+        }),
+      );
+      const { router } = renderApp({ route: `/deadlines/${EV}` });
+      await userEvent.click(await screen.findByRole('button', { name: 'Редактировать' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Удалить карточку' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Да, удалить' }));
+      await waitFor(() => expect(router.state.location.pathname).toBe('/deadlines'));
+      expect(query!.get('expected_revision')).toBe('3');
+    });
+
+    it('offers no delete button to a student who opens the edit address', async () => {
+      useScenario();
+      server.use(http.get(`${API}/homework/${HW}`, () => HttpResponse.json(base)));
+      renderApp({ route: `/homework/${HW}/edit` });
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Удалить карточку' })).not.toBeInTheDocument();
+    });
+  });
+
   it('opens the bot to send a file, and hides the button from students', async () => {
     useScenario();
     server.use(

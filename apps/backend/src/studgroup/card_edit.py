@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -123,22 +123,27 @@ def provided(body):
     return body.model_fields_set - {"expected_revision"}
 
 
-async def apply(db, group, user, member, key, row, expected, values, only_description):
+async def run_operation(db, group, user, member, key, row, expected, operation, values=None):
     if row.revision != expected:
         raise ApiError("revision_conflict", "Данные карточки изменились. Обновите карточку", 409)
     try:
-        await domain.mutate(
-            db,
-            group,
-            user,
-            member,
-            key,
-            expected,
-            "description" if only_description else "edit",
-            values,
-        )
+        await domain.mutate(db, group, user, member, key, expected, operation, values)
     except domain.StError as error:
         raise ApiError("permission_denied", str(error), 403) from None
+
+
+async def apply(db, group, user, member, key, row, expected, values, only_description):
+    await run_operation(
+        db,
+        group,
+        user,
+        member,
+        key,
+        row,
+        expected,
+        "description" if only_description else "edit",
+        values,
+    )
 
 
 @router.patch("/homework/{homework_id}")
@@ -192,6 +197,62 @@ async def edit_homework(
     result = await homework_representation(db, row, user.id, now)
     await db.commit()
     return result
+
+
+@router.delete("/homework/{homework_id}")
+async def delete_homework(
+    homework_id: uuid.UUID,
+    expected_revision: Annotated[int, Query(ge=1)],
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    """Delete = cancel, exactly as the bot's «Отменить»: the card leaves the active lists, stays in
+    the archive as cancelled, the AI cannot bring it back, and the journal can undo it."""
+    user, member = await editor(db, group, authorization)
+    row = await find_card(db, group, homework_id)
+    if row.status != "cancelled":  # a repeated request for a deleted card changes nothing
+        await run_operation(
+            db, group, user, member, f"h:{row.id}", row, expected_revision, "cancel"
+        )
+    result = await homework_representation(db, row, user.id, datetime.now(UTC))
+    await db.commit()
+    return result
+
+
+@router.delete("/deadlines/{deadline_id}")
+async def delete_deadline(
+    deadline_id: uuid.UUID,
+    expected_revision: Annotated[int, Query(ge=1)],
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    user, member = await editor(db, group, authorization)
+    now = datetime.now(UTC)
+    row = await db.scalar(
+        select(AcademicDeadline)
+        .where(
+            AcademicDeadline.id == deadline_id,
+            AcademicDeadline.group_id == group.id,
+            AcademicDeadline.delete_at > now,
+        )
+        .with_for_update()
+    )
+    if row is None:
+        raise ApiError("not_found", "Событие не найдено", 404)
+    if row.cancelled_at is None:
+        await run_operation(
+            db, group, user, member, f"e:{row.id}", row, expected_revision, "cancel"
+        )
+    item = await deadline_representation(db, group, row, now)
+    await db.commit()
+    return {
+        "generated_at": now,
+        "group_timezone": group.timezone,
+        "item": item,
+        "permissions": list(EDIT_PERMISSIONS),
+    }
 
 
 @router.patch("/deadlines/{deadline_id}")

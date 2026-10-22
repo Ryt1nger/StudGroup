@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import {
   useAcademicDeadlineQuery,
+  useDeleteEventMutation,
+  useDeleteHomeworkMutation,
   useEditEventMutation,
   useEditHomeworkMutation,
   useHomeworkQuery,
@@ -57,6 +59,7 @@ export function HomeworkEditScreen() {
   const back = () => void navigate(`/homework/${homeworkId}`, { replace: true });
   const query = useHomeworkQuery(homeworkId);
   const mutation = useEditHomeworkMutation(homeworkId);
+  const removal = useDeleteHomeworkMutation(homeworkId);
   const names = useSubjectNames();
   const timeZone = useGroupTimeZone();
   const detail = query.data;
@@ -97,6 +100,13 @@ export function HomeworkEditScreen() {
           error={mutation.error}
           onSave={save}
           onCancel={back}
+          onDelete={() =>
+            removal.mutate(detail.revision, {
+              onSuccess: () => void navigate('/tasks', { replace: true }),
+            })
+          }
+          deleting={removal.isPending}
+          deleteError={removal.error}
         />
       ) : null}
     </EditPage>
@@ -109,6 +119,7 @@ export function EventEditScreen() {
   const back = () => void navigate(`/deadlines/${deadlineId}`, { replace: true });
   const query = useAcademicDeadlineQuery(deadlineId);
   const mutation = useEditEventMutation(deadlineId);
+  const removal = useDeleteEventMutation(deadlineId);
   const names = useSubjectNames();
   const data = query.data;
   const item = data?.item;
@@ -142,6 +153,15 @@ export function EventEditScreen() {
           error={mutation.error}
           onSave={save}
           onCancel={back}
+          onDelete={() => {
+            const { revision } = item;
+            if (revision === undefined) return;
+            removal.mutate(revision, {
+              onSuccess: () => void navigate('/deadlines', { replace: true }),
+            });
+          }}
+          deleting={removal.isPending}
+          deleteError={removal.error}
         />
       ) : null}
     </EditPage>
