@@ -27,7 +27,19 @@ from studgroup.models import Group, HeadmanSession, Membership, StartSession, Us
 
 SESSION_MINUTES = 30
 CLAIM_HOURS = 24  # how long «Я староста» waits for the bot to be added to a group
-INFO_TOPICS = {"info_howto": "howto", "info_faq": "faq", "info_support": "support"}
+INFO_TOPICS = {
+    "info_howto": "howto",
+    "info_tariffs": "tariffs",
+    "info_connect": "connect",
+    "info_faq": "faq",
+    "info_support": "support",
+}
+# Where a topic leads next, as buttons instead of «/command» links inside the text.
+TOPIC_LINKS = {
+    "faq": [("Сколько стоит", "info_tariffs"), ("Как подключиться", "info_connect")],
+    "tariffs": [("Как подключиться", "info_connect")],
+    "connect": [("Частые вопросы", "info_faq")],
+}
 _LINK_CODE = re.compile(r"invite_([A-Za-z0-9_-]{20,64})")
 _BARE_CODE = re.compile(r"[A-Za-z0-9_-]{20,64}")
 
@@ -83,10 +95,24 @@ async def screen(db, session, text, rows, step, data=None, minutes=SESSION_MINUT
 
 
 def info_row():
-    return [("Как это работает", "info_howto")], [
+    return [("Как это работает", "info_howto"), ("Тарифы", "info_tariffs")], [
         ("Частые вопросы", "info_faq"),
         ("Поддержка", "info_support"),
     ]
+
+
+async def topic_screen(db, session, settings, topic):
+    """An info topic on the one /start panel, with its follow-ups as buttons."""
+    rows = []
+    if topic == "howto":
+        rows.append([app_button(settings)])
+    links = [(label, action) for label, action in TOPIC_LINKS.get(topic, [])]
+    rows += [[link] for link in links]
+    if topic != "support":
+        rows.append([("Поддержка", "info_support")])
+    rows.append([("‹ Назад", "home")])
+    body = bot_info.render(topic, settings.support_contact)
+    await screen(db, session, body, rows, "info")
 
 
 async def current_membership(db, telegram_id):
@@ -324,7 +350,7 @@ async def forget(db, chat, message):
     )
 
 
-async def handle(db, update, settings):
+async def handle(db, update, settings, topic=None):
     callback = update.callback_query
     message = callback.message if callback else update.message
     sender = callback.sender if callback else message.sender if message else None
@@ -340,6 +366,9 @@ async def handle(db, update, settings):
         )
         db.add(session)
     text = (message.text or "").strip()
+    if topic:  # an info command or a landing-page deep link: shown on the panel like a button
+        await topic_screen(db, session, settings, topic)
+        return True
     if not callback:
         parts = text.split(maxsplit=1)
         if parts and parts[0].split("@")[0] == "/start":
@@ -388,8 +417,7 @@ async def handle(db, update, settings):
         if not await open_cabinet(db, sender.id):
             await home(db, session, settings, sender.id)
     elif action in INFO_TOPICS:
-        body = bot_info.render(INFO_TOPICS[action], settings.support_contact, footer=False)
-        await screen(db, session, body, [[("‹ Назад", "home")]], "info")
+        await topic_screen(db, session, settings, INFO_TOPICS[action])
     else:
         await home(db, session, settings, sender.id)
     return True

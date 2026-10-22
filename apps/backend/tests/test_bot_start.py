@@ -59,7 +59,8 @@ def test_welcome_offers_roles_and_info_buttons_not_commands(foreman):
     assert "/" not in last(foreman)["text"]
     tap(foreman, "Как это работает")
     assert "Как пользоваться StudGroup" in last(foreman)["text"]
-    assert "Команды:" not in last(foreman)["text"] and labels(foreman) == ["‹ Назад"]
+    assert "Команды:" not in last(foreman)["text"]
+    assert "‹ Назад" in labels(foreman) and "Открыть StudGroup" in labels(foreman)
     tap(foreman, "Назад")
     assert "Кто вы?" in last(foreman)["text"]
 
@@ -216,3 +217,34 @@ def test_no_screen_of_the_cabinet_menu_tells_people_to_type_a_command(foreman):
         seen.append(last(foreman)["text"])
         tap(foreman, "Главное меню", uid=1)
     assert not [text for text in seen if " /" in text or text.startswith("/")]
+
+
+def test_the_welcome_screen_reaches_every_info_topic_by_buttons(foreman):
+    deliver(foreman, "/start", uid=33)
+    assert {"Как это работает", "Тарифы", "Частые вопросы", "Поддержка"} <= set(labels(foreman))
+    tap(foreman, "Тарифы")
+    assert "Тарифы StudGroup скоро появятся" in last(foreman)["text"]
+    assert "/" not in last(foreman)["text"]
+    tap(foreman, "Как подключиться")
+    assert "Подключение группы" in last(foreman)["text"]
+    tap(foreman, "Частые вопросы")
+    assert {"Сколько стоит", "Как подключиться", "Поддержка"} <= set(labels(foreman))
+    tap(foreman, "Сколько стоит")
+    assert "Тарифы" in last(foreman)["text"]
+    tap(foreman, "Назад")
+    assert "Кто вы?" in last(foreman)["text"]
+
+
+def test_an_info_command_replaces_the_screen_instead_of_adding_a_message(transport):
+    client, calls = transport
+    input_message(client, 500, "/tariffs")
+    drain(client)
+    first, _ = current(client, "start")
+    input_message(client, 501, "/faq")
+    drain(client)
+    deleted = {d["message_id"] for m, d in calls if m == "deleteMessage"}
+    assert first in deleted and 500 in deleted  # the old screen and the typed command are removed
+    second, frame = current(client, "start")
+    assert second != first and "Частые вопросы" in frame["text"]
+    sent = [d for m, d in calls if m == "sendMessage"]
+    assert len(sent) == 2  # one panel message per command, never a pile

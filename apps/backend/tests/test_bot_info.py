@@ -57,47 +57,6 @@ def test_topic_for(text, topic):
     assert bot_info.topic_for(text) == topic
 
 
-@pytest.mark.parametrize(
-    ("text", "needle"),
-    [
-        ("/start tariffs", "Тарифы"),
-        ("/start howto", "Как пользоваться"),
-        ("/start connect", "Подключение группы"),
-        ("/start faq", "Частые вопросы"),
-        ("/start support", "Поддержка"),
-    ],
-)
-def test_deep_links_answer_any_private_user(client, text, needle):
-    private(client, text, uid=2)  # not the bot admin
-    reply = sent(client)[-1]
-    assert reply["chat_id"] == 2
-    assert needle in reply["text"]
-    assert "/tariffs" in reply["text"]
-
-
-def test_tariffs_publish_no_prices(client):
-    private(client, "/tariffs", uid=2)
-    text = sent(client)[-1]["text"]
-    assert "скоро" in text
-    assert "₽" not in text and "руб" not in text.lower()
-    assert not any(ch.isdigit() for ch in text)
-
-
-def test_howto_offers_the_webapp_button(client):
-    private(client, "/help", uid=2)
-    markup = sent(client)[-1]["reply_markup"]["inline_keyboard"][0][0]
-    assert markup["text"] == "Открыть StudGroup"
-    assert markup["web_app"]["url"] == client.app.state.settings.webapp_origin
-
-
-def test_support_contact_comes_from_settings(client):
-    private(client, "/support", uid=2)
-    assert "скоро появятся" in sent(client)[-1]["text"]
-    client.app.state.settings.support_contact = "@studgroup_support"
-    private(client, "/support", uid=2, update=101)
-    assert "@studgroup_support" in sent(client)[-1]["text"]
-
-
 def panel_frames(client):
     async def read():
         async with AsyncSession(client.app.state.engine) as db:
@@ -111,6 +70,63 @@ def panel_frames(client):
             return [json.loads(r.payload) for r in rows]
 
     return asyncio.run(read())
+
+
+def buttons(frame):
+    return [b for row in frame["reply_markup"]["inline_keyboard"] for b in row]
+
+
+@pytest.mark.parametrize(
+    ("text", "needle"),
+    [
+        ("/start tariffs", "Тарифы"),
+        ("/start howto", "Как пользоваться"),
+        ("/start connect", "Подключение группы"),
+        ("/start faq", "Частые вопросы"),
+        ("/start support", "Поддержка"),
+        ("/tariffs", "Тарифы"),
+        ("/faq", "Частые вопросы"),
+    ],
+)
+def test_topics_open_on_the_start_panel_for_any_private_user(client, text, needle):
+    private(client, text, uid=2)  # not the bot admin
+    assert sent(client) == []  # no loose message: the panel is the only thing sent
+    frame = panel_frames(client)[-1]
+    assert frame["chat_id"] == 2 and needle in frame["text"]
+    assert "Команды:" not in frame["text"]
+    assert "‹ Назад" in [b["text"] for b in buttons(frame)]
+
+
+@pytest.mark.parametrize("topic", ["tariffs", "howto", "connect", "faq", "support"])
+def test_no_topic_asks_people_to_type_a_command(topic):
+    import re
+
+    for contact in ("", "@studgroup_support"):
+        text = bot_info.render(topic, contact)
+        assert not re.search(r"(?<![\w/])/[A-Za-z_]{3,}", text), text
+
+
+def test_tariffs_publish_no_prices(client):
+    private(client, "/tariffs", uid=2)
+    text = panel_frames(client)[-1]["text"]
+    assert "скоро" in text
+    assert "₽" not in text and "руб" not in text.lower()
+    assert not any(ch.isdigit() for ch in text)
+
+
+def test_howto_offers_the_webapp_button(client):
+    private(client, "/help", uid=2)
+    button = next(b for b in buttons(panel_frames(client)[-1]) if "web_app" in b)
+    assert button["text"] == "Открыть StudGroup"
+    assert button["web_app"]["url"] == client.app.state.settings.webapp_origin
+
+
+def test_support_contact_comes_from_settings(client):
+    private(client, "/support", uid=2)
+    assert "скоро появятся" in panel_frames(client)[-1]["text"]
+    client.app.state.settings.support_contact = "@studgroup_support"
+    private(client, "/support", uid=2, update=101)
+    assert "@studgroup_support" in panel_frames(client)[-1]["text"]
 
 
 def test_invite_codes_are_not_swallowed(client):
