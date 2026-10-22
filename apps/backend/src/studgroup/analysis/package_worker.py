@@ -172,7 +172,7 @@ def _eligible(group, settings, now):
     return filters
 
 
-async def _read_pending_photos(db, group, rows, settings, provider, transport, now):
+async def _read_pending_photos(db, group, rows, target_ids, settings, provider, transport, now):
     """Read the unread photos of these messages; returns (cost in USD, retry_later).
 
     One try per photo: a photo that cannot be downloaded or read is marked ``failed`` and the
@@ -192,9 +192,13 @@ async def _read_pending_photos(db, group, rows, settings, provider, transport, n
                 MessageAttachment.processing_state == "metadata_only",
             )
             .order_by(MessageAttachment.created_at, MessageAttachment.id)
-            .limit(photo_reading.MAX_PHOTOS_PER_PACKAGE)
+            .limit(photo_reading.MAX_PHOTOS_PER_PACKAGE * 8)
         )
     ).all()
+    # The photos of the package's own targets come first; context photos only use what is left.
+    pending = sorted(pending, key=lambda item: item.raw_message_id not in target_ids)[
+        : photo_reading.MAX_PHOTOS_PER_PACKAGE
+    ]
     if not pending:
         return Decimal(0), False
     if provider is None:
@@ -279,8 +283,9 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
         )
     ).all()
     rows = {row.id: row for row in [*before, *middle, *after]}
+    target_row_ids = {row.id for row in targets}
     photo_cost, retry_later = await _read_pending_photos(
-        db, group, list(rows.values()), settings, provider, transport, now
+        db, group, list(rows.values()), target_row_ids, settings, provider, transport, now
     )
     if retry_later:
         await db.commit()  # keep the cost and the photos already read
@@ -307,6 +312,41 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
     run_key = hashlib.sha256(f"{package.key}:{generation}".encode()).hexdigest()
     memory = assemble_memory_context(group.id, " ".join(row.text for row in messages), facts)
     return package, memory, revision, run_key, generation, photo_cost
+
+
+async def reopen_unread_photo_messages(db, group, since, now):
+    """Queue stored messages whose photos were never read for one more package analysis.
+
+    Only RawMessage state and generation change (the same effect as the owner's ``reopen``), and
+    only for messages that carry a photo still ``metadata_only``. Once the package has read the
+    photo its state is no longer ``metadata_only``, so the message is never reopened again: the
+    call is idempotent and safe to repeat on every iteration. No card is touched here.
+    """
+    lower = _utc(since)
+    if group.bot_added_at is not None:
+        lower = max(lower, _utc(group.bot_added_at))
+    unread = (
+        select(MessageAttachment.raw_message_id)
+        .where(
+            MessageAttachment.kind == "photo",
+            MessageAttachment.active.is_(True),
+            MessageAttachment.processing_state == "metadata_only",
+        )
+        .scalar_subquery()
+    )
+    result = await db.execute(
+        update(RawMessage)
+        .where(
+            RawMessage.group_id == group.id,
+            RawMessage.imported.is_(False),
+            RawMessage.message_date >= lower,
+            RawMessage.delete_at > now,
+            RawMessage.processing_state.in_(["completed", "failed", "needs_context"]),
+            RawMessage.id.in_(unread),
+        )
+        .values(processing_state="pending", analysis_generation=RawMessage.analysis_generation + 1)
+    )
+    return result.rowcount or 0
 
 
 async def enqueue_next_package(engine, settings, now=None, provider=None, transport=None):
@@ -344,6 +384,8 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
             )
             if open_run is not None:
                 continue
+            if settings.photo_reading_enabled and settings.photo_backfill_since is not None:
+                await reopen_unread_photo_messages(db, group, settings.photo_backfill_since, now)
             planned = await _plan_next(db, group, route, settings, now, provider, transport)
             if planned is None:
                 continue

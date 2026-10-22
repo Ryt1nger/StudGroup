@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     new_engine_notifications: bool = False
     # Vision pass over photos of homework before a package is analysed (costs one image call each).
     photo_reading_enabled: bool = False
+    # With photo reading on: stored messages since this moment whose photos were never read are
+    # analysed again once (e.g. PHOTO_BACKFILL_SINCE=2026-10-17T00:00:00+03:00). Idempotent.
+    photo_backfill_since: datetime | None = None
     # Rolling one-hour spend cap of the new engine, on top of the group's daily cap.
     new_engine_hourly_budget_usd: float = Field(default=0.50, ge=0)
     ai_enabled_until: datetime | None = None
@@ -98,7 +101,11 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "ai_enabled_until", "ai_shadow_enabled_until", "new_engine_enabled_until", mode="before"
+        "ai_enabled_until",
+        "ai_shadow_enabled_until",
+        "new_engine_enabled_until",
+        "photo_backfill_since",
+        mode="before",
     )
     @classmethod
     def empty_cutoff(cls, value):
@@ -129,6 +136,7 @@ class Settings(BaseSettings):
         "ai_shadow_enabled_until",
         "new_engine_enabled_until",
         "owner_update_notifications_since",
+        "photo_backfill_since",
     )
     @classmethod
     def deadline_requires_timezone(cls, value):
