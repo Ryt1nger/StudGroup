@@ -107,6 +107,7 @@
   --sg-tint-danger: rgba(240, 68, 56, 0.1);
   --sg-tint-info: rgba(46, 144, 250, 0.12);
   --sg-tint-primary: rgba(91, 77, 255, 0.1);
+  --sg-ring-primary: rgba(91, 77, 255, 0.35);
   --sg-page-glow: radial-gradient(120% 60% at 80% -10%, rgba(124, 92, 255, 0.12), transparent 60%);
   /* --- visual layer from the mockups (surfaces, depth, backgrounds) --- */
   --sg-bg-image: url('../assets/visual/bg.light.png');
@@ -161,6 +162,7 @@
   --sg-tint-danger: rgba(255, 90, 101, 0.14);
   --sg-tint-info: rgba(83, 177, 253, 0.14);
   --sg-tint-primary: rgba(115, 103, 255, 0.18);
+  --sg-ring-primary: rgba(115, 103, 255, 0.35);
   --sg-page-glow: radial-gradient(120% 60% at 80% -10%, rgba(139, 92, 246, 0.22), transparent 60%);
   --sg-bg-image: url('../assets/visual/bg.dark.png');
   --sg-glass-bg: linear-gradient(180deg, rgba(20, 30, 72, 0.66) 0%, rgba(12, 20, 52, 0.66) 100%);

@@ -1,6 +1,7 @@
 import type { LessonOccurrence, ScheduleResponse } from '@studgroup/shared-types';
 import { ru } from '../../i18n/ru';
 import { dayKey, formatDayKey, formatTime } from '../../lib/format';
+import { safeLessonUrl } from '../../ui/lessonLink';
 import type { ScheduleDayView, ScheduleItemView, ScheduleScreenView } from './viewModel';
 
 function lessonItem(
@@ -17,6 +18,8 @@ function lessonItem(
   const subtitle = [lesson.location, lesson.teacher]
     .filter((part): part is string => Boolean(part))
     .join(' · ');
+  const online =
+    lesson.status !== 'cancelled' && end > nowMs ? safeLessonUrl(lesson.online_url) : null;
   return {
     id: lesson.id,
     time: formatTime(lesson.starts_at, timeZone),
@@ -24,8 +27,10 @@ function lessonItem(
     subtitle,
     state: current ? 'current' : done ? 'done' : 'upcoming',
     cancelled: lesson.status === 'cancelled',
-    onlineUrl: lesson.status !== 'cancelled' && end > nowMs ? (lesson.online_url ?? null) : null,
-    badges: current ? [{ kind: 'now', label: ru.schedule.now, tone: 'solid' }] : [],
+    onlineUrl: online,
+    // «Сейчас» is only for online (СДО) lessons, where it opens the lesson; an in-person lesson in
+    // progress is already marked by the highlighted card and the timeline node.
+    badges: current && online ? [{ kind: 'now', label: ru.schedule.now, tone: 'solid', href: online }] : [],
     onOpen: onOpen ? () => onOpen(lesson) : undefined,
   };
 }
