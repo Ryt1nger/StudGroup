@@ -255,6 +255,70 @@ Question delivery uses the existing web process, so a sleeping free Render insta
 catches up on waking; it is not a guaranteed always-on scheduler. Questions are off
 by default; no production role or notification preference is enabled automatically.
 
+## Private /start walkthrough (migration 0036)
+
+`/start` opens a button-only panel (`bot_start.py`, callback prefix `t`) built on the same
+durable panel mechanism as `/st` and `/admin`: one message edited in place, every new `/start`
+removes the previous screen and the person's own messages, buttons go stale with their screen.
+Student path: welcome -> «Я студент» -> «Ввести код» -> paste a code -> «Готово» with the app
+button. A wrong typed code keeps the panel waiting for another try. A person who is already
+connected sees their group and the app button instead of the role question. Info topics
+(how it works, FAQ, support) are buttons on the welcome screen; the old commands still work.
+
+Invitation codes are secrets: the message carrying one (typed code or `/start invite_<code>`)
+is deleted at once. Set `BOT_USERNAME` (without `@`) so the headman's «Создать приглашения» shows
+tap-to-join links `https://t.me/<bot>?start=invite_<code>`; unset, it shows the old command text.
+
+### Connecting a new group (`bot_connect.py`)
+
+Adding the bot to a Telegram group is enough: the bot creates the group and its environment
+(group row with `pilot_authorized`, bot-added boundary now, timezone Europe/Moscow until changed
+in the cabinet, AI profile) and starts at once, with no approval. The headman is a separate fact.
+«Я староста» leaves a claim (valid 24 h); if the person who added the bot holds one, they become
+the single headman immediately. Otherwise the group exists with «староста не выбран»: the bot
+posts one note in the group with a «Я староста» button (`?start=headman`), the owner's `/admin`
+list marks the group, and any administrator of that chat can take the role later, by picking the
+group on the «Я староста» screen or typing `/start` in the group.
+
+Guards: Telegram must report the claimant as creator/administrator and the bot as administrator;
+a group that already has a headman can never be claimed; a person in another group cannot claim
+this one; the role is assigned under a lock on the group row. Names of groups the person does not
+administer are never shown. Triggers: `my_chat_member` (the webhook must deliver it; it is part of
+Telegram's default update set), the new-members service message, or `/start` typed in the group.
+The owner's `/admin` assignment also refuses a second active headman in one group.
+
+Cost note: every group the bot is added to now starts AI analysis, and several owner tools
+(`/explain`, `/shadowstatus`, the first-run preview) still assume exactly one authorized group.
+
+### Headman cabinet by buttons
+
+Headmen and deputies see «Кабинет старосты» on the start screen (and after connecting a group).
+It opens the same cabinet `/st` opens, straight into the main menu for the usual single group:
+the start screen is removed and the cabinet takes its place; «‹ В начало» in the cabinet menu
+returns the other way. Cabinet texts no longer ask people to type commands; the `/st` command
+still works as a shortcut. A stale button or expired session now re-opens a fresh menu or says
+to use the latest message. Text input steps (titles, dates, links) remain typed by nature.
+
+Not built yet: the promo-code step from the flow diagram (no partner model to record the code).
+There is no database-level unique index on one active headman per group; add it once production
+data is checked for duplicates.
+
+## Cabinet API /v1/staff (contract 0.10.0)
+
+HTTP entry point to the same headman/deputy rules for the Mini App cabinet. Apply
+migration 0035 (`groups.schedule_version`) before startup. Every route re-reads and
+locks the membership; students get 403. Deputies can edit lessons, days without lessons
+and card deadlines; timezone and first-week anchor are headman-only, as in `/st`.
+
+Every group timetable change from the bot, the cabinet, undo or reviewed publication goes
+through `schedule_audit.schedule_changed`: one `schedule_changes` row, a new
+`schedule_version`, then `rebuild_after_schedule_change` in the same transaction. Setting
+or confirming a card deadline locks the `deadline` field and clears the deadline request;
+`PUT /items/{id}/locks` replaces the locked field set. No notifications are sent.
+
+Not in this release: schedule import, personal (per-student) schedule, rollback journal
+in the cabinet, and showing days without lessons on the student schedule.
+
 ## Profile, inbox and private bot administration (contract 0.7.0)
 
 The production header reads the authenticated session, not demo data. Its profile

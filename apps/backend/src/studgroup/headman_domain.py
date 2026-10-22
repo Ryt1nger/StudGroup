@@ -652,7 +652,13 @@ async def undo(db, group, user, member, audit_id):
             )
     audit.undone = True
     await db.flush()
-    return await save_audit(db, group, user, "undo", inverse, rows)
+    saved = await save_audit(db, group, user, "undo", inverse, rows)
+    if any(kind in {"p", "x"} for _, kind, _ in rows):
+        # Restoring a lesson changes the timetable, so derived deadlines follow it like an edit.
+        from studgroup.schedule_audit import schedule_changed  # late: headman_schedule imports us
+
+        await schedule_changed(db, group, method="bot", operation="undo", user=user, member=member)
+    return saved
 
 
 async def ai_locked(db, group_id, raw_id):

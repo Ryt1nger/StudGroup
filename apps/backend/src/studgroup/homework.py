@@ -84,6 +84,7 @@ async def representation(db, row, user, now):
             "date_only": row.deadline_date_only,
             "certainty": enrichment["deadline_certainty"],
             "origin": enrichment["deadline_origin"],
+            "label": enrichment["deadline_label"],
         },
         "status": row.status,
         "urgency": row.urgency,

@@ -1,5 +1,26 @@
 # Contract compatibility
 
+## Headman/deputy cabinet API (0.12.0, 2026-10-21)
+
+Additive only: existing student routes, fields and enums keep their meaning. New optional
+fields `Deadline.label` and `AcademicDeadline.deadline_label` may be ignored by older clients.
+Clients that switch on `ApiError.code` must tolerate the new `action_rejected`.
+
+- `/staff/*` routes return 403 `permission_denied` for students and re-check the role on every
+  request; session `permissions` is a UI hint only. Group settings are headman-only; deputies
+  can edit lessons, days without lessons and card deadlines, as in the headman bot.
+- Lesson edits reuse the bot's revision guards: a stale `pattern_revision`/`override_revision`
+  or a deputy changing a headman-confirmed lesson gets 409 `action_rejected`.
+- Every group timetable change (bot, cabinet, undo, reviewed publication) writes one
+  `schedule_changes` row and bumps `schedule_version`, then recomputes `schedule_inferred`
+  deadlines in the same transaction. Locked, explicit/relative and past deadlines are not
+  changed; no notification is sent.
+- Days without lessons affect deadline inference only in this version; the student schedule
+  still lists lessons on such days until the owner decides how they are shown.
+- A set or confirmed deadline locks the `deadline` field; `set` stores basis `explicit` with
+  reason `headman_set`. Field locks are shared by headman and deputy: either can release them.
+- `StaffItem.id` is the canonical card id, not the homework/deadline id students see.
+
 ## Files that stay in Telegram (0.11.0)
 
 Additive. A material with a `kind` other than `link` may carry an API-relative signed `url`

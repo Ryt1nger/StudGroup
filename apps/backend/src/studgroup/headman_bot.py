@@ -9,11 +9,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 
+from studgroup import bot_start, headman_schedule, telegram_files
 from studgroup import headman_domain as domain
-from studgroup import headman_schedule, telegram_files
 from studgroup.api import schedule_data
 from studgroup.bot_admin import enqueue, say
-from studgroup.deadline_rebuild import rebuild_after_schedule_change
 from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, resolve_deadline
 from studgroup.homework import utc
 from studgroup.models import (
@@ -30,6 +29,7 @@ from studgroup.models import (
     RawMessage,
     User,
 )
+from studgroup.schedule_audit import schedule_changed
 from studgroup.subject_identity import subject_uuid
 
 
@@ -75,8 +75,20 @@ async def menu(db, session, group):
             [("Настройки", "settings")],
             [("Журнал правок / откат", "journal")],
             [("Выбрать другую группу", "groups")],
+            [("‹ В начало", "to_start")],
         ],
     )
+
+
+async def enter(db, session):
+    """Open the cabinet: straight to the menu for the usual single group, else the group list."""
+    allowed = await domain.memberships(db, session.telegram_user_id)
+    if len(allowed) != 1:
+        await groups(db, session)
+        return
+    _, _, group = await domain.access(db, session.telegram_user_id, allowed[0][2].id)
+    session.group_id = group.id
+    await menu(db, session, group)
 
 
 async def groups(db, session, forward=None):
@@ -85,7 +97,8 @@ async def groups(db, session, forward=None):
         await screen(
             db,
             session,
-            "Нет роли старосты/помощника. Роль назначает владелец через /admin; /st не выдаёт её автоматически.",
+            "Нет роли старосты/помощника. Староста становится им, подключив группу кнопкой "
+            "«Я староста» на стартовом экране; помощника назначает владелец проекта.",
             [],
             "closed",
         )
@@ -465,25 +478,6 @@ async def handle(db, update, settings):
     if not message or not sender or message.chat.type != "private" or message.chat.id != sender.id:
         return False
     text = (message.text or "").strip()
-    if not callback and text.startswith("/start invite_"):
-        try:
-            async with db.begin_nested():
-                group = await domain.redeem_invite(
-                    db, settings, sender.id, text.split("invite_", 1)[1]
-                )
-            await say(
-                db,
-                sender.id,
-                f"Ты подключён к «{group.name}». Открой приложение заново.",
-                {
-                    "inline_keyboard": [
-                        [{"text": "Открыть StudGroup", "web_app": {"url": settings.webapp_origin}}]
-                    ]
-                },
-            )
-        except domain.StError as error:
-            await say(db, sender.id, str(error))
-        return True
     session = await db.scalar(
         select(HeadmanSession).where(HeadmanSession.telegram_user_id == sender.id).with_for_update()
     )
@@ -556,7 +550,16 @@ async def handle(db, update, settings):
         await groups(db, session)
         return True
     if not session or utc(session.expires_at) <= datetime.now(UTC):
-        await say(db, sender.id, "Сессия истекла. Отправь /st заново.")
+        if session is None:
+            session = HeadmanSession(
+                telegram_user_id=sender.id,
+                nonce="",
+                step="groups",
+                payload="{}",
+                expires_at=datetime.now(UTC),
+            )
+            db.add(session)
+        await enter(db, session)  # a fresh main menu instead of «send the command again»
         return True
     try:
         data = payload(session)
@@ -564,8 +567,11 @@ async def handle(db, update, settings):
         if callback:
             parts = (callback.data or "").split(":", 2)
             if len(parts) != 3 or not secrets.compare_digest(parts[1], session.nonce):
-                raise domain.StError("Кнопка устарела. Отправь /st заново.")
+                raise domain.StError("Экран устарел. Используйте кнопки последнего сообщения.")
             action = parts[2]
+        if action == "to_start":
+            await bot_start.open_start(db, settings, sender.id)
+            return True
         if action == "groups":
             await groups(db, session)
             return True
@@ -866,7 +872,7 @@ async def handle(db, update, settings):
             domain.headman_only(member)
             target = await db.get(Membership, uuid.UUID(data["members"][int(action[6:])]))
             if target.group_id != group.id or target.role != "student":
-                raise domain.StError("Роли старост и помощников меняет владелец через /admin.")
+                raise domain.StError("Роли старост и помощников меняет владелец проекта.")
             await preview(
                 db,
                 session,
@@ -975,14 +981,14 @@ async def handle(db, update, settings):
         elif session.step == "text" and not callback:
             await typed(db, session, group, user, member, data, text, message)
         else:
-            raise domain.StError("Открой раздел заново через /st.")
+            raise domain.StError("Откройте раздел заново кнопками главного меню.")
     except (domain.StError, ValueError, IndexError, KeyError, ZoneInfoNotFoundError) as error:
         await say(
             db,
             sender.id,
             str(error)
             if isinstance(error, domain.StError)
-            else "Некорректный ввод или устаревшее меню. Для нового меню — /st.",
+            else "Некорректный ввод или устаревшее меню. Вернитесь в главное меню кнопкой.",
         )
     return True
 
@@ -1332,8 +1338,9 @@ async def apply(db, session, group, user, member, data, settings):
         await screen(
             db,
             session,
-            "Одноразовые коды (24 часа). Передай участникам: отправить боту /start invite_КОД.\n\n"
-            + "\n".join(f"/start invite_{code}" for code in codes),
+            "Одноразовые приглашения на 24 часа. Перешли каждую ссылку одному студенту: "
+            "достаточно нажать на неё в Telegram.\n\n"
+            + "\n".join(bot_start.invite_link(settings, code) for code in codes),
             [back()],
         )
         return
@@ -1384,7 +1391,9 @@ async def apply(db, session, group, user, member, data, settings):
         group.timezone = data["timezone"]
         await db.flush()
         # Derived deadlines depend on the group's calendar day, so the zone change rebuilds them.
-        await rebuild_after_schedule_change(db, group, datetime.now(UTC))
+        await schedule_changed(
+            db, group, method="bot", operation="timezone", user=user, member=member
+        )
     else:
         raise domain.StError("Неизвестное действие.")
     await db.flush()

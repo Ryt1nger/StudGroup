@@ -53,6 +53,7 @@ async def representation(db, group, row, now):
         "needs_clarification": row.needs_clarification,
         "deadline_certainty": enrichment["deadline_certainty"],
         "deadline_origin": enrichment["deadline_origin"],
+        "deadline_label": enrichment["deadline_label"],
         "source_message_ids": json.loads(row.source_message_ids),
         "sources": enrichment["sources"],
         "updates": enrichment["updates"],

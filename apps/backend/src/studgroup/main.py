@@ -24,6 +24,7 @@ from studgroup.card_edit import router as card_edit_router
 from studgroup.homework import router as homework_router
 from studgroup.ingestion import router as ingestion_router
 from studgroup.notifications import router as notifications_router
+from studgroup.staff_api import router as staff_router
 from studgroup.subjects import router as subjects_router
 from studgroup.telegram_files import configure as configure_file_links
 from studgroup.telegram_files import router as files_router
@@ -84,6 +85,7 @@ class Settings(BaseSettings):
     owner_update_notifications_since: datetime | None = None
     bot_admin_user_id: int | None = None
     support_contact: str = ""
+    bot_username: str = ""  # without @; builds t.me invitation links, else code text is shown
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -296,6 +298,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(subjects_router)
     app.include_router(deadlines_router)
     app.include_router(notifications_router)
+    app.include_router(staff_router)
 
     @app.exception_handler(ApiError)
     async def api_error(request, error):

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.11.0
+  version: 0.12.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -16,6 +16,8 @@ tags:
   - name: Today
   - name: Homework
   - name: Membership
+  - name: Staff
+    description: Headman/deputy cabinet. Every route re-checks the active membership role.
 paths:
   /notifications:
     get:
@@ -490,6 +492,351 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /staff/schedule:
+    get:
+      tags: [Staff]
+      operationId: getStaffSchedule
+      summary: Group timetable with the revisions the editor needs and days without lessons
+      parameters:
+        - name: start
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: end
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: The student schedule unchanged plus editor metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffScheduleResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+  /staff/schedule/lessons:
+    post:
+      tags: [Staff]
+      operationId: createStaffLesson
+      summary: Add a one-off group lesson
+      description: Recomputes timetable-derived deadlines in the same transaction. No notification.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LessonCreateRequest"
+            examples:
+              consultation:
+                value:
+                  subject: Консультация
+                  starts_at: "2026-10-15T15:00:00+03:00"
+                  ends_at: "2026-10-15T16:00:00+03:00"
+                  location: Ауд. 305
+      responses:
+        "201":
+          description: Lesson added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleMutationResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/ActionRejected"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+  /staff/schedule/lessons/{lesson_id}:
+    parameters:
+      - name: lesson_id
+        in: path
+        required: true
+        description: LessonOccurrence.id (`<pattern uuid>:<YYYY-MM-DD>`).
+        schema: { type: string }
+    patch:
+      tags: [Staff]
+      operationId: changeStaffLesson
+      summary: Move, relocate or cancel one occurrence or the whole recurring rule
+      description: >-
+        Only fields present in the body change; starts_at and ends_at come together.
+        Revisions come from StaffScheduleResponse.lesson_edits. Timetable-derived deadlines are
+        recomputed in the same transaction; locked, explicit and past deadlines never change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LessonChangeRequest"
+            examples:
+              moveRule:
+                value:
+                  scope: recurring
+                  pattern_revision: 1
+                  override_revision: 0
+                  starts_at: "2026-10-13T09:00:00+03:00"
+                  ends_at: "2026-10-13T10:30:00+03:00"
+                  location: Ауд. 305
+              cancelOnce:
+                value: { scope: once, pattern_revision: 1, override_revision: 0, cancelled: true }
+      responses:
+        "200":
+          description: Change saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleMutationResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/ActionRejected"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+  /staff/no-lesson-days:
+    get:
+      tags: [Staff]
+      operationId: listNoLessonDays
+      summary: Days without lessons, optionally within a date range
+      parameters:
+        - name: start
+          in: query
+          required: false
+          schema: { type: string, format: date }
+        - name: end
+          in: query
+          required: false
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Days ordered by date
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NoLessonDayList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Staff]
+      operationId: addNoLessonDay
+      summary: Mark a day without lessons for the whole group
+      description: >-
+        Timetable-derived deadlines whose window crosses this day become unknown and are sent to
+        the headman. The student schedule still lists the lessons of that day in this version.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoLessonDay"
+            examples:
+              holiday:
+                value: { day: "2026-11-04", reason: День народного единства }
+      responses:
+        "201":
+          description: Day added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleMutationResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/ActionRejected"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+  /staff/no-lesson-days/{day}:
+    parameters:
+      - name: day
+        in: path
+        required: true
+        schema: { type: string, format: date }
+    delete:
+      tags: [Staff]
+      operationId: removeNoLessonDay
+      summary: Remove a day without lessons
+      responses:
+        "200":
+          description: Day removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleMutationResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /staff/group/settings:
+    patch:
+      tags: [Staff]
+      operationId: changeGroupSettings
+      summary: Change the group timezone or first-week anchor (headman only)
+      description: >-
+        Guarded by schedule_version. Deputies receive 403. Timetable-derived deadlines are
+        recomputed because both values change the group's calendar.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupSettingsChangeRequest"
+            examples:
+              anchor:
+                value: { schedule_version: 4, first_week_anchor: "2026-09-01" }
+      responses:
+        "200":
+          description: Settings saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupSettingsResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/RevisionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+  /staff/deadline-queue:
+    get:
+      tags: [Staff]
+      operationId: getDeadlineQueue
+      summary: Active cards waiting for the headman to set or confirm a deadline
+      responses:
+        "200":
+          description: Oldest first, at most 200 cards
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffItemList"
+              examples:
+                inferred:
+                  $ref: "#/components/examples/StaffDeadlineQueue"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /staff/items/{item_id}:
+    parameters:
+      - $ref: "#/components/parameters/StaffItemId"
+    get:
+      tags: [Staff]
+      operationId: getStaffItem
+      summary: One card with staff-only deadline explanation and field locks
+      responses:
+        "200":
+          description: Card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /staff/items/{item_id}/deadline:
+    parameters:
+      - $ref: "#/components/parameters/StaffItemId"
+    post:
+      tags: [Staff]
+      operationId: decideItemDeadline
+      summary: Set or confirm a card deadline
+      description: >-
+        Both actions lock the deadline field (AI and timetable rebuilds no longer change it),
+        remove the deadline request from attention_reasons and create a new revision with history.
+        `set` stores basis `explicit` with reason `headman_set`; a date_only value is normalised to
+        the start of that day in the group timezone. `confirm` keeps the shown date and stores
+        reason `headman_confirmed`. No notification is sent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeadlineActionRequest"
+            examples:
+              confirm:
+                value: { action: confirm, revision: 1 }
+              set:
+                value:
+                  action: set
+                  revision: 1
+                  deadline_at: "2026-10-20T00:00:00+03:00"
+                  date_only: true
+      responses:
+        "200":
+          description: Updated card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Stale revision (revision_conflict) or inactive card / no deadline to confirm (action_rejected)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
+  /staff/items/{item_id}/locks:
+    parameters:
+      - $ref: "#/components/parameters/StaffItemId"
+    put:
+      tags: [Staff]
+      operationId: setItemLocks
+      summary: Replace the set of fields the AI may not overwrite
+      description: Send the full list; an empty list releases every lock.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FieldLocksRequest"
+            examples:
+              lockTitle:
+                value: { revision: 2, locked_fields: [deadline, title] }
+      responses:
+        "200":
+          description: Updated card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Stale revision (revision_conflict) or inactive card (action_rejected)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/InvalidRequest"
 components:
   securitySchemes:
     bearerAuth:
@@ -498,6 +845,14 @@ components:
       bearerFormat: opaque
       description: Opaque 256-bit-or-stronger session token; never a JWT.
   parameters:
+    StaffItemId:
+      name: item_id
+      in: path
+      required: true
+      description: Canonical card id from the staff endpoints (not the homework/deadline id).
+      schema:
+        type: string
+        format: uuid
     HomeworkId:
       name: homework_id
       in: path
@@ -506,6 +861,20 @@ components:
         type: string
         format: uuid
   responses:
+    ActionRejected:
+      description: The action conflicts with current data or a group rule; message explains why
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            staleLesson:
+              value:
+                error:
+                  code: action_rejected
+                  message: Карточка уже изменилась. Открой её заново — старую правку не применяю.
+                  correlation_id: 01J9Z4A8Z1R9N2Y3P4Q5W6E7T8
+                  retryable: false
     Unauthorized:
       description: Telegram bootstrap or bearer session is invalid or expired
       content:
@@ -592,6 +961,37 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
   examples:
+    StaffDeadlineQueue:
+      summary: One homework dated by the timetable, waiting for confirmation
+      value:
+        items:
+          - id: 7b0f8c1e-5a7d-4c55-9a36-1f0f2b3c4d5e
+            revision: 1
+            state: active
+            card_kind: homework
+            destination: task
+            subject: Математический анализ
+            title: Номер 5 письменно
+            description: Решить номер 5 письменно.
+            deadline:
+              at: "2026-10-14T12:10:00+03:00"
+              date_only: false
+              basis: schedule_inferred
+              reason: next_subject_lesson
+              timezone_confirmed: true
+              label: К следующему занятию
+            staff_note: Дата не найдена в сообщении, она выведена по расписанию. Уточните срок.
+            attention_reasons: [deadline_inferred_confirm]
+            locked_fields: []
+            sources:
+              - kind: telegram_group_message
+                imported: false
+                availability: { state: available, reason: null }
+                message_date: "2026-10-12T09:00:00Z"
+                excerpt: номер 5 письменно
+                action: { type: open_telegram_link, url: "https://t.me/c/1234567890/1" }
+            created_at: "2026-10-12T09:00:05Z"
+            updated_at: "2026-10-12T09:00:05Z"
     HomeworkListEmpty:
       value:
         server_time: "2026-10-05T06:00:00Z"
@@ -1098,6 +1498,12 @@ components:
         - homework.completion.write
         - homework.edit
         - homework.material.write
+        - schedule.write
+        - deadline.manage
+        - group.settings.write
+      description: >-
+        Staff permissions are a UI hint: headman gets schedule.write, deadline.manage and
+        group.settings.write, deputy the first two. The backend re-checks the role on every request.
     HomeworkListResponse:
       type: object
       additionalProperties: false
@@ -1240,6 +1646,9 @@ components:
               imported,
               unknown,
             ]
+        deadline_label:
+          type: [string, "null"]
+          description: Neutral student wording for an uncertain deadline («К следующему занятию», «Срок уточняется»); null when nothing needs saying.
         window_start: { type: [string, "null"], format: date-time }
         window_end: { type: [string, "null"], format: date-time }
         date_hint: { type: [string, "null"] }
@@ -1528,6 +1937,9 @@ components:
               unknown,
             ]
           description: Student-safe origin; no model confidence, prompt or internal evidence metadata.
+        label:
+          type: [string, "null"]
+          description: Neutral student wording for an uncertain deadline («К следующему занятию», «Срок уточняется»); null when nothing needs saying.
     LearningCardKind:
       type: string
       description: >-
@@ -1703,6 +2115,196 @@ components:
         expected_revision:
           type: integer
           minimum: 1
+    StaffScheduleResponse:
+      type: object
+      additionalProperties: false
+      required: [schedule, lesson_edits, no_lesson_days, schedule_version]
+      properties:
+        schedule: { $ref: "#/components/schemas/ScheduleResponse" }
+        lesson_edits:
+          type: array
+          items: { $ref: "#/components/schemas/LessonEdit" }
+        no_lesson_days:
+          type: array
+          items: { $ref: "#/components/schemas/NoLessonDay" }
+        schedule_version: { type: integer, minimum: 0 }
+    LessonEdit:
+      type: object
+      additionalProperties: false
+      required: [lesson_id, pattern_revision, override_revision, week, single_day]
+      properties:
+        lesson_id: { type: string }
+        pattern_revision: { type: integer, minimum: 1 }
+        override_revision:
+          type: integer
+          minimum: 0
+          description: 0 when this occurrence has no one-off change yet.
+        week: { type: string, enum: [all, first, second] }
+        single_day:
+          type: boolean
+          description: True for a one-off lesson; scope recurring then edits only that day.
+    NoLessonDay:
+      type: object
+      additionalProperties: false
+      required: [day]
+      properties:
+        day: { type: string, format: date }
+        reason: { type: [string, "null"], maxLength: 255 }
+    NoLessonDayList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/NoLessonDay" }
+    LessonCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [subject, starts_at, ends_at]
+      properties:
+        subject: { type: string, minLength: 1, maxLength: 255 }
+        starts_at: { type: string, format: date-time, description: Must carry a UTC offset. }
+        ends_at: { type: string, format: date-time, description: Same group day, after starts_at. }
+        location: { type: [string, "null"], maxLength: 512 }
+    LessonChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [scope, pattern_revision, override_revision]
+      properties:
+        scope:
+          type: string
+          enum: [once, recurring]
+          description: once changes this occurrence; recurring changes the rule for every week it applies to.
+        pattern_revision: { type: integer }
+        override_revision: { type: integer }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        location: { type: [string, "null"], maxLength: 512 }
+        online_url: { type: [string, "null"], maxLength: 2048, description: HTTPS only. }
+        cancelled: { type: boolean }
+    ScheduleMutationResult:
+      type: object
+      additionalProperties: false
+      required: [schedule_version]
+      properties:
+        schedule_version: { type: integer, minimum: 1 }
+    GroupSettingsChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [schedule_version]
+      properties:
+        schedule_version: { type: integer, minimum: 0 }
+        timezone: { type: string, description: IANA zone, e.g. Europe/Moscow. }
+        first_week_anchor:
+          type: string
+          format: date
+          description: Any day of a «first» week; weeks are counted Monday to Sunday.
+    GroupSettingsResult:
+      type: object
+      additionalProperties: false
+      required: [schedule_version, timezone, first_week_anchor]
+      properties:
+        schedule_version: { type: integer, minimum: 1 }
+        timezone: { type: string }
+        first_week_anchor: { type: [string, "null"], format: date }
+    LockableField:
+      type: string
+      enum: [deadline, subject, kind, title, description]
+    StaffDeadline:
+      type: object
+      additionalProperties: false
+      required: [at, date_only, basis, reason, timezone_confirmed, label]
+      properties:
+        at: { type: [string, "null"], format: date-time }
+        date_only: { type: boolean }
+        basis:
+          type: string
+          description: explicit | relative_resolved | schedule_inferred | unknown (older rows may hold ambiguous_range).
+        reason:
+          type: string
+          description: Machine code, e.g. next_subject_lesson, no_lesson_day_in_window, headman_set, headman_confirmed.
+        timezone_confirmed: { type: boolean }
+        label:
+          type: [string, "null"]
+          description: The wording students see for this deadline.
+    StaffItem:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          revision,
+          state,
+          card_kind,
+          destination,
+          subject,
+          title,
+          description,
+          deadline,
+          staff_note,
+          attention_reasons,
+          locked_fields,
+          sources,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        revision: { type: integer, minimum: 1 }
+        state: { type: string, description: active | cancelled | archived }
+        card_kind: { type: string }
+        destination: { type: string, enum: [task, deadline] }
+        subject: { type: [string, "null"] }
+        title: { type: string }
+        description: { type: string }
+        deadline: { $ref: "#/components/schemas/StaffDeadline" }
+        staff_note:
+          type: [string, "null"]
+          description: Explanation for the headman; null once the deadline is set or confirmed.
+        attention_reasons:
+          type: array
+          items: { type: string }
+          description: >-
+            Machine codes. deadline_needs_headman asks to set a deadline, deadline_inferred_confirm
+            asks to confirm a timetable-derived one; other codes may appear.
+        locked_fields:
+          type: array
+          items: { $ref: "#/components/schemas/LockableField" }
+        sources:
+          type: array
+          items: { $ref: "#/components/schemas/SourceDetail" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    StaffItemList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StaffItem" }
+    DeadlineActionRequest:
+      type: object
+      additionalProperties: false
+      required: [action, revision]
+      properties:
+        action: { type: string, enum: [set, confirm] }
+        revision: { type: integer }
+        deadline_at:
+          type: [string, "null"]
+          format: date-time
+          description: Required for set; must carry a UTC offset.
+        date_only: { type: boolean, default: false }
+    FieldLocksRequest:
+      type: object
+      additionalProperties: false
+      required: [revision, locked_fields]
+      properties:
+        revision: { type: integer }
+        locked_fields:
+          type: array
+          items: { $ref: "#/components/schemas/LockableField" }
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -1735,6 +2337,7 @@ components:
             - not_found
             - gone
             - revision_conflict
+            - action_rejected
             - rate_limited
             - service_unavailable
             - internal_error

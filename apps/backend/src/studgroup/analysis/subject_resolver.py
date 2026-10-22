@@ -13,9 +13,10 @@ subject, because a wrong subject is worse than a missing one.
 import re
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from studgroup.schedule import week_kind  # one first/second-week rule for every caller
 from studgroup.subject_identity import match_key
 
 AFTER_LESSON_MINUTES = 30
@@ -87,11 +88,6 @@ def hashtag_subject(text, names):
         if len(hits) == 1:
             found |= hits
     return next(iter(found)) if len(found) == 1 else None
-
-
-def week_kind(day: date, first_week_anchor: date) -> str:
-    """ "first" for the anchor's week and every second week after it, else "second"."""
-    return "first" if ((day - first_week_anchor).days // 7) % 2 == 0 else "second"
 
 
 def schedule_subject(

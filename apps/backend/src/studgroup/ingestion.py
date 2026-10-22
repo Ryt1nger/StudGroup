@@ -27,6 +27,7 @@ router = APIRouter(prefix="/v1/telegram", include_in_schema=False)
 class Chat(BaseModel):
     id: int
     type: str
+    title: str | None = Field(default=None, max_length=255)
 
 
 class Sender(BaseModel):
@@ -99,6 +100,19 @@ class Message(BaseModel):
     animation: TelegramFile | None = None
 
 
+class MemberStatus(BaseModel):
+    status: str
+    user: Sender
+
+
+class MyChatMemberUpdated(BaseModel):
+    """The bot's own status in a chat changed (added, promoted, removed)."""
+
+    chat: Chat
+    sender: Sender = Field(alias="from")
+    new_chat_member: MemberStatus
+
+
 class CallbackQuery(BaseModel):
     id: str = Field(max_length=256)
     sender: Sender = Field(alias="from")
@@ -111,6 +125,7 @@ class Update(BaseModel):
     message: Message | None = None
     edited_message: Message | None = None
     callback_query: CallbackQuery | None = None
+    my_chat_member: MyChatMemberUpdated | None = None
 
 
 async def authenticate_webhook(
@@ -140,6 +155,13 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
     if await dispatch(db, update, request.app.state.settings):
         await db.commit()
         return {"ok": True}
+    from studgroup import bot_connect
+
+    settings = request.app.state.settings
+    if update.my_chat_member is not None:
+        await bot_connect.on_my_chat_member(db, settings, update.my_chat_member)
+        await db.commit()
+        return {"ok": True}
     message = update.edited_message or update.message
     if message is None or message.chat.type not in {"group", "supergroup"}:
         await db.commit()
@@ -152,8 +174,17 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
         )
     )
     if group is None:
+        if update.message is not None:
+            await bot_connect.on_group_message(db, settings, update.message)
         await db.commit()
         return {"ok": True}
+    if (
+        update.message is not None
+        and (update.message.text or "").lstrip().startswith("/start")
+        and not await bot_connect.has_headman(db, group.id)
+    ):
+        # A headman-less group: an administrator typing /start in it can finish a pending claim.
+        await bot_connect.on_group_message(db, settings, update.message)
 
     # Persist the exact paid-history boundary when Telegram tells this bot that it
     # joined. Older installations are backfilled by migration from the first live

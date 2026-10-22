@@ -33,6 +33,8 @@ class Group(Base):
     name: Mapped[str] = mapped_column(String(255))
     timezone: Mapped[str] = mapped_column(String(64))
     first_week_anchor: Mapped[date | None] = mapped_column(Date)
+    # Bumped by every group timetable change; schedule_changes rows record the value they produced.
+    schedule_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     status: Mapped[str] = mapped_column(String(32), default="active")
     pilot_authorized: Mapped[bool] = mapped_column(Boolean, default=False)
     bot_added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -715,6 +717,17 @@ class BotAdminSession(Base):
     request_id: Mapped[int | None] = mapped_column(Integer)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     candidate_role: Mapped[str] = mapped_column(String(16), default="student")
+
+
+class StartSession(Base):
+    """Where a person is in the private /start walkthrough; buttons carry this row's nonce."""
+
+    __tablename__ = "start_sessions"
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nonce: Mapped[str] = mapped_column(String(24))
+    step: Mapped[str] = mapped_column(String(24))
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class BotOutbox(Base):

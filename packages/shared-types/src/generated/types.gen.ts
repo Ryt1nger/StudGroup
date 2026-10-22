@@ -102,7 +102,10 @@ export type AccessState = 'active' | 'no_active_group' | 'membership_suspended' 
 
 export type MemberRole = 'student' | 'deputy' | 'headman';
 
-export type Permission = 'schedule.read' | 'today.read' | 'homework.read' | 'homework.completion.write' | 'homework.edit' | 'homework.material.write';
+/**
+ * Staff permissions are a UI hint: headman gets schedule.write, deadline.manage and group.settings.write, deputy the first two. The backend re-checks the role on every request.
+ */
+export type Permission = 'schedule.read' | 'today.read' | 'homework.read' | 'homework.completion.write' | 'homework.edit' | 'homework.material.write' | 'schedule.write' | 'deadline.manage' | 'group.settings.write';
 
 export type HomeworkListResponse = {
     /**
@@ -136,7 +139,7 @@ export type TodayResponse = {
     processing: FeedProcessing;
     empty: boolean;
     /**
-     * Ordered by backend (due_today, new_or_changed, upcoming); the client preserves order. new_or_changed contains only existing assignments with a significant update within the last 24 hours, not newly created or imported assignments. Import normalization and initial inferred timetable dates do not count as live updates. Personally completed items with a known active deadline remain eligible in their normal sections with my_state preserved; completed items without a known deadline are excluded. Cancelled and past-deadline items are archived and excluded immediately; date-only deadlines remain active through their group calendar day. Empty sections are omitted. These display rules do not delete stored homework. Legacy overdue section kind remains accepted but is no longer returned.
+     * Ordered by backend (due_today, upcoming, new_or_changed); the client preserves order. new_or_changed contains only existing assignments with a significant update within the last 5 hours; assignments created within the last 5 hours count as new and are never listed there, nor are imported assignments. Import normalization and initial inferred timetable dates do not count as live updates. Personally completed items with a known active deadline remain eligible in their normal sections with my_state preserved; completed items without a known deadline are excluded. Cancelled and past-deadline items are archived and excluded immediately; date-only deadlines remain active through their group calendar day. Empty sections are omitted. These display rules do not delete stored homework. Legacy overdue section kind remains accepted but is no longer returned.
      */
     sections: Array<TodaySection>;
 };
@@ -158,6 +161,10 @@ export type AcademicDeadline = {
     date_only: boolean;
     deadline_certainty?: 'confirmed' | 'from_source' | 'inferred' | 'needs_clarification' | 'unknown';
     deadline_origin?: 'explicit_message' | 'schedule_inferred' | 'ambiguous_message' | 'manual' | 'imported' | 'unknown';
+    /**
+     * Neutral student wording for an uncertain deadline («К следующему занятию», «Срок уточняется»); null when nothing needs saying.
+     */
+    deadline_label?: string | null;
     window_start: string | null;
     window_end: string | null;
     date_hint: string | null;
@@ -315,6 +322,10 @@ export type Deadline = {
      * Student-safe origin; no model confidence, prompt or internal evidence metadata.
      */
     origin?: 'explicit_message' | 'schedule_inferred' | 'ambiguous_message' | 'manual' | 'imported' | 'unknown';
+    /**
+     * Neutral student wording for an uncertain deadline («К следующему занятию», «Срок уточняется»); null when nothing needs saying.
+     */
+    label?: string | null;
 };
 
 /**
@@ -416,12 +427,160 @@ export type SetCompletionRequest = {
     expected_revision: number;
 };
 
+export type StaffScheduleResponse = {
+    schedule: ScheduleResponse;
+    lesson_edits: Array<LessonEdit>;
+    no_lesson_days: Array<NoLessonDay>;
+    schedule_version: number;
+};
+
+export type LessonEdit = {
+    lesson_id: string;
+    pattern_revision: number;
+    /**
+     * 0 when this occurrence has no one-off change yet.
+     */
+    override_revision: number;
+    week: 'all' | 'first' | 'second';
+    /**
+     * True for a one-off lesson; scope recurring then edits only that day.
+     */
+    single_day: boolean;
+};
+
+export type NoLessonDay = {
+    day: string;
+    reason?: string | null;
+};
+
+export type NoLessonDayList = {
+    items: Array<NoLessonDay>;
+};
+
+export type LessonCreateRequest = {
+    subject: string;
+    /**
+     * Must carry a UTC offset.
+     */
+    starts_at: string;
+    /**
+     * Same group day
+     */
+    ends_at: string;
+    location?: string | null;
+};
+
+export type LessonChangeRequest = {
+    /**
+     * once changes this occurrence; recurring changes the rule for every week it applies to.
+     */
+    scope: 'once' | 'recurring';
+    pattern_revision: number;
+    override_revision: number;
+    starts_at?: string;
+    ends_at?: string;
+    location?: string | null;
+    /**
+     * HTTPS only.
+     */
+    online_url?: string | null;
+    cancelled?: boolean;
+};
+
+export type ScheduleMutationResult = {
+    schedule_version: number;
+};
+
+export type GroupSettingsChangeRequest = {
+    schedule_version: number;
+    /**
+     * IANA zone
+     */
+    timezone?: string;
+    /**
+     * Any day of a «first» week; weeks are counted Monday to Sunday.
+     */
+    first_week_anchor?: string;
+};
+
+export type GroupSettingsResult = {
+    schedule_version: number;
+    timezone: string;
+    first_week_anchor: string | null;
+};
+
+export type LockableField = 'deadline' | 'subject' | 'kind' | 'title' | 'description';
+
+export type StaffDeadline = {
+    at: string | null;
+    date_only: boolean;
+    /**
+     * explicit | relative_resolved | schedule_inferred | unknown (older rows may hold ambiguous_range).
+     */
+    basis: string;
+    /**
+     * Machine code, e.g. next_subject_lesson, no_lesson_day_in_window, headman_set, headman_confirmed.
+     */
+    reason: string;
+    timezone_confirmed: boolean;
+    /**
+     * The wording students see for this deadline.
+     */
+    label: string | null;
+};
+
+export type StaffItem = {
+    id: string;
+    revision: number;
+    /**
+     * active | cancelled | archived
+     */
+    state: string;
+    card_kind: string;
+    destination: 'task' | 'deadline';
+    subject: string | null;
+    title: string;
+    description: string;
+    deadline: StaffDeadline;
+    /**
+     * Explanation for the headman; null once the deadline is set or confirmed.
+     */
+    staff_note: string | null;
+    /**
+     * Machine codes. deadline_needs_headman asks to set a deadline, deadline_inferred_confirm asks to confirm a timetable-derived one; other codes may appear.
+     */
+    attention_reasons: Array<string>;
+    locked_fields: Array<LockableField>;
+    sources: Array<SourceDetail>;
+    created_at: string;
+    updated_at: string;
+};
+
+export type StaffItemList = {
+    items: Array<StaffItem>;
+};
+
+export type DeadlineActionRequest = {
+    action: 'set' | 'confirm';
+    revision: number;
+    /**
+     * Required for set; must carry a UTC offset.
+     */
+    deadline_at?: string | null;
+    date_only?: boolean;
+};
+
+export type FieldLocksRequest = {
+    revision: number;
+    locked_fields: Array<LockableField>;
+};
+
 export type ErrorResponse = {
     error: ApiError;
 };
 
 export type ApiError = {
-    code: 'invalid_request' | 'unauthenticated' | 'initdata_invalid' | 'initdata_expired' | 'session_expired' | 'no_active_group' | 'not_group_member' | 'membership_suspended' | 'membership_left' | 'group_not_authorized_for_pilot' | 'invitation_expired' | 'invitation_consumed' | 'group_deletion_pending' | 'permission_denied' | 'not_found' | 'gone' | 'revision_conflict' | 'rate_limited' | 'service_unavailable' | 'internal_error';
+    code: 'invalid_request' | 'unauthenticated' | 'initdata_invalid' | 'initdata_expired' | 'session_expired' | 'no_active_group' | 'not_group_member' | 'membership_suspended' | 'membership_left' | 'group_not_authorized_for_pilot' | 'invitation_expired' | 'invitation_consumed' | 'group_deletion_pending' | 'permission_denied' | 'not_found' | 'gone' | 'revision_conflict' | 'action_rejected' | 'rate_limited' | 'service_unavailable' | 'internal_error';
     message: string;
     correlation_id: string;
     retryable: boolean;
@@ -434,6 +593,11 @@ export type ApiError = {
         [key: string]: unknown;
     } | null;
 };
+
+/**
+ * Canonical card id from the staff endpoints (not the homework/deadline id).
+ */
+export type StaffItemId = string;
 
 export type HomeworkId = string;
 
@@ -1055,3 +1219,418 @@ export type RecheckMembershipResponses = {
 };
 
 export type RecheckMembershipResponse = RecheckMembershipResponses[keyof RecheckMembershipResponses];
+
+export type GetStaffScheduleData = {
+    body?: never;
+    path?: never;
+    query: {
+        start: string;
+        end: string;
+    };
+    url: '/staff/schedule';
+};
+
+export type GetStaffScheduleErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type GetStaffScheduleError = GetStaffScheduleErrors[keyof GetStaffScheduleErrors];
+
+export type GetStaffScheduleResponses = {
+    /**
+     * The student schedule unchanged plus editor metadata
+     */
+    200: StaffScheduleResponse;
+};
+
+export type GetStaffScheduleResponse = GetStaffScheduleResponses[keyof GetStaffScheduleResponses];
+
+export type CreateStaffLessonData = {
+    body: LessonCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/staff/schedule/lessons';
+};
+
+export type CreateStaffLessonErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The action conflicts with current data or a group rule; message explains why
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type CreateStaffLessonError = CreateStaffLessonErrors[keyof CreateStaffLessonErrors];
+
+export type CreateStaffLessonResponses = {
+    /**
+     * Lesson added
+     */
+    201: ScheduleMutationResult;
+};
+
+export type CreateStaffLessonResponse = CreateStaffLessonResponses[keyof CreateStaffLessonResponses];
+
+export type ChangeStaffLessonData = {
+    body: LessonChangeRequest;
+    path: {
+        /**
+         * LessonOccurrence.id (`<pattern uuid>:<YYYY-MM-DD>`).
+         */
+        lesson_id: string;
+    };
+    query?: never;
+    url: '/staff/schedule/lessons/{lesson_id}';
+};
+
+export type ChangeStaffLessonErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The action conflicts with current data or a group rule; message explains why
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type ChangeStaffLessonError = ChangeStaffLessonErrors[keyof ChangeStaffLessonErrors];
+
+export type ChangeStaffLessonResponses = {
+    /**
+     * Change saved
+     */
+    200: ScheduleMutationResult;
+};
+
+export type ChangeStaffLessonResponse = ChangeStaffLessonResponses[keyof ChangeStaffLessonResponses];
+
+export type ListNoLessonDaysData = {
+    body?: never;
+    path?: never;
+    query?: {
+        start?: string;
+        end?: string;
+    };
+    url: '/staff/no-lesson-days';
+};
+
+export type ListNoLessonDaysErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+};
+
+export type ListNoLessonDaysError = ListNoLessonDaysErrors[keyof ListNoLessonDaysErrors];
+
+export type ListNoLessonDaysResponses = {
+    /**
+     * Days ordered by date
+     */
+    200: NoLessonDayList;
+};
+
+export type ListNoLessonDaysResponse = ListNoLessonDaysResponses[keyof ListNoLessonDaysResponses];
+
+export type AddNoLessonDayData = {
+    body: NoLessonDay;
+    path?: never;
+    query?: never;
+    url: '/staff/no-lesson-days';
+};
+
+export type AddNoLessonDayErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The action conflicts with current data or a group rule; message explains why
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type AddNoLessonDayError = AddNoLessonDayErrors[keyof AddNoLessonDayErrors];
+
+export type AddNoLessonDayResponses = {
+    /**
+     * Day added
+     */
+    201: ScheduleMutationResult;
+};
+
+export type AddNoLessonDayResponse = AddNoLessonDayResponses[keyof AddNoLessonDayResponses];
+
+export type RemoveNoLessonDayData = {
+    body?: never;
+    path: {
+        day: string;
+    };
+    query?: never;
+    url: '/staff/no-lesson-days/{day}';
+};
+
+export type RemoveNoLessonDayErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type RemoveNoLessonDayError = RemoveNoLessonDayErrors[keyof RemoveNoLessonDayErrors];
+
+export type RemoveNoLessonDayResponses = {
+    /**
+     * Day removed
+     */
+    200: ScheduleMutationResult;
+};
+
+export type RemoveNoLessonDayResponse = RemoveNoLessonDayResponses[keyof RemoveNoLessonDayResponses];
+
+export type ChangeGroupSettingsData = {
+    body: GroupSettingsChangeRequest;
+    path?: never;
+    query?: never;
+    url: '/staff/group/settings';
+};
+
+export type ChangeGroupSettingsErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type ChangeGroupSettingsError = ChangeGroupSettingsErrors[keyof ChangeGroupSettingsErrors];
+
+export type ChangeGroupSettingsResponses = {
+    /**
+     * Settings saved
+     */
+    200: GroupSettingsResult;
+};
+
+export type ChangeGroupSettingsResponse = ChangeGroupSettingsResponses[keyof ChangeGroupSettingsResponses];
+
+export type GetDeadlineQueueData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/staff/deadline-queue';
+};
+
+export type GetDeadlineQueueErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+};
+
+export type GetDeadlineQueueError = GetDeadlineQueueErrors[keyof GetDeadlineQueueErrors];
+
+export type GetDeadlineQueueResponses = {
+    /**
+     * Oldest first, at most 200 cards
+     */
+    200: StaffItemList;
+};
+
+export type GetDeadlineQueueResponse = GetDeadlineQueueResponses[keyof GetDeadlineQueueResponses];
+
+export type GetStaffItemData = {
+    body?: never;
+    path: {
+        /**
+         * Canonical card id from the staff endpoints (not the homework/deadline id).
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/staff/items/{item_id}';
+};
+
+export type GetStaffItemErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type GetStaffItemError = GetStaffItemErrors[keyof GetStaffItemErrors];
+
+export type GetStaffItemResponses = {
+    /**
+     * Card
+     */
+    200: StaffItem;
+};
+
+export type GetStaffItemResponse = GetStaffItemResponses[keyof GetStaffItemResponses];
+
+export type DecideItemDeadlineData = {
+    body: DeadlineActionRequest;
+    path: {
+        /**
+         * Canonical card id from the staff endpoints (not the homework/deadline id).
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/staff/items/{item_id}/deadline';
+};
+
+export type DecideItemDeadlineErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * Stale revision (revision_conflict) or inactive card / no deadline to confirm (action_rejected)
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type DecideItemDeadlineError = DecideItemDeadlineErrors[keyof DecideItemDeadlineErrors];
+
+export type DecideItemDeadlineResponses = {
+    /**
+     * Updated card
+     */
+    200: StaffItem;
+};
+
+export type DecideItemDeadlineResponse = DecideItemDeadlineResponses[keyof DecideItemDeadlineResponses];
+
+export type SetItemLocksData = {
+    body: FieldLocksRequest;
+    path: {
+        /**
+         * Canonical card id from the staff endpoints (not the homework/deadline id).
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/staff/items/{item_id}/locks';
+};
+
+export type SetItemLocksErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * Stale revision (revision_conflict) or inactive card (action_rejected)
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type SetItemLocksError = SetItemLocksErrors[keyof SetItemLocksErrors];
+
+export type SetItemLocksResponses = {
+    /**
+     * Updated card
+     */
+    200: StaffItem;
+};
+
+export type SetItemLocksResponse = SetItemLocksResponses[keyof SetItemLocksResponses];

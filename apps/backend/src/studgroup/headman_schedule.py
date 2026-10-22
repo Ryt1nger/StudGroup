@@ -4,7 +4,6 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 
 from studgroup.api import schedule_data
-from studgroup.deadline_rebuild import rebuild_after_schedule_change
 from studgroup.headman_domain import (
     StError,
     entity,
@@ -15,6 +14,7 @@ from studgroup.headman_domain import (
     snapshot,
 )
 from studgroup.models import ScheduleException, SchedulePattern
+from studgroup.schedule_audit import schedule_changed
 
 
 async def occurrence(db, group, ident):
@@ -51,7 +51,19 @@ async def occurrence(db, group, ident):
     return pattern, override, lesson, day
 
 
-async def change(db, group, user, member, ident, pattern_revision, override_revision, scope, patch):
+async def change(
+    db,
+    group,
+    user,
+    member,
+    ident,
+    pattern_revision,
+    override_revision,
+    scope,
+    patch,
+    *,
+    method="bot",
+):
     pattern, override, lesson, day = await occurrence(db, group, ident)
     await guard(db, group, member, f"p:{pattern.id}", pattern, pattern_revision)
     if (override.revision if override else 0) != override_revision:
@@ -80,7 +92,9 @@ async def change(db, group, user, member, ident, pattern_revision, override_revi
         await db.flush()
         await lock_decision(db, group, user, member, key, pattern)
         saved = await save_audit(db, group, user, "schedule", before, [(key, "p", pattern)])
-        await rebuild_after_schedule_change(db, group, datetime.now(UTC))
+        await schedule_changed(
+            db, group, method=method, operation="lesson_recurring", user=user, member=member
+        )
         return saved
     if scope != "once":
         raise StError("Выбери разовую правку или изменение всего правила.")
@@ -113,11 +127,13 @@ async def change(db, group, user, member, ident, pattern_revision, override_revi
     await db.flush()
     await lock_decision(db, group, user, member, key, override)
     saved = await save_audit(db, group, user, "schedule", before, [(key, "x", override)])
-    await rebuild_after_schedule_change(db, group, datetime.now(UTC))
+    await schedule_changed(
+        db, group, method=method, operation="lesson_once", user=user, member=member
+    )
     return saved
 
 
-async def add(db, group, user, member, subject, starts, ends, location):
+async def add(db, group, user, member, subject, starts, ends, location, *, method="bot"):
     local = starts.astimezone(ZoneInfo(group.timezone))
     end = ends.astimezone(ZoneInfo(group.timezone))
     if end <= local or end.date() != local.date():
@@ -139,5 +155,7 @@ async def add(db, group, user, member, subject, starts, ends, location):
     key = f"p:{row.id}"
     await lock_decision(db, group, user, member, key, row)
     saved = await save_audit(db, group, user, "schedule_add", {key: None}, [(key, "p", row)])
-    await rebuild_after_schedule_change(db, group, datetime.now(UTC))
+    await schedule_changed(
+        db, group, method=method, operation="lesson_add", user=user, member=member
+    )
     return saved

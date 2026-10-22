@@ -1,5 +1,19 @@
 # Contract changelog
 
+## 0.12.0 — 2026-10-21
+
+- Added the headman/deputy cabinet API under `/staff` (tag `Staff`): timetable view with editor
+  revisions, add/change/cancel lessons, days without lessons, group timezone and first-week
+  anchor (headman only), the "deadline needs the headman" queue, set/confirm a card deadline and
+  per-field locks.
+- Added permissions `schedule.write`, `deadline.manage` (headman and deputy) and
+  `group.settings.write` (headman). Students keep the four existing permissions.
+- Added error code `action_rejected` (409) for actions refused by current data or a group rule.
+- Added nullable `Deadline.label` (homework) and `AcademicDeadline.deadline_label` with the neutral
+  student wording for uncertain deadlines.
+- A deadline set or confirmed by the headman/deputy is reported as certainty `confirmed`,
+  origin `manual`.
+
 ## 0.11.0 — 2026-10-21
 
 - Files that stay in Telegram: a card material with `kind` other than `link` may now carry an

@@ -141,18 +141,6 @@ async def handle(db, update, settings):
     if callback:
         enqueue(db, "answerCallbackQuery", {"callback_query_id": callback.id})
     text = message.text or ""
-    if not callback and text.split("@")[0].strip() == "/start":
-        await say(
-            db,
-            chat,
-            "Открой StudGroup через кнопку ниже.",
-            {
-                "inline_keyboard": [
-                    [{"text": "Открыть StudGroup", "web_app": {"url": settings.webapp_origin}}]
-                ]
-            },
-        )
-        return True
     if sender.id != settings.bot_admin_user_id or chat != sender.id:
         if text.startswith("/admin"):
             await say(db, chat, "Админ-панель недоступна для этого аккаунта.")
@@ -182,11 +170,25 @@ async def handle(db, update, settings):
                 .limit(40)
             )
         ).all()
+        from studgroup.bot_connect import NO_HEADMAN, headmanless_group_ids
+
+        without = await headmanless_group_ids(db)
         await say(
             db,
             chat,
             "Выбери группу:" if groups else "Нет подключённых групп.",
-            buttons(session, [[(g.name[:50], "g" + g.id.hex)] for g in groups]),
+            buttons(
+                session,
+                [
+                    [
+                        (
+                            g.name[:36] + (f" · {NO_HEADMAN}" if g.id in without else ""),
+                            "g" + g.id.hex,
+                        )
+                    ]
+                    for g in groups
+                ],
+            ),
         )
         return True
     if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/explain":
@@ -609,6 +611,24 @@ async def handle(db, update, settings):
             if not group or not group.pilot_authorized or group.status != "active":
                 return True
             target = session.candidate_id
+            if session.candidate_role == "headman" and await db.scalar(
+                select(Membership.id)
+                .join(User, User.id == Membership.user_id)
+                .where(
+                    Membership.group_id == group.id,
+                    Membership.role == "headman",
+                    Membership.status == "active",
+                    User.telegram_user_id != target,
+                )
+            ):
+                await say(
+                    db,
+                    chat,
+                    f"В «{group.name}» уже есть староста: он может быть только один. "
+                    "Сначала смените роль действующему старосте.",
+                    {"remove_keyboard": True},
+                )
+                return True
             await db.execute(
                 insert(User)
                 .values(id=uuid.uuid4(), telegram_user_id=target, display_name="Участник")
