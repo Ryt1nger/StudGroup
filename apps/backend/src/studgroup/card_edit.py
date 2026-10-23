@@ -10,7 +10,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -23,7 +23,7 @@ from studgroup.academic_deadlines import representation as deadline_representati
 from studgroup.api import EDIT_PERMISSIONS, ApiError, active_group, database
 from studgroup.homework import find_card
 from studgroup.homework import representation as homework_representation
-from studgroup.models import AcademicDeadline, Group, User, WebSession
+from studgroup.models import AcademicDeadline, Group, HeadmanAudit, User, WebSession
 from studgroup.security import token_hash
 from studgroup.subject_identity import subject_uuid
 
@@ -133,7 +133,7 @@ async def apply(
     if row.revision != expected:
         raise ApiError("revision_conflict", "Данные карточки изменились. Обновите карточку", 409)
     try:
-        await domain.mutate(
+        return await domain.mutate(
             db,
             group,
             user,
@@ -370,7 +370,7 @@ async def create_event(
     )
 
 
-@router.delete("/homework/{homework_id}", status_code=204)
+@router.delete("/homework/{homework_id}")
 async def delete_homework(
     homework_id: uuid.UUID,
     expected_revision: Annotated[int, Query(ge=1)],
@@ -381,13 +381,15 @@ async def delete_homework(
     """Remove a card for everyone. The card is hidden at once; the correction journal can undo it."""
     user, member = await editor(db, group, authorization)
     row = await find_card(db, group, homework_id)
-    await apply(db, group, user, member, f"h:{row.id}", row, expected_revision, {}, False, "delete")
+    undo_id = await apply(
+        db, group, user, member, f"h:{row.id}", row, expected_revision, {}, False, "delete"
+    )
     await staff_items.retire_canonical(db, "homework", row.id, datetime.now(UTC))
     await db.commit()
-    return Response(status_code=204)
+    return {"undo_id": undo_id}
 
 
-@router.delete("/deadlines/{deadline_id}", status_code=204)
+@router.delete("/deadlines/{deadline_id}")
 async def delete_event(
     deadline_id: uuid.UUID,
     expected_revision: Annotated[int, Query(ge=1)],
@@ -408,10 +410,38 @@ async def delete_event(
     )
     if row is None:
         raise ApiError("not_found", "Событие не найдено", 404)
-    await apply(db, group, user, member, f"e:{row.id}", row, expected_revision, {}, False, "delete")
+    undo_id = await apply(
+        db, group, user, member, f"e:{row.id}", row, expected_revision, {}, False, "delete"
+    )
     await staff_items.retire_canonical(db, "deadline", row.id, now)
     await db.commit()
-    return Response(status_code=204)
+    return {"undo_id": undo_id}
+
+
+@router.post("/card-removals/{undo_id}/undo")
+async def undo_removal(
+    undo_id: uuid.UUID,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    """Bring back a card that was just removed. Only removals can be undone here; other edits are
+    undone in the bot's correction journal. A card that changed since, or an already undone removal,
+    answers 409."""
+    user, member = await editor(db, group, authorization)
+    audit = await db.get(HeadmanAudit, undo_id)
+    if audit is None or audit.group_id != group.id or audit.operation != "delete":
+        raise ApiError("not_found", "Удаление не найдено", 404)
+    try:
+        await domain.undo(db, group, user, member, undo_id)
+    except domain.StError as error:
+        raise ApiError("action_rejected", str(error), 409) from None
+    await db.commit()
+    kind, _, entity_id = audit.entity_key.partition(":")
+    return {
+        "entity_type": "homework" if kind == "h" else "deadline",
+        "entity_id": uuid.UUID(entity_id),
+    }
 
 
 _bot_username = None

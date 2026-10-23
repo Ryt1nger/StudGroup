@@ -4,6 +4,10 @@ export type ClientOptions = {
     baseUrl: 'https://api.studgroup.example/v1' | (string & {});
 };
 
+export type CardRemoval = {
+    undo_id: string;
+};
+
 export type NotificationSettings = {
     enabled?: boolean;
     new_cards?: boolean;
@@ -1202,9 +1206,9 @@ export type DeleteAcademicEventError = DeleteAcademicEventErrors[keyof DeleteAca
 
 export type DeleteAcademicEventResponses = {
     /**
-     * Removed
+     * Removed; `undo_id` brings the event back (`undoCardRemoval`)
      */
-    204: void;
+    200: CardRemoval;
 };
 
 export type DeleteAcademicEventResponse = DeleteAcademicEventResponses[keyof DeleteAcademicEventResponses];
@@ -1411,9 +1415,9 @@ export type DeleteHomeworkError = DeleteHomeworkErrors[keyof DeleteHomeworkError
 
 export type DeleteHomeworkResponses = {
     /**
-     * Removed
+     * Removed; `undo_id` brings the card back for a short while (`undoCardRemoval`)
      */
-    204: void;
+    200: CardRemoval;
 };
 
 export type DeleteHomeworkResponse = DeleteHomeworkResponses[keyof DeleteHomeworkResponses];
@@ -1503,6 +1507,48 @@ export type EditHomeworkResponses = {
 };
 
 export type EditHomeworkResponse = EditHomeworkResponses[keyof EditHomeworkResponses];
+
+export type UndoCardRemovalData = {
+    body?: never;
+    path: {
+        undo_id: string;
+    };
+    query?: never;
+    url: '/card-removals/{undo_id}/undo';
+};
+
+export type UndoCardRemovalErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The action conflicts with current data or a group rule; message explains why
+     */
+    409: ErrorResponse;
+};
+
+export type UndoCardRemovalError = UndoCardRemovalErrors[keyof UndoCardRemovalErrors];
+
+export type UndoCardRemovalResponses = {
+    /**
+     * The card is back in every list
+     */
+    200: {
+        entity_type: 'homework' | 'deadline';
+        entity_id: string;
+    };
+};
+
+export type UndoCardRemovalResponse = UndoCardRemovalResponses[keyof UndoCardRemovalResponses];
 
 export type GetAttachmentImageData = {
     body?: never;

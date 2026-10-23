@@ -19,6 +19,8 @@ import {
   deleteHomework,
   createAcademicEvent,
   deleteAcademicEvent,
+  undoCardRemoval,
+  type CardRemoval,
   type CreateAcademicEventRequest,
   type CreateHomeworkRequest,
   getProfile,
@@ -76,9 +78,10 @@ export const api = {
     unwrap(editAcademicDeadline({ path: { deadline_id: id }, body })),
   createHomework: (body: CreateHomeworkRequest): Promise<HomeworkDetail> => unwrap(createHomework({ body })),
   createEvent: (body: CreateAcademicEventRequest) => unwrap(createAcademicEvent({ body })),
-  deleteHomework: (id: string, expectedRevision: number): Promise<unknown> =>
+  deleteHomework: (id: string, expectedRevision: number): Promise<CardRemoval> =>
     unwrap(deleteHomework({ path: { homework_id: id }, query: { expected_revision: expectedRevision } })),
-  deleteEvent: (id: string, expectedRevision: number): Promise<unknown> =>
+  undoRemoval: (undoId: string) => unwrap(undoCardRemoval({ path: { undo_id: undoId } })),
+  deleteEvent: (id: string, expectedRevision: number): Promise<CardRemoval> =>
     unwrap(deleteAcademicEvent({ path: { deadline_id: id }, query: { expected_revision: expectedRevision } })),
   setCompletion: (id: string, completed: boolean, expectedRevision: number): Promise<HomeworkDetail> =>
     unwrap(
@@ -306,6 +309,16 @@ export function useDeleteCard(kind: 'homework' | 'event', id: string) {
       }
     },
   });
+}
+
+/** Brings a just-removed card back. A plain function: the undo bar outlives the screen that removed the card. */
+export function useRestoreCard() {
+  const queryClient = useQueryClient();
+  return async (undoId: string) => {
+    const restored = await api.undoRemoval(undoId);
+    refreshAfterCardChange(queryClient);
+    return restored;
+  };
 }
 
 /** Drops loaded pages and cursor chains of every Tasks filter; active lists refetch their first page. */

@@ -1,5 +1,13 @@
 # Contract changelog
 
+## 0.17.0 — 2026-10-23
+
+- `DELETE /homework/{id}` and `DELETE /deadlines/{id}` now answer 200 with `{ undo_id }` instead of
+  204 (nothing was released with the 204 shape for more than hours; clients that ignore the body keep
+  working).
+- Added `POST /card-removals/{undo_id}/undo`: the headman or deputy brings back a card they removed
+  (409 `action_rejected` when it changed or was already restored). Additive.
+
 ## 0.16.0 — 2026-10-23
 
 - Added `POST /homework` and `POST /deadlines`: a headman or deputy creates a homework card or a
