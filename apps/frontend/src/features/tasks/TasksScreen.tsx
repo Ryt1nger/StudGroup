@@ -1,9 +1,11 @@
 import clsx from 'clsx';
+import { useLayoutEffect, useRef } from 'react';
 import { NavLink, useSearchParams } from 'react-router';
 import type { HomeworkSummary } from '@studgroup/shared-types';
 import { ru } from '../../i18n/ru';
 import { useServerNow } from '../../lib/hooks';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
+import { useIsEditor } from '../../session/SessionProvider';
 import { GroupTop } from '../../shell/TopBar';
 import { Banner, Empty, Skeleton } from '../../ui/Blocks';
 import { EndSentinel } from '../../ui/EndSentinel';
@@ -13,10 +15,54 @@ import { useToggleDone } from '../shared/useToggleDone';
 import { parseTaskFilter, TASK_FILTERS, type TaskFilter } from './taskFilters';
 import { useTaskList } from './useTaskList';
 
-/** The two titles of the tasks area: «Задания» and «Дедлайны» switch in place. */
+interface TitleBox {
+  rect: DOMRect;
+  size: number;
+  color: string;
+  at: number;
+}
+let lastTitles: TitleBox[] | null = null;
+
+/**
+ * The two titles of the tasks area: «Задания» and «Дедлайны» switch in place. Both end up at their
+ * final size at once; the move is a FLIP (translate + scale on the compositor), so the text never
+ * reflows mid-animation.
+ */
 export function SectionTitles({ active }: { active: 'tasks' | 'deadlines' }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const group = ref.current;
+    if (!group) return;
+    const titles = [...group.querySelectorAll<HTMLElement>('.tt')];
+    const before = lastTitles;
+    lastTitles = null;
+    if (before && Date.now() - before[0]!.at < 800 && typeof matchMedia === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      titles.forEach((el, i) => {
+        const old = before[i];
+        if (!old) return;
+        const now = el.getBoundingClientRect();
+        const size = parseFloat(getComputedStyle(el).fontSize);
+        el.style.transition = 'none';
+        el.style.transformOrigin = 'left bottom';
+        el.style.color = old.color;
+        el.style.transform = `translate(${old.rect.left - now.left}px, ${old.rect.bottom - now.bottom}px) scale(${old.size / size})`;
+      });
+      void group.offsetWidth;
+      titles.forEach((el) => {
+        el.style.transition = 'transform .34s cubic-bezier(.22,1,.36,1), color .34s ease';
+        el.style.transform = '';
+        el.style.color = '';
+      });
+    }
+    return () => {
+      lastTitles = titles.map((el) => {
+        const cs = getComputedStyle(el);
+        return { rect: el.getBoundingClientRect(), size: parseFloat(cs.fontSize), color: cs.color, at: Date.now() };
+      });
+    };
+  }, []);
   return (
-    <div className="titles" role="group" aria-label="Задания и дедлайны">
+    <div ref={ref} className="titles" role="group" aria-label="Задания и дедлайны">
       {(
         [
           ['/tasks', 'Задания', 'tasks'],
@@ -45,7 +91,10 @@ function arrange(items: readonly HomeworkSummary[], archive: boolean): HomeworkS
  */
 export function TasksScreen() {
   const [params, setParams] = useSearchParams();
-  const filter = parseTaskFilter(params.get('filter'));
+  const editor = useIsEditor();
+  const requested = parseTaskFilter(params.get('filter'));
+  // The review queue belongs to the headman and deputy; a student's link to it falls back to «Все».
+  const filter = requested === 'review' && !editor ? 'all' : requested;
   const list = useTaskList(filter);
   const nowMs = useServerNow(list.generatedAt, list.updatedAt);
   const timeZone = list.timeZone;
@@ -65,7 +114,7 @@ export function TasksScreen() {
       <h1 className="sr">{ru.tasks.title}</h1>
       <SectionTitles active="tasks" />
       <div className="seg" role="group" aria-label={ru.tasks.filtersAria}>
-        {TASK_FILTERS.map((f) => (
+        {TASK_FILTERS.filter((f) => f !== 'review' || (editor && (list.reviewCount > 0 || filter === 'review'))).map((f) => (
           <button key={f} type="button" className="chip" aria-pressed={f === filter} onClick={() => select(f)}>
             {ru.tasks.filters[f]}
           </button>

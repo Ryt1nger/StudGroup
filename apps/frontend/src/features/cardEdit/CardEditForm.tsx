@@ -6,6 +6,7 @@ import { ru } from '../../i18n/ru';
 import { zonedParts, zonedToIso } from '../../lib/zoned';
 import { Float } from '../../shell/AppRoot';
 import { Spinner } from '../../ui/Blocks';
+import { Ic } from '../../ui/Ic';
 
 type DeadlineMode = 'none' | 'date' | 'datetime';
 
@@ -18,11 +19,14 @@ export interface CardEditValues {
   /** Only academic events have a free-text hint about the date. */
   dateHint?: string;
   deadline: { at: string | null; dateOnly: boolean };
+  /** Homework only: the red «Срочно» mark. */
+  urgent?: boolean;
 }
 
 /** The fields that changed, in the wire shape of the PATCH body (without `expected_revision`). */
 export interface CardEditPatch {
   title?: string;
+  urgency?: 'normal' | 'urgent';
   subject?: string;
   description?: string;
   kind?: Exclude<LearningCardKind, 'homework'>;
@@ -77,6 +81,7 @@ export function CardEditForm({ variant, initial, timeZone, subjectSuggestions, s
   const [mode, setMode] = useState<DeadlineMode>(modeOf(initial.deadline));
   const [date, setDate] = useState(start.date);
   const [time, setTime] = useState(initial.deadline.dateOnly ? '' : start.time);
+  const [urgent, setUrgent] = useState(initial.urgent ?? false);
   const [problem, setProblem] = useState<string | null>(null);
   const message = problem ?? failureMessage(error);
 
@@ -90,6 +95,7 @@ export function CardEditForm({ variant, initial, timeZone, subjectSuggestions, s
     if (title.trim() !== initial.title) patch.title = title.trim();
     if (subject.trim() !== initial.subject) patch.subject = subject.trim();
     if (description.trim() !== initial.description.trim()) patch.description = description.trim();
+    if (variant === 'homework' && urgent !== (initial.urgent ?? false)) patch.urgency = urgent ? 'urgent' : 'normal';
     if (variant === 'event') {
       if (kind && kind !== initial.kind) patch.kind = kind;
       if (dateHint.trim() !== (initial.dateHint ?? '').trim()) patch.date_hint = dateHint.trim() || null;
@@ -154,6 +160,15 @@ export function CardEditForm({ variant, initial, timeZone, subjectSuggestions, s
             </div>
           ) : null}
         </div>
+        {variant === 'homework' ? (
+          <div className="grp" style={{ marginTop: 16 }}>
+            <div className="srow">
+              <span className="ri"><Ic name="bolt" size={18} /></span>
+              <div><div className="st">Срочно</div><div className="ss">Красная отметка у карточки в списках</div></div>
+              <button type="button" className="sw" role="switch" aria-checked={urgent} aria-label="Срочно" onClick={() => setUrgent((v) => !v)} />
+            </div>
+          </div>
+        ) : null}
         {variant === 'event' ? (
           <div className="field">
             <label htmlFor={ids.hint}>{ru.edit.dateHint}</label>

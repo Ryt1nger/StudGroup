@@ -574,3 +574,8 @@ a.pcard:active { transform: scale(.98); }
 .nowbadge:focus-visible { outline: 2px solid var(--label); outline-offset: 2px; }
 .ev.hasbadge b { padding-right: 86px; }
 .chipx.live { color: var(--on-accent); background: var(--grad); padding-left: 10px; }
+
+/* Schedule: the title, date and week strip stay in place; only the calendar below scrolls. */
+.pinned { position: sticky; top: 0; z-index: 4; margin: calc(-1 * (max(var(--sg-safe-top, 0px), env(safe-area-inset-top, 0px)) + 16px)) -16px 0; padding: calc(max(var(--sg-safe-top, 0px), env(safe-area-inset-top, 0px)) + 16px) 16px 0; background: var(--bg); }
+.pinned::after { content: ''; position: absolute; left: 0; right: 0; bottom: -14px; height: 14px; background: linear-gradient(var(--bg), rgb(var(--bg-rgb) / 0)); pointer-events: none; }
+.pinned .week { margin-bottom: 4px; }

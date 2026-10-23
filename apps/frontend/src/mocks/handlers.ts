@@ -1,3 +1,4 @@
+import { applyProfilePatch, demoProfile } from './profile';
 import type {
   ApiError,
   HomeworkListResponse,
@@ -74,8 +75,17 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
     if (scenario === 'slow') await delay(2500);
   };
 
+  let profile = demoProfile();
   const handlers: HttpHandler[] = [
+    http.get(url('/profile'), () => HttpResponse.json(profile)),
+    http.patch(url('/profile'), async ({ request }) => {
+      profile = applyProfilePatch(profile, (await request.json()) as Record<string, unknown>);
+      return HttpResponse.json(profile);
+    }),
     http.get(url('/notifications'), () =>
+      HttpResponse.json({ items: [], unread_count: 0, generated_at: new Date().toISOString() }),
+    ),
+    http.post(url('/notifications/:id/read'), () =>
       HttpResponse.json({ items: [], unread_count: 0, generated_at: new Date().toISOString() }),
     ),
     http.post(url('/notifications/read-all'), () =>

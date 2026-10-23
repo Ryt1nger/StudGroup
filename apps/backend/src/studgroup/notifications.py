@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.api import active_group, database
+from studgroup.api import ApiError, active_group, database
 from studgroup.homework import user_id
 from studgroup.models import Group, Notification, NotificationRead
 
@@ -87,6 +87,35 @@ async def list_notifications(
     authorization: Annotated[str | None, Header()] = None,
 ):
     return await inbox(db, group, await user_id(db, authorization))
+
+
+@router.post("/notifications/{notification_id}/read")
+async def read_one(
+    notification_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(database)],
+    group: Annotated[Group, Depends(active_group)],
+    authorization: Annotated[str | None, Header()] = None,
+):
+    """Personal read receipt for one notification of the caller's group."""
+    user = await user_id(db, authorization)
+    exists = await db.scalar(
+        select(Notification.id).where(
+            Notification.id == notification_id,
+            Notification.group_id == group.id,
+            Notification.delete_at > datetime.now(UTC),
+        )
+    )
+    if exists is None:
+        raise ApiError("not_found", "Уведомление не найдено", 404)
+    await db.execute(
+        insert(NotificationRead)
+        .values(id=uuid.uuid4(), notification_id=exists, user_id=user, read_at=datetime.now(UTC))
+        .on_conflict_do_nothing(
+            index_elements=[NotificationRead.notification_id, NotificationRead.user_id]
+        )
+    )
+    await db.commit()
+    return await inbox(db, group, user)
 
 
 @router.post("/notifications/read-all")

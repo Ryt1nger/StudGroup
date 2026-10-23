@@ -86,6 +86,24 @@ describe('headman card editing', () => {
     expect(screen.queryByRole('button', { name: 'Сохранить' })).not.toBeInTheDocument();
   });
 
+  it('sends the «Срочно» mark only when the switch was changed', async () => {
+    useScenario();
+    let sent: unknown = null;
+    server.use(
+      http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
+      http.patch(`${API}/homework/${HW}`, async ({ request }) => {
+        sent = await request.json();
+        return HttpResponse.json({ ...editable, urgency: 'urgent', revision: base.revision + 1 });
+      }),
+    );
+    renderApp({ route: `/homework/${HW}/edit` });
+    const mark = await screen.findByRole('switch', { name: 'Срочно' });
+    await userEvent.click(mark);
+    expect(mark).toHaveAttribute('aria-checked', String(editable.urgency === 'normal'));
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(sent).toEqual({ expected_revision: base.revision, urgency: editable.urgency === 'normal' ? 'urgent' : 'normal' }));
+  });
+
   it('sets a date with time in the group timezone as an offset-aware instant', async () => {
     useScenario();
     let sent: { deadline?: { at: string; date_only: boolean } } = {};

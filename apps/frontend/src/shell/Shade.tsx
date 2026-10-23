@@ -2,7 +2,7 @@ import clsx from 'clsx';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
-import { listNotifications, readAllNotifications, type NotificationInbox } from '@studgroup/shared-types';
+import { listNotifications, readAllNotifications, readNotification, type NotificationInbox } from '@studgroup/shared-types';
 import { unwrap } from '../api/errors';
 import { plural } from '../lib/format';
 import { useSession } from '../session/SessionProvider';
@@ -142,6 +142,13 @@ function Shade({ onClose }: { onClose: () => void }) {
     onSuccess: (data) => queryClient.setQueryData(['notifications'], data),
   });
 
+  // One notification leaves the list at once; the server remembers it. A failure only means it may return
+  // after a reload, so it is not worth interrupting the user.
+  const readOne = useMutation({
+    mutationFn: (id: string) => unwrap(readNotification({ path: { notification_id: id } })),
+    onSuccess: (data) => queryClient.setQueryData(['notifications'], data),
+  });
+
   const close = () => {
     if (leaving) return;
     setLeaving(true);
@@ -174,7 +181,10 @@ function Shade({ onClose }: { onClose: () => void }) {
     () => (inbox.data?.items ?? []).filter((item) => !item.read && !dismissed.has(item.id)),
     [inbox.data, dismissed],
   );
-  const dismiss = (id: string) => setDismissed((current) => new Set(current).add(id));
+  const dismiss = (id: string) => {
+    setDismissed((current) => new Set(current).add(id));
+    readOne.mutate(id);
+  };
   const today0 = new Date().setHours(0, 0, 0, 0);
   const groups = [
     ['Сегодня', items.filter((item) => Date.parse(item.created_at) >= today0)],

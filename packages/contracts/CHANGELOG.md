@@ -1,5 +1,16 @@
 # Contract changelog
 
+## 0.15.0 — 2026-10-23
+
+- Added `POST /notifications/{notification_id}/read`: marks one notification of the caller's group
+  read for the caller and returns the updated inbox (404 for an unknown or foreign id). Additive.
+- Added optional `urgency` (`normal` | `urgent`) to `EditHomeworkRequest`: the headman and deputy can
+  set or clear the «Срочно» mark when editing a card. Additive; omitted means unchanged.
+- Added `GET`/`PATCH /profile`: the caller's own name, e-mail, study-platform data (platform, https
+  URL, login, https calendar URL) and notification preferences. The study-platform password is
+  write-only (`sdu_password`, cleared with `clear_sdu_password`) and is never returned, only
+  `sdu.password_set`; the server stores it encrypted and answers 503 when it has no key. Additive.
+
 ## 0.14.0 — 2026-10-23
 
 - Added `review` to `listHomework` `filter` and a `review` query flag to `listAcademicDeadlines`: the

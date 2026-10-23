@@ -28,7 +28,7 @@ export function HomeworkEditScreen() {
   const detail = query.data;
   const save = (patch: CardEditPatch) => {
     if (!detail) return;
-    const { subject, ...rest } = patch;
+    const { subject, urgency, ...rest } = patch;
     mutation.mutate(
       {
         expected_revision: detail.revision,
@@ -36,6 +36,7 @@ export function HomeworkEditScreen() {
         ...(rest.description !== undefined ? { description: rest.description } : {}),
         ...(subject !== undefined ? { subject_name: subject } : {}),
         ...(rest.deadline !== undefined ? { deadline: rest.deadline } : {}),
+        ...(urgency !== undefined ? { urgency } : {}),
       },
       { onSuccess: () => { toast(ru.edit.saved); back(); } },
     );
@@ -55,6 +56,7 @@ export function HomeworkEditScreen() {
             subject: detail.confirmed_subject?.name ?? detail.subject.name,
             description: detail.description ?? '',
             deadline: { at: detail.deadline.at ?? null, dateOnly: detail.deadline.date_only },
+            urgent: detail.urgency !== 'normal',
           }}
           timeZone={timeZone}
           subjectSuggestions={names}

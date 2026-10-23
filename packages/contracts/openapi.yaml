@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.14.0
+  version: 0.15.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -34,6 +34,28 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /notifications/{notification_id}/read:
+    post:
+      operationId: readNotification
+      summary: Mark one notification of the current group read for the current user
+      parameters:
+        - name: notification_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Updated notification inbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationInbox"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /notifications/read-all:
     post:
       operationId: readAllNotifications
@@ -49,6 +71,44 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /profile:
+    get:
+      operationId: getProfile
+      summary: The caller's own profile
+      responses:
+        "200":
+          description: Profile; the study-platform password is never returned, only whether one is set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      operationId: updateProfile
+      summary: Change the caller's own profile (only the sent fields change)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422": { $ref: "#/components/responses/InvalidRequest" }
+        "503":
+          description: The server cannot store a study-platform password right now (no encryption key)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /schedule:
     get:
       tags: [Schedule]
@@ -1372,6 +1432,55 @@ components:
         permissions: [homework.read, homework.completion.write]
         generated_at: "2026-10-04T12:00:00Z"
   schemas:
+    NotificationSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: { type: boolean, default: true }
+        new_cards: { type: boolean, default: true }
+        changes: { type: boolean, default: true }
+        deadlines: { type: boolean, default: true }
+        deadline_lead: { type: string, enum: ["3h", "1d", "2d"], default: "1d" }
+        lessons: { type: boolean, default: false }
+        lesson_lead_minutes: { type: integer, enum: [10, 15, 30], default: 15 }
+        quiet: { type: boolean, default: true }
+        quiet_range: { type: string, enum: ["23-08", "22-09", "00-07"], default: "23-08" }
+    UserProfile:
+      type: object
+      required: [telegram_user_id, sdu, settings]
+      properties:
+        telegram_user_id: { type: integer, format: int64 }
+        username: { type: [string, "null"] }
+        first_name: { type: [string, "null"], maxLength: 60 }
+        last_name: { type: [string, "null"], maxLength: 60 }
+        email: { type: [string, "null"], maxLength: 120 }
+        sdu:
+          type: object
+          required: [password_set]
+          properties:
+            platform: { type: [string, "null"], maxLength: 80 }
+            url: { type: [string, "null"], maxLength: 200 }
+            login: { type: [string, "null"], maxLength: 80 }
+            calendar_url: { type: [string, "null"], maxLength: 300 }
+            password_set: { type: boolean }
+        settings:
+          $ref: "#/components/schemas/NotificationSettings"
+    UpdateProfileRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        first_name: { type: [string, "null"], maxLength: 60 }
+        last_name: { type: [string, "null"], maxLength: 60 }
+        email: { type: [string, "null"], maxLength: 120 }
+        sdu_platform: { type: [string, "null"], maxLength: 80 }
+        sdu_url: { type: [string, "null"], maxLength: 200, description: "https only, no credentials" }
+        sdu_login: { type: [string, "null"], maxLength: 80 }
+        sdu_calendar_url: { type: [string, "null"], maxLength: 300, description: "https only, no credentials" }
+        sdu_password: { type: string, minLength: 1, maxLength: 200, writeOnly: true }
+        clear_sdu_password: { type: boolean }
+        settings:
+          $ref: "#/components/schemas/NotificationSettings"
     NotificationInbox:
       type: object
       required: [items, unread_count, generated_at]
@@ -2159,6 +2268,10 @@ components:
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: [string, "null"], maxLength: 8000 }
         subject_name: { type: string, minLength: 1, maxLength: 255 }
+        urgency:
+          type: string
+          enum: [normal, urgent]
+          description: The red «Срочно» mark of the card; only the headman and deputy may set it.
         deadline:
           oneOf:
             - $ref: "#/components/schemas/DeadlineInput"

@@ -70,6 +70,7 @@ class EditHomeworkRequest(BaseModel):
     description: str | None = None
     subject_name: str | None = None
     deadline: DeadlineValue | None = None
+    urgency: Literal["normal", "urgent"] | None = None
 
     @field_validator("title", "subject_name")
     @classmethod
@@ -166,6 +167,10 @@ async def edit_homework(
             raise ApiError("invalid_request", "Предмет не может быть пустым", 422)
         values["subject_name"] = body.subject_name
         values["subject_id"] = subject_uuid(group.id, body.subject_name)
+    if "urgency" in fields:
+        if body.urgency is None:
+            raise ApiError("invalid_request", "Срочность не может быть пустой", 422)
+        values["urgency"] = body.urgency
     if "deadline" in fields:
         deadline = body.deadline or DeadlineValue()
         at, date_only = deadline.at, deadline.date_only

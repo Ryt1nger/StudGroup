@@ -3,9 +3,11 @@ import './styles/app.css';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { configureApiClient } from './api/client';
+import { applySavedDisplay } from './shell/display';
 import { loadTelegramAdapter } from './telegram/loadAdapter';
 
 async function start() {
+  applySavedDisplay();
   const isDemo = import.meta.env.MODE === 'demo';
   if (import.meta.env.DEV && import.meta.env.VITE_LOCAL_PREVIEW === 'true' && 'serviceWorker' in navigator) {
     const registrations = await navigator.serviceWorker.getRegistrations();

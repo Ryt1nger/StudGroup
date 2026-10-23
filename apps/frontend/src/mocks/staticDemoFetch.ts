@@ -10,6 +10,7 @@ import type {
 } from '@studgroup/shared-types';
 import { addDays, dayKey } from '../lib/format';
 import { buildToday, exampleSession, sessionAt } from './data';
+import { applyProfilePatch, demoProfile } from './profile';
 import { GROUP_TZ, isListFilter, selectHomework } from './homeworkList';
 import {
   buildReviewedNextLesson,
@@ -54,6 +55,7 @@ function requestBody(input: RequestInfo | URL, init?: RequestInit): Promise<unkn
 /** Static demo transport. It preserves the generated API client boundary without a Service Worker. */
 export function createStaticDemoFetch(): typeof fetch {
   const world = buildReviewedWorld();
+  let profile = demoProfile();
 
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = input instanceof Request ? input : null;
@@ -114,6 +116,11 @@ export function createStaticDemoFetch(): typeof fetch {
       const end = url.searchParams.get('end');
       if (!start || !end) return error('invalid_request', 'Укажите start и end.', 422);
       return json(buildReviewedSchedule(start, end, now) satisfies ScheduleResponse);
+    }
+
+    if (path.endsWith('/profile')) {
+      if (method === 'PATCH') profile = applyProfilePatch(profile, (request ? await request.json() : JSON.parse(String(init?.body ?? '{}'))) as Record<string, unknown>);
+      return json(profile);
     }
 
     if (method === 'GET' && path.endsWith('/subjects')) {

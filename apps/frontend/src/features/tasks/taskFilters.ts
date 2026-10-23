@@ -1,7 +1,7 @@
 import type { HomeworkSummary } from '@studgroup/shared-types';
 import { dayKey } from '../../lib/format';
 
-export const TASK_FILTERS = ['all', 'today', 'week', 'mine', 'archive'] as const;
+export const TASK_FILTERS = ['all', 'today', 'review', 'week', 'mine', 'archive'] as const;
 export type TaskFilter = (typeof TASK_FILTERS)[number];
 
 export const TASK_SECTIONS = ['upcoming', 'unknown', 'overdue', 'cancelled', 'done'] as const;

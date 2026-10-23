@@ -15,6 +15,10 @@ import {
   editAcademicDeadline,
   recheckMembership,
   setHomeworkCompletion,
+  getProfile,
+  updateProfile,
+  type UpdateProfileRequest,
+  type UserProfile,
   type EditAcademicDeadlineRequest,
   type EditHomeworkRequest,
   type HomeworkDetail,
@@ -46,7 +50,8 @@ export const api = {
   lessonSubject: (id: string): Promise<LessonSubjectResponse> =>
     unwrap(getLessonSubject({ path: { lesson_id: id } })),
   subjects: (): Promise<SubjectListResponse> => unwrap(listSubjects()),
-  deadlines: (archive = false) => unwrap(listAcademicDeadlines({ query: { archive } })),
+  deadlines: (archive = false, review = false) =>
+    unwrap(listAcademicDeadlines({ query: { archive, ...(review ? { review: true } : {}) } })),
   event: (id: string) => unwrap(getAcademicDeadline({ path: { deadline_id: id } })),
   schedule: (start: string, end: string): Promise<ScheduleResponse> =>
     unwrap(getSchedule({ query: { start, end } })),
@@ -72,6 +77,19 @@ export const api = {
     ),
 };
 
+export function useProfileQuery() {
+  return useQuery({ queryKey: ['profile'], queryFn: (): Promise<UserProfile> => unwrap(getProfile()), staleTime: 60_000 });
+}
+
+/** Saves only the sent fields; the response (without the password) replaces the cached profile. */
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpdateProfileRequest): Promise<UserProfile> => unwrap(updateProfile({ body })),
+    onSuccess: (profile) => queryClient.setQueryData(['profile'], profile),
+  });
+}
+
 export function useTodayQuery(day: 'today' | 'tomorrow' = 'today') {
   return useQuery({
     queryKey: [...queryKeys.today, day],
@@ -93,10 +111,10 @@ export function useSubjectsQuery() {
   return useQuery({ queryKey: queryKeys.subjects, queryFn: api.subjects, ...todayQueryOptions });
 }
 
-export function useAcademicDeadlinesQuery(archive = false) {
+export function useAcademicDeadlinesQuery(archive = false, review = false) {
   return useQuery({
-    queryKey: ['academic-deadlines', archive],
-    queryFn: () => api.deadlines(archive),
+    queryKey: ['academic-deadlines', archive, review],
+    queryFn: () => api.deadlines(archive, review),
     ...todayQueryOptions,
   });
 }

@@ -128,6 +128,26 @@ def test_the_headman_sees_the_edit_permissions_and_edits_any_field(client):
     assert asyncio.run(decision()) == (True, True)
 
 
+def test_the_headman_can_mark_a_card_urgent_and_back(client):
+    card = seed_card(client)
+    set_role(client, "headman")
+    marked = client.patch(
+        f"/v1/homework/{card}", json={"expected_revision": 1, "urgency": "urgent"}, headers=HEADERS
+    )
+    assert marked.status_code == 200, marked.text
+    assert marked.json()["urgency"] == "urgent" and marked.json()["revision"] == 2
+    cleared = client.patch(
+        f"/v1/homework/{card}", json={"expected_revision": 2, "urgency": "normal"}, headers=HEADERS
+    )
+    assert cleared.json()["urgency"] == "normal"
+    bad = client.patch(
+        f"/v1/homework/{card}",
+        json={"expected_revision": 3, "urgency": "super_urgent"},
+        headers=HEADERS,
+    )
+    assert bad.status_code == 422
+
+
 def test_a_stale_revision_is_rejected_with_a_conflict_and_nothing_changes(client):
     card = seed_card(client)
     set_role(client, "headman")

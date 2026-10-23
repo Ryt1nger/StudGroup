@@ -94,7 +94,9 @@ function anchor(scroll: HTMLElement, nowMs: number) {
     events.find((e) => Number(e.dataset.start) <= nowMs && nowMs < Number(e.dataset.end)) ??
     events.find((e) => Number(e.dataset.start) > nowMs) ??
     events[events.length - 1]!;
-  const y = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop - 150;
+  // The header above the calendar is pinned, so the lesson is placed just under it.
+  const pinned = scroll.querySelector<HTMLElement>('.pinned')?.offsetHeight ?? 0;
+  const y = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop - pinned - 40;
   scroll.scrollTop = Math.max(0, y);
 }
 
@@ -151,10 +153,12 @@ export function ScheduleScreen() {
 
   return (
     <>
-      <SectionTop title="Расписание" />
-      <h1 className="sr">{ru.nav.schedule}</h1>
-      <div className="datel">{label}</div>
-      <WeekStrip days={days} selected={selected} marked={marked} onSelect={(i) => { setSelected(i); anchored.current = ''; }} />
+      <div className="pinned">
+        <SectionTop title="Расписание" />
+        <h1 className="sr">{ru.nav.schedule}</h1>
+        <div className="datel">{label}</div>
+        <WeekStrip days={days} selected={selected} marked={marked} onSelect={(i) => { setSelected(i); anchored.current = ''; }} />
+      </div>
       {data?.week_state === 'needs_clarification' ? (
         <Banner tone="warning" icon="clock"><strong>{ru.schedule.clarifyTitle}.</strong> {ru.schedule.clarifyBody}</Banner>
       ) : null}

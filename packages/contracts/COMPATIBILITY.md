@@ -357,3 +357,9 @@ and never listed in new_or_changed. After the window the card leaves that sectio
 Tasks and detail are unaffected. No schema or enum change; clients that preserve server
 order need no update. Example: an assignment created 3 days ago and edited 1 hour ago
 → new_or_changed; edited 6 hours ago → upcoming (if due within 7 days) or absent.
+
+## One-notification read receipt and editable urgency (0.15.0)
+
+Both additions are optional and additive. Old clients keep using `read-all` and never send
+`urgency`; an old backend answers 404 to the new path, so the app falls back to `read-all`
+semantics (it only hides the item locally). Existing responses are unchanged.

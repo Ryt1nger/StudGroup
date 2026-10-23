@@ -156,7 +156,12 @@ export function LessonScreen() {
           ))}
         </Sec>
       ) : null}
-      {canJoin ? <JoinBar url={online} /> : null}
+      {canJoin ? (
+        <>
+          <div className="cta-space" />
+          <JoinBar url={online} />
+        </>
+      ) : null}
     </>
   );
 }
