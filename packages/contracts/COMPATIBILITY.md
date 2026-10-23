@@ -1,5 +1,13 @@
 # Contract compatibility
 
+## Review queue (0.14.0, 2026-10-23)
+
+Additive only. Existing filters, query flags and fields keep their meaning. A 0.13.0 client never
+sends `filter=review` or `review=true` and may ignore the new optional `review_count`. A client
+that validates the `filter` enum strictly must add `review`. Students never receive `review_count`
+and get 403 `permission_denied` for the review queue; the server re-checks the role on every
+request, `permissions` stays a UI hint.
+
 ## Headman/deputy cabinet API (0.12.0, 2026-10-21)
 
 Additive only: existing student routes, fields and enums keep their meaning. New optional

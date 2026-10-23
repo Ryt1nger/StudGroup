@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.13.0
+  version: 0.14.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -190,6 +190,12 @@ paths:
         - in: query
           name: archive
           schema: { type: boolean, default: false }
+        - in: query
+          name: review
+          description: >-
+            Editors' queue: active events flagged needs_clarification. Headman and deputy only
+            (students get 403 permission_denied); cannot be combined with archive (422).
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Active or archived retained deadlines for the active group
@@ -204,8 +210,15 @@ paths:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/AcademicDeadline" }
+                  review_count:
+                    type: integer
+                    minimum: 0
+                    description: >-
+                      Number of active events in the review queue; present only for the headman and
+                      deputy, omitted for students.
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
   /homework/{homework_id}/file-link:
     get:
       tags: [Homework]
@@ -343,7 +356,7 @@ paths:
           schema:
             {
               type: string,
-              enum: [all, today, week, mine, archive],
+              enum: [all, today, week, mine, archive, review],
               default: all,
             }
           description: >-
@@ -352,6 +365,9 @@ paths:
             week excludes completed and selects active deadlines in the current
             group calendar week Monday through Sunday. archive includes all cancelled or past-deadline items.
             Unknown deadlines never archive automatically unless cancelled.
+            review is the editors' queue: active (not archived, not cancelled) cards whose status or
+            verification_state is needs_clarification, regardless of personal completion. Only the headman
+            and deputy may request it; students get 403 permission_denied.
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
@@ -1036,6 +1052,18 @@ components:
         processing: { state: idle, retry_after_seconds: null }
         items: []
         next_cursor: null
+    HomeworkListReviewQueue:
+      summary: Editors' review queue (filter=review) with the count the client uses to show the tab
+      value:
+        server_time: "2026-10-05T06:00:00Z"
+        generated_at: "2026-10-05T06:00:00Z"
+        group_timezone: Europe/Moscow
+        freshness:
+          { last_successful_sync_at: "2026-10-05T06:00:00Z", stale: false }
+        processing: { state: idle, retry_after_seconds: null }
+        items: []
+        next_cursor: null
+        review_count: 0
     SchedulePopulated:
       value:
         generated_at: "2026-10-05T06:00:00Z"
@@ -1572,6 +1600,13 @@ components:
         next_cursor:
           type: [string, "null"]
           description: Pass unchanged with the same filter and session; null means no further page.
+        review_count:
+          type: integer
+          minimum: 0
+          description: >-
+            Number of active cards waiting in the review queue, independent of the selected filter.
+            Present only for the headman and deputy, so the client can show the review tab only while
+            something needs a look. Omitted for students.
     TodayResponse:
       type: object
       additionalProperties: false
