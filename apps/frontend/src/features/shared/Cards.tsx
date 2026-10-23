@@ -3,7 +3,8 @@ import type { KeyboardEvent, MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import type { AcademicDeadline, HomeworkSummary, LessonOccurrence } from '@studgroup/shared-types';
 import { addDays, dayKey, formatShortDate, formatTime, plural, whenLabel } from '../../lib/format';
-import { subjectGlyph, subjectStyle } from '../../lib/subjectColor';
+import { subjectStyle } from '../../lib/subjectColor';
+import { SubjectMark } from '../../ui/SubjectMark';
 import { useReadySession } from '../../session/SessionProvider';
 import { Ic } from '../../ui/Ic';
 import { changedAfterCompletion, showUrgent } from '../today/cardStatus';
@@ -22,7 +23,7 @@ export const EVENT_KIND: Record<string, string> = {
 export function SubjectChip({ name }: { name: string }) {
   return (
     <span className="chipx" style={subjectStyle(name)}>
-      <b>{subjectGlyph(name)}</b>
+      <b><SubjectMark name={name} /></b>
       {name}
     </span>
   );

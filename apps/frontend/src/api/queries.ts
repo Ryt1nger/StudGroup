@@ -77,8 +77,13 @@ export const api = {
     ),
 };
 
-export function useProfileQuery() {
-  return useQuery({ queryKey: ['profile'], queryFn: (): Promise<UserProfile> => unwrap(getProfile()), staleTime: 60_000 });
+export function useProfileQuery(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['profile'],
+    queryFn: (): Promise<UserProfile> => unwrap(getProfile()),
+    staleTime: 60_000,
+    enabled: options.enabled ?? true,
+  });
 }
 
 /** Saves only the sent fields; the response (without the password) replaces the cached profile. */

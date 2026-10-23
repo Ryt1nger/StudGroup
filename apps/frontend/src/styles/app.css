@@ -115,7 +115,7 @@ a { color: inherit; text-decoration: none; }
 .cb.on { background: var(--accent); border-color: var(--accent); }
 .cb.off { border-style: dashed; opacity: .4; }
 .task .t { font-size: 17px; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; padding-right: 14px; }
-.task .s { font-size: 14px; color: var(--label-2); margin-top: 3px; line-height: 1.35; }
+.task .s { font-size: 14px; color: var(--label-2); margin-top: 3px; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .task .m { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; align-items: center; }
 .task.done .t { color: var(--label-2); text-decoration: line-through; text-decoration-color: var(--label-3); } .task.done .s { color: var(--label-3); }
 .task.done .bar { opacity: .45; } .task.cancelled { opacity: .5; }
@@ -147,8 +147,8 @@ a { color: inherit; text-decoration: none; }
 .ev .dim { color: var(--label-3) !important; }
 .ev .vid { color: var(--sc); display: grid; }
 .ev.now { box-shadow: 0 0 0 1.5px var(--sc); }
-.nowline { position: absolute; left: -52px; right: 0; border-top: 1.5px solid var(--accent-2); z-index: 0; pointer-events: none; }
-.nowline span { position: absolute; left: -2px; top: -11px; padding: 2px 8px; border-radius: 99px; background: var(--accent-2); color: var(--on-accent); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.nowline { position: absolute; left: -52px; right: 0; border-top: 2px solid var(--accent); z-index: 0; pointer-events: none; }
+.nowline span { position: absolute; left: -2px; top: -12px; padding: 3px 9px; border-radius: 99px; background: var(--accent); box-shadow: 0 2px 8px hsl(var(--hsl) / 0.45); color: var(--on-accent); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* subjects */
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -579,3 +579,11 @@ a.pcard:active { transform: scale(.98); }
 .pinned { position: sticky; top: calc(-1 * (max(var(--sg-safe-top, 0px), env(safe-area-inset-top, 0px)) + 16px)); z-index: 4; margin: calc(-1 * (max(var(--sg-safe-top, 0px), env(safe-area-inset-top, 0px)) + 16px)) -16px 0; padding: calc(max(var(--sg-safe-top, 0px), env(safe-area-inset-top, 0px)) + 16px) 16px 0; background: var(--bg); }
 .pinned::after { content: ''; position: absolute; left: 0; right: 0; bottom: -14px; height: 14px; background: linear-gradient(var(--bg), rgb(var(--bg-rgb) / 0)); pointer-events: none; }
 .pinned .week { margin-bottom: 4px; }
+
+/* Subject icons replace the letter inside the chip and the tile. */
+.chipx b svg { width: 11px; height: 11px; stroke-width: 2.4; }
+.tile .ic svg { width: 22px; height: 22px; }
+.d-head .chipx b svg { width: 12px; height: 12px; }
+
+/* A lesson that is over fades to grey; the current one and the coming ones keep their colour. */
+.ev.past { opacity: .5; filter: grayscale(.9); }

@@ -59,6 +59,7 @@ function Event({ lesson, timeZone, nowMs, isToday }: { lesson: LessonOccurrence;
   const start = Date.parse(lesson.starts_at);
   const end = Date.parse(lesson.ends_at);
   const now = isToday && start <= nowMs && nowMs < end;
+  const past = end <= nowMs;
   const from = formatTime(lesson.starts_at, timeZone);
   const to = formatTime(lesson.ends_at, timeZone);
   const top = (minutesOf(from) * PX) / 60;
@@ -67,7 +68,7 @@ function Event({ lesson, timeZone, nowMs, isToday }: { lesson: LessonOccurrence;
   const joinNow = now && online !== null;
   return (
     <Link
-      className={`ev${now ? ' now' : ''}${joinNow ? ' hasbadge' : ''}`}
+      className={`ev${now ? ' now' : ''}${joinNow ? ' hasbadge' : ''}${past ? ' past' : ''}`}
       data-start={start}
       data-end={end}
       style={{ ...subjectStyle(lesson.subject), top, height }}
@@ -86,8 +87,15 @@ function Event({ lesson, timeZone, nowMs, isToday }: { lesson: LessonOccurrence;
   );
 }
 
-/** Scrolls so the lesson in progress (else the next one, else the last) sits near the top. */
+/** Scrolls to the current-time line (today), else to the lesson in progress, the next one, or the last. */
 function anchor(scroll: HTMLElement, nowMs: number) {
+  const line = scroll.querySelector<HTMLElement>('.nowline');
+  if (line) {
+    const pinnedHeight = scroll.querySelector<HTMLElement>('.pinned')?.offsetHeight ?? 0;
+    const at = line.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop - pinnedHeight - 140;
+    scroll.scrollTop = Math.max(0, at);
+    return;
+  }
   const events = [...scroll.querySelectorAll<HTMLElement>('.ev')];
   if (!events.length) return;
   const target =

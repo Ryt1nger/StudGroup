@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import { useSubjectsQuery } from '../../api/queries';
-import { subjectGlyph, subjectStyle } from '../../lib/subjectColor';
+import { subjectStyle } from '../../lib/subjectColor';
+import { SubjectMark } from '../../ui/SubjectMark';
 import { SectionTop } from '../../shell/TopBar';
 import { Empty, Skeleton } from '../../ui/Blocks';
 import { RequestError } from '../../ui/RequestError';
@@ -30,7 +31,7 @@ export function SubjectsScreen() {
               return (
                 <Link key={subject.id} className="tile" style={subjectStyle(subject.name)} to={`/subjects/${encodeURIComponent(subject.id)}`} aria-label={subject.name}>
                   <span className="bar" />
-                  <div className="ic">{subjectGlyph(subject.name)}</div>
+                  <div className="ic"><SubjectMark name={subject.name} /></div>
                   <div>
                     <b>{subject.name}</b>
                     {progress(subject.name) !== null ? <div className="prog" aria-hidden="true"><i style={{ width: `${progress(subject.name)}%` }} /></div> : null}

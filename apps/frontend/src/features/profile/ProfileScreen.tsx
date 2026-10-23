@@ -289,17 +289,75 @@ function ResetRow() {
   );
 }
 
-function About() {
+function Kv({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="srow plain">
+      <div className="st">{title}</div>
+      <span className="sv">{value}</span>
+    </div>
+  );
+}
+
+function MyGroup() {
+  const { state } = useSession();
+  if (state.status !== 'ready') return null;
+  const { group, membership } = state.session;
   return (
     <>
       <BackTop fallback="/profile" />
-      <h1 className="ptitle">Данные и помощь</h1>
+      <h1 className="ptitle">Моя группа</h1>
+      <div className="pcard">
+        <div className="gic">{initialsOf(group?.name ?? 'SG')}</div>
+        <div><b>{group?.name ?? 'Группа'}</b><span>{membership ? ROLE[membership.role] : ROLE.student}</span></div>
+      </div>
+      <Group title="О группе">
+        <Kv title="Ваша роль" value={membership ? ROLE[membership.role] : ROLE.student} />
+        <Kv title="Часовой пояс" value={group?.timezone ?? '—'} />
+      </Group>
+      <p className="foot">Вступить в группу или выйти из неё можно через бота StudGroup.</p>
+    </>
+  );
+}
+
+function ScheduleInfo() {
+  const { state } = useSession();
+  if (state.status !== 'ready') return null;
+  const timezone = state.session.group?.timezone ?? '—';
+  return (
+    <>
+      <BackTop fallback="/profile" />
+      <h1 className="ptitle">Расписание</h1>
+      <Group title="Часовой пояс">
+        <Kv title="Группа" value={timezone} />
+      </Group>
+      <p className="foot">Часовой пояс задаёт староста группы. Все сроки и пары показываются в нём.</p>
+    </>
+  );
+}
+
+function Privacy() {
+  return (
+    <>
+      <BackTop fallback="/profile" />
+      <h1 className="ptitle">Данные и приватность</h1>
       <div className="block">
         <h3>Что хранится</h3>
         <p>Из сообщений группы приложение делает карточки заданий. Исходные сообщения хранятся ограниченное время, потом остаётся только карточка. Ваши отметки «Выполнено мной» видны только вам.</p>
       </div>
       <Group title="На этом устройстве">
         <ResetRow />
+      </Group>
+    </>
+  );
+}
+
+function Help() {
+  return (
+    <>
+      <BackTop fallback="/profile" />
+      <h1 className="ptitle">Помощь</h1>
+      <Group title="Приложение">
+        <Kv title="Язык" value="Русский" />
       </Group>
       <p className="foot">StudGroup · задания и расписание вашей группы в Telegram</p>
     </>
@@ -329,6 +387,18 @@ function Home() {
         </div>
         <span className="pc-chev"><Ic name="chev" /></span>
       </Link>
+      <Group title="Учёба">
+        <Link className="srow" to="/profile/group">
+          <Icon name="users" />
+          <div><div className="st">Моя группа</div></div>
+          <span className="sv">{group?.name}<Ic name="chev" /></span>
+        </Link>
+        <Link className="srow" to="/profile/schedule">
+          <Icon name="cal" />
+          <div><div className="st">Расписание</div></div>
+          <span className="sv"><Ic name="chev" /></span>
+        </Link>
+      </Group>
       <Group title="Приложение">
         <Link className="srow" to="/profile/personal">
           <Icon name="palette" />
@@ -342,9 +412,14 @@ function Home() {
         </Link>
       </Group>
       <Group title="Данные и помощь">
-        <Link className="srow" to="/profile/about">
+        <Link className="srow" to="/profile/privacy">
           <Icon name="shield" />
-          <div><div className="st">Данные и помощь</div></div>
+          <div><div className="st">Данные и приватность</div></div>
+          <span className="sv"><Ic name="chev" /></span>
+        </Link>
+        <Link className="srow" to="/profile/about">
+          <Icon name="info" />
+          <div><div className="st">Помощь</div></div>
           <span className="sv"><Ic name="chev" /></span>
         </Link>
       </Group>
@@ -370,7 +445,10 @@ export function ProfileScreen() {
   const { section } = useParams();
   if (section === undefined) return <Home />;
   if (section === 'personal') return <Personal />;
-  if (section === 'about') return <About />;
+  if (section === 'group') return <MyGroup />;
+  if (section === 'schedule') return <ScheduleInfo />;
+  if (section === 'privacy') return <Privacy />;
+  if (section === 'about') return <Help />;
   if (section === 'me') return <WithProfile>{(profile) => <Me profile={profile} />}</WithProfile>;
   if (section === 'notify') return <WithProfile>{(profile) => <Notify profile={profile} />}</WithProfile>;
   return (
