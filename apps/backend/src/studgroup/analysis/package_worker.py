@@ -22,6 +22,7 @@ from decimal import Decimal
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from studgroup import photo_dedupe
 from studgroup.ai import ProviderFailure
 from studgroup.ai_schedule import window
 from studgroup.analysis import duplicate_guard, photo_reading
@@ -107,20 +108,26 @@ def _source_message(row, *, roles, topics, attachments):
 async def _source_messages(db, group, rows):
     ids = [row.id for row in rows]
     attachments = {}
-    for attachment in (
+    stored = (
         await db.scalars(
             select(MessageAttachment).where(
                 MessageAttachment.raw_message_id.in_(ids), MessageAttachment.active.is_(True)
             )
         )
-    ).all():
+    ).all()
+    # Two shots of one board (wide, then close-up) are one fact: the model reads the better one
+    # only, so the second shot is not mistaken for a supplement that changes the card.
+    kept = {a.id for a in photo_dedupe.distinct(stored)}
+    for attachment in stored:
         attachments.setdefault(attachment.raw_message_id, []).append(
             {
                 "kind": attachment.kind,
                 "mime_type": attachment.mime_type,
                 "size_bytes": attachment.size_bytes,
                 "media_group_id": attachment.media_group_id,
-                "processing_state": attachment.processing_state,
+                "processing_state": (
+                    attachment.processing_state if attachment.id in kept else "irrelevant"
+                ),
                 "file_name": (attachment.file_name or None) and attachment.file_name[:255],
                 "photo_summary": attachment.photo_summary,
                 "photo_text": attachment.photo_text,

@@ -23,6 +23,7 @@ from studgroup.models import (
     MessageAttachment,
     RawMessage,
 )
+from studgroup.photo_dedupe import distinct as distinct_photos
 from studgroup.subject_identity import subject_uuid
 
 CARD_KINDS = {
@@ -311,6 +312,7 @@ async def projected_materials(db, group_id, entity_key, now, sources):
             str(attachment.id),
         )
     )
+    attachments = distinct_photos(attachments)
     captions = {
         raw_id: text or ""
         for raw_id, text in (
