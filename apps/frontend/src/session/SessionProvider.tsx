@@ -100,6 +100,13 @@ export function useSession(): SessionContextValue {
   return value;
 }
 
+/** A UI hint from the session permissions; the server still decides every request. */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useHasPermission(permission: SessionContext['permissions'][number]): boolean {
+  const { state } = useSession();
+  return state.status === 'ready' && state.session.permissions.includes(permission);
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export function useIsHeadman(): boolean {
   const value = useContext(Ctx);

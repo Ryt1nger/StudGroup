@@ -15,6 +15,12 @@ import {
   editAcademicDeadline,
   recheckMembership,
   setHomeworkCompletion,
+  createHomework,
+  deleteHomework,
+  createAcademicEvent,
+  deleteAcademicEvent,
+  type CreateAcademicEventRequest,
+  type CreateHomeworkRequest,
   getProfile,
   updateProfile,
   type UpdateProfileRequest,
@@ -68,6 +74,12 @@ export const api = {
     unwrap(getDeadlineFileLink({ path: { deadline_id: id } })).then((r) => r.url),
   editEvent: (id: string, body: EditAcademicDeadlineRequest) =>
     unwrap(editAcademicDeadline({ path: { deadline_id: id }, body })),
+  createHomework: (body: CreateHomeworkRequest): Promise<HomeworkDetail> => unwrap(createHomework({ body })),
+  createEvent: (body: CreateAcademicEventRequest) => unwrap(createAcademicEvent({ body })),
+  deleteHomework: (id: string, expectedRevision: number): Promise<unknown> =>
+    unwrap(deleteHomework({ path: { homework_id: id }, query: { expected_revision: expectedRevision } })),
+  deleteEvent: (id: string, expectedRevision: number): Promise<unknown> =>
+    unwrap(deleteAcademicEvent({ path: { deadline_id: id }, query: { expected_revision: expectedRevision } })),
   setCompletion: (id: string, completed: boolean, expectedRevision: number): Promise<HomeworkDetail> =>
     unwrap(
       setHomeworkCompletion({
@@ -244,6 +256,54 @@ export function useEditEventMutation(id: string) {
       void queryClient.invalidateQueries({ queryKey: ['academic-deadlines'] });
       void queryClient.invalidateQueries({ queryKey: queryKeys.today });
       void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
+    },
+  });
+}
+
+/** Everything a created or removed card can appear in has to be fetched again. */
+function refreshAfterCardChange(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.today });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.subjects });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.lessonSubjects });
+  void queryClient.invalidateQueries({ queryKey: ['academic-deadlines'] });
+  restartHomeworkLists(queryClient);
+}
+
+/** Headman/deputy creates a homework card; the server audits it and announces it like the bot does. */
+export function useCreateHomework() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateHomeworkRequest) => api.createHomework(body),
+    onSuccess: (detail) => {
+      queryClient.setQueryData(queryKeys.homework(detail.id), detail);
+      refreshAfterCardChange(queryClient);
+    },
+  });
+}
+
+/** Headman/deputy creates a graded event. */
+export function useCreateEvent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateAcademicEventRequest) => api.createEvent(body),
+    onSuccess: () => refreshAfterCardChange(queryClient),
+  });
+}
+
+/** Removes a card for everyone; `expected_revision` stops the removal of a card that changed meanwhile. */
+export function useDeleteCard(kind: 'homework' | 'event', id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (expectedRevision: number) =>
+      kind === 'homework' ? api.deleteHomework(id, expectedRevision) : api.deleteEvent(id, expectedRevision),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: kind === 'homework' ? queryKeys.homework(id) : ['academic-deadline', id] });
+      refreshAfterCardChange(queryClient);
+    },
+    onError: async (error) => {
+      if (isApiRequestError(error) && error.code === 'revision_conflict') {
+        await queryClient.invalidateQueries({ queryKey: kind === 'homework' ? queryKeys.homework(id) : ['academic-deadline', id] });
+      }
     },
   });
 }

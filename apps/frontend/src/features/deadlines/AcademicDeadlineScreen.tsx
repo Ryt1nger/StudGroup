@@ -9,6 +9,7 @@ import { BackTop } from '../../shell/TopBar';
 import { Banner, Skeleton } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
+import { DeleteCardButton } from '../shared/DeleteCard';
 import { AddFile, Collapsible, SourceRow, UpdatesBlock } from '../shared/CardParts';
 import { EVENT_KIND } from '../shared/Cards';
 import { MaterialList, Photos } from '../shared/Materials';
@@ -37,7 +38,7 @@ export function AcademicDeadlineScreen() {
   const showHint = item.date_hint && (headman || (!item.deadline_at && !item.window_start));
   return (
     <>
-      <BackTop fallback="/deadlines" right={editor ? <Link className="pillb" to="edit"><Ic name="edit" size={15} />{ru.edit.open}</Link> : undefined} />
+      <BackTop fallback="/deadlines" right={editor ? <>{item.revision !== undefined ? <DeleteCardButton kind="event" id={item.id} revision={item.revision} backTo="/deadlines" /> : null}<Link className="pillb" to="edit"><Ic name="edit" size={15} />{ru.edit.open}</Link></> : undefined} />
       <div className="d-head" style={subjectStyle(subject)}>
         <span className="chipx"><b><SubjectMark name={subject} /></b>{subject}</span>
         <h1>{item.title}</h1>

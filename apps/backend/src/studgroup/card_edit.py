@@ -10,12 +10,15 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import headman_domain as domain
+from studgroup import staff_items
 from studgroup.academic_deadlines import representation as deadline_representation
 from studgroup.api import EDIT_PERMISSIONS, ApiError, active_group, database
 from studgroup.homework import find_card
@@ -124,7 +127,9 @@ def provided(body):
     return body.model_fields_set - {"expected_revision"}
 
 
-async def apply(db, group, user, member, key, row, expected, values, only_description):
+async def apply(
+    db, group, user, member, key, row, expected, values, only_description, operation=None
+):
     if row.revision != expected:
         raise ApiError("revision_conflict", "Данные карточки изменились. Обновите карточку", 409)
     try:
@@ -135,7 +140,7 @@ async def apply(db, group, user, member, key, row, expected, values, only_descri
             member,
             key,
             expected,
-            "description" if only_description else "edit",
+            operation or ("description" if only_description else "edit"),
             values,
         )
     except domain.StError as error:
@@ -257,6 +262,156 @@ async def edit_deadline(
         "item": item,
         "permissions": list(EDIT_PERMISSIONS),
     }
+
+
+class CreateHomeworkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str
+    subject: str
+    description: str = ""
+    deadline: DeadlineValue | None = None
+
+    @field_validator("title", "subject")
+    @classmethod
+    def short_text(cls, value):
+        return clean(value, required=True, limit=255)
+
+    @field_validator("description")
+    @classmethod
+    def long_text(cls, value):
+        return clean(value, required=False, limit=8000)
+
+
+class CreateEventRequest(CreateHomeworkRequest):
+    kind: Literal[DEADLINE_KINDS] = "control_point"
+    date_hint: str | None = None
+
+    @field_validator("date_hint")
+    @classmethod
+    def hint(cls, value):
+        return None if value is None else (clean(value, required=False, limit=1000) or None)
+
+
+@router.post("/homework", status_code=201)
+async def create_homework(
+    body: CreateHomeworkRequest,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    """A card made in the Mini App: same rules, audit and notification as one made in the bot."""
+    user, member = await editor(db, group, authorization)
+    deadline = body.deadline or DeadlineValue()
+    try:
+        key, _ = await domain.create_card(
+            db,
+            group,
+            user,
+            member,
+            "h",
+            {
+                "subject": body.subject,
+                "title": body.title,
+                "description": body.description or None,
+                "deadline_at": deadline.at,
+                "date_only": deadline.date_only,
+            },
+        )
+    except domain.StError as error:
+        raise ApiError("permission_denied", str(error), 403) from None
+    row = await find_card(db, group, uuid.UUID(key.split(":", 1)[1]))
+    result = await homework_representation(db, row, user.id, datetime.now(UTC))
+    await db.commit()
+    return JSONResponse(jsonable_encoder(result), status_code=201)
+
+
+@router.post("/deadlines", status_code=201)
+async def create_event(
+    body: CreateEventRequest,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    user, member = await editor(db, group, authorization)
+    deadline = body.deadline or DeadlineValue()
+    try:
+        key, _ = await domain.create_card(
+            db,
+            group,
+            user,
+            member,
+            "e",
+            {
+                "kind": body.kind,
+                "subject": body.subject,
+                "title": body.title,
+                "description": body.description,
+                "deadline_at": deadline.at,
+                "date_only": deadline.date_only,
+            },
+        )
+    except domain.StError as error:
+        raise ApiError("permission_denied", str(error), 403) from None
+    now = datetime.now(UTC)
+    row = await db.get(AcademicDeadline, uuid.UUID(key.split(":", 1)[1]))
+    row.date_hint = body.date_hint
+    item = await deadline_representation(db, group, row, now)
+    await db.commit()
+    return JSONResponse(
+        jsonable_encoder(
+            {
+                "generated_at": now,
+                "group_timezone": group.timezone,
+                "item": item,
+                "permissions": list(EDIT_PERMISSIONS),
+            }
+        ),
+        status_code=201,
+    )
+
+
+@router.delete("/homework/{homework_id}", status_code=204)
+async def delete_homework(
+    homework_id: uuid.UUID,
+    expected_revision: Annotated[int, Query(ge=1)],
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    """Remove a card for everyone. The card is hidden at once; the correction journal can undo it."""
+    user, member = await editor(db, group, authorization)
+    row = await find_card(db, group, homework_id)
+    await apply(db, group, user, member, f"h:{row.id}", row, expected_revision, {}, False, "delete")
+    await staff_items.retire_canonical(db, "homework", row.id, datetime.now(UTC))
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.delete("/deadlines/{deadline_id}", status_code=204)
+async def delete_event(
+    deadline_id: uuid.UUID,
+    expected_revision: Annotated[int, Query(ge=1)],
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    user, member = await editor(db, group, authorization)
+    now = datetime.now(UTC)
+    row = await db.scalar(
+        select(AcademicDeadline)
+        .where(
+            AcademicDeadline.id == deadline_id,
+            AcademicDeadline.group_id == group.id,
+            AcademicDeadline.delete_at > now,
+        )
+        .with_for_update()
+    )
+    if row is None:
+        raise ApiError("not_found", "Событие не найдено", 404)
+    await apply(db, group, user, member, f"e:{row.id}", row, expected_revision, {}, False, "delete")
+    await staff_items.retire_canonical(db, "deadline", row.id, now)
+    await db.commit()
+    return Response(status_code=204)
 
 
 _bot_username = None

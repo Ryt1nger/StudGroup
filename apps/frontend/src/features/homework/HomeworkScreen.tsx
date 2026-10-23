@@ -18,6 +18,7 @@ import { useTelegram } from '../../telegram/TelegramProvider';
 import { Banner, Skeleton, Spinner } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
+import { DeleteCardButton } from '../shared/DeleteCard';
 import { AddFile, Collapsible, SourceRow, UpdatesBlock } from '../shared/CardParts';
 import { MaterialList, Photos } from '../shared/Materials';
 import { changedAfterCompletion, showUrgent } from '../today/cardStatus';
@@ -81,7 +82,7 @@ function Body({ detail, nowMs, gaveUp, restart, refreshing }: { detail: Homework
   const canComplete = !cancelled && view.kind === 'homework';
   return (
     <>
-      <BackTop fallback="/tasks" right={editor ? <Link className="pillb" to="edit"><Ic name="edit" size={15} />{ru.edit.open}</Link> : undefined} />
+      <BackTop fallback="/tasks" right={editor ? <>{cancelled ? null : <DeleteCardButton kind="homework" id={detail.id} revision={detail.revision} backTo="/tasks" />}<Link className="pillb" to="edit"><Ic name="edit" size={15} />{ru.edit.open}</Link></> : undefined} />
       <div className="d-head" style={subjectStyle(subject)}>
         <span className="chipx"><b><SubjectMark name={subject} /></b>{subject}</span>
         <h1>{detail.title}</h1>

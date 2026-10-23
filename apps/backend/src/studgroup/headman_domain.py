@@ -55,6 +55,7 @@ FIELDS = {
         "cancelled_at",
         "updated_at",
         "significant_updated_at",
+        "delete_at",
         "revision",
     ],
     "e": [
@@ -69,6 +70,7 @@ FIELDS = {
         "date_hint",
         "needs_clarification",
         "cancelled_at",
+        "delete_at",
         "revision",
     ],
     "p": [
@@ -178,7 +180,7 @@ def headman_only(member):
         raise StError("Участниками и настройками группы управляет староста.")
 
 
-async def entity(db, group, key):
+async def entity(db, group, key, include_deleted=False):
     try:
         kind, ident = key.split(":", 1)
         cls = MODELS[kind]
@@ -189,7 +191,8 @@ async def entity(db, group, key):
         )
     except (ValueError, KeyError):
         row = None
-    if row is None or (hasattr(row, "delete_at") and utc(row.delete_at) <= datetime.now(UTC)):
+    gone = hasattr(row, "delete_at") and utc(row.delete_at) <= datetime.now(UTC)
+    if row is None or (gone and not include_deleted):
         raise StError("Карточка больше недоступна. Обнови список.")
     return kind, row
 
@@ -411,12 +414,14 @@ async def mutate(db, group, user, member, key, expected, operation, values=None)
     await guard(db, group, member, key, row, expected)
     before = {key: await snapshot(db, key, kind, row)}
     values = values or {}
+    if operation == "delete" and kind not in {"h", "e"}:
+        raise StError("Эту запись удалить нельзя.")
     for field, value in values.items():
         if field not in FIELDS[kind] or field == "revision":
             raise StError("Недоступное поле.")
         setattr(row, field, value)
     now = datetime.now(UTC)
-    if operation in {"cancel", "reject"}:
+    if operation in {"cancel", "reject", "delete"}:
         if kind == "h":
             row.status = "cancelled"
             row.cancelled_at = now
@@ -428,13 +433,17 @@ async def mutate(db, group, user, member, key, expected, operation, values=None)
             raise StError("Для пары используется изменение расписания.")
     if kind == "h" and operation != "defer":
         row.verification_state = "manual_confirmed"
-        if row.status == "needs_clarification" and operation not in {"cancel", "reject"}:
+        if row.status == "needs_clarification" and operation not in {"cancel", "reject", "delete"}:
             row.status = "published"  # a person has settled it; only a new conflict may reopen it
         row.updated_at = now
         if operation not in {"confirm", "material"}:
             row.significant_updated_at = now
     if kind == "e" and operation != "defer":
         row.needs_clarification = False
+    if operation == "delete":
+        # Retention is the one removal mechanism: every read already hides a card whose delete_at
+        # has passed, so the card vanishes for everyone at once; the audit row can still undo it.
+        row.delete_at = now
     row.revision += 1
     await db.flush()
     await lock_decision(
@@ -453,7 +462,7 @@ async def mutate(db, group, user, member, key, expected, operation, values=None)
         operation,
         before,
         [(key, kind, row)],
-        notify=operation not in {"confirm", "defer", "material", "description"},
+        notify=operation not in {"confirm", "defer", "material", "description", "delete"},
     )
 
 
@@ -593,7 +602,7 @@ async def undo(db, group, user, member, audit_id):
     before, after = json.loads(audit.before), json.loads(audit.after)
     rows = []
     for key, snapshot_after in sorted(after.items()):
-        kind, row = await entity(db, group, key)
+        kind, row = await entity(db, group, key, include_deleted=True)
         await guard(db, group, member, key, row, snapshot_after["fields"]["revision"])
         rows.append((key, kind, row))
     inverse = {key: await snapshot(db, key, kind, row) for key, kind, row in rows}

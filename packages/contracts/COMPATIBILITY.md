@@ -1,5 +1,14 @@
 # Contract compatibility
 
+## Creating and removing cards in the Mini App (0.16.0)
+
+Additive only: new operations `createHomework`, `createAcademicEvent`, `deleteHomework`,
+`deleteAcademicEvent` and the permission value `homework.create`. Older clients never call them. A
+client MUST NOT treat the permission as authorization: students get 403 on every one of them.
+A removed card answers 404/410 on every read afterwards and is absent from lists, including the
+archive; students receive no notification for the removal. Removal is soft: the audit row keeps the
+data and the bot's correction journal restores it while the row exists.
+
 ## Review queue (0.14.0, 2026-10-23)
 
 Additive only. Existing filters, query flags and fields keep their meaning. A 0.13.0 client never

@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import type { AcademicDeadline } from '@studgroup/shared-types';
 import { useAcademicDeadlinesQuery } from '../../api/queries';
-import { useIsEditor } from '../../session/SessionProvider';
+import { Link } from 'react-router';
+import { useHasPermission, useIsEditor } from '../../session/SessionProvider';
+import { Float } from '../../shell/AppRoot';
+import { Ic } from '../../ui/Ic';
 import { useServerNow } from '../../lib/hooks';
 import { GroupTop } from '../../shell/TopBar';
 import { Empty, Skeleton } from '../../ui/Blocks';
@@ -16,6 +19,7 @@ const startOf = (item: AcademicDeadline) => Date.parse(item.deadline_at ?? item.
 export function DeadlinesScreen() {
   const [view, setView] = useState<View>('actual');
   const editor = useIsEditor();
+  const canCreate = useHasPermission('homework.create');
   const query = useAcademicDeadlinesQuery(view === 'archive', view === 'review');
   // «Проверка» exists only for editors and only while something needs a look; the count comes with every list.
   const reviewCount = query.data?.review_count ?? 0;
@@ -41,6 +45,7 @@ export function DeadlinesScreen() {
           </button>
         ))}
       </div>
+      {canCreate ? <Float><Link className="fab" to="/cards/new?type=event" aria-label="Новое событие"><Ic name="plus" /></Link></Float> : null}
       <div style={{ marginTop: 16 }}>
         {query.isPending ? <Skeleton label="Загружаем…" /> : null}
         {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
