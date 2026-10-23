@@ -1,80 +1,56 @@
-import { useEffect, type ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useEffect } from 'react';
+import { useSearchParams } from 'react-router';
 import type { HomeworkSummary, TodayResponse } from '@studgroup/shared-types';
 import { STALE_AFTER_MS } from '../../api/cachePolicy';
 import { useAcademicDeadlinesQuery, useScheduleQuery, useTodayQuery } from '../../api/queries';
-import { AcademicDeadlineCard } from '../deadlines/AcademicDeadlineCard';
-import { upcomingDeadlines } from '../deadlines/upcomingDeadlines';
 import { ru } from '../../i18n/ru';
 import { dayKey, formatLongDay, formatTime } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
 import { useProcessingPoll } from '../../lib/processingPoll';
-import { TopBar } from '../../shell/TopBar';
-import { Banner } from '../../ui/Banner';
-import { Button } from '../../ui/Button';
+import { SectionTop } from '../../shell/TopBar';
+import { Banner, Skeleton } from '../../ui/Blocks';
+import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
-import { Skeleton } from '../../ui/Skeleton';
-import { AlertCircle, Bolt, Check, Clock, NavTasks, Refresh } from '../../ui/icons';
-import { mapNextLesson } from '../schedule/mapNextLesson';
-import { NextClassCard } from '../schedule/NextClassCard';
-import { HomeworkCard } from './HomeworkCard';
-import { DayView, lessonsOfDay } from './DayView';
-import { WeekStrip, weekKeys } from './WeekStrip';
+import { upcomingDeadlines } from '../deadlines/upcomingDeadlines';
+import { DlCard, HwCard } from '../shared/Cards';
+import { Hero } from '../shared/Hero';
+import { Sec } from '../shared/Sec';
+import { WeekStrip, weekKeys } from '../shared/WeekStrip';
 import { useTaskList } from '../tasks/useTaskList';
-import styles from './TodayScreen.module.css';
+import { useToggleDone } from '../shared/useToggleDone';
+import { DayView, lessonsOfDay } from './DayView';
 
-function Loading() {
-  return (
-    <div className={styles.list} role="status" aria-label={ru.states.loading}>
-      {[0, 1, 2].map((i) => (
-        <div key={i} className={styles.skelCard}>
-          <Skeleton width={52} height={52} radius={16} />
-          <div className={styles.skelText}>
-            <Skeleton height={16} width="70%" />
-            <Skeleton height={12} width="45%" />
-            <Skeleton height={12} width="55%" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** Today plan: only what is due today and not yet done; nothing "nearest" or "changed" is shown here. */
-function Plan({ data, nowMs }: { data: TodayResponse; nowMs: number }) {
+function Plan({ data, nowMs, busy, onToggle }: { data: TodayResponse; nowMs: number; busy: ReadonlySet<string>; onToggle: (item: HomeworkSummary) => void }) {
   const items = data.sections
     .filter((section) => section.kind === 'due_today')
     .flatMap((section) => section.items)
     .filter((item: HomeworkSummary) => item.my_state.completion !== 'completed' && !isHomeworkArchived(item, nowMs, data.group_timezone));
   if (items.length === 0) return null;
   return (
-    <section className={styles.section} aria-labelledby="sec-plan">
-      <h2 id="sec-plan" className={styles.sectionTitle}>{ru.today.plan}</h2>
-      <div className={styles.list}>
-        {items.map((item) => (
-          <HomeworkCard key={item.id} item={item} nowMs={nowMs} timeZone={data.group_timezone} />
-        ))}
-      </div>
-    </section>
+    <Sec id="sec-plan" title={ru.today.plan}>
+      {items.map((item) => (
+        <HwCard key={item.id} item={item} nowMs={nowMs} timeZone={data.group_timezone} busy={busy.has(item.id)} onToggle={onToggle} />
+      ))}
+    </Sec>
   );
 }
 
 function Stats({ items }: { items: readonly HomeworkSummary[] }) {
-  const live = items.filter((item) => item.status !== 'cancelled');
+  const live = items.filter((item) => item.status !== 'cancelled' && !isOver(item));
   const done = live.filter((item) => item.my_state.completion === 'completed').length;
   const urgent = live.filter((item) => item.my_state.completion !== 'completed' && item.urgency !== 'normal').length;
-  const tiles: ReadonlyArray<readonly [string, number, ReactNode]> = [
-    [ru.today.stats.total, live.length, <NavTasks key="t" size={18} />],
-    [ru.today.stats.done, done, <Check key="d" size={18} />],
-    [ru.today.stats.ahead, live.length - done, <Clock key="a" size={18} />],
-    [ru.today.stats.urgent, urgent, <Bolt key="u" size={18} />],
-  ];
+  const tiles = [
+    ['s1', 'list', live.length, ru.today.stats.total],
+    ['s2', 'check', done, ru.today.stats.done],
+    ['s3', 'clock', live.length - done, ru.today.stats.ahead],
+    ['s4', 'flame', urgent, ru.today.stats.urgent],
+  ] as const;
   return (
-    <div className={styles.stats} aria-label={ru.today.stats.aria}>
-      {tiles.map(([label, value, icon]) => (
-        <div key={label} className={styles.stat}>
-          <span className={styles.statIcon} aria-hidden="true">{icon}</span>
+    <div className="stats" aria-label={ru.today.stats.aria}>
+      {tiles.map(([cls, icon, value, label]) => (
+        <div key={cls} className={`stat ${cls}`}>
+          <span className="si"><Ic name={icon} size={18} /></span>
           <b>{value}</b>
           <span>{label}</span>
         </div>
@@ -83,14 +59,18 @@ function Stats({ items }: { items: readonly HomeworkSummary[] }) {
   );
 }
 
+function isOver(item: HomeworkSummary): boolean {
+  return item.deadline.state === 'known' && !!item.deadline.at && Date.parse(item.deadline.at) < Date.now() && item.my_state.completion !== 'completed';
+}
+
 export function TodayScreen() {
-  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const rawDay = Number(params.get('day'));
   const selected = Number.isInteger(rawDay) && rawDay > 0 && rawDay < 7 ? rawDay : 0;
   const query = useTodayQuery('today');
   const deadlines = useAcademicDeadlinesQuery();
   const all = useTaskList('all');
+  const { toggle, busy } = useToggleDone();
   const data = query.data;
   const nowMs = useServerNow(data?.server_time, query.dataUpdatedAt);
   const timeZone = data?.group_timezone;
@@ -112,30 +92,10 @@ export function TodayScreen() {
 
   const processingActive = data !== undefined && data.processing.state !== 'idle';
   const { gaveUp, restart } = useProcessingPoll(processingActive, query.refetch);
-
   const staleByClock = data ? nowMs - Date.parse(data.freshness.last_successful_sync_at) > STALE_AFTER_MS : false;
   const stale = data ? data.freshness.stale || staleByClock || (query.isError && query.data !== undefined) : false;
-  const nextLesson = data ? mapNextLesson(data.next_lesson, nowMs, data.group_timezone) : null;
   const selectedKey = days[selected];
-  const dateLine = data
-    ? selected === 0
-      ? formatLongDay(new Date(nowMs).toISOString(), data.group_timezone)
-      : selectedKey
-        ? formatLongDay(`${selectedKey}T12:00:00Z`, 'UTC')
-        : ''
-    : null;
 
-  const deadlinesSection =
-    deadlines.data && soonDeadlines.length ? (
-      <section className={styles.section} aria-labelledby="important-deadlines">
-        <h2 id="important-deadlines" className={styles.sectionTitle}>{ru.today.deadlines}</h2>
-        <div className={styles.list}>
-          {soonDeadlines.slice(0, 3).map((item) => (
-            <AcademicDeadlineCard key={item.id} item={item} timeZone={deadlines.data!.group_timezone} />
-          ))}
-        </div>
-      </section>
-    ) : null;
   const select = (index: number) =>
     setParams((previous) => {
       const next = new URLSearchParams(previous);
@@ -144,59 +104,59 @@ export function TodayScreen() {
       return next;
     }, { replace: true });
 
+  const deadlinesSection =
+    deadlines.data && soonDeadlines.length ? (
+      <Sec id="important-deadlines" title={ru.today.deadlines}>
+        {soonDeadlines.slice(0, 3).map((item) => (
+          <DlCard key={item.id} item={item} timeZone={deadlines.data!.group_timezone} nowMs={nowMs} />
+        ))}
+      </Sec>
+    ) : null;
+
   return (
     <>
-      <TopBar />
-      <div className={styles.page}>
-        <h1 className={styles.title}>{ru.today.title}</h1>
-        {dateLine !== null ? <p className={styles.date}>{dateLine}</p> : <Skeleton height={18} width={180} />}
-        {today ? <WeekStrip days={days} selected={selected} marked={marked} onSelect={select} /> : null}
+      <SectionTop />
+      <h1 className="sr">{ru.today.title}</h1>
+      {today ? <WeekStrip days={days} selected={selected} marked={marked} onSelect={select} /> : <Skeleton count={1} label={ru.states.loading} />}
+      {selected > 0 && data && selectedKey ? <div className="datel">{formatLongDay(`${selectedKey}T12:00:00Z`, 'UTC')}</div> : null}
 
-        {data && stale ? (
-          <div className={styles.banner}>
-            <Banner tone="warning" icon={<Clock />} action={<Button variant="ghost" onClick={() => void query.refetch()}><Refresh size={16} /></Button>}>
-              {ru.freshness.stale(formatTime(data.freshness.last_successful_sync_at, data.group_timezone))}
-            </Banner>
-          </div>
-        ) : null}
-        {data && data.processing.state === 'delayed' ? (
-          <div className={styles.banner}>
-            <Banner tone="warning" icon={<AlertCircle />}>{ru.today.delayed}</Banner>
-          </div>
-        ) : null}
-        {processingActive && gaveUp ? (
-          <div className={styles.banner}>
-            <Banner tone="info" action={<Button variant="secondary" onClick={restart}>{ru.today.recheck}</Button>}>{ru.today.pollStopped}</Banner>
-          </div>
-        ) : null}
+      {data && stale ? (
+        <Banner
+          tone="warning"
+          icon="clock"
+          action={<button type="button" className="bact" aria-label="Обновить" onClick={() => void query.refetch()}><Ic name="refresh" size={16} /></button>}
+        >
+          {ru.freshness.stale(formatTime(data.freshness.last_successful_sync_at, data.group_timezone))}
+        </Banner>
+      ) : null}
+      {data && data.processing.state === 'delayed' ? <Banner tone="warning" icon="alert">{ru.today.delayed}</Banner> : null}
+      {processingActive && gaveUp ? (
+        <Banner tone="info" icon="alert" action={<button type="button" className="bact txt" onClick={restart}>{ru.today.recheck}</button>}>{ru.today.pollStopped}</Banner>
+      ) : null}
 
-        {query.isPending ? <Loading /> : null}
-        {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
+      {query.isPending ? <Skeleton label={ru.states.loading} /> : null}
+      {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
 
-        {data && selected === 0 ? (
-          <>
-            {all.items.length > 0 ? <Stats items={all.items} /> : null}
-            {nextLesson ? (
-              <div className={styles.banner}>
-                <NextClassCard view={{ ...nextLesson, onOpen: () => void navigate(`/subjects/lessons/${encodeURIComponent(data.next_lesson!.lesson.id)}`, { state: { backTo: '/today' } }) }} />
-              </div>
-            ) : null}
-            <Plan data={data} nowMs={nowMs} />
-            {deadlinesSection}
-          </>
-        ) : null}
-        {data && selected > 0 && selectedKey ? (
-          <DayView
-            dayKeyValue={selectedKey}
-            timeZone={data.group_timezone}
-            nowMs={nowMs}
-            lessons={lessons}
-            homework={all.items}
-            events={deadlines.data?.items ?? []}
-            loading={schedule.isPending || all.isPending || deadlines.isPending}
-          />
-        ) : null}
-      </div>
+      {data && selected === 0 ? (
+        <>
+          {all.items.length > 0 ? <Stats items={all.items} /> : null}
+          {data.next_lesson ? <Hero next={data.next_lesson} nowMs={nowMs} timeZone={data.group_timezone} /> : null}
+          <Plan data={data} nowMs={nowMs} busy={busy} onToggle={(item) => void toggle(item)} />
+          {deadlinesSection}
+        </>
+      ) : null}
+      {data && selected > 0 && selectedKey ? (
+        <DayView
+          dayKeyValue={selectedKey}
+          timeZone={data.group_timezone}
+          nowMs={nowMs}
+          lessons={lessons}
+          homework={all.items}
+          events={deadlines.data?.items ?? []}
+          loading={schedule.isPending || all.isPending || deadlines.isPending}
+        />
+      ) : null}
     </>
   );
 }
+

@@ -1,68 +1,47 @@
-import { useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router';
 import clsx from 'clsx';
+import { NavLink, useSearchParams } from 'react-router';
+import type { HomeworkSummary } from '@studgroup/shared-types';
 import { ru } from '../../i18n/ru';
 import { useServerNow } from '../../lib/hooks';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
+import { GroupTop } from '../../shell/TopBar';
+import { Banner, Empty, Skeleton } from '../../ui/Blocks';
+import { EndSentinel } from '../../ui/EndSentinel';
 import { RequestError } from '../../ui/RequestError';
-import { Skeleton } from '../../ui/Skeleton';
-import { StateView } from '../../ui/StateView';
-import { HomeworkCard } from '../today/HomeworkCard';
-import todayStyles from '../today/TodayScreen.module.css';
-import { Banner } from '../../ui/Banner';
-import { Button } from '../../ui/Button';
-import { AlertCircle } from '../../ui/icons';
-import { groupTaskSections, parseTaskFilter, TASK_FILTERS, type TaskFilter } from './taskFilters';
+import { HwCard } from '../shared/Cards';
+import { useToggleDone } from '../shared/useToggleDone';
+import { parseTaskFilter, TASK_FILTERS, type TaskFilter } from './taskFilters';
 import { useTaskList } from './useTaskList';
-import styles from './TasksScreen.module.css';
 
-/** Loads the next page when the end of the list scrolls into view; there is no «load more» button. */
-function EndSentinel({ onReach, busy }: { onReach: () => void; busy: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const reach = useRef(onReach);
-  useEffect(() => {
-    reach.current = onReach;
-  });
-  useEffect(() => {
-    const node = ref.current;
-    if (!node || typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) reach.current();
-      },
-      { rootMargin: '240px 0px' },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [busy]);
+/** The two titles of the tasks area: «Задания» and «Дедлайны» switch in place. */
+export function SectionTitles({ active }: { active: 'tasks' | 'deadlines' }) {
   return (
-    <div ref={ref} className={styles.sentinel} role={busy ? 'status' : undefined} aria-label={busy ? ru.tasks.loadingMore : undefined}>
-      {busy ? <span className={styles.spinner} aria-hidden="true" /> : null}
-    </div>
-  );
-}
-
-function Loading() {
-  return (
-    <div className={todayStyles.list} role="status" aria-label={ru.states.loading}>
-      {[0, 1, 2].map((i) => (
-        <div key={i} className={todayStyles.skelCard}>
-          <Skeleton width={52} height={52} radius={16} />
-          <div className={todayStyles.skelText}>
-            <Skeleton height={16} width="70%" />
-            <Skeleton height={12} width="45%" />
-            <Skeleton height={12} width="55%" />
-          </div>
-        </div>
+    <div className="titles" role="group" aria-label="Задания и дедлайны">
+      {(
+        [
+          ['/tasks', 'Задания', 'tasks'],
+          ['/deadlines', 'Дедлайны', 'deadlines'],
+        ] as const
+      ).map(([to, label, key]) => (
+        <NavLink key={to} to={to} replace className={clsx('tt', active === key && 'on')} aria-current={active === key ? 'page' : undefined}>
+          {label}
+        </NavLink>
       ))}
     </div>
   );
 }
 
+const deadlineOf = (item: HomeworkSummary) => (item.deadline.state === 'known' && item.deadline.at ? Date.parse(item.deadline.at) : Number.POSITIVE_INFINITY);
+
+/** Deadline order; completed cards sink to the end of the list, the order inside each group is kept. */
+function arrange(items: readonly HomeworkSummary[], archive: boolean): HomeworkSummary[] {
+  const done = (item: HomeworkSummary) => (item.my_state.completion === 'completed' ? 1 : 0);
+  return [...items].sort((a, b) => done(a) - done(b) || (archive ? deadlineOf(b) - deadlineOf(a) : deadlineOf(a) - deadlineOf(b)));
+}
+
 /**
- * «Задания»: the full retained list (completed, cancelled and long-overdue items included), unlike Today.
- * The server applies the selected filter and paginates by cursor; the client only merges pages by id and
- * groups them. Cards are the Today cards; the filter lives in the URL so returning from a card keeps it.
+ * «Задания»: the server applies the filter and paginates by cursor; the client merges pages by id.
+ * Archived cards (past deadline, cancelled) are shown only under «Архив», grey and read-only.
  */
 export function TasksScreen() {
   const [params, setParams] = useSearchParams();
@@ -70,84 +49,48 @@ export function TasksScreen() {
   const list = useTaskList(filter);
   const nowMs = useServerNow(list.generatedAt, list.updatedAt);
   const timeZone = list.timeZone;
-  const liveItems = timeZone
-    ? list.items.filter((item) => isHomeworkArchived(item, nowMs, timeZone) === (filter === 'archive'))
-    : [];
-  const sections = timeZone ? groupTaskSections(liveItems, nowMs, timeZone) : [];
+  const { toggle, busy } = useToggleDone();
+  const archive = filter === 'archive';
+  const shown = timeZone ? arrange(list.items.filter((item) => isHomeworkArchived(item, nowMs, timeZone) === archive), archive) : [];
+  const hasData = timeZone !== undefined;
 
   const select = (next: TaskFilter) => {
     if (next === filter) return;
     setParams(next === 'all' ? {} : { filter: next }, { replace: true });
   };
-  const hasData = timeZone !== undefined;
 
   return (
     <>
-      <div className={todayStyles.page}>
-        <div className={styles.filters} role="group" aria-label={ru.tasks.filtersAria}>
-          {TASK_FILTERS.map((f) => (
-            <button
-              key={f}
-              type="button"
-              className={clsx(styles.chip, f === filter && styles.chipActive)}
-              aria-pressed={f === filter}
-              onClick={() => select(f)}
-            >
-              {ru.tasks.filters[f]}
-            </button>
-          ))}
-        </div>
+      <GroupTop />
+      <h1 className="sr">{ru.tasks.title}</h1>
+      <SectionTitles active="tasks" />
+      <div className="seg" role="group" aria-label={ru.tasks.filtersAria}>
+        {TASK_FILTERS.map((f) => (
+          <button key={f} type="button" className="chip" aria-pressed={f === filter} onClick={() => select(f)}>
+            {ru.tasks.filters[f]}
+          </button>
+        ))}
+      </div>
 
-        {list.isPending ? <Loading /> : null}
+      <div style={{ marginTop: 16, opacity: list.isSwitching ? 0.6 : 1, transition: 'opacity .15s' }}>
+        {list.isPending ? <Skeleton label={ru.states.loading} /> : null}
         {list.isError ? <RequestError error={list.error} onRetry={list.refetch} /> : null}
-        <div className={clsx(styles.content, list.isSwitching && styles.switching)}>
-          {hasData
-            ? sections.map((section) => (
-                <section
-                  key={section.kind}
-                  className={todayStyles.section}
-                  aria-labelledby={`task-sec-${section.kind}`}
-                >
-                  <h2 id={`task-sec-${section.kind}`} className={todayStyles.sectionTitle}>
-                    {ru.tasks.sections[section.kind as keyof typeof ru.tasks.sections]}
-                  </h2>
-                  <div className={todayStyles.list}>
-                    {section.items.map((item) => (
-                      <HomeworkCard key={item.id} item={item} nowMs={nowMs} timeZone={timeZone} archived={filter === 'archive'} />
-                    ))}
-                  </div>
-                </section>
-              ))
-            : null}
-          {hasData && list.loadMoreFailed ? (
-            <div className={styles.more}>
-              <Banner
-                tone="warning"
-                icon={<AlertCircle />}
-                action={
-                  <Button variant="secondary" onClick={() => void list.loadMore()}>
-                    {ru.tasks.retry}
-                  </Button>
-                }
-              >
-                {ru.tasks.loadMoreFailed}
-              </Banner>
-            </div>
-          ) : null}
-          {hasData && !list.isSwitching && list.hasNextPage && !list.loadMoreFailed && list.items.length > 0 ? (
-            <EndSentinel busy={list.isFetchingNextPage} onReach={() => !list.isFetchingNextPage && void list.loadMore()} />
-          ) : null}
-          {hasData &&
-          !list.isSwitching &&
-          !list.hasNextPage &&
-          !list.isFetchingNextPage &&
-          sections.length === 0 ? (
-            <StateView 
-              title={ru.tasks.empty[filter].title}
-              body={ru.tasks.empty[filter].body}
-            />
-          ) : null}
-        </div>
+        {hasData && timeZone
+          ? shown.map((item) => (
+              <HwCard key={item.id} item={item} nowMs={nowMs} timeZone={timeZone} archive={archive} busy={busy.has(item.id)} onToggle={(card) => void toggle(card)} />
+            ))
+          : null}
+        {hasData && list.loadMoreFailed ? (
+          <Banner tone="warning" icon="alert" action={<button type="button" className="bact txt" onClick={() => void list.loadMore()}>{ru.tasks.retry}</button>}>
+            {ru.tasks.loadMoreFailed}
+          </Banner>
+        ) : null}
+        {hasData && !list.isSwitching && list.hasNextPage && !list.loadMoreFailed && list.items.length > 0 ? (
+          <EndSentinel busy={list.isFetchingNextPage} onReach={() => !list.isFetchingNextPage && void list.loadMore()} />
+        ) : null}
+        {hasData && !list.isSwitching && !list.hasNextPage && !list.isFetchingNextPage && shown.length === 0 ? (
+          <Empty title={ru.tasks.empty[filter].title} body={ru.tasks.empty[filter].body} />
+        ) : null}
       </div>
     </>
   );

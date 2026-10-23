@@ -1,23 +1,46 @@
-import clsx from 'clsx';
-import { useSearchParams } from 'react-router';
+import { useState } from 'react';
+import type { AcademicDeadline } from '@studgroup/shared-types';
 import { useAcademicDeadlinesQuery } from '../../api/queries';
+import { useServerNow } from '../../lib/hooks';
+import { GroupTop } from '../../shell/TopBar';
+import { Empty, Skeleton } from '../../ui/Blocks';
 import { RequestError } from '../../ui/RequestError';
-import { Skeleton } from '../../ui/Skeleton';
-import { AcademicDeadlineCard } from './AcademicDeadlineCard';
-import styles from './Deadlines.module.css';
-import filterStyles from '../tasks/TasksScreen.module.css';
+import { DlCard } from '../shared/Cards';
+import { SectionTitles } from '../tasks/TasksScreen';
+
+type View = 'actual' | 'archive';
+const VIEWS: ReadonlyArray<readonly [View, string]> = [
+  ['actual', 'Актуальные'],
+  ['archive', 'Архив'],
+];
+
+const startOf = (item: AcademicDeadline) => Date.parse(item.deadline_at ?? item.window_start ?? '') || Number.POSITIVE_INFINITY;
 
 export function DeadlinesScreen() {
-  const [params, setParams] = useSearchParams();
-  const archive = params.get('archive') === 'true';
-  const query = useAcademicDeadlinesQuery(archive);
-  return <div className={styles.page}>
-    <div className={clsx(filterStyles.filters, styles.filters)} role="group" aria-label="Раздел дедлайнов">
-      <button type="button" className={clsx(filterStyles.chip, !archive && filterStyles.chipActive)} aria-pressed={!archive} onClick={() => setParams({})}>Актуальные</button>
-      <button type="button" className={clsx(filterStyles.chip, archive && filterStyles.chipActive)} aria-pressed={archive} onClick={() => setParams({ archive: 'true' })}>Архив</button>
-    </div>
-    {query.isPending ? <Skeleton height={100} /> : null}
-    {query.isError ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
-    {query.data ? <div className={styles.list}>{query.data.items.map((item) => <AcademicDeadlineCard key={item.id} item={item} timeZone={query.data.group_timezone} />)}{query.data.items.length === 0 ? <p>Дедлайны пока не найдены.</p> : null}</div> : null}
-  </div>;
+  const [view, setView] = useState<View>('actual');
+  const query = useAcademicDeadlinesQuery(view === 'archive');
+  const data = query.data;
+  const nowMs = useServerNow(data?.generated_at, query.dataUpdatedAt);
+  const items = data ? [...data.items].sort((a, b) => (view === 'archive' ? startOf(b) - startOf(a) : startOf(a) - startOf(b))) : [];
+
+  return (
+    <>
+      <GroupTop />
+      <h1 className="sr">Дедлайны</h1>
+      <SectionTitles active="deadlines" />
+      <div className="seg" role="group" aria-label="Раздел дедлайнов">
+        {VIEWS.map(([key, label]) => (
+          <button key={key} type="button" className="chip" aria-pressed={view === key} onClick={() => setView(key)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ marginTop: 16 }}>
+        {query.isPending ? <Skeleton label="Загружаем…" /> : null}
+        {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
+        {data ? items.map((item) => <DlCard key={item.id} item={item} timeZone={data.group_timezone} nowMs={nowMs} archive={view === 'archive'} />) : null}
+        {data && items.length === 0 ? <Empty title="Дедлайнов пока нет" body="Контрольные, тесты и контрольные точки появятся здесь." /> : null}
+      </div>
+    </>
+  );
 }

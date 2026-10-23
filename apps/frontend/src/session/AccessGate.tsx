@@ -1,20 +1,26 @@
 import { useState, type ReactNode } from 'react';
 import { ru } from '../i18n/ru';
-import { StateView } from '../ui/StateView';
-import { Button } from '../ui/Button';
-import { Skeleton } from '../ui/Skeleton';
-import { AlertCircle, Lock, Refresh, WifiOff } from '../ui/icons';
-import { useSession } from './SessionProvider';
-import styles from './AccessGate.module.css';
+import { StateButton, StateView } from '../ui/Blocks';
+import { useSession as useSessionGate } from './SessionProvider';
+
+function Screen({ children }: { children: ReactNode }) {
+  return (
+    <div className="app">
+      <div className="scroll"><div className="view" data-dir="none">{children}</div></div>
+    </div>
+  );
+}
 
 function Splash() {
   return (
-    <div className={styles.splash} role="status" aria-live="polite">
-      <span className={styles.splashLogo} aria-hidden="true" />
-      <p className={styles.splashText}>{ru.gate.bootLoading}</p>
-      <div className={styles.splashBars} aria-hidden="true">
-        <Skeleton height={14} width="60%" />
-        <Skeleton height={14} width="40%" />
+    <div className="app">
+      <div className="gate">
+        <div className="splash" role="status" aria-live="polite">
+          <div className="logo" aria-hidden="true">SG</div>
+          <p>{ru.gate.bootLoading}</p>
+          <div className="sk" style={{ width: '60%', height: 14, borderRadius: 8 }} />
+          <div className="sk" style={{ width: '40%', height: 14, borderRadius: 8 }} />
+        </div>
       </div>
     </div>
   );
@@ -22,44 +28,29 @@ function Splash() {
 
 /** Renders the right screen for every session / membership state; children only for `active`. */
 export function AccessGate({ children }: { children: ReactNode }) {
-  const { state, retry, recheck } = useSession();
+  const { state, retry, recheck } = useSessionGate();
   const [rechecking, setRechecking] = useState(false);
   const [recheckFailed, setRecheckFailed] = useState(false);
 
   if (state.status === 'loading') return <Splash />;
 
   if (state.status === 'no-telegram') {
-    return (
-      <div className={styles.page}>
-        <StateView icon={<Lock />} title={ru.gate.notTelegramTitle} body={ru.gate.notTelegramBody} />
-      </div>
-    );
+    return <Screen><StateView icon="lock" title={ru.gate.notTelegramTitle} body={ru.gate.notTelegramBody} /></Screen>;
   }
-
   if (state.status === 'expired') {
-    return (
-      <div className={styles.page}>
-        <StateView role="alert" icon={<Lock />} title={ru.gate.expiredTitle} body={ru.gate.expiredBody} />
-      </div>
-    );
+    return <Screen><StateView icon="lock" title={ru.gate.expiredTitle} body={ru.gate.expiredBody} /></Screen>;
   }
-
   if (state.status === 'failed') {
     return (
-      <div className={styles.page}>
+      <Screen>
         <StateView
-          role="alert"
-          icon={state.offline ? <WifiOff /> : <AlertCircle />}
+          icon={state.offline ? 'wifioff' : 'alert'}
           title={state.offline ? ru.states.offlineTitle : ru.states.serviceTitle}
           body={state.offline ? ru.states.offlineBody : ru.states.serviceBody}
-          correlationId={state.correlationId}
-          action={
-            <Button icon={<Refresh />} onClick={retry}>
-              {ru.states.retry}
-            </Button>
-          }
+          code={state.correlationId}
+          action={<StateButton icon="refresh" onClick={retry}>{ru.states.retry}</StateButton>}
         />
-      </div>
+      </Screen>
     );
   }
 
@@ -70,16 +61,16 @@ export function AccessGate({ children }: { children: ReactNode }) {
     case 'membership_suspended': {
       const canRecheck = session.membership?.can_recheck === true;
       return (
-        <div className={styles.page}>
+        <Screen>
           <StateView
-            icon={<Lock />}
+            icon="lock"
             title={ru.gate.suspendedTitle}
             body={ru.gate.suspendedBody}
             action={
               canRecheck ? (
-                <Button
+                <StateButton
+                  icon="refresh"
                   busy={rechecking}
-                  icon={<Refresh />}
                   onClick={() => {
                     setRechecking(true);
                     setRecheckFailed(false);
@@ -89,33 +80,22 @@ export function AccessGate({ children }: { children: ReactNode }) {
                   }}
                 >
                   {ru.gate.recheck}
-                </Button>
+                </StateButton>
               ) : undefined
             }
           />
-          {recheckFailed ? <p className={styles.note}>{ru.states.errorBody}</p> : null}
-        </div>
+          {recheckFailed ? <p className="rfail" role="alert" style={{ textAlign: 'center' }}>{ru.states.errorBody}</p> : null}
+        </Screen>
       );
     }
     case 'membership_left':
-      return (
-        <div className={styles.page}>
-          <StateView icon={<Lock />} title={ru.gate.leftTitle} body={ru.gate.leftBody} />
-        </div>
-      );
+      return <Screen><StateView icon="lock" title={ru.gate.leftTitle} body={ru.gate.leftBody} /></Screen>;
     case 'group_deletion_pending':
-      return (
-        <div className={styles.page}>
-          <StateView icon={<Lock />} title={ru.gate.deletionTitle} body={ru.gate.deletionBody} />
-        </div>
-      );
+      return <Screen><StateView icon="lock" title={ru.gate.deletionTitle} body={ru.gate.deletionBody} /></Screen>;
     case 'no_active_group':
     default:
       // Unknown future access states fail closed to the safe "no active group" screen.
-      return (
-        <div className={styles.page}>
-          <StateView icon={<Lock />} title={ru.gate.noGroupTitle} body={ru.gate.noGroupBody} />
-        </div>
-      );
+      return <Screen><StateView icon="lock" title={ru.gate.noGroupTitle} body={ru.gate.noGroupBody} /></Screen>;
   }
 }
+

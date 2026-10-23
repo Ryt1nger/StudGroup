@@ -4,7 +4,9 @@ import type { ColorScheme, TelegramAdapter } from './adapter';
 interface TelegramContextValue {
   adapter: TelegramAdapter | null;
   scheme: ColorScheme;
-  setTheme: (scheme: ColorScheme) => void;
+  /** `preference`: the user's choice; `setTheme(null)` goes back to following Telegram. */
+  preference: ColorScheme | null;
+  setTheme: (scheme: ColorScheme | null) => void;
   accent: Accent;
   setAccent: (accent: Accent) => void;
 }
@@ -36,10 +38,10 @@ export function TelegramProvider({ adapter, children }: { adapter: TelegramAdapt
   const telegramScheme = useSyncExternalStore<ColorScheme>(subscribe, () => adapter?.colorScheme ?? 'light', () => 'light');
   const [preferred, setPreferred] = useState<ColorScheme | null>(savedTheme);
   const scheme = preferred ?? telegramScheme;
-  const setTheme = useCallback((next: ColorScheme) => {
+  const setTheme = useCallback((next: ColorScheme | null) => {
     setPreferred(next);
     try {
-      document.cookie = `${THEME_COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+      document.cookie = `${THEME_COOKIE}=${next ?? ''}; Path=/; Max-Age=${next ? 31536000 : 0}; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
     } catch { /* Appearance still works when persistent cookies are blocked. */ }
   }, []);
 
@@ -76,7 +78,7 @@ export function TelegramProvider({ adapter, children }: { adapter: TelegramAdapt
     return adapter.onViewportChange(apply);
   }, [adapter]);
 
-  const value = useMemo(() => ({ adapter, scheme, setTheme, accent, setAccent }), [adapter, scheme, setTheme, accent, setAccent]);
+  const value = useMemo(() => ({ adapter, scheme, preference: preferred, setTheme, accent, setAccent }), [adapter, scheme, preferred, setTheme, accent, setAccent]);
   return <TelegramContext.Provider value={value}>{children}</TelegramContext.Provider>;
 }
 

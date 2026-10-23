@@ -24,18 +24,18 @@ function hash(name: string): number {
 /** Style variables for an element tinted by its subject: the colour, its hsl components (for alpha) and a darker ink. */
 export function subjectStyle(name: string): CSSProperties {
   const [hue, lightness] = SHADES[hash(name) % SHADES.length]!;
-  const hsl = `calc(var(--sg-h) + ${hue}) var(--sg-s) calc(var(--sg-l) + ${lightness}%)`;
+  const hsl = `calc(var(--h) + ${hue}) var(--s) calc(var(--l) + ${lightness}%)`;
   return {
-    '--sg-subject': `hsl(${hsl})`,
-    '--sg-subject-hsl': hsl,
-    '--sg-subject-ink': `calc(var(--sg-h) + ${hue}) var(--sg-s) calc(var(--sg-l) + ${lightness}% - 26%)`,
+    '--sc': `hsl(${hsl})`,
+    '--sc-hsl': hsl,
+    '--sc-ink': `calc(var(--h) + ${hue}) var(--s) calc(var(--l) + ${lightness}% - 26%)`,
   } as CSSProperties;
 }
 
 /** A CSS colour built from the accent variables, so it follows the chosen accent and theme. */
 export function subjectColor(name: string): string {
   const [hue, lightness] = SHADES[hash(name) % SHADES.length]!;
-  return `hsl(calc(var(--sg-h) + ${hue}) var(--sg-s) calc(var(--sg-l) + ${lightness}%))`;
+  return `hsl(calc(var(--h) + ${hue}) var(--s) calc(var(--l) + ${lightness}%))`;
 }
 
 /** One capital letter for the subject chip. */
