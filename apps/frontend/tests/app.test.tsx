@@ -223,8 +223,9 @@ describe('homework detail and source', () => {
     renderApp({ route: `/homework/${HW_UNAVAILABLE}` });
     expect(await screen.findByText('Подготовить презентацию')).toBeInTheDocument();
     expect(screen.getByText('Источник недоступен')).toBeInTheDocument();
-    expect(screen.getAllByText('Срок не указан').length).toBeGreaterThan(0);
-    expect(screen.getByText('Срок не назван. Мы уточним у старосты и обновим карточку.')).toBeInTheDocument();
+    // the student sees neither a banner nor a caption about the missing date
+    expect(screen.queryByText(/Мы уточним у старосты/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Срок не указан')).not.toBeInTheDocument();
   });
 
   it('never opens a non-t.me URL even if the backend returns one', async () => {
