@@ -41,10 +41,15 @@ def quality(attachment):
     )
 
 
-def distinct(attachments):
-    """The attachments without near-duplicate photos; order and non-photos are untouched."""
+def distinct(attachments, anchors=()):
+    """The attachments without near-duplicate photos; order and non-photos are untouched.
+
+    ``anchors`` are photos that were already analysed in earlier packages: a new photo repeating one
+    of them is hidden whatever its quality, because its content is already on a card.
+    """
     photos = [a for a in attachments if a.kind == "photo" and a.processing_state == "ready"]
-    hidden = set()
+    known = [a for a in anchors if a.kind == "photo" and a.processing_state == "ready"]
+    hidden = {p.id for p in photos if any(same_content(k, p) for k in known)}
     for candidate in sorted(photos, key=quality, reverse=True):
         if candidate.id in hidden:
             continue

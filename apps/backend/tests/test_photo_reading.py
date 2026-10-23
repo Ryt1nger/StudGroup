@@ -316,3 +316,55 @@ def test_a_second_shot_of_the_same_board_is_shown_to_the_model_once(client, monk
     seen = json.dumps(provider.requests[-1].user_payload, ensure_ascii=False)
     assert seen.count("Текст на фото") == 1
     assert seen.count(close) == 1  # only inside the better reading, never as a second one
+
+
+def test_a_photo_repeating_one_from_an_earlier_package_is_not_shown_to_the_model(
+    client, monkeypatch
+):
+    allow_download(monkeypatch)
+    wide = "Доказательство теорем 20/3 ст 69-70 предел функции эквивалентные бесконечно малые"
+    close = "Доказательство теорем 20/3 ст 69-70"
+    answers = iter([reading(text=wide), reading(text=close)])
+
+    class Sequential(VisionProvider):
+        async def complete_vision(self, **kwargs):
+            self.answer = next(answers)
+            return await super().complete_vision(**kwargs)
+
+    photo_message(client, mid=31)
+    make_new(client)
+    first = Sequential(reading(), cited=(31,))
+    assert step(client, first, photo_settings()) == "completed"
+
+    # an hour later the same board arrives again as a close-up
+    later = BASE + timedelta(hours=1)
+    source(client, mid=32, text="", when=later)
+
+    async def attach():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
+            db.add(
+                MessageAttachment(
+                    raw_message_id=raw.id,
+                    group_id=raw.group_id,
+                    source_revision=1,
+                    kind="photo",
+                    stable_file_id="u32",
+                    telegram_file_id="f32",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    active=True,
+                    created_at=later,
+                    delete_at=later + timedelta(days=30),
+                )
+            )
+            await db.commit()
+
+    asyncio.run(attach())
+    second = Sequential(reading(), cited=(32,))
+    step(client, second, photo_settings())
+    seen = (
+        json.dumps(second.requests[-1].user_payload, ensure_ascii=False) if second.requests else ""
+    )
+    # message 31 is context and keeps its reading; the repeated close-up adds nothing
+    assert seen.count("Текст на фото") == 1 and seen.count(close) == 1

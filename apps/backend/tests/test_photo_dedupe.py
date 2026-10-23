@@ -72,3 +72,11 @@ def test_summaries_decide_only_when_neither_photo_has_readable_text():
     assert ids(distinct([left, right, other])) == ["l", "o"] or ids(
         distinct([left, right, other])
     ) == ["r", "o"]
+
+
+def test_a_photo_repeating_one_from_an_earlier_package_is_hidden_even_if_it_reads_better():
+    earlier = photo("old", CLOSE_UP)
+    new = photo("new", BOARD, width=1920, height=1080)
+    other = photo("other", FORMULAS)
+    assert ids(distinct([new, other], [earlier])) == ["other"]
+    assert ids(distinct([new, other])) == ["new", "other"]

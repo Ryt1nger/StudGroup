@@ -71,6 +71,7 @@ CONTEXT_AFTER = 8  # read-only messages after the last target (if they exist yet
 RUN_RETENTION = timedelta(days=30)
 EXISTING_ITEMS_LIMIT = 30  # active cards offered to the model as update/cancel targets
 EXISTING_ITEMS_WINDOW = timedelta(days=30)
+PHOTO_MEMORY = timedelta(days=14)  # how far back a repeated photo is still recognised
 
 
 def _gate(settings, now):
@@ -117,7 +118,29 @@ async def _source_messages(db, group, rows):
     ).all()
     # Two shots of one board (wide, then close-up) are one fact: the model reads the better one
     # only, so the second shot is not mistaken for a supplement that changes the card.
-    kept = {a.id for a in photo_dedupe.distinct(stored)}
+    # A photo repeating one that an earlier package already turned into a card is not news either.
+    earliest = min((row.message_date for row in rows), default=None)
+    earlier = (
+        (
+            await db.scalars(
+                select(MessageAttachment)
+                .join(RawMessage, RawMessage.id == MessageAttachment.raw_message_id)
+                .where(
+                    MessageAttachment.group_id == group.id,
+                    MessageAttachment.active.is_(True),
+                    MessageAttachment.kind == "photo",
+                    MessageAttachment.processing_state == "ready",
+                    MessageAttachment.raw_message_id.not_in(ids),
+                    RawMessage.processing_state == "completed",
+                    RawMessage.message_date < earliest,
+                    RawMessage.message_date >= earliest - PHOTO_MEMORY,
+                )
+            )
+        ).all()
+        if earliest is not None
+        else []
+    )
+    kept = {a.id for a in photo_dedupe.distinct(stored, earlier)}
     for attachment in stored:
         attachments.setdefault(attachment.raw_message_id, []).append(
             {
