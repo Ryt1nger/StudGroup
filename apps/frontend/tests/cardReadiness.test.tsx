@@ -56,7 +56,9 @@ describe('published learning card readiness', () => {
 
     const { adapter } = renderApp({ route: `/homework/${HW}` });
     expect(await screen.findByText('Тест')).toBeInTheDocument();
-    expect(screen.getByText('Дата требует уточнения')).toBeInTheDocument();
+    // this viewer edits cards: one small mark, no caption about where the date came from
+    expect(screen.getByText('Требует уточнения')).toBeInTheDocument();
+    expect(screen.queryByText('Дата требует уточнения')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Дополнения и изменения' })).toBeInTheDocument();
     expect(screen.getByText('Добавлены страницы 12–14.')).toBeInTheDocument();
 
@@ -82,7 +84,28 @@ describe('published learning card readiness', () => {
       ),
     );
     renderApp({ route: `/homework/${HW}` });
-    expect((await screen.findAllByText('Срок не указан')).length).toBeGreaterThan(0);
+    await screen.findByRole('heading', { level: 1 });
+    // no banner and no caption for a student; the headman gets one small mark instead
+    expect(screen.queryByText(/Мы уточним у старосты/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Срок не указан')).not.toBeInTheDocument();
     expect(screen.queryByText('Дата определена автоматически')).not.toBeInTheDocument();
+    expect(screen.queryByText('Требует уточнения')).not.toBeInTheDocument();
+  });
+
+  it('shows the headman only a small "needs clarification" mark for a card without a deadline', async () => {
+    useScenario();
+    server.use(
+      http.get(`${API}/homework/${HW}`, () =>
+        HttpResponse.json({
+          ...base,
+          permissions: [...base.permissions, 'homework.edit'],
+          deadline: { state: 'unknown', at: null, date_only: false },
+        }),
+      ),
+    );
+    renderApp({ route: `/homework/${HW}` });
+    expect(await screen.findByText('Требует уточнения')).toBeInTheDocument();
+    expect(screen.queryByText(/Мы уточним у старосты/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Срок не указан')).not.toBeInTheDocument();
   });
 });

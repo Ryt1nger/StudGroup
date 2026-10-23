@@ -71,6 +71,11 @@ function Body({ detail, nowMs, gaveUp, restart, refreshing }: { detail: Homework
   const photos = photoMaterials(view.materials);
   const editor = detail.permissions.includes('homework.edit');
   const cancelled = detail.status === 'cancelled';
+  // Only the headman sees that the card needs a check, as a small mark; students see nothing.
+  const needsClarification =
+    detail.deadline.state !== 'known' ||
+    view.deadlineCertainty === 'needs_clarification' ||
+    detail.verification_state === 'needs_clarification';
   // Editors only: the list of what changed is a working detail, not news for students.
   const updates = !editor
     ? []
@@ -91,16 +96,15 @@ function Body({ detail, nowMs, gaveUp, restart, refreshing }: { detail: Homework
           <span className="chipx ok">{ru.card.kind[view.kind]}</span>
           {showUrgent(detail) ? <span className="chipx warn"><Ic name="bolt" size={12} />срочно</span> : null}
           {cancelled ? <span className="chipx mute">{ru.card.cancelled}</span> : null}
+          {editor && needsClarification ? <span className="chipx warn">{ru.card.needsClarification}</span> : null}
           {changedAfterCompletion(detail) ? <span className="chipx warn"><Ic name="refresh" size={12} />{ru.card.updatedCheck}</span> : null}
         </div>
-        <p className="cert">{ru.card.deadlineCertainty[view.deadlineCertainty]}</p>
       </div>
       {detail.processing.state === 'delayed' ? <Banner tone="warning" icon="alert">{ru.card.delayed}</Banner> : null}
       {detail.processing.state === 'reanalyzing' ? <Banner tone="info" icon="refresh">{ru.card.reanalyzing}</Banner> : null}
       {detail.processing.state !== 'none' && gaveUp ? (
         <Banner tone="info" icon="alert" action={<button type="button" className="bact txt" onClick={restart}>{ru.today.recheck}</button>}>{ru.today.pollStopped}</Banner>
       ) : null}
-      {detail.deadline.state !== 'known' ? <Banner tone="info" icon="alert">Срок не назван. Мы уточним у старосты и обновим карточку.</Banner> : null}
       {completionMessage ? <Banner tone="danger" icon="alert">{completionMessage}</Banner> : null}
       <div className="block" aria-labelledby="todo-title">
         <h3 id="todo-title">{ru.detail.whatToDo}</h3>

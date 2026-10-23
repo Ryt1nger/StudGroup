@@ -4,7 +4,6 @@ import { ru } from '../../i18n/ru';
 import { photoMaterials, remainingMaterials } from '../../lib/photoMaterials';
 import { subjectStyle } from '../../lib/subjectColor';
 import { SubjectMark } from '../../ui/SubjectMark';
-import { useIsHeadman } from '../../session/SessionProvider';
 import { BackTop } from '../../shell/TopBar';
 import { Banner, Skeleton } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
@@ -18,7 +17,6 @@ import { formatEventDate } from './formatEventDate';
 export function AcademicDeadlineScreen() {
   const { deadlineId = '' } = useParams();
   const query = useAcademicDeadlineQuery(deadlineId);
-  const headman = useIsHeadman();
   const data = query.data;
   const item = data?.item;
   if (!item || !data) {
@@ -35,7 +33,11 @@ export function AcademicDeadlineScreen() {
   const editor = (data.permissions?.includes('homework.edit') ?? false) && item.revision !== undefined;
   const photos = photoMaterials(item.materials);
   const updates = (item.updates ?? []).map((u) => ({ id: u.id, kind: u.kind, text: u.text, createdAt: u.created_at }));
-  const showHint = item.date_hint && (headman || (!item.deadline_at && !item.window_start));
+  // Only the headman sees that the card needs a check, as a small mark; students see the hint only
+  // when it is their sole date information.
+  const needsClarification =
+    item.needs_clarification || item.deadline_certainty === 'needs_clarification' || (!item.deadline_at && !item.window_start);
+  const showHint = item.date_hint && !item.deadline_at && !item.window_start;
   return (
     <>
       <BackTop fallback="/deadlines" right={editor ? <>{item.revision !== undefined ? <DeleteCardButton kind="event" id={item.id} revision={item.revision} backTo="/deadlines" /> : null}<Link className="pillb" to="edit"><Ic name="edit" size={15} />{ru.edit.open}</Link></> : undefined} />
@@ -45,8 +47,8 @@ export function AcademicDeadlineScreen() {
         <div className="m">
           <span className="chipx warn">{EVENT_KIND[item.kind]}</span>
           <span className="when"><Ic name="clock" size={14} />{formatEventDate(item, timeZone)}</span>
+          {editor && needsClarification ? <span className="chipx warn">{ru.card.needsClarification}</span> : null}
         </div>
-        {item.deadline_certainty ? <p className="cert">{ru.card.deadlineCertainty[item.deadline_certainty]}</p> : null}
       </div>
       {showHint ? <Banner tone="info" icon="alert">{item.date_hint}</Banner> : null}
       <div className="block">
