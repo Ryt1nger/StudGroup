@@ -1,6 +1,7 @@
-import { useNavigate, useParams } from 'react-router';
-import { useAcademicDeadlineQuery, useEditEventMutation, useEditHomeworkMutation, useHomeworkQuery, useSubjectsQuery } from '../../api/queries';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useAcademicDeadlineQuery, useCreateEvent, useCreateHomework, useEditEventMutation, useEditHomeworkMutation, useHomeworkQuery, useSubjectsQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
+import { useHasPermission } from '../../session/SessionProvider';
 import { useGroupTimeZone } from '../../session/useGroupTimeZone';
 import { BackTop } from '../../shell/TopBar';
 import { Empty, Skeleton } from '../../ui/Blocks';
@@ -111,6 +112,73 @@ export function EventEditScreen() {
           onCancel={back}
         />
       ) : null}
+    </>
+  );
+}
+
+/** A new homework card or event: `?type=event` opens the event form, anything else the homework one. */
+export function CreateCardScreen() {
+  const [params] = useSearchParams();
+  const event = params.get('type') === 'event';
+  const navigate = useNavigate();
+  const { toast } = useFeedback();
+  const allowed = useHasPermission('homework.create');
+  const names = useSubjectNames();
+  const timeZone = useGroupTimeZone();
+  const createHomework = useCreateHomework();
+  const createEvent = useCreateEvent();
+  const mutation = event ? createEvent : createHomework;
+  const back = event ? '/deadlines' : '/tasks';
+
+  if (!allowed) {
+    return (
+      <>
+        <BackTop fallback={back} />
+        <Empty title="Нет доступа" body={ru.edit.create.forbidden} />
+      </>
+    );
+  }
+  const save = (patch: CardEditPatch) => {
+    const deadline = patch.deadline ?? undefined;
+    if (event) {
+      createEvent.mutate(
+        {
+          title: patch.title ?? '',
+          subject: patch.subject ?? '',
+          kind: patch.kind ?? 'assessment',
+          ...(patch.description !== undefined ? { description: patch.description } : {}),
+          ...(patch.date_hint ? { date_hint: patch.date_hint } : {}),
+          ...(deadline ? { deadline } : {}),
+        },
+        { onSuccess: (data) => { toast('Карточка создана'); void navigate(`/deadlines/${data.item.id}`, { replace: true }); } },
+      );
+    } else {
+      createHomework.mutate(
+        {
+          title: patch.title ?? '',
+          subject: patch.subject ?? '',
+          ...(patch.description !== undefined ? { description: patch.description } : {}),
+          ...(deadline ? { deadline } : {}),
+        },
+        { onSuccess: (data) => { toast('Карточка создана'); void navigate(`/homework/${data.id}`, { replace: true }); } },
+      );
+    }
+  };
+  return (
+    <>
+      <BackTop fallback={back} />
+      <CardEditForm
+        key={event ? 'event' : 'homework'}
+        variant={event ? 'event' : 'homework'}
+        purpose="create"
+        initial={{ title: '', subject: '', description: '', kind: event ? 'assessment' : undefined, deadline: { at: null, dateOnly: false } }}
+        timeZone={timeZone}
+        subjectSuggestions={names}
+        saving={mutation.isPending}
+        error={mutation.error}
+        onSave={save}
+        onCancel={() => void navigate(back)}
+      />
     </>
   );
 }

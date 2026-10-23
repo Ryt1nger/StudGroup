@@ -102,4 +102,5 @@ def test_the_browser_may_send_patch_from_the_web_app(client):
         },
     )
     assert response.status_code == 200
-    assert "PATCH" in response.headers["access-control-allow-methods"]
+    allowed = response.headers["access-control-allow-methods"]
+    assert "PATCH" in allowed and "DELETE" in allowed

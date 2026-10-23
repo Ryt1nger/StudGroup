@@ -36,6 +36,8 @@ export interface CardEditPatch {
 
 interface Props {
   variant: 'homework' | 'event';
+  /** `create`: a new card, every filled field is sent. */
+  purpose?: 'edit' | 'create';
   initial: CardEditValues;
   timeZone: string;
   subjectSuggestions: string[];
@@ -70,7 +72,7 @@ const MODES: ReadonlyArray<readonly [DeadlineMode, string]> = [
   ['datetime', ru.edit.deadlineDateTime],
 ];
 
-export function CardEditForm({ variant, initial, timeZone, subjectSuggestions, saving, error, onSave, onCancel }: Props) {
+export function CardEditForm({ variant, purpose = 'edit', initial, timeZone, subjectSuggestions, saving, error, onSave, onCancel }: Props) {
   const ids = { title: useId(), subject: useId(), description: useId(), kind: useId(), hint: useId(), list: useId(), mode: useId() };
   const start = initial.deadline.at ? zonedParts(initial.deadline.at, timeZone) : { date: '', time: '' };
   const [title, setTitle] = useState(initial.title);
@@ -106,14 +108,20 @@ export function CardEditForm({ variant, initial, timeZone, subjectSuggestions, s
       (before === null && nextDeadline === null) ||
       (before !== null && nextDeadline !== null && new Date(before.at).getTime() === new Date(nextDeadline.at).getTime() && before.date_only === nextDeadline.date_only);
     if (!same) patch.deadline = nextDeadline;
-    if (Object.keys(patch).length === 0) return onCancel();
+    if (purpose === 'create') {
+      // A new card has no earlier values: everything that is filled goes to the server.
+      patch.title = title.trim();
+      patch.subject = subject.trim();
+      if (description.trim()) patch.description = description.trim();
+      if (variant === 'event') patch.kind = kind ?? 'assessment';
+    } else if (Object.keys(patch).length === 0) return onCancel();
     onSave(patch);
   }
 
   return (
     <>
       <h1 className="ptitle">
-        {ru.edit.pageTitle}
+        {purpose === 'create' ? ru.edit.create.pageTitle : ru.edit.pageTitle}
         <small>{variant === 'homework' ? 'Задание' : 'Событие'}</small>
       </h1>
       <form className="form" noValidate aria-label={ru.edit.heading} onSubmit={(event) => { event.preventDefault(); submit(); }}>
@@ -181,7 +189,7 @@ export function CardEditForm({ variant, initial, timeZone, subjectSuggestions, s
       <Float>
         <div className="cta-bar">
           <button type="button" className={clsx('btn', saving && 'busy')} disabled={saving} onClick={submit}>
-            {saving ? <><Spinner />{ru.edit.saving}</> : ru.edit.save}
+            {saving ? <><Spinner />{purpose === 'create' ? ru.edit.create.submitting : ru.edit.saving}</> : purpose === 'create' ? ru.edit.create.submit : ru.edit.save}
           </button>
         </div>
       </Float>

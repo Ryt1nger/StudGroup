@@ -15,7 +15,12 @@ from studgroup.analysis.deadline_application import REASON_CONFIRM_DEADLINE, REA
 from studgroup.analysis.deadline_policy import staff_note
 from studgroup.analysis.deadline_updates import LOCKABLE_FIELDS
 from studgroup.deadline_rebuild import commit_item_revision
-from studgroup.models import CanonicalAcademicItem, CanonicalItemEvidence, RawMessage
+from studgroup.models import (
+    CanonicalAcademicItem,
+    CanonicalItemEvidence,
+    CanonicalProjectionLink,
+    RawMessage,
+)
 from studgroup.student_cards import (
     deadline_decision,
     deadline_label,
@@ -49,6 +54,24 @@ async def find_item(db, group, item_id):
     if item is None:
         raise StaffItemError("not_found", "Карточка не найдена")
     return item
+
+
+async def retire_canonical(db, entity_type, entity_id, now):
+    """A card removed by the headman leaves the «needs a deadline» queue and is never re-opened.
+
+    Only the state changes: no new revision is written, so nothing is re-projected to students.
+    """
+    link = await db.scalar(
+        select(CanonicalProjectionLink).where(
+            CanonicalProjectionLink.entity_type == entity_type,
+            CanonicalProjectionLink.entity_id == entity_id,
+        )
+    )
+    item = await db.get(CanonicalAcademicItem, link.item_id) if link else None
+    if item is not None and item.state == "active":
+        item.state = "cancelled"
+        item.attention_reasons = "[]"
+        item.updated_at = now
 
 
 async def staff_view(db, group, item, now):

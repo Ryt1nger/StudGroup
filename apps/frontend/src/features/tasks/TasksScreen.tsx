@@ -1,11 +1,13 @@
 import clsx from 'clsx';
 import { useLayoutEffect, useRef } from 'react';
-import { NavLink, useSearchParams } from 'react-router';
+import { Link, NavLink, useSearchParams } from 'react-router';
 import type { HomeworkSummary } from '@studgroup/shared-types';
 import { ru } from '../../i18n/ru';
 import { useServerNow } from '../../lib/hooks';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
-import { useIsEditor } from '../../session/SessionProvider';
+import { useHasPermission, useIsEditor } from '../../session/SessionProvider';
+import { Float } from '../../shell/AppRoot';
+import { Ic } from '../../ui/Ic';
 import { GroupTop } from '../../shell/TopBar';
 import { Banner, Empty, Skeleton } from '../../ui/Blocks';
 import { EndSentinel } from '../../ui/EndSentinel';
@@ -92,6 +94,7 @@ function arrange(items: readonly HomeworkSummary[], archive: boolean): HomeworkS
 export function TasksScreen() {
   const [params, setParams] = useSearchParams();
   const editor = useIsEditor();
+  const canCreate = useHasPermission('homework.create');
   const requested = parseTaskFilter(params.get('filter'));
   // The review queue belongs to the headman and deputy; a student's link to it falls back to «Все».
   const filter = requested === 'review' && !editor ? 'all' : requested;
@@ -121,6 +124,7 @@ export function TasksScreen() {
         ))}
       </div>
 
+      {canCreate ? <Float><Link className="fab" to="/cards/new" aria-label="Новая карточка"><Ic name="plus" /></Link></Float> : null}
       <div style={{ marginTop: 16, opacity: list.isSwitching ? 0.6 : 1, transition: 'opacity .15s' }}>
         {list.isPending ? <Skeleton label={ru.states.loading} /> : null}
         {list.isError ? <RequestError error={list.error} onRetry={list.refetch} /> : null}

@@ -149,9 +149,9 @@ export type AccessState = 'active' | 'no_active_group' | 'membership_suspended' 
 export type MemberRole = 'student' | 'deputy' | 'headman';
 
 /**
- * Staff permissions are a UI hint: headman gets schedule.write, deadline.manage and group.settings.write, deputy the first two. The backend re-checks the role on every request.
+ * Staff permissions are a UI hint: headman gets schedule.write, deadline.manage, homework.create and group.settings.write, deputy all but the last. The backend re-checks the role on every request.
  */
-export type Permission = 'schedule.read' | 'today.read' | 'homework.read' | 'homework.completion.write' | 'homework.edit' | 'homework.material.write' | 'schedule.write' | 'deadline.manage' | 'group.settings.write';
+export type Permission = 'schedule.read' | 'today.read' | 'homework.read' | 'homework.completion.write' | 'homework.edit' | 'homework.material.write' | 'homework.create' | 'schedule.write' | 'deadline.manage' | 'group.settings.write';
 
 export type HomeworkListResponse = {
     /**
@@ -477,6 +477,22 @@ export type EditAcademicDeadlineRequest = {
     title?: string;
     description?: string | null;
     subject?: string;
+    deadline?: DeadlineInput | null;
+    date_hint?: string | null;
+};
+
+export type CreateHomeworkRequest = {
+    title: string;
+    subject: string;
+    description?: string;
+    deadline?: DeadlineInput | null;
+};
+
+export type CreateAcademicEventRequest = {
+    kind?: 'control_point' | 'assessment' | 'test' | 'credit' | 'exam' | 'other_academic_deadline';
+    title: string;
+    subject: string;
+    description?: string;
     deadline?: DeadlineInput | null;
     date_hint?: string | null;
 };
@@ -1019,10 +1035,6 @@ export type ListAcademicDeadlinesErrors = {
      * Authenticated user cannot access the active group or resource
      */
     403: ErrorResponse;
-    /**
-     * The request body is malformed or a value is not allowed
-     */
-    422: ErrorResponse;
 };
 
 export type ListAcademicDeadlinesError = ListAcademicDeadlinesErrors[keyof ListAcademicDeadlinesErrors];
@@ -1043,6 +1055,44 @@ export type ListAcademicDeadlinesResponses = {
 };
 
 export type ListAcademicDeadlinesResponse = ListAcademicDeadlinesResponses[keyof ListAcademicDeadlinesResponses];
+
+export type CreateAcademicEventData = {
+    body: CreateAcademicEventRequest;
+    path?: never;
+    query?: never;
+    url: '/deadlines';
+};
+
+export type CreateAcademicEventErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type CreateAcademicEventError = CreateAcademicEventErrors[keyof CreateAcademicEventErrors];
+
+export type CreateAcademicEventResponses = {
+    /**
+     * The created event
+     */
+    201: {
+        generated_at: string;
+        group_timezone: string;
+        item: AcademicDeadline;
+        permissions: Array<Permission>;
+    };
+};
+
+export type CreateAcademicEventResponse = CreateAcademicEventResponses[keyof CreateAcademicEventResponses];
 
 export type GetHomeworkFileLinkData = {
     body?: never;
@@ -1113,6 +1163,51 @@ export type GetDeadlineFileLinkResponses = {
 };
 
 export type GetDeadlineFileLinkResponse = GetDeadlineFileLinkResponses[keyof GetDeadlineFileLinkResponses];
+
+export type DeleteAcademicEventData = {
+    body?: never;
+    path: {
+        deadline_id: string;
+    };
+    query: {
+        expected_revision: number;
+    };
+    url: '/deadlines/{deadline_id}';
+};
+
+export type DeleteAcademicEventErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type DeleteAcademicEventError = DeleteAcademicEventErrors[keyof DeleteAcademicEventErrors];
+
+export type DeleteAcademicEventResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type DeleteAcademicEventResponse = DeleteAcademicEventResponses[keyof DeleteAcademicEventResponses];
 
 export type GetAcademicDeadlineData = {
     body?: never;
@@ -1244,6 +1339,84 @@ export type ListHomeworkResponses = {
 };
 
 export type ListHomeworkResponse = ListHomeworkResponses[keyof ListHomeworkResponses];
+
+export type CreateHomeworkData = {
+    body: CreateHomeworkRequest;
+    path?: never;
+    query?: never;
+    url: '/homework';
+};
+
+export type CreateHomeworkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type CreateHomeworkError = CreateHomeworkErrors[keyof CreateHomeworkErrors];
+
+export type CreateHomeworkResponses = {
+    /**
+     * The created homework card
+     */
+    201: HomeworkDetail;
+};
+
+export type CreateHomeworkResponse = CreateHomeworkResponses[keyof CreateHomeworkResponses];
+
+export type DeleteHomeworkData = {
+    body?: never;
+    path: {
+        homework_id: string;
+    };
+    query: {
+        expected_revision: number;
+    };
+    url: '/homework/{homework_id}';
+};
+
+export type DeleteHomeworkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * Resource existed but is no longer retained
+     */
+    410: ErrorResponse;
+};
+
+export type DeleteHomeworkError = DeleteHomeworkErrors[keyof DeleteHomeworkErrors];
+
+export type DeleteHomeworkResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type DeleteHomeworkResponse = DeleteHomeworkResponses[keyof DeleteHomeworkResponses];
 
 export type GetHomeworkData = {
     body?: never;
