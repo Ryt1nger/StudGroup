@@ -3,13 +3,12 @@
 .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
 .tab, .tabActive {
   min-height: var(--sg-hit-min); border: 0; border-radius: var(--sg-radius-pill); cursor: pointer;
-  padding: 0 8px; font-size: 14px; font-weight: 600; background: var(--sg-color-surface); color: var(--sg-color-text-secondary-strong);
-  box-shadow: var(--sg-shadow-card);
+  padding: 0 8px; font-size: 14px; font-weight: 600; background: var(--sg-glass-bg); border: 0.5px solid var(--sg-glass-border); color: var(--sg-color-text-secondary-strong);
 }
 .tabActive { background: var(--sg-gradient-primary); color: var(--sg-color-on-primary); }
 .week {
   margin-bottom: 8px; padding: 14px 16px; border-radius: var(--sg-radius-lg);
-  background: var(--sg-color-surface); box-shadow: var(--sg-shadow-card); font-size: 16px;
+  background: var(--sg-glass-bg); border: 0.5px solid var(--sg-glass-border); box-shadow: var(--sg-glass-shadow); font-size: 16px;
   color: var(--sg-color-text-secondary-strong);
 }
 .loading { display: grid; gap: 12px; margin-top: 12px; }

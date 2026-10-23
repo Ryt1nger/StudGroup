@@ -1,8 +1,7 @@
 import type { AcademicDeadline } from '@studgroup/shared-types';
-import { assets } from '../../assets';
 import { Link, useLocation } from 'react-router';
-import { ThemedImage } from '../../ui/ThemedImage';
-import { ChevronRight, Clock } from '../../ui/icons';
+import { subjectStyle } from '../../lib/subjectColor';
+import { ChevronRight, Clock, NavSchedule } from '../../ui/icons';
 import { formatEventDate } from './formatEventDate';
 import styles from './Deadlines.module.css';
 
@@ -17,11 +16,15 @@ export function AcademicDeadlineCard({ item, timeZone }: { item: AcademicDeadlin
       to={`/deadlines/${item.id}`}
       state={{ backTo: `${location.pathname}${location.search}` }}
       className={`${styles.card} ${styles.eventLink}`}
+      style={subjectStyle(subject)}
       viewTransition
       aria-label={`Открыть событие: ${subject} — ${item.title}`}
     >
+      <span className={styles.bar} aria-hidden="true" />
       <div className={styles.summary}>
-        <ThemedImage asset={assets.tiles.exam} className={styles.icon} />
+        <span className={styles.icon} aria-hidden="true">
+          <NavSchedule size={22} />
+        </span>
         <div className={styles.cardText}>
           <h3>{subject}</h3>
           <p>{item.title}</p>

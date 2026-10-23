@@ -17,13 +17,18 @@
 .back {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  background: transparent;
-  border-radius: 12px;
+  width: 42px;
+  height: 42px;
+  border: 0.5px solid var(--sg-glass-border);
+  background: var(--sg-glass-bg);
+  box-shadow: var(--sg-glass-shadow);
+  -webkit-backdrop-filter: blur(var(--sg-glass-blur));
+  backdrop-filter: blur(var(--sg-glass-blur));
+  border-radius: 50%;
   cursor: pointer;
+  color: var(--sg-color-text);
 }
+.back:active { transform: scale(0.94); }
 .backSpacer {
   width: 44px;
   height: 44px;
@@ -40,8 +45,7 @@
   gap: 14px;
   padding: 14px;
   border-radius: var(--sg-radius-lg);
-  background: var(--sg-color-surface);
-  box-shadow: var(--sg-shadow-card);
+  background: var(--sg-glass-bg); border: 0.5px solid var(--sg-glass-border); box-shadow: var(--sg-glass-shadow);
 }
 .dateTile {
   flex: none;
@@ -51,7 +55,7 @@
   justify-content: center;
   width: 72px;
   height: 72px;
-  border-radius: 18px;
+  border-radius: 22px;
   background: var(--sg-tint-primary);
   color: var(--sg-color-primary-text);
 }
@@ -71,9 +75,8 @@
   letter-spacing: 0.04em;
 }
 .tileImg {
-  width: 38px;
-  height: 38px;
-  object-fit: contain;
+  width: 26px;
+  height: 26px;
 }
 .heroText {
   flex: 1;
@@ -85,9 +88,10 @@
 }
 .heroTitle {
   margin: 0;
-  font-size: 20px;
-  line-height: 26px;
+  font-size: 22px;
+  line-height: 28px;
   font-weight: 700;
+  letter-spacing: -0.03em;
 }
 .heroDeadline {
   margin: 0;
@@ -113,14 +117,16 @@
 .card {
   padding: 16px;
   border-radius: var(--sg-radius-lg);
-  background: var(--sg-color-surface);
-  box-shadow: var(--sg-shadow-card);
+  background: var(--sg-glass-bg); border: 0.5px solid var(--sg-glass-border); box-shadow: var(--sg-glass-shadow);
 }
 .cardTitle {
   margin: 0 0 8px;
-  font-size: 16px;
-  line-height: 22px;
-  font-weight: 700;
+  font-size: 12.5px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sg-color-text-secondary);
 }
 .statusRow {
   display: flex;
@@ -136,9 +142,9 @@
 }
 .description {
   margin: 0;
-  padding: 12px;
-  border-radius: var(--sg-radius-sm);
-  background: var(--sg-tint-primary);
+  font-size: 16.5px;
+  line-height: 1.5;
+  letter-spacing: -0.012em;
   white-space: pre-wrap;
 }
 .muted {
@@ -156,14 +162,18 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 12px;
+  padding: 12px 14px;
   border-radius: var(--sg-radius-sm);
-  background: var(--sg-tint-primary);
+  background: var(--sg-chip-bg);
 }
 .updateKind {
-  font-size: var(--sg-type-meta-size);
+  align-self: flex-start;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
   font-weight: 700;
-  color: var(--sg-color-text-secondary-strong);
+  color: var(--sg-color-primary-text);
+  background: var(--sg-tint-primary);
 }
 .updateItem time {
   font-size: var(--sg-type-meta-size);
@@ -252,3 +262,6 @@
     animation: none;
   }
 }
+
+.updatesList { margin-top: 12px; }
+.updatesList[hidden] { display: none; }

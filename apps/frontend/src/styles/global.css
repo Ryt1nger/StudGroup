@@ -14,13 +14,14 @@ body,
 
 body {
   margin: 0;
-  background: linear-gradient(var(--sg-bg-veil), var(--sg-bg-veil)) fixed, var(--sg-bg-image) center top / cover no-repeat fixed, var(--sg-color-background);
+  background: var(--sg-page-glow) fixed, var(--sg-color-background);
   color: var(--sg-color-text);
   font-family: var(--sg-font-family);
   font-size: var(--sg-type-body-size);
   line-height: var(--sg-type-body-lh);
   font-weight: var(--sg-type-body-weight);
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overflow-wrap: anywhere;

@@ -1,6 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { assets } from '../assets';
-import { ThemedImage } from '../ui/ThemedImage';
+import { useSession } from '../session/SessionProvider';
 import styles from './TopBar.module.css';
 import { HeaderActions } from './HeaderActions';
 
@@ -12,6 +11,8 @@ const demoBuild = import.meta.env.MODE === 'demo';
 const DemoHeaderActions = import.meta.env.DEV || demoBuild ? lazy(() => import('./demo/DemoHeaderActions')) : null;
 
 export function TopBar() {
+  const { state } = useSession();
+  const group = state.status === 'ready' ? state.session.group?.name : null;
   const demo =
     (demoBuild ||
       (import.meta.env.DEV &&
@@ -19,8 +20,10 @@ export function TopBar() {
     DemoHeaderActions;
   return (
     <header className={styles.bar}>
-      <ThemedImage asset={assets.logoSymbol} className={styles.symbol} alt="" />
-      <ThemedImage asset={assets.wordmark} className={styles.wordmark} alt="StudGroup" />
+      <span className={styles.group}>
+        <i className={styles.dot} aria-hidden="true" />
+        {group ?? 'StudGroup'}
+      </span>
       {demo ? (
         <Suspense fallback={null}>
           <DemoHeaderActions />

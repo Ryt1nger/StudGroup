@@ -4,7 +4,7 @@ import { dayKey } from '../../lib/format';
 export const TASK_FILTERS = ['all', 'today', 'week', 'mine', 'archive'] as const;
 export type TaskFilter = (typeof TASK_FILTERS)[number];
 
-export const TASK_SECTIONS = ['upcoming', 'unknown', 'done', 'overdue', 'cancelled'] as const;
+export const TASK_SECTIONS = ['upcoming', 'unknown', 'overdue', 'cancelled', 'done'] as const;
 // due_today is an internal filter category, displayed together with upcoming.
 export type TaskSectionKind = (typeof TASK_SECTIONS)[number] | 'due_today';
 

@@ -53,7 +53,7 @@ describe('archive card presentation', () => {
   it('hides urgent and updated labels, retaining only an accessible completion indicator', () => {
     renderCard(item({ urgency: 'urgent', my_state: done(1), significant_updated_at: AFTER }), true);
     expect(shown()).toEqual([]);
-    expect(screen.queryByText('Срочно')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Срочно' })).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Выполнено мной' })).toBeInTheDocument();
   });
 
@@ -153,11 +153,11 @@ describe('HomeworkCard rendering', () => {
   it('urgent adds «Срочно» next to one primary label, but never on a cancelled card', () => {
     const { unmount } = renderCard(item({ urgency: 'urgent', my_state: done(2) }));
     expect(shown()).toEqual(['Выполнено мной']);
-    expect(screen.getAllByText('Срочно')).toHaveLength(1);
+    expect(screen.getAllByRole('img', { name: 'Срочно' })).toHaveLength(1);
     unmount();
     renderCard(item({ urgency: 'super_urgent', status: 'cancelled' }));
     expect(shown()).toEqual(['Отменено']);
-    expect(screen.queryByText('Срочно')).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'Срочно' })).not.toBeInTheDocument();
   });
 
   it('unknown deadline: «Срок уточняется» in the date line AND the «Требует уточнения» label, once each', () => {
@@ -178,11 +178,11 @@ describe('HomeworkCard rendering', () => {
     expect(screen.queryByText('Требует уточнения')).not.toBeInTheDocument();
   });
 
-  it('card background does not depend on completion', () => {
+  it('a completed card only adds the muted «completed» class to the ordinary card', () => {
     const a = renderCard(item());
     const clsA = a.container.querySelector('a')!.className;
     a.unmount();
     const b = renderCard(item({ my_state: done(2) }));
-    expect(b.container.querySelector('a')!.className).toBe(clsA);
+    expect(b.container.querySelector('a')!.className).toBe(`${clsA} completed`);
   });
 });

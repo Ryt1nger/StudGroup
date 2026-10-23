@@ -6,6 +6,7 @@ import { MOCK_ADAPTER_MARKER } from '../../telegram/mockAdapter';
 import { useTelegram, useTheme } from '../../telegram/TelegramProvider';
 import { Bell, Close, Moon, Sun } from '../../ui/icons';
 import { markAllDemoRead, markDemoRead, useDemoNotifications } from './demoStore';
+import { AccentPicker } from '../ThemeSwitch';
 import styles from './DemoHeaderActions.module.css';
 
 function initialsOf(name: string | undefined): string {
@@ -167,6 +168,7 @@ export default function DemoHeaderActions() {
             </span>
           </div>
           <ThemeSwitch />
+          <AccentPicker />
           <p className={styles.note}>Демонстрационная панель: остальные настройки и действия профиля пока недоступны.</p>
         </Panel>
       ) : null}

@@ -7,7 +7,7 @@
 .current .time { color: var(--sg-color-primary-text); font-weight: 700; }
 .node {
   position: relative; z-index: 1; margin-top: 18px; width: 16px; height: 16px; justify-self: center;
-  border-radius: 50%; background: var(--sg-color-disabled); display: grid; place-items: center; color: #fff;
+  border-radius: 50%; background: var(--sg-color-disabled); display: grid; place-items: center; color: var(--sg-on-accent);
 }
 .item::before {
   content: ''; position: absolute; left: calc(52px + 10px + 10px - 1px); top: 26px; bottom: -18px; width: 2px;
@@ -18,23 +18,26 @@
 .done::before { background: var(--sg-color-success); opacity: 0.6; }
 .current .node { background: var(--sg-color-surface); border: 4px solid var(--sg-color-primary); width: 22px; height: 22px; margin-top: 15px; }
 .card {
-  display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 12px; border: 0; text-align: left; color: inherit; font: inherit;
-  border-radius: var(--sg-radius-lg); background: var(--sg-color-surface); box-shadow: var(--sg-shadow-card);
+  position: relative; overflow: hidden; display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 12px 14px 12px 20px; border: 0; text-align: left; color: inherit; font: inherit;
+  border-radius: var(--sg-radius-lg); background: var(--sg-glass-bg); border: 0.5px solid var(--sg-glass-border); box-shadow: var(--sg-glass-shadow);
 }
 button.card { cursor: pointer; }
-/* No color-mix(): older Android WebViews (Telegram) drop the whole declaration and the card
-   loses its background and ring. A tint layer over the surface looks the same everywhere. */
-.cardCurrent { background: linear-gradient(var(--sg-tint-primary), var(--sg-tint-primary)), var(--sg-color-surface); box-shadow: 0 0 0 1.5px var(--sg-ring-primary), var(--sg-shadow-card); }
+/* Current lesson: a ring in the subject colour. */
+.cardCurrent { box-shadow: 0 0 0 1.5px var(--sg-subject), var(--sg-glass-shadow); }
 .cardStretch { position: relative; }
 .cardStretch > * { position: relative; pointer-events: none; }
 .cardStretch > .hit { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: inherit; background: transparent; cursor: pointer; pointer-events: auto; }
 .cardStretch > .hit:focus-visible { outline: 2px solid var(--sg-color-primary); outline-offset: 2px; }
 .cardStretch a { pointer-events: auto; }
 .cancelled .title { text-decoration: line-through; opacity: 0.75; }
-.tile { flex: none; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: var(--sg-tint-primary); color: var(--sg-color-primary-text); }
 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .title { font-size: var(--sg-type-card-title-size); line-height: var(--sg-type-card-title-lh); font-weight: var(--sg-type-card-title-weight); }
 .subtitle { font-size: 14px; line-height: 20px; color: var(--sg-color-text-secondary-strong); }
 .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .chevron { flex: none; align-self: center; color: var(--sg-color-text-secondary-strong); }
 .join { grid-column: 3; margin-top: 8px; }
+
+.bar { position: absolute; left: 7px; top: 12px; bottom: 12px; width: 4px; border-radius: 99px; background: var(--sg-subject); z-index: 1; pointer-events: none; }
+.cancelled .bar, .done .bar { opacity: 0.45; }
+.current .node { border-color: var(--sg-subject); }
+.cardStretch > .bar { position: absolute; }

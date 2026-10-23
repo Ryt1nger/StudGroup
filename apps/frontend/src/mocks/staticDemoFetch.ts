@@ -116,6 +116,19 @@ export function createStaticDemoFetch(): typeof fetch {
       return json(buildReviewedSchedule(start, end, now) satisfies ScheduleResponse);
     }
 
+    if (method === 'GET' && path.endsWith('/subjects')) {
+      const names = new Set<string>();
+      for (const item of reviewedDeadlines) names.add(item.subject);
+      for (const summary of world.summaries.values()) names.add(summary.subject.name);
+      const items = [...names].map((name, index) => ({
+        id: `subject-${index + 1}`,
+        name,
+        homework_count: [...world.summaries.values()].filter((summary) => summary.subject.name === name).length,
+        deadline_count: reviewedDeadlines.filter((item) => item.subject === name).length,
+      }));
+      return json({ generated_at: new Date(now).toISOString(), group_timezone: GROUP_TZ, items });
+    }
+
     const lessonMatch = path.match(/\/lessons\/([^/]+)\/subject$/);
     if (method === 'GET' && lessonMatch) {
       const next = buildReviewedNextLesson(now);

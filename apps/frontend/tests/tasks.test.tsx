@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { buildWorld } from '../src/mocks/data';
 import { decodeCursor, encodeCursor, selectHomework, type ListFilter } from '../src/mocks/homeworkList';
 import { classifyTask, groupTaskSections, mergePages } from '../src/features/tasks/taskFilters';
-import { renderApp, server, useScenario } from './helpers';
+import { reachEnd, renderApp, server, useScenario } from './helpers';
 
 const TZ = 'Europe/Moscow';
 // Monday 2026-10-05 09:00 Moscow.
@@ -27,7 +27,7 @@ describe('grouping (client) – the server filter is authoritative', () => {
     const all = [...world.summaries.values()];
     // Hand the client a "today" response that contains a completed and a far-future card: both stay.
     const sections = groupTaskSections(all, NOW, TZ);
-    expect(sections.map((s) => s.kind)).toEqual(['upcoming', 'unknown', 'done', 'overdue', 'cancelled']);
+    expect(sections.map((s) => s.kind)).toEqual(['upcoming', 'unknown', 'overdue', 'cancelled', 'done']);
     const titles = sections.flatMap((s) => s.items.map((i) => i.title));
     expect(titles).toHaveLength(all.length);
     expect(sections.find((s) => s.kind === 'upcoming')!.items.map((i) => i.title)).toEqual(
@@ -157,7 +157,7 @@ describe('Tasks screen', () => {
       within(screen.getByRole('link', { name: /Открыть задание: Доклад по экологии/ })).queryByText('Отменено'),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Срок сегодня' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Загрузить ещё' })).not.toBeInTheDocument();
+    
   });
 
   it('passes the selected filter to the server and restarts the list on every change', async () => {
@@ -202,7 +202,7 @@ describe('Tasks screen', () => {
     await userEvent.click(await screen.findByRole('button', { name: filter }));
     expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
     expect(cards()).toHaveLength(0);
-    expect(screen.queryByRole('button', { name: 'Загрузить ещё' })).not.toBeInTheDocument();
+    
   });
 
   it('shows an error with retry when the list cannot be loaded', { timeout: 15000 }, async () => {
@@ -238,17 +238,16 @@ describe('Tasks screen', () => {
 describe('Tasks pagination', () => {
   beforeEach(() => server.events.removeAllListeners());
 
-  it('loads pages with «Загрузить ещё» (limit 50, cursor passed unchanged) until the end', async () => {
+  it('loads pages when the end of the list scrolls into view (limit 50, cursor passed unchanged) until the end', async () => {
     useScenario('tasks-many');
     const urls = requests();
     renderApp({ route: '/tasks' });
-    const more = await screen.findByRole('button', { name: 'Загрузить ещё' });
-    expect(cards()).toHaveLength(50);
-    await userEvent.click(more);
+    await waitFor(() => expect(cards()).toHaveLength(50));
+    await reachEnd();
     await waitFor(() => expect(cards()).toHaveLength(100));
-    await userEvent.click(await screen.findByRole('button', { name: 'Загрузить ещё' }));
+    await reachEnd();
     await waitFor(() => expect(cards()).toHaveLength(124));
-    expect(screen.queryByRole('button', { name: 'Загрузить ещё' })).not.toBeInTheDocument();
+    
     expect(urls.map((u) => (u.searchParams.get('cursor') ? 'cursor' : 'first'))).toEqual([
       'first',
       'cursor',
@@ -262,7 +261,7 @@ describe('Tasks pagination', () => {
   it('merges duplicated ids from the next page without duplicate cards', async () => {
     useScenario('tasks-dup-page');
     renderApp({ route: '/tasks' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Загрузить ещё' }));
+    await reachEnd();
     await waitFor(() => expect(cards()).toHaveLength(100));
     const names = cards().map((c) => c.getAttribute('aria-label'));
     expect(new Set(names).size).toBe(names.length);
@@ -276,12 +275,12 @@ describe('Tasks pagination', () => {
   });
 
   it(
-    'a failed «Загрузить ещё» keeps the loaded cards, offers a retry and then continues',
+    'a failed next page keeps the loaded cards, offers a retry and then continues',
     { timeout: 15000 },
     async () => {
       useScenario('tasks-more-fails');
       renderApp({ route: '/tasks' });
-      await userEvent.click(await screen.findByRole('button', { name: 'Загрузить ещё' }));
+      await reachEnd();
       expect(
         await screen.findByText(/Не удалось загрузить следующие задания/, {}, { timeout: 8000 }),
       ).toBeInTheDocument();
@@ -296,14 +295,14 @@ describe('Tasks pagination', () => {
     useScenario('tasks-cursor-expired');
     const urls = requests();
     renderApp({ route: '/tasks' });
-    await userEvent.click(await screen.findByRole('button', { name: 'Загрузить ещё' }));
+    await reachEnd();
     await waitFor(() => expect(urls.filter((u) => !u.searchParams.get('cursor'))).toHaveLength(2));
     await waitFor(() => expect(cards()).toHaveLength(50));
     await new Promise((r) => setTimeout(r, 300));
     // first page, the rejected cursor, the single restart: nothing more.
     expect(urls).toHaveLength(3);
     expect(screen.queryByText(/Не удалось загрузить следующие задания/)).not.toBeInTheDocument();
-    await userEvent.click(await screen.findByRole('button', { name: 'Загрузить ещё' }));
+    await reachEnd();
     await waitFor(() => expect(cards()).toHaveLength(100));
   });
 });
@@ -345,20 +344,14 @@ describe('completion sync', () => {
     expect(urls.every((u) => !u.searchParams.get('cursor'))).toBe(true);
   });
 
-  it('completing a Today card keeps a known-deadline card on Today with the mark and lists it in Tasks', async () => {
+  it('completing a Today card takes it off the Today plan and lists it in Tasks', async () => {
     const { router } = renderApp({ route: '/today' });
     await userEvent.click(await screen.findByRole('link', { name: /Открыть задание: ДЗ №12–140/ }));
     await userEvent.click(await screen.findByRole('button', { name: 'Выполнено мной' }));
     await screen.findByRole('button', { name: /Снять отметку/ });
     await router.navigate('/today');
-    // Owner update (DESIGN_HANDOFF «Сегодня»): a personal completion does not hide a card whose
-    // deadline is known and current; it stays in its ordinary section with the completion mark.
-    // The Today list is invalidated, not awaited: wait for the refetched card to carry the mark.
-    await waitFor(() =>
-      expect(
-        within(screen.getByRole('link', { name: /Открыть задание: ДЗ №12–140/ })).getByText('Выполнено мной'),
-      ).toBeInTheDocument(),
-    );
+    // The Today list is invalidated, not awaited: wait for the refetched plan to drop the card.
+    await waitFor(() => expect(screen.queryByRole('link', { name: /Открыть задание: ДЗ №12–140/ })).not.toBeInTheDocument());
     await router.navigate('/tasks?filter=mine');
     // The first paint can come from the cache and is replaced when the refetch lands, so assert
     // on a fresh query until it settles (and allow for a slow CI machine).

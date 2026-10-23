@@ -51,7 +51,7 @@ function relativeLabel(
 
 /**
  * `/schedule/lesson/:lessonId`. Shows ONLY fields of the generated LessonOccurrence. Lesson type,
- * materials, notes and related homework need a contract addition (see DESIGN_HANDOFF §14).
+ * materials, notes and related homework need a contract addition.
  */
 export function LessonScreen() {
   const { lessonId = '' } = useParams();

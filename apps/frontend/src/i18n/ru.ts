@@ -13,15 +13,9 @@ export const ru = {
   },
   today: {
     title: 'Сегодня',
-    // proposal: section headings by contract kind
-    sections: {
-      overdue: 'Просрочено',
-      due_today: 'Срок сегодня',
-      upcoming: 'Ближайшие',
-      new_or_changed: 'Изменённое',
-    },
-    emptyTitle: 'На сегодня заданий нет', // proposal
-    emptyBody: 'Когда в группе появится новое задание, оно отобразится здесь.', // proposal
+    plan: 'План на сегодня',
+    deadlines: 'Дедлайны',
+    stats: { aria: 'Сводка', total: 'Всего', done: 'Готово', ahead: 'Впереди', urgent: 'Срочно' },
     updating: 'Обновляем информацию группы',
     delayed: 'Обработка информации задерживается. Данные появятся автоматически',
     pollStopped: 'Автоматическое обновление остановлено.',
@@ -38,7 +32,6 @@ export const ru = {
       overdue: 'Прошедшие',
       cancelled: 'Отменено',
     },
-    loadMore: 'Загрузить ещё',
     loadingMore: 'Загружаем…',
     loadMoreFailed: 'Не удалось загрузить следующие задания',
     retry: 'Повторить',

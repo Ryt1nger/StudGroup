@@ -1,5 +1,3 @@
-import { assets } from '../../assets';
-import { ThemedImage } from '../../ui/ThemedImage';
 import { Clock, ChevronRight } from '../../ui/icons';
 import { ScheduleBadge } from './ScheduleBadge';
 import type { NextClassView } from './viewModel';
@@ -19,7 +17,6 @@ export function NextClassCard({ view }: { view: NextClassView }) {
   const Root = view.onOpen ? 'button' : 'div';
   return (
     <Root className={styles.card} type={view.onOpen ? 'button' : undefined} onClick={view.onOpen} aria-label={view.onOpen ? `${view.heading}: ${view.subject}` : undefined}>
-      <ThemedImage asset={assets.nextCard} className={styles.decor} />
       <span className={styles.top}>
         <span className={styles.glyph}>
           <CalendarGlyph />

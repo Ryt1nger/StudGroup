@@ -6,18 +6,15 @@
   padding: 40px 24px;
   text-align: center;
 }
-.illustration img {
-  width: 150px;
-  height: auto;
-  margin: 0 auto 4px;
-}
 .icon {
   display: grid;
   place-items: center;
   width: 64px;
   height: 64px;
   border-radius: 22px;
-  background: var(--sg-tint-primary);
+  background: var(--sg-glass-bg);
+  border: 0.5px solid var(--sg-glass-border);
+  box-shadow: var(--sg-glass-shadow);
   color: var(--sg-color-primary-text);
 }
 .icon svg {
@@ -29,6 +26,7 @@
   font-size: var(--sg-type-h2-size);
   line-height: var(--sg-type-h2-lh);
   font-weight: var(--sg-type-h2-weight);
+  letter-spacing: -0.02em;
 }
 .body {
   margin: 0;

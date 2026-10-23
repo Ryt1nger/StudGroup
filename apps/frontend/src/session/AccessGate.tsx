@@ -1,10 +1,8 @@
 import { useState, type ReactNode } from 'react';
-import { assets } from '../assets';
 import { ru } from '../i18n/ru';
 import { StateView } from '../ui/StateView';
 import { Button } from '../ui/Button';
 import { Skeleton } from '../ui/Skeleton';
-import { ThemedImage } from '../ui/ThemedImage';
 import { AlertCircle, Lock, Refresh, WifiOff } from '../ui/icons';
 import { useSession } from './SessionProvider';
 import styles from './AccessGate.module.css';
@@ -12,7 +10,7 @@ import styles from './AccessGate.module.css';
 function Splash() {
   return (
     <div className={styles.splash} role="status" aria-live="polite">
-      <ThemedImage asset={assets.logoSymbol} className={styles.splashLogo} />
+      <span className={styles.splashLogo} aria-hidden="true" />
       <p className={styles.splashText}>{ru.gate.bootLoading}</p>
       <div className={styles.splashBars} aria-hidden="true">
         <Skeleton height={14} width="60%" />

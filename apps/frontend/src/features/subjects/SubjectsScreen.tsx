@@ -1,4 +1,5 @@
 import { useSubjectsQuery } from '../../api/queries';
+import { subjectGlyph, subjectStyle } from '../../lib/subjectColor';
 import { TopBar } from '../../shell/TopBar';
 import { RequestError } from '../../ui/RequestError';
 import { Skeleton } from '../../ui/Skeleton';
@@ -22,10 +23,21 @@ export function SubjectsScreen() {
           query.data.items.length ? (
             <div className={styles.list}>
               {query.data.items.map((subject) => (
-                <section key={subject.id} className={styles.panel} aria-label={subject.name}>
-                  <h2>{subject.name}</h2>
-                  <p className={styles.note}>Заданий: {subject.homework_count}</p>
-                  <p className={styles.note}>Событий и контрольных: {subject.deadline_count}</p>
+                <section
+                  key={subject.id}
+                  className={styles.subject}
+                  aria-label={subject.name}
+                  style={subjectStyle(subject.name)}
+                >
+                  <span className={styles.glyph} aria-hidden="true">
+                    {subjectGlyph(subject.name)}
+                  </span>
+                  <div className={styles.subjectText}>
+                    <h2>{subject.name}</h2>
+                    <p className={styles.note}>
+                      Заданий: {subject.homework_count} · Событий и КТ: {subject.deadline_count}
+                    </p>
+                  </div>
                 </section>
               ))}
             </div>

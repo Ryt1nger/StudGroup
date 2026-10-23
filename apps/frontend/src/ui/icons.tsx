@@ -136,3 +136,35 @@ export const Moon = (p: IconProps) => (
     <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
   </Svg>
 );
+
+export const NavToday = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </Svg>
+);
+export const NavTasks = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m3.5 7.2 1.9 1.9 3.4-4" />
+    <path d="M12.5 7.2h8" />
+    <path d="m3.5 16.8 1.9 1.9 3.4-4" />
+    <path d="M12.5 16.8h8" />
+  </Svg>
+);
+export const NavSchedule = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="5" width="18" height="16" rx="3" />
+    <path d="M3 10h18M8 3v4M16 3v4" />
+  </Svg>
+);
+export const NavSubjects = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 6.6C10.2 5.2 7.8 4.7 4.5 4.8v12.4c3.3-.1 5.7.4 7.5 1.8 1.8-1.4 4.2-1.9 7.5-1.8V4.8c-3.3-.1-5.7.4-7.5 1.8Z" />
+    <path d="M12 6.6V19" />
+  </Svg>
+);
+export const Bolt = (p: IconProps) => (
+  <Svg {...p} fill="currentColor" stroke="none">
+    <path d="M13 2 4 14h6l-1 8 9-12h-6Z" />
+  </Svg>
+);

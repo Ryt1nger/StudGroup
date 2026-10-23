@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { setupServer } from 'msw/node';
 import { vi } from 'vitest';
 import { configureApiClient, setAccessToken } from '../src/api/client';
@@ -60,4 +60,16 @@ export function renderApp(options: { route?: string; adapter?: TelegramAdapter |
     </TelegramProvider>,
   );
   return { ...view, adapter, router, queryClient };
+}
+
+/** Scrolls to the end of an infinite list: fires the (fake) IntersectionObserver once its sentinel is mounted. */
+export async function reachEnd(): Promise<void> {
+  const fire = (globalThis as unknown as { __reachEnd: () => number }).__reachEnd;
+  await waitFor(() => {
+    let fired = 0;
+    act(() => {
+      fired = fire();
+    });
+    if (fired === 0) throw new Error('the end of the list is not on screen yet');
+  });
 }

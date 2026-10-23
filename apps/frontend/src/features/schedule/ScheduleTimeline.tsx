@@ -5,17 +5,7 @@ import type { ScheduleDayView, ScheduleItemView } from './viewModel';
 import styles from './ScheduleTimeline.module.css';
 import { dayAnchorId, lessonAnchorId } from './scheduleAnchor';
 import { JoinLessonLink } from '../../ui/JoinLessonLink';
-
-function SubjectTile() {
-  // Subject icon/colour are not in the contract yet; a neutral book tile is used until they are.
-  return (
-    <span className={styles.tile} aria-hidden="true">
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20" />
-      </svg>
-    </span>
-  );
-}
+import { subjectStyle } from '../../lib/subjectColor';
 
 function Row({ item }: { item: ScheduleItemView }) {
   const Root = item.onOpen ? 'button' : 'div';
@@ -24,7 +14,7 @@ function Row({ item }: { item: ScheduleItemView }) {
   const joinsNow = item.state === 'current' && !item.cancelled && item.badges.some((b) => b.href);
   const content = (
     <>
-      <SubjectTile />
+      <span className={styles.bar} aria-hidden="true" />
       <span className={styles.body}>
         <span className={styles.title}>{item.title}</span>
         <span className={styles.subtitle}>{item.subtitle}</span>
@@ -41,7 +31,7 @@ function Row({ item }: { item: ScheduleItemView }) {
   );
   const cardClass = clsx(styles.card, item.state === 'current' && styles.cardCurrent, item.cancelled && styles.cancelled);
   return (
-    <li id={lessonAnchorId(item.id)} className={clsx(styles.item, styles[item.state])}>
+    <li id={lessonAnchorId(item.id)} className={clsx(styles.item, styles[item.state])} style={subjectStyle(item.title)}>
       <span className={styles.time}>{item.time}</span>
       <span className={styles.node} aria-hidden="true">
         {item.state === 'done' ? <Check size={12} strokeWidth={3} /> : null}

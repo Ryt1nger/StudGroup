@@ -11,8 +11,6 @@ import { Banner } from '../../ui/Banner';
 import { RequestError } from '../../ui/RequestError';
 import { Skeleton } from '../../ui/Skeleton';
 import { StateView } from '../../ui/StateView';
-import { emptyIllustrations } from '../../ui/entityIcons';
-import { ThemedImage } from '../../ui/ThemedImage';
 import { Clock, Lock } from '../../ui/icons';
 import { mapSchedule } from './mapSchedule';
 import { scheduleAnchor } from './scheduleAnchor';
@@ -108,8 +106,7 @@ export function ScheduleScreen() {
         <RequestError error={query.error} onRetry={() => void query.refetch()} />
       ) : null}
       {data && data.lessons.length === 0 ? (
-        <StateView
-          illustration={<ThemedImage asset={emptyIllustrations.noLessons} />}
+        <StateView 
           title={ru.schedule.emptyTitle}
           body={ru.schedule.emptyBody}
         />

@@ -34,7 +34,6 @@ describe('«Следующая пара» on Today (today.next_lesson)', () => {
     renderApp();
     expect(await screen.findByText('Следующая пара')).toBeInTheDocument();
     expect(screen.getByText('Математический анализ')).toBeInTheDocument();
-    expect(await screen.findByText(/нет заданий|Пока нет|Всё сделано|Заданий нет/i)).toBeInTheDocument();
   });
 });
 

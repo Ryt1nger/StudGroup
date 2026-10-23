@@ -5,11 +5,9 @@ import { ru } from '../../i18n/ru';
 import { formatDeadline } from '../../lib/format';
 import { useIsHeadman } from '../../session/SessionProvider';
 import { Badge } from '../../ui/Badge';
-import { homeworkTileAsset } from '../../ui/entityIcons';
-import { ThemedImage } from '../../ui/ThemedImage';
-import { AlertCircle, CheckCircle, ChevronRight, Clock, Refresh } from '../../ui/icons';
+import { subjectGlyph, subjectStyle } from '../../lib/subjectColor';
+import { AlertCircle, CheckCircle, Clock, Refresh } from '../../ui/icons';
 import { cardStatus, showUrgent, type CardStatus } from './cardStatus';
-import { urgencyBadge } from './homeworkBadges';
 import styles from './HomeworkCard.module.css';
 import { confirmedSubject } from '../homework/confirmedSubject';
 
@@ -62,37 +60,38 @@ export function HomeworkCard({ item, nowMs, timeZone, archived = false }: Props)
   return (
     <Link
       to={`/homework/${item.id}`}
-      className={clsx(styles.card, archived && styles.archived, !archived && cancelled && styles.cancelled)}
+      className={clsx(styles.card, archived && styles.archived, !archived && cancelled && styles.cancelled, !archived && completed && styles.completed)}
+      style={subjectStyle(subject?.name ?? item.subject.name)}
       aria-label={`${ru.card.open}: ${item.title}`}
     >
-      <ThemedImage
-        asset={homeworkTileAsset({
-          urgent: !archived && urgent,
-          completed: !archived && completed,
-          cancelled,
-        })}
-        className={clsx(styles.tile, !archived && urgent && !completed && styles.tileUrgent)}
-      />
+      <span className={styles.bar} aria-hidden="true" />
       <span className={styles.body}>
         <span className={styles.title}>{item.title}</span>
-        {subject ? <span className={styles.subject}>{subject.name}</span> : null}
+        {item.summary ? <span className={styles.summary}>{item.summary}</span> : null}
         <span className={styles.meta}>
-          <Clock className={styles.metaIcon} size={14} />
-          <span>{deadline ?? ru.card.deadlineUnknown}</span>
+          {subject ? (
+            <span className={styles.subjectChip}>
+              <b aria-hidden="true">{subjectGlyph(subject.name)}</b>
+              {subject.name}
+            </span>
+          ) : null}
+          <span className={styles.when}>
+            <Clock className={styles.metaIcon} size={14} />
+            <span>{deadline ?? ru.card.deadlineUnknown}</span>
+          </span>
         </span>
-        {!archived && (status || urgent) ? (
+        {!archived && status ? (
           <span className={styles.badges}>
-            {status ? <StatusLabel status={status} /> : null}
-            {urgent ? urgencyBadge(item.urgency) : null}
+            <StatusLabel status={status} />
           </span>
         ) : null}
       </span>
+      {!archived && urgent ? <span className={styles.urgent} role="img" aria-label={ru.card.urgent} /> : null}
       {archived && completed ? (
         <span className={styles.archiveCompleted} role="img" aria-label={ru.card.completedByMe}>
           <CheckCircle size={18} />
         </span>
       ) : null}
-      <ChevronRight className={styles.chevron} size={20} />
     </Link>
   );
 }

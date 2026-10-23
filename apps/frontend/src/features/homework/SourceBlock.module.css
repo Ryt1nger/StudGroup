@@ -1,8 +1,7 @@
 .block {
   padding: 16px;
   border-radius: var(--sg-radius-lg);
-  background: var(--sg-color-surface);
-  box-shadow: var(--sg-shadow-card);
+  background: var(--sg-glass-bg); border: 0.5px solid var(--sg-glass-border); box-shadow: var(--sg-glass-shadow);
 }
 .title {
   margin: 0;
@@ -63,7 +62,7 @@
   width: 100%;
   min-height: 56px;
   padding: 10px 12px;
-  border: 1px solid var(--sg-color-border);
+  border: 0.5px solid var(--sg-color-border);
   border-radius: var(--sg-radius-md);
   background: var(--sg-color-surface-elevated);
   text-align: left;

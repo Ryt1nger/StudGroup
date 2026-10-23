@@ -5,7 +5,12 @@ interface TelegramContextValue {
   adapter: TelegramAdapter | null;
   scheme: ColorScheme;
   setTheme: (scheme: ColorScheme) => void;
+  accent: Accent;
+  setAccent: (accent: Accent) => void;
 }
+
+export const ACCENTS = ['violet', 'blue', 'green', 'red', 'yellow', 'gray'] as const;
+export type Accent = (typeof ACCENTS)[number];
 
 const TelegramContext = createContext<TelegramContextValue | null>(null);
 
@@ -16,6 +21,14 @@ function savedTheme(): ColorScheme | null {
     const value = document.cookie.split('; ').find((part) => part.startsWith(`${THEME_COOKIE}=`))?.split('=')[1];
     return value === 'dark' || value === 'light' ? value : null;
   } catch { return null; }
+}
+
+const ACCENT_COOKIE = 'studgroup_accent';
+function savedAccent(): Accent {
+  try {
+    const value = document.cookie.split('; ').find((part) => part.startsWith(`${ACCENT_COOKIE}=`))?.split('=')[1];
+    return ACCENTS.find((accent) => accent === value) ?? 'violet';
+  } catch { return 'violet'; }
 }
 
 export function TelegramProvider({ adapter, children }: { adapter: TelegramAdapter | null; children: ReactNode }) {
@@ -29,6 +42,17 @@ export function TelegramProvider({ adapter, children }: { adapter: TelegramAdapt
       document.cookie = `${THEME_COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
     } catch { /* Appearance still works when persistent cookies are blocked. */ }
   }, []);
+
+  const [accent, setAccentState] = useState<Accent>(savedAccent);
+  const setAccent = useCallback((next: Accent) => {
+    setAccentState(next);
+    try {
+      document.cookie = `${ACCENT_COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+    } catch { /* The accent still applies for this visit when persistent cookies are blocked. */ }
+  }, []);
+  useEffect(() => {
+    document.documentElement.dataset.accent = accent;
+  }, [accent]);
 
   useEffect(() => {
     adapter?.ready();
@@ -52,7 +76,7 @@ export function TelegramProvider({ adapter, children }: { adapter: TelegramAdapt
     return adapter.onViewportChange(apply);
   }, [adapter]);
 
-  const value = useMemo(() => ({ adapter, scheme, setTheme }), [adapter, scheme, setTheme]);
+  const value = useMemo(() => ({ adapter, scheme, setTheme, accent, setAccent }), [adapter, scheme, setTheme, accent, setAccent]);
   return <TelegramContext.Provider value={value}>{children}</TelegramContext.Provider>;
 }
 

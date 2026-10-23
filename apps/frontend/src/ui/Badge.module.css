@@ -2,8 +2,8 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 24px;
-  padding: 3px 9px 3px 7px;
+  min-height: 26px;
+  padding: 3px 10px 3px 8px;
   border-radius: var(--sg-radius-pill);
   font-size: var(--sg-type-badge-size);
   font-weight: var(--sg-type-badge-weight);
@@ -40,6 +40,6 @@
   color: var(--sg-color-primary-text);
 }
 .neutral {
-  background: var(--sg-tint-primary);
+  background: var(--sg-chip-bg);
   color: var(--sg-color-text-secondary-strong);
 }

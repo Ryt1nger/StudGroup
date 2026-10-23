@@ -7,7 +7,7 @@ import { useSession } from '../session/SessionProvider';
 import { useTelegram } from '../telegram/TelegramProvider';
 import { Bell, Close } from '../ui/icons';
 import styles from './demo/DemoHeaderActions.module.css';
-import { ThemeSwitch } from './ThemeSwitch';
+import { AccentPicker, ThemeSwitch } from './ThemeSwitch';
 
 export function HeaderActions() {
   const { state } = useSession();
@@ -59,7 +59,7 @@ export function HeaderActions() {
             <span className={styles.profileName}>{user.display_name}</span>{user.username ? <span>@{user.username}</span> : null}
             <span>{membership ? roles[membership.role] : ''}</span></div></div>
           <p>{group?.name}</p><p className={styles.note}>Telegram ID: {user.telegram_user_id}</p>
-          <ThemeSwitch scheme={scheme} onChange={setTheme} />
+          <ThemeSwitch scheme={scheme} onChange={setTheme} /><AccentPicker />
         </> : <>
           {inbox.isPending ? <p role="status">Загрузка уведомлений…</p> : null}
           {inbox.isError ? <button className={styles.link} onClick={() => void inbox.refetch()}>Не удалось загрузить. Повторить</button> : null}

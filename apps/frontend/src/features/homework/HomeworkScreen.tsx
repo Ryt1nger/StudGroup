@@ -3,7 +3,6 @@ import clsx from 'clsx';
 import { useCallback, useId, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { api, useHomeworkQuery } from '../../api/queries';
-import { assets } from '../../assets';
 import { ru } from '../../i18n/ru';
 import { formatDateTile, formatDeadline, formatShortDate, formatTime } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
@@ -19,8 +18,7 @@ import { CardPhotos } from '../../ui/CardPhotos';
 import { MaterialLinks } from '../../ui/MaterialLinks';
 import { RequestError } from '../../ui/RequestError';
 import { Skeleton } from '../../ui/Skeleton';
-import { ThemedImage } from '../../ui/ThemedImage';
-import { AlertCircle, ChevronLeft, Clock, Refresh } from '../../ui/icons';
+import { AlertCircle, ChevronDown, ChevronLeft, Clock, NavTasks, Refresh } from '../../ui/icons';
 import {
   changedAfterCompletion,
   needsClarification,
@@ -37,6 +35,7 @@ import {
   type LearningCardUpdateView,
 } from './cardViewModel';
 import styles from './HomeworkScreen.module.css';
+import sourceStyles from './SourceBlock.module.css';
 
 function Loading() {
   return (
@@ -93,7 +92,7 @@ function Hero({
             <span className={styles.dateMonth}>{tile.month}</span>
           </>
         ) : (
-          <ThemedImage asset={assets.homeworkTile} className={styles.tileImg} />
+          <NavTasks size={26} />
         )}
       </div>
       <div className={styles.heroText}>
@@ -105,7 +104,6 @@ function Hero({
         <p className={styles.certainty}>{ru.card.deadlineCertainty[view.deadlineCertainty]}</p>
         <div className={styles.heroBadges}>
           <Badge tone="primary">{ru.card.kind[view.kind]}</Badge>
-          {detail.status === 'published' ? <Badge tone="success">{ru.card.published}</Badge> : null}
           {detail.status === 'cancelled' ? <Badge tone="neutral">{ru.card.cancelled}</Badge> : null}
           {urgent ? urgencyBadge(detail.urgency) : null}
         </div>
@@ -114,6 +112,7 @@ function Hero({
   );
 }
 
+/** Editors only, and collapsed like the sources: the list of what changed is a working detail, not news for students. */
 function UpdatesBlock({
   detail,
   items,
@@ -123,6 +122,9 @@ function UpdatesBlock({
   items: LearningCardUpdateView[];
   timeZone: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  if (!detail.permissions.includes('homework.edit')) return null;
   if (!items.length && !detail.significant_update) return null;
   const visible = items.length
     ? items
@@ -136,10 +138,20 @@ function UpdatesBlock({
       ];
   return (
     <section className={styles.card} aria-labelledby="updates-title">
-      <h2 id="updates-title" className={styles.cardTitle}>
-        {ru.detail.updates}
+      <h2 id="updates-title" className={sourceStyles.title}>
+        <button
+          type="button"
+          className={sourceStyles.toggle}
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-label={`${ru.detail.updates}: ${open ? ru.detail.sourcesHide : ru.detail.sourcesShow}`}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <span>{ru.detail.updates}</span>
+          <ChevronDown size={20} className={clsx(sourceStyles.chevron, open && sourceStyles.chevronOpen)} />
+        </button>
       </h2>
-      <ul className={styles.updates}>
+      <ul id={listId} className={clsx(styles.updates, styles.updatesList)} hidden={!open}>
         {visible.map((item) => (
           <li key={item.id} className={styles.updateItem}>
             <span className={styles.updateKind}>{ru.detail.updateKind[item.kind]}</span>

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import clsx from 'clsx';
 import { ru } from '../../i18n/ru';
@@ -6,8 +7,6 @@ import { isHomeworkArchived } from '../../lib/homeworkArchive';
 import { RequestError } from '../../ui/RequestError';
 import { Skeleton } from '../../ui/Skeleton';
 import { StateView } from '../../ui/StateView';
-import { emptyIllustrations } from '../../ui/entityIcons';
-import { ThemedImage } from '../../ui/ThemedImage';
 import { HomeworkCard } from '../today/HomeworkCard';
 import todayStyles from '../today/TodayScreen.module.css';
 import { Banner } from '../../ui/Banner';
@@ -16,6 +15,32 @@ import { AlertCircle } from '../../ui/icons';
 import { groupTaskSections, parseTaskFilter, TASK_FILTERS, type TaskFilter } from './taskFilters';
 import { useTaskList } from './useTaskList';
 import styles from './TasksScreen.module.css';
+
+/** Loads the next page when the end of the list scrolls into view; there is no «load more» button. */
+function EndSentinel({ onReach, busy }: { onReach: () => void; busy: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const reach = useRef(onReach);
+  useEffect(() => {
+    reach.current = onReach;
+  });
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) reach.current();
+      },
+      { rootMargin: '240px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [busy]);
+  return (
+    <div ref={ref} className={styles.sentinel} role={busy ? 'status' : undefined} aria-label={busy ? ru.tasks.loadingMore : undefined}>
+      {busy ? <span className={styles.spinner} aria-hidden="true" /> : null}
+    </div>
+  );
+}
 
 function Loading() {
   return (
@@ -109,24 +134,15 @@ export function TasksScreen() {
               </Banner>
             </div>
           ) : null}
-          {hasData &&
-          !list.isSwitching &&
-          list.hasNextPage &&
-          !list.loadMoreFailed &&
-          list.items.length > 0 ? (
-            <div className={styles.more}>
-              <Button variant="secondary" busy={list.isFetchingNextPage} onClick={() => void list.loadMore()}>
-                {list.isFetchingNextPage ? ru.tasks.loadingMore : ru.tasks.loadMore}
-              </Button>
-            </div>
+          {hasData && !list.isSwitching && list.hasNextPage && !list.loadMoreFailed && list.items.length > 0 ? (
+            <EndSentinel busy={list.isFetchingNextPage} onReach={() => !list.isFetchingNextPage && void list.loadMore()} />
           ) : null}
           {hasData &&
           !list.isSwitching &&
           !list.hasNextPage &&
           !list.isFetchingNextPage &&
           sections.length === 0 ? (
-            <StateView
-              illustration={<ThemedImage asset={emptyIllustrations.noTasks} />}
+            <StateView 
               title={ru.tasks.empty[filter].title}
               body={ru.tasks.empty[filter].body}
             />
