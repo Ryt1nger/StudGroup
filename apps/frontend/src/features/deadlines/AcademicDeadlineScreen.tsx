@@ -2,7 +2,8 @@ import { Link, useParams } from 'react-router';
 import { api, useAcademicDeadlineQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
 import { photoMaterials, remainingMaterials } from '../../lib/photoMaterials';
-import { subjectGlyph, subjectStyle } from '../../lib/subjectColor';
+import { subjectStyle } from '../../lib/subjectColor';
+import { SubjectMark } from '../../ui/SubjectMark';
 import { useIsHeadman } from '../../session/SessionProvider';
 import { BackTop } from '../../shell/TopBar';
 import { Banner, Skeleton } from '../../ui/Blocks';
@@ -38,7 +39,7 @@ export function AcademicDeadlineScreen() {
     <>
       <BackTop fallback="/deadlines" right={editor ? <Link className="pillb" to="edit"><Ic name="edit" size={15} />{ru.edit.open}</Link> : undefined} />
       <div className="d-head" style={subjectStyle(subject)}>
-        <span className="chipx"><b>{subjectGlyph(subject)}</b>{subject}</span>
+        <span className="chipx"><b><SubjectMark name={subject} /></b>{subject}</span>
         <h1>{item.title}</h1>
         <div className="m">
           <span className="chipx warn">{EVENT_KIND[item.kind]}</span>

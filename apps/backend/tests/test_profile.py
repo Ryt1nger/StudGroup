@@ -88,3 +88,18 @@ def test_notification_preferences_are_stored_and_validated(client):
         "/v1/profile", json={"settings": {"lesson_lead_minutes": 7}}, headers=HEADERS
     )
     assert bad.status_code == 422
+
+
+def test_the_browser_may_send_patch_from_the_web_app(client):
+    """Without PATCH in the CORS methods the preflight fails and profile/card edits never reach the API."""
+    origin = client.app.state.settings.webapp_origin
+    response = client.options(
+        "/v1/profile",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "PATCH",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert response.status_code == 200
+    assert "PATCH" in response.headers["access-control-allow-methods"]

@@ -8,7 +8,8 @@ import { dayKey, formatLongDay, formatTime } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
 import { safeLessonUrl, useLessonLinkClick } from '../../lib/lessonLink';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
-import { subjectGlyph, subjectStyle } from '../../lib/subjectColor';
+import { subjectStyle } from '../../lib/subjectColor';
+import { SubjectMark } from '../../ui/SubjectMark';
 import { useSessionServerNow } from '../../session/SessionProvider';
 import { useGroupTimeZone } from '../../session/useGroupTimeZone';
 import { BackTop } from '../../shell/TopBar';
@@ -129,7 +130,7 @@ export function LessonScreen() {
     <>
       <BackTop fallback="/schedule" />
       <div className="d-head" style={subjectStyle(lesson.subject)}>
-        <span className="chipx"><b>{subjectGlyph(lesson.subject)}</b>Пара</span>
+        <span className="chipx"><b><SubjectMark name={lesson.subject} /></b>Пара</span>
         <h1>{lesson.subject}</h1>
         <div className="m">
           <span className={`chipx ${rel.kind === 'now' ? 'live' : rel.kind === 'done' ? 'mute' : 'ok'}`}>{rel.text}</span>

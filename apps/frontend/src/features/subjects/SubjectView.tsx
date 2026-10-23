@@ -2,7 +2,8 @@ import type { AcademicDeadline, HomeworkSummary, LessonOccurrence, MaterialLink 
 import { Link } from 'react-router';
 import { formatShortDate, formatTime } from '../../lib/format';
 import { safeLessonUrl } from '../../lib/lessonLink';
-import { subjectGlyph, subjectStyle } from '../../lib/subjectColor';
+import { subjectStyle } from '../../lib/subjectColor';
+import { SubjectMark } from '../../ui/SubjectMark';
 import { BackTop } from '../../shell/TopBar';
 import { DlCard, HwCard, LessonRow } from '../shared/Cards';
 import { MaterialList } from '../shared/Materials';
@@ -39,7 +40,7 @@ export function SubjectView({
     <>
       <BackTop fallback="/subjects" />
       <div className="d-head" style={subjectStyle(name)}>
-        <span className="chipx"><b>{subjectGlyph(name)}</b>Предмет</span>
+        <span className="chipx"><b><SubjectMark name={name} /></b>Предмет</span>
         <h1>{name}</h1>
       </div>
       {next ? (

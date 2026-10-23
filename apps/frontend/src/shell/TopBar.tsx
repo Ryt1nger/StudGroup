@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
+import { useProfileQuery } from '../api/queries';
 import { useSession } from '../session/SessionProvider';
 import { Ic } from '../ui/Ic';
 import { useBack } from './useBack';
@@ -15,10 +16,19 @@ export function initialsOf(name: string): string {
 }
 
 /** Bell and avatar: the two buttons at the right of every top row. */
+/** The name the person gave in their profile, else the one Telegram knows. */
+function useOwnName(): { first: string; full: string } {
+  const { state } = useSession();
+  const profile = useProfileQuery({ enabled: state.status === 'ready' }).data;
+  const telegram = state.status === 'ready' ? state.session.user.display_name : '';
+  const full = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || telegram;
+  return { first: profile?.first_name ?? telegram.split(/\s+/)[0] ?? '', full };
+}
+
 function Actions() {
   const { state } = useSession();
+  const { full: name } = useOwnName();
   if (state.status !== 'ready') return null;
-  const name = state.session.user.display_name;
   return (
     <div className="tr">
       <BellButton />
@@ -30,13 +40,14 @@ function Actions() {
 /** Top row of a section: «Сегодня» greets the user, the other sections show the group name over their title. */
 export function SectionTop({ title }: { title?: string }) {
   const { state } = useSession();
+  const { first } = useOwnName();
   const ready = state.status === 'ready' ? state.session : null;
   const group = ready?.group?.name ?? 'StudGroup';
   return (
     <div className="top">
       <div className="hi">
         <span>{title ? group : greeting()}</span>
-        <b>{title ?? ready?.user.display_name.split(/\s+/)[0] ?? ''}</b>
+        <b>{title ?? first}</b>
       </div>
       <Actions />
     </div>
