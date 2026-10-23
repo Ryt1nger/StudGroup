@@ -10,7 +10,7 @@ describe('static mobile demo transport', () => {
     const body = (await response.json()) as SessionBootstrapResponse;
 
     expect(response.status).toBe(200);
-    expect(body.session.user.display_name).toBe('Демо');
+    expect(body.session.user.display_name).toBe('Тимофей');
     expect(body.session.group?.name).toBe('БИ 1.2 · обезличено');
   });
 

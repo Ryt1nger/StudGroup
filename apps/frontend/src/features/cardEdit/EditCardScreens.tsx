@@ -1,19 +1,11 @@
-import type { ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import {
-  useAcademicDeadlineQuery,
-  useEditEventMutation,
-  useEditHomeworkMutation,
-  useHomeworkQuery,
-  useSubjectsQuery,
-} from '../../api/queries';
+import { useAcademicDeadlineQuery, useEditEventMutation, useEditHomeworkMutation, useHomeworkQuery, useSubjectsQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
 import { useGroupTimeZone } from '../../session/useGroupTimeZone';
-import { useBackButton } from '../../shell/useBackButton';
+import { BackTop } from '../../shell/TopBar';
+import { Empty, Skeleton } from '../../ui/Blocks';
+import { useFeedback } from '../../ui/Feedback';
 import { RequestError } from '../../ui/RequestError';
-import { Skeleton } from '../../ui/Skeleton';
-import { ChevronLeft } from '../../ui/icons';
-import layout from '../homework/HomeworkScreen.module.css';
 import { CardEditForm, type CardEditPatch } from './CardEditForm';
 
 /** Subject names the group already uses, for the datalist of the form. */
@@ -22,38 +14,12 @@ function useSubjectNames(): string[] {
   return subjects.data?.items.map((item) => item.name) ?? [];
 }
 
-/** Own page for editing: back returns to the card, saving does the same. */
-function EditPage({ children, onBack }: { children: ReactNode; onBack: () => void }) {
-  const nativeBack = useBackButton(onBack);
-  return (
-    <div className={layout.page}>
-      <header className={layout.header}>
-        {!nativeBack ? (
-          <button type="button" className={layout.back} onClick={onBack} aria-label={ru.detail.back}>
-            <ChevronLeft size={24} />
-          </button>
-        ) : (
-          <span className={layout.backSpacer} />
-        )}
-        <h1 className={layout.headerTitle}>{ru.edit.pageTitle}</h1>
-        <span className={layout.backSpacer} />
-      </header>
-      <div className={layout.stack}>{children}</div>
-    </div>
-  );
-}
-
-function Forbidden() {
-  return (
-    <p role="alert" className={layout.muted}>
-      {ru.edit.errors.forbidden}
-    </p>
-  );
-}
+const forbidden = <Empty title="Нет доступа" body={ru.edit.errors.forbidden} />;
 
 export function HomeworkEditScreen() {
   const { homeworkId = '' } = useParams();
   const navigate = useNavigate();
+  const { toast } = useFeedback();
   const back = () => void navigate(`/homework/${homeworkId}`, { replace: true });
   const query = useHomeworkQuery(homeworkId);
   const mutation = useEditHomeworkMutation(homeworkId);
@@ -62,7 +28,7 @@ export function HomeworkEditScreen() {
   const detail = query.data;
   const save = (patch: CardEditPatch) => {
     if (!detail) return;
-    const { subject, ...rest } = patch;
+    const { subject, urgency, ...rest } = patch;
     mutation.mutate(
       {
         expected_revision: detail.revision,
@@ -70,17 +36,17 @@ export function HomeworkEditScreen() {
         ...(rest.description !== undefined ? { description: rest.description } : {}),
         ...(subject !== undefined ? { subject_name: subject } : {}),
         ...(rest.deadline !== undefined ? { deadline: rest.deadline } : {}),
+        ...(urgency !== undefined ? { urgency } : {}),
       },
-      { onSuccess: back },
+      { onSuccess: () => { toast(ru.edit.saved); back(); } },
     );
   };
   return (
-    <EditPage onBack={back}>
-      {query.isPending ? <Skeleton height={320} /> : null}
-      {query.isError && !detail ? (
-        <RequestError error={query.error} onRetry={() => void query.refetch()} homeLink />
-      ) : null}
-      {detail && !detail.permissions.includes('homework.edit') ? <Forbidden /> : null}
+    <>
+      <BackTop fallback={`/homework/${homeworkId}`} />
+      {query.isPending ? <Skeleton label={ru.states.loading} /> : null}
+      {query.isError && !detail ? <RequestError error={query.error} onRetry={() => void query.refetch()} homeLink /> : null}
+      {detail && !detail.permissions.includes('homework.edit') ? forbidden : null}
       {detail && detail.permissions.includes('homework.edit') ? (
         <CardEditForm
           key={detail.revision}
@@ -90,6 +56,7 @@ export function HomeworkEditScreen() {
             subject: detail.confirmed_subject?.name ?? detail.subject.name,
             description: detail.description ?? '',
             deadline: { at: detail.deadline.at ?? null, dateOnly: detail.deadline.date_only },
+            urgent: detail.urgency !== 'normal',
           }}
           timeZone={timeZone}
           subjectSuggestions={names}
@@ -99,13 +66,14 @@ export function HomeworkEditScreen() {
           onCancel={back}
         />
       ) : null}
-    </EditPage>
+    </>
   );
 }
 
 export function EventEditScreen() {
   const { deadlineId = '' } = useParams();
   const navigate = useNavigate();
+  const { toast } = useFeedback();
   const back = () => void navigate(`/deadlines/${deadlineId}`, { replace: true });
   const query = useAcademicDeadlineQuery(deadlineId);
   const mutation = useEditEventMutation(deadlineId);
@@ -115,15 +83,14 @@ export function EventEditScreen() {
   const allowed = data?.permissions?.includes('homework.edit') ?? false;
   const save = (patch: CardEditPatch) => {
     if (item?.revision === undefined) return;
-    mutation.mutate({ expected_revision: item.revision, ...patch }, { onSuccess: back });
+    mutation.mutate({ expected_revision: item.revision, ...patch }, { onSuccess: () => { toast(ru.edit.saved); back(); } });
   };
   return (
-    <EditPage onBack={back}>
-      {query.isPending ? <Skeleton height={320} /> : null}
-      {query.isError && !data ? (
-        <RequestError error={query.error} onRetry={() => void query.refetch()} homeLink />
-      ) : null}
-      {data && (!allowed || item?.revision === undefined) ? <Forbidden /> : null}
+    <>
+      <BackTop fallback={`/deadlines/${deadlineId}`} />
+      {query.isPending ? <Skeleton label={ru.states.loading} /> : null}
+      {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} homeLink /> : null}
+      {data && (!allowed || item?.revision === undefined) ? forbidden : null}
       {data && item && allowed && item.revision !== undefined ? (
         <CardEditForm
           key={item.revision}
@@ -144,6 +111,6 @@ export function EventEditScreen() {
           onCancel={back}
         />
       ) : null}
-    </EditPage>
+    </>
   );
 }

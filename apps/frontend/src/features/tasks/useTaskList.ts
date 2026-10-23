@@ -78,6 +78,8 @@ export function useTaskList(filter: HomeworkListFilter) {
     generatedAt: last?.generated_at,
     timeZone: last?.group_timezone,
     updatedAt: query.dataUpdatedAt,
+    /** Cards waiting for a look; only the headman and deputy get it. */
+    reviewCount: last?.review_count ?? 0,
     isPending: query.isPending,
     /** Showing the previous filter's cards while the new filter loads. */
     isSwitching: query.isPlaceholderData,

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetAttachmentImageData, GetAttachmentImageErrors, GetAttachmentImageResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses } from './types.gen';
+import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetAttachmentImageData, GetAttachmentImageErrors, GetAttachmentImageResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetProfileData, GetProfileErrors, GetProfileResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, ReadNotificationData, ReadNotificationErrors, ReadNotificationResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses, UpdateProfileData, UpdateProfileErrors, UpdateProfileResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -28,12 +28,43 @@ export const listNotifications = <ThrowOnError extends boolean = false>(options?
 });
 
 /**
+ * Mark one notification of the current group read for the current user
+ */
+export const readNotification = <ThrowOnError extends boolean = false>(options: Options<ReadNotificationData, ThrowOnError>): RequestResult<ReadNotificationResponses, ReadNotificationErrors, ThrowOnError> => (options.client ?? client).post<ReadNotificationResponses, ReadNotificationErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/notifications/{notification_id}/read',
+    ...options
+});
+
+/**
  * Mark current user's visible group notifications read
  */
 export const readAllNotifications = <ThrowOnError extends boolean = false>(options?: Options<ReadAllNotificationsData, ThrowOnError>): RequestResult<ReadAllNotificationsResponses, ReadAllNotificationsErrors, ThrowOnError> => (options?.client ?? client).post<ReadAllNotificationsResponses, ReadAllNotificationsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/notifications/read-all',
     ...options
+});
+
+/**
+ * The caller's own profile
+ */
+export const getProfile = <ThrowOnError extends boolean = false>(options?: Options<GetProfileData, ThrowOnError>): RequestResult<GetProfileResponses, GetProfileErrors, ThrowOnError> => (options?.client ?? client).get<GetProfileResponses, GetProfileErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/profile',
+    ...options
+});
+
+/**
+ * Change the caller's own profile (only the sent fields change)
+ */
+export const updateProfile = <ThrowOnError extends boolean = false>(options: Options<UpdateProfileData, ThrowOnError>): RequestResult<UpdateProfileResponses, UpdateProfileErrors, ThrowOnError> => (options.client ?? client).patch<UpdateProfileResponses, UpdateProfileErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/profile',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

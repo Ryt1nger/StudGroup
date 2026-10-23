@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.13.0
+  version: 0.15.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -34,6 +34,28 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /notifications/{notification_id}/read:
+    post:
+      operationId: readNotification
+      summary: Mark one notification of the current group read for the current user
+      parameters:
+        - name: notification_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Updated notification inbox
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationInbox"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /notifications/read-all:
     post:
       operationId: readAllNotifications
@@ -49,6 +71,44 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /profile:
+    get:
+      operationId: getProfile
+      summary: The caller's own profile
+      responses:
+        "200":
+          description: Profile; the study-platform password is never returned, only whether one is set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      operationId: updateProfile
+      summary: Change the caller's own profile (only the sent fields change)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422": { $ref: "#/components/responses/InvalidRequest" }
+        "503":
+          description: The server cannot store a study-platform password right now (no encryption key)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /schedule:
     get:
       tags: [Schedule]
@@ -190,6 +250,12 @@ paths:
         - in: query
           name: archive
           schema: { type: boolean, default: false }
+        - in: query
+          name: review
+          description: >-
+            Editors' queue: active events flagged needs_clarification. Headman and deputy only
+            (students get 403 permission_denied); cannot be combined with archive (422).
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Active or archived retained deadlines for the active group
@@ -204,8 +270,15 @@ paths:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/AcademicDeadline" }
+                  review_count:
+                    type: integer
+                    minimum: 0
+                    description: >-
+                      Number of active events in the review queue; present only for the headman and
+                      deputy, omitted for students.
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
   /homework/{homework_id}/file-link:
     get:
       tags: [Homework]
@@ -343,7 +416,7 @@ paths:
           schema:
             {
               type: string,
-              enum: [all, today, week, mine, archive],
+              enum: [all, today, week, mine, archive, review],
               default: all,
             }
           description: >-
@@ -352,6 +425,9 @@ paths:
             week excludes completed and selects active deadlines in the current
             group calendar week Monday through Sunday. archive includes all cancelled or past-deadline items.
             Unknown deadlines never archive automatically unless cancelled.
+            review is the editors' queue: active (not archived, not cancelled) cards whose status or
+            verification_state is needs_clarification, regardless of personal completion. Only the headman
+            and deputy may request it; students get 403 permission_denied.
         - name: limit
           in: query
           schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
@@ -1036,6 +1112,18 @@ components:
         processing: { state: idle, retry_after_seconds: null }
         items: []
         next_cursor: null
+    HomeworkListReviewQueue:
+      summary: Editors' review queue (filter=review) with the count the client uses to show the tab
+      value:
+        server_time: "2026-10-05T06:00:00Z"
+        generated_at: "2026-10-05T06:00:00Z"
+        group_timezone: Europe/Moscow
+        freshness:
+          { last_successful_sync_at: "2026-10-05T06:00:00Z", stale: false }
+        processing: { state: idle, retry_after_seconds: null }
+        items: []
+        next_cursor: null
+        review_count: 0
     SchedulePopulated:
       value:
         generated_at: "2026-10-05T06:00:00Z"
@@ -1344,6 +1432,55 @@ components:
         permissions: [homework.read, homework.completion.write]
         generated_at: "2026-10-04T12:00:00Z"
   schemas:
+    NotificationSettings:
+      type: object
+      additionalProperties: false
+      properties:
+        enabled: { type: boolean, default: true }
+        new_cards: { type: boolean, default: true }
+        changes: { type: boolean, default: true }
+        deadlines: { type: boolean, default: true }
+        deadline_lead: { type: string, enum: ["3h", "1d", "2d"], default: "1d" }
+        lessons: { type: boolean, default: false }
+        lesson_lead_minutes: { type: integer, enum: [10, 15, 30], default: 15 }
+        quiet: { type: boolean, default: true }
+        quiet_range: { type: string, enum: ["23-08", "22-09", "00-07"], default: "23-08" }
+    UserProfile:
+      type: object
+      required: [telegram_user_id, sdu, settings]
+      properties:
+        telegram_user_id: { type: integer, format: int64 }
+        username: { type: [string, "null"] }
+        first_name: { type: [string, "null"], maxLength: 60 }
+        last_name: { type: [string, "null"], maxLength: 60 }
+        email: { type: [string, "null"], maxLength: 120 }
+        sdu:
+          type: object
+          required: [password_set]
+          properties:
+            platform: { type: [string, "null"], maxLength: 80 }
+            url: { type: [string, "null"], maxLength: 200 }
+            login: { type: [string, "null"], maxLength: 80 }
+            calendar_url: { type: [string, "null"], maxLength: 300 }
+            password_set: { type: boolean }
+        settings:
+          $ref: "#/components/schemas/NotificationSettings"
+    UpdateProfileRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        first_name: { type: [string, "null"], maxLength: 60 }
+        last_name: { type: [string, "null"], maxLength: 60 }
+        email: { type: [string, "null"], maxLength: 120 }
+        sdu_platform: { type: [string, "null"], maxLength: 80 }
+        sdu_url: { type: [string, "null"], maxLength: 200, description: "https only, no credentials" }
+        sdu_login: { type: [string, "null"], maxLength: 80 }
+        sdu_calendar_url: { type: [string, "null"], maxLength: 300, description: "https only, no credentials" }
+        sdu_password: { type: string, minLength: 1, maxLength: 200, writeOnly: true }
+        clear_sdu_password: { type: boolean }
+        settings:
+          $ref: "#/components/schemas/NotificationSettings"
     NotificationInbox:
       type: object
       required: [items, unread_count, generated_at]
@@ -1572,6 +1709,13 @@ components:
         next_cursor:
           type: [string, "null"]
           description: Pass unchanged with the same filter and session; null means no further page.
+        review_count:
+          type: integer
+          minimum: 0
+          description: >-
+            Number of active cards waiting in the review queue, independent of the selected filter.
+            Present only for the headman and deputy, so the client can show the review tab only while
+            something needs a look. Omitted for students.
     TodayResponse:
       type: object
       additionalProperties: false
@@ -2124,6 +2268,10 @@ components:
         title: { type: string, minLength: 1, maxLength: 255 }
         description: { type: [string, "null"], maxLength: 8000 }
         subject_name: { type: string, minLength: 1, maxLength: 255 }
+        urgency:
+          type: string
+          enum: [normal, urgent]
+          description: The red «Срочно» mark of the card; only the headman and deputy may set it.
         deadline:
           oneOf:
             - $ref: "#/components/schemas/DeadlineInput"

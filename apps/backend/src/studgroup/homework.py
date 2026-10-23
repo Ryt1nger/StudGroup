@@ -169,7 +169,7 @@ async def homework_list(
     group: CurrentGroup,
     db: Database,
     authorization: str = Header(),
-    filter: Literal["all", "today", "week", "mine", "archive"] = "all",
+    filter: Literal["all", "today", "week", "mine", "archive", "review"] = "all",
     limit: int = Query(default=50, ge=1, le=100),
     cursor: str | None = Query(default=None, max_length=2048),
 ):
@@ -185,6 +185,10 @@ async def homework_list(
             and_(Homework.created_at == created, Homework.id > last_id),
         )
     user = await user_id(db, authorization)
+    # The review queue (cards the editors must look at) exists only for headman and deputy.
+    editor = bool(await edit_permissions(db, group.id, user))
+    if filter == "review" and not editor:
+        raise ApiError("permission_denied", "Очередь проверки доступна старосте и помощнику", 403)
     query = (
         select(Homework)
         .outerjoin(
@@ -207,7 +211,14 @@ async def homework_list(
         Homework.status != "cancelled",
         ~archived,
     )
+    # Needs a look from an editor: the AI could not settle the card (status or verification).
+    needs_review = or_(
+        Homework.status == "needs_clarification",
+        Homework.verification_state == "needs_clarification",
+    )
     query = query.where(archived if filter == "archive" else active)
+    if filter == "review":
+        query = query.where(needs_review)
     if filter == "mine":
         query = query.where(
             PersonalCompletion.completed_at.is_not(None), Homework.status != "cancelled"
@@ -254,7 +265,7 @@ async def homework_list(
         .where(RawMessage.group_id == group.id, RawMessage.processing_state == "pending")
         .limit(1)
     )
-    return {
+    response = {
         "server_time": selected_at,
         "generated_at": generated,
         "group_timezone": group.timezone,
@@ -266,6 +277,20 @@ async def homework_list(
         "items": items,
         "next_cursor": next_cursor,
     }
+    if editor:
+        # Lets the client show the review tab only while there is something to review.
+        response["review_count"] = await db.scalar(
+            select(func.count())
+            .select_from(Homework)
+            .where(
+                Homework.group_id == group.id,
+                Homework.status.in_(["published", "needs_clarification"]),
+                Homework.delete_at > generated,
+                active,
+                needs_review,
+            )
+        )
+    return response
 
 
 @router.get("/homework/{homework_id}")

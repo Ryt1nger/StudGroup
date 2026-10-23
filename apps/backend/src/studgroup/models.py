@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -72,6 +73,29 @@ class User(Base):
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True)
     display_name: Mapped[str] = mapped_column(String(255))
     username: Mapped[str | None] = mapped_column(String(64))
+
+
+class UserProfile(Base):
+    """What a person tells the app about themselves: name, contact, study platform and preferences.
+
+    The study-platform password is stored only encrypted (``sdu_password_encrypted``) and never read
+    back by any endpoint; ``settings`` holds the notification preferences.
+    """
+
+    __tablename__ = "user_profiles"
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    first_name: Mapped[str | None] = mapped_column(String(60))
+    last_name: Mapped[str | None] = mapped_column(String(60))
+    email: Mapped[str | None] = mapped_column(String(120))
+    sdu_platform: Mapped[str | None] = mapped_column(String(60))
+    sdu_url: Mapped[str | None] = mapped_column(String(200))
+    sdu_login: Mapped[str | None] = mapped_column(String(80))
+    sdu_calendar_url: Mapped[str | None] = mapped_column(String(300))
+    sdu_password_encrypted: Mapped[str | None] = mapped_column(Text)
+    settings: Mapped[dict | None] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Membership(Base):

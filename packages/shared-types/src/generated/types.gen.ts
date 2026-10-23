@@ -4,6 +4,52 @@ export type ClientOptions = {
     baseUrl: 'https://api.studgroup.example/v1' | (string & {});
 };
 
+export type NotificationSettings = {
+    enabled?: boolean;
+    new_cards?: boolean;
+    changes?: boolean;
+    deadlines?: boolean;
+    deadline_lead?: '3h' | '1d' | '2d';
+    lessons?: boolean;
+    lesson_lead_minutes?: 10 | 15 | 30;
+    quiet?: boolean;
+    quiet_range?: '23-08' | '22-09' | '00-07';
+};
+
+export type UserProfile = {
+    telegram_user_id: number;
+    username?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+    sdu: {
+        platform?: string | null;
+        url?: string | null;
+        login?: string | null;
+        calendar_url?: string | null;
+        password_set: boolean;
+    };
+    settings: NotificationSettings;
+};
+
+export type UpdateProfileRequest = {
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+    sdu_platform?: string | null;
+    /**
+     * https only, no credentials
+     */
+    sdu_url?: string | null;
+    sdu_login?: string | null;
+    /**
+     * https only, no credentials
+     */
+    sdu_calendar_url?: string | null;
+    clear_sdu_password?: boolean;
+    settings?: NotificationSettings;
+};
+
 export type NotificationInbox = {
     generated_at: string;
     unread_count: number;
@@ -121,6 +167,10 @@ export type HomeworkListResponse = {
      * Pass unchanged with the same filter and session; null means no further page.
      */
     next_cursor: string | null;
+    /**
+     * Number of active cards waiting in the review queue, independent of the selected filter. Present only for the headman and deputy, so the client can show the review tab only while something needs a look. Omitted for students.
+     */
+    review_count?: number;
 };
 
 export type TodayResponse = {
@@ -414,6 +464,10 @@ export type EditHomeworkRequest = {
     title?: string;
     description?: string | null;
     subject_name?: string;
+    /**
+     * The red «Срочно» mark of the card; only the headman and deputy may set it.
+     */
+    urgency?: 'normal' | 'urgent';
     deadline?: DeadlineInput | null;
 };
 
@@ -599,6 +653,25 @@ export type ApiError = {
     } | null;
 };
 
+export type UpdateProfileRequestWritable = {
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+    sdu_platform?: string | null;
+    /**
+     * https only, no credentials
+     */
+    sdu_url?: string | null;
+    sdu_login?: string | null;
+    /**
+     * https only, no credentials
+     */
+    sdu_calendar_url?: string | null;
+    sdu_password?: string;
+    clear_sdu_password?: boolean;
+    settings?: NotificationSettings;
+};
+
 /**
  * Canonical card id from the staff endpoints (not the homework/deadline id).
  */
@@ -635,6 +708,41 @@ export type ListNotificationsResponses = {
 
 export type ListNotificationsResponse = ListNotificationsResponses[keyof ListNotificationsResponses];
 
+export type ReadNotificationData = {
+    body?: never;
+    path: {
+        notification_id: string;
+    };
+    query?: never;
+    url: '/notifications/{notification_id}/read';
+};
+
+export type ReadNotificationErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type ReadNotificationError = ReadNotificationErrors[keyof ReadNotificationErrors];
+
+export type ReadNotificationResponses = {
+    /**
+     * Updated notification inbox
+     */
+    200: NotificationInbox;
+};
+
+export type ReadNotificationResponse = ReadNotificationResponses[keyof ReadNotificationResponses];
+
 export type ReadAllNotificationsData = {
     body?: never;
     path?: never;
@@ -663,6 +771,64 @@ export type ReadAllNotificationsResponses = {
 };
 
 export type ReadAllNotificationsResponse = ReadAllNotificationsResponses[keyof ReadAllNotificationsResponses];
+
+export type GetProfileData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/profile';
+};
+
+export type GetProfileErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+};
+
+export type GetProfileError = GetProfileErrors[keyof GetProfileErrors];
+
+export type GetProfileResponses = {
+    /**
+     * Profile; the study-platform password is never returned, only whether one is set
+     */
+    200: UserProfile;
+};
+
+export type GetProfileResponse = GetProfileResponses[keyof GetProfileResponses];
+
+export type UpdateProfileData = {
+    body: UpdateProfileRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/profile';
+};
+
+export type UpdateProfileErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+    /**
+     * The server cannot store a study-platform password right now (no encryption key)
+     */
+    503: ErrorResponse;
+};
+
+export type UpdateProfileError = UpdateProfileErrors[keyof UpdateProfileErrors];
+
+export type UpdateProfileResponses = {
+    /**
+     * Updated profile
+     */
+    200: UserProfile;
+};
+
+export type UpdateProfileResponse = UpdateProfileResponses[keyof UpdateProfileResponses];
 
 export type GetScheduleData = {
     body?: never;
@@ -836,6 +1002,10 @@ export type ListAcademicDeadlinesData = {
     path?: never;
     query?: {
         archive?: boolean;
+        /**
+         * Editors' queue: active events flagged needs_clarification. Headman and deputy only (students get 403 permission_denied); cannot be combined with archive (422).
+         */
+        review?: boolean;
     };
     url: '/deadlines';
 };
@@ -849,6 +1019,10 @@ export type ListAcademicDeadlinesErrors = {
      * Authenticated user cannot access the active group or resource
      */
     403: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
 };
 
 export type ListAcademicDeadlinesError = ListAcademicDeadlinesErrors[keyof ListAcademicDeadlinesErrors];
@@ -861,6 +1035,10 @@ export type ListAcademicDeadlinesResponses = {
         generated_at: string;
         group_timezone: string;
         items: Array<AcademicDeadline>;
+        /**
+         * Number of active events in the review queue; present only for the headman and deputy, omitted for students.
+         */
+        review_count?: number;
     };
 };
 
@@ -1032,9 +1210,9 @@ export type ListHomeworkData = {
     path?: never;
     query?: {
         /**
-         * all includes active items, including personally completed; mine is active personal completion. today excludes completed and selects active deadlines on the group's current calendar day. week excludes completed and selects active deadlines in the current group calendar week Monday through Sunday. archive includes all cancelled or past-deadline items. Unknown deadlines never archive automatically unless cancelled.
+         * all includes active items, including personally completed; mine is active personal completion. today excludes completed and selects active deadlines on the group's current calendar day. week excludes completed and selects active deadlines in the current group calendar week Monday through Sunday. archive includes all cancelled or past-deadline items. Unknown deadlines never archive automatically unless cancelled. review is the editors' queue: active (not archived, not cancelled) cards whose status or verification_state is needs_clarification, regardless of personal completion. Only the headman and deputy may request it; students get 403 permission_denied.
          */
-        filter?: 'all' | 'today' | 'week' | 'mine' | 'archive';
+        filter?: 'all' | 'today' | 'week' | 'mine' | 'archive' | 'review';
         limit?: number;
         cursor?: string;
     };

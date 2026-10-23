@@ -58,3 +58,33 @@ def test_inbox_scoped_and_personal_read_state_is_persistent(client):
     assert [x["title"] for x in r["items"]] == ["Наше"]
     assert client.post("/v1/notifications/read-all", headers=HEADERS).json()["unread_count"] == 0
     assert client.get("/v1/notifications", headers=HEADERS).json()["items"][0]["read"] is True
+
+
+def test_one_notification_can_be_marked_read_and_foreign_ones_are_not_found(client):
+    ids = {}
+
+    async def seed():
+        async with AsyncSession(client.app.state.engine) as db:
+            for g in (await db.scalars(select(Group))).all():
+                note = Notification(
+                    id=uuid.uuid4(),
+                    group_id=g.id,
+                    event_key=str(g.id),
+                    title="Наше" if g.pilot_authorized else "Чужое",
+                    body="Срок изменён",
+                    entity_type="homework",
+                    entity_id=uuid.uuid4(),
+                    created_at=datetime.now(UTC),
+                    delete_at=datetime.now(UTC) + timedelta(days=90),
+                )
+                ids[g.pilot_authorized] = note.id
+                db.add(note)
+            await db.commit()
+
+    asyncio.run(seed())
+    assert client.post(f"/v1/notifications/{ids[True]}/read").status_code == 401
+    assert client.post(f"/v1/notifications/{ids[False]}/read", headers=HEADERS).status_code == 404
+    result = client.post(f"/v1/notifications/{ids[True]}/read", headers=HEADERS).json()
+    assert result["unread_count"] == 0 and result["items"][0]["read"] is True
+    # repeating it is harmless
+    assert client.post(f"/v1/notifications/{ids[True]}/read", headers=HEADERS).status_code == 200

@@ -67,7 +67,8 @@ describe('Today', () => {
   it('opens the subject page from the lesson and opens related homework', async () => {
     useScenario();
     renderApp();
-    await userEvent.click(await screen.findByRole('button', { name: /Следующая пара:/ }));
+    await userEvent.click(await screen.findByRole('link', { name: /Следующая пара:/ }));
+    await userEvent.click(await screen.findByRole('link', { name: /Всё по предмету/ }));
     expect(
       await screen.findByRole('heading', { name: 'Математический анализ', level: 1 }),
     ).toBeInTheDocument();
@@ -77,7 +78,7 @@ describe('Today', () => {
     await userEvent.click(screen.getByRole('link', { name: /ДЗ №12–140/ }));
     expect(await screen.findByText('Что нужно сделать')).toBeInTheDocument();
   });
-  it('shows the finished-day notice and never substitutes a tomorrow lesson', async () => {
+  it('has no end-of-day notice: the hero card follows next_lesson only', async () => {
     useScenario();
     server.use(
       http.get(`${API}/today`, () =>
@@ -90,23 +91,22 @@ describe('Today', () => {
       ),
     );
     renderApp();
-    expect(await screen.findByText('На сегодня пары закончились')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Следующая пара:/ })).not.toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /пара:/ })).toBeInTheDocument();
+    expect(screen.queryByText('На сегодня пары закончились')).not.toBeInTheDocument();
   });
-  it('switches the heading and requests tomorrow without assigning unknown deadlines', async () => {
+  it('picks another day in the week strip without leaving Today', async () => {
     useScenario();
     renderApp();
     await screen.findByText('ДЗ №12–140');
-    const todayButton = screen.getByRole('button', { name: 'Сегодня' });
-    const tomorrowButton = screen.getByRole('button', { name: 'Завтра' });
-    await userEvent.click(tomorrowButton);
-    expect(await screen.findByRole('heading', { name: 'Завтра', level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Завтра' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Завтра' })).toBe(tomorrowButton);
-    expect(screen.getByRole('button', { name: 'Сегодня' })).toBe(todayButton);
+    const strip = await screen.findByRole('group', { name: 'День' });
+    const days = within(strip).getAllByRole('button');
+    expect(days).toHaveLength(7);
+    expect(days[0]).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(days[2]!);
+    expect(days[2]).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: 'Сегодня', level: 1 })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText('ДЗ №12–140')).not.toBeInTheDocument());
-    await userEvent.click(screen.getByRole('button', { name: 'Сегодня' }));
-    expect(await screen.findByRole('heading', { name: 'Сегодня', level: 1 })).toBeInTheDocument();
+    await userEvent.click(days[0]!);
     expect(await screen.findByText('ДЗ №12–140')).toBeInTheDocument();
   });
   it('renders backend-ordered sections, urgency only from the field, and hides undefined badges', async () => {
@@ -114,28 +114,23 @@ describe('Today', () => {
     renderApp();
     await screen.findByText('ДЗ №12–140');
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(['Срок сегодня', 'Ближайшие', 'Изменённое']);
+    expect(headings).toEqual(['План на сегодня']);
     // urgent badge appears for urgent/super_urgent cards only
-    expect(screen.getAllByText('Срочно')).toHaveLength(1);
+    expect(screen.getAllByRole('img', { name: 'Срочно' })).toHaveLength(1);
     expect(screen.queryByText(/Найти или спросить/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Уведомления/ })).toBeInTheDocument();
-    // Completed cards with active deadlines stay visible, including meaningful updates.
-    expect(screen.getByText('Эссе по маркетингу')).toBeInTheDocument();
-    expect(screen.getByText('Обновлено — проверьте')).toBeInTheDocument();
     // processing/source/verification details are not on list cards
     expect(screen.queryByText('Проверяем обновление')).not.toBeInTheDocument();
     expect(screen.queryByText('Из сообщения группы')).not.toBeInTheDocument();
     expect(screen.queryByText('Подтверждено')).not.toBeInTheDocument();
     expect(screen.queryByText('ДЗ')).not.toBeInTheDocument();
-    // unknown deadline + needs_clarification: date line and the primary label are both kept
-    expect(screen.getByText('Срок уточняется', { exact: false })).toBeInTheDocument();
-    expect(screen.getByText('Требует уточнения')).toBeInTheDocument();
   });
 
-  it('shows the empty state for a successfully loaded empty feed', async () => {
+  it('shows no empty-state card for a successfully loaded empty feed', async () => {
     useScenario('empty');
     renderApp();
-    expect(await screen.findByText('На сегодня заданий нет')).toBeInTheDocument();
+    expect(await screen.findByRole('group', { name: 'День' })).toBeInTheDocument();
+    expect(screen.queryByText('На сегодня заданий нет')).not.toBeInTheDocument();
   });
 
   it('shows the delayed-processing text without inventing cards', async () => {
@@ -176,7 +171,7 @@ describe('subjects', () => {
     useScenario();
     renderApp({ route: '/subjects' });
     expect(await screen.findByRole('heading', { name: 'Предметы' })).toBeInTheDocument();
-    expect(await screen.findByRole('region', { name: 'Математический анализ' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Математический анализ' })).toBeInTheDocument();
     expect(screen.queryByText('Раздел готовится')).not.toBeInTheDocument();
   });
 });
@@ -190,21 +185,6 @@ describe('homework detail and source', () => {
     expect(screen.queryByText('Фрагмент')).not.toBeInTheDocument();
     expect(screen.queryByRole('blockquote')).not.toBeInTheDocument();
     expect(screen.queryByText('По матану решаем номера 12–140.')).not.toBeInTheDocument();
-    // Source details are collapsed behind the info button in the hero card.
-    const info = screen.getByRole('button', { name: 'Информация об источнике' });
-    expect(info).toHaveAttribute('aria-expanded', 'false');
-    expect(document.getElementById(info.getAttribute('aria-controls')!)).toHaveAttribute(
-      'aria-hidden',
-      'true',
-    );
-    await userEvent.click(info);
-    expect(info).toHaveAttribute('aria-expanded', 'true');
-    const panel = document.getElementById(info.getAttribute('aria-controls')!)!;
-    expect(panel).toHaveAttribute('aria-hidden', 'false');
-    expect(within(panel).getByText('Подтверждено')).toBeInTheDocument();
-    expect(within(panel).getByText(/Получено/)).toBeInTheDocument();
-    await userEvent.click(info);
-    expect(info).toHaveAttribute('aria-expanded', 'false');
     // The «Источник» section is collapsed by default and opens with its arrow.
     const toggle = screen.getByRole('button', { name: /^Источник:/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -244,8 +224,7 @@ describe('homework detail and source', () => {
     expect(await screen.findByText('Подготовить презентацию')).toBeInTheDocument();
     expect(screen.getByText('Источник недоступен')).toBeInTheDocument();
     expect(screen.getAllByText('Срок не указан').length).toBeGreaterThan(0);
-    expect(screen.getByText('Требует уточнения')).toBeInTheDocument();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Срок не назван. Мы уточним у старосты и обновим карточку.')).toBeInTheDocument();
   });
 
   it('never opens a non-t.me URL even if the backend returns one', async () => {

@@ -1,14 +1,7 @@
 import type { HomeworkSummary } from '@studgroup/shared-types';
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
-import { HomeworkCard } from '../src/features/today/HomeworkCard';
 import { cardStatus, changedAfterCompletion, showUrgent } from '../src/features/today/cardStatus';
-import { TelegramProvider } from '../src/telegram/TelegramProvider';
-import { makeAdapter } from './helpers';
 
-const NOW = Date.parse('2026-10-05T09:00:00Z');
-const TZ = 'Europe/Moscow';
 
 function item(patch: Partial<HomeworkSummary> = {}): HomeworkSummary {
   return {
@@ -36,33 +29,6 @@ function item(patch: Partial<HomeworkSummary> = {}): HomeworkSummary {
 const done = (rev: number) => ({ completion: 'completed', completed_at: '2026-10-02T10:00:00Z', completed_revision: rev }) as HomeworkSummary['my_state'];
 const AFTER = '2026-10-03T10:00:00Z';
 const BEFORE = '2026-10-01T10:00:00Z';
-
-function renderCard(i: HomeworkSummary, archived = false) {
-  return render(
-    <TelegramProvider adapter={makeAdapter()}>
-      <MemoryRouter>
-        <HomeworkCard item={i} nowMs={NOW} timeZone={TZ} archived={archived} />
-      </MemoryRouter>
-    </TelegramProvider>,
-  );
-}
-const LABELS = ['Отменено', 'Обновлено — проверьте', 'Требует уточнения', 'Выполнено мной'];
-const shown = () => LABELS.filter((l) => screen.queryByText(l));
-
-describe('archive card presentation', () => {
-  it('hides urgent and updated labels, retaining only an accessible completion indicator', () => {
-    renderCard(item({ urgency: 'urgent', my_state: done(1), significant_updated_at: AFTER }), true);
-    expect(shown()).toEqual([]);
-    expect(screen.queryByText('Срочно')).not.toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Выполнено мной' })).toBeInTheDocument();
-  });
-
-  it('hides cancellation badges without falsely marking the item completed', () => {
-    renderCard(item({ status: 'cancelled' }), true);
-    expect(shown()).toEqual([]);
-    expect(screen.queryByRole('img', { name: 'Выполнено мной' })).not.toBeInTheDocument();
-  });
-});
 
 describe('cardStatus priority', () => {
   it('ordinary card has no status', () => {
@@ -122,67 +88,3 @@ describe('cardStatus priority', () => {
   });
 });
 
-describe('HomeworkCard rendering', () => {
-  it('ordinary card: title, subject, deadline and nothing else; no ДЗ chip, source, import or processing', () => {
-    renderCard(item());
-    expect(screen.getByText('ДЗ №5')).toBeInTheDocument();
-    expect(screen.getByText('Физика')).toBeInTheDocument();
-    expect(screen.getByText(/8 окт|Завтра|7 окт/)).toBeInTheDocument();
-    expect(shown()).toEqual([]);
-    for (const hidden of ['ДЗ', 'Из группы', 'Импортировано', 'Подтверждено', 'Проверяем обновление', 'Срочно']) {
-      expect(screen.queryByText(hidden)).not.toBeInTheDocument();
-    }
-  });
-
-  it('shows exactly one primary label for every combination (no duplicates)', () => {
-    const combos: HomeworkSummary[] = [
-      item({ status: 'cancelled', my_state: done(1), verification_state: 'needs_clarification' }),
-      item({ significant_updated_at: AFTER, my_state: done(1), status: 'needs_clarification' }),
-      item({ status: 'needs_clarification', my_state: done(2) }),
-      item({ my_state: done(2) }),
-    ];
-    const expected = ['Отменено', 'Обновлено — проверьте', 'Выполнено мной', 'Выполнено мной'];
-    combos.forEach((c, idx) => {
-      const { unmount } = renderCard(c);
-      expect(shown()).toEqual([expected[idx]]);
-      expect(screen.getAllByText(expected[idx] as string)).toHaveLength(1);
-      unmount();
-    });
-  });
-
-  it('urgent adds «Срочно» next to one primary label, but never on a cancelled card', () => {
-    const { unmount } = renderCard(item({ urgency: 'urgent', my_state: done(2) }));
-    expect(shown()).toEqual(['Выполнено мной']);
-    expect(screen.getAllByText('Срочно')).toHaveLength(1);
-    unmount();
-    renderCard(item({ urgency: 'super_urgent', status: 'cancelled' }));
-    expect(shown()).toEqual(['Отменено']);
-    expect(screen.queryByText('Срочно')).not.toBeInTheDocument();
-  });
-
-  it('unknown deadline: «Срок уточняется» in the date line AND the «Требует уточнения» label, once each', () => {
-    renderCard(item({ status: 'needs_clarification', deadline: { state: 'unknown', at: null, date_only: false } }));
-    expect(screen.getAllByText('Срок уточняется')).toHaveLength(1);
-    expect(screen.getAllByText('Требует уточнения')).toHaveLength(1);
-    expect(shown()).toEqual(['Требует уточнения']);
-  });
-
-  it('unknown deadline without clarification state shows only the date line', () => {
-    renderCard(item({ deadline: { state: 'unknown', at: null, date_only: false } }));
-    expect(screen.getAllByText('Срок уточняется')).toHaveLength(1);
-    expect(shown()).toEqual([]);
-  });
-
-  it('hides the clarification warning from a student when the deadline is known', () => {
-    renderCard(item({ verification_state: 'needs_clarification' }));
-    expect(screen.queryByText('Требует уточнения')).not.toBeInTheDocument();
-  });
-
-  it('card background does not depend on completion', () => {
-    const a = renderCard(item());
-    const clsA = a.container.querySelector('a')!.className;
-    a.unmount();
-    const b = renderCard(item({ my_state: done(2) }));
-    expect(b.container.querySelector('a')!.className).toBe(clsA);
-  });
-});

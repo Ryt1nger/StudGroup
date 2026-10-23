@@ -1,366 +1,141 @@
-import type { HomeworkDetail } from '@studgroup/shared-types';
 import clsx from 'clsx';
-import { useCallback, useId, useState, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router';
-import { api, useHomeworkQuery } from '../../api/queries';
-import { assets } from '../../assets';
+import { useState } from 'react';
+import { Link, useParams } from 'react-router';
+import type { HomeworkDetail } from '@studgroup/shared-types';
+import { isApiRequestError } from '../../api/errors';
+import { api, useCompletionMutation, useHomeworkQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
-import { formatDateTile, formatDeadline, formatShortDate, formatTime } from '../../lib/format';
+import { whenLabel } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
-import { useProcessingPoll } from '../../lib/processingPoll';
-import { useGroupTimeZone } from '../../session/useGroupTimeZone';
-import { useIsHeadman } from '../../session/SessionProvider';
-import { useBackButton } from '../../shell/useBackButton';
-import { Badge } from '../../ui/Badge';
-import { Banner } from '../../ui/Banner';
-import { Button } from '../../ui/Button';
 import { photoMaterials, remainingMaterials } from '../../lib/photoMaterials';
-import { CardPhotos } from '../../ui/CardPhotos';
-import { MaterialLinks } from '../../ui/MaterialLinks';
+import { useProcessingPoll } from '../../lib/processingPoll';
+import { subjectGlyph, subjectStyle } from '../../lib/subjectColor';
+import { useGroupTimeZone } from '../../session/useGroupTimeZone';
+import { Float } from '../../shell/AppRoot';
+import { BackTop } from '../../shell/TopBar';
+import { useTelegram } from '../../telegram/TelegramProvider';
+import { Banner, Skeleton, Spinner } from '../../ui/Blocks';
+import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
-import { Skeleton } from '../../ui/Skeleton';
-import { ThemedImage } from '../../ui/ThemedImage';
-import { AlertCircle, ChevronLeft, Clock, Refresh } from '../../ui/icons';
-import {
-  changedAfterCompletion,
-  needsClarification,
-  visibleClarification,
-  showUrgent,
-} from '../today/cardStatus';
-import { processingBadge, urgencyBadge, verificationBadge, sourceLabel } from '../today/homeworkBadges';
-import { EditActions } from '../cardEdit/CardEditor';
-import { CompletionBar } from './CompletionBar';
-import { SourceBlock } from './SourceBlock';
-import {
-  toHomeworkCardViewModel,
-  type HomeworkCardViewModel,
-  type LearningCardUpdateView,
-} from './cardViewModel';
-import styles from './HomeworkScreen.module.css';
+import { AddFile, Collapsible, SourceRow, UpdatesBlock } from '../shared/CardParts';
+import { MaterialList, Photos } from '../shared/Materials';
+import { changedAfterCompletion, showUrgent } from '../today/cardStatus';
+import { toHomeworkCardViewModel } from './cardViewModel';
 
-function Loading() {
+/** Personal «Выполнено мной»: set and undo, with conflict and failure handling. */
+function CompletionBar({ detail, refreshing, onError }: { detail: HomeworkDetail; refreshing: boolean; onError: (message: string | null) => void }) {
+  const { adapter } = useTelegram();
+  const mutation = useCompletionMutation(detail.id);
+  const done = detail.my_state.completion === 'completed';
+  if (!detail.permissions.includes('homework.completion.write')) return null;
   return (
-    <div className={styles.stack} role="status" aria-label={ru.states.loading}>
-      <Skeleton height={96} radius={22} />
-      <Skeleton height={84} radius={22} />
-      <Skeleton height={110} radius={22} />
-      <Skeleton height={90} radius={22} />
-    </div>
-  );
-}
-
-interface InfoToggle {
-  expanded: boolean;
-  panelId: string;
-  onToggle: () => void;
-}
-
-function Hero({
-  detail,
-  view,
-  nowMs,
-  timeZone,
-  info,
-}: {
-  detail: HomeworkDetail;
-  view: HomeworkCardViewModel;
-  nowMs: number;
-  timeZone: string;
-  info: InfoToggle | null;
-}) {
-  const urgent = showUrgent(detail);
-  const known = detail.deadline.state === 'known' && detail.deadline.at;
-  const tile = known ? formatDateTile(detail.deadline.at as string, timeZone) : null;
-  const deadline = formatDeadline(detail.deadline, nowMs, timeZone);
-  return (
-    <section className={styles.hero}>
-      {info ? (
+    <Float>
+      <div className="cta-bar">
         <button
           type="button"
-          className={clsx(styles.infoButton, info.expanded && styles.infoButtonOn)}
-          onClick={info.onToggle}
-          aria-expanded={info.expanded}
-          aria-controls={info.panelId}
-          aria-label={ru.detail.info}
+          className={clsx('btn', done && 'on', mutation.isPending && 'busy')}
+          disabled={mutation.isPending || refreshing}
+          onClick={() => {
+            onError(null);
+            mutation.mutate(
+              { completed: !done, expectedRevision: detail.revision },
+              {
+                onSuccess: () => adapter?.haptic('success'),
+                onError: (error) => {
+                  adapter?.haptic('error');
+                  if (isApiRequestError(error) && error.code === 'revision_conflict') onError(ru.detail.completionConflict);
+                  else if (isApiRequestError(error) && (error.status === 403 || error.code === 'permission_denied')) onError(ru.detail.completionForbidden);
+                  else onError(ru.detail.completionFailed);
+                },
+              },
+            );
+          }}
         >
-          <AlertCircle size={20} />
+          {mutation.isPending ? <Spinner /> : done ? null : <Ic name="check" size={18} />}
+          {done ? ru.detail.unmarkDone : ru.detail.markDone}
         </button>
-      ) : null}
-      <div className={clsx(styles.dateTile, urgent && styles.dateTileUrgent)}>
-        {tile ? (
-          <>
-            <span className={styles.dateDay}>{tile.day}</span>
-            <span className={styles.dateMonth}>{tile.month}</span>
-          </>
-        ) : (
-          <ThemedImage asset={assets.homeworkTile} className={styles.tileImg} />
-        )}
       </div>
-      <div className={styles.heroText}>
-        <h2 className={styles.heroTitle}>{detail.title}</h2>
-        <p className={styles.heroDeadline}>
-          <Clock size={14} />
-          <span>{deadline ? `${ru.detail.deadlinePrefix}: ${deadline}` : ru.card.deadlineAbsent}</span>
-        </p>
-        <p className={styles.certainty}>{ru.card.deadlineCertainty[view.deadlineCertainty]}</p>
-        <div className={styles.heroBadges}>
-          <Badge tone="primary">{ru.card.kind[view.kind]}</Badge>
-          {detail.status === 'published' ? <Badge tone="success">{ru.card.published}</Badge> : null}
-          {detail.status === 'cancelled' ? <Badge tone="neutral">{ru.card.cancelled}</Badge> : null}
-          {urgent ? urgencyBadge(detail.urgency) : null}
-        </div>
-      </div>
-    </section>
+    </Float>
   );
 }
 
-function UpdatesBlock({
-  detail,
-  items,
-  timeZone,
-}: {
-  detail: HomeworkDetail;
-  items: LearningCardUpdateView[];
-  timeZone: string;
-}) {
-  if (!items.length && !detail.significant_update) return null;
-  const visible = items.length
-    ? items
-    : [
-        {
-          id: 'significant-update',
-          kind: 'change' as const,
-          text: ru.detail.cardUpdated,
-          createdAt: detail.significant_updated_at ?? detail.updated_at,
-        },
-      ];
-  return (
-    <section className={styles.card} aria-labelledby="updates-title">
-      <h2 id="updates-title" className={styles.cardTitle}>
-        {ru.detail.updates}
-      </h2>
-      <ul className={styles.updates}>
-        {visible.map((item) => (
-          <li key={item.id} className={styles.updateItem}>
-            <span className={styles.updateKind}>{ru.detail.updateKind[item.kind]}</span>
-            <span>{item.text}</span>
-            {item.createdAt ? (
-              <time dateTime={item.createdAt}>
-                {formatShortDate(item.createdAt, timeZone)} · {formatTime(item.createdAt, timeZone)}
-              </time>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** Clarification is role-aware; cancellation and other warnings remain visible. */
-function AlertsBlock({ detail }: { detail: HomeworkDetail }) {
-  const isHeadman = useIsHeadman();
+function Body({ detail, nowMs, gaveUp, restart, refreshing }: { detail: HomeworkDetail; nowMs: number; gaveUp: boolean; restart: () => void; refreshing: boolean }) {
+  const timeZone = useGroupTimeZone();
+  const view = toHomeworkCardViewModel(detail);
+  const [completionMessage, setCompletionMessage] = useState<string | null>(null);
+  const subject = view.subject?.name ?? 'Без предмета';
+  const when = whenLabel(detail.deadline, nowMs, timeZone);
+  const description = detail.description ?? detail.summary ?? null;
+  const photos = photoMaterials(view.materials);
+  const editor = detail.permissions.includes('homework.edit');
   const cancelled = detail.status === 'cancelled';
-  const changed = changedAfterCompletion(detail);
-  const clarify = visibleClarification(detail, isHeadman);
-  const delayed = detail.processing.state === 'delayed';
-  if (!cancelled && !changed && !clarify && !delayed) return null;
-  return (
-    <section className={styles.card}>
-      <div className={styles.statusRow}>
-        {cancelled ? <Badge tone="neutral">{ru.card.cancelled}</Badge> : null}
-        {changed ? (
-          <Badge tone="warning" icon={<Refresh />}>
-            {ru.card.updatedCheck}
-          </Badge>
-        ) : null}
-        {clarify ? verificationBadge(detail) : null}
-        {delayed ? processingBadge(detail.processing.state) : null}
-      </div>
-    </section>
-  );
-}
-
-/** What the info button reveals: verification, source and receipt time (no warnings, they are always shown). */
-function infoContent(detail: HomeworkDetail, timeZone: string) {
-  const verification = needsClarification(detail) ? null : verificationBadge(detail);
-  const label = sourceLabel(detail.source);
-  const date = detail.source_detail.message_date;
-  const processing = detail.processing.state === 'delayed' ? null : processingBadge(detail.processing.state);
-  if (!verification && !label && !date && !processing) return null;
+  // Editors only: the list of what changed is a working detail, not news for students.
+  const updates = !editor
+    ? []
+    : view.updates.length
+      ? view.updates
+      : detail.significant_update
+        ? [{ id: 'significant-update', kind: 'change' as const, text: ru.detail.cardUpdated, createdAt: detail.significant_updated_at ?? detail.updated_at }]
+        : [];
+  const canComplete = !cancelled && view.kind === 'homework';
   return (
     <>
-      <div className={styles.statusRow}>
-        {verification}
-        {processing}
-        {label ? <Badge tone="neutral">{label}</Badge> : null}
+      <BackTop fallback="/tasks" right={editor ? <Link className="pillb" to="edit"><Ic name="edit" size={15} />{ru.edit.open}</Link> : undefined} />
+      <div className="d-head" style={subjectStyle(subject)}>
+        <span className="chipx"><b>{subjectGlyph(subject)}</b>{subject}</span>
+        <h1>{detail.title}</h1>
+        <div className="m">
+          <span className="when">{when.known ? <Ic name="clock" size={14} /> : null}{when.text}</span>
+          <span className="chipx ok">{ru.card.kind[view.kind]}</span>
+          {showUrgent(detail) ? <span className="chipx warn"><Ic name="bolt" size={12} />срочно</span> : null}
+          {cancelled ? <span className="chipx mute">{ru.card.cancelled}</span> : null}
+          {changedAfterCompletion(detail) ? <span className="chipx warn"><Ic name="refresh" size={12} />{ru.card.updatedCheck}</span> : null}
+        </div>
+        <p className="cert">{ru.card.deadlineCertainty[view.deadlineCertainty]}</p>
       </div>
-      {date ? (
-        <p className={styles.received}>
-          <Clock size={16} />
-          <span>
-            {ru.detail.received} {formatShortDate(date, timeZone)} · {formatTime(date, timeZone)}
-          </span>
-        </p>
+      {detail.processing.state === 'delayed' ? <Banner tone="warning" icon="alert">{ru.card.delayed}</Banner> : null}
+      {detail.processing.state === 'reanalyzing' ? <Banner tone="info" icon="refresh">{ru.card.reanalyzing}</Banner> : null}
+      {detail.processing.state !== 'none' && gaveUp ? (
+        <Banner tone="info" icon="alert" action={<button type="button" className="bact txt" onClick={restart}>{ru.today.recheck}</button>}>{ru.today.pollStopped}</Banner>
       ) : null}
-    </>
-  );
-}
-
-/** Smoothly expanding card: the height animates via grid rows, content is inert while collapsed. */
-function InfoPanel({ id, expanded, children }: { id: string; expanded: boolean; children: ReactNode }) {
-  return (
-    <div
-      id={id}
-      className={clsx(styles.infoWrap, expanded && styles.infoOpen)}
-      aria-hidden={!expanded}
-      inert={!expanded}
-    >
-      <div className={styles.infoClip}>
-        <section className={clsx(styles.card, styles.infoCard)}>{children}</section>
+      {detail.deadline.state !== 'known' ? <Banner tone="info" icon="alert">Срок не назван. Мы уточним у старосты и обновим карточку.</Banner> : null}
+      {completionMessage ? <Banner tone="danger" icon="alert">{completionMessage}</Banner> : null}
+      <div className="block" aria-labelledby="todo-title">
+        <h3 id="todo-title">{ru.detail.whatToDo}</h3>
+        {photos.length ? <Photos items={photos} alt={detail.title} /> : <p>{description ?? ru.detail.noDescription}</p>}
       </div>
-    </div>
+      {editor ? <AddFile fetchLink={() => api.homeworkFileLink(detail.id)} /> : null}
+      <UpdatesBlock items={updates} timeZone={timeZone} />
+      <Collapsible title={view.sources.length > 1 ? ru.detail.sources : ru.detail.source} label={view.sources.length > 1 ? ru.detail.sources : ru.detail.source}>
+        {view.sources.map((source, index) => (
+          <SourceRow key={`${source.kind}-${source.message_date ?? 'undated'}-${index}`} source={source} timeZone={timeZone} />
+        ))}
+      </Collapsible>
+      <div className="block">
+        <h3 id="homework-materials">Материалы</h3>
+        <MaterialList items={remainingMaterials(view.materials)} />
+      </div>
+      <div className="cta-space" />
+      {canComplete ? <CompletionBar detail={detail} refreshing={refreshing} onError={setCompletionMessage} /> : null}
+    </>
   );
 }
 
 export function HomeworkScreen() {
   const { homeworkId = '' } = useParams();
-  const navigate = useNavigate();
   const query = useHomeworkQuery(homeworkId);
   const detail = query.data;
-  const subject = detail ? toHomeworkCardViewModel(detail).subject : null;
   const nowMs = useServerNow(detail?.generated_at, query.dataUpdatedAt);
-
-  const goBack = useCallback(() => {
-    if (window.history.state && typeof window.history.state.idx === 'number' && window.history.state.idx > 0)
-      void navigate(-1);
-    else void navigate('/today', { replace: true });
-  }, [navigate]);
-  const nativeBack = useBackButton(goBack);
-
   const processingActive = detail !== undefined && detail.processing.state !== 'none';
   const { gaveUp, restart } = useProcessingPoll(processingActive, query.refetch);
-
-  return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        {!nativeBack ? (
-          <button type="button" className={styles.back} onClick={goBack} aria-label={ru.detail.back}>
-            <ChevronLeft size={24} />
-          </button>
-        ) : (
-          <span className={styles.backSpacer} />
-        )}
-        <h1 className={styles.headerTitle}>
-          {detail ? (subject?.name ?? 'Без предмета') : <Skeleton height={20} width={160} />}
-        </h1>
-        <span className={styles.backSpacer} />
-      </header>
-
-      {query.isPending ? <Loading /> : null}
-      {query.isError && !detail ? (
-        <RequestError error={query.error} onRetry={() => void query.refetch()} homeLink />
-      ) : null}
-
-      {detail ? (
-        <DetailBody
-          detail={detail}
-          nowMs={nowMs}
-          gaveUp={gaveUp}
-          restart={restart}
-          refreshing={query.isFetching}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function DetailBody({
-  detail,
-  nowMs,
-  gaveUp,
-  restart,
-  refreshing,
-}: {
-  detail: HomeworkDetail;
-  nowMs: number;
-  gaveUp: boolean;
-  restart: () => void;
-  refreshing: boolean;
-}) {
-  // HomeworkDetail carries no timezone; the group timezone comes from the session.
-  const timeZone = useGroupTimeZone();
-  const description = detail.description ?? detail.summary ?? null;
-  const view = toHomeworkCardViewModel(detail);
-  const [infoOpen, setInfoOpen] = useState(false);
-  const panelId = useId();
-  const info = infoContent(detail, timeZone);
-  const photos = photoMaterials(view.materials);
-  return (
-    <div className={styles.stack}>
-      {detail.processing.state === 'delayed' ? (
-        <Banner tone="warning" icon={<AlertCircle />}>
-          {ru.card.delayed}
-        </Banner>
-      ) : null}
-      {detail.processing.state === 'reanalyzing' ? (
-        <Banner tone="info" icon={<Refresh />}>
-          {ru.card.reanalyzing}
-        </Banner>
-      ) : null}
-      {detail.processing.state !== 'none' && gaveUp ? (
-        <Banner
-          tone="info"
-          action={
-            <Button variant="secondary" onClick={restart}>
-              {ru.today.recheck}
-            </Button>
-          }
-        >
-          {ru.today.pollStopped}
-        </Banner>
-      ) : null}
-
-      <Hero
-        detail={detail}
-        view={view}
-        nowMs={nowMs}
-        timeZone={timeZone}
-        info={info ? { expanded: infoOpen, panelId, onToggle: () => setInfoOpen((v) => !v) } : null}
-      />
-      {info ? (
-        <InfoPanel id={panelId} expanded={infoOpen}>
-          {info}
-        </InfoPanel>
-      ) : null}
-      <AlertsBlock detail={detail} />
-
-      <section className={styles.card} aria-labelledby="todo-title">
-        <h2 id="todo-title" className={styles.cardTitle}>
-          {ru.detail.whatToDo}
-        </h2>
-        {photos.length ? (
-          <CardPhotos items={photos} alt={detail.title} />
-        ) : (
-          <p className={clsx(styles.description, !description && styles.muted)}>
-            {description ?? ru.detail.noDescription}
-          </p>
-        )}
-      </section>
-
-      <EditActions
-        allowed={detail.permissions.includes('homework.edit')}
-        fetchFileLink={() => api.homeworkFileLink(detail.id)}
-      />
-      <UpdatesBlock detail={detail} items={view.updates} timeZone={timeZone} />
-      <SourceBlock sources={view.sources} timeZone={timeZone} />
-      <section className={styles.card} aria-labelledby="homework-materials">
-        <h2 id="homework-materials" className={styles.cardTitle}>
-          Материалы
-        </h2>
-        <MaterialLinks items={remainingMaterials(view.materials)} />
-      </section>
-      <div className={styles.ctaSpace} />
-      <CompletionBar detail={detail} refreshing={refreshing} />
-    </div>
-  );
+  if (!detail) {
+    return (
+      <>
+        <BackTop fallback="/tasks" />
+        {query.isPending ? <Skeleton label={ru.states.loading} /> : null}
+        {query.isError ? <RequestError error={query.error} onRetry={() => void query.refetch()} homeLink /> : null}
+      </>
+    );
+  }
+  return <Body detail={detail} nowMs={nowMs} gaveUp={gaveUp} restart={restart} refreshing={query.isFetching} />;
 }

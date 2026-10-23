@@ -13,15 +13,9 @@ export const ru = {
   },
   today: {
     title: 'Сегодня',
-    // proposal: section headings by contract kind
-    sections: {
-      overdue: 'Просрочено',
-      due_today: 'Срок сегодня',
-      upcoming: 'Ближайшие',
-      new_or_changed: 'Изменённое',
-    },
-    emptyTitle: 'На сегодня заданий нет', // proposal
-    emptyBody: 'Когда в группе появится новое задание, оно отобразится здесь.', // proposal
+    plan: 'План на сегодня',
+    deadlines: 'Дедлайны',
+    stats: { aria: 'Сводка', total: 'Всего', done: 'Готово', ahead: 'Впереди', urgent: 'Срочно' },
     updating: 'Обновляем информацию группы',
     delayed: 'Обработка информации задерживается. Данные появятся автоматически',
     pollStopped: 'Автоматическое обновление остановлено.',
@@ -30,7 +24,7 @@ export const ru = {
   tasks: {
     title: 'Задания',
     filtersAria: 'Фильтр заданий',
-    filters: { all: 'Все', today: 'Сегодня', week: 'На неделе', mine: 'Выполнено мной', archive: 'Архив' },
+    filters: { all: 'Все', today: 'Сегодня', review: 'Проверка', week: 'На неделе', mine: 'Выполнено мной', archive: 'Архив' },
     sections: {
       upcoming: 'Ближайшие',
       unknown: 'Срок уточняется',
@@ -38,7 +32,6 @@ export const ru = {
       overdue: 'Прошедшие',
       cancelled: 'Отменено',
     },
-    loadMore: 'Загрузить ещё',
     loadingMore: 'Загружаем…',
     loadMoreFailed: 'Не удалось загрузить следующие задания',
     retry: 'Повторить',
@@ -53,6 +46,7 @@ export const ru = {
         title: 'Выполненных заданий пока нет',
         body: 'Задания, которые вы отметите выполненными, появятся здесь.',
       },
+      review: { title: 'Всё проверено', body: 'Карточки с неясным сроком или на перепроверке появятся здесь.' },
       archive: { title: 'Архив пока пуст', body: 'Здесь будут задания с прошедшим сроком и отменённые.' },
     },
   },

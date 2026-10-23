@@ -5,8 +5,8 @@ import { isHomeworkArchived } from '../lib/homeworkArchive';
 
 export const GROUP_TZ = 'Europe/Moscow';
 export const CURSOR_TTL_MS = 15 * 60_000;
-export type ListFilter = 'all' | 'today' | 'week' | 'mine' | 'archive';
-export const isListFilter = (v: string): v is ListFilter => v === 'all' || v === 'today' || v === 'week' || v === 'mine' || v === 'archive';
+export type ListFilter = 'all' | 'today' | 'review' | 'week' | 'mine' | 'archive';
+export const isListFilter = (v: string): v is ListFilter => v === 'all' || v === 'today' || v === 'review' || v === 'week' || v === 'mine' || v === 'archive';
 
 interface Cursor {
   f: ListFilter;
@@ -40,6 +40,8 @@ export function selectHomework(items: HomeworkSummary[], filter: ListFilter, now
       case 'all':
       case 'archive':
         return true;
+      case 'review':
+        return i.status === 'needs_clarification' || i.verification_state === 'needs_clarification';
       case 'mine':
         return completed(i) && i.status !== 'cancelled';
       case 'today': {

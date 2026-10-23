@@ -106,6 +106,14 @@ export function useIsHeadman(): boolean {
   return value?.state.status === 'ready' && value.state.session.membership?.role === 'headman';
 }
 
+/** Headman or deputy: may review cards and open the editor (the backend still decides every write). */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useIsEditor(): boolean {
+  const value = useContext(Ctx);
+  const role = value?.state.status === 'ready' ? value.state.session.membership?.role : undefined;
+  return role === 'headman' || role === 'deputy';
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export function useReadySession(): SessionContext {
   const { state } = useSession();

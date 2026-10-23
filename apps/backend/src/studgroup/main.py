@@ -24,6 +24,7 @@ from studgroup.card_edit import router as card_edit_router
 from studgroup.homework import router as homework_router
 from studgroup.ingestion import router as ingestion_router
 from studgroup.notifications import router as notifications_router
+from studgroup.profile import router as profile_router
 from studgroup.staff_api import router as staff_router
 from studgroup.subjects import router as subjects_router
 from studgroup.telegram_files import configure as configure_file_links
@@ -37,6 +38,8 @@ class Settings(BaseSettings):
     webapp_origin: str = "http://localhost:5173"
     telegram_bot_token: str = ""
     telegram_webhook_secret: str = ""
+    # Fernet key (urlsafe base64, 32 bytes) that protects study-platform passwords; empty disables them.
+    profile_encryption_key: SecretStr = SecretStr("")
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
@@ -308,6 +311,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(subjects_router)
     app.include_router(deadlines_router)
     app.include_router(notifications_router)
+    app.include_router(profile_router)
     app.include_router(staff_router)
 
     @app.exception_handler(ApiError)

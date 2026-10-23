@@ -23,6 +23,8 @@ describe('published learning card readiness', () => {
     useScenario();
     const extended = {
       ...base,
+      // The updates block is for editors only.
+      permissions: [...base.permissions, 'homework.edit'],
       card_kind: 'test',
       deadline: { ...base.deadline, certainty: 'needs_clarification' },
       materials: [

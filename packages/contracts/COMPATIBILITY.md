@@ -1,5 +1,13 @@
 # Contract compatibility
 
+## Review queue (0.14.0, 2026-10-23)
+
+Additive only. Existing filters, query flags and fields keep their meaning. A 0.13.0 client never
+sends `filter=review` or `review=true` and may ignore the new optional `review_count`. A client
+that validates the `filter` enum strictly must add `review`. Students never receive `review_count`
+and get 403 `permission_denied` for the review queue; the server re-checks the role on every
+request, `permissions` stays a UI hint.
+
 ## Headman/deputy cabinet API (0.12.0, 2026-10-21)
 
 Additive only: existing student routes, fields and enums keep their meaning. New optional
@@ -349,3 +357,9 @@ and never listed in new_or_changed. After the window the card leaves that sectio
 Tasks and detail are unaffected. No schema or enum change; clients that preserve server
 order need no update. Example: an assignment created 3 days ago and edited 1 hour ago
 → new_or_changed; edited 6 hours ago → upcoming (if due within 7 days) or absent.
+
+## One-notification read receipt and editable urgency (0.15.0)
+
+Both additions are optional and additive. Old clients keep using `read-all` and never send
+`urgency`; an old backend answers 404 to the new path, so the app falls back to `read-all`
+semantics (it only hides the item locally). Existing responses are unchanged.

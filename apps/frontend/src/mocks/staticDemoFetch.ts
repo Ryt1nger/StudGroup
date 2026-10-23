@@ -10,6 +10,7 @@ import type {
 } from '@studgroup/shared-types';
 import { addDays, dayKey } from '../lib/format';
 import { buildToday, exampleSession, sessionAt } from './data';
+import { applyProfilePatch, demoProfile } from './profile';
 import { GROUP_TZ, isListFilter, selectHomework } from './homeworkList';
 import {
   buildReviewedNextLesson,
@@ -41,7 +42,7 @@ const error = (code: ApiError['code'], message: string, status: number) =>
 const demoSession = (now: number): SessionBootstrapResponse =>
   sessionAt(exampleSession, now, (session) => ({
     ...session,
-    user: { ...session.user, telegram_user_id: 0, display_name: 'Демо', username: null },
+    user: { ...session.user, telegram_user_id: 0, display_name: 'Тимофей', username: null },
     group: session.group ? { ...session.group, name: 'БИ 1.2 · обезличено' } : null,
   }));
 
@@ -54,6 +55,7 @@ function requestBody(input: RequestInfo | URL, init?: RequestInit): Promise<unkn
 /** Static demo transport. It preserves the generated API client boundary without a Service Worker. */
 export function createStaticDemoFetch(): typeof fetch {
   const world = buildReviewedWorld();
+  let profile = demoProfile();
 
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = input instanceof Request ? input : null;
@@ -114,6 +116,28 @@ export function createStaticDemoFetch(): typeof fetch {
       const end = url.searchParams.get('end');
       if (!start || !end) return error('invalid_request', 'Укажите start и end.', 422);
       return json(buildReviewedSchedule(start, end, now) satisfies ScheduleResponse);
+    }
+
+    if (path.includes('/notifications')) {
+      return json({ items: [], unread_count: 0, generated_at: new Date(now).toISOString() });
+    }
+
+    if (path.endsWith('/profile')) {
+      if (method === 'PATCH') profile = applyProfilePatch(profile, (request ? await request.json() : JSON.parse(String(init?.body ?? '{}'))) as Record<string, unknown>);
+      return json(profile);
+    }
+
+    if (method === 'GET' && path.endsWith('/subjects')) {
+      const names = new Set<string>();
+      for (const item of reviewedDeadlines) names.add(item.subject);
+      for (const summary of world.summaries.values()) names.add(summary.subject.name);
+      const items = [...names].map((name, index) => ({
+        id: `subject-${index + 1}`,
+        name,
+        homework_count: [...world.summaries.values()].filter((summary) => summary.subject.name === name).length,
+        deadline_count: reviewedDeadlines.filter((item) => item.subject === name).length,
+      }));
+      return json({ generated_at: new Date(now).toISOString(), group_timezone: GROUP_TZ, items });
     }
 
     const lessonMatch = path.match(/\/lessons\/([^/]+)\/subject$/);

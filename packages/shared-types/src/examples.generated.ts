@@ -62,6 +62,22 @@ export const contractExamples = {
     "items": [],
     "next_cursor": null
   },
+  "HomeworkListReviewQueue": {
+    "server_time": "2026-10-05T06:00:00Z",
+    "generated_at": "2026-10-05T06:00:00Z",
+    "group_timezone": "Europe/Moscow",
+    "freshness": {
+      "last_successful_sync_at": "2026-10-05T06:00:00Z",
+      "stale": false
+    },
+    "processing": {
+      "state": "idle",
+      "retry_after_seconds": null
+    },
+    "items": [],
+    "next_cursor": null,
+    "review_count": 0
+  },
   "SchedulePopulated": {
     "generated_at": "2026-10-05T06:00:00Z",
     "group_timezone": "Europe/Moscow",
