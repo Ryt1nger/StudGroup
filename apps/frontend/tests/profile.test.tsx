@@ -17,7 +17,9 @@ describe('profile', () => {
       }),
     );
     renderApp({ route: '/profile/me' });
-    await userEvent.type(await screen.findByLabelText('Имя'), 'Тимофей');
+    const first = await screen.findByLabelText('Имя');
+    await userEvent.clear(first);
+    await userEvent.type(first, 'Тимофей');
     await userEvent.type(screen.getByLabelText('Ссылка на СДО'), 'http://sdo.example.edu');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     expect(await screen.findByText('Нужна ссылка, которая начинается с https://')).toBeInTheDocument();

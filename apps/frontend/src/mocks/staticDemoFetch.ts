@@ -118,6 +118,10 @@ export function createStaticDemoFetch(): typeof fetch {
       return json(buildReviewedSchedule(start, end, now) satisfies ScheduleResponse);
     }
 
+    if (path.includes('/notifications')) {
+      return json({ items: [], unread_count: 0, generated_at: new Date(now).toISOString() });
+    }
+
     if (path.endsWith('/profile')) {
       if (method === 'PATCH') profile = applyProfilePatch(profile, (request ? await request.json() : JSON.parse(String(init?.body ?? '{}'))) as Record<string, unknown>);
       return json(profile);

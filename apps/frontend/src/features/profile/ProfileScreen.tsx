@@ -165,12 +165,15 @@ function Field({ id, label, error, children }: { id: string; label: ReactNode; e
 
 function Me({ profile }: { profile: UserProfile }) {
   const navigate = useNavigate();
+  const { state } = useSession();
+  // Until the person fills the form in, their Telegram name is a sensible starting point.
+  const telegramName = state.status === 'ready' ? state.session.user.display_name.trim().split(/\s+/) : [];
   const { toast } = useFeedback();
   const save = useUpdateProfile();
   const ids = { first: useId(), last: useId(), email: useId(), platform: useId(), url: useId(), login: useId(), pass: useId(), cal: useId(), list: useId() };
   const [form, setForm] = useState({
-    first: profile.first_name ?? '',
-    last: profile.last_name ?? '',
+    first: profile.first_name ?? telegramName[0] ?? '',
+    last: profile.last_name ?? telegramName.slice(1).join(' '),
     email: profile.email ?? '',
     platform: profile.sdu.platform ?? '',
     url: profile.sdu.url ?? '',
