@@ -1,5 +1,15 @@
 # Contract changelog
 
+## 0.14.0 — 2026-10-23
+
+- Added `review` to `listHomework` `filter` and a `review` query flag to `listAcademicDeadlines`: the
+  editors' queue of active cards/events flagged `needs_clarification`. Headman and deputy only;
+  students get 403 `permission_denied`. `review` cannot be combined with `archive` on deadlines (422).
+- Added optional `review_count` to the homework list and the deadlines list responses, present only
+  for the headman and deputy, so a client shows the review tab only while something needs a look.
+- Clarified (no behaviour change): a card whose known deadline has passed is archived regardless of
+  personal completion, so a completed overdue card appears only under `filter=archive`.
+
 ## 0.13.0 — 2026-10-22
 
 - Added `GET /attachments/{attachment_id}/image`: the photo of a card, streamed from Telegram for

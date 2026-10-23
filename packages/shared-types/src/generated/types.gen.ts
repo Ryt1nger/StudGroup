@@ -121,6 +121,10 @@ export type HomeworkListResponse = {
      * Pass unchanged with the same filter and session; null means no further page.
      */
     next_cursor: string | null;
+    /**
+     * Number of active cards waiting in the review queue, independent of the selected filter. Present only for the headman and deputy, so the client can show the review tab only while something needs a look. Omitted for students.
+     */
+    review_count?: number;
 };
 
 export type TodayResponse = {
@@ -836,6 +840,10 @@ export type ListAcademicDeadlinesData = {
     path?: never;
     query?: {
         archive?: boolean;
+        /**
+         * Editors' queue: active events flagged needs_clarification. Headman and deputy only (students get 403 permission_denied); cannot be combined with archive (422).
+         */
+        review?: boolean;
     };
     url: '/deadlines';
 };
@@ -849,6 +857,10 @@ export type ListAcademicDeadlinesErrors = {
      * Authenticated user cannot access the active group or resource
      */
     403: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
 };
 
 export type ListAcademicDeadlinesError = ListAcademicDeadlinesErrors[keyof ListAcademicDeadlinesErrors];
@@ -861,6 +873,10 @@ export type ListAcademicDeadlinesResponses = {
         generated_at: string;
         group_timezone: string;
         items: Array<AcademicDeadline>;
+        /**
+         * Number of active events in the review queue; present only for the headman and deputy, omitted for students.
+         */
+        review_count?: number;
     };
 };
 
@@ -1032,9 +1048,9 @@ export type ListHomeworkData = {
     path?: never;
     query?: {
         /**
-         * all includes active items, including personally completed; mine is active personal completion. today excludes completed and selects active deadlines on the group's current calendar day. week excludes completed and selects active deadlines in the current group calendar week Monday through Sunday. archive includes all cancelled or past-deadline items. Unknown deadlines never archive automatically unless cancelled.
+         * all includes active items, including personally completed; mine is active personal completion. today excludes completed and selects active deadlines on the group's current calendar day. week excludes completed and selects active deadlines in the current group calendar week Monday through Sunday. archive includes all cancelled or past-deadline items. Unknown deadlines never archive automatically unless cancelled. review is the editors' queue: active (not archived, not cancelled) cards whose status or verification_state is needs_clarification, regardless of personal completion. Only the headman and deputy may request it; students get 403 permission_denied.
          */
-        filter?: 'all' | 'today' | 'week' | 'mine' | 'archive';
+        filter?: 'all' | 'today' | 'week' | 'mine' | 'archive' | 'review';
         limit?: number;
         cursor?: string;
     };

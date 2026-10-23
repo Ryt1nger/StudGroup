@@ -63,7 +63,7 @@ async def representation(db, group, row, now):
     }
 
 
-async def items(db, group, now, archive=False, subject=None):
+async def items(db, group, now, archive=False, subject=None, review=False):
     rows = (
         await db.scalars(
             select(AcademicDeadline).where(
@@ -80,6 +80,7 @@ async def items(db, group, now, archive=False, subject=None):
         row
         for row in rows
         if archived(row, now, group.timezone) == archive
+        and (not review or row.needs_clarification)
         and (subject is None or normalized(row.subject) == normalized(subject))
     ]
     selected.sort(
@@ -97,18 +98,42 @@ async def items(db, group, now, archive=False, subject=None):
     return result
 
 
+async def review_count(db, group, now):
+    """Active events an editor still has to settle (no representation work needed)."""
+    rows = await db.scalars(
+        select(AcademicDeadline).where(
+            AcademicDeadline.group_id == group.id,
+            AcademicDeadline.delete_at > now,
+            AcademicDeadline.needs_clarification.is_(True),
+        )
+    )
+    return sum(1 for row in rows if not archived(row, now, group.timezone))
+
+
 @router.get("/deadlines")
 async def list_deadlines(
     group: Annotated[Group, Depends(active_group)],
     db: Annotated[AsyncSession, Depends(database)],
+    authorization: str = Header(),
     archive: bool = False,
+    review: bool = False,
 ):
     now = datetime.now(UTC)
-    return {
+    session = await db.get(WebSession, token_hash(authorization[7:]))
+    editor = bool(await edit_permissions(db, group.id, session.user_id))
+    if review and not editor:
+        raise ApiError("permission_denied", "Очередь проверки доступна старосте и помощнику", 403)
+    if review and archive:
+        raise ApiError("invalid_request", "Проверка относится только к актуальным событиям", 422)
+    response = {
         "generated_at": now,
         "group_timezone": group.timezone,
-        "items": await items(db, group, now, archive),
+        "items": await items(db, group, now, archive, review=review),
     }
+    if editor:
+        # Lets the client show the review tab only while there is something to review.
+        response["review_count"] = await review_count(db, group, now)
+    return response
 
 
 @router.get("/deadlines/{deadline_id}")
