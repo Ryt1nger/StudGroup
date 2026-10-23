@@ -57,14 +57,14 @@ export function GroupTop() {
 
 /** Top row of a detail screen: back arrow (hidden when Telegram shows its own) and optional actions. */
 export function BackTop({ fallback, right }: { fallback: string; right?: ReactNode }) {
-  const { go, native } = useBack(fallback);
+  // Our own arrow is always shown, like in the design; the native Telegram BackButton does the same thing.
+  const { go } = useBack(fallback);
   return (
     <div className="top">
       <a
         className="icon-btn"
         href={fallback}
         aria-label="Назад"
-        style={native ? { visibility: 'hidden' } : undefined}
         onClick={(event) => {
           event.preventDefault();
           go();
