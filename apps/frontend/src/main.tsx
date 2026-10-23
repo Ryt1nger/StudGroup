@@ -1,5 +1,5 @@
 import '@fontsource-variable/inter/wght.css';
-import './styles/global.css';
+import './styles/app.css';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { configureApiClient } from './api/client';

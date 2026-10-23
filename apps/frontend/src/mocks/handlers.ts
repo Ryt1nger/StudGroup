@@ -110,7 +110,7 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
         publicDemo
           ? {
               ...session,
-              user: { ...session.user, telegram_user_id: 0, display_name: 'Демо', username: null },
+              user: { ...session.user, telegram_user_id: 0, display_name: 'Тимофей', username: null },
               group: session.group ? { ...session.group, name: 'БИ 1.2 · обезличено' } : null,
             }
           : session,

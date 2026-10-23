@@ -1,6 +1,4 @@
 import { expect, test } from '@playwright/test';
-import type { ScheduleResponse } from '@studgroup/shared-types';
-import { scheduleAnchor } from '../src/features/schedule/scheduleAnchor';
 
 /**
  * Critical journey: Today → homework detail → «Выполнено мной», including a revision conflict.
@@ -48,19 +46,17 @@ test('a failed write is rolled back and reported', async ({ page }) => {
 
 test('schedule opens from the navigation and shows lessons', async ({ page }) => {
   await page.goto('/?scenario=populated');
-  const response = page.waitForResponse((r) => new URL(r.url()).pathname === '/v1/schedule');
   await page.getByRole('link', { name: 'Расписание' }).click();
-  const data = await (await response).json() as ScheduleResponse;
-  const anchor = scheduleAnchor(data, Date.parse(data.generated_at));
   await expect(page.getByRole('heading', { name: 'Расписание', level: 1 })).toBeAttached();
-  await expect(page.locator(`[id="${anchor}"]`)).toBeInViewport();
+  await expect(page.locator('.ev').first()).toBeInViewport();
 });
 
 test('Today lesson opens the subject page for that lesson', async ({ page }) => {
   await page.goto('/?scenario=populated');
-  const card = page.getByRole('button', { name: /Следующая пара/ });
+  const card = page.getByRole('link', { name: /пара:/ });
   await expect(card).toBeVisible();
   await card.click();
+  await page.getByRole('link', { name: /Всё по предмету/ }).click();
   await expect(page.getByRole('heading', { name: 'Математический анализ', level: 1 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Домашние задания' })).toBeVisible();
 

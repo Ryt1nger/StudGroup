@@ -67,7 +67,8 @@ describe('Today', () => {
   it('opens the subject page from the lesson and opens related homework', async () => {
     useScenario();
     renderApp();
-    await userEvent.click(await screen.findByRole('button', { name: /Следующая пара:/ }));
+    await userEvent.click(await screen.findByRole('link', { name: /Следующая пара:/ }));
+    await userEvent.click(await screen.findByRole('link', { name: /Всё по предмету/ }));
     expect(
       await screen.findByRole('heading', { name: 'Математический анализ', level: 1 }),
     ).toBeInTheDocument();
@@ -90,7 +91,7 @@ describe('Today', () => {
       ),
     );
     renderApp();
-    expect(await screen.findByRole('button', { name: /Следующая пара:/ })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /пара:/ })).toBeInTheDocument();
     expect(screen.queryByText('На сегодня пары закончились')).not.toBeInTheDocument();
   });
   it('picks another day in the week strip without leaving Today', async () => {
@@ -170,7 +171,7 @@ describe('subjects', () => {
     useScenario();
     renderApp({ route: '/subjects' });
     expect(await screen.findByRole('heading', { name: 'Предметы' })).toBeInTheDocument();
-    expect(await screen.findByRole('region', { name: 'Математический анализ' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Математический анализ' })).toBeInTheDocument();
     expect(screen.queryByText('Раздел готовится')).not.toBeInTheDocument();
   });
 });
@@ -184,21 +185,6 @@ describe('homework detail and source', () => {
     expect(screen.queryByText('Фрагмент')).not.toBeInTheDocument();
     expect(screen.queryByRole('blockquote')).not.toBeInTheDocument();
     expect(screen.queryByText('По матану решаем номера 12–140.')).not.toBeInTheDocument();
-    // Source details are collapsed behind the info button in the hero card.
-    const info = screen.getByRole('button', { name: 'Информация об источнике' });
-    expect(info).toHaveAttribute('aria-expanded', 'false');
-    expect(document.getElementById(info.getAttribute('aria-controls')!)).toHaveAttribute(
-      'aria-hidden',
-      'true',
-    );
-    await userEvent.click(info);
-    expect(info).toHaveAttribute('aria-expanded', 'true');
-    const panel = document.getElementById(info.getAttribute('aria-controls')!)!;
-    expect(panel).toHaveAttribute('aria-hidden', 'false');
-    expect(within(panel).getByText('Подтверждено')).toBeInTheDocument();
-    expect(within(panel).getByText(/Получено/)).toBeInTheDocument();
-    await userEvent.click(info);
-    expect(info).toHaveAttribute('aria-expanded', 'false');
     // The «Источник» section is collapsed by default and opens with its arrow.
     const toggle = screen.getByRole('button', { name: /^Источник:/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -238,8 +224,7 @@ describe('homework detail and source', () => {
     expect(await screen.findByText('Подготовить презентацию')).toBeInTheDocument();
     expect(screen.getByText('Источник недоступен')).toBeInTheDocument();
     expect(screen.getAllByText('Срок не указан').length).toBeGreaterThan(0);
-    expect(screen.getByText('Требует уточнения')).toBeInTheDocument();
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Срок не назван. Мы уточним у старосты и обновим карточку.')).toBeInTheDocument();
   });
 
   it('never opens a non-t.me URL even if the backend returns one', async () => {

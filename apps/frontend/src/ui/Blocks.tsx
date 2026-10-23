@@ -21,7 +21,7 @@ export function Empty({ title, body }: { title: string; body: string }) {
   return (
     <div className="empty">
       <div className="glyph" aria-hidden="true">✦</div>
-      <b>{title}</b>
+      <b role="heading" aria-level={2}>{title}</b>
       <p>{body}</p>
     </div>
   );
@@ -58,7 +58,7 @@ export function StateView({
   return (
     <div className="state" role={role}>
       <div className="sic"><Ic name={icon} size={28} /></div>
-      <b>{title}</b>
+      <b role="heading" aria-level={2}>{title}</b>
       <p>{body}</p>
       {code ? <p className="code2">Код обращения: {code}</p> : null}
       {action}

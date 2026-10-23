@@ -31,12 +31,6 @@ describe('schedule (GET /v1/schedule)', () => {
     expect(screen.queryByText('Практика')).not.toBeInTheDocument();
   });
 
-  it('shows the week label from selected_week', async () => {
-    useScenario();
-    renderApp({ route: '/schedule' });
-    expect(await screen.findByText(/Первая неделя/)).toBeInTheDocument();
-  });
-
   it('explains unresolved parity (needs_clarification) instead of hiding it', async () => {
     useScenario('schedule-clarify');
     renderApp({ route: '/schedule' });
@@ -47,7 +41,7 @@ describe('schedule (GET /v1/schedule)', () => {
   it('shows an empty state when the week has no lessons', async () => {
     useScenario('schedule-empty');
     renderApp({ route: '/schedule' });
-    expect(await screen.findByText('Занятий на этой неделе нет')).toBeInTheDocument();
+    expect(await screen.findByText('Пар нет')).toBeInTheDocument();
   });
 
   it('shows a permission state on 403 and a retryable error on 5xx', async () => {

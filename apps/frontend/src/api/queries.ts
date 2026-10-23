@@ -84,6 +84,7 @@ export function useLessonSubjectQuery(id: string) {
   return useQuery({
     queryKey: queryKeys.lessonSubject(id),
     queryFn: () => api.lessonSubject(id),
+    enabled: id !== '',
     ...detailQueryOptions,
   });
 }

@@ -51,18 +51,16 @@ function Frame() {
   const { pathname } = useLocation();
   const online = useOnline();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const previous = useRef<string | null>(null);
-  const [dir, setDir] = useState<'fwd' | 'back' | 'fade' | 'none'>('none');
+  // Direction is derived from the previous path while rendering, so the new screen mounts with it.
+  const [nav, setNav] = useState<{ path: string; dir: 'fwd' | 'back' | 'fade' | 'none' }>({ path: pathname, dir: 'none' });
+  if (nav.path !== pathname) setNav({ path: pathname, dir: direction(nav.path, pathname) });
+  const dir = nav.dir;
   const section = sectionOf(pathname);
   const index = Math.max(0, NAV.findIndex(([path]) => path === `/${section}`));
 
-  // Direction is decided during render from the previous path, so the new screen mounts with it.
-  const nextDir = direction(previous.current, pathname);
-  if (nextDir !== dir && previous.current !== pathname) setDir(nextDir);
-
   useLayoutEffect(() => {
-    previous.current = pathname;
-    scrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    const scroll = scrollRef.current;
+    if (scroll) scroll.scrollTop = 0;
   }, [pathname]);
 
   // Stagger: every element that appears gets the next slot, so a screen builds up from top to bottom.

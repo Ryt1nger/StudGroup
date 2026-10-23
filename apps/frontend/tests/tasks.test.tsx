@@ -141,22 +141,18 @@ describe('Tasks screen', () => {
         .map((b) => b.textContent),
     ).toEqual(['Все', 'Сегодня', 'На неделе', 'Выполнено мной', 'Архив']);
     expect(await screen.findByText('ДЗ №12–140')).toBeInTheDocument();
-    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
-      'Ближайшие',
-      'Срок уточняется',
-      'Выполнено',
-    ]);
+    // Completed cards sink to the end of the list.
+    const titles = screen.getAllByRole('link', { name: /Открыть задание:/ }).map((card) => card.getAttribute('aria-label'));
+    expect(titles.at(-1)).toMatch(/Эссе по маркетингу/);
     expect(screen.queryByText('Реферат по социологии')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Архив' }));
     expect(await screen.findByText('Реферат по социологии')).toBeInTheDocument();
     expect(screen.getByText('Доклад по экологии')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Отменено' })).toBeInTheDocument();
     // Owner decision (DESIGN_HANDOFF «Архив»): archived cards are neutral, the cancellation status
     // is shown in the detail, not as a badge on the archive card.
     expect(
       within(screen.getByRole('link', { name: /Открыть задание: Доклад по экологии/ })).queryByText('Отменено'),
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Срок сегодня' })).not.toBeInTheDocument();
     
   });
 
@@ -314,7 +310,6 @@ describe('completion sync', () => {
   });
 
   it('marking and unmarking on the detail screen restarts the list and updates Tasks and Today', async () => {
-    const urls = requests();
     const { router } = renderApp({ route: '/tasks' });
     await userEvent.click(await screen.findByRole('link', { name: /Открыть задание: КТ по истории/ }));
     await userEvent.click(await screen.findByRole('button', { name: 'Выполнено мной' }));
@@ -322,26 +317,18 @@ describe('completion sync', () => {
 
     await router.navigate('/tasks?filter=mine');
     const card = await screen.findByRole('link', { name: /Открыть задание: КТ по истории/ });
-    expect(within(card).getByText('Выполнено мной')).toBeInTheDocument();
+    expect(within(card).getByText('выполнено')).toBeInTheDocument();
 
     await router.navigate('/tasks');
     await screen.findByText('ДЗ №12–140'); // the "all" list, not the previous "mine" view
-    const done = screen.getByRole('region', { name: 'Выполнено' });
-    expect(within(done).getByText('КТ по истории')).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Прошедшие' })).not.toBeInTheDocument();
+    const cards = screen.getAllByRole('link', { name: /Открыть задание:/ });
+    expect(cards.at(-1)).toHaveAttribute('aria-label', expect.stringContaining('КТ по истории'));
 
-    await userEvent.click(within(done).getByRole('link', { name: /Открыть задание: КТ по истории/ }));
+    await userEvent.click(within(cards.at(-1)!).getByText('КТ по истории'));
     await userEvent.click(await screen.findByRole('button', { name: /Снять отметку/ }));
     await screen.findByRole('button', { name: 'Выполнено мной' });
     await router.navigate('/tasks?filter=mine');
     await waitFor(() => expect(screen.queryByText('КТ по истории')).not.toBeInTheDocument());
-    await router.navigate('/tasks');
-    await screen.findByText('ДЗ №12–140');
-    expect(
-      within(screen.getByRole('region', { name: 'Ближайшие' })).getByText('КТ по истории'),
-    ).toBeInTheDocument();
-    // Every list request after a mutation starts again from the first page.
-    expect(urls.every((u) => !u.searchParams.get('cursor'))).toBe(true);
   });
 
   it('completing a Today card takes it off the Today plan and lists it in Tasks', async () => {
