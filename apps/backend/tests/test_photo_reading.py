@@ -295,3 +295,24 @@ def test_backfill_needs_photo_reading_and_respects_the_start(client, monkeypatch
         == "idle"
     )
     assert provider.vision == []
+
+
+def test_a_second_shot_of_the_same_board_is_shown_to_the_model_once(client, monkeypatch):
+    allow_download(monkeypatch)
+    wide = "Доказательство теорем 20/3 ст 69-70 предел функции эквивалентные бесконечно малые"
+    close = "Доказательство теорем 20/3 ст 69-70"
+    answers = iter([reading(text=wide), reading(text=close)])
+
+    class TwoShots(VisionProvider):
+        async def complete_vision(self, **kwargs):
+            self.answer = next(answers)
+            return await super().complete_vision(**kwargs)
+
+    photo_message(client, mid=31)
+    photo_message(client, mid=32)
+    make_new(client)
+    provider = TwoShots(reading(), cited=(31, 32))
+    assert step(client, provider, photo_settings()) == "completed"
+    seen = json.dumps(provider.requests[-1].user_payload, ensure_ascii=False)
+    assert seen.count("Текст на фото") == 1
+    assert seen.count(close) == 1  # only inside the better reading, never as a second one
