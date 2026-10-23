@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.16.0
+  version: 0.17.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -451,7 +451,11 @@ paths:
           required: true
           schema: { type: integer, minimum: 1 }
       responses:
-        "204": { description: Removed }
+        "200":
+          description: Removed; `undo_id` brings the event back (`undoCardRemoval`)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardRemoval" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -631,8 +635,12 @@ paths:
           required: true
           schema: { type: integer, minimum: 1 }
       responses:
-        "204":
-          description: Removed
+        "200":
+          description: Removed; `undo_id` brings the card back for a short while (`undoCardRemoval`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardRemoval"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -643,6 +651,39 @@ paths:
           $ref: "#/components/responses/RevisionConflict"
         "410":
           $ref: "#/components/responses/Gone"
+  /card-removals/{undo_id}/undo:
+    post:
+      tags: [Homework]
+      operationId: undoCardRemoval
+      summary: Headman or deputy brings back a card they just removed
+      description: >-
+        Only removals made with `deleteHomework` / `deleteAcademicEvent` can be undone here; other edits
+        are undone in the bot's correction journal. A card that changed since, or a removal that was
+        already undone, answers 409 `action_rejected`. Students receive 403.
+      parameters:
+        - in: path
+          name: undo_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The card is back in every list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entity_type, entity_id]
+                properties:
+                  entity_type: { type: string, enum: [homework, deadline] }
+                  entity_id: { type: string, format: uuid }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ActionRejected"
   /attachments/{attachment_id}/image:
     parameters:
       - name: attachment_id
@@ -1553,6 +1594,11 @@ components:
         permissions: [homework.read, homework.completion.write]
         generated_at: "2026-10-04T12:00:00Z"
   schemas:
+    CardRemoval:
+      type: object
+      required: [undo_id]
+      properties:
+        undo_id: { type: string, format: uuid }
     NotificationSettings:
       type: object
       additionalProperties: false

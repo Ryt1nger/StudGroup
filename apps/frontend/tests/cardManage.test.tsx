@@ -8,6 +8,7 @@ import { exampleSession, sessionAt } from '../src/mocks/data';
 import { API, renderApp, server, useScenario } from './helpers';
 
 const HW = '44444444-4444-4444-8444-444444444444';
+const UNDO = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const NEW_HW = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const base = contractExamples.HomeworkDetailAvailable as unknown as HomeworkDetail;
 const editable = { ...base, permissions: [...base.permissions, 'homework.edit', 'homework.material.write'] };
@@ -59,11 +60,16 @@ describe('creating and removing cards', () => {
   it('removes a card only after the confirmation, with the revision the card has', async () => {
     useScenario();
     let revision: string | null = null;
+    let restored = false;
     server.use(
       http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
       http.delete(`${API}/homework/${HW}`, ({ request }) => {
         revision = new URL(request.url).searchParams.get('expected_revision');
-        return new HttpResponse(null, { status: 204 });
+        return HttpResponse.json({ undo_id: UNDO });
+      }),
+      http.post(`${API}/card-removals/${UNDO}/undo`, () => {
+        restored = true;
+        return HttpResponse.json({ entity_type: 'homework', entity_id: HW });
       }),
     );
     const { router } = renderApp({ route: `/homework/${HW}` });
@@ -75,6 +81,10 @@ describe('creating and removing cards', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Да, удалить' }));
     await waitFor(() => expect(revision).toBe(String(base.revision)));
     await waitFor(() => expect(router.state.location.pathname).toBe('/tasks'));
+    // The bar with the countdown offers to take the removal back.
+    await userEvent.click(await screen.findByRole('button', { name: 'Отменить' }));
+    await waitFor(() => expect(restored).toBe(true));
+    expect(await screen.findByText('Карточка возвращена')).toBeInTheDocument();
   });
 
   it('hides the trash button from a student', async () => {

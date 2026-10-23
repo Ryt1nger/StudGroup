@@ -477,7 +477,7 @@ def test_deleting_hides_the_card_for_everyone_without_notifying_and_can_be_undon
     assert stale.status_code == 409 and stale.json()["error"]["code"] == "revision_conflict"
     assert client.get(f"/v1/homework/{card}", headers=HEADERS).status_code == 200
     response = client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS)
-    assert response.status_code == 204 and response.content == b""
+    assert response.status_code == 200 and response.json()["undo_id"]
     assert client.get(f"/v1/homework/{card}", headers=HEADERS).status_code in {404, 410}
     for filter_name in ("all", "archive"):
         items = client.get(f"/v1/homework?filter={filter_name}", headers=HEADERS).json()["items"]
@@ -514,7 +514,7 @@ def test_deleting_an_event_and_a_card_of_another_group(client):
     assert client.get(f"/v1/deadlines/{event}", headers=HEADERS).status_code == 200
     assert (
         client.delete(f"/v1/deadlines/{event}?expected_revision=1", headers=HEADERS).status_code
-        == 204
+        == 200
     )
     assert client.get(f"/v1/deadlines/{event}", headers=HEADERS).status_code == 404
     assert (
@@ -523,6 +523,39 @@ def test_deleting_an_event_and_a_card_of_another_group(client):
     )
     missing = client.delete(f"/v1/homework/{uuid.uuid4()}?expected_revision=1", headers=HEADERS)
     assert missing.status_code == 404
+
+
+def test_a_removed_card_can_be_brought_back_once_from_the_app(client):
+    card = seed_card(client)
+    set_role(client, "headman")
+    removed = client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS)
+    undo_id = removed.json()["undo_id"]
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).status_code in {404, 410}
+    # a student cannot, an unknown or foreign id is not found
+    assert client.post(f"/v1/card-removals/{uuid.uuid4()}/undo", headers=HEADERS).status_code == 404
+    restored = client.post(f"/v1/card-removals/{undo_id}/undo", headers=HEADERS)
+    assert restored.status_code == 200, restored.text
+    assert restored.json() == {"entity_type": "homework", "entity_id": card}
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).status_code == 200
+    again = client.post(f"/v1/card-removals/{undo_id}/undo", headers=HEADERS)
+    assert again.status_code == 409 and again.json()["error"]["code"] == "action_rejected"
+
+
+def test_only_removals_can_be_undone_from_the_app_and_students_cannot(client):
+    card = seed_card(client)
+    set_role(client, "headman")
+    edited = client.patch(
+        f"/v1/homework/{card}", json={"expected_revision": 1, "title": "Другое"}, headers=HEADERS
+    )
+    assert edited.status_code == 200
+
+    async def audit_id(db):
+        return (await db.scalar(select(HeadmanAudit).where(HeadmanAudit.operation == "edit"))).id
+
+    edit_audit = asyncio.run(_in_session(client, audit_id))
+    assert client.post(f"/v1/card-removals/{edit_audit}/undo", headers=HEADERS).status_code == 404
+    set_role(client, "student")
+    assert client.post(f"/v1/card-removals/{edit_audit}/undo", headers=HEADERS).status_code == 403
 
 
 def test_session_permissions_offer_creating_only_to_staff(client):

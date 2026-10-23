@@ -1,5 +1,11 @@
 # Contract compatibility
 
+## Undoing a removal (0.17.0)
+
+The two delete operations change their success status from 204 to 200 with a small JSON body. A 0.16.0
+client that only checks for a 2xx status is unaffected; one that expects an empty body must not parse
+it. `undoCardRemoval` is new and optional. Restoring does not notify students, as removing did not.
+
 ## Creating and removing cards in the Mini App (0.16.0)
 
 Additive only: new operations `createHomework`, `createAcademicEvent`, `deleteHomework`,

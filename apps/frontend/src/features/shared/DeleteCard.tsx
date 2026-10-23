@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { isApiRequestError } from '../../api/errors';
-import { useDeleteCard } from '../../api/queries';
+import { useDeleteCard, useRestoreCard } from '../../api/queries';
 import { ru } from '../../i18n/ru';
 import { ConfirmModal } from '../../ui/Blocks';
 import { useFeedback } from '../../ui/Feedback';
@@ -12,7 +12,8 @@ import { Float } from '../../shell/AppRoot';
 export function DeleteCardButton({ kind, id, revision, backTo }: { kind: 'homework' | 'event'; id: string; revision: number; backTo: string }) {
   const [asking, setAsking] = useState(false);
   const navigate = useNavigate();
-  const { toast } = useFeedback();
+  const { toast, undo } = useFeedback();
+  const restore = useRestoreCard();
   const remove = useDeleteCard(kind, id);
   return (
     <>
@@ -30,9 +31,14 @@ export function DeleteCardButton({ kind, id, revision, backTo }: { kind: 'homewo
             onCancel={() => setAsking(false)}
             onConfirm={() =>
               remove.mutate(revision, {
-                onSuccess: () => {
+                onSuccess: (removal) => {
                   setAsking(false);
-                  toast('Карточка удалена');
+                  undo('Карточка удалена', () => {
+                    restore(removal.undo_id).then(
+                      () => toast('Карточка возвращена'),
+                      () => toast('Не удалось вернуть карточку'),
+                    );
+                  });
                   void navigate(backTo, { replace: true });
                 },
                 onError: (error) => {
