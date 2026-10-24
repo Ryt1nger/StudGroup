@@ -5,13 +5,14 @@ from datetime import UTC, datetime
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from studgroup import subgroups
 from studgroup.academic_deadlines import archived as deadline_archived
 from studgroup.api import active_group, database
-from studgroup.homework import archived_condition
+from studgroup.homework import archived_condition, user_id
 from studgroup.models import AcademicDeadline, Group, Homework, SchedulePattern
 from studgroup.subject_identity import match_key, subject_uuid
 
@@ -34,8 +35,10 @@ def subject_key(value):
 async def subjects(
     group: Annotated[Group, Depends(active_group)],
     db: Annotated[AsyncSession, Depends(database)],
+    authorization: str = Header(),
 ):
     now = datetime.now(UTC)
+    hidden = await subgroups.hidden(db, group.id, await user_id(db, authorization))
     local_day = now.astimezone(ZoneInfo(group.timezone)).date()
     names = {}
     ids = defaultdict(list)
@@ -61,6 +64,7 @@ async def subjects(
                 Homework.status.in_(["published", "needs_clarification", "completed"]),
                 Homework.delete_at > now,
                 ~archived_condition(now, group.timezone),
+                subgroups.visible(Homework.subgroup_id, hidden),
             )
         )
     ).all()
@@ -81,7 +85,7 @@ async def subjects(
         )
     ).all()
     for row in deadlines:
-        if deadline_archived(row, now, group.timezone):
+        if deadline_archived(row, now, group.timezone) or row.subgroup_id in hidden:
             continue
         if is_placeholder(row.subject):
             continue

@@ -1,5 +1,13 @@
 # Contract compatibility
 
+## Subject subgroups (0.18.0, 2026-10-24)
+
+Additive wire change. Older clients ignore the optional `subgroup` object and never call the two new
+membership endpoints; server-side filtering still gives them only common cards and cards for the
+student's chosen subgroup. A student with no choice sees every subgroup until answering, preventing
+a silent missed assignment. Editors always see every subgroup. An unrecognised subgroup produces a
+common visible card marked for editor review, so filtering never hides uncertain information.
+
 ## Undoing a removal (0.17.0)
 
 The two delete operations change their success status from 204 to 200 with a small JSON body. A 0.16.0

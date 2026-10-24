@@ -112,6 +112,56 @@ class Membership(Base):
     status: Mapped[str] = mapped_column(String(16))
 
 
+class SubjectSplit(Base):
+    """A subject the headman says is taught in separate subgroups (two English groups and so on).
+
+    ``subject_id`` is the shared ``subject_identity.subject_uuid`` of the subject name, the same id
+    the cards and the AI subject catalog use.
+    """
+
+    __tablename__ = "subject_splits"
+    __table_args__ = (UniqueConstraint("group_id", "subject_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    subject_name: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Subgroup(Base):
+    """One subgroup of a split subject: the name students pick and the signals that recognise it
+    in chat messages (teacher's surname, group number, room: whatever the headman wrote)."""
+
+    __tablename__ = "subgroups"
+    __table_args__ = (UniqueConstraint("split_id", "position"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    split_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("subject_splits.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(80))
+    signals: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of strings
+
+
+class MemberSubgroup(Base):
+    """The subgroup a member chose for one split subject. No row: the member has not answered yet
+    and sees the cards of every subgroup of that subject."""
+
+    __tablename__ = "member_subgroups"
+    membership_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("memberships.id", ondelete="CASCADE"), primary_key=True
+    )
+    split_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("subject_splits.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    subgroup_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="CASCADE"), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class WebSession(Base):
     __tablename__ = "web_sessions"
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -205,6 +255,10 @@ class Homework(Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revision: Mapped[int] = mapped_column(Integer, default=1)
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Set only for a subject taught in subgroups: the card is shown to that subgroup alone.
+    subgroup_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="SET NULL"), index=True
+    )
 
 
 class AcademicDeadline(Base):
@@ -233,6 +287,9 @@ class AcademicDeadline(Base):
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revision: Mapped[int] = mapped_column(Integer, default=1)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    subgroup_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="SET NULL"), index=True
+    )
 
 
 class PersonalCompletion(Base):

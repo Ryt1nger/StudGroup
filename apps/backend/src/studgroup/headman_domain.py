@@ -56,6 +56,7 @@ FIELDS = {
         "updated_at",
         "significant_updated_at",
         "delete_at",
+        "subgroup_id",
         "revision",
     ],
     "e": [
@@ -71,6 +72,7 @@ FIELDS = {
         "needs_clarification",
         "cancelled_at",
         "delete_at",
+        "subgroup_id",
         "revision",
     ],
     "p": [

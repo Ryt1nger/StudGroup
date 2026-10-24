@@ -26,6 +26,7 @@ from studgroup.ingestion import router as ingestion_router
 from studgroup.notifications import router as notifications_router
 from studgroup.profile import router as profile_router
 from studgroup.staff_api import router as staff_router
+from studgroup.subgroup_api import router as subgroup_router
 from studgroup.subjects import router as subjects_router
 from studgroup.telegram_files import configure as configure_file_links
 from studgroup.telegram_files import router as files_router
@@ -312,6 +313,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(deadlines_router)
     app.include_router(notifications_router)
     app.include_router(profile_router)
+    app.include_router(subgroup_router)
     app.include_router(staff_router)
 
     @app.exception_handler(ApiError)

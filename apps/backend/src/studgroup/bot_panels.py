@@ -260,7 +260,7 @@ async def dispatch(db, update_value, settings):
     topic = None if callback else bot_info.topic_for(text)
     route = await db.get(BotDialogRoute, chat)
     mode = None
-    start = not callback and (command == "/start" or topic is not None)
+    start = not callback and (command in {"/start", "/test_subgroups"} or topic is not None)
     routed = route.mode if route else None
     if routed == "start" and not await bot_start.awaiting_input(db, chat):
         routed = None  # the walkthrough only owns plain text while it waits for a code

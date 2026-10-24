@@ -9,6 +9,9 @@ Student path: welcome -> "Я студент" -> join -> paste a code (or tap an 
 Headman path: «Я староста» leaves a claim that ``bot_connect`` fulfils when the bot is added to a
 new group. The promo-code step from the flow diagram is not built: Module 0 describes partner
 codes but no partner model exists to record them.
+
+The owner-only ``/test_subgroups`` command is a read-only click-through preview of both subgroup
+journeys. It never writes group configuration or a member choice.
 """
 
 import json
@@ -19,7 +22,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from studgroup import bot_info, bot_panels
+from studgroup import bot_info, bot_panels, subgroups
 from studgroup import headman_domain as domain
 from studgroup.bot_admin import enqueue, say
 from studgroup.homework import utc
@@ -144,6 +147,8 @@ async def home(db, session, settings, telegram_id):
             rows.insert(0, [("Кабинет старосты", "cabinet")])
         if member.role == "headman":
             rows.insert(1, [("Создать приглашение", "invite")])
+        if member.role == "student" and await subgroups.splits(db, group.id):
+            rows.insert(0, [("Мои подгруппы", "subgroups")])
         await screen(db, session, text, [*rows, *info_row()], "home")
         return
     await screen(
@@ -335,12 +340,96 @@ async def redeem(db, session, settings, telegram_id, code, *, typed):
         else:
             await join(db, session, f"Не получилось: {error}")
         return
+    found = await current_membership(db, telegram_id)
+    member = found[0] if found and found[1].id == group.id else None
+    if member and await subgroups.unanswered(db, member):
+        await subgroup_choice(db, session, settings, member, group, joined=True)
+    else:
+        await screen(
+            db,
+            session,
+            f"Готово! Вы подключены к «{group.name}».",
+            [[app_button(settings)]],
+            "done",
+        )
+
+
+async def subgroup_choice(db, session, settings, member, group, *, joined=False):
+    """Show the next unanswered split, or the member's complete editable list."""
+    all_splits = await subgroups.splits(db, group.id)
+    picked = await subgroups.choices(db, member.id)
+    unanswered = [pair for pair in all_splits if pair[0].id not in picked]
+    if unanswered:
+        split, choices = unanswered[0]
+        prefix = f"Готово! Вы подключены к «{group.name}».\n\n" if joined else ""
+        await screen(
+            db,
+            session,
+            prefix + f"К какой подгруппе по предмету «{split.subject_name}» вы относитесь?\n\n"
+            "Выбор можно изменить позже.",
+            [[(row.name, f"subgroup_pick_{n}")] for n, row in enumerate(choices)]
+            + [[("‹ Назад", "home")]],
+            "subgroups",
+            {
+                "member_id": str(member.id),
+                "split_id": str(split.id),
+                "subgroups": [str(row.id) for row in choices],
+            },
+        )
+        return
+    lines, rows = [f"Ваши подгруппы в «{group.name}»:"], []
+    for n, (split, choices) in enumerate(all_splits):
+        chosen = next((row for row in choices if row.id == picked.get(split.id)), None)
+        lines.append(f"• {split.subject_name}: {chosen.name if chosen else 'не выбрана'}")
+        rows.append([(f"Изменить · {split.subject_name}"[:55], f"subgroup_change_{n}")])
+    rows += [[app_button(settings)], [("‹ В начало", "home")]]
     await screen(
         db,
         session,
-        f"Готово! Вы подключены к «{group.name}».",
-        [[app_button(settings)]],
-        "done",
+        "\n".join(lines) if all_splits else "В вашей группе пока нет предметов с подгруппами.",
+        rows,
+        "subgroups_done",
+        {"member_id": str(member.id), "splits": [str(pair[0].id) for pair in all_splits]},
+    )
+
+
+def demo_allowed(settings, telegram_id):
+    return telegram_id in {
+        value
+        for value in (settings.owner_telegram_user_id, settings.bot_admin_user_id)
+        if value is not None
+    }
+
+
+async def demo_home(db, session):
+    await screen(
+        db,
+        session,
+        "Тест подгрупп\n\nВыберите путь. Это демонстрация: реальные группы, карточки и выборы студентов не изменяются.",
+        [
+            [("Пройти как староста", "demo_headman")],
+            [("Пройти как студент", "demo_student")],
+            [("‹ В обычное меню", "home")],
+        ],
+        "demo",
+    )
+
+
+async def demo_student_summary(db, session, english, informatics):
+    await screen(
+        db,
+        session,
+        "Путь студента пройден.\n\n"
+        f"• Английский язык: {english}\n"
+        f"• Информатика: {informatics}\n\n"
+        "В реальном сценарии после этого студент видит только общие карточки и карточки своих подгрупп.",
+        [
+            [("Изменить английский", "demo_s_change")],
+            [("Пройти заново", "demo_student")],
+            [("‹ К выбору пути", "demo_home")],
+        ],
+        "demo_student_done",
+        {"english": english, "informatics": informatics},
     )
 
 
@@ -376,6 +465,19 @@ async def handle(db, update, settings, topic=None):
         return True
     if not callback:
         parts = text.split(maxsplit=1)
+        command = parts[0].split("@")[0] if parts else ""
+        if command == "/test_subgroups":
+            if demo_allowed(settings, sender.id):
+                await demo_home(db, session)
+            else:
+                await screen(
+                    db,
+                    session,
+                    "Тестовый путь доступен только владельцу проекта.",
+                    [[("‹ В начало", "home")]],
+                    "demo_forbidden",
+                )
+            return True
         if parts and parts[0].split("@")[0] == "/start":
             argument = parts[1].strip() if len(parts) == 2 else ""
             if argument == "headman":  # the button under the bot's note in the group chat
@@ -383,6 +485,12 @@ async def handle(db, update, settings, topic=None):
             elif argument.startswith("invite_"):
                 await forget(db, chat, message)  # the code is a secret: never leave it in the chat
                 await redeem(db, session, settings, sender.id, extract_code(argument), typed=False)
+            elif argument == "subgroups":
+                found = await current_membership(db, sender.id)
+                if found:
+                    await subgroup_choice(db, session, settings, found[0], found[1])
+                else:
+                    await home(db, session, settings, sender.id)
             else:
                 await home(db, session, settings, sender.id)
             return True
@@ -395,7 +503,122 @@ async def handle(db, update, settings, topic=None):
             return True
         return False
     action = (callback.data or "").split(":", 2)[2]
-    if action == "home":
+    if action.startswith("demo_") and not demo_allowed(settings, sender.id):
+        await home(db, session, settings, sender.id)
+    elif action == "demo_home":
+        await demo_home(db, session)
+    elif action == "demo_headman":
+        await screen(
+            db,
+            session,
+            "Путь старосты · шаг 1 из 6\n\nВ кабинете появился раздел «Подгруппы по предметам». Начнём настройку.",
+            [[("Добавить предмет", "demo_h_add")], [("‹ К выбору пути", "demo_home")]],
+            "demo_headman",
+        )
+    elif action == "demo_h_add":
+        await screen(
+            db,
+            session,
+            "Путь старосты · шаг 2 из 6\n\nБот спрашивает название предмета. В реальном пути староста вводит его текстом.",
+            [[("Английский язык", "demo_h_subject")], [("‹ К выбору пути", "demo_home")]],
+            "demo_headman",
+        )
+    elif action == "demo_h_subject":
+        await screen(
+            db,
+            session,
+            "Путь старосты · шаг 3 из 6\n\nНа сколько подгрупп делится английский?",
+            [[("2 подгруппы", "demo_h_count")], [("‹ К выбору пути", "demo_home")]],
+            "demo_headman",
+        )
+    elif action == "demo_h_count":
+        await screen(
+            db,
+            session,
+            "Путь старосты · шаг 4 из 6\n\nСигналы первой подгруппы. Можно указать фамилию, номер, аудиторию и любые характерные слова.",
+            [
+                [("Иванова, 1 группа, ауд. 305", "demo_h_signal1")],
+                [("‹ К выбору пути", "demo_home")],
+            ],
+            "demo_headman",
+        )
+    elif action == "demo_h_signal1":
+        await screen(
+            db,
+            session,
+            "Путь старосты · шаг 5 из 6\n\nТеперь сигналы второй подгруппы.",
+            [[("Петров, 2 группа", "demo_h_signal2")], [("‹ К выбору пути", "demo_home")]],
+            "demo_headman",
+        )
+    elif action == "demo_h_signal2":
+        await screen(
+            db,
+            session,
+            "Путь старосты · шаг 6 из 6\n\nИИ предложил названия:\n1. Гр. 1 · Иванова\n2. Гр. 2 · Петров\n\nПеред сохранением каждое название можно изменить.",
+            [[("Сохранить демо-настройку", "demo_h_save")], [("‹ К выбору пути", "demo_home")]],
+            "demo_headman",
+        )
+    elif action == "demo_h_save":
+        await screen(
+            db,
+            session,
+            "Путь старосты пройден.\n\nВ реальном сценарии настройка сохранится, а существующие студенты получат личную кнопку выбора подгруппы.",
+            [
+                [("Пройти заново", "demo_headman")],
+                [("Пройти как студент", "demo_student")],
+                [("‹ К выбору пути", "demo_home")],
+            ],
+            "demo_headman_done",
+        )
+    elif action == "demo_student":
+        await screen(
+            db,
+            session,
+            "Путь студента · шаг 1 из 2\n\nГотово! Вы подключены к «Демо-группе».\n\nК какой подгруппе по предмету «Английский язык» вы относитесь?",
+            [
+                [("Гр. 1 · Иванова", "demo_s_eng1")],
+                [("Гр. 2 · Петров", "demo_s_eng2")],
+                [("‹ К выбору пути", "demo_home")],
+            ],
+            "demo_student",
+        )
+    elif action in {"demo_s_eng1", "demo_s_eng2"}:
+        english = "Гр. 1 · Иванова" if action.endswith("1") else "Гр. 2 · Петров"
+        await screen(
+            db,
+            session,
+            "Путь студента · шаг 2 из 2\n\nК какой подгруппе по предмету «Информатика» вы относитесь?",
+            [
+                [("Гр. 1 · Сидоров", "demo_s_inf1")],
+                [("Гр. 2 · Орлова", "demo_s_inf2")],
+                [("‹ К выбору пути", "demo_home")],
+            ],
+            "demo_student",
+            {"english": english},
+        )
+    elif action in {"demo_s_inf1", "demo_s_inf2"}:
+        data = json.loads(session.payload)
+        informatics = "Гр. 1 · Сидоров" if action.endswith("1") else "Гр. 2 · Орлова"
+        await demo_student_summary(db, session, data["english"], informatics)
+    elif action == "demo_s_change":
+        data = json.loads(session.payload)
+        await screen(
+            db,
+            session,
+            "Изменение выбора\n\nВыберите другую подгруппу по английскому.",
+            [
+                [("Гр. 1 · Иванова", "demo_s_re_eng1")],
+                [("Гр. 2 · Петров", "demo_s_re_eng2")],
+                [("‹ Назад", "demo_student")],
+            ],
+            "demo_student_change",
+            data,
+        )
+    elif action in {"demo_s_re_eng1", "demo_s_re_eng2"}:
+        data = json.loads(session.payload)
+        english = "Гр. 1 · Иванова" if action.endswith("1") else "Гр. 2 · Петров"
+        await demo_student_summary(db, session, english, data["informatics"])
+    elif action == "home":
         await home(db, session, settings, sender.id)
     elif action == "student":
         await join(db, session)
@@ -421,6 +644,49 @@ async def handle(db, update, settings, topic=None):
     elif action == "cabinet":
         if not await open_cabinet(db, sender.id):
             await home(db, session, settings, sender.id)
+    elif action == "subgroups":
+        found = await current_membership(db, sender.id)
+        if found:
+            await subgroup_choice(db, session, settings, found[0], found[1])
+        else:
+            await home(db, session, settings, sender.id)
+    elif session.step == "subgroups" and action.startswith("subgroup_pick_"):
+        data = json.loads(session.payload)
+        found = await current_membership(db, sender.id)
+        if not found or str(found[0].id) != data.get("member_id"):
+            await home(db, session, settings, sender.id)
+        else:
+            index = int(action.removeprefix("subgroup_pick_"))
+            await subgroups.choose(
+                db,
+                found[0],
+                uuid.UUID(data["split_id"]),
+                uuid.UUID(data["subgroups"][index]),
+            )
+            await subgroup_choice(db, session, settings, found[0], found[1])
+    elif session.step == "subgroups_done" and action.startswith("subgroup_change_"):
+        data = json.loads(session.payload)
+        found = await current_membership(db, sender.id)
+        if not found or str(found[0].id) != data.get("member_id"):
+            await home(db, session, settings, sender.id)
+        else:
+            split_id = uuid.UUID(data["splits"][int(action.removeprefix("subgroup_change_"))])
+            split, choices = next(
+                pair for pair in await subgroups.splits(db, found[1].id) if pair[0].id == split_id
+            )
+            await screen(
+                db,
+                session,
+                f"Выберите подгруппу по предмету «{split.subject_name}».",
+                [[(row.name, f"subgroup_pick_{n}")] for n, row in enumerate(choices)]
+                + [[("‹ Назад", "subgroups")]],
+                "subgroups",
+                {
+                    "member_id": str(found[0].id),
+                    "split_id": str(split.id),
+                    "subgroups": [str(row.id) for row in choices],
+                },
+            )
     elif action in INFO_TOPICS:
         await topic_screen(db, session, settings, INFO_TOPICS[action])
     else:

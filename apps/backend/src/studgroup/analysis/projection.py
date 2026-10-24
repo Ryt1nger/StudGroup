@@ -7,6 +7,7 @@ from datetime import UTC, timedelta
 
 from sqlalchemy import exists, select
 
+from studgroup import subgroups
 from studgroup.analysis.card_editor import DESCRIPTION_ATTACHMENT_ONLY, DESCRIPTION_PENDING
 from studgroup.analysis.linking import PENDING_INTEGRATION
 from studgroup.models import (
@@ -31,8 +32,9 @@ def utc(value):
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def visible_title(item):
-    if item.audience_scope == "subgroup" and item.audience_label:
+def visible_title(item, subgroup_known=False):
+    # A configured subgroup is shown as its own chip, so only an unconfigured label stays in text.
+    if item.audience_scope == "subgroup" and item.audience_label and not subgroup_known:
         return f"[{item.audience_label}] {item.title}"[:255]
     return item.title
 
@@ -115,7 +117,14 @@ async def project_item(db, item, now, *, writer_mode="shadow", emit_notification
     expected_entity_type = "homework" if item.destination == "task" else "deadline"
     if link and link.entity_type != expected_entity_type:
         return ProjectionResult("type_change_blocked", link.entity_type, link.entity_id)
-    title = visible_title(item)
+    subgroup_id, unresolved = await subgroups.assign(
+        db,
+        item.group_id,
+        item.subject,
+        item.audience_label if item.audience_scope == "subgroup" else None,
+        "\n".join(row.text or "" for row in sources),
+    )
+    title = visible_title(item, subgroup_id is not None)
     if item.destination == "task":
         row = await db.get(Homework, link.entity_id, with_for_update=True) if link else None
         if row is None and link is None:
@@ -152,9 +161,10 @@ async def project_item(db, item, now, *, writer_mode="shadow", emit_notification
         row.status = "cancelled" if item.state == "cancelled" else "published"
         row.cancelled_at = now if item.state == "cancelled" else None
         row.urgency = "normal"
+        row.subgroup_id = subgroup_id
         row.verification_state = (
             "needs_clarification"
-            if json.loads(item.attention_reasons)
+            if json.loads(item.attention_reasons) or unresolved
             else "inferred"
             if item.deadline_basis == "schedule_inferred"
             else "from_group_message"
@@ -206,7 +216,8 @@ async def project_item(db, item, now, *, writer_mode="shadow", emit_notification
         row.window_start = None
         row.window_end = None
         row.date_hint = None
-        row.needs_clarification = bool(json.loads(item.attention_reasons))
+        row.subgroup_id = subgroup_id
+        row.needs_clarification = bool(json.loads(item.attention_reasons)) or unresolved
         row.source_message_ids = json.dumps([source.telegram_message_id for source in sources])
         row.cancelled_at = now if item.state == "cancelled" else None
         row.delete_at = max(utc(source.delete_at), utc(now) + timedelta(days=90))

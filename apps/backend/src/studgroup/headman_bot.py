@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 
-from studgroup import bot_start, headman_schedule, telegram_files
+from studgroup import bot_start, headman_schedule, subgroups, telegram_files
 from studgroup import headman_domain as domain
 from studgroup.api import schedule_data
 from studgroup.bot_admin import enqueue, say
@@ -27,6 +27,8 @@ from studgroup.models import (
     Homework,
     Membership,
     RawMessage,
+    Subgroup,
+    SubjectSplit,
     User,
 )
 from studgroup.schedule_audit import schedule_changed
@@ -70,6 +72,7 @@ async def menu(db, session, group):
             [("Домашние задания", "tasks")],
             [("КТ", "control_points")],
             [("Расписание", "schedule")],
+            [("Подгруппы по предметам", "subgroup_settings")],
             [("Участники", "members")],
             [("Сводка группы", "summary")],
             [("Настройки", "settings")],
@@ -262,21 +265,33 @@ async def detail(db, session, group, key):
         text += "Требует проверки: ИИ не уверен в распознавании.\n"
     if kind == "e" and row.window_end:
         text += f"Период до {utc(row.window_end).astimezone(ZoneInfo(group.timezone)).strftime('%d.%m.%Y %H:%M')}\n"
+    subject = row.subject_name if kind == "h" else row.subject
+    split = subgroups.split_for(await subgroups.splits(db, group.id), group.id, subject)
+    subgroup = await db.get(Subgroup, row.subgroup_id) if row.subgroup_id else None
+    if split:
+        text += (
+            f"Подгруппа: {subgroup.name if subgroup else 'не определена — карточка видна всем'}\n"
+        )
     text += f"\nИсточник: {raw.text[:1500] if raw and utc(raw.delete_at) > datetime.now(UTC) else 'вручную или срок хранения истёк'}"
+    buttons = [
+        [("Подтвердить", "confirm")],
+        [("Предмет", "edit_subject"), ("Название", "edit_title")],
+        [("Описание", "edit_description"), ("Срок", "edit_deadline")],
+    ]
+    if split:
+        buttons.append([("Назначить подгруппу", "subgroup_assign")])
+    buttons += [
+        [("Добавить материал-ссылку", "material"), ("Добавить файл", "file")],
+        [("Это КТ" if kind == "h" else "Это ДЗ", "convert"), ("Объединить", "merge")],
+        [("Отменить", "cancel"), ("Не задание", "reject")],
+        [("Вернуться позже", "defer")],
+        back(),
+    ]
     await screen(
         db,
         session,
         text,
-        [
-            [("Подтвердить", "confirm")],
-            [("Предмет", "edit_subject"), ("Название", "edit_title")],
-            [("Описание", "edit_description"), ("Срок", "edit_deadline")],
-            [("Добавить материал-ссылку", "material"), ("Добавить файл", "file")],
-            [("Это КТ" if kind == "h" else "Это ДЗ", "convert"), ("Объединить", "merge")],
-            [("Отменить", "cancel"), ("Не задание", "reject")],
-            [("Вернуться позже", "defer")],
-            back(),
-        ],
+        buttons,
         "detail",
         {"key": key, "revision": row.revision},
     )
@@ -471,6 +486,72 @@ async def members_screen(db, session, group, member, page=0):
     )
 
 
+async def subgroup_settings_screen(db, session, group):
+    configured = await subgroups.splits(db, group.id)
+    lines = ["Подгруппы по предметам"]
+    if configured:
+        lines.append("Откройте предмет, чтобы изменить названия или удалить разделение.")
+    else:
+        lines.append("Укажите предметы, по которым студенты учатся в разных подгруппах.")
+    await screen(
+        db,
+        session,
+        "\n\n".join(lines),
+        [
+            [(f"{split.subject_name} · {len(rows)}"[:55], f"subgroup_open_{n}")]
+            for n, (split, rows) in enumerate(configured)
+        ]
+        + [[("Добавить предмет", "subgroup_add")], back()],
+        "subgroup_list",
+        {"splits": [str(split.id) for split, _ in configured]},
+    )
+
+
+async def subgroup_detail(db, session, group, split_id):
+    found = next(
+        (
+            (split, rows)
+            for split, rows in await subgroups.splits(db, group.id)
+            if split.id == split_id
+        ),
+        None,
+    )
+    if found is None:
+        raise domain.StError("Настройка уже изменилась. Откройте список заново.")
+    split, rows = found
+    text = [f"{split.subject_name}", "Сигналы помогают распознавать подгруппу в сообщениях:"]
+    text += [f"{row.position}. {row.name} — {', '.join(subgroups.signals_of(row))}" for row in rows]
+    await screen(
+        db,
+        session,
+        "\n".join(text),
+        [
+            [(f"Переименовать · {row.name}"[:55], f"subgroup_rename_{n}")]
+            for n, row in enumerate(rows)
+        ]
+        + [[("Удалить разделение", "subgroup_delete")], [("‹ К предметам", "subgroup_settings")]],
+        "subgroup_detail",
+        {"split_id": str(split.id), "subgroups": [str(row.id) for row in rows]},
+    )
+
+
+async def subgroup_draft_screen(db, session, data):
+    lines = [f"{data['subject']} — проверьте названия:"]
+    lines += [f"{n + 1}. {name}" for n, name in enumerate(data["names"])]
+    await screen(
+        db,
+        session,
+        "\n".join(lines),
+        [
+            [(f"Изменить · {name}"[:55], f"subgroup_draft_name_{n}")]
+            for n, name in enumerate(data["names"])
+        ]
+        + [[("Сохранить", "subgroup_save")], [("‹ Отмена", "subgroup_settings")]],
+        "subgroup_draft",
+        data,
+    )
+
+
 async def handle(db, update, settings):
     callback = update.callback_query
     message = callback.message if callback else update.message
@@ -575,6 +656,81 @@ async def handle(db, update, settings):
         if action == "groups":
             await groups(db, session)
             return True
+        if action == "subgroup_settings" or session.step in {
+            "subgroup_list",
+            "subgroup_detail",
+            "subgroup_delete",
+            "subgroup_draft",
+        }:
+            user, member, group = await domain.access(db, sender.id, session.group_id)
+        if action == "subgroup_settings":
+            domain.headman_only(member)
+            await subgroup_settings_screen(db, session, group)
+            return True
+        if session.step == "subgroup_list" and action == "subgroup_add":
+            domain.headman_only(member)
+            await ask(
+                db,
+                session,
+                "Как называется предмет с разделением на подгруппы?",
+                {},
+                "subgroup_subject",
+            )
+            return True
+        if session.step == "subgroup_list" and action.startswith("subgroup_open_"):
+            domain.headman_only(member)
+            index = int(action.removeprefix("subgroup_open_"))
+            await subgroup_detail(db, session, group, uuid.UUID(data["splits"][index]))
+            return True
+        if session.step == "subgroup_detail" and action.startswith("subgroup_rename_"):
+            domain.headman_only(member)
+            index = int(action.removeprefix("subgroup_rename_"))
+            await ask(
+                db,
+                session,
+                "Новое короткое название подгруппы:",
+                {**data, "subgroup_id": data["subgroups"][index]},
+                "subgroup_existing_name",
+            )
+            return True
+        if session.step == "subgroup_detail" and action == "subgroup_delete":
+            domain.headman_only(member)
+            await screen(
+                db,
+                session,
+                "Удалить разделение по этому предмету? Карточки снова станут общими для всей группы.",
+                [[("Удалить", "subgroup_delete_yes")], [("‹ Отмена", "subgroup_settings")]],
+                "subgroup_delete",
+                data,
+            )
+            return True
+        if session.step == "subgroup_delete" and action == "subgroup_delete_yes":
+            domain.headman_only(member)
+            await subgroups.delete_split(db, group.id, uuid.UUID(data["split_id"]))
+            await subgroup_settings_screen(db, session, group)
+            return True
+        if session.step == "subgroup_draft" and action.startswith("subgroup_draft_name_"):
+            domain.headman_only(member)
+            await ask(
+                db,
+                session,
+                "Новое короткое название подгруппы:",
+                {**data, "name_index": int(action.removeprefix("subgroup_draft_name_"))},
+                "subgroup_draft_name",
+            )
+            return True
+        if session.step == "subgroup_draft" and action == "subgroup_save":
+            domain.headman_only(member)
+            entries = list(zip(data["names"], data["signals"], strict=True))
+            split = await subgroups.create_split(db, group, data["subject"], entries)
+            await subgroups.notify_students(db, settings, group, split)
+            await screen(
+                db,
+                session,
+                "Подгруппы сохранены. Студенты получили просьбу выбрать свою.",
+                [[("К предметам", "subgroup_settings")], back()],
+            )
+            return True
         if session.step == "groups" and action.startswith("group"):
             selected = data["groups"][int(action[5:])]
             user, member, group = await domain.access(db, sender.id, uuid.UUID(selected))
@@ -649,6 +805,38 @@ async def handle(db, update, settings):
                 await ask(
                     db, session, f"Новое значение: {field}. Отправь текст.", data, "edit_" + field
                 )
+        elif session.step == "detail" and action == "subgroup_assign":
+            kind, row = await domain.entity(db, group, data["key"])
+            subject = row.subject_name if kind == "h" else row.subject
+            split = subgroups.split_for(await subgroups.splits(db, group.id), group.id, subject)
+            if split is None:
+                raise domain.StError("Для предмета больше не настроены подгруппы.")
+            await screen(
+                db,
+                session,
+                "Для какой подгруппы эта карточка?",
+                [[(row.name, f"subgroup_card_{n}")] for n, row in enumerate(split[1])]
+                + [[("Общая для всех", "subgroup_card_all")], back()],
+                "subgroup_card",
+                {
+                    **data,
+                    "subgroups": [str(row.id) for row in split[1]],
+                },
+            )
+        elif session.step == "subgroup_card" and action.startswith("subgroup_card_"):
+            chosen = action.removeprefix("subgroup_card_")
+            subgroup_id = None if chosen == "all" else uuid.UUID(data["subgroups"][int(chosen)])
+            await domain.mutate(
+                db,
+                group,
+                user,
+                member,
+                data["key"],
+                data["revision"],
+                "subgroup",
+                {"subgroup_id": subgroup_id},
+            )
+            await detail(db, session, group, data["key"])
         elif session.step == "detail" and action == "file":
             await ask_file(db, session, data)
         elif session.step == "detail" and action == "material":
@@ -979,7 +1167,7 @@ async def handle(db, update, settings):
             async with db.begin_nested():
                 await apply(db, session, group, user, member, data, settings)
         elif session.step == "text" and not callback:
-            await typed(db, session, group, user, member, data, text, message)
+            await typed(db, session, group, user, member, data, text, message, settings)
         else:
             raise domain.StError("Откройте раздел заново кнопками главного меню.")
     except (domain.StError, ValueError, IndexError, KeyError, ZoneInfoNotFoundError) as error:
@@ -1070,13 +1258,76 @@ async def file_received(db, session, data, message):
     )
 
 
-async def typed(db, session, group, user, member, data, text, message):
+async def typed(db, session, group, user, member, data, text, message, settings):
     field = data["field"]
     if field == "file":
         return await file_received(db, session, data, message)
     if not text or len(text) > 12000:
         raise domain.StError("Нужен текст до 12 000 символов.")
-    if field == "search":
+    if field == "subgroup_subject":
+        domain.headman_only(member)
+        if len(text) > 255:
+            raise domain.StError("Название предмета — до 255 символов.")
+        await ask(
+            db,
+            session,
+            "На сколько подгрупп делится предмет? От 2 до 6.",
+            {"subject": text},
+            "subgroup_count",
+        )
+    elif field == "subgroup_count":
+        domain.headman_only(member)
+        count = int(text)
+        if not 2 <= count <= subgroups.MAX_SUBGROUPS:
+            raise domain.StError("Количество подгрупп — от 2 до 6.")
+        await ask(
+            db,
+            session,
+            "Сигналы для подгруппы 1 через запятую: фамилия преподавателя, номер группы, аудитория или другие слова из сообщений.",
+            {**data, "count": count, "signals": []},
+            "subgroup_signals",
+        )
+    elif field == "subgroup_signals":
+        domain.headman_only(member)
+        parsed = subgroups.parse_signals(text)
+        if not parsed:
+            raise domain.StError("Укажите хотя бы один сигнал.")
+        signals = [*data["signals"], parsed]
+        if len(signals) < data["count"]:
+            await ask(
+                db,
+                session,
+                f"Сигналы для подгруппы {len(signals) + 1} через запятую:",
+                {**data, "signals": signals},
+                "subgroup_signals",
+            )
+        else:
+            names = await subgroups.suggest_names(settings, data["subject"], signals)
+            await subgroup_draft_screen(db, session, {**data, "signals": signals, "names": names})
+    elif field == "subgroup_draft_name":
+        domain.headman_only(member)
+        name = " ".join(text.split())
+        if len(name) > subgroups.MAX_NAME:
+            raise domain.StError("Название подгруппы — до 40 символов.")
+        names = list(data["names"])
+        names[data["name_index"]] = name
+        if len({subgroups.match_key(value) for value in names}) != len(names):
+            raise domain.StError("Названия подгрупп должны отличаться.")
+        await subgroup_draft_screen(db, session, {**data, "names": names})
+    elif field == "subgroup_existing_name":
+        domain.headman_only(member)
+        subgroup = await db.get(Subgroup, uuid.UUID(data["subgroup_id"]))
+        if subgroup is None:
+            raise domain.StError("Подгруппа уже удалена.")
+        split = await db.get(SubjectSplit, subgroup.split_id)
+        if split is None or split.group_id != group.id:
+            raise domain.StError("Подгруппа принадлежит другой группе.")
+        name = " ".join(text.split())
+        if not name or len(name) > subgroups.MAX_NAME:
+            raise domain.StError("Название подгруппы — от 1 до 40 символов.")
+        subgroup.name = name
+        await subgroup_detail(db, session, group, split.id)
+    elif field == "search":
         await listing(
             db,
             session,

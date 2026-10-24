@@ -141,6 +141,12 @@ confirms none, subject and subject_id stay null: never guess and never take the 
 use an id that is not in the catalog. If the catalog says complete=false, a subject missing from it
 may be named in subject (subject_id null) only when the messages state it explicitly. Without a
 catalog subject_id is always null.
+Subgroups: a catalog subject that lists subgroups is taught to this group in separate subgroups,
+each with the signals the headman gave (teacher's surname, group number, room and the like). When
+the cited or neighbouring messages show which subgroup the item is for (a listed signal, the
+teacher, "вторая подгруппа"), set audience=subgroup and audience.label to that subgroup's name
+exactly as listed. When the item is for all of them, or nothing shows which one, use
+audience=group: never guess a subgroup.
 Never add quotes, source_id, message_id, type or explanatory wrapper fields."""
 EXTRACTION_SYSTEM_PROMPT = _EXTRACTION_INSTRUCTIONS + "\n\n" + contract_block()
 

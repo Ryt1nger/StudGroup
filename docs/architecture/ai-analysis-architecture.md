@@ -341,9 +341,10 @@ unknown optional fields remain empty. A card is held only when a student could n
 understand the required action/event or when publishing it could materially mislead.
 
 Subgroups use a deliberately limited first version. If the source explicitly gives
-different assignments for subgroup 1 and subgroup 2, the engine creates separate cards
-with visible subgroup labels. Both remain visible to the whole group until membership and
-personal filtering are implemented later. A general assignment has no subgroup label.
+different assignments for subgroup 1 and subgroup 2, the engine creates separate cards. When the
+subject has configured subgroups, each recognised card is filtered to members of that subgroup; an
+unrecognised subgroup remains visible to the whole group and enters editor review. A general
+assignment has no subgroup target.
 
 ## 7. Proposed internal contracts
 

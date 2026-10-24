@@ -1,5 +1,13 @@
 # Contract changelog
 
+## 0.18.0 — 2026-10-24
+
+- Added optional nullable `subgroup` (`id`, `name`) to homework and academic-deadline cards. The
+  server filters cards to the student's selected subgroup; cards without a recognised subgroup and
+  all cards for students who have not answered remain visible.
+- Added `GET /subgroups` and `PUT /subgroups/{split_id}` so the Mini App profile can list and change
+  the caller's per-subject subgroup choices. Additive; subgroup setup remains in the headman bot.
+
 ## 0.17.0 — 2026-10-23
 
 - `DELETE /homework/{id}` and `DELETE /deadlines/{id}` now answer 200 with `{ undo_id }` instead of
