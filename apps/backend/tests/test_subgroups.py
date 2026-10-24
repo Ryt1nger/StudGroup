@@ -227,3 +227,46 @@ def test_homework_list_hides_only_the_other_chosen_subgroup(client):
     assert titles == {"Для Ивановой", "Общее"}
     labelled = next(row for row in response.json()["items"] if row["title"] == "Для Ивановой")
     assert labelled["subgroup"]["name"] == "Иванова"
+
+
+def test_owner_can_preview_headman_path_without_writing_data(foreman_fixture):  # noqa: F811
+    foreman_fixture.app.state.settings.owner_telegram_user_id = 1
+    deliver(foreman_fixture, "/test_subgroups")
+    assert labels(foreman_fixture)[:2] == ["Пройти как староста", "Пройти как студент"]
+
+    tap(foreman_fixture, "как староста", uid=1)
+    for label in [
+        "Добавить предмет",
+        "Английский язык",
+        "2 подгруппы",
+        "Иванова",
+        "Петров",
+        "Сохранить демо-настройку",
+    ]:
+        tap(foreman_fixture, label, uid=1)
+    assert "Путь старосты пройден" in last(foreman_fixture)["text"]
+
+    async def count(db):
+        return len((await db.scalars(select(SubjectSplit))).all())
+
+    assert run(foreman_fixture, count) == 0
+
+
+def test_owner_can_preview_student_path_and_change_choice(foreman_fixture):  # noqa: F811
+    foreman_fixture.app.state.settings.bot_admin_user_id = 1
+    deliver(foreman_fixture, "/test_subgroups")
+    tap(foreman_fixture, "как студент", uid=1)
+    tap(foreman_fixture, "Гр. 1 · Иванова", uid=1)
+    tap(foreman_fixture, "Гр. 2 · Орлова", uid=1)
+    assert "Английский язык: Гр. 1 · Иванова" in last(foreman_fixture)["text"]
+    assert "Информатика: Гр. 2 · Орлова" in last(foreman_fixture)["text"]
+    tap(foreman_fixture, "Изменить английский", uid=1)
+    tap(foreman_fixture, "Гр. 2 · Петров", uid=1)
+    assert "Английский язык: Гр. 2 · Петров" in last(foreman_fixture)["text"]
+
+
+def test_subgroup_preview_is_owner_only(foreman_fixture):  # noqa: F811
+    foreman_fixture.app.state.settings.owner_telegram_user_id = 1
+    deliver(foreman_fixture, "/test_subgroups", uid=33)
+    assert "только владельцу" in last(foreman_fixture)["text"]
+    assert labels(foreman_fixture) == ["‹ В начало"]

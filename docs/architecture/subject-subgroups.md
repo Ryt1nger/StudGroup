@@ -39,3 +39,10 @@ not a security or correctness boundary.
 The API change is additive and documented in contract 0.18.0. The Telegram setup flow remains the
 authoritative administrative interface; no public API lets a student create or alter group-wide
 subgroup definitions.
+
+## Owner test command
+
+`/test_subgroups` opens a read-only click-through of both the headman setup and student selection
+journeys. It is accepted only from `OWNER_TELEGRAM_USER_ID` or `BOT_ADMIN_USER_ID`; other users see
+an access notice. The demo uses fixed example subjects and never writes subgroup definitions,
+member choices, cards, or notifications.
