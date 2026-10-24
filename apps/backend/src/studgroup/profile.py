@@ -15,8 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, database
-from studgroup.homework import user_id
-from studgroup.models import User, UserProfile
+from studgroup.models import User, UserProfile, WebSession
+from studgroup.security import token_hash
 
 router = APIRouter(prefix="/v1")
 
@@ -129,13 +129,22 @@ def representation(user: User, row: UserProfile | None):
 
 
 async def current(db, authorization):
-    uid = await user_id(db, authorization)
+    """The caller and their profile row; an absent, unknown or expired session is a 401 like elsewhere."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise ApiError("unauthenticated", "Откройте приложение из Telegram")
+    credential = await db.get(WebSession, token_hash(authorization[7:]))
+    expiry = credential.expires_at if credential else None
+    if expiry is not None and expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=UTC)
+    if credential is None or expiry <= datetime.now(UTC):
+        raise ApiError("session_expired", "Откройте приложение заново из Telegram")
+    uid = credential.user_id
     return await db.get(User, uid), await db.get(UserProfile, uid)
 
 
 @router.get("/profile")
 async def read_profile(
-    db: Annotated[AsyncSession, Depends(database)], authorization: str = Header()
+    db: Annotated[AsyncSession, Depends(database)], authorization: str | None = Header(None)
 ):
     user, row = await current(db, authorization)
     return representation(user, row)
@@ -146,7 +155,7 @@ async def update_profile(
     body: UpdateProfile,
     request: Request,
     db: Annotated[AsyncSession, Depends(database)],
-    authorization: str = Header(),
+    authorization: str | None = Header(None),
 ):
     user, row = await current(db, authorization)
     fields = body.model_fields_set

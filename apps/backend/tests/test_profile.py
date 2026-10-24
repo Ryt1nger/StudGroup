@@ -1,6 +1,7 @@
 """The caller's own profile: contact data, study platform and notification preferences."""
 
 import asyncio
+import uuid
 
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
@@ -14,7 +15,10 @@ HEADERS = {"Authorization": "Bearer valid"}
 
 
 def test_an_empty_profile_has_calm_defaults_and_needs_a_session(client):
-    assert client.get("/v1/profile").status_code in (401, 422)
+    assert client.get("/v1/profile").status_code == 401
+    bad = client.get("/v1/profile", headers={"Authorization": "Bearer nope"})
+    assert bad.status_code == 401 and bad.json()["error"]["code"] == "session_expired"
+    assert client.patch("/v1/profile", json={"first_name": "А"}).status_code == 401
     data = client.get("/v1/profile", headers=HEADERS).json()
     assert data["first_name"] is None and data["sdu"]["password_set"] is False
     assert data["settings"]["enabled"] is True and data["settings"]["lessons"] is False
@@ -104,3 +108,29 @@ def test_the_browser_may_send_patch_from_the_web_app(client):
     assert response.status_code == 200
     allowed = response.headers["access-control-allow-methods"]
     assert "PATCH" in allowed and "DELETE" in allowed
+
+
+def test_no_v1_route_crashes_on_an_unknown_session_token(client):
+    """An expired session must always end in 401/403/404/422, never in a server error."""
+    skipped = {"/v1/session/bootstrap", "/v1/telegram/webhook"}
+    bad = {"Authorization": "Bearer unknown-token"}
+    failures = []
+    for route in client.app.routes:
+        path = getattr(route, "path", "")
+        if not path.startswith("/v1") or path in skipped:
+            continue
+        concrete = path.replace("{homework_id}", str(uuid.uuid4()))
+        concrete = concrete.replace("{deadline_id}", str(uuid.uuid4()))
+        concrete = concrete.replace("{notification_id}", str(uuid.uuid4()))
+        concrete = concrete.replace("{undo_id}", str(uuid.uuid4()))
+        concrete = concrete.replace("{attachment_id}", str(uuid.uuid4()))
+        concrete = concrete.replace("{lesson_id}", "x")
+        if "{" in concrete:
+            continue
+        for method in getattr(route, "methods", set()) - {"HEAD", "OPTIONS"}:
+            response = client.request(
+                method, concrete, headers=bad, json={} if method != "GET" else None
+            )
+            if response.status_code >= 500:
+                failures.append((method, path, response.status_code))
+    assert failures == []
