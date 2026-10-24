@@ -15,6 +15,7 @@ import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
 import { WeekStrip, weekKeys } from '../shared/WeekStrip';
 import { lessonsOfDay } from '../today/DayView';
+import { lessonAt, positionSchedule } from './schedulePosition';
 
 const HR0 = 8;
 const HR1 = 21;
@@ -87,27 +88,6 @@ function Event({ lesson, timeZone, nowMs, isToday }: { lesson: LessonOccurrence;
   );
 }
 
-/** Scrolls to the current-time line (today), else to the lesson in progress, the next one, or the last. */
-function anchor(scroll: HTMLElement, nowMs: number) {
-  const line = scroll.querySelector<HTMLElement>('.nowline');
-  if (line) {
-    const pinnedHeight = scroll.querySelector<HTMLElement>('.pinned')?.offsetHeight ?? 0;
-    const at = line.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop - pinnedHeight - 140;
-    scroll.scrollTop = Math.max(0, at);
-    return;
-  }
-  const events = [...scroll.querySelectorAll<HTMLElement>('.ev')];
-  if (!events.length) return;
-  const target =
-    events.find((e) => Number(e.dataset.start) <= nowMs && nowMs < Number(e.dataset.end)) ??
-    events.find((e) => Number(e.dataset.start) > nowMs) ??
-    events[events.length - 1]!;
-  // The header above the calendar is pinned, so the lesson is placed just under it.
-  const pinned = scroll.querySelector<HTMLElement>('.pinned')?.offsetHeight ?? 0;
-  const y = target.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop - pinned - 40;
-  scroll.scrollTop = Math.max(0, y);
-}
-
 export function ScheduleScreen() {
   const timeZone = useGroupTimeZone();
   const { state } = useSession();
@@ -127,12 +107,21 @@ export function ScheduleScreen() {
   const marked = new Set(data ? days.filter((d) => lessonsOfDay(data.lessons, d, timeZone).length > 0) : []);
 
   useLayoutEffect(() => {
-    const id = `${key}:${lessons.length}`;
-    if (!data || anchored.current === id || !lessons.length) return;
+    if (!data) return;
+    const anchorLessons = lessonsOfDay(data.lessons, key, timeZone);
+    const id = `${key}:${anchorLessons.map((lesson) => `${lesson.id}:${lesson.starts_at}:${lesson.ends_at}`).join('|')}`;
+    if (anchored.current === id || !anchorLessons.length) return;
     anchored.current = id;
-    const scroll = ref.current?.closest<HTMLElement>('.scroll');
-    if (scroll) anchor(scroll, nowMs);
-  }, [data, key, lessons.length, nowMs]);
+    const position = () => {
+      const scroll = ref.current?.closest<HTMLElement>('.scroll');
+      if (scroll) positionSchedule(scroll, nowMs);
+    };
+    // React Router and Telegram WebView may settle their viewport after the layout effect. Position
+    // once immediately and once on the next frame so their own restoration cannot undo the anchor.
+    position();
+    const frame = requestAnimationFrame(position);
+    return () => cancelAnimationFrame(frame);
+  }, [data, key, nowMs, timeZone]);
 
   if (!allowed) {
     return (
@@ -149,6 +138,7 @@ export function ScheduleScreen() {
   const nowM = minutesOf(clock);
   const nowOn = selected === 0 && nowM > 0 && nowM < (HR1 - HR0) * 60;
   const nowY = (nowM * PX) / 60;
+  const lineBehindLesson = nowOn && lessonAt(lessons, nowMs);
   const hours = Array.from({ length: HR1 - HR0 + 1 }, (_, i) => {
     const top = i * PX;
     const covered = nowOn && Math.abs(nowY - top) < 19;
@@ -177,7 +167,7 @@ export function ScheduleScreen() {
       {data && lessons.length > 0 ? (
         <div ref={ref} className="tline" style={{ height: (HR1 - HR0) * PX + 20 }}>
           {hours}
-          {nowOn ? <div className="nowline" style={{ top: nowY }}><span>{clock}</span></div> : null}
+          {nowOn ? <div className={`nowline${lineBehindLesson ? ' behind-event' : ''}`} style={{ top: nowY }}><span>{clock}</span></div> : null}
           {lessons.map((lesson) => <Event key={lesson.id} lesson={lesson} timeZone={data.group_timezone} nowMs={nowMs} isToday={selected === 0} />)}
         </div>
       ) : null}

@@ -52,6 +52,7 @@ export type HomeworkListFilter = NonNullable<
 export const api = {
   bootstrap: (initData: string): Promise<SessionBootstrapResponse> =>
     unwrap(bootstrapSession({ body: { init_data: initData } })),
+  profile: (): Promise<UserProfile> => unwrap(getProfile()),
   recheck: (): Promise<SessionContext> => unwrap(recheckMembership()),
   today: (day: 'today' | 'tomorrow' = 'today'): Promise<TodayResponse> =>
     unwrap(getToday({ query: { day } })),
@@ -95,7 +96,7 @@ export const api = {
 export function useProfileQuery(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ['profile'],
-    queryFn: (): Promise<UserProfile> => unwrap(getProfile()),
+    queryFn: api.profile,
     staleTime: 60_000,
     enabled: options.enabled ?? true,
   });
