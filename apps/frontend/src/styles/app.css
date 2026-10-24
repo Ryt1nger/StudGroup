@@ -151,6 +151,7 @@ a { color: inherit; text-decoration: none; }
 .ev .vid { color: var(--sc); display: grid; }
 .ev.now { box-shadow: 0 0 0 1.5px var(--sc); }
 .nowline { position: absolute; left: -52px; right: 0; border-top: 2px solid var(--accent); z-index: 0; pointer-events: none; }
+.nowline.behind-event { right: calc(100% - 6px); }
 .nowline span { position: absolute; left: -2px; top: -12px; padding: 3px 9px; border-radius: 99px; background: var(--accent); box-shadow: 0 2px 8px hsl(var(--hsl) / 0.45); color: var(--on-accent); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* subjects */

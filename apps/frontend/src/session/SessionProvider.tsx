@@ -54,6 +54,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const res = await api.bootstrap(adapter.initData);
         if (cancelled) return;
         setAccessToken(res.access_token);
+        // The profile may contain a name chosen in the app that differs from Telegram. Load it
+        // before rendering the shell, otherwise the Telegram name flashes for one request.
+        try {
+          await queryClient.fetchQuery({ queryKey: ['profile'], queryFn: api.profile, staleTime: 0, retry: false });
+        } catch {
+          // Profile data is optional for starting the app; mounted queries can retry it later.
+        }
+        if (cancelled) return;
         setState({ status: 'ready', session: res.session, expiresAt: res.expires_at, clock: makeClock(res.session) });
       } catch (error) {
         if (cancelled) return;
@@ -73,7 +81,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [adapter, attempt]);
+  }, [adapter, attempt, queryClient]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
