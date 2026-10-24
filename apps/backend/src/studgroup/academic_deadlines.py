@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from studgroup import subgroups
 from studgroup.api import ApiError, active_group, database, edit_permissions
 from studgroup.models import AcademicDeadline, Group, WebSession
 from studgroup.security import token_hash
@@ -42,6 +43,7 @@ async def representation(db, group, row, now):
         "kind": row.kind,
         "card_kind": enrichment["card_kind"],
         "subject": row.subject,
+        "subgroup": await subgroups.label(db, row.subgroup_id),
         "confirmed_subject": enrichment["confirmed_subject"],
         "title": row.title,
         "description": row.description,
@@ -63,7 +65,7 @@ async def representation(db, group, row, now):
     }
 
 
-async def items(db, group, now, archive=False, subject=None, review=False):
+async def items(db, group, now, archive=False, subject=None, review=False, hidden=frozenset()):
     rows = (
         await db.scalars(
             select(AcademicDeadline).where(
@@ -80,6 +82,7 @@ async def items(db, group, now, archive=False, subject=None, review=False):
         row
         for row in rows
         if archived(row, now, group.timezone) == archive
+        and row.subgroup_id not in hidden
         and (not review or row.needs_clarification)
         and (subject is None or normalized(row.subject) == normalized(subject))
     ]
@@ -128,7 +131,14 @@ async def list_deadlines(
     response = {
         "generated_at": now,
         "group_timezone": group.timezone,
-        "items": await items(db, group, now, archive, review=review),
+        "items": await items(
+            db,
+            group,
+            now,
+            archive,
+            review=review,
+            hidden=await subgroups.hidden(db, group.id, session.user_id),
+        ),
     }
     if editor:
         # Lets the client show the review tab only while there is something to review.
@@ -151,10 +161,10 @@ async def get_deadline(
             AcademicDeadline.delete_at > now,
         )
     )
-    if row is None:
+    session = await db.get(WebSession, token_hash(authorization[7:]))
+    if row is None or row.subgroup_id in await subgroups.hidden(db, group.id, session.user_id):
         raise ApiError("not_found", "Событие не найдено", 404)
     item = await representation(db, group, row, now)
-    session = await db.get(WebSession, token_hash(authorization[7:]))
     return {
         "generated_at": now,
         "group_timezone": group.timezone,

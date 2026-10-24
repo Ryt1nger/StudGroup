@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.17.0
+  version: 0.18.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -109,6 +109,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /subgroups:
+    get:
+      tags: [Membership]
+      operationId: listMySubgroups
+      summary: Subjects split into subgroups and the caller's current choices
+      responses:
+        "200":
+          description: Current active-group subgroup choices
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MySubgroupsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /subgroups/{split_id}:
+    put:
+      tags: [Membership]
+      operationId: chooseMySubgroup
+      summary: Choose or change the caller's subgroup for one subject
+      parameters:
+        - in: path
+          name: split_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChooseSubgroupRequest" }
+      responses:
+        "200":
+          description: Updated subgroup choices
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MySubgroupsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
   /schedule:
     get:
       tags: [Schedule]
@@ -1970,6 +2008,10 @@ components:
             ]
         card_kind: { $ref: "#/components/schemas/LearningCardKind" }
         subject: { type: string }
+        subgroup:
+          oneOf:
+            - $ref: "#/components/schemas/SubgroupRef"
+            - type: "null"
         confirmed_subject:
           oneOf:
             - $ref: "#/components/schemas/SubjectRef"
@@ -2176,6 +2218,10 @@ components:
           type: string
         subject:
           $ref: "#/components/schemas/SubjectRef"
+        subgroup:
+          oneOf:
+            - $ref: "#/components/schemas/SubgroupRef"
+            - type: "null"
         confirmed_subject:
           description: >-
             Confirmed subject for new clients. Null means that publication did not establish a
@@ -2248,6 +2294,39 @@ components:
             generated_at:
               type: string
               format: date-time
+    SubgroupRef:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    MySubgroupSubject:
+      type: object
+      additionalProperties: false
+      required: [split_id, subject, options, selected_subgroup_id]
+      properties:
+        split_id: { type: string, format: uuid }
+        subject: { $ref: "#/components/schemas/SubjectRef" }
+        options:
+          type: array
+          minItems: 2
+          items: { $ref: "#/components/schemas/SubgroupRef" }
+        selected_subgroup_id: { type: [string, "null"], format: uuid }
+    MySubgroupsResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/MySubgroupSubject" }
+    ChooseSubgroupRequest:
+      type: object
+      additionalProperties: false
+      required: [subgroup_id]
+      properties:
+        subgroup_id: { type: string, format: uuid }
     SubjectRef:
       type: object
       additionalProperties: false

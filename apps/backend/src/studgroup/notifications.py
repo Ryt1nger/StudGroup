@@ -5,13 +5,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header
-from sqlalchemy import func, select
+from sqlalchemy import func, select, true
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from studgroup import subgroups
 from studgroup.api import ApiError, active_group, database
 from studgroup.homework import user_id
-from studgroup.models import Group, Notification, NotificationRead
+from studgroup.models import AcademicDeadline, Group, Homework, Notification, NotificationRead
 
 router = APIRouter(prefix="/v1")
 
@@ -37,12 +38,31 @@ async def record_change(db, raw, entity, kind, now):
     )
 
 
+async def own_notifications(db, group_id, user):
+    """Condition that drops notifications about another subgroup's cards."""
+    hidden = await subgroups.hidden(db, group_id, user)
+    if not hidden:
+        return true()
+    cards = [
+        *(await db.scalars(select(Homework.id).where(Homework.subgroup_id.in_(hidden)))).all(),
+        *(
+            await db.scalars(
+                select(AcademicDeadline.id).where(AcademicDeadline.subgroup_id.in_(hidden))
+            )
+        ).all(),
+    ]
+    return (
+        Notification.entity_id.is_(None) | Notification.entity_id.not_in(cards) if cards else true()
+    )
+
+
 async def inbox(db, group, user):
     now = datetime.now(UTC)
+    mine = await own_notifications(db, group.id, user)
     rows = (
         await db.scalars(
             select(Notification)
-            .where(Notification.group_id == group.id, Notification.delete_at > now)
+            .where(Notification.group_id == group.id, Notification.delete_at > now, mine)
             .order_by(Notification.created_at.desc())
             .limit(50)
         )
@@ -60,6 +80,7 @@ async def inbox(db, group, user):
             select(func.count(Notification.id)).where(
                 Notification.group_id == group.id,
                 Notification.delete_at > now,
+                mine,
                 Notification.id.not_in(
                     select(NotificationRead.notification_id).where(NotificationRead.user_id == user)
                 ),
@@ -98,11 +119,13 @@ async def read_one(
 ):
     """Personal read receipt for one notification of the caller's group."""
     user = await user_id(db, authorization)
+    mine = await own_notifications(db, group.id, user)
     exists = await db.scalar(
         select(Notification.id).where(
             Notification.id == notification_id,
             Notification.group_id == group.id,
             Notification.delete_at > datetime.now(UTC),
+            mine,
         )
     )
     if exists is None:
@@ -132,6 +155,7 @@ async def read_all(
                 Notification.group_id == group.id,
                 Notification.delete_at > snapshot["generated_at"],
                 Notification.created_at <= snapshot["generated_at"],
+                await own_notifications(db, group.id, user),
             )
         )
     ).all()

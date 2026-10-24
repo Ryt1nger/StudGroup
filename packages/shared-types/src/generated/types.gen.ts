@@ -208,6 +208,7 @@ export type AcademicDeadline = {
     kind: 'control_point' | 'assessment' | 'test' | 'credit' | 'exam' | 'other_academic_deadline';
     card_kind?: LearningCardKind;
     subject: string;
+    subgroup?: SubgroupRef | null;
     confirmed_subject?: SubjectRef | null;
     title: string;
     description: string;
@@ -319,6 +320,7 @@ export type HomeworkSummary = {
     card_kind?: LearningCardKind;
     title: string;
     subject: SubjectRef;
+    subgroup?: SubgroupRef | null;
     /**
      * Confirmed subject for new clients. Null means that publication did not establish a subject. The legacy subject field remains populated during the compatibility window.
      */
@@ -356,6 +358,26 @@ export type HomeworkDetail = HomeworkSummary & {
     updates?: Array<LearningCardUpdate>;
     permissions: Array<Permission>;
     generated_at: string;
+};
+
+export type SubgroupRef = {
+    id: string;
+    name: string;
+};
+
+export type MySubgroupSubject = {
+    split_id: string;
+    subject: SubjectRef;
+    options: Array<SubgroupRef>;
+    selected_subgroup_id: string | null;
+};
+
+export type MySubgroupsResponse = {
+    items: Array<MySubgroupSubject>;
+};
+
+export type ChooseSubgroupRequest = {
+    subgroup_id: string;
 };
 
 export type SubjectRef = {
@@ -849,6 +871,74 @@ export type UpdateProfileResponses = {
 };
 
 export type UpdateProfileResponse = UpdateProfileResponses[keyof UpdateProfileResponses];
+
+export type ListMySubgroupsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/subgroups';
+};
+
+export type ListMySubgroupsErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+};
+
+export type ListMySubgroupsError = ListMySubgroupsErrors[keyof ListMySubgroupsErrors];
+
+export type ListMySubgroupsResponses = {
+    /**
+     * Current active-group subgroup choices
+     */
+    200: MySubgroupsResponse;
+};
+
+export type ListMySubgroupsResponse = ListMySubgroupsResponses[keyof ListMySubgroupsResponses];
+
+export type ChooseMySubgroupData = {
+    body: ChooseSubgroupRequest;
+    path: {
+        split_id: string;
+    };
+    query?: never;
+    url: '/subgroups/{split_id}';
+};
+
+export type ChooseMySubgroupErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type ChooseMySubgroupError = ChooseMySubgroupErrors[keyof ChooseMySubgroupErrors];
+
+export type ChooseMySubgroupResponses = {
+    /**
+     * Updated subgroup choices
+     */
+    200: MySubgroupsResponse;
+};
+
+export type ChooseMySubgroupResponse = ChooseMySubgroupResponses[keyof ChooseMySubgroupResponses];
 
 export type GetScheduleData = {
     body?: never;

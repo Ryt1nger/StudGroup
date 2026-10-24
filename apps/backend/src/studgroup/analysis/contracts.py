@@ -77,6 +77,13 @@ class SourceMessage(StrictDTO):
         return self
 
 
+class SubgroupEntry(StrictDTO):
+    """One subgroup of a subject taught in subgroups, with the headman's recognition signals."""
+
+    name: str = Field(min_length=1, max_length=80)
+    signals: list[str] = Field(default_factory=list, max_length=12)
+
+
 class SubjectEntry(StrictDTO):
     """One real subject of a group, as the trusted catalog states it."""
 
@@ -84,6 +91,7 @@ class SubjectEntry(StrictDTO):
     name: str = Field(min_length=1, max_length=255)
     aliases: list[str] = Field(default_factory=list, max_length=20)
     teachers: list[str] = Field(default_factory=list, max_length=10)
+    subgroups: list[SubgroupEntry] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
     def validate_labels(self):

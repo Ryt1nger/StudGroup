@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from studgroup import bot_info, bot_panels
+from studgroup import bot_info, bot_panels, subgroups
 from studgroup import headman_domain as domain
 from studgroup.bot_admin import enqueue, say
 from studgroup.homework import utc
@@ -144,6 +144,8 @@ async def home(db, session, settings, telegram_id):
             rows.insert(0, [("Кабинет старосты", "cabinet")])
         if member.role == "headman":
             rows.insert(1, [("Создать приглашение", "invite")])
+        if member.role == "student" and await subgroups.splits(db, group.id):
+            rows.insert(0, [("Мои подгруппы", "subgroups")])
         await screen(db, session, text, [*rows, *info_row()], "home")
         return
     await screen(
@@ -335,12 +337,56 @@ async def redeem(db, session, settings, telegram_id, code, *, typed):
         else:
             await join(db, session, f"Не получилось: {error}")
         return
+    found = await current_membership(db, telegram_id)
+    member = found[0] if found and found[1].id == group.id else None
+    if member and await subgroups.unanswered(db, member):
+        await subgroup_choice(db, session, settings, member, group, joined=True)
+    else:
+        await screen(
+            db,
+            session,
+            f"Готово! Вы подключены к «{group.name}».",
+            [[app_button(settings)]],
+            "done",
+        )
+
+
+async def subgroup_choice(db, session, settings, member, group, *, joined=False):
+    """Show the next unanswered split, or the member's complete editable list."""
+    all_splits = await subgroups.splits(db, group.id)
+    picked = await subgroups.choices(db, member.id)
+    unanswered = [pair for pair in all_splits if pair[0].id not in picked]
+    if unanswered:
+        split, choices = unanswered[0]
+        prefix = f"Готово! Вы подключены к «{group.name}».\n\n" if joined else ""
+        await screen(
+            db,
+            session,
+            prefix + f"К какой подгруппе по предмету «{split.subject_name}» вы относитесь?\n\n"
+            "Выбор можно изменить позже.",
+            [[(row.name, f"subgroup_pick_{n}")] for n, row in enumerate(choices)]
+            + [[("‹ Назад", "home")]],
+            "subgroups",
+            {
+                "member_id": str(member.id),
+                "split_id": str(split.id),
+                "subgroups": [str(row.id) for row in choices],
+            },
+        )
+        return
+    lines, rows = [f"Ваши подгруппы в «{group.name}»:"], []
+    for n, (split, choices) in enumerate(all_splits):
+        chosen = next((row for row in choices if row.id == picked.get(split.id)), None)
+        lines.append(f"• {split.subject_name}: {chosen.name if chosen else 'не выбрана'}")
+        rows.append([(f"Изменить · {split.subject_name}"[:55], f"subgroup_change_{n}")])
+    rows += [[app_button(settings)], [("‹ В начало", "home")]]
     await screen(
         db,
         session,
-        f"Готово! Вы подключены к «{group.name}».",
-        [[app_button(settings)]],
-        "done",
+        "\n".join(lines) if all_splits else "В вашей группе пока нет предметов с подгруппами.",
+        rows,
+        "subgroups_done",
+        {"member_id": str(member.id), "splits": [str(pair[0].id) for pair in all_splits]},
     )
 
 
@@ -383,6 +429,12 @@ async def handle(db, update, settings, topic=None):
             elif argument.startswith("invite_"):
                 await forget(db, chat, message)  # the code is a secret: never leave it in the chat
                 await redeem(db, session, settings, sender.id, extract_code(argument), typed=False)
+            elif argument == "subgroups":
+                found = await current_membership(db, sender.id)
+                if found:
+                    await subgroup_choice(db, session, settings, found[0], found[1])
+                else:
+                    await home(db, session, settings, sender.id)
             else:
                 await home(db, session, settings, sender.id)
             return True
@@ -421,6 +473,49 @@ async def handle(db, update, settings, topic=None):
     elif action == "cabinet":
         if not await open_cabinet(db, sender.id):
             await home(db, session, settings, sender.id)
+    elif action == "subgroups":
+        found = await current_membership(db, sender.id)
+        if found:
+            await subgroup_choice(db, session, settings, found[0], found[1])
+        else:
+            await home(db, session, settings, sender.id)
+    elif session.step == "subgroups" and action.startswith("subgroup_pick_"):
+        data = json.loads(session.payload)
+        found = await current_membership(db, sender.id)
+        if not found or str(found[0].id) != data.get("member_id"):
+            await home(db, session, settings, sender.id)
+        else:
+            index = int(action.removeprefix("subgroup_pick_"))
+            await subgroups.choose(
+                db,
+                found[0],
+                uuid.UUID(data["split_id"]),
+                uuid.UUID(data["subgroups"][index]),
+            )
+            await subgroup_choice(db, session, settings, found[0], found[1])
+    elif session.step == "subgroups_done" and action.startswith("subgroup_change_"):
+        data = json.loads(session.payload)
+        found = await current_membership(db, sender.id)
+        if not found or str(found[0].id) != data.get("member_id"):
+            await home(db, session, settings, sender.id)
+        else:
+            split_id = uuid.UUID(data["splits"][int(action.removeprefix("subgroup_change_"))])
+            split, choices = next(
+                pair for pair in await subgroups.splits(db, found[1].id) if pair[0].id == split_id
+            )
+            await screen(
+                db,
+                session,
+                f"Выберите подгруппу по предмету «{split.subject_name}».",
+                [[(row.name, f"subgroup_pick_{n}")] for n, row in enumerate(choices)]
+                + [[("‹ Назад", "subgroups")]],
+                "subgroups",
+                {
+                    "member_id": str(found[0].id),
+                    "split_id": str(split.id),
+                    "subgroups": [str(row.id) for row in choices],
+                },
+            )
     elif action in INFO_TOPICS:
         await topic_screen(db, session, settings, INFO_TOPICS[action])
     else:

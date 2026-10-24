@@ -445,8 +445,9 @@ stable.
   conflict/material ambiguity produces a held review proposal.
 - A factual deterministic display fallback is used only when AI display text is missing,
   malformed or factually invalid, and is marked for headman attention.
-- Explicitly different subgroup assignments produce separate labelled proposals, both
-  visible to the whole group in the initial version.
+- Explicitly different subgroup assignments produce separate proposals. Configured split subjects
+  are filtered by membership after projection; unresolved targeting stays visible to all and enters
+  editor review.
 - Prompt-injection text cannot alter schema, system policy or allowed source IDs.
 - Repeated unchanged input produces semantically stable display fields.
 - No product or notification row is written.
@@ -534,13 +535,14 @@ PR-7.
 - Generated display fields populate current title/description only after validation.
 - Students receive neutral schedule-inferred wording and no technical uncertainty badge;
   the headman view can expose source basis and `needs_attention` reason.
-- Subgroup-labelled cards remain visible to all group members until membership-based
-  filtering is implemented as a later product capability.
+- Configured subgroup cards are filtered by the member's per-subject choice; unanswered members see
+  all variants and editors always see all variants.
 - Projection and outbox records commit atomically.
 - Update/reschedule/cancel recalculates future notifications without duplicates.
 - Explicitly personal content cannot trigger a group-wide card or push. Unknown audience
   follows the serious-ambiguity review policy; an explicit subgroup label is publishable
-  under the initial all-members-visible rule.
+  only when it resolves to a configured subgroup; otherwise the card requires editor review and
+  remains visible to all.
 - Manual corrections remain authoritative in both canonical and projected views.
 
 ### Risks, compatibility and rollback
@@ -647,7 +649,7 @@ The following are separate product slices, not hidden inside the core rollout:
 
 - OCR/vision for photos, then documents/PDFs and albums, each with cost and retention caps;
 - complete event vocabulary and approved UI mapping;
-- subgroup/conditional membership and recipient-aware delivery;
+- conditional audiences beyond the implemented per-subject subgroup membership;
 - revised reminder cadence and morning digest;
 - broader multi-group scale/fairness testing;
 - eventual legacy schema/code retirement after a separate decision.
