@@ -49,6 +49,14 @@ class StrictDTO(BaseModel):
 
 
 class SourceAttachment(StrictDTO):
+    attachment_id: UUID | None = None
+    pixel_sha256: str | None = None
+    visual_hash: str | None = None
+    content_signature: str | None = None
+    image_analysis_state: str | None = None
+    semantic_types: list[str] = Field(default_factory=list)
+    width: int | None = None
+    height: int | None = None
     kind: Literal["photo", "document", "video", "audio", "voice", "animation"]
     mime_type: str | None = Field(default=None, max_length=255)
     size_bytes: int | None = Field(default=None, ge=0)

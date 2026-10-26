@@ -879,6 +879,9 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
         attachment_metadata.setdefault(attachment.raw_message_id, []).append(
             {
                 "kind": attachment.kind,
+                "attachment_id": attachment.id,
+                "width": attachment.width,
+                "height": attachment.height,
                 "mime_type": attachment.mime_type,
                 "size_bytes": attachment.size_bytes,
                 "media_group_id": attachment.media_group_id,

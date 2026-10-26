@@ -199,3 +199,16 @@ prompt to retain precise confirmed numbers and conditions. 129 initial regressio
 semantic/hybrid/stored-result/PostgreSQL checks passed. Fixed a test DTO serialization mistake
 and the adapter's old fact-path whitelist, then reran successfully. Review covered evidence
 scope, retry review-candidates, prompt compatibility and manual source preservation. USD 0 spent.
+
+### 4 — PASS
+
+Added local bounded Pillow visual hashing plus exact pixel hashes. A shared display-only selector
+uses visual proof and identical structured content; different facts/pages/crops stay visible.
+Explicit card image references exclude unrelated images from the same source. No fixed image
+count. The analysis snapshot still contains every image, including hidden exact duplicates.
+Live/shadow snapshots carry display metadata; owner preview and student API share selection.
+Structured images never replace the full card description. Compatibility notes updated; no
+frontend edits or public schema removal. Reviewed per-card source references and image-bomb
+handling. 53 initial and 34 display/preview/student API/PostgreSQL checks passed; lint/diff clean.
+Selection is deliberately conservative when visual equivalence cannot be proved; real-world
+suppression quality remains UNMEASURED. Actual AI cost USD 0.

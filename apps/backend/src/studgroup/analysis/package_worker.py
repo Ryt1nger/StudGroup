@@ -145,6 +145,9 @@ async def _source_messages(db, group, rows, *, structured_images=False):
         attachments.setdefault(attachment.raw_message_id, []).append(
             {
                 "kind": attachment.kind,
+                "attachment_id": attachment.id,
+                "width": attachment.width,
+                "height": attachment.height,
                 "mime_type": attachment.mime_type,
                 "size_bytes": attachment.size_bytes,
                 "media_group_id": attachment.media_group_id,
@@ -333,6 +336,14 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
     messages = await _source_messages(db, group, list(rows.values()), structured_images=structured)
     images = await load_image_evidence(db, group.id, messages, now) if structured else []
     messages = add_image_facts(messages, images)
+    if images:
+        from studgroup.analysis.image_evidence import display_metadata
+
+        metadata = await display_metadata(db, group.id, images)
+        messages = [message.model_copy(update={"attachments": [
+            attachment.model_copy(update=metadata.get(attachment.attachment_id, {}))
+            for attachment in message.attachments
+        ]}) for message in messages]
     facts = (
         await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
     ).all()

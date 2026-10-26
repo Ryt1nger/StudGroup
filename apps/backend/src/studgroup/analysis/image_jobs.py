@@ -381,6 +381,9 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             job.state = "ready" if result.complete else "failed"
             job.error = None if result.complete else "image_reading_incomplete"
             job.pixel_sha256 = hashlib.sha256(image).hexdigest()
+            from studgroup.photo_dedupe import visual_fingerprint
+
+            job.visual_hash = visual_fingerprint(image)
         else:
             job.error = failure.code
             if paid and usage is None and not getattr(failure, "reservation_releasable", False):

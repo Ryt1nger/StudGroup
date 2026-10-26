@@ -312,7 +312,42 @@ async def projected_materials(db, group_id, entity_key, now, sources):
             str(attachment.id),
         )
     )
-    attachments = distinct_photos(attachments)
+    from studgroup.analysis.contracts import SourceMessage
+    from studgroup.analysis.image_evidence import display_metadata, load_image_evidence
+    from studgroup.photo_dedupe import select_evidence_images
+
+    raw_rows = (await db.scalars(select(RawMessage).where(
+        RawMessage.group_id == group_id, RawMessage.id.in_(source_urls),
+    ))).all()
+    messages = [SourceMessage(telegram_message_id=raw.telegram_message_id, revision=raw.revision,
+        message_date=utc(raw.message_date), text=raw.text or "[attachment source]") for raw in raw_rows]
+    image_rows = await load_image_evidence(db, group_id, messages, now)
+    image_rows = [item for item in image_rows if item.error != "image_not_scheduled"]
+    metadata = await display_metadata(db, group_id, image_rows)
+    structured_ids = set(metadata)
+    legacy = distinct_photos([item for item in attachments if item.id not in structured_ids])
+    kept = {item.id for item in legacy}
+    from uuid import UUID
+
+    entity_type = "homework" if entity_key.startswith("h:") else "deadline"
+    projection = await db.scalar(select(CanonicalProjectionLink).where(
+        CanonicalProjectionLink.entity_type == entity_type,
+        CanonicalProjectionLink.entity_id == UUID(entity_key.split(":", 1)[1]),
+    ))
+    source_paths = (await db.scalars(select(CanonicalItemEvidence.fact_path).join(
+        CanonicalAcademicItem, CanonicalAcademicItem.id == CanonicalItemEvidence.item_id
+    ).where(
+        CanonicalAcademicItem.group_id == group_id,
+        CanonicalItemEvidence.item_id == projection.item_id,
+        CanonicalItemEvidence.item_revision == projection.projected_revision,
+    ))).all() if projection else []
+    required_images = {path.split(":")[1] for path in source_paths if path.startswith("image:")}
+    selected = select_evidence_images([
+        {"attachment_id": item.id, "width": item.width, "height": item.height, **metadata[item.id]}
+        for item in attachments if item.id in structured_ids
+    ], required_images)
+    kept.update(item["attachment_id"] for item in selected)
+    attachments = [item for item in attachments if item.id in kept]
     captions = {
         raw_id: text or ""
         for raw_id, text in (
@@ -332,7 +367,8 @@ async def projected_materials(db, group_id, entity_key, now, sources):
                 # A photo the vision pass read as study material, posted with at most a short
                 # caption, IS the task: the card shows it instead of a text description.
                 "replaces_description": (
-                    attachment.kind == "photo"
+                    attachment.id not in structured_ids
+                    and attachment.kind == "photo"
                     and attachment.processing_state == "ready"
                     and len(captions.get(attachment.raw_message_id, "").strip())
                     <= PHOTO_CARD_MAX_CAPTION

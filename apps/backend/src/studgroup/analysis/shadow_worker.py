@@ -113,6 +113,14 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
     # Keep old source snapshots unchanged when the new queue has not produced jobs.
     images = [item for item in images if item.error != "image_not_scheduled"]
     messages = add_image_facts(messages, images)
+    if images:
+        from studgroup.analysis.image_evidence import display_metadata
+
+        metadata = await display_metadata(db, group.id, images)
+        messages = [message.model_copy(update={"attachments": [
+            attachment.model_copy(update=metadata.get(attachment.attachment_id, {}))
+            for attachment in message.attachments
+        ]}) for message in messages]
     facts = (
         await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
     ).all()

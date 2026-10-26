@@ -98,3 +98,25 @@ def fact_source(message):
     """Ephemeral validation view; original message text/evidence is never changed."""
     facts = getattr(message, "image_facts", [])
     return message.model_copy(update={"text": "\n".join([message.text, *facts])}) if facts else message
+
+
+async def display_metadata(db, group_id, evidence):
+    """Common metadata for owner preview and student API; only successful pass B is eligible."""
+    from studgroup.analysis.image_jobs import digest
+
+    result = {}
+    for item in evidence:
+        jobs = (await db.scalars(select(ImageAnalysisJob).where(
+            ImageAnalysisJob.group_id == group_id, ImageAnalysisJob.attachment_id == item.attachment_id,
+            ImageAnalysisJob.source_revision == item.source_revision,
+            ImageAnalysisJob.context_sha256 == item.context_sha256, ImageAnalysisJob.pass_number == 2,
+        ))).all()
+        job = jobs[0] if jobs else None
+        result[item.attachment_id] = {
+            "image_analysis_state": item.state,
+            "semantic_types": item.reading.semantic_types if item.reading else [],
+            "content_signature": digest(item.reading.model_dump(mode="json")) if item.reading else None,
+            "pixel_sha256": job.pixel_sha256 if job else None,
+            "visual_hash": job.visual_hash if job else None,
+        }
+    return result

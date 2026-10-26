@@ -386,3 +386,11 @@ order need no update. Example: an assignment created 3 days ago and edited 1 hou
 Both additions are optional and additive. Old clients keep using `read-all` and never send
 `urgency`; an old backend answers 404 to the new path, so the app falls back to `read-all`
 semantics (it only hides the item locally). Existing responses are unchanged.
+
+## Core v2 image pilot (2026-10-26)
+
+No existing card field is removed or renamed. For materials processed by the new explicitly
+allowlisted image pipeline, `replaces_description` is false: confirmed full task text remains
+visible and photos supplement it. Legacy materials retain their existing flag semantics. New
+internal SourceAttachment/ImageEvidence fields are not additions to the student API. The same
+card image references and display-only selector are used for owner preview and student materials.
