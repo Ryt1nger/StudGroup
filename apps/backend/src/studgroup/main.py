@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     new_engine_notifications: bool = False
     # Vision pass over photos of homework before a package is analysed (costs one image call each).
     # Internal pilot only: never inferred from PHOTO_READING_ENABLED.
+    image_event_review_enabled: bool = False
+    image_event_publication_enabled: bool = False
     image_schedule_review_enabled: bool = False
     image_analysis_enabled: bool = False
     image_analysis_groups: list[str] = Field(default_factory=list)
@@ -327,6 +329,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from studgroup.image_review_api import router as image_review_router
 
     app.include_router(image_review_router)
+    from studgroup.group_event_api import router as group_event_router
+
+    app.include_router(group_event_router)
 
     @app.exception_handler(ApiError)
     async def api_error(request, error):

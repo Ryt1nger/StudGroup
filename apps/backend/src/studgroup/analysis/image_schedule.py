@@ -66,7 +66,7 @@ async def current_source(db, job_id, group_id, now):
     current = await context_snapshot(db, raw)
     saved = json.loads(job.context_json)
     current["pass_a_sha256"] = saved["pass_a_sha256"]
-    if digest({k: v for k, v in current.items() if k != "existing_items"}) != job.context_sha256:
+    if digest({k: v for k, v in current.items() if k not in {"existing_items", "existing_events"}}) != job.context_sha256:
         raise ApiError("stale_context", "Обсуждение изменилось; требуется новое чтение", 409)
     return job
 

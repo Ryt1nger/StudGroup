@@ -50,6 +50,68 @@ paths:
         '403': {description: Membership role disallows confirmation}
         '404': {description: Not found or feature disabled}
         '409': {description: 'Stale source/context/revision, missing dates or unresolved subgroup/lesson mapping'}
+  /staff/image-findings/events:
+    get:
+      operationId: listImageEventDrafts
+      responses:
+        '200': {description: Retained group events with revisions and applied/held source findings; staff only}
+        '403': {description: Membership role disallows review}
+        '404': {description: Review flag disabled}
+  /staff/image-findings/events/{id}:
+    put:
+      operationId: reviewImageEvent
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_revision, payload]
+              properties:
+                expected_revision: {type: integer, minimum: 1}
+                state: {type: string, enum: [draft, active, cancelled], default: draft}
+                accept_source_ids: {type: array, items: {type: string, format: uuid}}
+                payload: {$ref: '#/components/schemas/EventPayload'}
+      responses:
+        '200': {description: Updated event and revision; manual lock is retained}
+        '403': {description: Staff membership required}
+        '404': {description: Event not found or activation/publication flag disabled}
+        '409': {description: Stale revision/source or event is not publishable}
+  /group-events:
+    get:
+      operationId: listPublishedGroupEvents
+      responses:
+        '200': {description: Only future active group-audience events with current retained sources}
+        '401': {description: Active authenticated membership required}
+        '404': {description: Publication disabled}
+  /group-events/{id}:
+    get:
+      operationId: getPublishedGroupEvent
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Published event payload with id/revision/state}
+        '404': {description: Private, unknown, expired, cancelled, stale, wrong group or feature disabled}
 components:
+  schemas:
+    EventPayload:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 255}
+        description: {type: string, maxLength: 8000, default: ''}
+        when_text: {type: [string, 'null'], maxLength: 1000}
+        starts_at: {type: [string, 'null'], format: date-time}
+        place: {type: [string, 'null'], maxLength: 500}
+        conditions: {type: [string, 'null'], maxLength: 2000}
+        audience: {type: string, enum: [group, subgroup, personal, unknown], default: unknown}
+        audience_label: {type: [string, 'null'], maxLength: 255}
+        action: {type: string, enum: [create, update, cancel], default: create}
+        existing_event_id: {type: [string, 'null'], format: uuid}
+        expected_revision: {type: [integer, 'null'], minimum: 1}
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}

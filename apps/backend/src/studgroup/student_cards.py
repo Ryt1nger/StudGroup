@@ -342,10 +342,14 @@ async def projected_materials(db, group_id, entity_key, now, sources):
         CanonicalItemEvidence.item_revision == projection.projected_revision,
     ))).all() if projection else []
     required_images = {path.split(":")[1] for path in source_paths if path.startswith("image:")}
+    uses_structured = "image_analysis" in source_paths or bool(required_images)
+    if not uses_structured:
+        metadata, structured_ids = {}, set()
+        kept = {item.id for item in distinct_photos(attachments)}
     selected = select_evidence_images([
         {"attachment_id": item.id, "width": item.width, "height": item.height, **metadata[item.id]}
         for item in attachments if item.id in structured_ids
-    ], required_images)
+    ], required_images) if required_images else []
     kept.update(item["attachment_id"] for item in selected)
     attachments = [item for item in attachments if item.id in kept]
     captions = {

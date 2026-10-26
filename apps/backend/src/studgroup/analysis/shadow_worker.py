@@ -63,6 +63,12 @@ async def purge_expired_shadow_runs(engine, now=None):
         result = await db.execute(
             delete(ShadowEvaluationRun).where(ShadowEvaluationRun.delete_at <= now)
         )
+        from studgroup.analysis.group_events import purge_events
+        from studgroup.models import ImageAnalysisJob, ImageScheduleSuggestion
+
+        await purge_events(db, now)
+        await db.execute(delete(ImageScheduleSuggestion).where(ImageScheduleSuggestion.delete_at <= now))
+        await db.execute(delete(ImageAnalysisJob).where(ImageAnalysisJob.delete_at <= now))
         await db.commit()
         return result.rowcount or 0
 

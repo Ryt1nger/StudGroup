@@ -225,3 +225,19 @@ mapping and unmapped subgroups are blocked rather than guessed. Added draft cont
 transaction atomicity and non-automatic writes. 35 focused regressions and final 8 real PostgreSQL/
 API cases passed; 0041 downgrade/re-upgrade, lint and diff checks passed. Actual AI cost USD 0.
 Owner/UI choice still needed for subgroup mappings; official timetable never changes automatically.
+
+### 5b — PASS (technical implementation; public contract activation BLOCKED)
+
+Added separate group_events, per-source applied/held findings and immutable revisions (`0042`).
+Existing EventRecord candidates map compatibly to drafts; image readings provide richer date,
+place/audience/conditions. Concurrent duplicate posters deduplicate under a group lock. Model
+updates/cancellation require identity/revision; published or manually locked records retain the
+incoming change for review. Staff update/cancel and optional explicit publication/list/detail
+endpoints use separate default-off flags plus group allowlist. Personal/unknown sources never
+publish to the whole group. Retention is bounded by source expiry; periodic cleanup also runs
+when feature flags are off. Updated canonical event contract and additive pilot API specification.
+Reviewed source isolation, stale sources, manual locks and prevention of shadow-driven changes to
+legacy card display (published canonical image provenance is required). Fixed a PostgreSQL test's
+expired ORM fixture reference and title-less candidate handling. Final 60 lifecycle/candidate/
+PostgreSQL checks passed; 0042 downgrade/re-upgrade, lint/diff clean. Actual AI cost USD 0.
+Owner decisions on public API/frontend, retention and subgroup visibility remain; no real publication.

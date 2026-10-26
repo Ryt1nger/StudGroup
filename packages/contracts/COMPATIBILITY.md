@@ -394,3 +394,9 @@ allowlisted image pipeline, `replaces_description` is false: confirmed full task
 visible and photos supplement it. Legacy materials retain their existing flag semantics. New
 internal SourceAttachment/ImageEvidence fields are not additions to the student API. The same
 card image references and display-only selector are used for owner preview and student materials.
+
+Image findings review and social-event endpoints are specified separately in
+`image-findings.openapi.yaml` as an additive, disabled pilot contract. They do not extend the
+seven academic kinds or replace `/deadlines`. Frontend/API adoption requires owner coordination.
+Review and publication each require their own flag and a group allowlist. Existing clients and
+existing EventRecord consumers remain compatible.

@@ -100,6 +100,13 @@ async def context_snapshot(db, raw):
         {"id": str(row.id), "revision": row.revision, "subject": row.subject,
          "title": row.title, "description": row.description} for row in cards
     ]
+    from studgroup.models import GroupEvent
+
+    events = (await db.scalars(select(GroupEvent).where(
+        GroupEvent.group_id == raw.group_id, GroupEvent.delete_at > datetime.now(UTC),
+    ).order_by(GroupEvent.created_at.desc()).limit(50))).all()
+    context["existing_events"] = [{"id": str(event.id), "revision": event.revision,
+        "state": event.state, **json.loads(event.payload_json)} for event in events]
     return context
 
 
@@ -132,7 +139,7 @@ async def schedule_group(db, group, now):
             context = await context_snapshot(db, raw)
             context["pass_a_sha256"] = digest(first.result_json)
             # Published-card revisions must not make image analysis feed back into itself.
-            second_key = digest({key: value for key, value in context.items() if key != "existing_items"})
+            second_key = digest({key: value for key, value in context.items() if key not in {"existing_items", "existing_events"}})
             for job in jobs:
                 if job.pass_number == 2 and job.context_sha256 != second_key and job.state != "stale":
                     job.state, job.error = "stale", "context_revision_changed"
@@ -369,7 +376,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
         if raw is not None and job.pass_number == 2:
             current = await context_snapshot(db, raw)
             current["pass_a_sha256"] = digest(first_job.result_json)
-            context_changed = digest({k: v for k, v in current.items() if k != "existing_items"}) != job.context_sha256
+            context_changed = digest({k: v for k, v in current.items() if k not in {"existing_items", "existing_events"}}) != job.context_sha256
         if (raw is None or attachment is None or not attachment.active
                 or raw.revision != job.source_revision or utc(job.delete_at) <= utc(datetime.now(UTC))
                 or context_changed):
@@ -394,9 +401,11 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             else:
                 job.state = "failed"
         if job.state == "ready" and job.pass_number == 2:
+            from studgroup.analysis.group_events import capture_image
             from studgroup.analysis.image_schedule import capture
 
             await capture(db, job, result, now)
+            await capture_image(db, job, result, raw, now)
         job.lease_until = None
         if (settings.image_analysis_mode == "live" and job.state in {"ready", "failed"}
                 and (job.pass_number == 2 or job.state == "failed")

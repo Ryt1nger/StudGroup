@@ -174,3 +174,50 @@ def test_schedule_confirmation_is_atomic_and_idempotent_in_postgres(monkeypatch)
                 await db.commit()
             await engine.dispose()
     asyncio.run(run())
+
+
+def test_event_lifecycle_deduplicates_concurrent_findings_and_retention_cascades():
+    from sqlalchemy import func
+
+    from studgroup.analysis.group_events import capture_event, purge_events
+    from studgroup.analysis.image_contracts import ImageEvent
+    from studgroup.models import GroupEvent, GroupEventRevision, GroupEventSource
+
+    async def run():
+        engine = create_async_engine(os.environ["POSTGRES_TEST_URL"], poolclass=NullPool)
+        _ident, group_id, values = await seed(engine)
+        now = datetime.now(UTC)
+        incoming = ImageEvent(title="Synthetic lecture", starts_at=now + timedelta(days=1), audience="group")
+        async def add():
+            async with AsyncSession(engine) as db:
+                raw = await db.get(RawMessage, values["raw_message_id"])
+                await capture_event(db, group_id, raw, incoming, now)
+                await db.commit()
+        try:
+            await asyncio.gather(add(), add())
+            async with AsyncSession(engine) as db:
+                rows = (await db.scalars(select(GroupEvent).where(GroupEvent.group_id == group_id))).all()
+                assert len(rows) == 1 and rows[0].revision == 1
+                event_id = rows[0].id
+                assert await db.scalar(select(func.count()).select_from(GroupEventSource).where(GroupEventSource.event_id == event_id)) == 1
+                raw = await db.get(RawMessage, values["raw_message_id"])
+                updated = incoming.model_copy(update={"action": "update", "existing_event_id": event_id,
+                    "expected_revision": 1, "place": "New hall"})
+                await capture_event(db, group_id, raw, updated, now)
+                await db.commit()
+                assert (await db.get(GroupEvent, event_id)).revision == 2
+                raw = await db.get(RawMessage, values["raw_message_id"])
+                await capture_event(db, group_id, raw, updated.model_copy(update={"action": "cancel", "expected_revision": 2}), now)
+                await db.commit()
+                assert (await db.get(GroupEvent, event_id)).state == "cancelled"
+                assert await db.scalar(select(func.count()).select_from(GroupEventRevision).where(GroupEventRevision.event_id == event_id)) == 3
+                await purge_events(db, now + timedelta(days=2))
+                await db.commit()
+                assert await db.scalar(select(func.count()).select_from(GroupEventSource).where(GroupEventSource.event_id == event_id)) == 0
+                assert await db.scalar(select(func.count()).select_from(GroupEventRevision).where(GroupEventRevision.event_id == event_id)) == 0
+        finally:
+            async with AsyncSession(engine) as db:
+                await db.delete(await db.get(Group, group_id))
+                await db.commit()
+            await engine.dispose()
+    asyncio.run(run())

@@ -100,6 +100,16 @@ def validate_single(ordinal, raw, analysis_input, *, existing_items=None):
     image_problem = proposal_image_problem(proposal, analysis_input)
     if image_problem:
         return None, RejectedItem(proposal_ordinal=ordinal, reason_code=image_problem), False, adapted.actions
+    if analysis_input.image_evidence:
+        # Persist provenance of the explicitly activated semantic path. Student display must
+        # never change just because shadow jobs happen to exist for an older published card.
+        first = proposal.evidence[0]
+        paths = list(dict.fromkeys([*first.fact_paths, "image_analysis"]))
+        if len(paths) > 20:
+            return None, RejectedItem(proposal_ordinal=ordinal, reason_code="image_evidence_overflow"), False, adapted.actions
+        proposal = proposal.model_copy(update={"evidence": [
+            first.model_copy(update={"fact_paths": paths}), *proposal.evidence[1:]
+        ]})
     return proposal, None, False, adapted.actions
 
 

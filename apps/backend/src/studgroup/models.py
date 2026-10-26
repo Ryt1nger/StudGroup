@@ -1083,3 +1083,45 @@ class ImageScheduleSuggestion(Base):
     decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class GroupEvent(Base):
+    """Social/organisational event, distinct from graded AcademicDeadline."""
+
+    __tablename__ = "group_events"
+    __table_args__ = (UniqueConstraint("group_id", "fingerprint"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    title_key: Mapped[str] = mapped_column(String(255), index=True)
+    payload_json: Mapped[str] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(String(24), default="draft")
+    manual_lock: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class GroupEventSource(Base):
+    __tablename__ = "group_event_sources"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("group_events.id", ondelete="CASCADE"), index=True)
+    image_job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"))
+    raw_message_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("raw_messages.id", ondelete="CASCADE"))
+    source_revision: Mapped[int] = mapped_column(Integer)
+    incoming_json: Mapped[str] = mapped_column(Text)
+    apply_state: Mapped[str] = mapped_column(String(24))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GroupEventRevision(Base):
+    __tablename__ = "group_event_revisions"
+    __table_args__ = (UniqueConstraint("event_id", "revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("group_events.id", ondelete="CASCADE"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    origin: Mapped[str] = mapped_column(String(24))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
