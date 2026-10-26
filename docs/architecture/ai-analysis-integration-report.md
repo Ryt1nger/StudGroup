@@ -165,3 +165,14 @@ attempts, source-revision invalidation, restart reuse and committed pre-call res
 Review covered retention, group isolation, lock order and ambiguous external failures. 65
 worker/photo regressions and 28 image/ingestion/contract/PostgreSQL checks passed; lint/diff clean.
 Actual AI cost USD 0. The compatibility reader is still one pass in this commit; next is 2a.
+
+### 2a — PASS
+
+Added strict structured reading with text/blocks/table rows/facts/uncertainty, multi-label semantics,
+schedule rows and event fields. Both versioned visual prompts send the original pixels; B also
+receives saved A and group-local messages/replies/roles/schedule/existing-card context. No string
+slicing; invalid/truncated responses explicitly fail with usage preserved. Pass B cannot silently
+drop A's facts. Each pass commits independently. 20 image contract/worker/real PostgreSQL checks
+passed; reviewed prompt injection boundaries, field constraints and feedback from generated cards.
+Existing-card changes do not self-trigger unlimited image reanalysis. Real OCR/classification
+quality remains UNMEASURED. Actual AI cost USD 0. Next: accounting and recovery hardening.

@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_package_worker import make_new, settings
-from test_photo_reading import JPEG, VisionProvider, photo_message, reading
+from test_photo_reading import JPEG, VisionProvider, photo_message
 
 from studgroup.analysis import image_jobs
 from studgroup.models import (
@@ -20,6 +20,10 @@ from studgroup.models import (
 )
 
 pytest_plugins = ["test_schedule_api"]
+
+
+def reading():
+    return '{"summary":"Лист", "extracted_text":"Алгебра упражнения 1–8", "complete":true}'
 
 
 def cfg(client, **patch):
@@ -62,11 +66,11 @@ def test_all_images_receive_attempts_independent_of_package_limit(client, monkey
     make_new(client)
     config = cfg(client)
     provider = VisionProvider(reading(), propose=False)
-    for _ in range(total):
+    for _ in range(total * 2):
         assert tick(client, provider, config) == "ready"
     assert tick(client, provider, config) == "idle"
-    assert len(provider.vision) == total
-    assert len(stored(client, ImageAnalysisJob)) == total
+    assert len(provider.vision) == total * 2
+    assert len(stored(client, ImageAnalysisJob)) == total * 2
     assert all(j.state == "ready" for j in stored(client, ImageAnalysisJob))
 
 
@@ -129,10 +133,11 @@ def test_completed_image_is_not_paid_again_after_restart(client, monkeypatch):
     provider = VisionProvider(reading())
     config = cfg(client)
     assert tick(client, provider, config) == "ready"
+    assert tick(client, provider, config) == "ready"
     assert tick(client, provider, config) == "idle"
-    assert len(provider.vision) == 1
+    assert len(provider.vision) == 2
     calls = stored(client, ImageAnalysisCall)
-    assert len(calls) == 1 and calls[0].charged_usd == Decimal("0.00034200")
+    assert len(calls) == 2 and calls[0].charged_usd == Decimal("0.00034200")
 
 
 def test_download_rejects_path_escape_and_retries_telegram_outage():

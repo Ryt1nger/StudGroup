@@ -64,7 +64,8 @@ def test_image_job_unique_source_pass_and_skip_locked():
 def test_concurrent_image_workers_make_only_one_paid_attempt(monkeypatch):
     from decimal import Decimal
 
-    from test_photo_reading import JPEG, VisionProvider, reading
+    from test_image_jobs import reading
+    from test_photo_reading import JPEG, VisionProvider
 
     from studgroup.analysis import image_jobs
     from studgroup.main import Settings

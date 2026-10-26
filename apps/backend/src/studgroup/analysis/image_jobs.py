@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.ai import ProviderFailure
 from studgroup.analysis.image_contracts import IMAGE_VERSION, VisualReading
-from studgroup.analysis.photo_reading import MAX_IMAGE_BYTES, TELEGRAM_API, read_photo, sniff_mime
+from studgroup.analysis.photo_reading import MAX_IMAGE_BYTES, TELEGRAM_API, sniff_mime
 from studgroup.analysis.shadow import usage_cost_usd
 from studgroup.models import (
     Group,
@@ -68,12 +68,39 @@ async def context_snapshot(db, raw):
             RawMessage.reply_to_message_id == raw.telegram_message_id),
     ).order_by(RawMessage.message_date).limit(40))).all()
     rows = {row.id: row for row in [*before, raw, *after, *related]}
-    return {"messages": [
+    context = {"messages": [
         {"id": row.telegram_message_id, "revision": row.revision, "text": row.text,
          "reply_to": row.reply_to_message_id, "topic": row.message_thread_id,
          "sent_at": utc(row.message_date).isoformat()}
         for row in sorted(rows.values(), key=lambda row: (row.message_date, row.telegram_message_id))
     ]}
+    from studgroup.models import CanonicalAcademicItem, Membership, SchedulePattern, User
+
+    roles = dict((await db.execute(select(User.telegram_user_id, Membership.role).join(
+        Membership, Membership.user_id == User.id
+    ).where(Membership.group_id == raw.group_id, Membership.status == "active"))).all())
+    for item, row in zip(context["messages"], sorted(rows.values(), key=lambda r: (r.message_date, r.telegram_message_id))):
+        item["author_role"] = roles.get(row.sender_id)
+    group = await db.get(Group, raw.group_id)
+    context["timezone"] = group.timezone
+    context["schedule_version"] = group.schedule_version
+    schedules = (await db.scalars(select(SchedulePattern).where(
+        SchedulePattern.group_id == raw.group_id,
+    ).order_by(SchedulePattern.id).limit(200))).all()
+    context["schedule"] = [
+        {"subject": row.subject, "weekday": row.weekday, "starts": row.starts.isoformat(),
+         "ends": row.ends.isoformat(), "week": row.week,
+         "valid_from": row.valid_from.isoformat(), "valid_until": row.valid_until.isoformat()}
+        for row in schedules
+    ]
+    cards = (await db.scalars(select(CanonicalAcademicItem).where(
+        CanonicalAcademicItem.group_id == raw.group_id, CanonicalAcademicItem.state != "cancelled",
+    ).order_by(CanonicalAcademicItem.updated_at.desc()).limit(30))).all()
+    context["existing_items"] = [
+        {"id": str(row.id), "revision": row.revision, "subject": row.subject,
+         "title": row.title, "description": row.description} for row in cards
+    ]
+    return context
 
 
 async def schedule_group(db, group, now):
@@ -98,7 +125,26 @@ async def schedule_group(db, group, now):
         for job in jobs:
             if job.source_revision != raw.revision and job.state != "stale":
                 job.state, job.error = "stale", "source_revision_changed"
-        if any(job.context_sha256 == key and job.pass_number == 1 for job in jobs):
+        first = next((job for job in jobs if job.context_sha256 == key and job.pass_number == 1), None)
+        if first is not None:
+            if first.state != "ready":
+                continue
+            context = await context_snapshot(db, raw)
+            context["pass_a_sha256"] = digest(first.result_json)
+            # Published-card revisions must not make image analysis feed back into itself.
+            second_key = digest({key: value for key, value in context.items() if key != "existing_items"})
+            for job in jobs:
+                if job.pass_number == 2 and job.context_sha256 != second_key and job.state != "stale":
+                    job.state, job.error = "stale", "context_revision_changed"
+            if not any(job.pass_number == 2 and job.context_sha256 == second_key for job in jobs):
+                db.add(ImageAnalysisJob(
+                    group_id=group.id, attachment_id=attachment.id, raw_message_id=raw.id,
+                    source_revision=raw.revision, context_sha256=second_key,
+                    context_json=json.dumps(context, ensure_ascii=False), version=IMAGE_VERSION,
+                    pass_number=2, state="pending", attempts=0, available_at=now,
+                    created_at=now, delete_at=min(raw.delete_at, attachment.delete_at),
+                ))
+                created += 1
             continue
         db.add(ImageAnalysisJob(
             group_id=group.id, attachment_id=attachment.id, raw_message_id=raw.id,
@@ -208,9 +254,10 @@ async def claim(db, group, route, settings, now):
 
 
 async def perform(provider, image, mime, job, raw, first=None):
-    # Stage 1 compatibility reader. Replaced by structured two-pass reader in stage 2a.
-    result = await read_photo(provider, image, mime, raw.text)
-    return VisualReading(summary=result.summary, extracted_text=result.text, complete=True), result.usage
+    from studgroup.analysis.image_reading import read_pass
+
+    return await read_pass(provider, image, mime, job.pass_number,
+        context=json.loads(job.context_json), first=first)
 
 
 async def process_images_next(engine, settings, provider=None, now=None, transport=None):
@@ -247,6 +294,14 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
         raw = await db.get(RawMessage, job.raw_message_id)
         attachment = await db.get(MessageAttachment, job.attachment_id)
         file_id = attachment.telegram_file_id
+        first = None
+        if job.pass_number == 2:
+            first_job = await db.scalar(select(ImageAnalysisJob).where(
+                ImageAnalysisJob.attachment_id == job.attachment_id,
+                ImageAnalysisJob.source_revision == job.source_revision,
+                ImageAnalysisJob.pass_number == 1, ImageAnalysisJob.state == "ready",
+            ))
+            first = VisualReading.model_validate_json(first_job.result_json) if first_job else None
     result, usage, failure, paid = None, None, None, False
     start = monotonic()
     try:
@@ -256,7 +311,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             provider = DeepSeekProvider(settings.deepseek_api_key.get_secret_value(),
                 model=settings.deepseek_model, base_url=settings.deepseek_base_url)
         paid = True
-        result, usage = await perform(provider, image, mime, job, raw)
+        result, usage = await perform(provider, image, mime, job, raw, first)
     except DownloadError as error:
         failure = error
     except ProviderFailure as error:
@@ -284,7 +339,9 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                 or raw.revision != job.source_revision or utc(job.delete_at) <= now):
             job.state, job.error = "stale", "source_revision_changed"
         elif result is not None:
-            job.result_json, job.state = result.model_dump_json(), "ready"
+            job.result_json = result.model_dump_json()
+            job.state = "ready" if result.complete else "failed"
+            job.error = None if result.complete else "image_reading_incomplete"
             job.pixel_sha256 = hashlib.sha256(image).hexdigest()
         else:
             job.error = failure.code
