@@ -750,3 +750,35 @@ architecture alone.
   The complete suite passed with **423 passed, 0 skipped** including the concurrent claim test.
 - C+ shadow execution is not yet connected to worker dispatch, and `new` groups are intentionally
   left queued. Current verdict remains **offline-ready**, not shadow-ready.
+
+
+## 18. Core v2 image-quality work
+
+Updated 2026-10-26 against `origin/main` `dbc5963`. This is a targeted continuation of the
+existing C+ implementation, not a new engine or architecture rewrite. The earlier PR sequence
+above records the foundation; this section is the current image-quality delivery sequence.
+See [stage-0 evidence](ai-analysis-integration-report.md). Owner agreement at the stage-0 gate
+is required by the image-quality brief. No implementation stages have been performed yet.
+
+Each numbered step is a separate reviewable change, with its own acceptance checklist. Split
+steps 1, 2 and 5 into schema/contracts first and behaviour second where needed. Do not combine
+all steps into one PR. Preserve original source snapshots, manual locks and existing APIs.
+
+| Stage | Files / smallest change | Dependency | Tests and completion gate |
+|---|---|---|---|
+| 0 — audit | `test_image_analysis_baseline.py`, synthetic image scenarios, this roadmap, integration report | Current remote main and project instructions | Reproduce coverage/crop/slide/document/budget failures, run focused/full tests, lint and real PostgreSQL checks. Agree unfinished-image publication policy before stage 1. |
+| 1a — image job contract | `models.py`, new additive migration, `analysis/contracts.py`, typed image input/result module | 0 approved | Versioned source attachment identity + source/context revision, per-pass status/attempts, error reason, next retry, lease, budget reservation and usage. Migration upgrade/downgrade/re-upgrade on disposable PostgreSQL; old snapshots still parse. |
+| 1b — full coverage | `ingestion.py`, `package_worker.py`, `photo_reading.py`, image job worker | 1a | JPEG/PNG/WebP supported by byte inspection for photo and image-document inputs; define terminal unsupported formats explicitly. Test 1/6/7/12, albums, no caption, duplicate delivery, edits, replacement, Telegram outage, rate limit, restarts, stale commits, parallel workers and budget deferral. Six is a work chunk, never completion. No unexplained unread image. All paid calls reserve funds first. |
+| 2a — two visual passes | `photo_reading.py`, image contracts/job storage, `ai.py`, feature settings | 1b | Pass A preserves blocks/facts/uncertainty; B gets original pixels + saved A + relevant versioned context. Test both requests contain pixels, strict output schemas, text/tables/dates/handwriting fixtures, conflicting readings and token truncation. No silent string slicing. |
+| 2b — resume and costs | image jobs, `package_worker.py`, provider usage/accounting | 2a | Save each successful pass before next; independent usage/latency/prompt version per call. Cap image/package/group spend, bounded retries/backoff; cancel/stale-context checks; failure after A resumes B without paying A twice. PostgreSQL concurrency and crash-recovery tests. |
+| 3 — semantic integration | `context_strategy.py`, `extraction_strategy.py`, `extraction_pipeline.py`, `card_editor.py`, `candidates.py`, `contracts.py` | 2b | All image facts reach C+ before display selection; typed image evidence, multi-label classwork/homework/material/event/schedule/organisation. Remove conflicting general-photo-description rule. Cases A–G from brief, later corrections and existing-card updates. No in-class task published as homework; facts remain unknown when unsupported. Deterministic tests first, actual classification quality measured only with authorized model sample. |
+| 4 — display selection | `photo_dedupe.py`, `package_worker._source_messages`, `card_materials.py`, `student_cards.py`, internal selection storage | 3 | Remove semantic suppression entirely; select by combined visual comparison, text/structure and unique facts only after merge. Keep source evidence for hidden images. Crops, duplicate screenshots, different templates/slides, 4 pages, unique details, unrelated images. One common selection for preview/API; no fixed 1–2 limit. Document shared contract implications of `replaces_description` before changing client expectations. |
+| 5a — timetable suggestions | image results, new schedule suggestion adapter/store, `headman_schedule.py`, `schedule_audit.py` | 3 and approved confirmation policy | Weeks/subgroups/rooms, single replacement, old image, unknown effective date, combined timetable + check. Extract suggestions only; authorized confirmation applies existing audited write. No silent official schedule mutation. |
+| 5b — public events | `candidates.py`, `EventRecord` contract, models/migration, event service, `api.py`, `packages/contracts/*`, event-records documentation | 3 and owner-approved API/visibility/retention; frontend coordination | Existing candidates stay compatible. Durable event with date/time/place/audience, deduplication/update/cancel lifecycle. Poster, repeated poster, time change, no date, personal invite, mixed homework. Group isolation/access tests, compatibility notes and migration checks. Do not reuse graded-event entity for social events. |
+| 6 — integration | `dispatch.py`, shadow/input assembly, worker/API tests, existing fixture corpus | 4, 5a, 5b | Identical image snapshots for shadow/live/preview; full backend + PostgreSQL, migration cycle; old text-only paths, multi-message merges, locks, stale edits, no duplicate cards/notifications, budget/error handling, no cross-group evidence. All required tests pass. |
+| 7 — controlled validation | settings, image evaluation runner, rollout/rollback documentation, measured report | 6 and explicit paid-shadow/deployment approvals | Off by default, per-group flag; same inputs old/new; measure image coverage, fact recall/precision, classification/linking, fact preservation, display, schedules/events, cost and latency. Owner sets thresholds after measured baseline. Limited shadow first; writer mode and production deployment approved separately; rollback preserves recorded results. |
+
+At every gate report changed files, concrete outcome, commands/counts, migration result, risks,
+AI spend, PASS/FAIL/BLOCKED and next action. A failing test blocks progression. Stub answers prove
+pipeline mechanics only. Until rendered labelled fixtures and authorized model runs exist,
+report semantic/vision precision and recall as unmeasured. Numeric thresholds are not invented.

@@ -6,6 +6,14 @@ not be committed.
 
 ## Split policy
 
+`image-scenarios.json` is the stage-0 image acceptance inventory. It has its own versioned
+format (not the Telegram JSONL schema below). Its 11 cases contain synthetic image text
+annotations and expected outcomes, not real pictures or measured model answers. They cover
+crops, distinct pages, in-class/homework ambiguity, schedules, events, private invitations,
+mixed entities, corrections and unreadable input. `test_image_analysis_baseline.py` reproduces
+the deterministic failures using stub vision answers. Neither resource proves vision accuracy;
+rendered images and provider measurements remain required before rollout.
+
 Split by `discussion_id`/`entity_id`, never by individual message. All messages that can
 describe, clarify, correct or cancel the same academic item must remain in one split. The
 held-out evaluation split is not used for prompt development.

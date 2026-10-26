@@ -1,0 +1,17 @@
+{
+  "version": "image-gold-1",
+  "provenance": "Entirely synthetic; image_text is an annotation, not a real OCR result. No real vision evaluation has run.",
+  "scenarios": [
+    {"id": "three_crops", "image_text": ["Алгебра: задачи 1–5", "Алгебра: задачи 6–8", "Алгебра: задачи 1–8, формат PDF"], "messages": ["Дома к среде"], "expected": {"facts": ["задачи 1–8", "формат PDF"], "homework_count": 1, "display": "minimum sufficient images after merging all facts"}},
+    {"id": "four_pages", "image_text": ["Практическая работа по алгебре упражнение 1", "Практическая работа по алгебре упражнение 2", "Практическая работа по алгебре упражнение 3", "Практическая работа по алгебре упражнение 4"], "messages": ["Всё это сделать дома"], "expected": {"facts": ["упражнения 1–4"], "homework_count": 1, "display_count": 4}},
+    {"id": "in_class", "image_text": ["Алгебра: упражнения 1–8"], "messages": ["Решаем сейчас на паре"], "expected": {"semantic_types": ["in_class_task"], "homework_count": 0}},
+    {"id": "finish_at_home", "image_text": ["Алгебра: упражнения 1–8"], "messages": ["Остальное доделать дома к среде"], "expected": {"semantic_types": ["homework"], "homework_count": 1, "uncertain": ["which exercises remain unfinished"]}},
+    {"id": "ambiguous_exercises", "image_text": ["Упражнения 1–8"], "messages": [], "expected": {"facts": ["упражнения 1–8"], "homework_count": 0, "needs_clarification": true}},
+    {"id": "schedule", "image_text": ["Понедельник 09:00–10:30 Алгебра ауд. 201 подгруппа 1"], "messages": [], "expected": {"semantic_types": ["schedule"], "homework_count": 0, "schedule_rows": [{"weekday": 0, "starts": "09:00", "ends": "10:30", "subject": "Алгебра", "room": "201", "subgroup": "1"}], "requires_confirmation": true, "valid_from": null}},
+    {"id": "poster", "image_text": ["Лекция о космосе 28 октября 2026 18:00 актовый зал. Для всей группы"], "messages": [], "expected": {"semantic_types": ["event"], "homework_count": 0, "event": {"date": "2026-10-28", "time": "18:00", "place": "актовый зал", "audience": "group"}}},
+    {"id": "personal_poster", "image_text": ["Лекция о космосе 28 октября 2026 18:00"], "messages": ["Только для Ивана, личное приглашение"], "expected": {"homework_count": 0, "public_event_count": 0}},
+    {"id": "mixed_schedule_check", "image_text": ["Алгебра переносится на 11:00. На занятии контрольная по главе 2"], "messages": [], "expected": {"semantic_types": ["schedule_change", "assessment"], "homework_count": 0, "schedule_write_without_confirmation": false, "unknown": ["effective date"]}},
+    {"id": "correction", "image_text": ["Домашняя работа: пункты 1–5"], "messages": ["Пункт 5 делать не надо"], "expected": {"facts": ["пункты 1–4", "пункт 5 отменён"], "homework_count": 1}},
+    {"id": "unreadable", "image_text": [null], "messages": [], "expected": {"homework_count": 0, "explicit_error": true, "irrelevant_due_to_error": false}}
+  ]
+}
