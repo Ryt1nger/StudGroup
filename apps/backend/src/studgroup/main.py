@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     # Student notifications for cards the new engine creates; keep off while backfilling history.
     new_engine_notifications: bool = False
     # Vision pass over photos of homework before a package is analysed (costs one image call each).
+    # Internal pilot only: never inferred from PHOTO_READING_ENABLED.
+    image_analysis_enabled: bool = False
+    image_analysis_groups: list[str] = Field(default_factory=list)
+    image_analysis_mode: Literal["shadow", "live"] = "shadow"
+    image_pass_reservation_usd: float = Field(default=0.02, gt=0)
+    image_total_budget_usd: float = Field(default=0.12, ge=0)
+    image_package_budget_usd: float = Field(default=0.20, ge=0)
+    image_hourly_budget_usd: float = Field(default=0.25, ge=0)
     photo_reading_enabled: bool = False
     # With photo reading on: stored messages since this moment whose photos were never read are
     # analysed again once (e.g. PHOTO_BACKFILL_SINCE=2026-10-17T00:00:00+03:00). Idempotent.

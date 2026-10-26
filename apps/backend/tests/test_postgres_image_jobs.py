@@ -59,3 +59,50 @@ def test_image_job_unique_source_pass_and_skip_locked():
                 assert await db.get(ImageAnalysisJob, ident) is None
             await engine.dispose()
     asyncio.run(run())
+
+
+def test_concurrent_image_workers_make_only_one_paid_attempt(monkeypatch):
+    from decimal import Decimal
+
+    from test_photo_reading import JPEG, VisionProvider, reading
+
+    from studgroup.analysis import image_jobs
+    from studgroup.main import Settings
+    from studgroup.models import GroupAnalysisSettings, ImageAnalysisCall
+
+    async def run():
+        engine = create_async_engine(os.environ["POSTGRES_TEST_URL"], poolclass=NullPool)
+        ident, group_id, _ = await seed(engine)
+        now = datetime.now(UTC)
+        async with AsyncSession(engine) as db:
+            # seed()'s placeholder job is unrelated to the production scheduling fingerprint.
+            await db.delete(await db.get(ImageAnalysisJob, ident))
+            group = await db.get(Group, group_id)
+            group.pilot_authorized = True
+            db.add(GroupAnalysisSettings(group_id=group_id, analysis_mode="shadow",
+                shadow_daily_budget_usd=Decimal("0.50"), updated_at=now))
+            await db.commit()
+
+        async def fake(*args, **kwargs):
+            await asyncio.sleep(0.05)
+            return JPEG, "image/jpeg"
+        monkeypatch.setattr(image_jobs, "download", fake)
+        provider = VisionProvider(reading())
+        config = Settings(_env_file=None, image_analysis_enabled=True,
+            image_analysis_groups=[str(group_id)])
+        try:
+            results = await asyncio.gather(*[
+                image_jobs.process_images_next(engine, config, provider, now)
+                for _ in range(2)
+            ])
+            assert sorted(results) == ["idle", "ready"]
+            assert len(provider.vision) == 1
+            async with AsyncSession(engine) as db:
+                calls = (await db.scalars(select(ImageAnalysisCall).where(ImageAnalysisCall.group_id == group_id))).all()
+                assert len(calls) == 1 and calls[0].reserved_usd == 0
+        finally:
+            async with AsyncSession(engine) as db:
+                await db.delete(await db.get(Group, group_id))
+                await db.commit()
+            await engine.dispose()
+    asyncio.run(run())

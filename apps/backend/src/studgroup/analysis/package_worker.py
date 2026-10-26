@@ -211,6 +211,10 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
     ``retry_later`` so the package is not frozen without a photo that would be readable a minute
     later. Cost is returned so the package run carries it in the budget.
     """
+    from studgroup.analysis.image_jobs import enabled
+
+    if enabled(settings, group.id):
+        return Decimal(0), False  # the durable independent image queue owns this group
     if not settings.photo_reading_enabled or not rows:
         return Decimal(0), False
     pending = (

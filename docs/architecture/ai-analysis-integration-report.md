@@ -154,3 +154,14 @@ Added strict internal image evidence/reading contracts, per-pass jobs and per-at
 foreign-key retention, pass identity, strict parsing and locking. 13 contract/PostgreSQL checks
 passed; migration upgrade/downgrade to 0039/re-upgrade passed. Ruff clean after fixing a test
 literal. Actual AI cost USD 0. Next: job scheduling and full image coverage.
+
+### 1b — PASS
+
+Added an independent, allowlisted image queue, disabled by default; images/documents and every
+album member receive durable jobs. Six is no longer the new path's completion boundary. Legacy
+photo behaviour remains available only when the new feature is off. Streamed Telegram downloads
+retain sanitized temporary/terminal errors and reject path escapes/oversized files. Three bounded
+attempts, source-revision invalidation, restart reuse and committed pre-call reservations added.
+Review covered retention, group isolation, lock order and ambiguous external failures. 65
+worker/photo regressions and 28 image/ingestion/contract/PostgreSQL checks passed; lint/diff clean.
+Actual AI cost USD 0. The compatibility reader is still one pass in this commit; next is 2a.
