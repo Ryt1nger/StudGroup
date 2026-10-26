@@ -1015,3 +1015,57 @@ class HeadmanQuestionDelivery(Base):
     )
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     escalated: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ImageAnalysisJob(Base):
+    """One pass of one attachment in one immutable source/context snapshot."""
+
+    __tablename__ = "image_analysis_jobs"
+    __table_args__ = (
+        UniqueConstraint("attachment_id", "source_revision", "context_sha256", "pass_number"),
+        CheckConstraint("pass_number IN (1, 2)"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    attachment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("message_attachments.id", ondelete="CASCADE"), index=True
+    )
+    raw_message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="CASCADE"), index=True
+    )
+    source_revision: Mapped[int] = mapped_column(Integer)
+    context_sha256: Mapped[str] = mapped_column(String(64))
+    context_json: Mapped[str] = mapped_column(Text)
+    version: Mapped[str] = mapped_column(String(64))
+    pass_number: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    error: Mapped[str | None] = mapped_column(String(100))
+    result_json: Mapped[str | None] = mapped_column(Text)
+    pixel_sha256: Mapped[str | None] = mapped_column(String(64))
+    visual_hash: Mapped[str | None] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class ImageAnalysisCall(Base):
+    """Per-attempt ledger. Ambiguous failures keep the conservative reserved charge."""
+
+    __tablename__ = "image_analysis_calls"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"), index=True
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    claim_token: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True)
+    state: Mapped[str] = mapped_column(String(24))
+    reserved_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=0)
+    charged_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=0)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

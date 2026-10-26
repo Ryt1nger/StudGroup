@@ -140,3 +140,17 @@ Do not change frontend or public contracts before coordination.
 Before any real AI observation or stage 7: agree provider/model, monetary caps, allowed corpus,
 groups and retention. Production deployment, writer mode, historical-card updates and rollout
 scope are separate approvals. Numeric quality/cost/latency thresholds follow measurements.
+
+## Implementation stage log
+
+Owner accepted stage 0 and authorized sequential offline implementation on 2026-10-26.
+The temporary publication policy in ADR-013 is now approved. Remaining product decisions are
+collected at the end of this living report; no per-stage owner approval is required.
+
+### 1a — PASS
+
+Added strict internal image evidence/reading contracts, per-pass jobs and per-attempt ledger
+(`0040` additive migration). Public APIs and old C+ snapshots are unchanged. Reviewed uniqueness,
+foreign-key retention, pass identity, strict parsing and locking. 13 contract/PostgreSQL checks
+passed; migration upgrade/downgrade to 0039/re-upgrade passed. Ruff clean after fixing a test
+literal. Actual AI cost USD 0. Next: job scheduling and full image coverage.
