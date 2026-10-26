@@ -187,3 +187,15 @@ review instead of automatically paying twice. 51 image/shadow/PostgreSQL checks 
 zero budget, all caps, crash/lease recovery, edit during paid call and preserved costs across a
 B retry. Ruff/diff clean. Reviewed transaction lock order and data isolation. No exact-once
 external billing claim: a process crash can leave an explicitly unknown paid outcome. USD 0 spent.
+
+### 3 — PASS
+
+C+ receives typed evidence for every image (source/attachment/revision/fact index); live and shadow
+use the same loader. Confirmed visual facts support card/date validation without rewriting raw
+source text. Added strict image fact-reference checks and guards against classwork/unknown/poster/
+schedule becoming homework; independent text remains eligible when an image fails. Unfinished
+sources use explicit image_pending state and reopen when new evidence arrives. Updated extraction
+prompt to retain precise confirmed numbers and conditions. 129 initial regressions and 111 final
+semantic/hybrid/stored-result/PostgreSQL checks passed. Fixed a test DTO serialization mistake
+and the adapter's old fact-path whitelist, then reran successfully. Review covered evidence
+scope, retry review-candidates, prompt compatibility and manual source preservation. USD 0 spent.

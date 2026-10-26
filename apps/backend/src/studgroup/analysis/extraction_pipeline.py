@@ -95,6 +95,11 @@ def validate_single(ordinal, raw, analysis_input, *, existing_items=None):
             False,
             adapted.actions,
         )
+    from studgroup.analysis.image_evidence import proposal_image_problem
+
+    image_problem = proposal_image_problem(proposal, analysis_input)
+    if image_problem:
+        return None, RejectedItem(proposal_ordinal=ordinal, reason_code=image_problem), False, adapted.actions
     return proposal, None, False, adapted.actions
 
 

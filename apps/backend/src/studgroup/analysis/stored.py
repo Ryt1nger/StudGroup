@@ -19,7 +19,9 @@ from studgroup.analysis.output_adapter import _Normalizer
 
 
 def _renormalized(ordinal, proposal, messages, timezone, actions):
-    by_id = {row.telegram_message_id: row for row in messages}
+    from studgroup.analysis.image_evidence import fact_source
+
+    by_id = {row.telegram_message_id: fact_source(row) for row in messages}
     normalizer = _Normalizer(
         ordinal,
         group_timezone=timezone,

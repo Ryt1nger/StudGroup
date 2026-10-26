@@ -41,6 +41,9 @@ NON_REPAIRABLE_RULE_CODES = frozenset(
 )
 
 
+from studgroup.analysis.image_contracts import ImageEvidence
+
+
 class StrictDTO(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -66,6 +69,7 @@ class SourceMessage(StrictDTO):
     author_alias: str | None = Field(default=None, max_length=64)
     # Group role of the sender (headman clarifications outrank ordinary messages).
     author_role: Literal["student", "deputy", "headman"] | None = None
+    image_facts: list[str] = Field(default_factory=list, max_length=1000)
     attachments: list[SourceAttachment] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
@@ -133,6 +137,7 @@ class AnalysisInput(StrictDTO):
     # Not part of the source snapshot (see shadow.source_snapshot_sha256): reference data the
     # frozen run was analysed with. Absent on every run created before the catalog existed.
     subject_catalog: SubjectCatalog | None = None
+    image_evidence: list[ImageEvidence] = Field(default_factory=list, max_length=1000)
 
     @model_validator(mode="after")
     def validate_scope(self):
@@ -142,6 +147,9 @@ class AnalysisInput(StrictDTO):
             raise ValueError("duplicate_source_message_id")
         if not set(self.target_message_ids).issubset(ids):
             raise ValueError("target_outside_source_envelope")
+        scope = {row.telegram_message_id: row.revision for row in self.messages}
+        if any(scope.get(image.telegram_message_id) != image.source_revision for image in self.image_evidence):
+            raise ValueError("image_evidence_outside_source_envelope")
         return self
 
 

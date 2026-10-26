@@ -106,7 +106,7 @@ def _source_message(row, *, roles, topics, attachments):
     )
 
 
-async def _source_messages(db, group, rows):
+async def _source_messages(db, group, rows, *, structured_images=False):
     ids = [row.id for row in rows]
     attachments = {}
     stored = (
@@ -140,7 +140,7 @@ async def _source_messages(db, group, rows):
         if earliest is not None
         else []
     )
-    kept = {a.id for a in photo_dedupe.distinct(stored, earlier)}
+    kept = {a.id for a in (stored if structured_images else photo_dedupe.distinct(stored, earlier))}
     for attachment in stored:
         attachments.setdefault(attachment.raw_message_id, []).append(
             {
@@ -177,9 +177,10 @@ async def _source_messages(db, group, rows):
             )
         ).all():
             roles[telegram_user_id] = role
-    return [
-        _source_message(row, roles=roles, topics=topics, attachments=attachments) for row in rows
-    ]
+    messages = [_source_message(row, roles=roles, topics=topics, attachments=attachments) for row in rows]
+    if structured_images:
+        messages = [message.model_copy(update={"text": row.text}) for message, row in zip(messages, rows)]
+    return messages
 
 
 def _eligible(group, settings, now):
@@ -325,7 +326,13 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
     if retry_later:
         await db.commit()  # keep the cost and the photos already read
         return "photo_retry"
-    messages = await _source_messages(db, group, list(rows.values()))
+    from studgroup.analysis.image_evidence import add_image_facts, load_image_evidence
+    from studgroup.analysis.image_jobs import enabled
+
+    structured = enabled(settings, group.id) and settings.image_analysis_mode == "live"
+    messages = await _source_messages(db, group, list(rows.values()), structured_images=structured)
+    images = await load_image_evidence(db, group.id, messages, now) if structured else []
+    messages = add_image_facts(messages, images)
     facts = (
         await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
     ).all()
@@ -339,12 +346,15 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
         subject_catalog=catalog,
     )
     package = packages[0]
+    selected = {row.telegram_message_id for row in package.analysis_input.messages}
+    package.analysis_input.image_evidence = [item for item in images if item.telegram_message_id in selected]
     # A reopened window (owner re-analysis) bumps the generation, so the same messages get a new
     # run key instead of being treated as the package that already ran.
     generation = max(
         row.analysis_generation for row in targets if row.telegram_message_id in package.target_ids
     )
-    run_key = hashlib.sha256(f"{package.key}:{generation}".encode()).hexdigest()
+    image_key = "" if not images else json.dumps([item.model_dump(mode="json") for item in images], sort_keys=True)
+    run_key = hashlib.sha256(f"{package.key}:{generation}:{image_key}".encode()).hexdigest()
     memory = assemble_memory_context(group.id, " ".join(row.text for row in messages), facts)
     return package, memory, revision, run_key, generation, photo_cost
 
@@ -743,6 +753,16 @@ async def _finish_targets(db, row, state):
         )
         .values(processing_state=state)
     )
+    if state == "completed":
+        data = AnalysisInput.model_validate_json(row.input_json)
+        waiting = {item.telegram_message_id for item in data.image_evidence
+                   if item.state not in {"ready", "failed", "stale"}}
+        if waiting:
+            await db.execute(update(RawMessage).where(
+                RawMessage.group_id == row.group_id,
+                RawMessage.telegram_message_id.in_(waiting & set(_targets(row))),
+                RawMessage.revision == row.source_revision,
+            ).values(processing_state="image_pending"))
 
 
 async def process_package_next(engine, settings, provider=None, now=None):

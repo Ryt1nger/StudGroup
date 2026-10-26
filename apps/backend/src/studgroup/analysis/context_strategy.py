@@ -66,6 +66,7 @@ def prepare_context_request(analysis_input: AnalysisInput, memory_context):
             "target_message_ids": analysis_input.target_message_ids,
             "messages": [row.model_dump(mode="json") for row in analysis_input.messages],
             "structured_memory": memory_context,
+            "image_evidence": [item.model_dump(mode="json") for item in analysis_input.image_evidence],
         },
         schema_version=analysis_input.schema_version,
         prompt_version=CONTEXT_PROMPT_VERSION,

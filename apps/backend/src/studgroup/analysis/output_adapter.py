@@ -485,7 +485,7 @@ class _Normalizer:
                 _reject("evidence_fact_path_invalid", path, item, expected="string")
             text = item.strip()
             root = text.split(".", 1)[0]
-            if root not in FACT_PATH_ROOTS:
+            if root not in FACT_PATH_ROOTS and not text.startswith("image:"):
                 self.note("unsupported_fact_path_dropped")
                 continue
             if text not in kept:
@@ -751,10 +751,12 @@ def adapt_proposal(
     subject_catalog=None,
 ) -> AdaptedProposal:
     """Normalize one provider proposal; failure never affects sibling proposals."""
+    from studgroup.analysis.image_evidence import fact_source
+
     normalizer = _Normalizer(
         ordinal,
         group_timezone=group_timezone,
-        messages=messages,
+        messages={key: fact_source(value) for key, value in messages.items()},
         allowed_sources=allowed_sources,
         existing_items=existing_items,
         subject_catalog=subject_catalog,

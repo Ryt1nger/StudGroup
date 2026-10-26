@@ -391,6 +391,12 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             else:
                 job.state = "failed"
         job.lease_until = None
+        if (settings.image_analysis_mode == "live" and job.state in {"ready", "failed"}
+                and (job.pass_number == 2 or job.state == "failed")
+                and raw is not None and raw.processing_state in {"completed", "image_pending", "needs_context"}
+                and raw.revision == job.source_revision):
+            raw.processing_state = "pending"
+            raw.analysis_generation += 1
         outcome = job.state
         await db.commit()
     return outcome

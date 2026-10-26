@@ -107,6 +107,12 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
         )
         for row in context
     ]
+    from studgroup.analysis.image_evidence import add_image_facts, load_image_evidence
+
+    images = await load_image_evidence(db, group.id, messages, now)
+    # Keep old source snapshots unchanged when the new queue has not produced jobs.
+    images = [item for item in images if item.error != "image_not_scheduled"]
+    messages = add_image_facts(messages, images)
     facts = (
         await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
     ).all()
@@ -117,6 +123,7 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
         target_message_ids=[raw.telegram_message_id],
         messages=messages,
         subject_catalog=await load_subject_catalog(db, group.id, facts),
+        image_evidence=images,
     )
     memory = assemble_memory_context(group.id, " ".join(row.text for row in messages), facts)
     selected = sampled(group.id, sample_key, route.shadow_sample_percent)
