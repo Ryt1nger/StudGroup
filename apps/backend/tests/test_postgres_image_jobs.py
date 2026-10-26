@@ -107,3 +107,70 @@ def test_concurrent_image_workers_make_only_one_paid_attempt(monkeypatch):
                 await db.commit()
             await engine.dispose()
     asyncio.run(run())
+
+
+def test_schedule_confirmation_is_atomic_and_idempotent_in_postgres(monkeypatch):
+    import json
+    from decimal import Decimal
+
+    from test_image_jobs import reading
+    from test_photo_reading import JPEG, VisionProvider
+
+    from studgroup.analysis import image_jobs
+    from studgroup.analysis.image_schedule import ScheduleConfirmation, confirm
+    from studgroup.main import Settings
+    from studgroup.models import (
+        GroupAnalysisSettings,
+        ImageScheduleSuggestion,
+        Membership,
+        ScheduleChange,
+        User,
+    )
+
+    async def run():
+        engine = create_async_engine(os.environ["POSTGRES_TEST_URL"], poolclass=NullPool)
+        ident, group_id, _ = await seed(engine)
+        now = datetime.now(UTC)
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            await db.delete(await db.get(ImageAnalysisJob, ident))
+            group = await db.get(Group, group_id)
+            group.pilot_authorized = True
+            user = User(telegram_user_id=uuid.uuid4().int % 10**14, display_name="Synthetic reviewer")
+            db.add(user)
+            await db.flush()
+            member = Membership(user_id=user.id, group_id=group_id, role="headman", status="active")
+            db.add(member)
+            db.add(GroupAnalysisSettings(group_id=group_id, analysis_mode="shadow",
+                shadow_daily_budget_usd=Decimal("0.50"), updated_at=now))
+            await db.commit()
+        async def fake(*args, **kwargs):
+            return JPEG, "image/jpeg"
+        monkeypatch.setattr(image_jobs, "download", fake)
+        day = (now + timedelta(days=7)).date()
+        payload = json.loads(reading()) | {"semantic_types": ["schedule"], "schedule": [{
+            "weekday": day.weekday(), "starts": "13:00", "ends": "14:30", "subject": "Алгебра",
+            "valid_from": day.isoformat(), "valid_until": day.isoformat()}]}
+        config = Settings(_env_file=None, image_analysis_enabled=True, image_analysis_groups=[str(group_id)])
+        try:
+            provider = VisionProvider(json.dumps(payload))
+            assert await image_jobs.process_images_next(engine, config, provider, now) == "ready"
+            assert await image_jobs.process_images_next(engine, config, provider, now) == "ready"
+            async with AsyncSession(engine) as db:
+                suggestion_id = await db.scalar(select(ImageScheduleSuggestion.id).where(ImageScheduleSuggestion.group_id == group_id))
+            async def apply():
+                async with AsyncSession(engine) as db:
+                    result = await confirm(db, group_id, user, member, suggestion_id,
+                        ScheduleConfirmation(expected_revision=1, expected_schedule_version=0), now)
+                    await db.commit()
+                    return result
+            assert await asyncio.gather(apply(), apply()) == [1, 1]
+            async with AsyncSession(engine) as db:
+                changes = (await db.scalars(select(ScheduleChange).where(ScheduleChange.group_id == group_id))).all()
+                assert len(changes) == 1
+        finally:
+            async with AsyncSession(engine) as db:
+                await db.delete(await db.get(Group, group_id))
+                await db.delete(await db.get(User, user.id))
+                await db.commit()
+            await engine.dispose()
+    asyncio.run(run())

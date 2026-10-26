@@ -393,6 +393,10 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                 job.available_at = now + timedelta(seconds=15 * 2 ** (job.attempts - 1))
             else:
                 job.state = "failed"
+        if job.state == "ready" and job.pass_number == 2:
+            from studgroup.analysis.image_schedule import capture
+
+            await capture(db, job, result, now)
         job.lease_until = None
         if (settings.image_analysis_mode == "live" and job.state in {"ready", "failed"}
                 and (job.pass_number == 2 or job.state == "failed")

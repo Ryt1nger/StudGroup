@@ -1069,3 +1069,17 @@ class ImageAnalysisCall(Base):
     cache_tokens: Mapped[int] = mapped_column(Integer, default=0)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class ImageScheduleSuggestion(Base):
+    __tablename__ = "image_schedule_suggestions"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    image_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"), unique=True)
+    schedule_version: Mapped[int] = mapped_column(Integer)
+    rows_json: Mapped[str] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(String(24), default="pending")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

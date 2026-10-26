@@ -212,3 +212,16 @@ frontend edits or public schema removal. Reviewed per-card source references and
 handling. 53 initial and 34 display/preview/student API/PostgreSQL checks passed; lint/diff clean.
 Selection is deliberately conservative when visual equivalence cannot be proved; real-world
 suppression quality remains UNMEASURED. Actual AI cost USD 0.
+
+### 5a — PASS (technical implementation; pilot/UI remain gated)
+
+Added image_schedule_suggestions (`0041`) with source job, official schedule version, typed rows,
+revision and retention. Staff-only gated list/confirmation endpoints recheck role, source/context,
+period, week anchor and current timetable version. New rows and exact slot updates use existing
+manual decisions/audit/deadline rebuild; explicit occurrence mappings use existing once/recurring
+change logic and headman locks. Retry confirmation is idempotent. Missing dates, ambiguous lesson
+mapping and unmapped subgroups are blocked rather than guessed. Added draft contract in
+`packages/contracts/image-findings.openapi.yaml`; no frontend changed. Reviewed role revocation,
+transaction atomicity and non-automatic writes. 35 focused regressions and final 8 real PostgreSQL/
+API cases passed; 0041 downgrade/re-upgrade, lint and diff checks passed. Actual AI cost USD 0.
+Owner/UI choice still needed for subgroup mappings; official timetable never changes automatically.

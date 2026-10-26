@@ -1,0 +1,55 @@
+openapi: 3.1.0
+info:
+  title: StudGroup image findings review (pilot, disabled by default)
+  version: 0.1.0
+  description: >-
+    Additive draft backend contract. Requires explicit group allowlist and review feature flags.
+    Frontend integration and public social-event publication await owner approval.
+servers:
+  - url: https://api.studgroup.example/v1
+security:
+  - bearerAuth: []
+paths:
+  /staff/image-findings/schedule:
+    get:
+      operationId: listImageScheduleSuggestions
+      description: Headman/deputy only; returns retained group-local draft rows and source schedule version.
+      responses:
+        '200': {description: 'suggestions array: id, revision, state, schedule_version, rows'}
+        '403': {description: Membership role disallows review}
+        '404': {description: Feature disabled or not allowlisted}
+  /staff/image-findings/schedule/{id}/confirm:
+    post:
+      operationId: confirmImageScheduleSuggestion
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_revision, expected_schedule_version]
+              properties:
+                expected_revision: {type: integer, minimum: 1}
+                expected_schedule_version: {type: integer, minimum: 0}
+                targets:
+                  type: array
+                  items:
+                    type: object
+                    required: [row_index, lesson_id, pattern_revision, override_revision]
+                    properties:
+                      row_index: {type: integer, minimum: 0}
+                      lesson_id: {type: string}
+                      pattern_revision: {type: integer, minimum: 1}
+                      override_revision: {type: integer, minimum: 0}
+                      scope: {type: string, enum: [once, recurring], default: once}
+      responses:
+        '200': {description: Confirmed schedule_version; repeated confirmation has no repeated side effects}
+        '403': {description: Membership role disallows confirmation}
+        '404': {description: Not found or feature disabled}
+        '409': {description: 'Stale source/context/revision, missing dates or unresolved subgroup/lesson mapping'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
