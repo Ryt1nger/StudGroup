@@ -176,3 +176,14 @@ drop A's facts. Each pass commits independently. 20 image contract/worker/real P
 passed; reviewed prompt injection boundaries, field constraints and feedback from generated cards.
 Existing-card changes do not self-trigger unlimited image reanalysis. Real OCR/classification
 quality remains UNMEASURED. Actual AI cost USD 0. Next: accounting and recovery hardening.
+
+### 2b — PASS
+
+Shared group/day and rolling-hour accounting now includes both image and text reservations under
+the existing group settings lock. Added per-image and per-album/message batch caps, conservative
+ambiguous-call settlement, usage/latency per attempt and stale-context/pixel guards. A superseded
+pass still settles its real usage. Pass B retries reuse committed A. Expired paid leases stop for
+review instead of automatically paying twice. 51 image/shadow/PostgreSQL checks passed, including
+zero budget, all caps, crash/lease recovery, edit during paid call and preserved costs across a
+B retry. Ruff/diff clean. Reviewed transaction lock order and data isolation. No exact-once
+external billing claim: a process crash can leave an explicitly unknown paid outcome. USD 0 spent.

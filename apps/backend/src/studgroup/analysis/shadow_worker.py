@@ -23,6 +23,7 @@ from studgroup.models import (
     Group,
     GroupAnalysisSettings,
     GroupKnowledgeFact,
+    ImageAnalysisCall,
     RawMessage,
     ShadowEvaluationRun,
 )
@@ -384,7 +385,11 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
                 ShadowEvaluationRun.id != row.id,
             )
         )
-        committed = Decimal(charged or 0) + Decimal(reserved_elsewhere or 0)
+        image_day = await db.scalar(select(func.coalesce(func.sum(
+            ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd), 0)).where(
+                ImageAnalysisCall.group_id == row.group_id, ImageAnalysisCall.created_at >= day_start,
+            ))
+        committed = Decimal(charged or 0) + Decimal(reserved_elsewhere or 0) + Decimal(image_day or 0)
         if committed + SHADOW_RESERVATION_USD > Decimal(route_row.shadow_daily_budget_usd):
             row.state = "budget_deferred"
             row.last_error = "shadow_budget_exhausted"
@@ -410,9 +415,13 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
                     ShadowEvaluationRun.id != row.id,
                 )
             )
+            image_hour = await db.scalar(select(func.coalesce(func.sum(
+                ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd), 0)).where(
+                    ImageAnalysisCall.group_id == row.group_id, ImageAnalysisCall.created_at >= hour_start,
+                ))
             if Decimal(hour_charged or 0) + Decimal(
                 hour_reserved or 0
-            ) + SHADOW_RESERVATION_USD > Decimal(hourly_cap):
+            ) + Decimal(image_hour or 0) + SHADOW_RESERVATION_USD > Decimal(hourly_cap):
                 row.state = "budget_deferred"
                 row.last_error = "shadow_hourly_budget_exhausted"
                 row.available_at = _utc(now) + timedelta(minutes=10)

@@ -155,3 +155,81 @@ def test_download_rejects_path_escape_and_retries_telegram_outage():
             await image_jobs.download("fake", "fake", transport=httpx.MockTransport(outage))
         assert captured.value.retryable
     asyncio.run(run())
+
+
+def test_pass_b_retry_reuses_a_and_keeps_every_charge(client, monkeypatch):
+    from studgroup.ai import ProviderFailure, TokenUsage
+
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+    config = cfg(client)
+    provider = VisionProvider(reading())
+    now = datetime.now(UTC)
+    assert tick(client, provider, config, now) == "ready"
+    provider.answer = ProviderFailure("rate_limited", True,
+        usage=TokenUsage(prompt_tokens=3, completion_tokens=0))
+    assert tick(client, provider, config, now) == "retry"
+    provider.answer = reading()
+    assert tick(client, provider, config, now + timedelta(minutes=1)) == "ready"
+    jobs = stored(client, ImageAnalysisJob)
+    assert next(j for j in jobs if j.pass_number == 1).attempts == 1
+    assert next(j for j in jobs if j.pass_number == 2).attempts == 2
+    calls = stored(client, ImageAnalysisCall)
+    assert len(calls) == 3
+    assert sum(c.charged_usd for c in calls) == Decimal("0.00068490")
+    assert all(c.reserved_usd == 0 for c in calls)
+
+
+def test_expired_paid_lease_never_repeats_ambiguous_purchase(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+    config = cfg(client)
+    provider = VisionProvider(reading())
+    now = datetime.now(UTC)
+
+    class Crash(VisionProvider):
+        async def complete_vision(self, **kwargs):
+            raise asyncio.CancelledError
+    with pytest.raises(asyncio.CancelledError):
+        tick(client, Crash(reading()), config, now)
+    assert tick(client, provider, config, now + timedelta(minutes=4)) == "idle"
+    assert provider.vision == []
+    assert stored(client, ImageAnalysisJob)[0].error == "ambiguous_paid_attempt"
+    call = stored(client, ImageAnalysisCall)[0]
+    assert call.state == "unknown" and call.charged_usd == Decimal("0.02")
+    assert call.reserved_usd == 0
+
+
+@pytest.mark.parametrize("patch,code", [
+    ({"image_hourly_budget_usd": 0}, "image_hourly_budget"),
+    ({"image_total_budget_usd": 0}, "image_budget_exhausted"),
+    ({"image_package_budget_usd": 0}, "image_package_budget_exhausted"),
+])
+def test_image_limits_prevent_paid_calls(client, monkeypatch, patch, code):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+    provider = VisionProvider(reading())
+    assert tick(client, provider, cfg(client, **patch)) == "idle"
+    assert provider.vision == []
+    assert stored(client, ImageAnalysisJob)[0].error == code
+
+
+def test_edit_during_paid_call_keeps_charge_but_rejects_result(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+    config = cfg(client)
+
+    class Edit(VisionProvider):
+        async def complete_vision(self, **kwargs):
+            async with AsyncSession(client.app.state.engine) as db:
+                raw = await db.scalar(select(RawMessage))
+                raw.revision += 1
+                await db.commit()
+            return await super().complete_vision(**kwargs)
+    assert tick(client, Edit(reading()), config) == "stale"
+    assert stored(client, ImageAnalysisJob)[0].result_json is None
+    assert stored(client, ImageAnalysisCall)[0].charged_usd == Decimal("0.00034200")

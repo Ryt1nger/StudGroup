@@ -243,6 +243,30 @@ async def claim(db, group, route, settings, now):
     if image_spent + reserve > Decimal(str(settings.image_total_budget_usd)):
         job.state, job.error = "failed", "image_budget_exhausted"
         return None
+    hour = now - timedelta(hours=1)
+    hourly = await total(db, ImageAnalysisCall,
+        ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd,
+        group_filter, ImageAnalysisCall.created_at >= hour)
+    hourly += await total(db, ShadowEvaluationRun,
+        ShadowEvaluationRun.charged_usd + ShadowEvaluationRun.reserved_usd,
+        ShadowEvaluationRun.group_id == group.id, ShadowEvaluationRun.created_at >= hour)
+    # An image batch is one Telegram album, or one non-album message.
+    batch = select(MessageAttachment.id).where(MessageAttachment.group_id == group.id)
+    if attachment.media_group_id:
+        batch = batch.where(MessageAttachment.media_group_id == attachment.media_group_id)
+    else:
+        batch = batch.where(MessageAttachment.raw_message_id == attachment.raw_message_id)
+    batch_jobs = select(ImageAnalysisJob.id).where(ImageAnalysisJob.attachment_id.in_(batch))
+    batch_spent = await total(db, ImageAnalysisCall,
+        ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd,
+        ImageAnalysisCall.job_id.in_(batch_jobs))
+    if hourly + reserve > Decimal(str(settings.image_hourly_budget_usd)):
+        job.state, job.error = "budget_deferred", "image_hourly_budget"
+        job.available_at = now + timedelta(minutes=10)
+        return None
+    if batch_spent + reserve > Decimal(str(settings.image_package_budget_usd)):
+        job.state, job.error = "failed", "image_package_budget_exhausted"
+        return None
     token = uuid.uuid4()
     job.state, job.claim_token = "running", token
     job.attempts += 1
@@ -274,8 +298,8 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                 continue
             route = await db.scalar(select(GroupAnalysisSettings).where(
                 GroupAnalysisSettings.group_id == candidate.group_id,
-            ).with_for_update(skip_locked=True))
-            if route is None:
+            ).with_for_update(skip_locked=True).execution_options(populate_existing=True))
+            if route is None or route.analysis_mode not in {"new", "shadow"}:
                 continue
             group = await db.get(Group, route.group_id)
             if group.status != "active" or not group.pilot_authorized:
@@ -310,6 +334,10 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             from studgroup.ai import DeepSeekProvider
             provider = DeepSeekProvider(settings.deepseek_api_key.get_secret_value(),
                 model=settings.deepseek_model, base_url=settings.deepseek_base_url)
+        if job.pass_number == 2 and first is None:
+            raise DownloadError("pass_a_missing", False)
+        if job.pass_number == 2 and first_job.pixel_sha256 != hashlib.sha256(image).hexdigest():
+            raise DownloadError("image_pixels_changed", False)
         paid = True
         result, usage = await perform(provider, image, mime, job, raw, first)
     except DownloadError as error:
@@ -323,8 +351,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
         call = await db.scalar(select(ImageAnalysisCall).where(ImageAnalysisCall.claim_token == token).with_for_update())
         if job is None or call is None:
             return "expired"
-        if job.claim_token != token or job.state != "running":
-            return "superseded"
+        superseded = job.claim_token != token or job.state != "running"
         charge_unknown = paid and not getattr(failure, "reservation_releasable", False)
         actual = usage_cost_usd(usage) if usage else call.reserved_usd if charge_unknown else Decimal(0)
         call.charged_usd, call.reserved_usd = actual, Decimal(0)
@@ -333,11 +360,22 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
         if usage:
             call.prompt_tokens, call.completion_tokens = usage.prompt_tokens, usage.completion_tokens
             call.cache_tokens = usage.prompt_cache_hit_tokens
+        if superseded:
+            await db.commit()  # even a stale pass must retain the actual paid usage
+            return "superseded"
         raw = await db.get(RawMessage, job.raw_message_id)
         attachment = await db.get(MessageAttachment, job.attachment_id)
+        context_changed = False
+        if raw is not None and job.pass_number == 2:
+            current = await context_snapshot(db, raw)
+            current["pass_a_sha256"] = digest(first_job.result_json)
+            context_changed = digest({k: v for k, v in current.items() if k != "existing_items"}) != job.context_sha256
         if (raw is None or attachment is None or not attachment.active
-                or raw.revision != job.source_revision or utc(job.delete_at) <= now):
-            job.state, job.error = "stale", "source_revision_changed"
+                or raw.revision != job.source_revision or utc(job.delete_at) <= utc(datetime.now(UTC))
+                or context_changed):
+            job.state, job.error = "stale", "context_or_source_revision_changed"
+        elif actual > Decimal(str(settings.image_pass_reservation_usd)):
+            job.state, job.error = "failed", "image_charge_over_reservation"
         elif result is not None:
             job.result_json = result.model_dump_json()
             job.state = "ready" if result.complete else "failed"
