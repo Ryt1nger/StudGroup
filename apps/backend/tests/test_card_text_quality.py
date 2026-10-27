@@ -450,7 +450,7 @@ def test_previously_valid_cards_keep_title_description_and_visibility(source, ti
 
 
 def test_prompt_version_and_the_title_and_description_contracts():
-    assert EXTRACTION_PROMPT_VERSION == "cplus-extraction-12"
+    assert EXTRACTION_PROMPT_VERSION == "cplus-extraction-13"
     prompt = EXTRACTION_SYSTEM_PROMPT
     assert "Title contract" in prompt and "ideally under 60 characters" in prompt
     assert "Description contract" in prompt and "in your own words" in prompt
