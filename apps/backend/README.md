@@ -512,3 +512,14 @@ That option is not part of the production image worker and never relaxes its amb
 The local check uses HTTP/2 with certificate verification after transient handshake failures; production transport
 is unchanged. Raw responses contain only synthetic fixture content; never use this runner with
 student photos or private chats. A new output path must not be used to reset the authorized cap.
+
+
+The authorized 2026-10-27 run is complete. Recorded synthetic responses, every attempted call,
+usage, held unknown charges and final C+ output are in
+`tests/fixtures/ai_analysis/image-provider-observations.json`; the canonical Russian assessment
+is `docs/architecture/ai-analysis-integration-report.md` at repository root. This file is a raw
+provider ledger, not the normalized ObservationRun input format. No real-group quality or
+production activation follows from it. Configure test credentials through DEEPSEEK_API_KEY or
+STUDGROUP_SYNTHETIC_ENV_FILE pointing to an ignored local .env; never commit that file.
+Only TCP/TLS connection establishment may retry automatically in the local check; paid read/write
+failures retain the hold. All already recorded expenses count against the original USD 2 cap.

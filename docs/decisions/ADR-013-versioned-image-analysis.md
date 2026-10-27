@@ -1,6 +1,6 @@
 # ADR-013: Versioned visual evidence inside C+
 
-Status: accepted for offline implementation; production activation requires owner approval.
+Status: implemented; authorized synthetic-provider validation completed; production activation requires owner approval.
 Date: 2026-10-26.
 
 Keep C+ context/extraction, canonical writer, source revisions and human locks. Add durable
@@ -45,3 +45,16 @@ Schedule confirmation must allow an authorized editor to correct uncertain subje
 effective dates, replacement mapping, time, room, teacher and once/recurring scope. Use group-local
 IDs, official revision locks and the existing schedule audit. No ambiguous automatic application.
 Backend contracts are prepared here; frontend changes and production activation are separate work.
+
+
+## Validation safeguards — 2026-10-27
+
+The context snapshot identifies the exact image source message and album/reply relations.
+Pixel facts never include chat-only claims; chat changes purpose and required actions with its
+own source IDs. The C+ request supplies a copyable fact-reference index. Bare-image proposals
+require exact image fact references, and the check repeats after album reconciliation so a
+newly attached unread/uncited page cannot bypass the publication gate. Missing provenance is
+held for review; prompts are reinforced without weakening this gate. Unknown purpose is distinct
+from unreadable pixels. "Finish the rest" never authorizes reassigning the entire printed range.
+The synthetic run, including failed schema responses and bounded retests, is recorded in the
+canonical integration report; its expense never resets the single authorized USD 2 ledger.
