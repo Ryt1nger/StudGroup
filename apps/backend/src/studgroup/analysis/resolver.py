@@ -88,6 +88,10 @@ def _keeps_known_deadline(item, shown):
     """
     if item.deadline_at is None or shown.reason == "withdrawn_deadline":
         return False
+    # Re-running next-lesson inference at a later package boundary is not a reschedule. Only the
+    # explicit reschedule action (handled outside this update rule) may move an inferred deadline.
+    if item.deadline_basis == shown.basis == "schedule_inferred":
+        return True
     return _BASIS_RANK.get(shown.basis, 0) < _BASIS_RANK.get(item.deadline_basis, 0)
 
 
@@ -242,7 +246,18 @@ async def resolve_proposal(
                     ),
                 ]
             proposed = {
-                "deadline": current["deadline"]
+                "deadline": (
+                    (
+                        item.deadline_at.replace(tzinfo=shown.at.tzinfo)
+                        if item.deadline_at is not None
+                        and item.deadline_at.tzinfo is None
+                        and shown.at is not None
+                        else item.deadline_at
+                    ),
+                    item.deadline_date_only,
+                    item.deadline_basis,
+                    item.deadline_reason,
+                )
                 if keeps_deadline
                 else (shown.at, shown.date_only, shown.basis, shown.reason),
                 "subject": subject,

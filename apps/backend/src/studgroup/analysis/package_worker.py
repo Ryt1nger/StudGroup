@@ -568,6 +568,22 @@ async def _existing_items(db, group_id, now):
             .limit(EXISTING_ITEMS_LIMIT)
         )
     ).all()
+    item_ids = [row.id for row in rows]
+    source_rows = (
+        (
+            await db.execute(
+                select(CanonicalItemEvidence.item_id, RawMessage.telegram_message_id)
+                .join(RawMessage, RawMessage.id == CanonicalItemEvidence.raw_message_id)
+                .where(CanonicalItemEvidence.item_id.in_(item_ids))
+                .distinct()
+            )
+        ).all()
+        if item_ids
+        else []
+    )
+    source_ids = {}
+    for item_id, message_id in source_rows:
+        source_ids.setdefault(item_id, []).append(message_id)
     return [
         {
             "id": str(row.id),
@@ -575,9 +591,10 @@ async def _existing_items(db, group_id, now):
             "semantic_kind": row.semantic_kind,
             "subject": row.subject,
             "title": row.title[:200],
-            "description": (row.description or "")[:600],
+            "description": row.description or "",
             "deadline_at": _utc(row.deadline_at).isoformat() if row.deadline_at else None,
             "deadline_basis": row.deadline_basis,
+            "source_message_ids": sorted(source_ids.get(row.id, [])),
         }
         for row in rows
     ]

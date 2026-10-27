@@ -5,6 +5,7 @@ import json
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_analysis_shadow import context_payload, proposal
@@ -873,6 +874,110 @@ def test_a_package_that_changed_nothing_sends_the_owner_nothing(client):
     assert owner_messages(client) == []
 
 
+def test_context_only_paraphrase_cannot_rewrite_an_existing_card(client):
+    """A new empty target must not make an old context message rewrite its card."""
+    source(client, mid=31, text="По математике решить задачи 1–3", when=BASE)
+    make_new(client)
+    assert step(client, PackageProvider(cited=(31,))) == "completed"
+    source(client, mid=32, text="Спасибо!", when=BASE + timedelta(minutes=20))
+
+    class ContextParaphrase(PackageProvider):
+        async def complete(self, request):
+            result = await super().complete(request)
+            if request.prompt_version.startswith("cplus-extraction"):
+                payload = json.loads(result.content)
+                payload["proposals"][0]["description"] = "Выполнить задачи 1–3."
+                result.content = json.dumps(payload)
+            return result
+
+    provider = ContextParaphrase(cited=(31,), update_existing=True)
+    assert step(client, provider) == "completed"
+    assert provider.requests[-1].user_payload["target_message_ids"] == [32]
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            item = await db.scalar(select(CanonicalAcademicItem))
+            runs = (
+                await db.scalars(
+                    select(ShadowEvaluationRun).order_by(ShadowEvaluationRun.created_at)
+                )
+            ).all()
+            validation = json.loads(runs[-1].validation_result_json)
+            return item.revision, validation
+
+    revision, validation = asyncio.run(inspect())
+    assert revision == 1
+    assert validation["accepted"] == []
+    assert validation["rejected"][0]["reason_code"] == "mutation_not_supported_by_target"
+
+
+def test_empty_target_cannot_formally_cover_an_old_context_update(client):
+    source(client, mid=31, text="По математике решить задачи 1–3", when=BASE)
+    make_new(client)
+    assert step(client, PackageProvider(cited=(31,))) == "completed"
+    source(client, mid=32, text="Спасибо!", when=BASE + timedelta(minutes=20))
+
+    # The provider cites both the useful old source and the current empty target. Merely naming
+    # a target is not enough: the proposed delta still has no support in that target.
+    provider = PackageProvider(cited=(31, 32), update_existing=True)
+    assert step(client, provider) == "completed"
+
+    async def revision():
+        async with AsyncSession(client.app.state.engine) as db:
+            return (await db.scalar(select(CanonicalAcademicItem))).revision
+
+    assert asyncio.run(revision()) == 1
+
+
+def test_old_context_cannot_create_a_card_for_an_empty_target(client):
+    source(client, mid=31, text="По математике решить задачи 1–3", when=BASE)
+    make_new(client)
+    assert step(client, PackageProvider(propose=False)) == "completed"
+    source(client, mid=32, text="Спасибо!", when=BASE + timedelta(minutes=20))
+    assert step(client, PackageProvider(cited=(31,))) == "completed"
+    assert count(client, CanonicalAcademicItem) == 0
+
+
+def test_real_target_addition_still_updates_instead_of_creating_a_duplicate(client):
+    source(client, mid=31, text="По математике решить задачи 1–3", when=BASE)
+    make_new(client)
+    assert step(client, PackageProvider(cited=(31,))) == "completed"
+    source(client, mid=32, text="Добавили задачу 4", when=BASE + timedelta(minutes=20))
+    assert step(client, PackageProvider(cited=(31, 32), update_existing=True)) == "completed"
+
+    async def item_state():
+        async with AsyncSession(client.app.state.engine) as db:
+            item = await db.scalar(select(CanonicalAcademicItem))
+            return item.revision, item.description
+
+    assert count(client, CanonicalAcademicItem) == 1
+    assert asyncio.run(item_state()) == (2, "Решить задачи 1–4.")
+
+
+def test_existing_item_description_is_not_silently_cut_before_an_update(client):
+    requirement = "Подготовить отчёт. " + " ".join(
+        f"Требование {index}: пояснить результаты." for index in range(30)
+    )
+    source(client, mid=31, text=requirement, when=BASE)
+    make_new(client)
+
+    class LongDescription(PackageProvider):
+        async def complete(self, request):
+            result = await super().complete(request)
+            if request.prompt_version.startswith("cplus-extraction"):
+                payload = json.loads(result.content)
+                payload["proposals"][0]["description"] = requirement
+                result.content = json.dumps(payload)
+            return result
+
+    assert step(client, LongDescription(cited=(31,))) == "completed"
+    source(client, mid=32, text="Добавить выводы в конце", when=BASE + timedelta(minutes=20))
+    inspect = PackageProvider(cited=(32,), propose=False)
+    assert step(client, inspect) == "completed"
+    assert len(requirement) > 600
+    assert inspect.offered[0]["description"] == requirement
+
+
 def test_without_the_owner_feed_no_message_is_queued(client):
     seed(client)
     make_new(client)
@@ -944,3 +1049,32 @@ def test_a_visible_update_is_reported_with_the_card_title_and_the_changed_fields
     found = asyncio.run(run())
     # revision 2 changed only technical fields and is dropped; revision 3 changed two visible ones
     assert found == [("updated", "Решить задачи 1–3", ["описание", "срок"])]
+
+
+@pytest.mark.parametrize(
+    ("text", "reply", "expected"),
+    [("Отмена!", 31, "cancelled"), ("Спасибо!", 31, "active"), ("Отмена!", None, "active")],
+)
+def test_terse_cancellation_requires_explicit_intent_and_item_reply(client, text, reply, expected):
+    source(client, mid=31, text="По математике решить задачи 1–3", when=BASE)
+    make_new(client)
+    assert step(client, PackageProvider(cited=(31,))) == "completed"
+    source(client, mid=32, reply=reply, text=text, when=BASE + timedelta(minutes=20))
+
+    class CancelProvider(PackageProvider):
+        async def complete(self, request):
+            result = await super().complete(request)
+            if request.prompt_version.startswith("cplus-extraction"):
+                payload = json.loads(result.content)
+                payload["proposals"][0]["action"] = "cancel"
+                payload["proposals"][0]["description"] = "Решить задачи 1–3."
+                result.content = json.dumps(payload)
+            return result
+
+    assert step(client, CancelProvider(cited=(31, 32), update_existing=True)) == "completed"
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            return (await db.scalar(select(CanonicalAcademicItem))).state
+
+    assert asyncio.run(inspect()) == expected
