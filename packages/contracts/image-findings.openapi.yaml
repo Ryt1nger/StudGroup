@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: StudGroup image findings review (pilot, disabled by default)
-  version: 0.1.0
+  version: 0.2.0
   description: >-
     Additive draft backend contract. Requires explicit group allowlist and review feature flags.
-    Frontend integration and public social-event publication await owner approval.
+    Separate events and editor-confirmed publication are owner-approved. Frontend integration and actual activation remain pending.
 servers:
   - url: https://api.studgroup.example/v1
 security:
@@ -41,6 +41,11 @@ paths:
               properties:
                 expected_revision: {type: integer, minimum: 1}
                 expected_schedule_version: {type: integer, minimum: 0}
+                corrected_rows:
+                  description: Optional editor-corrected full rows; preserve AI rows separately for audit. Each subgroup_id must belong to this group and subject.
+                  type: [array, 'null']
+                  maxItems: 100
+                  items: {$ref: '#/components/schemas/ConfirmedScheduleRow'}
                 targets:
                   type: array
                   items:
@@ -91,7 +96,7 @@ paths:
     get:
       operationId: listPublishedGroupEvents
       responses:
-        '200': {description: Only future active group-audience events with current retained sources}
+        '200': {description: Approved active group events retained through local end date + 7 days inclusive; private source expiry never removes the approved record}
         '401': {description: Active authenticated membership required}
         '404': {description: Publication disabled}
   /group-events/{id}:
@@ -101,9 +106,26 @@ paths:
         - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
       responses:
         '200': {description: Published event payload with id/revision/state}
-        '404': {description: Private, unknown, expired, cancelled, stale, wrong group or feature disabled}
+        '404': {description: Private, unknown, unapproved, expired, wrong group or feature disabled; retained cancelled events remain accessible by id}
 components:
   schemas:
+    ConfirmedScheduleRow:
+      type: object
+      additionalProperties: false
+      required: [weekday, starts, ends, subject, valid_from, valid_until]
+      properties:
+        weekday: {type: integer, minimum: 0, maximum: 6}
+        starts: {type: string, format: time}
+        ends: {type: string, format: time}
+        subject: {type: string, minLength: 1, maxLength: 255}
+        subject_id: {type: [string, 'null'], format: uuid}
+        subgroup: {type: [string, 'null'], maxLength: 255}
+        subgroup_id: {type: [string, 'null'], format: uuid}
+        week: {type: string, enum: [all, first, second], default: all}
+        valid_from: {type: string, format: date}
+        valid_until: {type: string, format: date}
+        room: {type: [string, 'null'], maxLength: 255}
+        teacher: {type: [string, 'null'], maxLength: 255}
     EventPayload:
       type: object
       additionalProperties: false
@@ -113,6 +135,10 @@ components:
         description: {type: string, maxLength: 8000, default: ''}
         when_text: {type: [string, 'null'], maxLength: 1000}
         starts_at: {type: [string, 'null'], format: date-time}
+        ends_at: {type: [string, 'null'], format: date-time}
+        starts_on: {type: [string, 'null'], format: date}
+        ends_on: {type: [string, 'null'], format: date}
+        multi_day: {type: boolean, default: false}
         place: {type: [string, 'null'], maxLength: 500}
         conditions: {type: [string, 'null'], maxLength: 2000}
         audience: {type: string, enum: [group, subgroup, personal, unknown], default: unknown}

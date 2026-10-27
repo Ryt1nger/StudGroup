@@ -400,3 +400,14 @@ Image findings review and social-event endpoints are specified separately in
 seven academic kinds or replace `/deadlines`. Frontend/API adoption requires owner coordination.
 Review and publication each require their own flag and a group allowlist. Existing clients and
 existing EventRecord consumers remain compatible.
+
+
+## Owner-approved Core v2 refinements (2026-10-27)
+
+The image-findings contract 0.2.0 adds optional event end/date-only/multi-day fields and corrected
+schedule rows with explicit group-local subject/subgroup IDs. Existing requests remain valid.
+Published events use an independently approved snapshot and survive expiry of private sources
+through the group-local event end date + 7 days inclusive. Retained past/cancelled event details
+remain available; cancellation stays hidden from active lists. APIs will expose explicit source
+availability instead of linking to expired private evidence. Public activation remains off pending
+frontend handoff and separate permission. No existing academic card endpoint is replaced.
