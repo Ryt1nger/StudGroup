@@ -1738,6 +1738,10 @@ components:
       properties:
         id: { type: string }
         subject: { type: string }
+        subgroup_id:
+          type: [string, "null"]
+          format: uuid
+          description: Optional confirmed subgroup; absent on existing group-wide lessons.
         starts_at: { type: string, format: date-time }
         ends_at: { type: string, format: date-time }
         teacher: { type: [string, "null"] }

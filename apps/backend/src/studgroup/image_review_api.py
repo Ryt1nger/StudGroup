@@ -31,7 +31,8 @@ async def list_schedule(request: Request, context: CurrentStaff, db: Db):
         ImageScheduleSuggestion.delete_at > datetime.now(UTC),
     ).order_by(ImageScheduleSuggestion.created_at.desc()).limit(100))).all()
     return {"suggestions": [{"id": row.id, "revision": row.revision, "state": row.state,
-        "schedule_version": row.schedule_version, "rows": json.loads(row.rows_json)} for row in rows]}
+        "schedule_version": row.schedule_version, "rows": json.loads(row.rows_json),
+        "confirmation": json.loads(row.confirmation_json) if row.confirmation_json else None} for row in rows]}
 
 
 @router.post("/schedule/{ident}/confirm")

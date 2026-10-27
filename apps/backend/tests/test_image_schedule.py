@@ -87,3 +87,82 @@ def test_subgroup_schedule_requires_explicit_mapping(client, monkeypatch):
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "subgroup_mapping_required"
     assert stored(client, ScheduleChange) == []
+
+
+def test_editor_can_correct_unknown_dates_subject_teacher_and_room(client, monkeypatch):
+    suggestion = prepare(client, monkeypatch, valid_from=None, valid_until=None)
+    original = suggestion.rows_json
+    make(client, "headman")
+    corrected = {"weekday": 2, "starts": "15:00", "ends": "16:30", "subject": "Информатика",
+        "room": "303", "teacher": "Петров", "valid_from": "2026-10-28", "valid_until": "2026-12-31"}
+    result = client.post(f"/v1/staff/image-findings/schedule/{suggestion.id}/confirm", headers=AUTH,
+        json={"expected_revision": 1, "expected_schedule_version": 0, "corrected_rows": [corrected]})
+    assert result.status_code == 200, result.text
+    current = stored(client, ImageScheduleSuggestion)[0]
+    assert current.rows_json == original
+    assert json.loads(current.confirmation_json)["rows"][0]["subject"] == "Информатика"
+    async def lesson():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(SchedulePattern).where(SchedulePattern.subject == "Информатика"))
+            return row.teacher, row.location, row.starts.hour
+    assert asyncio.run(lesson()) == ("Петров", "303", 15)
+
+
+def test_editor_subgroup_mapping_is_group_and_subject_scoped(client, monkeypatch):
+    from datetime import UTC, datetime
+
+    from studgroup.models import Group, Subgroup, SubjectSplit
+    from studgroup.subject_identity import subject_uuid
+
+    async def setup():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            other = await db.scalar(select(Group).where(Group.telegram_chat_id == -1002))
+            ids = []
+            for owner, subject in ((group, "Алгебра"), (group, "Математика"), (other, "Алгебра")):
+                split = SubjectSplit(group_id=owner.id, subject_id=subject_uuid(owner.id, subject),
+                    subject_name=subject, created_at=datetime.now(UTC))
+                db.add(split)
+                await db.flush()
+                subgroup = Subgroup(split_id=split.id, position=1, name="Первая", signals="[]")
+                db.add(subgroup)
+                await db.flush()
+                ids.append((str(subgroup.id), str(split.subject_id)))
+            await db.commit()
+            return ids
+    pairs = asyncio.run(setup())
+    suggestion = prepare(client, monkeypatch, subgroup="Первая")
+    make(client, "headman")
+    subgroup_id, subject_id = pairs[0]
+    row = json.loads(suggestion.rows_json)[0] | {"subgroup_id": subgroup_id, "subject_id": subject_id}
+    path = f"/v1/staff/image-findings/schedule/{suggestion.id}/confirm"
+    for invalid in (row | {"subgroup_id": pairs[1][0]}, row | {"subgroup_id": pairs[2][0]},
+                    row | {"subject_id": pairs[2][1]}):
+        response = client.post(path, headers=AUTH, json={"expected_revision": 1,
+            "expected_schedule_version": 0, "corrected_rows": [invalid]})
+        assert response.status_code == 409, response.text
+        assert stored(client, ScheduleChange) == []
+    response = client.post(path, headers=AUTH, json={"expected_revision": 1,
+        "expected_schedule_version": 0, "corrected_rows": [row]})
+    assert response.status_code == 200, response.text
+    data = client.get("/v1/schedule?start=2026-10-28&end=2026-10-28", headers=AUTH).json()
+    assert next(item for item in data["lessons"] if item["subject"] == "Алгебра")["subgroup_id"] == subgroup_id
+
+
+def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(client, monkeypatch):
+    suggestion = prepare(client, monkeypatch)
+    make(client, "headman")
+    lesson = client.get("/v1/staff/schedule?start=2026-11-02&end=2026-11-02", headers=AUTH).json()["lesson_edits"][0]
+    corrected = {"weekday": 0, "starts": "11:00", "ends": "12:30", "subject": "Информатика",
+        "teacher": None, "room": "303", "valid_from": "2026-11-02", "valid_until": "2026-11-02"}
+    response = client.post(f"/v1/staff/image-findings/schedule/{suggestion.id}/confirm", headers=AUTH,
+        json={"expected_revision": 1, "expected_schedule_version": 0, "corrected_rows": [corrected],
+            "targets": [{"row_index": 0, "lesson_id": lesson["lesson_id"],
+                "pattern_revision": lesson["pattern_revision"], "override_revision": lesson["override_revision"], "scope": "once"}]})
+    assert response.status_code == 200, response.text
+    result = client.get("/v1/schedule?start=2026-11-02&end=2026-11-02", headers=AUTH)
+    assert result.status_code == 200, result.text
+    changed = next(row for row in result.json()["lessons"] if row["subject"] == "Информатика")
+    assert changed["teacher"] is None
+    assert changed["location"] == "303"
+    assert stored(client, ScheduleChange)[0].input_method == "image_confirm"

@@ -224,6 +224,8 @@ async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):
         )
         for lesson in expanded:
             lesson["online_url"] = row.online_url
+            if row.subgroup_id is not None:
+                lesson["subgroup_id"] = str(row.subgroup_id)
             if row.cancelled:
                 lesson["status"] = "cancelled"
         lessons.extend(expanded)
@@ -259,8 +261,8 @@ async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):
         lessons.append(
             {
                 "id": ident,
-                "subject": pattern.subject,
-                "teacher": pattern.teacher,
+                "subject": exception.subject or pattern.subject,
+                "teacher": exception.teacher if exception.teacher_overridden else pattern.teacher,
                 "starts_at": stamp.isoformat(),
                 "ends_at": (
                     exception.ends_at.replace(tzinfo=UTC)
@@ -270,6 +272,9 @@ async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):
                 "location": exception.location,
                 "online_url": exception.online_url,
                 "status": "cancelled" if exception.cancelled else "scheduled",
+                **({"subgroup_id": str(exception.subgroup_id) if exception.subgroup_id else None}
+                   if exception.subgroup_overridden else
+                   {"subgroup_id": str(pattern.subgroup_id)} if pattern.subgroup_id else {}),
             }
         )
     lessons.sort(key=lambda lesson: (lesson["starts_at"], lesson["id"]))

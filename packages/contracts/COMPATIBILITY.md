@@ -411,3 +411,10 @@ through the group-local event end date + 7 days inclusive. Retained past/cancell
 remain available; cancellation stays hidden from active lists. APIs will expose explicit source
 availability instead of linking to expired private evidence. Public activation remains off pending
 frontend handoff and separate permission. No existing academic card endpoint is replaced.
+
+Core v2 editor confirmation (2026-10-27): `corrected_rows` is optional; original AI rows remain
+immutable, confirmed rows and target revisions are retained separately. Subject/subgroup IDs
+must belong to the same group and subject. `LessonOccurrence.subgroup_id` is additive and optional.
+Existing group-wide schedule responses stay compatible. One-off replacements carry their own
+subject/teacher/subgroup, including an explicitly cleared teacher. Frontend confirmation UI
+and feature activation remain pending; all image review/publication flags default to off.

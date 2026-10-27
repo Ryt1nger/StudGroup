@@ -493,3 +493,11 @@ PostgreSQL database before deployment. The draft additive API is
 `packages/contracts/image-findings.openapi.yaml`; frontend adoption, event retention and subgroup
 mapping require owner coordination. See the living integration report for completed gates and
 `OWNER_DECISIONS_REQUIRED`.
+
+Owner decisions 2026-10-27: approved structured events survive private-source expiry and are
+retained through the event's local end date plus seven full calendar days. Drafts remain bounded
+by source retention. Missing dates or a multi-day event without an end prevent publication.
+Expired private-source links are unavailable; approved events never preserve copied raw chat.
+Schedule confirmation accepts optional corrected_rows and explicit subgroup/lesson mapping;
+AI rows remain immutable. Migration 0044 and the additive LessonOccurrence.subgroup_id field
+support the pending frontend integration. No public/review flags are activated by these changes.

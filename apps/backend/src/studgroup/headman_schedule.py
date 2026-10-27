@@ -85,7 +85,8 @@ async def change(
                 end.time(),
                 start.weekday(),
             )
-        for field in ["location", "online_url", "cancelled"]:
+        for field in ["location", "online_url", "cancelled", "subject", "teacher", "subgroup_id",
+                      "valid_from", "valid_until", "week"]:
             if field in patch:
                 setattr(pattern, field, patch[field])
         pattern.revision += 1
@@ -118,9 +119,13 @@ async def change(
         await db.flush()
         key = f"x:{override.id}"
         before = {key: None}
-    for field in ["starts_at", "ends_at", "location", "online_url", "cancelled"]:
+    for field in ["starts_at", "ends_at", "location", "online_url", "cancelled", "subject", "teacher", "subgroup_id"]:
         if field in patch:
             setattr(override, field, patch[field])
+    if "teacher" in patch:
+        override.teacher_overridden = True
+    if "subgroup_id" in patch:
+        override.subgroup_overridden = True
     if override.ends_at <= override.starts_at:
         raise StError("Конец пары должен быть позже начала.")
     override.revision += 1
