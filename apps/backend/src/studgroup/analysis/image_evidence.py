@@ -9,7 +9,7 @@ from studgroup.analysis.image_contracts import ImageEvidence, VisualReading
 from studgroup.models import ImageAnalysisJob, MessageAttachment
 
 
-async def load_image_evidence(db, group_id, messages, now=None):
+async def load_image_evidence(db, group_id, messages, now=None, since=None):
     now = now or datetime.now(UTC)
     revisions = {row.telegram_message_id: row.revision for row in messages}
     from studgroup.models import RawMessage
@@ -35,11 +35,23 @@ async def load_image_evidence(db, group_id, messages, now=None):
         job = jobs[0] if jobs else None
         # A alone is never complete contextual evidence.
         state = job.state if job and (job.pass_number == 2 or job.state == "failed") else "pending"
+        error = job.error if job else "image_not_scheduled"
+        if since is not None:
+            from studgroup.analysis.image_jobs import utc
+            if utc(raw.message_date) < utc(since) and job is None:
+                state, error = "failed", "outside_activation_scope"
+        if job and state == "ready":
+            from studgroup.analysis.image_schedule import current_source
+            from studgroup.api import ApiError
+            try:
+                await current_source(db, job.id, group_id, now)
+            except ApiError:
+                state, error = "pending", "context_or_source_changed"
         reading = VisualReading.model_validate_json(job.result_json) if job and state == "ready" else None
         result.append(ImageEvidence(
             attachment_id=attachment.id, telegram_message_id=raw.telegram_message_id,
             source_revision=raw.revision, context_sha256=job.context_sha256 if job else "0" * 64,
-            state=state, reading=reading, error=job.error if job else "image_not_scheduled",
+            state=state, reading=reading, error=error,
         ))
     return result
 

@@ -101,3 +101,12 @@ class ImageEvidence(ImageDTO):
     state: ImageState
     reading: VisualReading | None = None
     error: str | None = Field(default=None, max_length=100)
+
+
+    @model_validator(mode="after")
+    def ready_requires_complete_reading(self):
+        if self.state == "ready" and (self.reading is None or not self.reading.complete):
+            raise ValueError("ready_image_requires_complete_reading")
+        if self.state != "ready" and self.reading is not None:
+            raise ValueError("unfinished_image_cannot_confirm_facts")
+        return self

@@ -241,3 +241,25 @@ legacy card display (published canonical image provenance is required). Fixed a 
 expired ORM fixture reference and title-less candidate handling. Final 60 lifecycle/candidate/
 PostgreSQL checks passed; 0042 downgrade/re-upgrade, lint/diff clean. Actual AI cost USD 0.
 Owner decisions on public API/frontend, retention and subgroup visibility remain; no real publication.
+
+### 6 — PASS
+
+Full offline image -> two visual passes -> C+ -> canonical card -> student API is tested, including
+precise confirmed numbers, complete text alongside images, idempotent reruns and shadow isolation.
+Added explicit activation start timestamp to prevent implicit historical processing. Current source/
+context checks reject stale readings; stored prompt versions participate in job identity. Preserved
+legacy snapshot hashes when new optional fields are absent. Kept legacy context metadata JSON-safe.
+Oversized semantic input is explicitly held as needs_context with an incident; full paid image
+results remain stored, never truncated. Teacher/location/catalog reference data reaches pass B.
+
+The first rerun found two legacy /explain failures after the date rollover: its old-source + future
+schedule span exceeded the public 32-day limit. Fixed internal non-overlapping calendar chunking
+without weakening that limit. A shadow-isolation assertion now excludes only generated_at, which
+changes on every API read. Oversize fixture serialization was corrected to match a real Unicode
+JSON answer. All failures were corrected and rechecked; no tests disabled or expectations weakened.
+Final full command (backend cwd): `POSTGRES_TEST_URL=<disposable-local-db> uv run pytest -q`:
+**1172 passed, 0 failed, 0 skipped**, 150.93 s; one upstream Starlette deprecation warning.
+An additional 13 integration/schedule/event checks passed after adding catalog context. PostgreSQL
+17 migration cycle in a separate disposable database: base -> 0042 -> base -> 0042 succeeded.
+Ruff and diff checks clean. Manual lock, notification, group-isolation and concurrency regressions
+are included in the full suite. Actual AI cost USD 0. Next: offline evaluation and rollout preparation.

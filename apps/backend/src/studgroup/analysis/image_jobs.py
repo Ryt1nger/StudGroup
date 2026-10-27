@@ -37,7 +37,8 @@ def utc(stamp):
 
 
 def enabled(settings, group_id):
-    return settings.image_analysis_enabled and str(group_id) in settings.image_analysis_groups
+    return (settings.image_analysis_enabled and settings.image_analysis_since is not None
+            and str(group_id) in settings.image_analysis_groups)
 
 
 def supported(attachment):
@@ -90,6 +91,7 @@ async def context_snapshot(db, raw):
     context["schedule"] = [
         {"subject": row.subject, "weekday": row.weekday, "starts": row.starts.isoformat(),
          "ends": row.ends.isoformat(), "week": row.week,
+         "teacher": row.teacher, "location": row.location,
          "valid_from": row.valid_from.isoformat(), "valid_until": row.valid_until.isoformat()}
         for row in schedules
     ]
@@ -100,8 +102,12 @@ async def context_snapshot(db, raw):
         {"id": str(row.id), "revision": row.revision, "subject": row.subject,
          "title": row.title, "description": row.description} for row in cards
     ]
-    from studgroup.models import GroupEvent
+    from studgroup.analysis.subject_catalog import load_subject_catalog
+    from studgroup.models import GroupEvent, GroupKnowledgeFact
 
+    known = (await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == raw.group_id))).all()
+    catalog = await load_subject_catalog(db, raw.group_id, known)
+    context["subject_catalog"] = catalog.model_dump(mode="json")
     events = (await db.scalars(select(GroupEvent).where(
         GroupEvent.group_id == raw.group_id, GroupEvent.delete_at > datetime.now(UTC),
     ).order_by(GroupEvent.created_at.desc()).limit(50))).all()
@@ -110,7 +116,7 @@ async def context_snapshot(db, raw):
     return context
 
 
-async def schedule_group(db, group, now):
+async def schedule_group(db, group, now, since):
     """Caller holds group settings lock. Enumerate every retained image, not just six."""
     attachments = (await db.scalars(select(MessageAttachment).join(
         RawMessage, RawMessage.id == MessageAttachment.raw_message_id
@@ -118,26 +124,31 @@ async def schedule_group(db, group, now):
         MessageAttachment.group_id == group.id, MessageAttachment.active.is_(True),
         MessageAttachment.delete_at > now, RawMessage.group_id == group.id,
         RawMessage.delete_at > now,
+        RawMessage.message_date >= since,
         RawMessage.message_date >= (group.bot_added_at or now - timedelta(days=30)),
     ).order_by(MessageAttachment.created_at, MessageAttachment.id))).all()
+    from studgroup.analysis.image_reading import PASS_A_VERSION, PASS_B_VERSION
+
     created = 0
     for attachment in attachments:
         if not supported(attachment):
             continue
         raw = await db.get(RawMessage, attachment.raw_message_id)
-        key = digest({"file": attachment.stable_file_id, "revision": raw.revision, "version": IMAGE_VERSION})
+        key = digest({"file": attachment.stable_file_id, "revision": raw.revision, "version": IMAGE_VERSION, "prompt": PASS_A_VERSION})
         jobs = (await db.scalars(select(ImageAnalysisJob).where(
             ImageAnalysisJob.attachment_id == attachment.id,
         ))).all()
         for job in jobs:
-            if job.source_revision != raw.revision and job.state != "stale":
-                job.state, job.error = "stale", "source_revision_changed"
+            expected_version = f"{IMAGE_VERSION}/{PASS_A_VERSION if job.pass_number == 1 else PASS_B_VERSION}"
+            if (job.source_revision != raw.revision or job.version != expected_version) and job.state != "stale":
+                job.state, job.error = "stale", "source_or_prompt_revision_changed"
         first = next((job for job in jobs if job.context_sha256 == key and job.pass_number == 1), None)
         if first is not None:
             if first.state != "ready":
                 continue
             context = await context_snapshot(db, raw)
             context["pass_a_sha256"] = digest(first.result_json)
+            context["pass_version"] = PASS_B_VERSION
             # Published-card revisions must not make image analysis feed back into itself.
             second_key = digest({key: value for key, value in context.items() if key not in {"existing_items", "existing_events"}})
             for job in jobs:
@@ -147,7 +158,7 @@ async def schedule_group(db, group, now):
                 db.add(ImageAnalysisJob(
                     group_id=group.id, attachment_id=attachment.id, raw_message_id=raw.id,
                     source_revision=raw.revision, context_sha256=second_key,
-                    context_json=json.dumps(context, ensure_ascii=False), version=IMAGE_VERSION,
+                    context_json=json.dumps(context, ensure_ascii=False), version=f"{IMAGE_VERSION}/{PASS_B_VERSION}",
                     pass_number=2, state="pending", attempts=0, available_at=now,
                     created_at=now, delete_at=min(raw.delete_at, attachment.delete_at),
                 ))
@@ -156,7 +167,7 @@ async def schedule_group(db, group, now):
         db.add(ImageAnalysisJob(
             group_id=group.id, attachment_id=attachment.id, raw_message_id=raw.id,
             source_revision=raw.revision, context_sha256=key, context_json="{}",
-            version=IMAGE_VERSION, pass_number=1, state="pending", attempts=0,
+            version=f"{IMAGE_VERSION}/{PASS_A_VERSION}", pass_number=1, state="pending", attempts=0,
             available_at=now, created_at=now, delete_at=min(raw.delete_at, attachment.delete_at),
         ))
         created += 1
@@ -292,7 +303,7 @@ async def perform(provider, image, mime, job, raw, first=None):
 
 
 async def process_images_next(engine, settings, provider=None, now=None, transport=None):
-    if not settings.image_analysis_enabled or not settings.image_analysis_groups:
+    if not settings.image_analysis_enabled or not settings.image_analysis_groups or settings.image_analysis_since is None:
         return "disabled"
     now = utc(now or datetime.now(UTC))
     async with AsyncSession(engine) as db:
@@ -311,7 +322,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             group = await db.get(Group, route.group_id)
             if group.status != "active" or not group.pilot_authorized:
                 continue
-            await schedule_group(db, group, now)
+            await schedule_group(db, group, now, settings.image_analysis_since)
             await db.flush()
             picked = await claim(db, group, route, settings, now)
             if picked:
@@ -326,11 +337,14 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
         attachment = await db.get(MessageAttachment, job.attachment_id)
         file_id = attachment.telegram_file_id
         first = None
+        from studgroup.analysis.image_reading import PASS_A_VERSION
+
         if job.pass_number == 2:
             first_job = await db.scalar(select(ImageAnalysisJob).where(
                 ImageAnalysisJob.attachment_id == job.attachment_id,
                 ImageAnalysisJob.source_revision == job.source_revision,
                 ImageAnalysisJob.pass_number == 1, ImageAnalysisJob.state == "ready",
+                ImageAnalysisJob.version == f"{IMAGE_VERSION}/{PASS_A_VERSION}",
             ))
             first = VisualReading.model_validate_json(first_job.result_json) if first_job else None
     result, usage, failure, paid = None, None, None, False
@@ -375,7 +389,10 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
         context_changed = False
         if raw is not None and job.pass_number == 2:
             current = await context_snapshot(db, raw)
+            from studgroup.analysis.image_reading import PASS_B_VERSION
+
             current["pass_a_sha256"] = digest(first_job.result_json)
+            current["pass_version"] = PASS_B_VERSION
             context_changed = digest({k: v for k, v in current.items() if k not in {"existing_items", "existing_events"}}) != job.context_sha256
         if (raw is None or attachment is None or not attachment.active
                 or raw.revision != job.source_revision or utc(job.delete_at) <= utc(datetime.now(UTC))

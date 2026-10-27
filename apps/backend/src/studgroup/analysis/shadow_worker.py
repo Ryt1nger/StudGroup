@@ -120,6 +120,23 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
     images = [item for item in images if item.error != "image_not_scheduled"]
     messages = add_image_facts(messages, images)
     if images:
+        from studgroup.analysis.contracts import SourceAttachment
+        from studgroup.models import MessageAttachment
+
+        saved_attachments = (await db.scalars(select(MessageAttachment).where(
+            MessageAttachment.group_id == group.id,
+            MessageAttachment.raw_message_id.in_([row.id for row in raws]),
+            MessageAttachment.active.is_(True), MessageAttachment.delete_at > now,
+        ))).all()
+        raw_by_message = {row.telegram_message_id: row.id for row in raws}
+        messages = [message.model_copy(update={"attachments": [SourceAttachment(
+            attachment_id=attachment.id, kind=attachment.kind, mime_type=attachment.mime_type,
+            size_bytes=attachment.size_bytes, media_group_id=attachment.media_group_id,
+            processing_state=attachment.processing_state, file_name=(attachment.file_name or "")[:255] or None,
+            width=attachment.width, height=attachment.height,
+        ) for attachment in saved_attachments
+            if attachment.raw_message_id == raw_by_message[message.telegram_message_id]]}) for message in messages]
+    if images:
         from studgroup.analysis.image_evidence import display_metadata
 
         metadata = await display_metadata(db, group.id, images)

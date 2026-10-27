@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AwareDatetime, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -65,13 +65,14 @@ class Settings(BaseSettings):
     image_event_review_enabled: bool = False
     image_event_publication_enabled: bool = False
     image_schedule_review_enabled: bool = False
+    image_analysis_since: AwareDatetime | None = None
     image_analysis_enabled: bool = False
     image_analysis_groups: list[str] = Field(default_factory=list)
     image_analysis_mode: Literal["shadow", "live"] = "shadow"
-    image_pass_reservation_usd: float = Field(default=0.02, gt=0)
-    image_total_budget_usd: float = Field(default=0.12, ge=0)
-    image_package_budget_usd: float = Field(default=0.20, ge=0)
-    image_hourly_budget_usd: float = Field(default=0.25, ge=0)
+    image_pass_reservation_usd: float = Field(default=0.02, gt=0, allow_inf_nan=False)
+    image_total_budget_usd: float = Field(default=0.12, ge=0, allow_inf_nan=False)
+    image_package_budget_usd: float = Field(default=0.20, ge=0, allow_inf_nan=False)
+    image_hourly_budget_usd: float = Field(default=0.25, ge=0, allow_inf_nan=False)
     photo_reading_enabled: bool = False
     # With photo reading on: stored messages since this moment whose photos were never read are
     # analysed again once (e.g. PHOTO_BACKFILL_SINCE=2026-10-17T00:00:00+03:00). Idempotent.

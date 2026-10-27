@@ -35,7 +35,8 @@ def private(client, text, uid=9001, update=100, shared=None, callback=None):
                 "data": callback,
             },
         }
-    assert send(client, body).status_code == 200
+    response = send(client, body)
+    assert response.status_code == 200, response.text
 
 
 def session(client):

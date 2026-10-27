@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from test_package_worker import make_new, settings
+from test_package_worker import BASE, make_new, settings
 from test_photo_reading import JPEG, VisionProvider, photo_message
 
 from studgroup.analysis import image_jobs
@@ -30,7 +30,8 @@ def cfg(client, **patch):
     async def ident():
         async with AsyncSession(client.app.state.engine) as db:
             return str(await db.scalar(select(Group.id).where(Group.telegram_chat_id == -1001)))
-    return settings(image_analysis_enabled=True, image_analysis_groups=[asyncio.run(ident())], **patch)
+    return settings(image_analysis_enabled=True, image_analysis_since=BASE - timedelta(days=1),
+        image_analysis_groups=[asyncio.run(ident())], **patch)
 
 
 def tick(client, provider, config, now=None):
@@ -233,3 +234,13 @@ def test_edit_during_paid_call_keeps_charge_but_rejects_result(client, monkeypat
     assert tick(client, Edit(reading()), config) == "stale"
     assert stored(client, ImageAnalysisJob)[0].result_json is None
     assert stored(client, ImageAnalysisCall)[0].charged_usd == Decimal("0.00034200")
+
+
+def test_no_explicit_start_means_no_history_processing(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+    config = cfg(client).model_copy(update={"image_analysis_since": None})
+    provider = VisionProvider(reading())
+    assert tick(client, provider, config) == "disabled"
+    assert provider.vision == [] and stored(client, ImageAnalysisJob) == []

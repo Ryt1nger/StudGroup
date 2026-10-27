@@ -89,7 +89,7 @@ def test_concurrent_image_workers_make_only_one_paid_attempt(monkeypatch):
             return JPEG, "image/jpeg"
         monkeypatch.setattr(image_jobs, "download", fake)
         provider = VisionProvider(reading())
-        config = Settings(_env_file=None, image_analysis_enabled=True,
+        config = Settings(_env_file=None, image_analysis_enabled=True, image_analysis_since=now - timedelta(days=1),
             image_analysis_groups=[str(group_id)])
         try:
             results = await asyncio.gather(*[
@@ -150,7 +150,7 @@ def test_schedule_confirmation_is_atomic_and_idempotent_in_postgres(monkeypatch)
         payload = json.loads(reading()) | {"semantic_types": ["schedule"], "schedule": [{
             "weekday": day.weekday(), "starts": "13:00", "ends": "14:30", "subject": "Алгебра",
             "valid_from": day.isoformat(), "valid_until": day.isoformat()}]}
-        config = Settings(_env_file=None, image_analysis_enabled=True, image_analysis_groups=[str(group_id)])
+        config = Settings(_env_file=None, image_analysis_enabled=True, image_analysis_since=now - timedelta(days=1), image_analysis_groups=[str(group_id)])
         try:
             provider = VisionProvider(json.dumps(payload))
             assert await image_jobs.process_images_next(engine, config, provider, now) == "ready"

@@ -879,9 +879,6 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
         attachment_metadata.setdefault(attachment.raw_message_id, []).append(
             {
                 "kind": attachment.kind,
-                "attachment_id": attachment.id,
-                "width": attachment.width,
-                "height": attachment.height,
                 "mime_type": attachment.mime_type,
                 "size_bytes": attachment.size_bytes,
                 "media_group_id": attachment.media_group_id,
@@ -954,10 +951,16 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
         return context, None
     start = max(span[0], min(source_day, today))
     end = min(span[1], today + timedelta(days=14))
-    calendar = await schedule_data(start, end, group, db)
-    schedule = ScheduleDeadlineContext(
-        calendar["lessons"], start, end, calendar["week_state"] == "ready"
-    )
+    # A retained source can be 30 days old, plus 14 days of future timetable. Keep the
+    # public 32-day guard and fetch the internal evidence span in non-overlapping chunks.
+    lessons, ready, cursor = [], True, start
+    while cursor <= end:
+        chunk_end = min(end, cursor + timedelta(days=31))
+        calendar = await schedule_data(cursor, chunk_end, group, db)
+        lessons.extend(calendar["lessons"])
+        ready = ready and calendar["week_state"] == "ready"
+        cursor = chunk_end + timedelta(days=1)
+    schedule = ScheduleDeadlineContext(lessons, start, end, ready)
     return context, schedule
 
 

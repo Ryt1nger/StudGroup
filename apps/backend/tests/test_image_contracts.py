@@ -20,3 +20,16 @@ def test_schedule_and_event_mutations_are_strict():
         )
     with pytest.raises(ValidationError):
         ImageEvent(title="Афиша", action="cancel")
+
+
+def test_ready_image_evidence_requires_complete_reading():
+    import uuid
+
+    from studgroup.analysis.image_contracts import ImageEvidence
+
+    values = {"attachment_id": uuid.uuid4(), "telegram_message_id": 1,
+              "source_revision": 1, "context_sha256": "0" * 64, "state": "ready"}
+    with pytest.raises(ValidationError):
+        ImageEvidence(**values)
+    with pytest.raises(ValidationError):
+        ImageEvidence(**values, reading=VisualReading(summary="", extracted_text="", complete=False))

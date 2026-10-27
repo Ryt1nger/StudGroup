@@ -334,7 +334,7 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
 
     structured = enabled(settings, group.id) and settings.image_analysis_mode == "live"
     messages = await _source_messages(db, group, list(rows.values()), structured_images=structured)
-    images = await load_image_evidence(db, group.id, messages, now) if structured else []
+    images = await load_image_evidence(db, group.id, messages, now, settings.image_analysis_since) if structured else []
     messages = add_image_facts(messages, images)
     if images:
         from studgroup.analysis.image_evidence import display_metadata
@@ -348,17 +348,30 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
         await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
     ).all()
     catalog = await load_subject_catalog(db, group.id, facts)
-    packages = plan_packages(
-        messages,
-        group_id=group.id,
-        timezone=group.timezone,
-        target_ids=[row.telegram_message_id for row in targets],
-        source_revision=revision,
-        subject_catalog=catalog,
-    )
-    package = packages[0]
-    selected = {row.telegram_message_id for row in package.analysis_input.messages}
-    package.analysis_input.image_evidence = [item for item in images if item.telegram_message_id in selected]
+    try:
+        packages = plan_packages(
+            messages,
+            group_id=group.id,
+            timezone=group.timezone,
+            target_ids=[row.telegram_message_id for row in targets],
+            source_revision=revision,
+            subject_catalog=catalog,
+        )
+        package = packages[0]
+        selected = {row.telegram_message_id for row in package.analysis_input.messages}
+        package.analysis_input.image_evidence = [item for item in images if item.telegram_message_id in selected]
+        if len(package.analysis_input.model_dump_json().encode()) > 48000:
+            raise ValueError("package_single_target_exceeds_limits")
+    except ValueError as error:
+        if not structured or str(error) != "package_single_target_exceeds_limits":
+            raise
+        # Keep full image results, isolate oversized text extraction for review, and allow
+        # the rest of the queue to advance. Never silently truncate paid image evidence.
+        for target in targets:
+            target.processing_state = "needs_context"
+        await incident_once(db, "pipeline_error", now, detail="image_context_requires_review")
+        await db.commit()
+        return "image_context_review"
     # A reopened window (owner re-analysis) bumps the generation, so the same messages get a new
     # run key instead of being treated as the package that already ran.
     generation = max(
@@ -445,8 +458,8 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
             planned = await _plan_next(db, group, route, settings, now, provider, transport)
             if planned is None:
                 continue
-            if planned == "photo_retry":
-                return "photo_retry"
+            if isinstance(planned, str):
+                return planned
             package, memory, revision, run_key, generation, photo_cost = planned
             existing = await db.scalar(
                 select(ShadowEvaluationRun).where(

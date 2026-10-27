@@ -65,7 +65,12 @@ async def current_source(db, job_id, group_id, now):
 
     current = await context_snapshot(db, raw)
     saved = json.loads(job.context_json)
+    from studgroup.analysis.image_reading import PASS_B_VERSION
+
+    if job.version != f"image-analysis-1/{PASS_B_VERSION}":
+        raise ApiError("stale_source", "Версия анализа изменилась", 409)
     current["pass_a_sha256"] = saved["pass_a_sha256"]
+    current["pass_version"] = PASS_B_VERSION
     if digest({k: v for k, v in current.items() if k not in {"existing_items", "existing_events"}}) != job.context_sha256:
         raise ApiError("stale_context", "Обсуждение изменилось; требуется новое чтение", 409)
     return job
