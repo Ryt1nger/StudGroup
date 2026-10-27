@@ -10,6 +10,13 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /staff/image-findings/images:
+    get:
+      operationId: imageAnalysisDiagnostics
+      responses:
+        '200': {description: Latest 200 group-local job statuses, sanitized errors, usage, conservative cost and latency; never source pixels or raw reading text}
+        '403': {description: Headman/deputy membership required}
+        '404': {description: Diagnostics flag or group allowlist disabled}
   /staff/image-findings/schedule:
     get:
       operationId: listImageScheduleSuggestions

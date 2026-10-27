@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     new_engine_notifications: bool = False
     # Vision pass over photos of homework before a package is analysed (costs one image call each).
     # Internal pilot only: never inferred from PHOTO_READING_ENABLED.
+    image_diagnostics_enabled: bool = False
     image_event_review_enabled: bool = False
     image_event_publication_enabled: bool = False
     image_schedule_review_enabled: bool = False

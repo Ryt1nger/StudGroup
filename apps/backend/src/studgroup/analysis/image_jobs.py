@@ -107,7 +107,7 @@ async def context_snapshot(db, raw):
 
     known = (await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == raw.group_id))).all()
     catalog = await load_subject_catalog(db, raw.group_id, known)
-    context["subject_catalog"] = catalog.model_dump(mode="json")
+    context["subject_catalog"] = catalog.model_dump(mode="json") if catalog is not None else None
     events = (await db.scalars(select(GroupEvent).where(
         GroupEvent.group_id == raw.group_id, GroupEvent.delete_at > datetime.now(UTC),
     ).order_by(GroupEvent.created_at.desc()).limit(50))).all()
@@ -259,7 +259,8 @@ async def claim(db, group, route, settings, now):
         job.available_at = day_start + timedelta(days=1)
         return None
     if image_spent + reserve > Decimal(str(settings.image_total_budget_usd)):
-        job.state, job.error = "failed", "image_budget_exhausted"
+        job.state, job.error = "budget_deferred", "image_budget_exhausted"
+        job.available_at = day_start + timedelta(days=1)
         return None
     hour = now - timedelta(hours=1)
     hourly = await total(db, ImageAnalysisCall,
@@ -283,7 +284,8 @@ async def claim(db, group, route, settings, now):
         job.available_at = now + timedelta(minutes=10)
         return None
     if batch_spent + reserve > Decimal(str(settings.image_package_budget_usd)):
-        job.state, job.error = "failed", "image_package_budget_exhausted"
+        job.state, job.error = "budget_deferred", "image_package_budget_exhausted"
+        job.available_at = day_start + timedelta(days=1)
         return None
     token = uuid.uuid4()
     job.state, job.claim_token = "running", token

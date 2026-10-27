@@ -436,3 +436,60 @@ are stored separately. Important approximate dates remain hints, not fabricated 
 timestamps. Media-only messages cannot be resolved when the exported attachments are
 absent. Production requires migration 0007; Base metadata creation here is limited
 to the explicit isolated preview setup, not a production migration substitute.
+
+## Core v2 image pilot (disabled)
+
+The durable two-pass image path is off by default. Offline tools do not import an AI provider,
+HTTP client or database writer. From `apps/backend`, render only the synthetic test corpus:
+
+```sh
+uv run python -m studgroup.analysis.image_evaluation render \
+  --gold tests/fixtures/ai_analysis/image-scenarios.json \
+  --font /path/to/installed-unicode-font.ttf --out /tmp/studgroup-image-fixtures
+uv run python -m studgroup.analysis.image_evaluation evaluate \
+  --gold tests/fixtures/ai_analysis/image-scenarios.json
+```
+
+The second command deliberately reports null measurements and `UNMEASURED / AWAITING OWNER
+APPROVAL` without observations. Add `--observations recording.json` to evaluate an annotated
+recording; `compare --baseline baseline-recording.json --observations candidate-recording.json`
+requires the same `input_sha256` (pixels AND chat/annotation snapshot). Observation format is
+`analysis.image_evaluation.ObservationRun`: evidence_kind, input_sha256, per-case image states,
+canonical fact annotations, types, card/display counts, schedule/event fields, optional measured
+cost/latency. Matching is exact normalized annotation text; paraphrases need human adjudication.
+Synthetic stub success must never be called measured model quality.
+
+Activation requires separate owner approval. Necessary settings (none changed here):
+
+- `IMAGE_ANALYSIS_ENABLED=true`, explicit JSON `IMAGE_ANALYSIS_GROUPS=["<group uuid>"]`,
+  and timezone-aware `IMAGE_ANALYSIS_SINCE=<approved start>`. Missing start disables work.
+- Begin with `IMAGE_ANALYSIS_MODE=shadow`: persist image evidence/drafts without reopening
+  messages or altering published cards. Do not enable legacy photo reading for this same pilot.
+- The pass reservation (default USD 0.02), image total (0.12), album/message batch (0.20), rolling
+  hour (0.25), and group's existing daily C+ budget apply before calls. These are configurable
+  safety reservations, not measured provider prices. Image and text accounting share group locks.
+  Usage above a reservation fails explicitly and stops further work at the relevant cap.
+- `IMAGE_DIAGNOSTICS_ENABLED`, `IMAGE_SCHEDULE_REVIEW_ENABLED`, `IMAGE_EVENT_REVIEW_ENABLED`,
+  `IMAGE_EVENT_PUBLICATION_ENABLED` remain false. Each endpoint also requires the group allowlist;
+  diagnostics/review require a freshly checked headman/deputy membership. Student events have a
+  separate publication gate; personal/unknown source audiences and unmapped subgroups stay hidden.
+
+Before an authorized shadow sample, verify both visual calls are supported by the configured
+provider/model and approve its rates, source corpus, retention and monetary caps. Compare the
+same rendered manifest/context with the baseline, inspect every critical number/date and every
+false homework, then agree precision/recall/cost/latency thresholds. Check unknown paid outcomes,
+retry counts and cost reservations in staff image diagnostics. Do not activate live processing,
+student publication, historical reprocessing or a writer-mode change from these instructions alone.
+
+Rollback is feature-only: first disable public event/schedule review gates, then image processing
+and diagnostics, retaining stored sources/results. Do not drop production tables or change writer
+mode automatically. Legacy published-card display remains intact; images published through the
+new canonical evidence path retain their full task text. An ambiguous paid lease is held for
+review rather than purchased again. Oversized combined evidence is explicitly held for review;
+all completed image readings are retained, never string-truncated.
+
+Migrations 0040–0042 are additive. Verify upgrade/downgrade/re-upgrade only on a disposable
+PostgreSQL database before deployment. The draft additive API is
+`packages/contracts/image-findings.openapi.yaml`; frontend adoption, event retention and subgroup
+mapping require owner coordination. See the living integration report for completed gates and
+`OWNER_DECISIONS_REQUIRED`.

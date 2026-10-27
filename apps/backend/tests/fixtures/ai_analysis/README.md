@@ -12,7 +12,10 @@ annotations and expected outcomes, not real pictures or measured model answers. 
 crops, distinct pages, in-class/homework ambiguity, schedules, events, private invitations,
 mixed entities, corrections and unreadable input. `test_image_analysis_baseline.py` reproduces
 the deterministic failures using stub vision answers. Neither resource proves vision accuracy;
-rendered images and provider measurements remain required before rollout.
+the rendered synthetic PNGs in `image-pixels/` now provide real deterministic pixel inputs.
+The manifest hashes both pixels and the chat/annotation snapshot. These printed fixtures are
+not handwriting or real-world image benchmarks; authorized provider measurements and a held-out
+adjudicated corpus remain required before rollout.
 
 Split by `discussion_id`/`entity_id`, never by individual message. All messages that can
 describe, clarify, correct or cancel the same academic item must remain in one split. The
