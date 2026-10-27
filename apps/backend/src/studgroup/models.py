@@ -1062,6 +1062,10 @@ class ImageAnalysisJob(Base):
     pixel_sha256: Mapped[str | None] = mapped_column(String(64))
     visual_hash: Mapped[str | None] = mapped_column(String(256))
     visual_coverage_json: Mapped[str | None] = mapped_column(Text)
+    model_key: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    reused_from_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("image_analysis_jobs.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 

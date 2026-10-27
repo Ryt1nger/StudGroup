@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     image_schedule_review_enabled: bool = False
     image_analysis_since: AwareDatetime | None = None
     image_analysis_enabled: bool = False
+    image_model_revision: str = Field(default="", max_length=128)
     image_analysis_groups: list[str] = Field(default_factory=list)
     image_analysis_mode: Literal["shadow", "live"] = "shadow"
     image_pass_reservation_usd: float = Field(default=0.02, gt=0, allow_inf_nan=False)

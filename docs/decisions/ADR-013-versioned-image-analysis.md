@@ -73,3 +73,16 @@ Coverage derivatives expire with their source jobs (additive migration 0045), ne
 private-source retention, and are not sent to the model. Immutable snapshots carry only compact
 coverage edges for consistent preview/student display. Selection finds a minimum cover for up
 to 16 candidates, with a safe greedy cover for larger batches. None of this starts an AI call.
+
+## Model-aware source-bounded reuse — 2026-10-27
+
+Migration 0046 records a provider/model/revision/schema digest and reuse origin. Cross-source
+pass-A reuse requires explicit image_model_revision configuration, exact bytes or Telegram stable
+file identity, matching prompt/schema/model, current source retention and the same group. Default
+revision is empty and cross-source reuse is off. Caption revisions reuse only unchanged pixels;
+pass B still receives the current context and pixels. Provider identity participates in both keys
+but is not sent as reasoning context. Successful exact-input snapshots can become current again;
+failed/ambiguous jobs cannot. Reuse never extends expiry or crosses group boundaries.
+
+The owner's later instruction supersedes the former USD 2 ceiling: all old observations and
+unknown-outcome reservations remain accounted inside one USD 1 total for comparisons and pilot.

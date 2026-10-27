@@ -40,7 +40,7 @@ def test_persistent_reservation_blocks_duplicate_after_restart(tmp_path):
 def test_limit_is_shared_and_checked_before_request(tmp_path):
     ledger = check.Ledger(tmp_path / "ledger.json")
     ledger.data["calls"] = [
-        {"state": "completed", "reservation_usd": "1.999", "cost_upper_usd": "1.999"}
+        {"state": "completed", "reservation_usd": ".999", "cost_upper_usd": ".999"}
     ]
     with pytest.raises(ValueError, match="total_budget_exceeded_before_request"):
         ledger.reserve("over budget", payload())
@@ -135,8 +135,30 @@ def test_explicit_synthetic_retest_never_releases_unknown_charge(tmp_path):
     fingerprint = hashlib.sha256(json.dumps(payload(), sort_keys=True).encode()).hexdigest()
     ledger = check.Ledger(tmp_path / "ledger.json", retest_ambiguous=True)
     ledger.data["calls"] = [
-        {"state": "unknown", "reservation_usd": "1.999", "request_sha256": fingerprint}
+        {"state": "unknown", "reservation_usd": ".999", "request_sha256": fingerprint}
     ]
     with pytest.raises(ValueError, match="total_budget_exceeded_before_request"):
         ledger.reserve("bounded synthetic retest", payload())
-    assert ledger.data["calls"][0]["reservation_usd"] == "1.999"
+    assert ledger.data["calls"][0]["reservation_usd"] == ".999"
+
+
+def test_owner_lower_limit_preserves_all_previous_charges(tmp_path):
+    import json
+
+    path = tmp_path / "ledger.json"
+    path.write_text(
+        json.dumps(
+            {
+                "limit_usd": "2",
+                "calls": [
+                    {"state": "completed", "reservation_usd": ".2", "cost_upper_usd": ".181507560"}
+                ],
+                "images": {},
+                "scenarios": {},
+            }
+        )
+    )
+    ledger = check.Ledger(path)
+    assert ledger.data["limit_usd"] == "1"
+    assert ledger.data["calls"][0]["cost_upper_usd"] == ".181507560"
+    assert ledger.data["limit_history"][0]["previous_usd"] == "2"

@@ -107,6 +107,10 @@ async def current_source(db, job_id, group_id, now):
         raise ApiError("stale_source", "Версия анализа изменилась", 409)
     current["pass_a_sha256"] = saved["pass_a_sha256"]
     current["pass_version"] = PASS_B_VERSION
+    if "model_key" in saved:
+        current["model_key"] = job.model_key
+    if "provider_identity" in saved:
+        current["provider_identity"] = saved["provider_identity"]
     if (
         digest({k: v for k, v in current.items() if k not in {"existing_items", "existing_events"}})
         != job.context_sha256

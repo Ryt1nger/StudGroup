@@ -29,7 +29,7 @@ from studgroup.analysis.image_reading import PASS_A_VERSION, PASS_B_VERSION, rea
 from studgroup.analysis.shadow import ShadowPassFailure, run_shadow
 from studgroup.photo_dedupe import select_evidence_images, visual_fingerprint
 
-LIMIT = Decimal(2)
+LIMIT = Decimal(1)
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests/fixtures/ai_analysis"
 
@@ -98,7 +98,23 @@ class Ledger:
             }
         )
         if self.data["limit_usd"] != str(LIMIT):
-            raise ValueError("ledger_limit_mismatch")
+            previous = Decimal(self.data["limit_usd"])
+            used = sum(
+                Decimal(row.get("cost_upper_usd", row["reservation_usd"]))
+                for row in self.data["calls"]
+            )
+            if previous > LIMIT and used <= LIMIT:
+                self.data.setdefault("limit_history", []).append(
+                    {
+                        "previous_usd": str(previous),
+                        "new_usd": str(LIMIT),
+                        "reason": "Owner lowered the entire Core release allowance to USD 1; all old charges retained",
+                    }
+                )
+                self.data["limit_usd"] = str(LIMIT)
+                self.save()
+            else:
+                raise ValueError("ledger_limit_mismatch")
 
     def save(self):
         temporary = self.path.with_suffix(".tmp")
@@ -446,7 +462,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--retest-ambiguous",
         action="store_true",
-        help="Explicit synthetic-only retest; keep unknown reservations fully charged within same $2 ledger",
+        help="Explicit synthetic-only retest; keep unknown reservations fully charged within same $1 ledger",
     )
     args = parser.parse_args()
     with args.out.with_suffix(".lock").open("w") as lock:
