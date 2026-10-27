@@ -1061,6 +1061,7 @@ class ImageAnalysisJob(Base):
     result_json: Mapped[str | None] = mapped_column(Text)
     pixel_sha256: Mapped[str | None] = mapped_column(String(64))
     visual_hash: Mapped[str | None] = mapped_column(String(256))
+    visual_coverage_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 

@@ -58,3 +58,18 @@ held for review; prompts are reinforced without weakening this gate. Unknown pur
 from unreadable pixels. "Finish the rest" never authorizes reassigning the entire printed range.
 The synthetic run, including failed schema responses and bounded retests, is recorded in the
 canonical integration report; its expense never resets the single authorized USD 2 ledger.
+
+## Display coverage after semantic merge — release continuation 2026-10-27
+
+Display minimization uses source-retained local ink/word geometry, binary word pixels, complete
+structured readings and a readability floor. Every visible ink row must map to a transcription
+line. Matching OCR or a perceptual hash alone is no longer sufficient to hide a structured image.
+Only explicit exercise ordinal ranges may expand; arithmetic subtraction, individual exercise
+numbers, rooms, equations, tables and untranscribed diagrams cannot use that rule. Unknown or
+conflicting readings/layouts retain all images. Full semantic evidence and source attachments
+remain unchanged. Exact-byte duplicates remain safe to collapse for display.
+
+Coverage derivatives expire with their source jobs (additive migration 0045), never extend
+private-source retention, and are not sent to the model. Immutable snapshots carry only compact
+coverage edges for consistent preview/student display. Selection finds a minimum cover for up
+to 16 candidates, with a safe greedy cover for larger batches. None of this starts an AI call.

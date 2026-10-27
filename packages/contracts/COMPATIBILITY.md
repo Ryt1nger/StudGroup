@@ -418,3 +418,9 @@ must belong to the same group and subject. `LessonOccurrence.subgroup_id` is add
 Existing group-wide schedule responses stay compatible. One-off replacements carry their own
 subject/teacher/subgroup, including an explicitly cleared teacher. Frontend confirmation UI
 and feature activation remain pending; all image review/publication flags default to off.
+
+Release continuation 2026-10-27: internal SourceAttachment adds optional display_covers and
+nullable display_readability for frozen preview consistency. These display-only properties are
+excluded from both AI requests. Public card/API schemas are unchanged. Old image jobs without a
+local visual proof remain visible unless their bytes are exactly identical; pHash/OCR similarity
+alone no longer hides an attachment. Migration 0045 adds only nullable job metadata.

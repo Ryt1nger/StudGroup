@@ -53,6 +53,8 @@ class SourceAttachment(StrictDTO):
     pixel_sha256: str | None = None
     visual_hash: str | None = None
     content_signature: str | None = None
+    display_covers: list[str] = Field(default_factory=list, max_length=1000)
+    display_readability: int | None = None
     image_analysis_state: str | None = None
     semantic_types: list[str] = Field(default_factory=list)
     width: int | None = None

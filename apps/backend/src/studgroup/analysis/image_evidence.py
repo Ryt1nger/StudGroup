@@ -1,5 +1,6 @@
 """One group-scoped image input shared by live packages and shadow snapshots."""
 
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -169,7 +170,7 @@ async def display_metadata(db, group_id, evidence):
     """Common metadata for owner preview and student API; only successful pass B is eligible."""
     from studgroup.analysis.image_jobs import digest
 
-    result = {}
+    result, profiles = {}, {}
     for item in evidence:
         jobs = (
             await db.scalars(
@@ -183,6 +184,9 @@ async def display_metadata(db, group_id, evidence):
             )
         ).all()
         job = jobs[0] if jobs else None
+        profiles[item.attachment_id] = (
+            json.loads(job.visual_coverage_json) if job and job.visual_coverage_json else None
+        )
         result[item.attachment_id] = {
             "image_analysis_state": item.state,
             "semantic_types": item.reading.semantic_types if item.reading else [],
@@ -192,4 +196,8 @@ async def display_metadata(db, group_id, evidence):
             "pixel_sha256": job.pixel_sha256 if job else None,
             "visual_hash": job.visual_hash if job else None,
         }
+    from studgroup.image_display_coverage import coverage_metadata
+
+    for ident, metadata in coverage_metadata(profiles).items():
+        result[ident].update(metadata)
     return result

@@ -111,38 +111,22 @@ def select_evidence_images(items, required_ids=None):
     Inputs are attachment metadata dictionaries from the same immutable analysis snapshot.
     No source/reading is deleted and no one/two-image ceiling is imposed.
     """
+    from studgroup.image_display_coverage import minimum_cover
+
     required = set(required_ids or ())
-    selected = []
+    eligible = []
+    legacy = []
     for item in items:
         if item.get("image_analysis_state") is None:
-            selected.append(item)
-            continue
-        if required and str(item.get("attachment_id")) not in required:
-            continue
-        if item.get("image_analysis_state") != "ready":
-            continue
-        types = item.get("semantic_types") or []
-        if not any(kind in types for kind in ("homework", "assessment", "material")):
-            continue
-        duplicate = None
-        for index, earlier in enumerate(selected):
-            exact = item.get("pixel_sha256") and item.get("pixel_sha256") == earlier.get(
-                "pixel_sha256"
+            legacy.append(item)
+        elif (
+            (not required or str(item.get("attachment_id")) in required)
+            and item.get("image_analysis_state") == "ready"
+            and any(
+                kind in (item.get("semantic_types") or [])
+                for kind in ("homework", "assessment", "material")
             )
-            same_facts = item.get("content_signature") and item.get(
-                "content_signature"
-            ) == earlier.get("content_signature")
-            if exact or (
-                same_facts and _visually_close(item.get("visual_hash"), earlier.get("visual_hash"))
-            ):
-                duplicate = index
-                break
-        if duplicate is None:
-            selected.append(item)
-        else:
-            old = selected[duplicate]
-            quality_new = (item.get("width") or 0) * (item.get("height") or 0)
-            quality_old = (old.get("width") or 0) * (old.get("height") or 0)
-            if quality_new > quality_old:
-                selected[duplicate] = item
-    return selected
+        ):
+            eligible.append(item)
+    kept = {id(item) for item in [*legacy, *minimum_cover(eligible)]}
+    return [item for item in items if id(item) in kept]

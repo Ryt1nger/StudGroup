@@ -188,7 +188,9 @@ make such a deadline unknown. Keep genuinely ambiguous calendar words unknown.
 
 def _local_message(row, timezone):
     local = row.message_date.astimezone(ZoneInfo(timezone))
-    return row.model_dump(mode="json") | {
+    return row.model_dump(
+        mode="json", exclude={"attachments": {"__all__": {"display_covers", "display_readability"}}}
+    ) | {
         "local_date": local.date().isoformat(),
         "local_time": local.strftime("%H:%M"),
         "local_weekday": local.strftime("%A"),

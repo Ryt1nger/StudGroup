@@ -695,6 +695,14 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             from studgroup.photo_dedupe import visual_fingerprint
 
             job.visual_hash = visual_fingerprint(image)
+            from studgroup.image_display_coverage import build_coverage
+
+            coverage = build_coverage(image, result)
+            if first is not None and " ".join(first.extracted_text.split()) != " ".join(
+                result.extracted_text.split()
+            ):
+                coverage = None  # conflicting pixel transcriptions cannot justify hiding a source
+            job.visual_coverage_json = json.dumps(coverage) if coverage else None
         else:
             job.error = failure.code
             if paid and usage is None and not getattr(failure, "reservation_releasable", False):
