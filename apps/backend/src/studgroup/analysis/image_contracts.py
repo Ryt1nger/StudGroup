@@ -56,6 +56,10 @@ class ImageEvent(ImageDTO):
     description: str = Field(default="", max_length=8000)
     when_text: str | None = Field(default=None, max_length=1000)
     starts_at: AwareDatetime | None = None
+    ends_at: AwareDatetime | None = None
+    starts_on: date | None = None
+    ends_on: date | None = None
+    multi_day: bool = False
     place: str | None = Field(default=None, max_length=500)
     conditions: str | None = Field(default=None, max_length=2000)
     audience: Literal["group", "subgroup", "personal", "unknown"] = "unknown"
@@ -66,6 +70,10 @@ class ImageEvent(ImageDTO):
 
     @model_validator(mode="after")
     def identity(self):
+        if self.starts_at and self.ends_at and self.ends_at < self.starts_at:
+            raise ValueError("event_end_before_start")
+        if self.starts_on and self.ends_on and self.ends_on < self.starts_on:
+            raise ValueError("event_end_before_start")
         if self.action != "create" and (
             self.existing_event_id is None or self.expected_revision is None
         ):

@@ -9,10 +9,11 @@ from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
-from studgroup.analysis.group_events import get_event, review_update, verified
+from studgroup.analysis.event_lifetime import approved_snapshot
+from studgroup.analysis.group_events import get_event, retained_sources, review_update
 from studgroup.analysis.image_contracts import ImageEvent
 from studgroup.api import ApiError, active_membership
-from studgroup.models import GroupEvent, GroupEventSource
+from studgroup.models import GroupEvent
 from studgroup.staff_api import CurrentStaff, Db
 
 router = APIRouter(prefix="/v1")
@@ -25,12 +26,13 @@ def gate(request, group_id, public=False):
         raise ApiError("not_found", "Раздел недоступен", 404)
 
 
-def view(event):
+def view(event, source_availability=None):
     payload = json.loads(event.payload_json)
     # Model linking hints and internal identifiers are not public event properties.
     for field in ("action", "existing_event_id", "expected_revision"):
         payload.pop(field, None)
-    return {"id": event.id, "revision": event.revision, "state": event.state, **payload}
+    return {"id": event.id, "revision": event.revision, "state": event.state,
+            "retained_until": event.delete_at, "source_availability": source_availability, **payload}
 
 
 @router.get("/staff/image-findings/events")
@@ -40,8 +42,8 @@ async def list_review_events(request: Request, context: CurrentStaff, db: Db):
         GroupEvent.delete_at > datetime.now(UTC)).order_by(GroupEvent.created_at.desc()).limit(100))).all()
     result = []
     for row in rows:
-        sources = (await db.scalars(select(GroupEventSource).where(GroupEventSource.event_id == row.id))).all()
-        result.append(view(row) | {"manual_lock": row.manual_lock, "findings": [
+        sources = await retained_sources(db, row, datetime.now(UTC))
+        result.append(view(row, "available" if sources else "expired") | {"manual_lock": row.manual_lock, "findings": [
             {"id": source.id, "state": source.apply_state, "payload": json.loads(source.incoming_json),
              "source_revision": source.source_revision} for source in sources]})
     return {"events": result}
@@ -89,8 +91,9 @@ async def list_group_events(request: Request, db: Db, context: GroupContext):
     result = []
     for event in rows:
         incoming = ImageEvent.model_validate_json(event.payload_json)
-        if incoming.audience == "group" and incoming.starts_at and incoming.starts_at > now and await verified(db, event, now):
-            result.append(view(event))
+        if incoming.audience == "group" and approved_snapshot(event):
+            sources = await retained_sources(db, event, now)
+            result.append(view(event, "available" if sources else "expired"))
     return {"events": result}
 
 
@@ -101,7 +104,8 @@ async def group_event(ident: UUID, request: Request, db: Db, context: GroupConte
     now = datetime.now(UTC)
     event = await get_event(db, group.id, ident, now)
     incoming = ImageEvent.model_validate_json(event.payload_json)
-    if (event.state != "active" or incoming.audience != "group" or incoming.starts_at is None
-            or incoming.starts_at <= now or not await verified(db, event, now)):
+    if (event.state not in {"active", "cancelled"} or incoming.audience != "group"
+            or not approved_snapshot(event)):
         raise ApiError("not_found", "Событие недоступно", 404)
-    return view(event)
+    sources = await retained_sources(db, event, now)
+    return view(event, "available" if sources else "expired")

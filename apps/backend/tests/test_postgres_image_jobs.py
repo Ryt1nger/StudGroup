@@ -221,3 +221,50 @@ def test_event_lifecycle_deduplicates_concurrent_findings_and_retention_cascades
                 await db.commit()
             await engine.dispose()
     asyncio.run(run())
+
+
+def test_approved_event_is_independent_of_expired_and_deleted_private_sources():
+    from studgroup.analysis.group_events import capture_event, purge_events, review_update
+    from studgroup.analysis.image_contracts import ImageEvent
+    from studgroup.models import GroupEvent, GroupEventSource, User
+
+    async def run():
+        engine = create_async_engine(os.environ["POSTGRES_TEST_URL"], poolclass=NullPool)
+        _ident, group_id, values = await seed(engine)
+        now = datetime.now(UTC)
+        try:
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                raw = await db.get(RawMessage, values["raw_message_id"])
+                user = User(telegram_user_id=uuid.uuid4().int % 10**14, display_name="Event editor")
+                db.add(user)
+                await db.flush()
+                user_id = user.id
+                incoming = ImageEvent.model_validate_json('{"title":"Synthetic future event","starts_on":"2026-12-20","audience":"group"}')
+                await capture_event(db, group_id, raw, incoming, now)
+                await db.flush()
+                event = await db.scalar(select(GroupEvent).where(GroupEvent.group_id == group_id))
+                event_id = event.id
+                await review_update(db, event, 1, incoming.model_dump(mode="json"), "active", user.id, now)
+                await db.commit()
+                assert event.delete_at == datetime(2026, 12, 27, 21, tzinfo=UTC)
+                raw.delete_at = now - timedelta(minutes=1)
+                await db.flush()
+                assert await purge_events(db, now) == 0
+                await db.delete(raw)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                event = await db.get(GroupEvent, event_id)
+                assert event is not None and event.state == "active"
+                assert event.approved_payload_sha256 and event.published_at
+                assert not (await db.scalars(select(GroupEventSource).where(GroupEventSource.event_id == event_id))).all()
+                assert await purge_events(db, datetime(2026, 12, 27, 20, 59, 59, tzinfo=UTC)) == 0
+                assert await purge_events(db, datetime(2026, 12, 27, 21, tzinfo=UTC)) == 1
+                await db.commit()
+        finally:
+            async with AsyncSession(engine) as db:
+                await db.delete(await db.get(Group, group_id))
+                if 'user_id' in locals():
+                    await db.delete(await db.get(User, user_id))
+                await db.commit()
+            await engine.dispose()
+    asyncio.run(run())
