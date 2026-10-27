@@ -754,11 +754,14 @@ architecture alone.
 
 ## 18. Core v2 image-quality work
 
-Updated 2026-10-26 against `origin/main` `dbc5963`. This is a targeted continuation of the
+Updated 2026-10-27 against the 2026-10-26 `origin/main` baseline `dbc5963`. This is a targeted continuation of the
 existing C+ implementation, not a new engine or architecture rewrite. The earlier PR sequence
 above records the foundation; this section is the current image-quality delivery sequence.
 See [stage-0 evidence](ai-analysis-integration-report.md). Owner agreement at the stage-0 gate
-is required by the image-quality brief. No implementation stages have been performed yet.
+was accepted on 2026-10-26. Safe technical implementation of stages 1a–6 is complete; stage 7
+has offline evaluation/rollout tooling. Real-provider measurement and production/public API
+activation remain separately blocked. See the living integration report for per-stage commits,
+checks, limitations and OWNER_DECISIONS_REQUIRED.
 
 Each numbered step is a separate reviewable change, with its own acceptance checklist. Split
 steps 1, 2 and 5 into schema/contracts first and behaviour second where needed. Do not combine

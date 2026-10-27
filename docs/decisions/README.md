@@ -29,3 +29,5 @@ Accepted decisions:
 - [ADR-010: Hybrid AI output adapter and bounded structural repair](ADR-010-hybrid-ai-output-adapter.md)
 - [ADR-011: Published student-card projection API](ADR-011-student-card-projection-api.md)
 - [ADR-012: Owner-only stored shadow export](ADR-012-owner-shadow-export.md)
+
+- [ADR-013: Versioned visual evidence inside C+](ADR-013-versioned-image-analysis.md): offline implementation, independent image passes and safe publication gates.

@@ -1,6 +1,7 @@
 # AI analysis integration report
 
-Date: 2026-10-26. Scope: stage 0 of the Core v2 image-quality brief; evolutionary C+ changes only.
+Updated: 2026-10-27. Scope: stages 0–7 of the Core v2 image-quality brief; evolutionary C+ changes only.
+Implementation is offline-tested and disabled by default; real model quality and production activation are not approved.
 Source: `origin/main` at `dbc59638bcde89daec29e2d71c6c51bb95c29d54`.
 Working branch: `codex/core-image-audit`, in a separate managed worktree.
 
@@ -17,7 +18,7 @@ This report replaces the old integration snapshot in place. The implementation p
 The system already has a live package writer, durable shadow execution and canonical projection;
 the earlier integration report's missing-writer blockers no longer describe this source revision.
 
-## Actual source-to-student path
+## Stage-0 baseline source-to-student path
 
 1. `ingestion.py:attachment_metadata`, `store_message` and `sync_attachments` persist media-only
    messages, the largest Telegram photo variant, document metadata, album IDs and attachment
@@ -119,27 +120,17 @@ real latency and quality, comparative precision/recall and provider cost remain 
 - Disposable PostgreSQL 17, localhost-only port 55439: migration upgrade `base -> 0039`,
   downgrade `0039 -> base`, second upgrade `base -> 0039` all succeeded. No schema edits.
 
-Stage verdict: **PASS for the offline technical audit**. Transition to stage 1 awaits owner
-agreement required by the brief. Product image quality is not accepted by this audit; model
-classification and pixel-reading accuracy are unmeasured. No implementation fix has shipped.
+Stage verdict: **PASS for the offline technical audit**. Owner accepted stage 0 and authorized implementation on 2026-10-26. Product image quality is not accepted by this audit; model
+classification and pixel-reading accuracy are unmeasured. At the stage-0 checkpoint no implementation fix had shipped.
 No paid model calls were made; no deployment or writer-mode switch was performed.
 
-## Owner decisions and next gate
+## Current authorization
 
-Before leaving stage 0, agree the staged plan below and resolve the implementation policy for
-unsupported/terminally unreadable or budget-deferred images. Recommendation: retain an explicit
-image status; defer unfinished reading, and hold publication that depends on unreadable facts for
-review, while allowing independently supported text-only facts under existing publication rules.
-This changes when a mixed text/photo message can publish and needs an explicit owner decision.
-
-Later, before stage 5: agree durable event storage/API, audience/visibility, edits/cancellation,
-retention, and who confirms timetable suggestions. Recommendation: separate event records and
-additive documented API, timetable suggestions confirmed by headman/deputy through existing writes.
-Do not change frontend or public contracts before coordination.
-
-Before any real AI observation or stage 7: agree provider/model, monetary caps, allowed corpus,
-groups and retention. Production deployment, writer mode, historical-card updates and rollout
-scope are separate approvals. Numeric quality/cost/latency thresholds follow measurements.
+Owner accepted the baseline and authorized all safe sequential technical work on 2026-10-26,
+including the temporary unreadable-image publication policy. No further per-stage confirmations
+are required. Paid AI calls, real-photo transfers to a new provider, production deployment,
+writer-mode changes and mass historical processing remain unauthorized. Current owner decisions
+are collected once at the end of this report.
 
 ## Implementation stage log
 
@@ -263,3 +254,183 @@ An additional 13 integration/schedule/event checks passed after adding catalog c
 17 migration cycle in a separate disposable database: base -> 0042 -> base -> 0042 succeeded.
 Ruff and diff checks clean. Manual lock, notification, group-isolation and concurrency regressions
 are included in the full suite. Actual AI cost USD 0. Next: offline evaluation and rollout preparation.
+
+
+### 7 — PASS for offline preparation; real vision evaluation BLOCKED
+
+Added offline-only `image_evaluation.py`: render synthetic PNGs, evaluate recorded observations,
+compare old/new only for identical pixel + chat/annotation input fingerprints. Missing observations
+produce null metrics and UNMEASURED, not fabricated accuracy. Exact normalized fact annotations
+and optional adjudicated checks cover facts, purpose, classwork/homework counts, schedule/event
+fields, display, linking and unique-fact preservation; semantic paraphrases need adjudication.
+Created 16 printed synthetic PNGs for 11 scenarios, with a versioned manifest. They are not a
+handwriting/real-world benchmark. Visually inspected the rendered Cyrillic schedule fixture.
+Added private feature-gated staff image diagnostics: states, sanitized errors, attempts, versions,
+usage/cost/reservations/unknown outcomes and latency; no image bytes or raw model text. Added
+activation/shadow/rollback instructions to backend README. All flags remain off, group allowlist
+empty and start timestamp unset. Budget exhaustion defers jobs rather than making them irrelevant.
+A final PostgreSQL check found a group with no subject catalog; fixed pass-B context to carry null
+instead of raising. Nine focused PostgreSQL/evaluation checks passed after this fix.
+Final regression command (backend cwd): `POSTGRES_TEST_URL=<disposable-local-db> uv run pytest -q`.
+**1178 passed, 0 failed, 0 skipped**, 144.46 s. Ruff and diff checks passed. Both OpenAPI YAML
+contracts parsed (31 existing paths, 7 additive pilot paths). The final full run also caught a
+legacy test helper selecting superseded bot frames by timestamp. Updated it to match the actual
+worker, which never displays superseded rows; added a regression with a deliberately later stale
+frame. All 17 headman checks and then the complete suite passed without disabling tests.
+Stage commit: `979e5ed`.
+Actual paid API calls: 0. Actual AI expenditure: USD 0. No production or public publication actions.
+
+## Сводный результат для владельца — 27 октября 2026
+
+Реализация сохраняет C+, существующий writer, ревизии, ручные блокировки и прежние API.
+Новая очередь учитывает все поддерживаемые JPEG/PNG/WebP, включая документы и альбомы.
+Каждое изображение получает два визуальных прохода с отдельными сохранёнными результатами и
+попытками. После сбоя завершённый проход повторно не оплачивается; неизвестный исход оплаченного
+запроса фиксируется отдельно и автоматически не покупается снова. Ошибки и исчерпание бюджета
+не считаются несущественными изображениями. Независимый текст сохраняет обычный путь C+.
+
+Все изображения участвуют до отбора материалов. Подтверждённые факты ссылаются на конкретное
+вложение/сообщение/ревизию, поддерживают точные числа и даты. Работа на паре и другие явно не
+домашние категории защищены от публикации как ДЗ. Расписание поступает в предложения с
+авторизованным подтверждением и аудитом; афиши — в отдельные черновики событий с источниками,
+ревизиями и обновлением/отменой. Frontend не изменялся. Новые публичные разделы выключены.
+
+### Проверяемая готовность по этапам
+
+| Этап | Технический результат | Коммит | Основная проверка |
+|---|---|---|---|
+| 1a | PASS: контракты, задания, журнал вызовов, миграция 0040 | a3c42b6 | 13 contract/PostgreSQL; downgrade/re-upgrade |
+| 1b | PASS: охват 1/6/7/12, документы, очередь, повторы, конкуренция | e845ad4 | 65 regressions + 28 focused checks |
+| 2a | PASS: два запроса с пикселями, структуры и сомнения | be9ba3b | 20 image/contract/PostgreSQL |
+| 2b | PASS: восстановление и предварительные общие резервы | 0ef3649 | 51 failure/budget/concurrency checks |
+| 3 | PASS: факты всех фото в C+, ссылки и ограничения публикации | 592b352 | 111 final semantic/hybrid/stored/PostgreSQL |
+| 4 | PASS: отбор для показа отдельно от анализа | 3256381 | 34 final display/preview/API/PostgreSQL |
+| 5a | PASS: предложения и подтверждение расписания; UI/подгруппы ограничены | 71f565b | 8 final API/PostgreSQL, миграция 0041 |
+| 5b | PASS: backend событий; публичное включение BLOCKED | 4fbb9c0 | 60 final lifecycle/candidate/PostgreSQL, миграция 0042 |
+| 6 | PASS: сквозная интеграция, совместимость, изоляция | fd68be5 | 1172 full + 13 post-catalog checks; полный цикл base ↔ 0042 |
+| 7 | PASS: офлайн-инструменты; реальное качество BLOCKED | 979e5ed | 1178 passed, 0 failed/skipped; lint/contracts clean |
+
+Повторные прогоны не суммируются в число уникальных тестов. Подробные файлы и устранённые ошибки
+перечислены в соответствующих записях этапов выше. PR не создавались; merge/push/deploy не выполнялись.
+
+### Что подтверждено, а что ещё нужно измерить
+
+- Охват 1, 6, 7 и 12 изображений/документов, два визуальных вызова, сохранение результатов,
+  отсутствие потери подтверждённых обрезок до C+, уникальные страницы, защита источников и бюджетов
+  подтверждены автоматическими проверками с локальными ответами провайдера.
+- Точные дубликаты и визуально близкие изображения с одинаковым содержанием отбираются отдельно.
+  При недостаточном доказательстве эквивалентности остаются оба изображения: минимальность набора
+  для сложных обрезок пока не доказана. Жёсткого лимита в 1–2 картинки нет.
+- ДЗ/работа на паре, расписания и события проверены на уровне контрактов и публикационных правил.
+  Реальная способность vision-модели прочитать доску, сложную таблицу или отличить эти назначения
+  пока UNMEASURED / AWAITING OWNER APPROVAL. Ответы заглушек этого не доказывают.
+- Большие результаты не обрезаются молча. Если объединённые доказательства превышают безопасный
+  размер C+ входа, источник явно удерживается для проверки; сохранённые чтения не теряются.
+- Ручные изменения, ревизии, отсутствие повторных карточек/уведомлений, групповые границы,
+  конкуренция и действующие текстовые сценарии входят в регрессионный набор.
+
+### Финансы и ограничения включения
+
+Нормальный новый путь: **2 vision-вызова на изображение**, затем существующие **2 текстовых
+прохода C+ на пакет**. Относительно старого photo-reading это +1 vision-вызов на изображение.
+Сохранение событий и предложений расписания дополнительных AI-вызовов не добавляет. Успешный A
+переиспользуется при повторе B; ошибки ограничены тремя попытками на проход, неоднозначная оплата
+требует проверки. Новые исходники/контекст могут требовать нового анализа в пределах лимитов.
+
+Текущие резервные настройки: USD 0.02/проход, 0.12/изображение, 0.20/альбом или сообщение,
+0.25/час плюс общий существующий дневной лимит группы с C+. Это предохранители в коде, а не
+проверенная цена провайдера. Неожиданное превышение резерва фиксируется как ошибка с фактическим
+usage. Стоимость/задержка реальных вызовов не измерены. Фактические расходы тестов — **USD 0**.
+
+Код, миграции и офлайн-проверки готовы. Feature flags, диагностический API, предложения расписания,
+review событий и публикация студентов выключены. Без разрешения нельзя ни включать production,
+ни менять writer mode, ни переобрабатывать историю. Для ограниченного shadow-пилота нужны
+утверждённые провайдер/тариф, бюджет, данные, группа и дата начала. Для студенческой публикации
+дополнительно нужны решение по API/frontend и оценка реального качества с согласованными порогами.
+
+## OWNER_DECISIONS_REQUIRED
+
+### 1. Платная проверка провайдера и качества
+
+**Вопрос:** какой провайдер/vision-модель, общий денежный лимит и набор данных разрешены для прогона?
+
+**Почему важно:** без запросов нельзя доказать OCR, классификацию, стоимость и задержку.
+
+**Варианты:** A — оставить только офлайн-проверки; B — разрешить сначала 16 синтетических PNG;
+C — затем добавить небольшой явно разрешённый реальный корпус без отправки новому провайдеру
+по умолчанию.
+
+**Рекомендация:** B, после проверки поддержки изображений и тарифа; C — отдельным разрешением.
+Бюджет и пороги качества согласовать по фактической тарификации и измеренному baseline.
+
+**Что реализовано:** два прохода, предварительные резервы, журнал usage, лимиты, сравнительный
+инструмент, фиксированный manifest. Платных вызовов не было.
+
+**После ответа:** зафиксировать модель/тариф/лимит и разрешённые данные, выполнить согласованный
+shadow-прогон и добавить измерения; production из такого ответа не следует.
+
+### 2. Публичный API событий и frontend
+
+**Вопрос:** утверждаем ли отдельный /group-events и явное редакторское подтверждение публикации?
+
+**Почему важно:** это новый пользовательский раздел и политика видимости, отдельная от дедлайнов.
+
+**Варианты:** A — только staff-черновики; B — публикация подтверждённых будущих событий всей группы;
+C — добавить подгруппы после утверждения их сопоставления.
+
+**Рекомендация:** B как первый пилот, без личных/неясных приглашений, после согласования с frontend.
+
+**Что реализовано:** отдельное хранилище, история, источники, review, update/cancel, закрытые
+публичные маршруты и аддитивный draft-контракт. Никакой существующий frontend не менялся.
+
+**После ответа:** точечно закрепить публичную схему/роли, согласовать интеграцию с владельцем
+frontend и повторить contract/API-тесты; включение требует отдельного разрешения.
+
+### 3. Retention событий
+
+**Вопрос:** ограничиваем события исходным 30-дневным окном или сохраняем публичное событие дольше?
+
+**Почему важно:** срок видимости и хранение источников/истории — разные продуктовые и privacy-решения.
+
+**Варианты:** A — текущее ограничение сроком источника; B — отдельный срок публичной записи с
+удалением исходных приватных доказательств по прежним правилам.
+
+**Рекомендация:** A для первого пилота; B проектировать только при подтверждённой необходимости.
+
+**Что реализовано:** срок источника, фильтрация API и каскадная очистка событий/источников/истории.
+
+**После ответа:** оставить текущую политику либо точечно изменить жизненный цикл и retention-тесты.
+
+### 4. Подгруппы, неизвестные даты и интерфейс подтверждения расписания
+
+**Вопрос:** как редактор сопоставляет распознанную подгруппу, период действия и заменяемое занятие?
+
+**Почему важно:** строковое имя подгруппы/неясная дата не дают права менять официальное расписание.
+
+**Варианты:** A — уточнение в чате и новое чтение; B — явный выбор существующей подгруппы,
+периода и занятия в согласованном интерфейсе; C — автоматическое сопоставление.
+
+**Рекомендация:** B; C не включать. До UI доступны A и безопасное явное сопоставление занятий в API.
+
+**Что реализовано:** typed строки, чётность, комнаты/преподаватели, предложения, guard ревизий,
+подтверждение, once/recurring mapping и аудит; неясные подгруппы/периоды удерживаются.
+
+**После ответа:** добавить только утверждённое сопоставление/поля подтверждения, согласовать UI
+и повторить permission, subgroup и migration-тесты при необходимости.
+
+### 5. Ограниченный пилот и отдельные production-действия
+
+**Вопрос:** какая группа, дата начала и длительность разрешены для shadow-пилота после измерений?
+
+**Почему важно:** включение не должно означать массовую обработку истории или смену writer.
+
+**Варианты:** A — оставить всё выключенным; B — ограниченный allowlisted shadow; C — live после
+приёмки качества и отдельного разрешения на deployment/публикацию.
+
+**Рекомендация:** B первым; C позже, с согласованными порогами и процедурой остановки.
+
+**Что реализовано:** default-off flags, обязательный cutoff, allowlist, диагностика, общий бюджет,
+сохранение старого пути и feature-only rollback без удаления таблиц/доказательств.
+
+**После ответа:** подготовить конкретные настройки/чеклист. Ни deployment, ни переключение
+writer, ни включение студентам, ни массовая история автоматически не подразумеваются.
