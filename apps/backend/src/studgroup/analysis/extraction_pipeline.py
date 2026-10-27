@@ -117,8 +117,9 @@ def _mutation_has_target_novelty(proposal, analysis_input, existing_item_snapsho
     # editor. Old facts may remain in a merged description without being repeated by the target.
     tokens = lambda value: set(re.findall(r"\d+|[a-zа-яё]{4,}", normalized(value)))
     changed = tokens(proposed) - tokens(known)
+    removed = tokens(known) - tokens(proposed)
     supported = tokens(target_text)
-    if changed & supported:
+    if (changed | removed) & supported:
         return True
     # Image facts have already passed their typed provenance validator. A target image may add a
     # fact whose wording is normalized differently by the editor, so do not require stem identity.
