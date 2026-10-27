@@ -1,10 +1,9 @@
 openapi: 3.1.0
 info:
   title: StudGroup image findings review (pilot, disabled by default)
-  version: 0.2.0
-  description: Additive draft backend contract. Requires explicit group allowlist and review feature flags.
-    Separate events and editor-confirmed publication are owner-approved. Frontend integration and actual
-    activation remain pending.
+  version: 0.3.0
+  description: Additive Core v2 contract for persisted events and editor-confirmed image findings. Group
+    allowlist and independent feature flags are required. Reads and manual mutations never invoke AI.
 servers:
   - url: https://api.studgroup.example/v1
 security:
@@ -15,10 +14,8 @@ paths:
       operationId: imageAnalysisDiagnostics
       responses:
         "200":
-          description: Latest 200 group-local job statuses
-          sanitized errors: null
-          usage: null
-          conservative cost and latency; never source pixels or raw reading text: null
+          description: Latest 200 group-local job statuses, sanitized errors, usage, conservative cost and latency;
+            never source pixels or raw reading text.
         "403":
           description: Headman/deputy membership required
         "404":
@@ -228,6 +225,34 @@ paths:
           description: Active authenticated membership required
         "404":
           description: Publication disabled
+      parameters:
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date
+          description: Inclusive first group-local calendar day. Requires end; at most 366 days.
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date
+          description: Inclusive last group-local day. Multi-day events overlap the requested interval.
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum:
+              - active
+              - cancelled
+              - all
+            default: active
+        - in: query
+          name: upcoming
+          schema:
+            type: boolean
+            default: false
+          description: Exclude ended events using group timezone; ongoing events remain visible.
   /group-events/{id}:
     get:
       operationId: getPublishedGroupEvent
@@ -246,11 +271,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/PublishedEvent"
         "404":
-          description: Private
-          unknown: null
-          unapproved: null
-          expired: null
-          wrong group or feature disabled; retained cancelled events remain accessible by id: null
+          description: Unknown, private, unapproved, expired, wrong group or feature disabled. Retained cancelled events
+            remain accessible by ID.
 components:
   schemas:
     ConfirmedScheduleRow:
@@ -488,6 +510,16 @@ components:
             - string
             - "null"
           maxLength: 255
+        source_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Retained same-group Telegram source only; null after source expiry or revision mismatch.
+        rescheduled:
+          type: boolean
+          default: false
+          description: An approved historical revision has different confirmed dates.
     StaffEvent:
       type: object
       additionalProperties: false
@@ -582,6 +614,16 @@ components:
             - string
             - "null"
           maxLength: 255
+        source_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Retained same-group Telegram source only; null after source expiry or revision mismatch.
+        rescheduled:
+          type: boolean
+          default: false
+          description: An approved historical revision has different confirmed dates.
     EventFinding:
       type: object
       additionalProperties: false
@@ -605,6 +647,11 @@ components:
         source_revision:
           type: integer
           minimum: 1
+        source_url:
+          type:
+            - string
+            - "null"
+          format: uri
     EventReview:
       type: object
       additionalProperties: false
@@ -707,6 +754,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EventFinding"
+        source_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Retained same-group Telegram source only; null after source expiry or revision mismatch.
+        rescheduled:
+          type: boolean
+          default: false
+          description: An approved historical revision has different confirmed dates.
     RecognizedScheduleRow:
       type: object
       additionalProperties: false

@@ -424,3 +424,18 @@ nullable display_readability for frozen preview consistency. These display-only 
 excluded from both AI requests. Public card/API schemas are unchanged. Old image jobs without a
 local visual proof remain visible unless their bytes are exactly identical; pHash/OCR similarity
 alone no longer hides an attachment. Migration 0045 adds only nullable job metadata.
+
+## Events/calendar integration — 2026-10-27
+
+Main API 0.19.0 references the canonical Image Findings API 0.3.0 path definitions; generated
+clients now consume those endpoints without duplicating event schemas. Existing paths and default
+active-event filtering remain valid. Optional start/end inclusive group-local dates, status and
+upcoming filters are additive; range requests reject missing boundaries, reversed ranges or more
+than 366 days. Lists are chronological and multi-day events overlap every confirmed day.
+Source URLs and rescheduled hints are additive, derived from retained same-group sources and
+approved history. Expired sources never regain links from an approved event snapshot.
+
+SessionContext adds optional per-group features (events/event_review/schedule_review). Missing
+fields mean disabled. These are display hints; every read and write still rechecks active
+membership, role, allowlist, feature flag, approval hash, audience and retention as appropriate.
+Public list/detail and editor actions read persisted structured data and perform no AI calls.

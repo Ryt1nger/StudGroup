@@ -89,3 +89,15 @@
 структурированная история могут пережить источники. API сообщает source_availability=expired для источников; событие не исчезает из-за удаления оригинала. Отмена исключает запись из активного
 списка, но сохраняет состояние и согласованный срок жизни. Неизвестные даты не публикуются,
 черновики ограничены сроком источника. Полные копии чата не добавляются в payload.
+
+## Calendar and interface consumption (27 October 2026)
+
+The same `/v1/group-events` entity feeds both Events and the existing calendar. Optional `start`
+and `end` are inclusive dates in the group's timezone, paired and limited to 366 days. Confirmed
+multi-day periods overlap the requested range. `status=active` remains the default;
+`status=cancelled|all` exposes retained approved history. `upcoming=true` excludes ended events.
+Unknown dates never receive a guessed calendar cell. Responses sort by confirmed start, then ID,
+before the existing 200-item cap. `source_url` is unavailable after source expiry/revision change;
+`rescheduled` is derived from approved revisions. Neither field creates a second event record.
+The main API references this canonical draft contract, and session capabilities expose only
+allowlisted flags for the current group and editor role. Reads/manual changes never invoke AI.
