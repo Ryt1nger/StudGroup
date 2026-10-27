@@ -115,8 +115,16 @@ def source_snapshot_sha256(analysis_input):
         if not message["image_facts"]:
             message.pop("image_facts")
         for attachment in message["attachments"]:
-            for key in ("attachment_id", "pixel_sha256", "visual_hash", "content_signature",
-                        "image_analysis_state", "semantic_types", "width", "height"):
+            for key in (
+                "attachment_id",
+                "pixel_sha256",
+                "visual_hash",
+                "content_signature",
+                "image_analysis_state",
+                "semantic_types",
+                "width",
+                "height",
+            ):
                 if not attachment.get(key):
                     attachment.pop(key, None)
     return hashlib.sha256(

@@ -75,11 +75,19 @@ def visual_fingerprint(image):
                 aspect = round(picture.width / picture.height, 3)
                 small = picture.convert("L").resize((9, 8))
                 pixels = [small.getpixel((x, y)) for y in range(8) for x in range(9)]
-        bits = sum((pixels[y * 9 + x] > pixels[y * 9 + x + 1]) << (y * 8 + x)
-                   for y in range(8) for x in range(8))
+        bits = sum(
+            (pixels[y * 9 + x] > pixels[y * 9 + x + 1]) << (y * 8 + x)
+            for y in range(8)
+            for x in range(8)
+        )
         return f"{aspect}:{bits:016x}"
-    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombWarning,
-            Image.DecompressionBombError):
+    except (
+        OSError,
+        ValueError,
+        UnidentifiedImageError,
+        Image.DecompressionBombWarning,
+        Image.DecompressionBombError,
+    ):
         return None
 
 
@@ -89,8 +97,10 @@ def _visually_close(left, right):
     try:
         aspect_left, bits_left = left.split(":")
         aspect_right, bits_right = right.split(":")
-        return (abs(float(aspect_left) - float(aspect_right)) < 0.02
-                and (int(bits_left, 16) ^ int(bits_right, 16)).bit_count() <= 2)
+        return (
+            abs(float(aspect_left) - float(aspect_right)) < 0.02
+            and (int(bits_left, 16) ^ int(bits_right, 16)).bit_count() <= 2
+        )
     except (ValueError, TypeError):
         return False
 
@@ -116,10 +126,15 @@ def select_evidence_images(items, required_ids=None):
             continue
         duplicate = None
         for index, earlier in enumerate(selected):
-            exact = item.get("pixel_sha256") and item.get("pixel_sha256") == earlier.get("pixel_sha256")
-            same_facts = (item.get("content_signature") and
-                          item.get("content_signature") == earlier.get("content_signature"))
-            if exact or (same_facts and _visually_close(item.get("visual_hash"), earlier.get("visual_hash"))):
+            exact = item.get("pixel_sha256") and item.get("pixel_sha256") == earlier.get(
+                "pixel_sha256"
+            )
+            same_facts = item.get("content_signature") and item.get(
+                "content_signature"
+            ) == earlier.get("content_signature")
+            if exact or (
+                same_facts and _visually_close(item.get("visual_hash"), earlier.get("visual_hash"))
+            ):
                 duplicate = index
                 break
         if duplicate is None:

@@ -21,7 +21,9 @@ router = APIRouter(prefix="/v1")
 
 def gate(request, group_id, public=False):
     settings = request.app.state.settings
-    flag = settings.image_event_publication_enabled if public else settings.image_event_review_enabled
+    flag = (
+        settings.image_event_publication_enabled if public else settings.image_event_review_enabled
+    )
     if not flag or str(group_id) not in settings.image_analysis_groups:
         raise ApiError("not_found", "Раздел недоступен", 404)
 
@@ -31,21 +33,47 @@ def view(event, source_availability=None):
     # Model linking hints and internal identifiers are not public event properties.
     for field in ("action", "existing_event_id", "expected_revision"):
         payload.pop(field, None)
-    return {"id": event.id, "revision": event.revision, "state": event.state,
-            "retained_until": event.delete_at, "source_availability": source_availability, **payload}
+    return {
+        "id": event.id,
+        "revision": event.revision,
+        "state": event.state,
+        "retained_until": event.delete_at,
+        "source_availability": source_availability,
+        **payload,
+    }
 
 
 @router.get("/staff/image-findings/events")
 async def list_review_events(request: Request, context: CurrentStaff, db: Db):
     gate(request, context.group.id)
-    rows = (await db.scalars(select(GroupEvent).where(GroupEvent.group_id == context.group.id,
-        GroupEvent.delete_at > datetime.now(UTC)).order_by(GroupEvent.created_at.desc()).limit(100))).all()
+    rows = (
+        await db.scalars(
+            select(GroupEvent)
+            .where(
+                GroupEvent.group_id == context.group.id, GroupEvent.delete_at > datetime.now(UTC)
+            )
+            .order_by(GroupEvent.created_at.desc())
+            .limit(100)
+        )
+    ).all()
     result = []
     for row in rows:
         sources = await retained_sources(db, row, datetime.now(UTC))
-        result.append(view(row, "available" if sources else "expired") | {"manual_lock": row.manual_lock, "findings": [
-            {"id": source.id, "state": source.apply_state, "payload": json.loads(source.incoming_json),
-             "source_revision": source.source_revision} for source in sources]})
+        result.append(
+            view(row, "available" if sources else "expired")
+            | {
+                "manual_lock": row.manual_lock,
+                "findings": [
+                    {
+                        "id": source.id,
+                        "state": source.apply_state,
+                        "payload": json.loads(source.incoming_json),
+                        "source_revision": source.source_revision,
+                    }
+                    for source in sources
+                ],
+            }
+        )
     return {"events": result}
 
 
@@ -58,7 +86,9 @@ class EventUpdate(BaseModel):
 
 
 @router.put("/staff/image-findings/events/{ident}")
-async def update_review_event(ident: UUID, body: EventUpdate, request: Request, context: CurrentStaff, db: Db):
+async def update_review_event(
+    ident: UUID, body: EventUpdate, request: Request, context: CurrentStaff, db: Db
+):
     from pydantic import ValidationError
 
     gate(request, context.group.id)
@@ -66,8 +96,16 @@ async def update_review_event(ident: UUID, body: EventUpdate, request: Request, 
         gate(request, context.group.id, public=True)
     event = await get_event(db, context.group.id, ident, lock=True)
     try:
-        await review_update(db, event, body.expected_revision, body.payload, body.state,
-            context.user.id, datetime.now(UTC), body.accept_source_ids)
+        await review_update(
+            db,
+            event,
+            body.expected_revision,
+            body.payload,
+            body.state,
+            context.user.id,
+            datetime.now(UTC),
+            body.accept_source_ids,
+        )
     except ValidationError:
         raise ApiError("invalid_request", "Некорректные поля события", 422) from None
     await db.commit()
@@ -86,8 +124,18 @@ async def list_group_events(request: Request, db: Db, context: GroupContext):
     group, _member = context
     gate(request, group.id, public=True)
     now = datetime.now(UTC)
-    rows = (await db.scalars(select(GroupEvent).where(GroupEvent.group_id == group.id,
-        GroupEvent.state == "active", GroupEvent.delete_at > now).order_by(GroupEvent.created_at.desc()).limit(200))).all()
+    rows = (
+        await db.scalars(
+            select(GroupEvent)
+            .where(
+                GroupEvent.group_id == group.id,
+                GroupEvent.state == "active",
+                GroupEvent.delete_at > now,
+            )
+            .order_by(GroupEvent.created_at.desc())
+            .limit(200)
+        )
+    ).all()
     result = []
     for event in rows:
         incoming = ImageEvent.model_validate_json(event.payload_json)
@@ -104,8 +152,11 @@ async def group_event(ident: UUID, request: Request, db: Db, context: GroupConte
     now = datetime.now(UTC)
     event = await get_event(db, group.id, ident, now)
     incoming = ImageEvent.model_validate_json(event.payload_json)
-    if (event.state not in {"active", "cancelled"} or incoming.audience != "group"
-            or not approved_snapshot(event)):
+    if (
+        event.state not in {"active", "cancelled"}
+        or incoming.audience != "group"
+        or not approved_snapshot(event)
+    ):
         raise ApiError("not_found", "Событие недоступно", 404)
     sources = await retained_sources(db, event, now)
     return view(event, "available" if sources else "expired")

@@ -635,6 +635,8 @@ async def undo(db, group, user, member, audit_id):
                 pattern.online_url,
                 False,
             )
+            row.subject, row.teacher, row.subgroup_id = None, None, None
+            row.teacher_overridden = row.subgroup_overridden = False
         elif kind == "p":
             row.cancelled = True
         row.revision += 1

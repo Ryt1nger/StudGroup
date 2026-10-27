@@ -6,8 +6,14 @@ from studgroup.photo_dedupe import select_evidence_images, visual_fingerprint
 
 
 def item(ident, *, pixel=None, facts="same", visual="1.0:0000000000000000", types=None):
-    return {"attachment_id": ident, "image_analysis_state": "ready", "content_signature": facts,
-            "pixel_sha256": pixel, "visual_hash": visual, "semantic_types": types or ["homework"]}
+    return {
+        "attachment_id": ident,
+        "image_analysis_state": "ready",
+        "content_signature": facts,
+        "pixel_sha256": pixel,
+        "visual_hash": visual,
+        "semantic_types": types or ["homework"],
+    }
 
 
 def test_different_pages_and_unique_crops_are_never_hidden_by_template_similarity():
@@ -18,7 +24,11 @@ def test_different_pages_and_unique_crops_are_never_hidden_by_template_similarit
 
 
 def test_exact_duplicate_pixels_are_hidden_after_evidence_is_preserved():
-    a, b, c = item("a", pixel="equal"), item("b", pixel="equal"), item("c", pixel="different", facts="other")
+    a, b, c = (
+        item("a", pixel="equal"),
+        item("b", pixel="equal"),
+        item("c", pixel="different", facts="other"),
+    )
     b.update(width=2000, height=1000)
     assert [i["attachment_id"] for i in select_evidence_images([a, b, c])] == ["b", "c"]
     assert len([a, b, c]) == 3  # input/semantic evidence unchanged

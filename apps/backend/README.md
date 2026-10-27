@@ -501,3 +501,14 @@ Expired private-source links are unavailable; approved events never preserve cop
 Schedule confirmation accepts optional corrected_rows and explicit subgroup/lesson mapping;
 AI rows remain immutable. Migration 0044 and the additive LessonOccurrence.subgroup_id field
 support the pending frontend integration. No public/review flags are activated by these changes.
+
+The owner-authorized synthetic-only provider check is `tools/synthetic_vision_check.py`.
+It accepts only the committed 16 PNG hashes, never opens the production database, and shares
+one durable USD 2 ledger across restarts. Run with `--out /absolute/private-ledger.json`.
+No automatic paid retries occur. Unknown outcomes retain their full reservation; default
+execution holds an identical request. An explicitly reviewed synthetic-only retest may use
+`--retest-ambiguous` within that same ledger and cap, retaining all unknown reservations.
+That option is not part of the production image worker and never relaxes its ambiguous-call hold.
+The local check uses HTTP/2 with certificate verification after transient handshake failures; production transport
+is unchanged. Raw responses contain only synthetic fixture content; never use this runner with
+student photos or private chats. A new output path must not be used to reset the authorized cap.

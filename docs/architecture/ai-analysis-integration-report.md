@@ -1,7 +1,7 @@
 # AI analysis integration report
 
 Updated: 2026-10-27. Scope: stages 0–7 of the Core v2 image-quality brief; evolutionary C+ changes only.
-Implementation is offline-tested and disabled by default; real model quality and production activation are not approved.
+Owner decisions of 2026-10-27 are implemented; synthetic-only paid checks are authorized up to $2 and recorded below. Real-group activation and production deployment are not approved.
 Source: `origin/main` at `dbc59638bcde89daec29e2d71c6c51bb95c29d54`.
 Working branch: `codex/core-image-audit`, in a separate managed worktree.
 
@@ -10,8 +10,7 @@ Working branch: `codex/core-image-audit`, in a separate managed worktree.
 The original checkout is `codex/ai-analysis-core`, one commit ahead and 82 behind current
 `origin/main`, with unrelated uncommitted files. Local `main` is 20 commits behind
 `origin/main`. Fetch succeeded. The audit uses current remote main without merging, resetting
-or changing the original checkout. No production configuration, provider call, published card,
-frontend file or shared API contract was changed. Obsolete documentation was not used.
+or changing the original checkout. At baseline no production configuration, provider call, published card, frontend file or shared API contract had been changed. Subsequent additive contracts and authorized synthetic calls are described below. Obsolete documentation was not used.
 
 This report replaces the old integration snapshot in place. The implementation plan is in
 [the current roadmap](ai-analysis-rebuild-roadmap.md#18-core-v2-image-quality-work).

@@ -60,7 +60,9 @@ class SchedulePattern(Base):
     valid_from: Mapped[date] = mapped_column(Date)
     valid_until: Mapped[date] = mapped_column(Date)
     week: Mapped[str] = mapped_column(String(8))
-    subgroup_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("subgroups.id", ondelete="SET NULL"))
+    subgroup_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="SET NULL")
+    )
     teacher: Mapped[str | None] = mapped_column(String(255))
     location: Mapped[str | None] = mapped_column(String(512))
     revision: Mapped[int] = mapped_column(Integer, default=1)
@@ -926,9 +928,13 @@ class ScheduleException(Base):
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     subject: Mapped[str | None] = mapped_column(String(255))
     teacher: Mapped[str | None] = mapped_column(String(255))
-    subgroup_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("subgroups.id", ondelete="SET NULL"))
+    subgroup_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="SET NULL")
+    )
     teacher_overridden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    subgroup_overridden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    subgroup_overridden: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     location: Mapped[str | None] = mapped_column(String(512))
     online_url: Mapped[str | None] = mapped_column(String(2048))
     cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -1032,7 +1038,9 @@ class ImageAnalysisJob(Base):
         CheckConstraint("pass_number IN (1, 2)"),
     )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
     attachment_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("message_attachments.id", ondelete="CASCADE"), index=True
     )
@@ -1065,7 +1073,9 @@ class ImageAnalysisCall(Base):
     job_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"), index=True
     )
-    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
     claim_token: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True)
     state: Mapped[str] = mapped_column(String(24))
     reserved_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=0)
@@ -1080,14 +1090,20 @@ class ImageAnalysisCall(Base):
 class ImageScheduleSuggestion(Base):
     __tablename__ = "image_schedule_suggestions"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
-    image_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"), unique=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    image_job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"), unique=True
+    )
     schedule_version: Mapped[int] = mapped_column(Integer)
     rows_json: Mapped[str] = mapped_column(Text)
     confirmation_json: Mapped[str | None] = mapped_column(Text)
     state: Mapped[str] = mapped_column(String(24), default="pending")
     revision: Mapped[int] = mapped_column(Integer, default=1)
-    decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
@@ -1098,11 +1114,15 @@ class GroupEvent(Base):
     __tablename__ = "group_events"
     __table_args__ = (UniqueConstraint("group_id", "fingerprint"),)
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
     fingerprint: Mapped[str] = mapped_column(String(64))
     title_key: Mapped[str] = mapped_column(String(255), index=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     approved_payload_sha256: Mapped[str | None] = mapped_column(String(64))
     event_end_date: Mapped[date | None] = mapped_column(Date)
     payload_json: Mapped[str] = mapped_column(Text)
@@ -1117,9 +1137,15 @@ class GroupEvent(Base):
 class GroupEventSource(Base):
     __tablename__ = "group_event_sources"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("group_events.id", ondelete="CASCADE"), index=True)
-    image_job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"))
-    raw_message_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("raw_messages.id", ondelete="CASCADE"))
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("group_events.id", ondelete="CASCADE"), index=True
+    )
+    image_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("image_analysis_jobs.id", ondelete="CASCADE")
+    )
+    raw_message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="CASCADE")
+    )
     source_revision: Mapped[int] = mapped_column(Integer)
     incoming_json: Mapped[str] = mapped_column(Text)
     apply_state: Mapped[str] = mapped_column(String(24))
@@ -1130,7 +1156,9 @@ class GroupEventRevision(Base):
     __tablename__ = "group_event_revisions"
     __table_args__ = (UniqueConstraint("event_id", "revision"),)
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("group_events.id", ondelete="CASCADE"), index=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("group_events.id", ondelete="CASCADE"), index=True
+    )
     revision: Mapped[int] = mapped_column(Integer)
     snapshot_json: Mapped[str] = mapped_column(Text)
     actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

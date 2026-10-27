@@ -272,9 +272,13 @@ async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):
                 "location": exception.location,
                 "online_url": exception.online_url,
                 "status": "cancelled" if exception.cancelled else "scheduled",
-                **({"subgroup_id": str(exception.subgroup_id) if exception.subgroup_id else None}
-                   if exception.subgroup_overridden else
-                   {"subgroup_id": str(pattern.subgroup_id)} if pattern.subgroup_id else {}),
+                **(
+                    {"subgroup_id": str(exception.subgroup_id) if exception.subgroup_id else None}
+                    if exception.subgroup_overridden
+                    else {"subgroup_id": str(pattern.subgroup_id)}
+                    if pattern.subgroup_id
+                    else {}
+                ),
             }
         )
     lessons.sort(key=lambda lesson: (lesson["starts_at"], lesson["id"]))

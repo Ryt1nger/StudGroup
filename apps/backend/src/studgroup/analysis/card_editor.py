@@ -126,7 +126,9 @@ def cited_sources(proposal, messages):
             raise ValueError("card_evidence_unavailable")
         if source not in rows:
             if source.image_facts:
-                source = source.model_copy(update={"text": "\n".join([source.text, *source.image_facts])})
+                source = source.model_copy(
+                    update={"text": "\n".join([source.text, *source.image_facts])}
+                )
             rows.append(source)
     return rows
 

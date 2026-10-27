@@ -156,7 +156,10 @@ class AnalysisInput(StrictDTO):
         if not set(self.target_message_ids).issubset(ids):
             raise ValueError("target_outside_source_envelope")
         scope = {row.telegram_message_id: row.revision for row in self.messages}
-        if any(scope.get(image.telegram_message_id) != image.source_revision for image in self.image_evidence):
+        if any(
+            scope.get(image.telegram_message_id) != image.source_revision
+            for image in self.image_evidence
+        ):
             raise ValueError("image_evidence_outside_source_envelope")
         return self
 

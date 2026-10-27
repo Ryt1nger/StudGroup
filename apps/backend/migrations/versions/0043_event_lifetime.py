@@ -12,8 +12,14 @@ depends_on = None
 def upgrade():
     # Existing gated drafts stay drafts; do not manufacture approval for old records.
     op.add_column("group_events", sa.Column("published_at", sa.DateTime(timezone=True)))
-    op.add_column("group_events", sa.Column("approved_by", sa.Uuid(),
-        sa.ForeignKey("users.id", ondelete="SET NULL", name="fk_group_event_approver")))
+    op.add_column(
+        "group_events",
+        sa.Column(
+            "approved_by",
+            sa.Uuid(),
+            sa.ForeignKey("users.id", ondelete="SET NULL", name="fk_group_event_approver"),
+        ),
+    )
     op.add_column("group_events", sa.Column("approved_payload_sha256", sa.String(64)))
     op.add_column("group_events", sa.Column("event_end_date", sa.Date()))
 

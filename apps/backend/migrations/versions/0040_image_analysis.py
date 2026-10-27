@@ -13,9 +13,21 @@ def upgrade():
     op.create_table(
         "image_analysis_jobs",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("attachment_id", sa.Uuid(), sa.ForeignKey("message_attachments.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("raw_message_id", sa.Uuid(), sa.ForeignKey("raw_messages.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False
+        ),
+        sa.Column(
+            "attachment_id",
+            sa.Uuid(),
+            sa.ForeignKey("message_attachments.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "raw_message_id",
+            sa.Uuid(),
+            sa.ForeignKey("raw_messages.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("source_revision", sa.Integer(), nullable=False),
         sa.Column("context_sha256", sa.String(64), nullable=False),
         sa.Column("context_json", sa.Text(), nullable=False),
@@ -40,8 +52,15 @@ def upgrade():
     op.create_table(
         "image_analysis_calls",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("job_id", sa.Uuid(), sa.ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "job_id",
+            sa.Uuid(),
+            sa.ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("claim_token", sa.Uuid(), nullable=False, unique=True),
         sa.Column("state", sa.String(24), nullable=False),
         sa.Column("reserved_usd", sa.Numeric(12, 8), nullable=False),

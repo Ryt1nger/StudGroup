@@ -20,9 +20,13 @@ def retention_end(payload, timezone):
     if payload.starts_on and payload.starts_at and payload.starts_on != start:
         raise ApiError("event_dates_ambiguous", "Дата и время начала противоречат друг другу", 409)
     if payload.ends_on and payload.ends_at and payload.ends_on != finish:
-        raise ApiError("event_dates_ambiguous", "Дата и время окончания противоречат друг другу", 409)
+        raise ApiError(
+            "event_dates_ambiguous", "Дата и время окончания противоречат друг другу", 409
+        )
     if payload.multi_day and (finish is None or finish <= start):
-        raise ApiError("event_end_required", "Уточните дату окончания многодневного мероприятия", 409)
+        raise ApiError(
+            "event_end_required", "Уточните дату окончания многодневного мероприятия", 409
+        )
     finish = finish or start
     if finish < start:
         raise ApiError("event_date_order", "Окончание раньше начала мероприятия", 409)
@@ -32,6 +36,10 @@ def retention_end(payload, timezone):
 
 
 def approved_snapshot(event):
-    return bool(event.published_at and event.event_end_date and event.approved_payload_sha256
-                and event.approved_payload_sha256 == payload_hash(event.payload_json)
-                and event.manual_lock)
+    return bool(
+        event.published_at
+        and event.event_end_date
+        and event.approved_payload_sha256
+        and event.approved_payload_sha256 == payload_hash(event.payload_json)
+        and event.manual_lock
+    )

@@ -82,6 +82,10 @@ export type ScheduleResponse = {
 export type LessonOccurrence = {
     id: string;
     subject: string;
+    /**
+     * Optional confirmed subgroup; absent on existing group-wide lessons.
+     */
+    subgroup_id?: string | null;
     starts_at: string;
     ends_at: string;
     teacher: string | null;

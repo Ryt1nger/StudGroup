@@ -24,8 +24,17 @@ class Observation(BaseModel):
     display_count: int | None = Field(default=None, ge=0)
     schedule_rows: list[dict] | None = None
     event: dict | None = None
-    adjudicated_checks: dict[Literal["context_linking", "duplicate_suppression", "unique_fact_preservation",
-        "display_completeness", "no_invented_critical_fact", "no_cross_group_leak"], bool] = Field(default_factory=dict)
+    adjudicated_checks: dict[
+        Literal[
+            "context_linking",
+            "duplicate_suppression",
+            "unique_fact_preservation",
+            "display_completeness",
+            "no_invented_critical_fact",
+            "no_cross_group_leak",
+        ],
+        bool,
+    ] = Field(default_factory=dict)
     cost_usd: Decimal | None = Field(default=None, ge=0)
     latency_ms: list[int] = Field(default_factory=list)
 
@@ -72,8 +81,15 @@ def evaluate(gold, observations=None):
         completed += sum(state == "ready" for state in observed.image_states.values())
         target = case["expected"]
         if "facts" in target and observed.facts is not None:
-            wanted, found = set(map(normalized, target["facts"])), set(map(normalized, observed.facts))
-            tp, fp, fn = tp + len(wanted & found), fp + len(found - wanted), fn + len(wanted - found)
+            wanted, found = (
+                set(map(normalized, target["facts"])),
+                set(map(normalized, observed.facts)),
+            )
+            tp, fp, fn = (
+                tp + len(wanted & found),
+                fp + len(found - wanted),
+                fn + len(wanted - found),
+            )
             measured_facts += 1
         if "semantic_types" in target and observed.semantic_types is not None:
             classifications += 1
@@ -98,10 +114,15 @@ def evaluate(gold, observations=None):
             raise ValueError("negative_latency")
         latencies.extend(observed.latency_ms)
     return {
-        "version": "image-evaluation-1", "evidence_kind": run.evidence_kind if run else "none",
-        "real_model_quality": "UNMEASURED / AWAITING OWNER APPROVAL" if not run or run.evidence_kind == "synthetic_stub" else "RECORDED DATA ONLY; verify approval and annotation provenance",
+        "version": "image-evaluation-1",
+        "evidence_kind": run.evidence_kind if run else "none",
+        "real_model_quality": "UNMEASURED / AWAITING OWNER APPROVAL"
+        if not run or run.evidence_kind == "synthetic_stub"
+        else "RECORDED DATA ONLY; verify approval and annotation provenance",
         "input_sha256": run.input_sha256 if run else None,
-        "case_count": len(expected), "observed_cases": len(actual), "total_images": total_images,
+        "case_count": len(expected),
+        "observed_cases": len(actual),
+        "total_images": total_images,
         "image_accounting_coverage": ratio(account, total_images) if run else None,
         "image_completed_coverage": ratio(completed, total_images) if run else None,
         "fact_matching": "exact normalized annotation text; paraphrases require human adjudication",
@@ -114,12 +135,30 @@ def evaluate(gold, observations=None):
         "event_fields_accuracy": ratio(correct_event, event_cases),
         "reported_cost_usd": str(cost) if costs else None,
         "median_latency_ms": median(latencies) if latencies else None,
-        "annotation_cases_measured": {"facts": measured_facts, "classification": classifications,
-            "homework": homework_cases, "display": display_cases, "schedule": schedule_cases, "event": event_cases},
-        "adjudicated_metrics": {key: ratio(sum(values), len(values)) for key, values in judgments.items()},
-        "unmeasured_metrics": [key for key in ("context_linking", "duplicate_suppression",
-            "unique_fact_preservation", "display_completeness", "no_invented_critical_fact", "no_cross_group_leak")
-            if key not in judgments] + ["human_adjudicated_fact_precision_recall"],
+        "annotation_cases_measured": {
+            "facts": measured_facts,
+            "classification": classifications,
+            "homework": homework_cases,
+            "display": display_cases,
+            "schedule": schedule_cases,
+            "event": event_cases,
+        },
+        "adjudicated_metrics": {
+            key: ratio(sum(values), len(values)) for key, values in judgments.items()
+        },
+        "unmeasured_metrics": [
+            key
+            for key in (
+                "context_linking",
+                "duplicate_suppression",
+                "unique_fact_preservation",
+                "display_completeness",
+                "no_invented_critical_fact",
+                "no_cross_group_leak",
+            )
+            if key not in judgments
+        ]
+        + ["human_adjudicated_fact_precision_recall"],
     }
 
 
@@ -127,12 +166,28 @@ def compare(gold, old, new):
     before, after = evaluate(gold, old), evaluate(gold, new)
     if before["input_sha256"] != after["input_sha256"]:
         raise ValueError("comparison_requires_identical_input_snapshot")
-    metrics = ("image_accounting_coverage", "image_completed_coverage", "fact_precision", "fact_recall",
-               "classification_accuracy", "homework_count_accuracy", "display_count_accuracy",
-               "schedule_rows_accuracy", "event_fields_accuracy", "median_latency_ms")
-    return {"before": before, "after": after, "delta": {
-        key: after[key] - before[key] if after[key] is not None and before[key] is not None else None
-        for key in metrics}}
+    metrics = (
+        "image_accounting_coverage",
+        "image_completed_coverage",
+        "fact_precision",
+        "fact_recall",
+        "classification_accuracy",
+        "homework_count_accuracy",
+        "display_count_accuracy",
+        "schedule_rows_accuracy",
+        "event_fields_accuracy",
+        "median_latency_ms",
+    )
+    return {
+        "before": before,
+        "after": after,
+        "delta": {
+            key: after[key] - before[key]
+            if after[key] is not None and before[key] is not None
+            else None
+            for key in metrics
+        },
+    }
 
 
 def render(gold, output, font_path):
@@ -140,7 +195,11 @@ def render(gold, output, font_path):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     font = ImageFont.truetype(str(font_path), 28)
-    manifest = {"version": "image-pixels-1", "provenance": "synthetic printed fixtures; not handwriting or real chat", "images": []}
+    manifest = {
+        "version": "image-pixels-1",
+        "provenance": "synthetic printed fixtures; not handwriting or real chat",
+        "images": [],
+    }
     for case in gold["scenarios"]:
         if not re.fullmatch(r"[a-z0-9_]+", case["id"]):
             raise ValueError("invalid_fixture_id")
@@ -157,9 +216,18 @@ def render(gold, output, font_path):
             name = f"{case['id']}-{index}.png"
             path = output / name
             image.save(path)
-            manifest["images"].append({"image_id": f"{case['id']}:{index}", "path": name,
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
-    manifest["input_sha256"] = hashlib.sha256(json.dumps({"images": manifest["images"], "gold_and_context": gold}, sort_keys=True).encode()).hexdigest()
+            manifest["images"].append(
+                {
+                    "image_id": f"{case['id']}:{index}",
+                    "path": name,
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                }
+            )
+    manifest["input_sha256"] = hashlib.sha256(
+        json.dumps(
+            {"images": manifest["images"], "gold_and_context": gold}, sort_keys=True
+        ).encode()
+    ).hexdigest()
     (output / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
     return manifest
 

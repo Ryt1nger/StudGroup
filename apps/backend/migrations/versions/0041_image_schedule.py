@@ -13,8 +13,16 @@ def upgrade():
     op.create_table(
         "image_schedule_suggestions",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("image_job_id", sa.Uuid(), sa.ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"), nullable=False, unique=True),
+        sa.Column(
+            "group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False
+        ),
+        sa.Column(
+            "image_job_id",
+            sa.Uuid(),
+            sa.ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"),
+            nullable=False,
+            unique=True,
+        ),
         sa.Column("schedule_version", sa.Integer(), nullable=False),
         sa.Column("rows_json", sa.Text(), nullable=False),
         sa.Column("state", sa.String(24), nullable=False),
@@ -24,7 +32,9 @@ def upgrade():
         sa.Column("delete_at", sa.DateTime(timezone=True), nullable=False),
     )
     for column in ("group_id", "delete_at"):
-        op.create_index(f"ix_image_schedule_suggestions_{column}", "image_schedule_suggestions", [column])
+        op.create_index(
+            f"ix_image_schedule_suggestions_{column}", "image_schedule_suggestions", [column]
+        )
 
 
 def downgrade():

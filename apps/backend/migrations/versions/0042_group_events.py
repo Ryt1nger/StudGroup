@@ -13,7 +13,9 @@ def upgrade():
     op.create_table(
         "group_events",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("fingerprint", sa.String(64), nullable=False),
         sa.Column("title_key", sa.String(255), nullable=False),
         sa.Column("payload_json", sa.Text(), nullable=False),
@@ -30,9 +32,21 @@ def upgrade():
     op.create_table(
         "group_event_sources",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("event_id", sa.Uuid(), sa.ForeignKey("group_events.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("image_job_id", sa.Uuid(), sa.ForeignKey("image_analysis_jobs.id", ondelete="CASCADE")),
-        sa.Column("raw_message_id", sa.Uuid(), sa.ForeignKey("raw_messages.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "event_id",
+            sa.Uuid(),
+            sa.ForeignKey("group_events.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "image_job_id", sa.Uuid(), sa.ForeignKey("image_analysis_jobs.id", ondelete="CASCADE")
+        ),
+        sa.Column(
+            "raw_message_id",
+            sa.Uuid(),
+            sa.ForeignKey("raw_messages.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("source_revision", sa.Integer(), nullable=False),
         sa.Column("incoming_json", sa.Text(), nullable=False),
         sa.Column("apply_state", sa.String(24), nullable=False),
@@ -42,7 +56,12 @@ def upgrade():
     op.create_table(
         "group_event_revisions",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("event_id", sa.Uuid(), sa.ForeignKey("group_events.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "event_id",
+            sa.Uuid(),
+            sa.ForeignKey("group_events.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("revision", sa.Integer(), nullable=False),
         sa.Column("snapshot_json", sa.Text(), nullable=False),
         sa.Column("actor_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="SET NULL")),

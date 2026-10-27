@@ -10,10 +10,20 @@ GOLD = json.loads((Path(__file__).parent / "fixtures/ai_analysis/image-scenarios
 
 
 def run(kind="synthetic_stub", fingerprint="0" * 64):
-    return {"input_sha256": fingerprint, "evidence_kind": kind, "cases": [{
-        "case_id": "in_class", "image_states": {"in_class:0": "ready"},
-        "semantic_types": ["in_class_task"], "homework_count": 0,
-        "cost_usd": "0.000342", "latency_ms": [10, 20]}]}
+    return {
+        "input_sha256": fingerprint,
+        "evidence_kind": kind,
+        "cases": [
+            {
+                "case_id": "in_class",
+                "image_states": {"in_class:0": "ready"},
+                "semantic_types": ["in_class_task"],
+                "homework_count": 0,
+                "cost_usd": "0.000342",
+                "latency_ms": [10, 20],
+            }
+        ],
+    }
 
 
 def test_missing_measurements_stay_unmeasured():
@@ -49,7 +59,9 @@ def test_renderer_creates_hashed_pixels_without_any_provider(tmp_path, monkeypat
     monkeypatch.setattr(ImageFont, "truetype", lambda *args, **kwargs: default)
     manifest = render(GOLD, tmp_path, "unused")
     assert len(manifest["images"]) == 16
-    assert all((tmp_path / row["path"]).read_bytes().startswith(b"\x89PNG") for row in manifest["images"])
+    assert all(
+        (tmp_path / row["path"]).read_bytes().startswith(b"\x89PNG") for row in manifest["images"]
+    )
     assert len(manifest["input_sha256"]) == 64
 
 

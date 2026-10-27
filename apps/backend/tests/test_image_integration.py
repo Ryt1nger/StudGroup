@@ -19,8 +19,13 @@ AUTH = {"Authorization": "Bearer valid"}
 
 
 def homework_reading():
-    return json.dumps(json.loads(reading()) | {"semantic_types": ["homework"],
-        "facts": [{"text": "Математика: решить задачи 1–3", "certainty": "confirmed"}]})
+    return json.dumps(
+        json.loads(reading())
+        | {
+            "semantic_types": ["homework"],
+            "facts": [{"text": "Математика: решить задачи 1–3", "certainty": "confirmed"}],
+        }
+    )
 
 
 def test_image_through_cplus_and_student_api_keeps_full_description(client, monkeypatch):
@@ -32,6 +37,7 @@ def test_image_through_cplus_and_student_api_keeps_full_description(client, monk
     async def ident():
         async with AsyncSession(client.app.state.engine) as db:
             return str(await db.scalar(select(MessageAttachment.id)))
+
     attachment_id = asyncio.run(ident())
 
     class Proof(VisionProvider):
@@ -39,9 +45,13 @@ def test_image_through_cplus_and_student_api_keeps_full_description(client, monk
             result = await super().complete(request)
             if request.prompt_version.startswith("cplus-extraction"):
                 payload = json.loads(result.content)
-                payload["proposals"][0]["evidence"][0]["fact_paths"] = ["description", f"image:{attachment_id}:0"]
+                payload["proposals"][0]["evidence"][0]["fact_paths"] = [
+                    "description",
+                    f"image:{attachment_id}:0",
+                ]
                 result.content = json.dumps(payload)
             return result
+
     provider = Proof(homework_reading(), cited=(31,))
     assert tick(client, provider, config) == "ready"
     assert tick(client, provider, config) == "ready"
@@ -80,10 +90,20 @@ def test_old_snapshot_hash_is_unchanged_when_new_fields_are_absent():
     for message in old["messages"]:
         message.pop("image_facts", None)
         for attachment in message["attachments"]:
-            for key in ("attachment_id", "pixel_sha256", "visual_hash", "content_signature",
-                        "image_analysis_state", "semantic_types", "width", "height"):
+            for key in (
+                "attachment_id",
+                "pixel_sha256",
+                "visual_hash",
+                "content_signature",
+                "image_analysis_state",
+                "semantic_types",
+                "width",
+                "height",
+            ):
                 attachment.pop(key, None)
-    expected = hashlib.sha256(json.dumps(old, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    expected = hashlib.sha256(
+        json.dumps(old, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()
     assert source_snapshot_sha256(data) == expected
 
 
@@ -95,16 +115,20 @@ def test_oversized_image_context_is_explicitly_held_without_losing_results(clien
     make_new(client)
     config = cfg(client, image_analysis_mode="live")
     content = json.loads(homework_reading())
-    content["facts"] = [{"text": f"Условие {i}: " + "я" * 3000, "certainty": "confirmed"} for i in range(20)]
+    content["facts"] = [
+        {"text": f"Условие {i}: " + "я" * 3000, "certainty": "confirmed"} for i in range(20)
+    ]
     provider = VisionProvider(json.dumps(content, ensure_ascii=False), cited=(31,))
     assert tick(client, provider, config) == "ready"
     assert tick(client, provider, config) == "ready"
     assert step(client, provider, config) == "image_context_review"
     assert provider.requests == []
+
     async def inspect():
         async with AsyncSession(client.app.state.engine) as db:
             raw = await db.scalar(select(RawMessage))
             jobs = (await db.scalars(select(ImageAnalysisJob))).all()
             assert raw.processing_state == "needs_context"
             assert all(job.state == "ready" and job.result_json for job in jobs)
+
     asyncio.run(inspect())
