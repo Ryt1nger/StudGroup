@@ -1,4 +1,5 @@
 import { eventHandlers } from './groupEvents';
+import { imageScheduleHandlers } from './imageSchedule';
 import { applyProfilePatch, demoProfile } from './profile';
 import type {
   ApiError,
@@ -79,6 +80,7 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
   let profile = demoProfile();
   const handlers: HttpHandler[] = [
     ...(scenario === 'events' && !publicDemo ? eventHandlers(baseUrl) : []),
+    ...(scenario === 'schedule-review' && !publicDemo ? imageScheduleHandlers(baseUrl) : []),
     http.get(url('/profile'), () => HttpResponse.json(profile)),
     http.patch(url('/profile'), async ({ request }) => {
       profile = applyProfilePatch(profile, (await request.json()) as Record<string, unknown>);
@@ -125,7 +127,11 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
               user: { ...session.user, telegram_user_id: 0, display_name: 'Тимофей', username: null },
               group: session.group ? { ...session.group, name: 'БИ 1.2 · обезличено' } : null,
             }
-          : scenario === 'events' ? {
+          : scenario === 'schedule-review' ? {
+              ...session,
+              features: { schedule_review: true },
+              membership: session.membership ? { ...session.membership, role: 'headman' } : null,
+            } : scenario === 'events' ? {
               ...session,
               features: { events: true, event_review: true, schedule_review: false },
               membership: session.membership ? { ...session.membership, role: 'headman' } : null,

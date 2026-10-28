@@ -1,6 +1,7 @@
 """Feature-gated staff-only review of image findings; never auto-enables publication."""
 
 import json
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Request
@@ -9,8 +10,16 @@ from sqlalchemy import select
 from studgroup.analysis.image_schedule import ScheduleConfirmation, confirm
 from studgroup.api import ApiError
 from studgroup.headman_domain import StError
-from studgroup.models import ImageScheduleSuggestion
+from studgroup.models import (
+    ImageAnalysisJob,
+    ImageScheduleSuggestion,
+    MessageAttachment,
+    RawMessage,
+    Subgroup,
+    SubjectSplit,
+)
 from studgroup.staff_api import CurrentStaff, Db
+from studgroup.student_cards import telegram_url
 
 router = APIRouter(prefix="/v1/staff/image-findings")
 
@@ -26,21 +35,49 @@ def gate(request, group_id):
 
 @router.get("/schedule")
 async def list_schedule(request: Request, context: CurrentStaff, db: Db):
-    from datetime import UTC, datetime
-
     gate(request, context.group.id)
+    now = datetime.now(UTC)
     rows = (
         await db.scalars(
             select(ImageScheduleSuggestion)
+            .join(ImageAnalysisJob, ImageAnalysisJob.id == ImageScheduleSuggestion.image_job_id)
+            .join(RawMessage, RawMessage.id == ImageAnalysisJob.raw_message_id)
+            .join(MessageAttachment, MessageAttachment.id == ImageAnalysisJob.attachment_id)
             .where(
                 ImageScheduleSuggestion.group_id == context.group.id,
-                ImageScheduleSuggestion.delete_at > datetime.now(UTC),
+                ImageScheduleSuggestion.delete_at > now,
+                ImageAnalysisJob.group_id == context.group.id,
+                ImageAnalysisJob.delete_at > now,
+                RawMessage.group_id == context.group.id,
+                RawMessage.delete_at > now,
+                RawMessage.revision == ImageAnalysisJob.source_revision,
+                MessageAttachment.group_id == context.group.id,
+                MessageAttachment.active.is_(True),
+                MessageAttachment.delete_at > now,
             )
             .order_by(ImageScheduleSuggestion.created_at.desc())
             .limit(100)
         )
     ).all()
+    subgroups = (
+        await db.execute(
+            select(Subgroup, SubjectSplit)
+            .join(SubjectSplit, SubjectSplit.id == Subgroup.split_id)
+            .where(SubjectSplit.group_id == context.group.id)
+            .order_by(SubjectSplit.subject_name, Subgroup.position)
+        )
+    ).all()
     return {
+        "current_schedule_version": context.group.schedule_version,
+        "subgroups": [
+            {
+                "id": subgroup.id,
+                "subject_id": split.subject_id,
+                "subject": split.subject_name,
+                "name": subgroup.name,
+            }
+            for subgroup, split in subgroups
+        ],
         "suggestions": [
             {
                 "id": row.id,
@@ -48,13 +85,34 @@ async def list_schedule(request: Request, context: CurrentStaff, db: Db):
                 "state": row.state,
                 "schedule_version": row.schedule_version,
                 "rows": json.loads(row.rows_json),
+                "source_url": await schedule_source_url(db, context.group, row, now),
                 "confirmation": json.loads(row.confirmation_json)
                 if row.confirmation_json
                 else None,
             }
             for row in rows
-        ]
+        ],
     }
+
+
+async def schedule_source_url(db, group, suggestion, now):
+    from studgroup.analysis.image_jobs import utc
+
+    job = await db.get(ImageAnalysisJob, suggestion.image_job_id)
+    if not job or job.group_id != group.id or job.state != "ready" or utc(job.delete_at) <= now:
+        return None
+    raw = await db.get(RawMessage, job.raw_message_id)
+    attachment = await db.get(MessageAttachment, job.attachment_id)
+    if (
+        raw is None
+        or raw.group_id != group.id
+        or attachment is None
+        or attachment.group_id != group.id
+        or not attachment.active
+        or utc(attachment.delete_at) <= now
+    ):
+        return None
+    return telegram_url(group, raw, now, job.source_revision)[0]
 
 
 @router.post("/schedule/{ident}/confirm")
@@ -75,7 +133,7 @@ async def image_diagnostics(request: Request, context: CurrentStaff, db: Db):
     from datetime import UTC, datetime
     from decimal import Decimal
 
-    from studgroup.models import ImageAnalysisCall, ImageAnalysisJob
+    from studgroup.models import ImageAnalysisCall
 
     settings = request.app.state.settings
     if (

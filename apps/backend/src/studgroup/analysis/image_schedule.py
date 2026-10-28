@@ -45,6 +45,7 @@ class ScheduleConfirmation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     expected_schedule_version: int = Field(ge=0)
+    acknowledge_schedule_change: bool = False
     targets: list[ScheduleTarget] = Field(default_factory=list, max_length=100)
     corrected_rows: list[ConfirmedScheduleRow] | None = Field(
         default=None, min_length=1, max_length=100
@@ -95,6 +96,7 @@ async def current_source(db, job_id, group_id, now):
         or raw.revision != job.source_revision
         or not attachment.active
         or utc(raw.delete_at) <= now
+        or utc(attachment.delete_at) <= now
     ):
         raise ApiError("stale_source", "Источник уже изменился или недоступен", 409)
     from studgroup.analysis.image_jobs import context_digest, context_snapshot
@@ -157,7 +159,10 @@ async def confirm(db, group_id, user, member, ident, body, now=None):
         suggestion.state != "pending"
         or suggestion.revision != body.expected_revision
         or group.schedule_version != body.expected_schedule_version
-        or suggestion.schedule_version != group.schedule_version
+        or (
+            suggestion.schedule_version != group.schedule_version
+            and not (body.acknowledge_schedule_change and body.corrected_rows is not None)
+        )
     ):
         raise ApiError(
             "revision_conflict", "Расписание изменилось; проверьте предложение заново", 409
@@ -368,6 +373,8 @@ async def confirm(db, group_id, user, member, ident, body, now=None):
             "rows": [row.model_dump(mode="json") for row in rows],
             "targets": [target.model_dump(mode="json") for target in body.targets],
             "schedule_version_before": body.expected_schedule_version,
+            "source_schedule_version": suggestion.schedule_version,
+            "acknowledged_schedule_change": body.acknowledge_schedule_change,
         },
         ensure_ascii=False,
     )

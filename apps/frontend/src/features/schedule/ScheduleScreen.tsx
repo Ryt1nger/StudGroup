@@ -175,6 +175,7 @@ export function ScheduleScreen() {
       <div className="pinned">
         <SectionTop title="Расписание" />
         <h1 className="sr">{ru.nav.schedule}</h1>
+        {features.schedule_review ? <Link className="pillb" to="/schedule/review">Проверить распознанное расписание</Link> : null}
         <div className="datel">{label}</div>
         {features.events ? <div className="event-week-nav"><button type="button" className="pillb" onClick={() => { setWeek((value) => value - 1); anchored.current = ''; }}>Предыдущая неделя</button><button type="button" className="pillb" onClick={() => { setWeek((value) => value + 1); anchored.current = ''; }}>Следующая неделя</button></div> : null}
         <WeekStrip days={days} selected={selected} marked={marked} onSelect={(i) => { setSelected(i); anchored.current = ''; }} />

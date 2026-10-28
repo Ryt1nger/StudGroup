@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup image findings review (pilot, disabled by default)
-  version: 0.3.0
+  version: 0.3.1
   description: Additive Core v2 contract for persisted events and editor-confirmed image findings. Group
     allowlist and independent feature flags are required. Reads and manual mutations never invoke AI.
 servers:
@@ -40,6 +40,14 @@ paths:
                     maxItems: 100
                     items:
                       $ref: "#/components/schemas/ScheduleSuggestion"
+                  current_schedule_version:
+                    type: integer
+                    minimum: 0
+                    description: Current official version, separately from the version captured in each suggestion.
+                  subgroups:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReviewSubgroup"
         "403":
           description: Membership role disallows review
         "404":
@@ -107,6 +115,11 @@ paths:
                           - once
                           - recurring
                         default: once
+                acknowledge_schedule_change:
+                  type: boolean
+                  default: false
+                  description: Explicit editor re-review after an official schedule change; requires corrected_rows and the
+                    current expected_schedule_version. Does not run AI.
       responses:
         "200":
           description: Confirmed schedule_version; repeated confirmation has no repeated side effects
@@ -861,6 +874,11 @@ components:
         schedule_version_before:
           type: integer
           minimum: 0
+        source_schedule_version:
+          type: integer
+          minimum: 0
+        acknowledged_schedule_change:
+          type: boolean
     ScheduleSuggestion:
       type: object
       additionalProperties: false
@@ -894,6 +912,32 @@ components:
           anyOf:
             - $ref: "#/components/schemas/ScheduleConfirmationRecord"
             - type: "null"
+        source_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Current retained same-group Telegram source; absent after source expiry or revision change.
+    ReviewSubgroup:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - subject_id
+        - subject
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+        subject_id:
+          type: string
+          format: uuid
+        subject:
+          type: string
+        name:
+          type: string
+          maxLength: 80
   securitySchemes:
     bearerAuth:
       type: http

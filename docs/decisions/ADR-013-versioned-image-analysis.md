@@ -94,3 +94,9 @@ without additional facts is retained in raw/C+ evidence but omitted from an olde
 unless it is the image source or a needed reply bridge. Short cancellations, digits and messages
 with additional words remain meaningful. These are source-identity/cost rules, not publication
 classification.
+
+Editor re-review after an unrelated official schedule change is explicit, not a paid visual retry.
+An optional acknowledgement plus full corrected rows and current expected schedule version allow
+the existing authorized confirmation path to proceed. Without all three, the original stale-version
+guard is unchanged. Source validity and row/subject/subgroup/occurrence locks still apply. Both
+source and applied versions and acknowledgement are stored with the manual confirmation.

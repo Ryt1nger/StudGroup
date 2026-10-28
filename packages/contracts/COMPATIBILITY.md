@@ -439,3 +439,10 @@ SessionContext adds optional per-group features (events/event_review/schedule_re
 fields mean disabled. These are display hints; every read and write still rechecks active
 membership, role, allowlist, feature flag, approval hash, audience and retention as appropriate.
 Public list/detail and editor actions read persisted structured data and perform no AI calls.
+
+Image Findings 0.3.1 adds optional current_schedule_version, group-scoped subgroup metadata and
+retained schedule-source URLs. Existing confirmation bodies preserve their previous version
+checks. The optional acknowledge_schedule_change flag permits an explicit editor re-review only
+with full corrected_rows and the current official version; stale source/revision, role and
+occurrence guards remain enforced. Confirmation history preserves both captured and applied
+schedule versions and the acknowledgement. No manual review operation starts a vision call.

@@ -9,6 +9,7 @@ import { homeworkIdFromStartParam } from './lib/deeplink';
 import { AppShell } from './shell/AppShell';
 import { TasksScreen } from './features/tasks/TasksScreen';
 import { ScheduleScreen } from './features/schedule/ScheduleScreen';
+import { ImageScheduleReviewScreen } from './features/schedule/ImageScheduleReviewScreen';
 import { LessonScreen } from './features/schedule/LessonScreen';
 import { SubjectsScreen } from './features/subjects/SubjectsScreen';
 import { DeadlinesScreen } from './features/deadlines/DeadlinesScreen';
@@ -57,6 +58,7 @@ export function appRoutes(startParam: string | null) {
         { path: 'cards/new', Component: CreateCardScreen },
         { path: 'tasks', Component: TasksScreen },
         { path: 'schedule', Component: ScheduleScreen },
+        { path: 'schedule/review', Component: ImageScheduleReviewScreen },
         { path: 'schedule/lesson/:lessonId', Component: LessonScreen },
         { path: 'subjects', Component: SubjectsScreen },
         { path: 'subjects/lessons/:lessonId', Component: LessonSubjectScreen },

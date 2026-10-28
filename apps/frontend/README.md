@@ -34,3 +34,9 @@ and its expected revision survive background refreshes; conflicts require an exp
 The existing theme/surface primitives, Telegram source opening and transient query cache are used.
 Use the development-only `?scenario=events` journey for UI verification. It is a mock API, not proof
 of Telegram ingestion, production persistence or a real pilot. Production bundles exclude mocks.
+
+`/schedule/review` provides editor confirmation of recognized timetable rows: source, effective
+dates, subject, subgroup, week parity, teacher/room, existing occurrence mapping and once/recurring
+scope. It uses the current staff schedule and group-local subgroup metadata. Missing dates are
+left blank. Stale official schedules require explicit re-review; source expiry blocks confirmation.
+The development-only `?scenario=schedule-review` exercises this UI against a mock API.

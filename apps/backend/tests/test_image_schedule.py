@@ -371,3 +371,86 @@ def test_editor_confirmation_does_not_restart_vision(client, monkeypatch):
     assert tick(client, provider, cfg(client)) == "idle"
     assert provider.vision == []
     assert len(stored(client, ImageAnalysisCall)) == before
+
+
+def test_explicit_editor_re_review_uses_current_version_without_another_ai_call(
+    client, monkeypatch
+):
+    from studgroup.models import Group, ImageAnalysisCall
+
+    suggestion = prepare(client, monkeypatch)
+    original = suggestion.rows_json
+    make(client, "headman")
+
+    async def manual_change():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.get(Group, suggestion.group_id)
+            group.schedule_version += 1
+            await db.commit()
+
+    asyncio.run(manual_change())
+    calls = len(stored(client, ImageAnalysisCall))
+    listing = client.get("/v1/staff/image-findings/schedule", headers=AUTH)
+    assert listing.status_code == 200
+    assert listing.json()["current_schedule_version"] == 1
+    assert listing.json()["suggestions"][0]["source_url"].endswith("/31")
+    body = {
+        "expected_revision": 1,
+        "expected_schedule_version": 1,
+        "corrected_rows": json.loads(original),
+    }
+    path = f"/v1/staff/image-findings/schedule/{suggestion.id}/confirm"
+    assert client.post(path, headers=AUTH, json=body).status_code == 409
+    body["acknowledge_schedule_change"] = True
+    result = client.post(path, headers=AUTH, json=body)
+    assert result.status_code == 200, result.text
+    assert result.json()["schedule_version"] == 2
+    current = stored(client, ImageScheduleSuggestion)[0]
+    assert current.rows_json == original
+    confirmation = json.loads(current.confirmation_json)
+    assert confirmation["source_schedule_version"] == 0
+    assert confirmation["schedule_version_before"] == 1
+    assert confirmation["acknowledged_schedule_change"]
+    provider = VisionProvider(reading())
+    assert tick(client, provider, cfg(client)) == "idle"
+    assert not provider.vision and len(stored(client, ImageAnalysisCall)) == calls
+
+
+def test_schedule_review_metadata_never_exposes_other_group_or_expired_sources(client, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from studgroup.models import Group, RawMessage, Subgroup, SubjectSplit
+    from studgroup.subject_identity import subject_uuid
+
+    suggestion = prepare(client, monkeypatch)
+    make(client, "headman")
+
+    async def seed():
+        async with AsyncSession(client.app.state.engine) as db:
+            other = await db.scalar(select(Group).where(Group.telegram_chat_id == -1002))
+            for group_id, name in [(suggestion.group_id, "Алгебра"), (other.id, "Чужой предмет")]:
+                split = SubjectSplit(
+                    group_id=group_id,
+                    subject_id=subject_uuid(group_id, name),
+                    subject_name=name,
+                    created_at=datetime.now(UTC),
+                )
+                db.add(split)
+                await db.flush()
+                db.add(Subgroup(split_id=split.id, position=1, name=name + " подгруппа"))
+            await db.commit()
+
+    asyncio.run(seed())
+    body = client.get("/v1/staff/image-findings/schedule", headers=AUTH).json()
+    assert [row["subject"] for row in body["subgroups"]] == ["Алгебра"]
+
+    async def expire():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(
+                select(RawMessage).where(RawMessage.group_id == suggestion.group_id)
+            )
+            raw.delete_at = datetime.now(UTC) - timedelta(seconds=1)
+            await db.commit()
+
+    asyncio.run(expire())
+    assert client.get("/v1/staff/image-findings/schedule", headers=AUTH).json()["suggestions"] == []

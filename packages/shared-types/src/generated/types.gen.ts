@@ -825,6 +825,13 @@ export type RecognizedScheduleRow = {
     teacher?: string | null;
 };
 
+export type ReviewSubgroup = {
+    id: string;
+    subject_id: string;
+    subject: string;
+    name: string;
+};
+
 export type ScheduleConfirmationRecord = {
     rows: Array<ConfirmedScheduleRow>;
     targets: Array<{
@@ -835,6 +842,8 @@ export type ScheduleConfirmationRecord = {
         scope?: 'once' | 'recurring';
     }>;
     schedule_version_before: number;
+    source_schedule_version?: number;
+    acknowledged_schedule_change?: boolean;
 };
 
 export type ScheduleSuggestion = {
@@ -844,6 +853,10 @@ export type ScheduleSuggestion = {
     schedule_version: number;
     rows: Array<RecognizedScheduleRow>;
     confirmation: ScheduleConfirmationRecord | null;
+    /**
+     * Current retained same-group Telegram source; absent after source expiry or revision change.
+     */
+    source_url?: string | null;
 };
 
 export type StaffEvent = {
@@ -1074,6 +1087,11 @@ export type ListImageScheduleSuggestionsResponses = {
      */
     200: {
         suggestions: Array<ScheduleSuggestion>;
+        /**
+         * Current official version, separately from the version captured in each suggestion.
+         */
+        current_schedule_version?: number;
+        subgroups?: Array<ReviewSubgroup>;
     };
 };
 
@@ -1094,6 +1112,10 @@ export type ConfirmImageScheduleSuggestionData = {
             override_revision: number;
             scope?: 'once' | 'recurring';
         }>;
+        /**
+         * Explicit editor re-review after an official schedule change; requires corrected_rows and the current expected_schedule_version. Does not run AI.
+         */
+        acknowledge_schedule_change?: boolean;
     };
     path: {
         id: string;
