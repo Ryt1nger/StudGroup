@@ -232,7 +232,10 @@ def test_candidates_cover_later_messages_and_reach_the_model_payload():
     payload = candidates_payload(messages)
     reply = next(row for row in payload if row["member_message_id"] == 2)
     assert reply["strength"] == "strong" and reply["minutes_after_anchor"] == 300
-    assert any(row["relation"] == "adjacent_file" and row["strength"] == "weak" for row in payload)
+    assert any(
+        row["relation"] == "staff_burst" and row["strength"] == "medium"
+        for row in payload
+    )
     data = AnalysisInput(
         group_id=GROUP,
         group_timezone="Europe/Moscow",
@@ -243,3 +246,34 @@ def test_candidates_cover_later_messages_and_reach_the_model_payload():
     request = prepare_extraction_request(data, {})
     assert request.user_payload["link_candidates"] == payload
     assert "text" not in payload[0] and len(payload) <= 40
+
+
+def test_staff_forwarded_assignment_burst_is_exposed_as_medium_context():
+    messages = [
+        msg(
+            1,
+            "#орг",
+            role="headman",
+            files=[("document", "Инструкции.docx", None)],
+        ),
+        msg(
+            2,
+            "Кандидаты готовят кампанию, журналисты берут интервью",
+            minutes=0,
+            role="headman",
+        ),
+        msg(
+            3,
+            "Нужна презентация на 3–5 слайдов, обязательные роли: 2 журналиста, 4 кандида",
+            minutes=24,
+            role="headman",
+        ),
+    ]
+    payload = candidates_payload(messages)
+    assert any(
+        row["relation"] == "staff_burst"
+        and row["strength"] == "medium"
+        and row["anchor_message_id"] == 1
+        and row["member_message_id"] in {2, 3}
+        for row in payload
+    )

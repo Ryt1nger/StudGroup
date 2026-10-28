@@ -9,6 +9,7 @@ from studgroup.analysis.projection import project_item
 from studgroup.analysis.resolver import resolve_proposal
 from studgroup.analysis.stored import effective_validation
 from studgroup.analysis.subject_resolver import hashtag_subject, resolve_card_subject
+from studgroup.analysis.text_hygiene import has_service_hashtag
 from studgroup.models import Group
 
 
@@ -69,7 +70,15 @@ async def apply_validated_batch(
                 found_subject = next(iter(tagged)) if len(tagged) == 1 else None
             else:
                 # The model named none: hashtag, or the lesson running when the messages were sent.
-                found_subject = resolve_card_subject(texts, **subject_context).subject
+                resolved_subject = resolve_card_subject(texts, **subject_context)
+                # A service-tagged post may happen during any lesson. An explicit subject hashtag
+                # still wins, but clock coincidence alone cannot turn #орг into that lesson.
+                found_subject = (
+                    None
+                    if resolved_subject.source == "schedule"
+                    and any(has_service_hashtag(text) for _, text in texts)
+                    else resolved_subject.subject
+                )
             if found_subject:
                 card = card.model_copy(update={"subject": found_subject})
         applied = (

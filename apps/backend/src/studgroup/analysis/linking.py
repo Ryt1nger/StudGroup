@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from studgroup.analysis.card_editor import supplement_adds_information
 from studgroup.analysis.contracts import EvidenceRef, RejectedItem
-from studgroup.analysis.text_hygiene import clean_text
+from studgroup.analysis.text_hygiene import clean_text, has_service_hashtag
 
 STRONG, MEDIUM, WEAK = "strong", "medium", "weak"
 RANK = {STRONG: 0, MEDIUM: 1, WEAK: 2}
@@ -91,6 +91,23 @@ def _relation(anchor, member, by_id):
     gap = _minutes(anchor, member)
     same_topic = anchor.topic_id == member.topic_id
     same_author = _same_author(anchor, member)
+    if (
+        same_topic
+        and same_author
+        and (_staff(anchor) or _staff(member))
+        and 0 <= gap <= 30
+        and (
+            anchor.attachments
+            or member.attachments
+            or has_service_hashtag(anchor.text)
+            or has_service_hashtag(member.text)
+            or (
+                CONTENT_SIGNAL.search(anchor.text or "")
+                and CONTENT_SIGNAL.search(member.text or "")
+            )
+        )
+    ):
+        return "staff_burst", MEDIUM
     if same_topic and same_author and 0 < gap:
         if _has_text(member) and gap <= 60 and ENUMERATION_START.match(member.text):
             return "enumeration_after", MEDIUM

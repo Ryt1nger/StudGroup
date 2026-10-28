@@ -346,7 +346,7 @@ def test_invented_numbers_works_dates_and_audience_still_fail_the_description(de
     )
     assert reason in card.attention_reasons
     assert card.description == DESCRIPTION_PENDING
-    assert "description" in card.fallback_fields and card.visibility == "headman_attention"
+    assert "description" in card.fallback_fields and card.visibility == "held"
     for invented in ("12", "реферат", "пятниц", "подгрупп"):
         assert invented not in card.description
 
@@ -450,7 +450,7 @@ def test_previously_valid_cards_keep_title_description_and_visibility(source, ti
 
 
 def test_prompt_version_and_the_title_and_description_contracts():
-    assert EXTRACTION_PROMPT_VERSION == "cplus-extraction-13"
+    assert EXTRACTION_PROMPT_VERSION == "cplus-extraction-14"
     prompt = EXTRACTION_SYSTEM_PROMPT
     assert "Title contract" in prompt and "ideally under 60 characters" in prompt
     assert "Description contract" in prompt and "in your own words" in prompt

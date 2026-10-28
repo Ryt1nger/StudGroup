@@ -358,11 +358,11 @@ def test_a_plain_card_gets_no_note(client):
 # -- 5. only serious doubts hide a card ---------------------------------------------------------
 
 
-def test_text_fallbacks_alone_never_hold_a_card_but_a_material_doubt_does():
+def test_unusable_new_description_and_material_doubt_both_hold_a_card():
     source = [msg(1, "Решить задачи 1–3")]
     soft = edit_card(_task_item_proposal(description="Решить задачи 1–7 на 99 страницах"), source)
     assert (
-        soft.visibility == "headman_attention"
+        soft.visibility == "held"
         and "description_pending_ai" in soft.attention_reasons
     )
     hard = edit_card(_task_item_proposal(attention_reasons=["material_conflict"]), source)

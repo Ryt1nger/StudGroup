@@ -590,6 +590,64 @@ def test_a_message_outside_any_lesson_never_gets_a_guessed_subject(client):
     assert item.subject is None
 
 
+def test_service_tagged_assignment_never_inherits_the_lesson_subject(client):
+    source(
+        client,
+        mid=31,
+        text="#орг кандидатам придумать кампанию и подготовить 3–5 слайдов",
+        when=MONDAY,
+    )
+    seed_timetable(client, subject="Математический анализ")
+    make_new(client)
+
+    class CampaignProvider(PackageProvider):
+        async def complete(self, request):
+            result = await super().complete(request)
+            if request.prompt_version.startswith("cplus-extraction"):
+                payload = json.loads(result.content)
+                payload["proposals"][0].update(
+                    subject=None,
+                    title="Подготовить предвыборную кампанию",
+                    description="Кандидатам придумать кампанию и подготовить 3–5 слайдов.",
+                )
+                result.content = json.dumps(payload)
+            return result
+
+    assert step(client, CampaignProvider(cited=(31,)), now=MONDAY + timedelta(hours=1)) == "completed"
+    item, homework = first_item(client)
+    assert item.subject is None
+    assert homework.subject_name == "Предмет не указан"
+    assert item.deadline_at is None
+
+
+def test_unreadable_new_card_is_held_in_review_and_never_projected(client):
+    source(client, mid=31, text="#орг кандидаты задают вопросы", when=BASE)
+    make_new(client)
+
+    class EmptyCardProvider(PackageProvider):
+        async def complete(self, request):
+            result = await super().complete(request)
+            if request.prompt_version.startswith("cplus-extraction"):
+                payload = json.loads(result.content)
+                payload["proposals"][0].update(
+                    subject=None, title="Задание", description=None
+                )
+                result.content = json.dumps(payload)
+            return result
+
+    assert step(client, EmptyCardProvider(cited=(31,))) == "completed"
+    assert count(client, CanonicalAcademicItem) == 0
+    assert count(client, Homework) == 0
+    assert count(client, Notification) == 0
+
+    async def outcome():
+        async with AsyncSession(client.app.state.engine) as db:
+            run = await db.scalar(select(ShadowEvaluationRun))
+            return json.loads(run.metrics_json)["promotion"]["statuses"]
+
+    assert asyncio.run(outcome()) == {"review": 1}
+
+
 def test_an_unambiguous_hashtag_beats_the_lesson_that_happened_to_be_running(client):
     seed_fixed(client, ["#матан решить задачи 1–3", "ок", "напоминаю про задачи 1–3"])
     seed_timetable(client, subject="Математический анализ")

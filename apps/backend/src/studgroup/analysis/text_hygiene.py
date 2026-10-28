@@ -94,3 +94,11 @@ def neutral_title(text, label):
 
 def is_service_subject(subject):
     return bool(subject) and " ".join(subject.casefold().lstrip("#").split()) in NON_SUBJECT_WORDS
+
+
+def has_service_hashtag(text):
+    """Whether source text carries a service tag that must not imply the current lesson."""
+    return any(
+        match.casefold().lstrip("#") in NON_SUBJECT_WORDS
+        for match in HASHTAG.findall(text or "")
+    )

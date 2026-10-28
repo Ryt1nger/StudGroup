@@ -113,7 +113,7 @@ def test_sniff_mime_uses_content_not_declared_type():
     assert photo_reading.sniff_mime(b"<html>") is None
 
 
-def test_photo_is_read_and_its_text_reaches_the_extraction_pass(client, monkeypatch):
+def test_photo_text_reaches_extraction_but_bare_exercises_are_not_published(client, monkeypatch):
     allow_download(monkeypatch)
     photo_message(client)
     make_new(client)
@@ -125,7 +125,9 @@ def test_photo_is_read_and_its_text_reaches_the_extraction_pass(client, monkeypa
     seen = json.dumps(provider.requests[-1].user_payload, ensure_ascii=False)
     assert "Текст на фото: Алгебра, №12–15, стр. 40" in seen
     assert "Фото: Страница учебника" in seen
-    assert count(client, Homework) == 1
+    # A photographed page names exercises but does not say they were assigned. The reading is
+    # available to the model, while the unsupported fallback card stays in review.
+    assert count(client, Homework) == 0
 
     async def stored_text():
         async with AsyncSession(client.app.state.engine) as db:

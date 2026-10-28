@@ -778,7 +778,7 @@ CASES = [
         "invented_number_falls_back_and_asks_attention",
         [msg(10, "По математике решить задачи 1–3 из учебника")],
         [item(title="Решить задачи 1–7", description="Решить задачи 1–7.")],
-        accepted_=[accepted("Математика", "homework", visibility="headman_attention")],
+        accepted_=[accepted("Математика", "homework", visibility="held")],
     ),
 ]
 

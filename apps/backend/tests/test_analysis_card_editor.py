@@ -68,12 +68,26 @@ def test_meaningful_ai_display_is_primary_path_and_preserves_complex_details():
     assert "43–44" in card.description
 
 
-def test_invented_page_triggers_evidence_only_fallback_for_headman_attention():
+def test_invented_page_without_any_supported_description_is_held():
     card = edit_card(proposal(description="Решить номера 10–16 на страницах 43–99."), [source()])
     assert card.used_fallback
-    assert card.visibility == "headman_attention"
+    assert card.visibility == "held"
     assert "unsupported_numeric_fact" in card.attention_reasons
     assert "99" not in card.description
+
+
+def test_failed_update_text_stays_attention_so_resolver_can_keep_the_old_text():
+    card = edit_card(
+        proposal(
+            action="update",
+            existing_item_id=UUID("00000000-0000-0000-0000-000000000099"),
+            expected_item_revision=2,
+            description="Решить номера 10–16 на страницах 43–99.",
+        ),
+        [source()],
+    )
+    assert card.visibility == "headman_attention"
+    assert "description_pending_ai" in card.attention_reasons
 
 
 def test_generic_title_uses_fallback_but_does_not_hold_useful_card():

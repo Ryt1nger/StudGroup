@@ -338,7 +338,10 @@ def edit_card(
     ):
         reasons.append("unsupported_explicit_deadline")
     reasons = list(dict.fromkeys(reasons))
-    if SERIOUS_REASONS & set(reasons):
+    unpublishable_new_card = proposal.action == "create" and bool(
+        {"title_insufficient_data", "description_pending_ai"} & set(reasons)
+    )
+    if SERIOUS_REASONS & set(reasons) or unpublishable_new_card:
         visibility = "held"
     elif fallback_fields or reasons:
         visibility = "headman_attention"
