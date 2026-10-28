@@ -353,3 +353,21 @@ def test_editor_recurring_replacement_updates_subject_period_and_teacher(client,
     assert pattern.teacher == "Петров"
     assert pattern.weekday == 2
     assert stored(client, ScheduleChange)[0].operation == "lesson_recurring"
+
+
+def test_editor_confirmation_does_not_restart_vision(client, monkeypatch):
+    from studgroup.models import ImageAnalysisCall
+
+    suggestion = prepare(client, monkeypatch)
+    make(client, "headman")
+    before = len(stored(client, ImageAnalysisCall))
+    result = client.post(
+        f"/v1/staff/image-findings/schedule/{suggestion.id}/confirm",
+        json={"expected_revision": 1, "expected_schedule_version": 0},
+        headers=AUTH,
+    )
+    assert result.status_code == 200, result.text
+    provider = VisionProvider(reading())
+    assert tick(client, provider, cfg(client)) == "idle"
+    assert provider.vision == []
+    assert len(stored(client, ImageAnalysisCall)) == before

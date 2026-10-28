@@ -59,6 +59,23 @@ def digest(data):
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def context_digest(context):
+    """Only source facts invalidate a paid reading; manual projections never buy another pass.
+
+    Trusted schedule/catalog data enrich the first request. Their own revisions guard editor
+    confirmation and C+ resolves against the current catalog; they are not new image/chat sources.
+    """
+    derived = {
+        "existing_items",
+        "existing_events",
+        "schedule",
+        "schedule_version",
+        "schedule_complete",
+        "subject_catalog",
+    }
+    return digest({key: value for key, value in context.items() if key not in derived})
+
+
 async def context_snapshot(db, raw):
     before = (
         await db.scalars(
@@ -160,15 +177,24 @@ async def context_snapshot(db, raw):
     # Other empty pictures contribute no pixels/text to THIS visual pass. Keep source/reply
     # bridges, but do not invalidate paid context analysis merely because another file arrived.
     source_id = raw.telegram_message_id
+
+    def substantive(item):
+        # The explicit no-op regression: leave it in raw/C+ evidence, but it does not change
+        # what THIS image says. A reply bridge/source or any additional word/digit is retained.
+        return (
+            bool(item["text"].strip())
+            and re.fullmatch(r"спасибо[.!\s]*", item["text"].strip().casefold()) is None
+        )
+
     referenced = {
         item["reply_to"]
         for item in context["messages"]
-        if item["reply_to"] is not None and (item["text"].strip() or item["id"] == source_id)
+        if item["reply_to"] is not None and (substantive(item) or item["id"] == source_id)
     }
     context["messages"] = [
         item
         for item in context["messages"]
-        if item["id"] == source_id or item["text"].strip() or item["id"] in referenced
+        if item["id"] == source_id or substantive(item) or item["id"] in referenced
     ]
     group = await db.get(Group, raw.group_id)
     context["timezone"] = group.timezone
@@ -373,13 +399,7 @@ async def schedule_group(db, group, now, since, model_key="", provider_identity=
             context["model_key"] = model_key
             context["provider_identity"] = provider_identity or {}
             # Published-card revisions must not make image analysis feed back into itself.
-            second_key = digest(
-                {
-                    key: value
-                    for key, value in context.items()
-                    if key not in {"existing_items", "existing_events"}
-                }
-            )
+            second_key = context_digest(context)
             for job in jobs:
                 if (
                     job.pass_number == 2
@@ -859,16 +879,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             current["pass_version"] = PASS_B_VERSION
             current["model_key"] = job.model_key
             current["provider_identity"] = json.loads(job.context_json).get("provider_identity", {})
-            context_changed = (
-                digest(
-                    {
-                        k: v
-                        for k, v in current.items()
-                        if k not in {"existing_items", "existing_events"}
-                    }
-                )
-                != job.context_sha256
-            )
+            context_changed = context_digest(current) != job.context_sha256
         if (
             raw is None
             or attachment is None

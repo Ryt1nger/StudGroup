@@ -3,11 +3,13 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_image_jobs import cfg, download_ok, reading, stored, tick
-from test_package_worker import make_new
+from test_package_worker import BASE, make_new
 from test_photo_reading import VisionProvider, photo_message
+from test_processing import source
 
 from studgroup.models import ImageAnalysisCall, ImageAnalysisJob, MessageAttachment, RawMessage
 
@@ -162,3 +164,42 @@ def test_return_to_successful_exact_context_reuses_snapshot(client, monkeypatch)
     jobs = stored(client, ImageAnalysisJob)
     originals = [job for job in jobs if job.pass_number == 2 and job.state == "ready"]
     assert len(originals) == 1
+
+
+def test_manual_schedule_changes_do_not_buy_another_visual_pass(client, monkeypatch):
+    from studgroup.models import Group, SchedulePattern
+
+    provider, config = prepare(client, monkeypatch)
+
+    async def change():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            group.schedule_version += 1
+            lesson = await db.scalar(
+                select(SchedulePattern).where(SchedulePattern.group_id == group.id)
+            )
+            lesson.subject = "Другой подтверждённый предмет"
+            lesson.location = "Новая аудитория"
+            await db.commit()
+
+    asyncio.run(change())
+    assert tick(client, provider, config) == "idle"
+    assert len(provider.vision) == 2
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Спасибо!", "idle"),
+        ("Отмена!", "ready"),
+        ("3", "ready"),
+        ("Спасибо! Сделать 3", "ready"),
+    ],
+)
+def test_noop_thanks_does_not_rebuy_pixels_but_terse_changes_do(
+    client, monkeypatch, text, expected
+):
+    provider, config = prepare(client, monkeypatch)
+    source(client, mid=32, reply=31, text=text, when=BASE + timedelta(minutes=20))
+    assert tick(client, provider, config) == expected
+    assert len(provider.vision) == (2 if expected == "idle" else 3)

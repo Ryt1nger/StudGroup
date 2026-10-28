@@ -86,3 +86,11 @@ failed/ambiguous jobs cannot. Reuse never extends expiry or crosses group bounda
 
 The owner's later instruction supersedes the former USD 2 ceiling: all old observations and
 unknown-outcome reservations remain accounted inside one USD 1 total for comparisons and pilot.
+
+Manual projection changes (schedule version/rows/catalog, existing cards and events) do not
+invalidate the paid image source key. They enrich the initial request; official schedule revision
+checks and current C+ catalog validation remain separate guards. Exact standalone “Спасибо!”
+without additional facts is retained in raw/C+ evidence but omitted from an older image's context
+unless it is the image source or a needed reply bridge. Short cancellations, digits and messages
+with additional words remain meaningful. These are source-identity/cost rules, not publication
+classification.

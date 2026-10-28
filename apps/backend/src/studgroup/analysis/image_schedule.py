@@ -97,7 +97,7 @@ async def current_source(db, job_id, group_id, now):
         or utc(raw.delete_at) <= now
     ):
         raise ApiError("stale_source", "Источник уже изменился или недоступен", 409)
-    from studgroup.analysis.image_jobs import context_snapshot, digest
+    from studgroup.analysis.image_jobs import context_digest, context_snapshot
 
     current = await context_snapshot(db, raw)
     saved = json.loads(job.context_json)
@@ -111,10 +111,7 @@ async def current_source(db, job_id, group_id, now):
         current["model_key"] = job.model_key
     if "provider_identity" in saved:
         current["provider_identity"] = saved["provider_identity"]
-    if (
-        digest({k: v for k, v in current.items() if k not in {"existing_items", "existing_events"}})
-        != job.context_sha256
-    ):
+    if context_digest(current) != job.context_sha256:
         raise ApiError("stale_context", "Обсуждение изменилось; требуется новое чтение", 409)
     return job
 
