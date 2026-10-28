@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
 
+// The fixture describes Monday at 09:00 Moscow; real timers/animations continue normally.
+test.beforeEach(async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-05T06:00:00Z'));
+});
+
 /**
  * Critical journey: Today → homework detail → «Выполнено мной», including a revision conflict.
  * Runs against the dev-only Telegram and API mocks (see playwright.config.ts).
@@ -13,24 +18,24 @@ test('Today → details → mark and unmark «Выполнено мной»', as
   await expect(page).toHaveURL(/\/homework\//);
   await expect(page.getByRole('heading', { name: 'ДЗ №12–140' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Выполнено мной' }).click();
+  await page.getByRole('button', { name: 'Выполнено мной', exact: true }).click();
   const undo = page.getByRole('button', { name: /Снять отметку/ });
   await expect(undo).toBeVisible();
   await expect(undo).toBeEnabled();
 
   await undo.click();
-  await expect(page.getByRole('button', { name: 'Выполнено мной' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Выполнено мной', exact: true })).toBeEnabled();
 });
 
 test('revision conflict: the card is refetched and the repeated action succeeds', async ({ page }) => {
   await page.goto('/?scenario=completion-conflict');
   await page.getByRole('link', { name: /ДЗ №12–140/ }).click();
 
-  await page.getByRole('button', { name: 'Выполнено мной' }).click();
+  await page.getByRole('button', { name: 'Выполнено мной', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('изменились');
 
   // After the forced refetch the action is available again, with the new revision.
-  const retry = page.getByRole('button', { name: 'Выполнено мной' });
+  const retry = page.getByRole('button', { name: 'Выполнено мной', exact: true });
   await expect(retry).toBeEnabled();
   await retry.click();
   await expect(page.getByRole('button', { name: /Снять отметку/ })).toBeVisible();
@@ -39,9 +44,9 @@ test('revision conflict: the card is refetched and the repeated action succeeds'
 test('a failed write is rolled back and reported', async ({ page }) => {
   await page.goto('/?scenario=completion-fails');
   await page.getByRole('link', { name: /ДЗ №12–140/ }).click();
-  await page.getByRole('button', { name: 'Выполнено мной' }).click();
+  await page.getByRole('button', { name: 'Выполнено мной', exact: true }).click();
   await expect(page.getByText('Не удалось сохранить отметку. Попробуйте ещё раз.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Выполнено мной' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Выполнено мной', exact: true })).toBeVisible();
 });
 
 test('schedule opens from the navigation and shows lessons', async ({ page }) => {
@@ -87,22 +92,27 @@ test('Tasks: archive rules, filters, card → details → mark syncs the list', 
   // Completing an active item moves it to «Выполнено мной» and the list restarts.
   await page.getByRole('button', { name: 'Все' }).click();
   await page.getByRole('link', { name: /Открыть задание: КТ по истории/ }).click();
+  await expect(page.getByRole('heading', { name: 'КТ по истории', level: 1 })).toBeVisible();
   await expect(page.getByText('Проверяем обновление')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Выполнено мной' }).click();
+  await page.getByRole('button', { name: 'Выполнено мной', exact: true }).click();
   await expect(page.getByRole('button', { name: /Снять отметку/ })).toBeVisible();
   await page.goBack();
-  await expect(page.getByRole('heading', { name: 'Выполнено', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Задания', level: 1 })).toBeVisible();
+  await page.getByRole('button', { name: 'Выполнено мной', exact: true }).click();
+  const completed = page.getByRole('link', { name: /Открыть задание: КТ по истории/ });
+  await expect(completed).toBeVisible();
+  await expect(completed.getByRole('button', { name: /Снять отметку/ })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('Tasks: server pages with «Загрузить ещё»', async ({ page }) => {
+test('Tasks: server pages load when scrolling to the end', async ({ page }) => {
   await page.goto('/?scenario=tasks-many');
   await page.getByRole('link', { name: 'Задания' }).click();
   await expect(page.getByRole('heading', { name: 'Задания', level: 1 })).toBeVisible();
   const cards = page.getByRole('link', { name: /Открыть задание/ });
   await expect(cards).toHaveCount(50);
-  await page.getByRole('button', { name: 'Загрузить ещё' }).click();
+  await page.locator('.sentinel').scrollIntoViewIfNeeded();
   await expect(cards).toHaveCount(100);
-  await page.getByRole('button', { name: 'Загрузить ещё' }).click();
+  await page.locator('.sentinel').scrollIntoViewIfNeeded();
   await expect(cards).toHaveCount(124);
-  await expect(page.getByRole('button', { name: 'Загрузить ещё' })).toHaveCount(0);
+  await expect(page.locator('.sentinel')).toHaveCount(0);
 });

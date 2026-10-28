@@ -1,6 +1,7 @@
 """One approved event entity feeds both chronological lists and local-date calendar intervals."""
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -130,3 +131,46 @@ def test_capabilities_follow_group_flags_and_staff_role(client):
             assert not any(group_features(settings, group, member).values())
 
     asyncio.run(check())
+
+
+def test_midnight_end_does_not_add_an_empty_extra_calendar_day(client, monkeypatch):
+    first = (datetime.now(UTC) + timedelta(days=4)).date()
+    last = first + timedelta(days=1)
+    event, _, _ = published(
+        client,
+        monkeypatch,
+        starts_at=f"{first}T20:00:00+03:00",
+        ends_at=f"{last}T00:00:00+03:00",
+        multi_day=True,
+    )
+    assert listing(client, start=str(first), end=str(first))[0]["id"] == str(event.id)
+    assert listing(client, start=str(last), end=str(last)) == []
+
+
+def test_repeated_poster_does_not_create_another_public_event(client, monkeypatch):
+    from test_processing import source
+
+    from studgroup.analysis.group_events import capture_event
+    from studgroup.analysis.image_contracts import ImageEvent
+    from studgroup.models import GroupEvent, GroupEventSource
+
+    event, payload, current = published(client, monkeypatch)
+    source(client, mid=32, text="Повтор афиши")
+
+    async def repeat():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
+            await capture_event(
+                db,
+                raw.group_id,
+                raw,
+                ImageEvent.model_validate_json(json.dumps(payload)),
+                datetime.now(UTC),
+            )
+            await db.commit()
+
+    asyncio.run(repeat())
+    assert len(stored(client, GroupEvent)) == 1
+    assert len(stored(client, GroupEventSource)) == 2
+    assert listing(client)[0]["revision"] == current["revision"]
+    assert listing(client)[0]["id"] == str(event.id)

@@ -12,6 +12,9 @@ import { SectionTop } from '../../shell/TopBar';
 import { Banner, Skeleton } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
+import { EventCards } from '../events/EventCard';
+import { useEventCapabilities, useGroupEvents } from '../events/api';
+import { groupEventOnDay } from '../events/calendar';
 import { upcomingDeadlines } from '../deadlines/upcomingDeadlines';
 import { DlCard, HwCard } from '../shared/Cards';
 import { Hero } from '../shared/Hero';
@@ -77,8 +80,11 @@ export function TodayScreen() {
   const today = timeZone ? dayKey(nowMs, timeZone) : null;
   const days = today ? weekKeys(today) : [];
   const schedule = useScheduleQuery(days[0] ?? '', days[6] ?? '', today !== null);
+  const features = useEventCapabilities();
+  const groupEvents = useGroupEvents({ start: days[0] ?? '', end: days[6] ?? '' });
+  const eventItems = groupEvents.data?.events ?? [];
   const lessons = schedule.data?.lessons ?? [];
-  const marked = new Set(timeZone ? days.filter((key) => lessonsOfDay(lessons, key, timeZone).length > 0) : []);
+  const marked = new Set(timeZone ? days.filter((key) => lessonsOfDay(lessons, key, timeZone).length > 0 || eventItems.some((item) => groupEventOnDay(item, key, timeZone))) : []);
   const soonDeadlines = deadlines.data ? upcomingDeadlines(deadlines.data.items, deadlines.data.generated_at, deadlines.data.group_timezone) : [];
   const refetch = query.refetch;
   useEffect(() => {
@@ -134,6 +140,8 @@ export function TodayScreen() {
         <Banner tone="info" icon="alert" action={<button type="button" className="bact txt" onClick={restart}>{ru.today.recheck}</button>}>{ru.today.pollStopped}</Banner>
       ) : null}
 
+      {features.events && groupEvents.isError ? <RequestError error={groupEvents.error} onRetry={() => void groupEvents.refetch()} /> : null}
+      {features.events && groupEvents.isPending ? <Skeleton count={1} label="Загрузка событий календаря" /> : null}
       {query.isPending ? <Skeleton label={ru.states.loading} /> : null}
       {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
 
@@ -143,6 +151,7 @@ export function TodayScreen() {
           {data.next_lesson ? <Hero next={data.next_lesson} nowMs={nowMs} timeZone={data.group_timezone} /> : null}
           <Plan data={data} nowMs={nowMs} busy={busy} onToggle={(item) => void toggle(item)} />
           {deadlinesSection}
+          {today && eventItems.some((item) => groupEventOnDay(item, today, data.group_timezone)) ? <Sec id="today-group-events" title="События"><EventCards items={eventItems.filter((item) => groupEventOnDay(item, today, data.group_timezone))} timeZone={data.group_timezone} /></Sec> : null}
         </>
       ) : null}
       {data && selected > 0 && selectedKey ? (
@@ -153,7 +162,8 @@ export function TodayScreen() {
           lessons={lessons}
           homework={all.items}
           events={deadlines.data?.items ?? []}
-          loading={schedule.isPending || all.isPending || deadlines.isPending}
+          groupEvents={eventItems}
+          loading={schedule.isPending || all.isPending || deadlines.isPending || (features.events === true && groupEvents.isPending)}
         />
       ) : null}
     </>

@@ -193,12 +193,12 @@ a { color: inherit; text-decoration: none; }
 @keyframes sh { to { background-position: -200% 0; } }
 
 /* nav */
-.nav { position: absolute; left: 16px; right: 16px; bottom: calc(18px + var(--bottom-inset)); z-index: 6; display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px; border-radius: 99px; background: var(--nav-bg); border: .5px solid var(--card-edge); box-shadow: var(--card-hi), 0 16px 40px rgba(0,0,0,.45); backdrop-filter: blur(30px) saturate(1.8); -webkit-backdrop-filter: blur(30px) saturate(1.8); }
+.nav { position: absolute; left: 16px; right: 16px; bottom: calc(18px + var(--bottom-inset)); z-index: 6; display: grid; grid-template-columns: repeat(var(--tabs, 4), 1fr); padding: 6px; border-radius: 99px; background: var(--nav-bg); border: .5px solid var(--card-edge); box-shadow: var(--card-hi), 0 16px 40px rgba(0,0,0,.45); backdrop-filter: blur(30px) saturate(1.8); -webkit-backdrop-filter: blur(30px) saturate(1.8); }
 .nav a { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 9px 0 8px; border-radius: 99px; font-size: 11px; font-weight: 600; color: var(--label-2); transition: all .25s; }
 .nav a svg { width: 24px; height: 24px; }
 .nav a { position: relative; z-index: 1; }
 .nav a[aria-current='page'] { color: var(--accent-text); }
-.ind { position: absolute; top: 6px; bottom: 6px; left: 6px; width: calc((100% - 12px) / 4); border-radius: 99px; background: hsl(var(--hsl) / 0.22); box-shadow: inset 0 0 0 .5px hsl(var(--hsl2) / 0.38); transform: translateX(calc(var(--idx, 0) * 100%)); transition: transform .28s cubic-bezier(.3,1.2,.4,1); }
+.ind { position: absolute; top: 6px; bottom: 6px; left: 6px; width: calc((100% - 12px) / var(--tabs, 4)); border-radius: 99px; background: hsl(var(--hsl) / 0.22); box-shadow: inset 0 0 0 .5px hsl(var(--hsl2) / 0.38); transform: translateX(calc(var(--idx, 0) * 100%)); transition: transform .28s cubic-bezier(.3,1.2,.4,1); }
 :root[data-theme='light'] .nav a[aria-current='page'] { color: var(--accent); }
 .toast { position: absolute; left: 50%; bottom: calc(104px + var(--bottom-inset)); transform: translateX(-50%); padding: 11px 18px; border-radius: 99px; font-weight: 600; font-size: 14.5px; z-index: 9; animation: in .25s; white-space: nowrap; background: var(--nav-bg); border: .5px solid var(--card-edge); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
 a:focus-visible, button:focus-visible, .task:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
@@ -591,3 +591,20 @@ a.pcard:active { transform: scale(.98); }
 
 /* A lesson that is over fades to grey; the current one and the coming ones keep their colour. */
 .ev.past { opacity: .5; filter: grayscale(.9); }
+
+/* Group events share the existing surfaces and theme tokens; academic cards remain separate. */
+.group-event-card { display: block; padding: 16px; margin: 10px 0; border-left: 3px solid var(--accent); }
+.group-event-main { display: block; color: var(--label); }
+.group-event-main h3 { margin: 8px 0; font-size: 17px; text-transform: none; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.group-event-main p { margin: 6px 0; color: var(--label-2); line-height: 1.4; display: flex; align-items: center; gap: 6px; }
+.group-event-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--accent); }
+.group-event-main .group-event-summary { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
+.event-source { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; color: var(--accent); }
+.event-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+.event-review-source { border-top: .5px solid var(--card-edge); padding: 12px 0; }
+.event-review-source label { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.event-week-nav { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; }
+.event-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.nav.with-events a { font-size: clamp(9px, 2.3vw, 10px); letter-spacing: -.025em; min-width: 0; }
+.event-week-nav .pillb { font-size: 12px; padding: 8px 10px; white-space: nowrap; }

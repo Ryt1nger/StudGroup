@@ -1,5 +1,6 @@
 export const SCENARIOS = [
   'populated',
+  'events',
   'single',
   'empty',
   'delayed',

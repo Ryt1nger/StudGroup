@@ -1,7 +1,7 @@
 """Additive social-event API. Review and student visibility have separate off-by-default gates."""
 
 import json
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated, Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -53,7 +53,16 @@ def calendar_bounds(payload, timezone):
     start_day = (
         payload.starts_at.astimezone(zone).date() if payload.starts_at else payload.starts_on
     )
-    end_day = payload.ends_at.astimezone(zone).date() if payload.ends_at else payload.ends_on
+    # Timestamp intervals are half-open: an event ending at midnight occupies the prior day.
+    end_day = (
+        (payload.ends_at - timedelta(microseconds=1)).astimezone(zone).date()
+        if payload.ends_at and (not payload.starts_at or payload.ends_at > payload.starts_at)
+        else payload.ends_at.astimezone(zone).date()
+        if payload.ends_at
+        else payload.ends_on
+    )
+    if payload.multi_day and end_day is None:
+        return None, None
     return start_day, end_day or start_day
 
 

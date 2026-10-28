@@ -101,3 +101,11 @@ before the existing 200-item cap. `source_url` is unavailable after source expir
 `rescheduled` is derived from approved revisions. Neither field creates a second event record.
 The main API references this canonical draft contract, and session capabilities expose only
 allowlisted flags for the current group and editor role. Reads/manual changes never invoke AI.
+
+The Mini App consumes this contract through the generated shared client. `/events` and its detail
+screen are separate from academic deadlines; the existing Today/Schedule calendar renders those
+same event IDs and covers multi-day dates. Timestamp ends are exclusive for calendar placement
+(an end at midnight does not create a zero-length extra day); date-only ends remain inclusive.
+Editor routes retain the original expected revision across background refreshes and require an
+explicit reload after conflict. Default-disabled group capabilities hide event navigation/queries.
+All event query variants invalidate after manual mutations and refetch on focus/reconnect.

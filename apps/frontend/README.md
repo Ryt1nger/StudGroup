@@ -1,6 +1,6 @@
 # Frontend
 
-Owner: Claude.
+Owner: Claude. Core v2 events/calendar integration explicitly assigned to Codex by the product owner on 27 October 2026.
 
 Current onboarding and Slice 1 requirements: [`docs/workflow/claude-frontend-stage-0-brief.md`](../../docs/workflow/claude-frontend-stage-0-brief.md).
 
@@ -19,3 +19,18 @@ Expected product areas include:
 - headman and deputy management views where approved.
 
 The approved architecture requires a TypeScript client generated from OpenAPI. Claude must review and document the concrete frontend stack during Stage 0 before scaffolding the application.
+
+## Core v2 events integration
+
+`/events` lists future approved group events and retained history. `/events/:eventId` shows details;
+`/events/review` and `/events/review/:eventId` use the existing headman/deputy backend review guards.
+The current Today day view and Schedule week strip render the same IDs from `/group-events`.
+Moving/cancelling an event invalidates every event interval and detail query; focus/reconnect and
+reopening the application refresh saved structured data. No event read or manual action invokes AI.
+
+Navigation and queries follow optional per-group session capabilities. Absent flags keep the old
+four-tab interface; editors can review drafts independently of student publication. Editor input
+and its expected revision survive background refreshes; conflicts require an explicit reload.
+The existing theme/surface primitives, Telegram source opening and transient query cache are used.
+Use the development-only `?scenario=events` journey for UI verification. It is a mock API, not proof
+of Telegram ingestion, production persistence or a real pilot. Production bundles exclude mocks.

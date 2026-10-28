@@ -1,8 +1,10 @@
-import type { AcademicDeadline, HomeworkSummary, LessonOccurrence } from '@studgroup/shared-types';
+import type { AcademicDeadline, HomeworkSummary, LessonOccurrence, PublishedEvent } from '@studgroup/shared-types';
 import { dayKey } from '../../lib/format';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
 import { Empty } from '../../ui/Blocks';
 import { DlCard, HwCard, LessonRow } from '../shared/Cards';
+import { EventCards } from '../events/EventCard';
+import { groupEventOnDay } from '../events/calendar';
 import { Sec } from '../shared/Sec';
 
 export function lessonsOfDay(lessons: readonly LessonOccurrence[], key: string, timeZone: string): LessonOccurrence[] {
@@ -31,6 +33,7 @@ export function DayView({
   lessons,
   homework,
   events,
+  groupEvents = [],
   loading,
 }: {
   dayKeyValue: string;
@@ -39,12 +42,14 @@ export function DayView({
   lessons: readonly LessonOccurrence[];
   homework: readonly HomeworkSummary[];
   events: readonly AcademicDeadline[];
+  groupEvents?: readonly PublishedEvent[];
   loading: boolean;
 }) {
   const dayLessons = lessonsOfDay(lessons, dayKeyValue, timeZone);
   const dayHomework = homework.filter((item) => homeworkOnDay(item, dayKeyValue, nowMs, timeZone));
   const dayEvents = events.filter((item) => eventOnDay(item, dayKeyValue, timeZone));
-  const none = !dayLessons.length && !dayHomework.length && !dayEvents.length;
+  const socialEvents = groupEvents.filter((item) => groupEventOnDay(item, dayKeyValue, timeZone));
+  const none = !dayLessons.length && !dayHomework.length && !dayEvents.length && !socialEvents.length;
   if (none && loading) return null;
   if (none) return <Empty title="На этот день ничего нет" body="Пар, заданий и контрольных на этот день не запланировано." />;
   return (
@@ -59,6 +64,7 @@ export function DayView({
           {dayHomework.map((item) => <HwCard key={item.id} item={item} nowMs={nowMs} timeZone={timeZone} />)}
         </Sec>
       ) : null}
+      {socialEvents.length ? <Sec id="day-group-events" title="События"><EventCards items={socialEvents} timeZone={timeZone} /></Sec> : null}
       {dayEvents.length ? (
         <Sec id="day-events" title="КТ и события">
           {dayEvents.map((item) => <DlCard key={item.id} item={item} timeZone={timeZone} nowMs={nowMs} />)}
