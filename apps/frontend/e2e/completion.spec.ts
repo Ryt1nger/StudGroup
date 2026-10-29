@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // The fixture describes Monday at 09:00 Moscow; real timers/animations continue normally.
 test.beforeEach(async ({ page }) => {

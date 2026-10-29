@@ -607,4 +607,5 @@ a.pcard:active { transform: scale(.98); }
 .event-week-nav { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0; }
 .event-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
 .nav.with-events a { font-size: clamp(9px, 2.3vw, 10px); letter-spacing: -.025em; min-width: 0; }
+@media (max-width: 360px) { .nav.with-events { left: 8px; right: 8px; } }
 .event-week-nav .pillb { font-size: 12px; padding: 8px 10px; white-space: nowrap; }

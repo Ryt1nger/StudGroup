@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('editor corrects the recognized schedule and maps it to one official occurrence', async ({ page }) => {
   await page.goto('/schedule?scenario=schedule-review');

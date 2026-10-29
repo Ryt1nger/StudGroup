@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 for (const theme of ['light', 'dark']) {
   test(`event draft → publication → calendar → move → cancellation (${theme})`, async ({
@@ -60,6 +60,7 @@ test('five navigation items fit a narrow mobile viewport', async ({ page }) => {
   const links = page.getByRole('navigation').getByRole('link');
   await expect(links).toHaveCount(5);
   for (const link of await links.all()) {
-    expect(await link.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    const size = await link.evaluate((node) => ({ label: node.textContent, scroll: node.scrollWidth, width: node.clientWidth }));
+    expect(size.scroll, JSON.stringify(size)).toBeLessThanOrEqual(size.width + 1);
   }
 });
