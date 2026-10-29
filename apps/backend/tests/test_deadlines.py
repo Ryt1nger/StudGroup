@@ -7,6 +7,23 @@ from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, re
 TZ = "Europe/Moscow"
 
 
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "К 06.11.2026 решить задачи 17–19. Решения загрузить до 18:00.",
+            "2026-11-06T18:00:00+03:00",
+        ),
+        ("К 06.11.2026 решить задачи 17–19.", "2026-11-06T00:00:00+03:00"),
+        ("Сдать к 06.11.2027 до 06:11.", "2027-11-06T06:11:00+03:00"),
+        ("Сдать до 12.00", "2026-10-29T12:00:00+03:00"),
+    ],
+)
+def test_numeric_calendar_day_and_year_outrank_same_day_clock_fallback(text, expected):
+    result = contextual_deadline(text, datetime.fromisoformat("2026-10-29T09:00:00+03:00"), TZ)
+    assert result.at.isoformat() == expected
+
+
 def test_attendance_clause_cannot_override_explicit_same_day_submission_hour():
     result = contextual_deadline(
         "Для всех, кто не был на паре сегодня, в СДО найти задание 01, сделать и скинуть строго до 17",

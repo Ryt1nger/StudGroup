@@ -6,9 +6,9 @@ import warnings
 
 from PIL import Image, UnidentifiedImageError
 
-VERSION = "visual-word-coverage-1"
+VERSION = "visual-word-coverage-2"
 _RANGE = re.compile(r"^(\d{1,4})[–—](\d{1,4})$")
-_TOKEN = re.compile(r"[^\w–—+*/^=−<>-]", re.UNICODE)
+_TOKEN = re.compile(r"[^\w.,():–—+*/^=−<>-]", re.UNICODE)
 
 
 def _runs(flags):
@@ -33,7 +33,7 @@ def _regions(ink, count):
     if cuts and (
         min(gap for gap, _ in cuts) < max(3, h * 0.16)
         or remaining
-        and min(gap for gap, _ in cuts) < max(remaining) * 1.5
+        and min(gap for gap, _ in cuts) <= max(remaining)
     ):
         return None
     borders = [-1, *sorted(index for _, index in cuts), len(runs) - 1]
@@ -79,20 +79,48 @@ def build_coverage(image, reading):
                 patch = stripe.crop((left, 0, right, stripe.height))
                 if patch.getbbox() is None:
                     return None
-                patch = patch.crop(patch.getbbox())
-                token = _TOKEN.sub("", text.casefold().replace("ё", "е")) or text
-                mask = (
-                    patch.resize((48, 24), Image.Resampling.LANCZOS)
-                    .point(lambda value: 255 if value > 128 else 0)
+                bounds = patch.getbbox()
+                original_patch = gray.crop(
+                    (left + bounds[0], top + bounds[1], left + bounds[2], top + bounds[3])
+                )
+                patch = patch.crop(bounds)
+                token = _TOKEN.sub("", text.casefold().replace("ё", "е")).rstrip(".,:") or text
+                scaled = patch.resize((48, 24), Image.Resampling.LANCZOS)
+                mask = scaled.point(lambda value: 255 if value > 128 else 0).convert("1")
+                certain = (
+                    original_patch.point(lambda value: 255 if value < 160 else 0)
+                    .resize((48, 24), Image.Resampling.LANCZOS)
+                    .point(lambda value: 255 if value > 144 else 0)
                     .convert("1")
                 )
+                possible = (
+                    original_patch.point(lambda value: 255 if value < 230 else 0)
+                    .resize((48, 24), Image.Resampling.LANCZOS)
+                    .point(lambda value: 255 if value > 112 else 0)
+                    .convert("1")
+                )
+                # JPEG/resampling can move a few edge pixels across 128. Keep an explicit
+                # bounded interval instead of treating a perceptual distance as coverage.
+                bounded_edges = (
+                    int.from_bytes(certain.tobytes()) ^ int.from_bytes(possible.tobytes())
+                ).bit_count() <= 230
                 visual_words.append(
                     {
                         "text": token,
-                        "height": patch.height,
+                        # A minus, dot or bullet is naturally shorter than a letter. Assess
+                        # its font scale from the full line; retain its exact ink mask below.
+                        "height": bottom - top,
                         "width": patch.width,
                         "box": [left, top, right, bottom],
                         "mask": mask.tobytes().hex(),
+                        **(
+                            {
+                                "mask_certain": certain.tobytes().hex(),
+                                "mask_possible": possible.tobytes().hex(),
+                            }
+                            if bounded_edges
+                            else {}
+                        ),
                     }
                 )
             result.append(visual_words)
@@ -125,7 +153,13 @@ def _word_covers(target, source, *, ordinal_range=False):
     if target["height"] < max(10, source["height"] * 0.85):
         return False
     if target["text"] == source["text"]:
-        return target["mask"] == source["mask"]
+        if target["mask"] == source["mask"]:
+            return True
+        if not all("mask_certain" in word and "mask_possible" in word for word in (target, source)):
+            return False
+        a, b = int(target["mask_certain"], 16), int(source["mask_certain"], 16)
+        possible_a, possible_b = int(target["mask_possible"], 16), int(source["mask_possible"], 16)
+        return not (a & ~possible_b or b & ~possible_a)
     if not ordinal_range:
         return False
     a, b = _range(target["text"]), _range(source["text"])

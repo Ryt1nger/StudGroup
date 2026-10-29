@@ -76,9 +76,16 @@ canonical integration report; its expense never resets the single authorized USD
 
 ## Display coverage after semantic merge — release continuation 2026-10-27
 
-Display minimization uses source-retained local ink/word geometry, binary word pixels, complete
+Display minimization uses source-retained local ink/word geometry, word pixels, complete
 structured readings and a readability floor. Every visible ink row must map to a transcription
 line. Matching OCR or a perceptual hash alone is no longer sufficient to hide a structured image.
+Version `visual-word-coverage-2` measures font scale from the complete ink line, so a minus or
+bullet is not mistaken for tiny unreadable text. Word gaps must be strictly larger than internal
+gaps. Exact masks remain the first comparison; a bounded grayscale/resampling interval may
+explain JPEG edge noise, but every certain ink/blank pixel must agree with the other word's
+possible range, with at most 20% ambiguous pixels. Decimal punctuation is preserved. This is
+not a perceptual-distance threshold. Changed numbers, decimal values and signs remain visible
+even when the supplied transcription incorrectly claims they are identical (regression tests).
 Only explicit exercise ordinal ranges may expand; arithmetic subtraction, individual exercise
 numbers, rooms, equations, tables and untranscribed diagrams cannot use that rule. Unknown or
 conflicting readings/layouts retain all images. Full semantic evidence and source attachments
@@ -88,6 +95,19 @@ Coverage derivatives expire with their source jobs (additive migration 0045), ne
 private-source retention, and are not sent to the model. Immutable snapshots carry only compact
 coverage edges for consistent preview/student display. Selection finds a minimum cover for up
 to 16 candidates, with a safe greedy cover for larger batches. None of this starts an AI call.
+
+Precise card image references retain pages whose purpose is `unknown`; an assignment instruction
+elsewhere in the same validated album must not make its formula page disappear. New image prompt
+versions A4/B8 recognize an explicit printed group instruction with a due date, and keep a lesson
+move in schedule review. A schedule-only reading cannot create a parallel event record. Optional
+descriptive block titles remain metadata, not facts; an unambiguous `type`/`kind` alias is normalized
+locally, while conflicting and other undeclared fields still fail strict validation.
+
+The complex corpus exposed a numeric-year date followed by a submission clock being changed to
+the source day. Full numeric dates now resolve before the same-day clock fallback; dotted clock
+notation and the existing ambiguous short-date rules are preserved. Corpus gold was frozen in
+731c0b6 before calls. Every first result and charged/zero-charge failure stays in the original
+USD-1 journal; local revalidation replays exact stored responses and forbids HTTP.
 
 ## Model-aware source-bounded reuse — 2026-10-27
 

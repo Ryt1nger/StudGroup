@@ -1,0 +1,43 @@
+name: Frontend
+
+on:
+  pull_request:
+    paths:
+      - 'apps/frontend/**'
+      - 'packages/contracts/**'
+      - 'packages/shared-types/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/frontend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.9.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @studgroup/shared-types check:drift
+      - run: pnpm --filter @studgroup/frontend check
+      - run: pnpm --filter @studgroup/frontend exec playwright install --with-deps chromium
+      - run: pnpm --filter @studgroup/frontend exec playwright test --workers=1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: frontend-browser-diagnostics
+          path: apps/frontend/test-results
+          retention-days: 7

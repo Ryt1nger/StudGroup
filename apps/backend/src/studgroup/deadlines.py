@@ -96,7 +96,7 @@ def submission_clock(text: str) -> tuple[time | None, bool]:
     clock = re.search(r"\b(\d{1,2}):(\d{2})\b", text)
     if not clock:
         # Dot notation needs a deadline/time cue: an exercise or calendar date is not a clock.
-        clock = re.search(r"\b(?:до|в|к)\s+(\d{1,2})\.(\d{2})\b", text)
+        clock = re.search(r"\b(?:до|в|к)\s+(\d{1,2})\.(\d{2})(?![\d.])", text)
         if (
             clock
             and int(clock[2]) != 0
@@ -197,6 +197,38 @@ def contextual_deadline(text: str, sent_at: datetime, timezone: str) -> Deadline
             clock is None,
             "explicit_source_date_inferred_clock" if inferred_clock else "explicit_source_date",
         )
+    numeric = re.search(
+        r"(?:дедлайн|сдать|сдача|срок|до|к)\s*(\d{1,2})[./](\d{2})(?:[./](20\d{2}))?(?![\d.,])",
+        text,
+    )
+    dotted_clock = bool(
+        numeric
+        and not numeric[3]
+        and clock
+        and not re.search(r"\b\d{1,2}:\d{2}\b", text)
+        and (int(numeric[1]), int(numeric[2])) == (clock.hour, clock.minute)
+    )
+    if numeric and numeric[3] and not dotted_clock:
+        year = int(numeric[3]) if numeric[3] else local.year
+        month, day = int(numeric[2]), int(numeric[1])
+        if not numeric[3] and local.month >= 11 and month <= 2:
+            year += 1
+        try:
+            at = datetime(
+                year,
+                month,
+                day,
+                clock.hour if clock else 0,
+                clock.minute if clock else 0,
+                tzinfo=local.tzinfo,
+            )
+        except ValueError:
+            return DeadlineResolution(None, False, "invalid_calendar_deadline")
+        return DeadlineResolution(
+            at,
+            clock is None,
+            "explicit_source_date_inferred_clock" if inferred_clock else "explicit_source_date",
+        )
     if re.search(r"(?:до|к)\s+конц[ау]\s+(?:этой\s+|текущей\s+)?недели", text):
         return calendar(6 - local.weekday())
     if re.search(r"\bпослезавтра\b", text):
@@ -226,7 +258,13 @@ def contextual_deadline(text: str, sent_at: datetime, timezone: str) -> Deadline
             return calendar(offset or (7 if "след" in weekday_match[0] else 0))
     if re.search(r"(?:к|на|до)\s+(?:след(?:ующ\w*)?\.?\s+)?пар[еу]", text):
         return DeadlineResolution(None, False, "next_subject_lesson_reference")
-    if clock and re.search(r"\bдо\s+\d", text):
+    if (
+        clock
+        and re.search(r"\bдо\s+\d", text)
+        and not re.search(
+            r"(?<![\w.,])\d{1,2}[./](?:0[1-9]|1[0-2])(?:[./]20\d{2})?(?![\d.,])", text
+        )
+    ):
         # No named date: same source day, never the processing day or tomorrow.
         result = calendar(0)
         return DeadlineResolution(result.at, False, "source_day_inferred_clock")

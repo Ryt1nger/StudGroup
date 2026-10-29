@@ -9,6 +9,44 @@ from studgroup.ai import ProviderFailure
 from studgroup.analysis.image_reading import read_pass
 
 
+def test_block_kind_alias_only_normalizes_unambiguous_values():
+    from pydantic import ValidationError
+
+    from studgroup.analysis.image_contracts import ImageBlock
+
+    assert (
+        ImageBlock.model_validate({"kind": "text", "type": "text", "content": "17"}).content == "17"
+    )
+    assert (
+        ImageBlock.model_validate({"type": "table", "content": "", "rows": [["205"]]}).kind
+        == "table"
+    )
+    with pytest.raises(ValidationError):
+        ImageBlock.model_validate({"kind": "text", "type": "table", "content": "17"})
+    with pytest.raises(ValidationError):
+        ImageBlock.model_validate({"kind": "text", "extra": "invented", "content": "17"})
+
+
+def test_descriptive_block_label_is_preserved_without_becoming_a_confirmed_fact():
+    async def run():
+        payload = json.loads(reading())
+        payload["blocks"] = [
+            {
+                "kind": "text",
+                "title": "Верхний левый угол",
+                "content": payload["extracted_text"],
+                "rows": [],
+            }
+        ]
+        provider = VisionProvider(json.dumps(payload))
+        result, _ = await read_pass(provider, JPEG, "image/jpeg", 1, context={})
+        assert result.blocks[0].title == "Верхний левый угол"
+        assert all(fact.text != "Верхний левый угол" for fact in result.facts)
+        assert result.extracted_text == payload["extracted_text"]
+
+    asyncio.run(run())
+
+
 def test_both_passes_get_pixels_and_b_gets_context_and_saved_a():
     async def run():
         provider = VisionProvider(reading())

@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw, ImageFont
 
 from studgroup.analysis.image_contracts import ImageBlock, VisualReading
@@ -62,6 +63,39 @@ def test_recorded_three_crops_choose_complete_third_without_any_new_ai_call():
     assert "1–5" in inputs[0][1].extracted_text
     assert "6–8" in inputs[1][1].extracted_text
     assert "PDF" in inputs[2][1].extracted_text
+
+
+def test_jpeg_recompression_and_math_punctuation_keep_the_complete_source():
+    texts = [
+        "Алгебра · БИ 1.2\nК 18.11.2026 решить задачи 41–44.\n41) 3x + 2 = 11",
+        "41) 3x + 2 = 11\n42) x² = 49\n43) 5x − 4 = 21\n44) x³ = 125",
+    ]
+    texts.append(texts[0] + "\n" + "\n".join(texts[1].splitlines()[1:]))
+    inputs = []
+    for ident, text in zip(["c15a", "c15b", "c15c"], texts):
+        reading = VisualReading(
+            summary="Independent source transcription",
+            extracted_text=text,
+            complete=True,
+            blocks=[{"kind": "text", "content": text}],
+        )
+        inputs.append(((FIXTURES / f"complex-images/{ident}.jpg").read_bytes(), reading))
+    assert [row["attachment_id"] for row in select_evidence_images(candidates(inputs))] == ["2"]
+
+
+@pytest.mark.parametrize(
+    "actual,claimed",
+    [
+        ("Probability 0.025", "Probability 0.25"),
+        ("Equation x + 4 = 21", "Equation x - 4 = 21"),
+        ("Equation x2 = 46", "Equation x2 = 49"),
+        ("Exercise 17", "Exercise 19"),
+    ],
+)
+def test_even_a_wrong_identical_transcription_cannot_hide_changed_numeric_pixels(actual, claimed):
+    changed, _ = printed([actual])
+    original, reading = printed([claimed])
+    assert not visually_covers(build_coverage(changed, reading), build_coverage(original, reading))
 
 
 def test_four_distinct_recorded_pages_are_preserved():

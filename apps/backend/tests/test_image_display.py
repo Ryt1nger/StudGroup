@@ -39,6 +39,15 @@ def test_unrelated_material_is_excluded_by_exact_card_image_references():
     assert select_evidence_images(photos, {"homework"}) == photos[:1]
 
 
+def test_precisely_cited_unknown_purpose_page_is_not_lost_from_a_valid_album_card():
+    photos = [
+        item("instruction"),
+        item("equations", types=["unknown"]),
+        item("poster", types=["event"]),
+    ]
+    assert select_evidence_images(photos, {"instruction", "equations"}) == photos[:2]
+
+
 def test_local_visual_hash_uses_real_pixels():
     picture = Image.new("RGB", (400, 300), "white")
     ImageDraw.Draw(picture).rectangle((20, 30, 100, 200), fill="black")

@@ -34,8 +34,24 @@ class ImageFact(ImageDTO):
 
 class ImageBlock(ImageDTO):
     kind: Literal["text", "table", "list", "diagram", "visual"]
+    # Descriptive block metadata, not a confirmed pixel fact or instruction.
+    title: str | None = Field(default=None, max_length=500)
     content: str = Field(max_length=20000)
     rows: list[list[str]] = Field(default_factory=list, max_length=150)
+
+    @model_validator(mode="before")
+    @classmethod
+    def canonical_kind(cls, value):
+        # A provider sometimes repeats kind as type. Normalize only an unambiguous alias;
+        # conflicting values and every other undeclared property still fail validation.
+        if (
+            isinstance(value, dict)
+            and "type" in value
+            and ("kind" not in value or value["kind"] == value["type"])
+        ):
+            value = dict(value)
+            value["kind"] = value.pop("type")
+        return value
 
 
 class ScheduleRow(ImageDTO):

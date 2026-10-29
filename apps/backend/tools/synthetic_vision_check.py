@@ -201,21 +201,26 @@ class Ledger:
 
 
 class CheckTransport(httpx.AsyncHTTPTransport):
+    def __init__(self, *, connect_timeout=2, **kwargs):
+        super().__init__(**kwargs)
+        self.connect_timeout = connect_timeout
+
     async def handle_async_request(self, request):
         # Only TCP/TLS connection failures retry (max three), before any HTTP request is sent.
-        request.extensions.setdefault("timeout", {})["connect"] = 2
+        request.extensions.setdefault("timeout", {})["connect"] = self.connect_timeout
         return await super().handle_async_request(request)
 
 
 class RecordedProvider(DeepSeekProvider):
-    def __init__(self, key, ledger):
+    def __init__(self, key, ledger, *, connect_timeout=2):
         super().__init__(
             key,
             model="deepseek-flash",
             base_url="https://api.deepseek.com/v1",
-            transport=CheckTransport(retries=3, http2=True),
+            transport=CheckTransport(retries=3, http2=True, connect_timeout=connect_timeout),
         )
         self.ledger = ledger
+        self.connect_timeout = connect_timeout
         self.label = ""
 
     async def _complete(self, payload):
@@ -230,7 +235,9 @@ class RecordedProvider(DeepSeekProvider):
             EXTRACTION_PROMPT_VERSION,
         ]
         started = time.monotonic()
-        self._transport = CheckTransport(retries=3, http2=True)
+        self._transport = CheckTransport(
+            retries=3, http2=True, connect_timeout=self.connect_timeout
+        )
         try:
             body = await super()._complete(payload)
         except ProviderFailure as error:

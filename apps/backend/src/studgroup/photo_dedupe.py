@@ -122,9 +122,12 @@ def select_evidence_images(items, required_ids=None):
         elif (
             (not required or str(item.get("attachment_id")) in required)
             and item.get("image_analysis_state") == "ready"
-            and any(
-                kind in (item.get("semantic_types") or [])
-                for kind in ("homework", "assessment", "material")
+            and (
+                str(item.get("attachment_id")) in required
+                or any(
+                    kind in (item.get("semantic_types") or [])
+                    for kind in ("homework", "assessment", "material")
+                )
             )
         ):
             eligible.append(item)

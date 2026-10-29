@@ -177,6 +177,10 @@ async def capture_event(db, group_id, raw, incoming, now, job=None):
 
 
 async def capture_image(db, job, reading, raw, now):
+    if {"schedule", "schedule_change"}.intersection(
+        reading.semantic_types
+    ) and "event" not in reading.semantic_types:
+        return  # a classroom move belongs to schedule review, never a parallel event record
     for incoming in reading.events:
         await capture_event(db, job.group_id, raw, incoming, now, job)
 

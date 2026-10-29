@@ -16,6 +16,33 @@ from studgroup.models import GroupEvent, GroupEventRevision, GroupEventSource, R
 pytest_plugins = ["test_schedule_api"]
 
 
+def test_a_lesson_change_cannot_create_a_parallel_event_even_if_model_fills_events(monkeypatch):
+    from types import SimpleNamespace
+
+    from studgroup.analysis import group_events
+    from studgroup.analysis.image_contracts import VisualReading
+
+    calls = []
+
+    async def capture(*args):
+        calls.append(args)
+
+    monkeypatch.setattr(group_events, "capture_event", capture)
+    result = VisualReading(
+        summary="Lesson move",
+        extracted_text="Физика перенесена",
+        complete=True,
+        semantic_types=["schedule_change"],
+        events=[ImageEvent(title="Физика", audience="group")],
+    )
+    job = SimpleNamespace(group_id="group")
+    asyncio.run(group_events.capture_image(None, job, result, None, datetime.now(UTC)))
+    assert calls == []
+    result = result.model_copy(update={"semantic_types": ["schedule_change", "event"]})
+    asyncio.run(group_events.capture_image(None, job, result, None, datetime.now(UTC)))
+    assert len(calls) == 1
+
+
 def prepare(client, monkeypatch, audience="group"):
     download_ok(monkeypatch)
     photo_message(client)

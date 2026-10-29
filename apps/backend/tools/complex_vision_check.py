@@ -44,7 +44,35 @@ def snapshot():
     return manifest
 
 
-async def main(path):
+class ReplayRecordedProvider(RecordedProvider):
+    offline = False
+
+    async def _complete(self, payload):
+        fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        for index in range(len(self.ledger.data["calls"]) - 1, -1, -1):
+            call = self.ledger.data["calls"][index]
+            if (
+                call["state"] == "completed"
+                and call.get("request_sha256") == fingerprint
+                and call.get("label") == self.label
+                and call.get("response")
+            ):
+                self.ledger.data.setdefault("complex_local_replays", []).append(
+                    {
+                        "call_index": index,
+                        "reason": "same raw response, current local parser; no HTTP",
+                    }
+                )
+                self.ledger.save()
+                return {"choices": call["response"], "usage": call["usage"], "model": call["model"]}
+        if self.offline:
+            raise ProviderFailure(
+                "offline_provider_response_missing", False, reservation_releasable=True
+            )
+        return await super()._complete(payload)
+
+
+async def main(path, *, offline=False, validation_revision="local-2", retry_known=False):
     manifest = snapshot()
     if not path.is_file():
         raise ValueError("original_release_journal_required")
@@ -55,8 +83,9 @@ async def main(path):
         # Old unknown reservations remain fully charged; the owner explicitly authorized this
         # next phase with the reduced total allowance. Never extend this boundary automatically.
         ledger.data["authorized_unknown_baseline"] = 278
-    run = ledger.data.setdefault(
-        "complex",
+    versions = [PASS_A_VERSION, PASS_B_VERSION, EXTRACTION_PROMPT_VERSION]
+    run = ledger.data.setdefault("complex_runs", {}).setdefault(
+        "/".join(versions),
         {
             "snapshot_sha256": manifest["snapshot_sha256"],
             "versions": [PASS_A_VERSION, PASS_B_VERSION, EXTRACTION_PROMPT_VERSION],
@@ -70,19 +99,45 @@ async def main(path):
         EXTRACTION_PROMPT_VERSION,
     ]:
         raise ValueError("frozen_benchmark_changed")
+    if offline:
+        run = ledger.data.setdefault("complex_revalidations", {}).setdefault(
+            "/".join(versions) + "/" + validation_revision,
+            {
+                "snapshot_sha256": manifest["snapshot_sha256"],
+                "versions": versions,
+                "images": run["images"],
+                "scenarios": {},
+                "mode": "offline; no HTTP permitted",
+            },
+        )
     ledger.save()
     key = os.environ.get("DEEPSEEK_API_KEY") or dotenv_values(
         os.environ.get("STUDGROUP_SYNTHETIC_ENV_FILE", ".env")
     ).get("DEEPSEEK_API_KEY")
     if not key:
         raise ValueError("provider_not_configured")
-    provider = RecordedProvider(key, ledger)
+    provider = ReplayRecordedProvider(key, ledger, connect_timeout=8)
+    provider.offline = offline
     stamp = datetime(2026, 10, 29, 6, tzinfo=UTC)
     images = {item["id"]: item for item in manifest["images"]}
     for scenario in manifest["scenarios"]:
         ident = scenario["id"]
         if ident in run["scenarios"]:
-            continue
+            previous = run["scenarios"][ident]
+            attempts = run.setdefault("scenario_attempts", {}).setdefault(ident, [])
+            calls = [
+                call
+                for call in ledger.data["calls"]
+                if call.get("label") == f"complex/{ident}/cplus"
+            ]
+            known_connect = (
+                calls and calls[-1]["state"] == "failed" and calls[-1].get("cost_upper_usd") == "0"
+            )
+            if not (retry_known and previous.get("error") and known_connect and len(attempts) < 2):
+                continue
+            attempts.append(previous)
+            del run["scenarios"][ident]
+            ledger.save()
         messages, evidence, metadata, profiles = [], [], [], {}
         context = {
             "timezone": "Europe/Moscow",
@@ -222,7 +277,21 @@ async def main(path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--journal", type=Path, required=True)
+    parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--validation-revision", default="local-2")
+    parser.add_argument(
+        "--retry-known",
+        action="store_true",
+        help="Bounded retry of proven zero-charge pre-connection errors only",
+    )
     args = parser.parse_args()
     with args.journal.with_suffix(".lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        asyncio.run(main(args.journal.resolve()))
+        asyncio.run(
+            main(
+                args.journal.resolve(),
+                offline=args.offline,
+                validation_revision=args.validation_revision,
+                retry_known=args.retry_known,
+            )
+        )
