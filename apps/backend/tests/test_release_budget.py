@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from test_package_worker import make_new
+from test_package_worker import PackageProvider, make_new, seed, step
 
 from studgroup.ai import DeepSeekProvider, ProviderFailure
 from studgroup.analysis.release_budget import (
@@ -71,6 +71,31 @@ def body(prompt=1000, output=1000):
             "prompt_cache_hit_tokens": 0,
         }
     }
+
+
+def test_funded_text_package_runs_with_legacy_photos_enabled_and_image_feature_off(client):
+    from studgroup.main import Settings
+
+    seed(client)
+    ident, _, _ = setup_budget(client)
+    config = Settings(
+        _env_file=None,
+        new_engine_enabled=True,
+        photo_reading_enabled=True,
+        image_analysis_enabled=False,
+        ai_release_budget_required_groups=[str(ident)],
+    )
+    provider = PackageProvider()
+    assert step(client, provider, config) == "completed"
+    assert len(provider.requests) == 2
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            calls = (await db.scalars(select(AnalysisBudgetCall))).all()
+            assert len(calls) == 2 and all(call.state == "settled" for call in calls)
+            assert Decimal(0) < await spent(db, ident) < Decimal(".03")
+
+    asyncio.run(inspect())
 
 
 def test_cancellation_immediately_holds_payment_and_preserves_cancellation(client):

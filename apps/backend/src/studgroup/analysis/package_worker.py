@@ -225,13 +225,6 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
         return Decimal(0), False  # the durable independent image queue owns this group
     if not settings.photo_reading_enabled or not rows:
         return Decimal(0), False
-    route = await db.get(GroupAnalysisSettings, group.id)
-    if (route and (route.release_budget_usd is not None or route.paid_outcome_hold)) or (
-        str(group.id) in settings.ai_release_budget_required_groups
-    ):
-        # Legacy photos run inside the planner's route transaction. Funded groups must use
-        # the independent image queue, whose reservation commits before the HTTP request.
-        return Decimal(0), True
     pending = (
         await db.scalars(
             select(MessageAttachment)
@@ -251,6 +244,13 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
     ]
     if not pending:
         return Decimal(0), False
+    route = await db.get(GroupAnalysisSettings, group.id)
+    if (route and (route.release_budget_usd is not None or route.paid_outcome_hold)) or (
+        str(group.id) in settings.ai_release_budget_required_groups
+    ):
+        # Only actual unread photos require the independent queue. Text-only packages still
+        # run when legacy photo reading is enabled but the new image feature is switched off.
+        return Decimal(0), True
     if provider is None:
         from studgroup.ai import DeepSeekProvider
 
