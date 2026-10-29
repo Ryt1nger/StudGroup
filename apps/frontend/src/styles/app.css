@@ -595,7 +595,7 @@ a.pcard:active { transform: scale(.98); }
 /* Group events share the existing surfaces and theme tokens; academic cards remain separate. */
 .group-event-card { display: block; padding: 16px; margin: 10px 0; border-left: 3px solid var(--accent); }
 .group-event-main { display: block; color: var(--label); }
-.group-event-main h3 { margin: 8px 0; font-size: 17px; text-transform: none; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.group-event-main h3 { margin: 8px 0; font-size: 17px; text-transform: none; letter-spacing: -.01em; overflow-wrap: anywhere; color: var(--label); }
 .group-event-main p { margin: 6px 0; color: var(--label-2); line-height: 1.4; display: flex; align-items: center; gap: 6px; }
 .group-event-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--accent); }
 .group-event-main .group-event-summary { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
