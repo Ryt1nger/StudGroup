@@ -679,7 +679,35 @@ class GroupAnalysisSettings(Base):
     engine_version: Mapped[str] = mapped_column(String(64), default="cplus-shadow-1")
     shadow_daily_budget_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8))
     shadow_sample_percent: Mapped[int] = mapped_column(Integer, default=100)
+    release_budget_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 8))
+    release_budget_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    release_budget_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    release_budget_receipt: Mapped[str | None] = mapped_column(String(64))
+    paid_outcome_hold: Mapped[str | None] = mapped_column(String(64))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AnalysisBudgetCall(Base):
+    """Per-HTTP-attempt financial metadata, independent of source/job deletion."""
+
+    __tablename__ = "analysis_budget_calls"
+    __table_args__ = (
+        CheckConstraint(
+            "reserved_usd >= 0 AND charged_usd >= 0", name="analysis_budget_nonnegative"
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("group_analysis_settings.group_id", ondelete="CASCADE"), index=True
+    )
+    attempt_key: Mapped[str] = mapped_column(String(160))
+    kind: Mapped[str] = mapped_column(String(16))
+    state: Mapped[str] = mapped_column(String(16))
+    reserved_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8))
+    charged_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class ShadowEvaluationRun(Base):

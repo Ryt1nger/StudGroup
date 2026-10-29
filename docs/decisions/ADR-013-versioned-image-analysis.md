@@ -3,6 +3,21 @@
 Status: implemented; authorized synthetic-provider validation completed; production activation requires owner approval.
 Date: 2026-10-26.
 
+Release funding update, 2026-10-29: the owner's USD 1 covers prior conservative charges,
+complex-image comparisons and the single-group 48-hour pilot together. Migration 0047 adds
+one optional funded allowance and a source-independent financial journal. Every physical
+provider request (including repair, C+, legacy and vision) reserves under the group-route lock
+before HTTP; actual usage settles once. Midnight, source expiry and mode changes do not
+refund or reset funding. Financial rows contain no prompts, pixels or source identifiers;
+they expire 30 days after the funding window, which remains closed afterwards. Group deletion
+cascades the journal. Unknown delivery/usage, cancellation or a lost paid lease permanently
+holds further paid processing pending explicit investigation; known pre-delivery failures
+release only their own reservation. No automatic paid recovery follows an unknown outcome.
+The original private benchmark journal retains every historic charge and freezes the remaining
+pilot allocation before provisioning its database receipt; failed provisioning never refunds
+that allocation automatically. `AI_RELEASE_BUDGET_REQUIRED_GROUPS` makes missing funding fail
+closed for the approved pilot. Defaults remain off; this change does not activate any group.
+
 Keep C+ context/extraction, canonical writer, source revisions and human locks. Add durable
 per-image, per-pass jobs and an independent per-attempt accounting ledger. A technical retry
 reuses a committed successful pass; another photograph always gets its own analysis. Pass B

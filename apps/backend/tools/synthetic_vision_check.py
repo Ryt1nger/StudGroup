@@ -122,10 +122,56 @@ class Ledger:
         os.chmod(temporary, 0o600)
         temporary.replace(self.path)
 
+    def used(self):
+        return sum(
+            (
+                Decimal(row.get("cost_upper_usd", row["reservation_usd"]))
+                for row in self.data["calls"]
+            ),
+            Decimal(0),
+        ) + sum(
+            (Decimal(row["amount_usd"]) for row in self.data.get("allocations", [])), Decimal(0)
+        )
+
+    def allocate_pilot(self, *, group_id, since, until):
+        """Caller holds the journal file lock. Funding stays reserved if DB provisioning fails."""
+        if any(row["state"] == "reserved" for row in self.data["calls"]):
+            raise ValueError("unresolved_paid_attempt_stop")
+        baseline = self.data.get("authorized_unknown_baseline", 0)
+        if any(row["state"] == "unknown" for row in self.data["calls"][baseline:]):
+            raise ValueError("new_unknown_paid_attempt_stop")
+        scope = {"group_id": str(group_id), "since": since.isoformat(), "until": until.isoformat()}
+        allocations = self.data.setdefault("allocations", [])
+        if allocations:
+            if len(allocations) == 1 and all(
+                allocations[0][key] == value for key, value in scope.items()
+            ):
+                return allocations[0]
+            raise ValueError("pilot_funding_cannot_reset")
+        if (
+            since.tzinfo is None
+            or until.tzinfo is None
+            or not 0 < (until - since).total_seconds() <= 172800
+        ):
+            raise ValueError("invalid_pilot_window")
+        amount = (LIMIT - self.used()).quantize(Decimal(".00000001"), rounding="ROUND_FLOOR")
+        if amount <= 0:
+            raise ValueError("total_budget_exhausted")
+        scope["amount_usd"] = str(amount)
+        scope["receipt"] = hashlib.sha256(json.dumps(scope, sort_keys=True).encode()).hexdigest()
+        allocations.append(scope)
+        self.save()
+        return scope
+
     def reserve(self, label, payload):
         request_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         if any(row["state"] == "reserved" for row in self.data["calls"]):
             raise ValueError("unresolved_paid_attempt_stop")
+        baseline = self.data.get("authorized_unknown_baseline")
+        if baseline is not None and any(
+            row["state"] == "unknown" for row in self.data["calls"][baseline:]
+        ):
+            raise ValueError("new_unknown_paid_attempt_stop")
         ambiguous = [
             index
             for index, row in enumerate(self.data["calls"])
@@ -137,9 +183,7 @@ class Ledger:
             )
         # Explicit synthetic-only retests keep every uncertain reservation fully charged.
         ceiling = reservation(payload)
-        used = sum(
-            Decimal(row.get("cost_upper_usd", row["reservation_usd"])) for row in self.data["calls"]
-        )
+        used = self.used()
         if used + ceiling > LIMIT:
             raise ValueError("total_budget_exceeded_before_request")
         row = {

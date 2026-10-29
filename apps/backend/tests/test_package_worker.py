@@ -43,6 +43,7 @@ class PackageProvider:
         self,
         *,
         failure=None,
+        failure_releasable=False,
         cited=(31, 33),
         propose=True,
         update_existing=False,
@@ -55,6 +56,7 @@ class PackageProvider:
         self.subject = subject
         self.requests = []
         self.failure = failure
+        self.failure_releasable = failure_releasable
         self.cited = cited
         self.propose = propose
         self.update_existing = update_existing
@@ -64,7 +66,9 @@ class PackageProvider:
     async def complete(self, request):
         self.requests.append(request)
         if self.failure:
-            raise ProviderFailure(self.failure, True)
+            raise ProviderFailure(
+                self.failure, True, reservation_releasable=self.failure_releasable
+            )
         revision = request.user_payload["source_revision"]
         if request.prompt_version == "cplus-context-1" and self.garbage_first > 0:
             self.garbage_first -= 1
@@ -294,7 +298,7 @@ def test_empty_package_marks_targets_completed_and_writes_nothing(client):
 def test_provider_failure_retries_then_parks_targets_as_failed(client):
     seed(client)
     make_new(client)
-    provider = PackageProvider(failure="provider_unreachable")
+    provider = PackageProvider(failure="provider_unreachable", failure_releasable=True)
     now = datetime.now(UTC)
     outcomes = [step(client, provider, now=now + timedelta(hours=hour)) for hour in range(1, 5)]
     assert outcomes[:2] == ["retry", "retry"]
@@ -483,7 +487,7 @@ def test_the_timetable_confirms_the_subject_even_when_the_message_does_not_name_
     assert homework.subject_name == "Математика"
 
 
-def test_a_worker_that_dies_mid_package_is_recovered_without_publishing_twice(client):
+def test_a_worker_that_dies_mid_package_holds_the_unknown_charge_without_repurchase(client):
     seed(client)
     make_new(client)
 
@@ -500,10 +504,20 @@ def test_a_worker_that_dies_mid_package_is_recovered_without_publishing_twice(cl
     assert count(client, Homework) == 0
     provider = PackageProvider()
     later = now + timedelta(minutes=10)  # the 3-minute lease has expired
-    assert step(client, provider, now=later) == "completed"
-    assert step(client, provider, now=later) == "idle"
-    assert count(client, Homework) == 1
+    assert step(client, provider, now=later) == "ambiguous_paid_attempt"
+    assert step(client, provider, now=later) == "idle"  # no queued work remains
+    assert provider.requests == []
+    assert count(client, Homework) == 0
     assert count(client, ShadowEvaluationRun) == 1
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            run = await db.scalar(select(ShadowEvaluationRun))
+            route = await db.scalar(select(GroupAnalysisSettings))
+            assert run.state == "failed" and run.charged_usd == Decimal(".04")
+            assert run.reserved_usd == 0 and route.paid_outcome_hold == "ambiguous_paid_attempt"
+
+    asyncio.run(inspect())
 
 
 def reopen(client, *, apply):

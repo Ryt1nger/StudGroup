@@ -1,6 +1,7 @@
 """No network: verify the paid-check guard before authorizing a real request."""
 
 import importlib.util
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -162,3 +163,32 @@ def test_owner_lower_limit_preserves_all_previous_charges(tmp_path):
     assert ledger.data["limit_usd"] == "1"
     assert ledger.data["calls"][0]["cost_upper_usd"] == ".181507560"
     assert ledger.data["limit_history"][0]["previous_usd"] == "2"
+
+
+def test_pilot_funding_freezes_remaining_money_in_original_journal(tmp_path):
+    path = tmp_path / "ledger.json"
+    ledger = check.Ledger(path)
+    ledger.data["calls"] = [
+        {"state": "completed", "reservation_usd": ".2", "cost_upper_usd": ".181507560"}
+    ]
+    now = datetime.now(UTC)
+    scope = {"group_id": "approved-group", "since": now, "until": now + timedelta(hours=48)}
+    allocation = ledger.allocate_pilot(**scope)
+    assert allocation["amount_usd"] == "0.81849244"
+    assert check.Ledger(path).allocate_pilot(**scope) == allocation
+    assert ledger.used() == 1
+    with pytest.raises(ValueError, match="total_budget_exceeded_before_request"):
+        check.Ledger(path).reserve("benchmarks cannot spend pilot money", payload())
+    with pytest.raises(ValueError, match="pilot_funding_cannot_reset"):
+        ledger.allocate_pilot(**(scope | {"group_id": "another-group"}))
+
+
+def test_new_unknown_stops_every_payload_after_authorized_old_baseline(tmp_path):
+    ledger = check.Ledger(tmp_path / "ledger.json", retest_ambiguous=True)
+    ledger.data["calls"] = [{"state": "unknown", "reservation_usd": ".02"}]
+    ledger.data["authorized_unknown_baseline"] = 1
+    call = ledger.reserve("new", payload())
+    call["state"] = "unknown"
+    other = payload() | {"max_tokens": 3000}
+    with pytest.raises(ValueError, match="new_unknown_paid_attempt_stop"):
+        ledger.reserve("even a different request", other)

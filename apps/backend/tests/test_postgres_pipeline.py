@@ -109,7 +109,7 @@ def test_postgres_telegram_worker_router_shadow_e2e_is_read_only():
         async def complete(self, request):
             if self.fail_next_shadow:
                 self.fail_next_shadow = False
-                raise ProviderFailure("provider_unreachable", True)
+                raise ProviderFailure("provider_unreachable", True, reservation_releasable=True)
             return await super().complete(request)
 
     async def seed(url, chat_id):

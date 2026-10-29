@@ -64,13 +64,14 @@ async def purge_expired_shadow_runs(engine, now=None):
             delete(ShadowEvaluationRun).where(ShadowEvaluationRun.delete_at <= now)
         )
         from studgroup.analysis.group_events import purge_events
-        from studgroup.models import ImageAnalysisJob, ImageScheduleSuggestion
+        from studgroup.models import AnalysisBudgetCall, ImageAnalysisJob, ImageScheduleSuggestion
 
         await purge_events(db, now)
         await db.execute(
             delete(ImageScheduleSuggestion).where(ImageScheduleSuggestion.delete_at <= now)
         )
         await db.execute(delete(ImageAnalysisJob).where(ImageAnalysisJob.delete_at <= now))
+        await db.execute(delete(AnalysisBudgetCall).where(AnalysisBudgetCall.delete_at <= now))
         await db.commit()
         return result.rowcount or 0
 
@@ -436,6 +437,18 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
             .where(GroupAnalysisSettings.group_id == row.group_id)
             .with_for_update()
         )
+        if row.state == "running":
+            from studgroup.analysis.release_budget import hold_lost_attempt
+
+            await hold_lost_attempt(db, route_row, f"cplus:{row.id}:{row.attempts}", now)
+            row.charged_usd += row.reserved_usd
+            row.reserved_usd, row.lease_until = Decimal(0), None
+            row.state, row.last_error, row.completed_at = "failed", "ambiguous_paid_attempt", now
+            await db.commit()
+            return "ambiguous_paid_attempt"
+        if route_row.paid_outcome_hold:
+            await db.commit()
+            return "paid_outcome_held"
         # The settings-row lock serializes reserve decisions for this group's cap.
         day = _utc(now)
         day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
@@ -547,15 +560,17 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
     try:
         analysis_input = AnalysisInput.model_validate_json(input_json)
         memory = json.loads(memory_json or "[]")
-        if provider is None:
-            from studgroup.ai import DeepSeekProvider
+        from studgroup.analysis.release_budget import provider_for
 
-            provider = DeepSeekProvider(
-                settings.deepseek_api_key.get_secret_value(),
-                model=settings.deepseek_model,
-                base_url=settings.deepseek_base_url,
-                allow_technical_repair=settings.ai_technical_repair_enabled,
-            )
+        provider = provider_for(
+            engine,
+            settings,
+            row.group_id,
+            provider,
+            kind="cplus",
+            attempt_key=f"cplus:{run_id}:{generation}",
+            mode="shadow",
+        )
         result = await run_shadow(
             provider,
             analysis_input,
@@ -620,7 +635,11 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
         if len(failure.raw_results) > 1:
             row.validation_result_json = failure.raw_results[1]
         row.last_error = failure.code
-        if failure.retryable and row.attempts - attempt_base(row) < SHADOW_MAX_ATTEMPTS:
+        if (
+            failure.usage_complete
+            and failure.retryable
+            and row.attempts - attempt_base(row) < SHADOW_MAX_ATTEMPTS
+        ):
             row.state = "retry"
             row.available_at = now + timedelta(seconds=15 * 2 ** (row.attempts - 1))
             outcome = "retry"

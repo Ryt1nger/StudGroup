@@ -225,6 +225,13 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
         return Decimal(0), False  # the durable independent image queue owns this group
     if not settings.photo_reading_enabled or not rows:
         return Decimal(0), False
+    route = await db.get(GroupAnalysisSettings, group.id)
+    if (route and (route.release_budget_usd is not None or route.paid_outcome_hold)) or (
+        str(group.id) in settings.ai_release_budget_required_groups
+    ):
+        # Legacy photos run inside the planner's route transaction. Funded groups must use
+        # the independent image queue, whose reservation commits before the HTTP request.
+        return Decimal(0), True
     pending = (
         await db.scalars(
             select(MessageAttachment)
@@ -860,15 +867,17 @@ async def process_package_next(engine, settings, provider=None, now=None):
     try:
         analysis_input = AnalysisInput.model_validate_json(input_json)
         memory = json.loads(memory_json or "[]")
-        if provider is None:
-            from studgroup.ai import DeepSeekProvider
+        from studgroup.analysis.release_budget import provider_for
 
-            provider = DeepSeekProvider(
-                settings.deepseek_api_key.get_secret_value(),
-                model=settings.deepseek_model,
-                base_url=settings.deepseek_base_url,
-                allow_technical_repair=settings.ai_technical_repair_enabled,
-            )
+        provider = provider_for(
+            engine,
+            settings,
+            row.group_id,
+            provider,
+            kind="cplus",
+            attempt_key=f"cplus:{run_id}:{generation}",
+            mode="new",
+        )
         result = await run_shadow(
             provider,
             analysis_input,
@@ -982,7 +991,9 @@ async def process_package_next(engine, settings, provider=None, now=None):
         # A malformed or schema-invalid model answer is a bad sample, not a defect of the package:
         # the next attempt is usually valid, and giving up would park the whole package (up to 24
         # messages) as failed. Both kinds are retried within the attempt limit.
-        retryable = failure.retryable or failure_stage(failure.code) == "validation"
+        retryable = failure.usage_complete and (
+            failure.retryable or failure_stage(failure.code) == "validation"
+        )
         if retryable and row.attempts - attempt_base(row) < SHADOW_MAX_ATTEMPTS:
             row.state = "retry"
             row.available_at = now + timedelta(seconds=15 * 2 ** (row.attempts - 1))

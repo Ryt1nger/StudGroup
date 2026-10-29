@@ -1378,11 +1378,16 @@ async def process_next(engine, settings, provider=None, now=None):
     failure = None
     failure_at = None
     try:
+        from studgroup.analysis.release_budget import RequestAccounting
+
         provider = provider or DeepSeekProvider(
             settings.deepseek_api_key.get_secret_value(),
             model=settings.deepseek_model,
             base_url=settings.deepseek_base_url,
             allow_technical_repair=settings.ai_technical_repair_enabled,
+            request_accounting=RequestAccounting(
+                engine, settings, raw.group_id, kind="legacy", attempt_key=f"legacy:{attempt_id}"
+            ),
         )
         remaining = (min(cutoffs) - clock()).total_seconds() if cutoffs else None
         if remaining is not None and remaining <= 0:

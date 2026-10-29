@@ -2,6 +2,25 @@
 
 Owner: Codex.
 
+## Core v2 release funding
+
+The current owner-approved allowance is **USD 1 total**, including previous conservative
+charges of USD 0.181507560, comparisons, vision, text and all retries. Older standalone probe
+ceilings below are not additional authorization for this release. Keep the original private
+journal; never start a fresh journal to regain money. Its pilot allocation is reserved before
+database provisioning and cannot be reset or automatically refunded after a provisioning error.
+
+Migration 0047 stores an optional funded allowance on the group's analysis settings and a
+source-independent per-HTTP-request journal. Configure it only for the explicitly approved
+pilot group after reserving the same amount in the original journal. Set
+`AI_RELEASE_BUDGET_REQUIRED_GROUPS` to that group UUID before enabling paid pilot work:
+missing funding then fails closed. `release_budget.configure` requires active pilot permission,
+an exact funding receipt and a window no longer than 48 hours; repeat configuration must be
+identical. Text and vision share this allowance, daily/hourly ceilings and an unknown-outcome
+hold. Source purge, midnight, restarts and route changes never reset spent money. Unknown
+delivery, missing usage, cancellation or a lost paid lease stop further paid work. There is no
+automatic unhold or funding-increase API. Default flags and required-group list remain empty.
+
 ## Private read-only shadow wave export
 
 To export stored C+ results without another provider call, set `DATABASE_URL` through the

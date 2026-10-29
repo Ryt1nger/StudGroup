@@ -312,6 +312,7 @@ class DeepSeekProvider:
         base_url="https://api.deepseek.com",
         transport: httpx.AsyncBaseTransport | None = None,
         allow_technical_repair: bool = False,
+        request_accounting=None,
     ):
         # Never send the credential to an arbitrary host, HTTP endpoint or redirect.
         if base_url.rstrip("/") not in {"https://api.deepseek.com", "https://api.deepseek.com/v1"}:
@@ -323,6 +324,7 @@ class DeepSeekProvider:
         self._base_url = base_url.rstrip("/")
         self._transport = transport
         self._allow_technical_repair = allow_technical_repair
+        self._request_accounting = request_accounting
 
     async def complete(self, request: PreparedRequest) -> ProviderResponse:
         """Implement the C+ transport port without exposing publication behaviour."""
@@ -1047,6 +1049,11 @@ merely because no single due date is given. Preserve task content and topics.
         )
 
     async def _complete(self, payload):
+        if self._request_accounting is not None:
+            return await self._request_accounting.execute(payload, lambda: self._send(payload))
+        return await self._send(payload)
+
+    async def _send(self, payload):
         try:
             async with httpx.AsyncClient(
                 timeout=45, follow_redirects=False, transport=self._transport, trust_env=False

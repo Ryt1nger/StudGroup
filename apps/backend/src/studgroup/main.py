@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
+    ai_release_budget_required_groups: list[str] = Field(default_factory=list)
     ai_daily_group_budget_usd: float = 0.05
     ai_hourly_group_budget_usd: float = 0.25
     ai_total_budget_usd: float = 1.70

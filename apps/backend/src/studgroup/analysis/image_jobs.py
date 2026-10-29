@@ -266,6 +266,7 @@ async def context_snapshot(db, raw):
             ImageAnalysisJob.source_revision == raw.revision,
             ImageAnalysisJob.pass_number == 1,
             ImageAnalysisJob.state == "ready",
+            ImageAnalysisJob.delete_at > datetime.now(UTC),
         )
         .order_by(ImageAnalysisJob.created_at.desc())
         .limit(1)
@@ -390,6 +391,8 @@ async def schedule_group(db, group, now, since, model_key="", provider_identity=
             (job for job in jobs if job.context_sha256 == key and job.pass_number == 1), None
         )
         if first is not None:
+            if utc(first.delete_at) <= now:
+                continue  # purge removes the expired cache row before a fresh reading is queued
             restore_successful_snapshot(first, now)
             if first.state != "ready":
                 continue
@@ -592,6 +595,7 @@ async def claim(db, group, route, settings, now):
         .where(
             ImageAnalysisJob.group_id == group.id,
             ImageAnalysisJob.delete_at > now,
+            *([ImageAnalysisJob.state == "running"] if route.paid_outcome_hold else []),
             or_(
                 ImageAnalysisJob.state.in_(["pending", "retry", "budget_deferred"])
                 & (ImageAnalysisJob.available_at <= now),
@@ -613,6 +617,9 @@ async def claim(db, group, route, settings, now):
             call.state, call.charged_usd = "unknown", call.reserved_usd
             call.reserved_usd = Decimal(0)
         job.state, job.error, job.lease_until = "failed", "ambiguous_paid_attempt", None
+        from studgroup.analysis.release_budget import hold_lost_attempt
+
+        await hold_lost_attempt(db, route, f"image:{job.claim_token}", now)
         return None
     raw = await db.get(RawMessage, job.raw_message_id)
     attachment = await db.get(MessageAttachment, job.attachment_id)
@@ -803,6 +810,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                     ImageAnalysisJob.source_revision == job.source_revision,
                     ImageAnalysisJob.pass_number == 1,
                     ImageAnalysisJob.state == "ready",
+                    ImageAnalysisJob.delete_at > now,
                     ImageAnalysisJob.version == f"{IMAGE_VERSION}/{PASS_A_VERSION}",
                     ImageAnalysisJob.model_key == job.model_key,
                 )
@@ -812,14 +820,6 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
     start = monotonic()
     try:
         image, mime = await download(settings.telegram_bot_token, file_id, transport=transport)
-        if provider is None:
-            from studgroup.ai import DeepSeekProvider
-
-            provider = DeepSeekProvider(
-                settings.deepseek_api_key.get_secret_value(),
-                model=settings.deepseek_model,
-                base_url=settings.deepseek_base_url,
-            )
         if job.pass_number == 2 and first is None:
             raise DownloadError("pass_a_missing", False)
         if job.pass_number == 2 and first_job.pixel_sha256 != hashlib.sha256(image).hexdigest():
@@ -832,6 +832,11 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
         if cached is not None:
             result = VisualReading.model_validate_json(cached.result_json)
         else:
+            from studgroup.analysis.release_budget import provider_for
+
+            provider = provider_for(
+                engine, settings, job.group_id, provider, kind="image", attempt_key=f"image:{token}"
+            )
             paid = True
             result, usage = await perform(provider, image, mime, job, raw, first)
     except DownloadError as error:
