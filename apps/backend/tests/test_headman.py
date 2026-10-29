@@ -78,8 +78,10 @@ def last(client):
         row = await db.scalar(
             select(BotOutbox)
             # Match the worker: superseded frames are never shown, regardless of timestamps.
-            .where(BotOutbox.method.in_(["sendMessage", "renderPanel", "panelAux"]),
-                   BotOutbox.state != "superseded")
+            .where(
+                BotOutbox.method.in_(["sendMessage", "renderPanel", "panelAux"]),
+                BotOutbox.state != "superseded",
+            )
             .order_by(BotOutbox.available_at.desc())
             .limit(1)
         )
@@ -510,15 +512,19 @@ def test_expired_invite_never_activates_user(foreman):
     )
 
 
-
 def test_visible_frame_ignores_superseded_outbox_even_if_its_timestamp_is_later(foreman):
     enter(foreman)
     expected = last(foreman)
 
     async def old_frame(db):
-        db.add(BotOutbox(method="renderPanel", state="superseded",
-            payload=json.dumps({"text": "Old frame must never be visible"}),
-            available_at=datetime.now(UTC) + timedelta(days=1)))
+        db.add(
+            BotOutbox(
+                method="renderPanel",
+                state="superseded",
+                payload=json.dumps({"text": "Old frame must never be visible"}),
+                available_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
 
     run(foreman, old_frame)
     assert last(foreman) == expected

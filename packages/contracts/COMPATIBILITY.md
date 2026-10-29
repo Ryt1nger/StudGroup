@@ -400,3 +400,49 @@ Image findings review and social-event endpoints are specified separately in
 seven academic kinds or replace `/deadlines`. Frontend/API adoption requires owner coordination.
 Review and publication each require their own flag and a group allowlist. Existing clients and
 existing EventRecord consumers remain compatible.
+
+
+## Owner-approved Core v2 refinements (2026-10-27)
+
+The image-findings contract 0.2.0 adds optional event end/date-only/multi-day fields and corrected
+schedule rows with explicit group-local subject/subgroup IDs. Existing requests remain valid.
+Published events use an independently approved snapshot and survive expiry of private sources
+through the group-local event end date + 7 days inclusive. Retained past/cancelled event details
+remain available; cancellation stays hidden from active lists. APIs will expose explicit source
+availability instead of linking to expired private evidence. Public activation remains off pending
+frontend handoff and separate permission. No existing academic card endpoint is replaced.
+
+Core v2 editor confirmation (2026-10-27): `corrected_rows` is optional; original AI rows remain
+immutable, confirmed rows and target revisions are retained separately. Subject/subgroup IDs
+must belong to the same group and subject. `LessonOccurrence.subgroup_id` is additive and optional.
+Existing group-wide schedule responses stay compatible. One-off replacements carry their own
+subject/teacher/subgroup, including an explicitly cleared teacher. Frontend confirmation UI
+and feature activation remain pending; all image review/publication flags default to off.
+
+Release continuation 2026-10-27: internal SourceAttachment adds optional display_covers and
+nullable display_readability for frozen preview consistency. These display-only properties are
+excluded from both AI requests. Public card/API schemas are unchanged. Old image jobs without a
+local visual proof remain visible unless their bytes are exactly identical; pHash/OCR similarity
+alone no longer hides an attachment. Migration 0045 adds only nullable job metadata.
+
+## Events/calendar integration — 2026-10-27
+
+Main API 0.19.0 references the canonical Image Findings API 0.3.0 path definitions; generated
+clients now consume those endpoints without duplicating event schemas. Existing paths and default
+active-event filtering remain valid. Optional start/end inclusive group-local dates, status and
+upcoming filters are additive; range requests reject missing boundaries, reversed ranges or more
+than 366 days. Lists are chronological and multi-day events overlap every confirmed day.
+Source URLs and rescheduled hints are additive, derived from retained same-group sources and
+approved history. Expired sources never regain links from an approved event snapshot.
+
+SessionContext adds optional per-group features (events/event_review/schedule_review). Missing
+fields mean disabled. These are display hints; every read and write still rechecks active
+membership, role, allowlist, feature flag, approval hash, audience and retention as appropriate.
+Public list/detail and editor actions read persisted structured data and perform no AI calls.
+
+Image Findings 0.3.1 adds optional current_schedule_version, group-scoped subgroup metadata and
+retained schedule-source URLs. Existing confirmation bodies preserve their previous version
+checks. The optional acknowledge_schedule_change flag permits an explicit editor re-review only
+with full corrected_rows and the current official version; stale source/revision, role and
+occurrence guards remain enforced. Confirmation history preserves both captured and applied
+schedule versions and the acknowledgement. No manual review operation starts a vision call.

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, ChooseMySubgroupData, ChooseMySubgroupErrors, ChooseMySubgroupResponses, CreateAcademicEventData, CreateAcademicEventErrors, CreateAcademicEventResponses, CreateHomeworkData, CreateHomeworkErrors, CreateHomeworkResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, DeleteAcademicEventData, DeleteAcademicEventErrors, DeleteAcademicEventResponses, DeleteHomeworkData, DeleteHomeworkErrors, DeleteHomeworkResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetAttachmentImageData, GetAttachmentImageErrors, GetAttachmentImageResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetProfileData, GetProfileErrors, GetProfileResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListMySubgroupsData, ListMySubgroupsErrors, ListMySubgroupsResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, ReadNotificationData, ReadNotificationErrors, ReadNotificationResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses, UndoCardRemovalData, UndoCardRemovalErrors, UndoCardRemovalResponses, UpdateProfileData, UpdateProfileErrors, UpdateProfileResponses } from './types.gen';
+import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, ChooseMySubgroupData, ChooseMySubgroupErrors, ChooseMySubgroupResponses, ConfirmImageScheduleSuggestionData, ConfirmImageScheduleSuggestionErrors, ConfirmImageScheduleSuggestionResponses, CreateAcademicEventData, CreateAcademicEventErrors, CreateAcademicEventResponses, CreateHomeworkData, CreateHomeworkErrors, CreateHomeworkResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, DeleteAcademicEventData, DeleteAcademicEventErrors, DeleteAcademicEventResponses, DeleteHomeworkData, DeleteHomeworkErrors, DeleteHomeworkResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetAttachmentImageData, GetAttachmentImageErrors, GetAttachmentImageResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetProfileData, GetProfileErrors, GetProfileResponses, GetPublishedGroupEventData, GetPublishedGroupEventErrors, GetPublishedGroupEventResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListImageEventDraftsData, ListImageEventDraftsErrors, ListImageEventDraftsResponses, ListImageScheduleSuggestionsData, ListImageScheduleSuggestionsErrors, ListImageScheduleSuggestionsResponses, ListMySubgroupsData, ListMySubgroupsErrors, ListMySubgroupsResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListPublishedGroupEventsData, ListPublishedGroupEventsErrors, ListPublishedGroupEventsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, ReadNotificationData, ReadNotificationErrors, ReadNotificationResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, ReviewImageEventData, ReviewImageEventErrors, ReviewImageEventResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses, UndoCardRemovalData, UndoCardRemovalErrors, UndoCardRemovalResponses, UpdateProfileData, UpdateProfileErrors, UpdateProfileResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,53 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
+
+export const listPublishedGroupEvents = <ThrowOnError extends boolean = false>(options?: Options<ListPublishedGroupEventsData, ThrowOnError>): RequestResult<ListPublishedGroupEventsResponses, ListPublishedGroupEventsErrors, ThrowOnError> => (options?.client ?? client).get<ListPublishedGroupEventsResponses, ListPublishedGroupEventsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/group-events',
+    ...options
+});
+
+export const getPublishedGroupEvent = <ThrowOnError extends boolean = false>(options: Options<GetPublishedGroupEventData, ThrowOnError>): RequestResult<GetPublishedGroupEventResponses, GetPublishedGroupEventErrors, ThrowOnError> => (options.client ?? client).get<GetPublishedGroupEventResponses, GetPublishedGroupEventErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/group-events/{id}',
+    ...options
+});
+
+export const listImageEventDrafts = <ThrowOnError extends boolean = false>(options?: Options<ListImageEventDraftsData, ThrowOnError>): RequestResult<ListImageEventDraftsResponses, ListImageEventDraftsErrors, ThrowOnError> => (options?.client ?? client).get<ListImageEventDraftsResponses, ListImageEventDraftsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/image-findings/events',
+    ...options
+});
+
+export const reviewImageEvent = <ThrowOnError extends boolean = false>(options: Options<ReviewImageEventData, ThrowOnError>): RequestResult<ReviewImageEventResponses, ReviewImageEventErrors, ThrowOnError> => (options.client ?? client).put<ReviewImageEventResponses, ReviewImageEventErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/image-findings/events/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Headman/deputy only; returns retained group-local draft rows and source schedule version.
+ */
+export const listImageScheduleSuggestions = <ThrowOnError extends boolean = false>(options?: Options<ListImageScheduleSuggestionsData, ThrowOnError>): RequestResult<ListImageScheduleSuggestionsResponses, ListImageScheduleSuggestionsErrors, ThrowOnError> => (options?.client ?? client).get<ListImageScheduleSuggestionsResponses, ListImageScheduleSuggestionsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/image-findings/schedule',
+    ...options
+});
+
+export const confirmImageScheduleSuggestion = <ThrowOnError extends boolean = false>(options: Options<ConfirmImageScheduleSuggestionData, ThrowOnError>): RequestResult<ConfirmImageScheduleSuggestionResponses, ConfirmImageScheduleSuggestionErrors, ThrowOnError> => (options.client ?? client).post<ConfirmImageScheduleSuggestionResponses, ConfirmImageScheduleSuggestionErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/image-findings/schedule/{id}/confirm',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Real retained notifications for the active group and current user

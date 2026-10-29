@@ -129,3 +129,11 @@
 - Added optimistic concurrency and the `revision_conflict` error.
 - Made `urgency` the sole source of urgent UI styling.
 - Kept invitations bot-only and omitted placeholder APIs for prepared screens.
+
+## 2026-10-27 — Core v2 editor confirmation (additive)
+
+- Image findings 0.2.0: explicit corrected schedule rows and same-group/subject subgroup mapping.
+- Published events: structured response, source availability and exclusive retained_until;
+  editor approval required, local event end date plus seven calendar days inclusive.
+- Optional LessonOccurrence.subgroup_id and regenerated shared TypeScript type.
+- Frontend UI and real-group activation remain pending; all review/publication gates stay off.

@@ -1,5 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createBrowserRouter, createMemoryRouter, Navigate, useRouteError } from 'react-router';
+import { EventReviewScreen, EventsScreen, GroupEventScreen } from './features/events/EventsScreen';
+import { EventReviewDetailScreen } from './features/events/EventReviewDetailScreen';
 import { TodayScreen } from './features/today/TodayScreen';
 import { HomeworkScreen } from './features/homework/HomeworkScreen';
 import { ru } from './i18n/ru';
@@ -7,6 +9,7 @@ import { homeworkIdFromStartParam } from './lib/deeplink';
 import { AppShell } from './shell/AppShell';
 import { TasksScreen } from './features/tasks/TasksScreen';
 import { ScheduleScreen } from './features/schedule/ScheduleScreen';
+import { ImageScheduleReviewScreen } from './features/schedule/ImageScheduleReviewScreen';
 import { LessonScreen } from './features/schedule/LessonScreen';
 import { SubjectsScreen } from './features/subjects/SubjectsScreen';
 import { DeadlinesScreen } from './features/deadlines/DeadlinesScreen';
@@ -46,11 +49,16 @@ export function appRoutes(startParam: string | null) {
       children: [
         { index: true, element: <Navigate to={deepLinkId ? `/homework/${deepLinkId}` : '/today'} replace /> },
         { path: 'today', Component: TodayScreen },
+        { path: 'events', Component: EventsScreen },
+        { path: 'events/review', Component: EventReviewScreen },
+        { path: 'events/review/:eventId', Component: EventReviewDetailScreen },
+        { path: 'events/:eventId', Component: GroupEventScreen },
         { path: 'homework/:homeworkId', Component: HomeworkScreen },
         { path: 'homework/:homeworkId/edit', Component: HomeworkEditScreen },
         { path: 'cards/new', Component: CreateCardScreen },
         { path: 'tasks', Component: TasksScreen },
         { path: 'schedule', Component: ScheduleScreen },
+        { path: 'schedule/review', Component: ImageScheduleReviewScreen },
         { path: 'schedule/lesson/:lessonId', Component: LessonScreen },
         { path: 'subjects', Component: SubjectsScreen },
         { path: 'subjects/lessons/:lessonId', Component: LessonSubjectScreen },

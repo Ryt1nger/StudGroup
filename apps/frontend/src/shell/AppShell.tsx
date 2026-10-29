@@ -1,6 +1,7 @@
 import clsx from 'clsx';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
+import { useEventCapabilities } from '../features/events/api';
 import { useOnline } from '../lib/hooks';
 import { Banner } from '../ui/Blocks';
 import { FeedbackProvider, useFeedback } from '../ui/Feedback';
@@ -15,7 +16,7 @@ const NAV: ReadonlyArray<readonly [string, string, IconName]> = [
   ['/subjects', 'Предметы', 'book'],
 ];
 
-const ORDER: Record<string, number> = { today: 0, tasks: 1, deadlines: 1.5, schedule: 2, subjects: 3 };
+const ORDER: Record<string, number> = { today: 0, tasks: 1, deadlines: 1.5, schedule: 2, events: 3, subjects: 4 };
 
 /** Which tab a path belongs to; `null` for screens outside the tab bar (profile). */
 function sectionOf(pathname: string): string | null {
@@ -56,7 +57,10 @@ function Frame() {
   if (nav.path !== pathname) setNav({ path: pathname, dir: direction(nav.path, pathname) });
   const dir = nav.dir;
   const section = sectionOf(pathname);
-  const index = Math.max(0, NAV.findIndex(([path]) => path === `/${section}`));
+  const features = useEventCapabilities();
+  const items = [...NAV];
+  if (features.events || features.event_review) items.splice(3, 0, ['/events', 'События', 'event']);
+  const index = Math.max(0, items.findIndex(([path]) => path === `/${section}`));
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
@@ -86,9 +90,9 @@ function Frame() {
         </div>
       </div>
       <div className="nav-scrim" aria-hidden="true" />
-      <nav className={clsx('nav', section === null && 'noact')} aria-label="Основная навигация" style={{ ['--idx' as string]: index }}>
+      <nav className={clsx('nav', section === null && 'noact', items.length === 5 && 'with-events')} aria-label="Основная навигация" style={{ ['--idx' as string]: index, ['--tabs' as string]: items.length }}>
         <span className="ind" aria-hidden="true" />
-        {NAV.map(([path, label, icon]) => (
+        {items.map(([path, label, icon]) => (
           <NavLink key={path} to={path} aria-current={section === path.slice(1) ? 'page' : undefined}>
             <Ic name={icon} />
             {label}

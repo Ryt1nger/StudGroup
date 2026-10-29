@@ -180,9 +180,13 @@ async def _source_messages(db, group, rows, *, structured_images=False):
             )
         ).all():
             roles[telegram_user_id] = role
-    messages = [_source_message(row, roles=roles, topics=topics, attachments=attachments) for row in rows]
+    messages = [
+        _source_message(row, roles=roles, topics=topics, attachments=attachments) for row in rows
+    ]
     if structured_images:
-        messages = [message.model_copy(update={"text": row.text}) for message, row in zip(messages, rows)]
+        messages = [
+            message.model_copy(update={"text": row.text}) for message, row in zip(messages, rows)
+        ]
     return messages
 
 
@@ -334,16 +338,27 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
 
     structured = enabled(settings, group.id) and settings.image_analysis_mode == "live"
     messages = await _source_messages(db, group, list(rows.values()), structured_images=structured)
-    images = await load_image_evidence(db, group.id, messages, now, settings.image_analysis_since) if structured else []
+    images = (
+        await load_image_evidence(db, group.id, messages, now, settings.image_analysis_since)
+        if structured
+        else []
+    )
     messages = add_image_facts(messages, images)
     if images:
         from studgroup.analysis.image_evidence import display_metadata
 
         metadata = await display_metadata(db, group.id, images)
-        messages = [message.model_copy(update={"attachments": [
-            attachment.model_copy(update=metadata.get(attachment.attachment_id, {}))
-            for attachment in message.attachments
-        ]}) for message in messages]
+        messages = [
+            message.model_copy(
+                update={
+                    "attachments": [
+                        attachment.model_copy(update=metadata.get(attachment.attachment_id, {}))
+                        for attachment in message.attachments
+                    ]
+                }
+            )
+            for message in messages
+        ]
     facts = (
         await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
     ).all()
@@ -359,7 +374,9 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
         )
         package = packages[0]
         selected = {row.telegram_message_id for row in package.analysis_input.messages}
-        package.analysis_input.image_evidence = [item for item in images if item.telegram_message_id in selected]
+        package.analysis_input.image_evidence = [
+            item for item in images if item.telegram_message_id in selected
+        ]
         if len(package.analysis_input.model_dump_json().encode()) > 48000:
             raise ValueError("package_single_target_exceeds_limits")
     except ValueError as error:
@@ -377,7 +394,11 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
     generation = max(
         row.analysis_generation for row in targets if row.telegram_message_id in package.target_ids
     )
-    image_key = "" if not images else json.dumps([item.model_dump(mode="json") for item in images], sort_keys=True)
+    image_key = (
+        ""
+        if not images
+        else json.dumps([item.model_dump(mode="json") for item in images], sort_keys=True)
+    )
     run_key = hashlib.sha256(f"{package.key}:{generation}:{image_key}".encode()).hexdigest()
     memory = assemble_memory_context(group.id, " ".join(row.text for row in messages), facts)
     return package, memory, revision, run_key, generation, photo_cost
@@ -549,13 +570,17 @@ async def _existing_items(db, group_id, now):
     ).all()
     item_ids = [row.id for row in rows]
     source_rows = (
-        await db.execute(
-            select(CanonicalItemEvidence.item_id, RawMessage.telegram_message_id)
-            .join(RawMessage, RawMessage.id == CanonicalItemEvidence.raw_message_id)
-            .where(CanonicalItemEvidence.item_id.in_(item_ids))
-            .distinct()
-        )
-    ).all() if item_ids else []
+        (
+            await db.execute(
+                select(CanonicalItemEvidence.item_id, RawMessage.telegram_message_id)
+                .join(RawMessage, RawMessage.id == CanonicalItemEvidence.raw_message_id)
+                .where(CanonicalItemEvidence.item_id.in_(item_ids))
+                .distinct()
+            )
+        ).all()
+        if item_ids
+        else []
+    )
     source_ids = {}
     for item_id, message_id in source_rows:
         source_ids.setdefault(item_id, []).append(message_id)
@@ -792,14 +817,21 @@ async def _finish_targets(db, row, state):
     )
     if state == "completed":
         data = AnalysisInput.model_validate_json(row.input_json)
-        waiting = {item.telegram_message_id for item in data.image_evidence
-                   if item.state not in {"ready", "failed", "stale"}}
+        waiting = {
+            item.telegram_message_id
+            for item in data.image_evidence
+            if item.state not in {"ready", "failed", "stale"}
+        }
         if waiting:
-            await db.execute(update(RawMessage).where(
-                RawMessage.group_id == row.group_id,
-                RawMessage.telegram_message_id.in_(waiting & set(_targets(row))),
-                RawMessage.revision == row.source_revision,
-            ).values(processing_state="image_pending"))
+            await db.execute(
+                update(RawMessage)
+                .where(
+                    RawMessage.group_id == row.group_id,
+                    RawMessage.telegram_message_id.in_(waiting & set(_targets(row))),
+                    RawMessage.revision == row.source_revision,
+                )
+                .values(processing_state="image_pending")
+            )
 
 
 async def process_package_next(engine, settings, provider=None, now=None):
@@ -897,6 +929,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
             row.state = "completed"
             row.completed_at = now
             from studgroup.analysis.image_jobs import enabled
+
             if enabled(settings, row.group_id):
                 from studgroup.analysis.group_events import capture_candidates
 

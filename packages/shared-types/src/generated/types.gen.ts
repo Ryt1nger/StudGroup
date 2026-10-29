@@ -82,6 +82,10 @@ export type ScheduleResponse = {
 export type LessonOccurrence = {
     id: string;
     subject: string;
+    /**
+     * Optional confirmed subgroup; absent on existing group-wide lessons.
+     */
+    subgroup_id?: string | null;
     starts_at: string;
     ends_at: string;
     teacher: string | null;
@@ -119,6 +123,14 @@ export type SessionContext = {
     membership?: Membership | null;
     group?: Group | null;
     permissions: Array<Permission>;
+    /**
+     * Optional per-group capabilities; absent fields mean disabled on older servers. Every endpoint still checks its own flag and permissions.
+     */
+    features?: {
+        events?: boolean;
+        event_review?: boolean;
+        schedule_review?: boolean;
+    };
     server_time: string;
 };
 
@@ -695,6 +707,201 @@ export type ApiError = {
     } | null;
 };
 
+export type ConfirmedScheduleRow = {
+    weekday: number;
+    starts: string;
+    ends: string;
+    subject: string;
+    subject_id?: string | null;
+    subgroup?: string | null;
+    subgroup_id?: string | null;
+    week?: 'all' | 'first' | 'second';
+    valid_from: string;
+    valid_until: string;
+    room?: string | null;
+    teacher?: string | null;
+};
+
+export type EventFinding = {
+    id: string;
+    state: 'applied' | 'held' | 'superseded';
+    payload: EventPayload;
+    source_revision: number;
+    source_url?: string | null;
+};
+
+export type EventPayload = {
+    title: string;
+    description?: string;
+    when_text?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    starts_on?: string | null;
+    ends_on?: string | null;
+    multi_day?: boolean;
+    place?: string | null;
+    conditions?: string | null;
+    audience?: 'group' | 'subgroup' | 'personal' | 'unknown';
+    audience_label?: string | null;
+    action?: 'create' | 'update' | 'cancel';
+    existing_event_id?: string | null;
+    expected_revision?: number | null;
+};
+
+export type EventReview = {
+    id: string;
+    revision: number;
+    state: 'draft' | 'active' | 'cancelled';
+    /**
+     * Exclusive deletion instant: midnight after the seventh local day following event end.
+     */
+    retained_until: string;
+    source_availability: 'available' | 'expired' | null;
+    title: string;
+    description?: string;
+    when_text?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    starts_on?: string | null;
+    ends_on?: string | null;
+    multi_day?: boolean;
+    place?: string | null;
+    conditions?: string | null;
+    audience?: 'group' | 'subgroup' | 'personal' | 'unknown';
+    audience_label?: string | null;
+    manual_lock: boolean;
+    findings: Array<EventFinding>;
+    /**
+     * Retained same-group Telegram source only; null after source expiry or revision mismatch.
+     */
+    source_url?: string | null;
+    /**
+     * An approved historical revision has different confirmed dates.
+     */
+    rescheduled?: boolean;
+};
+
+export type PublishedEvent = {
+    id: string;
+    revision: number;
+    state: 'active' | 'cancelled';
+    /**
+     * Exclusive deletion instant: midnight after the seventh local day following event end.
+     */
+    retained_until: string;
+    source_availability: 'available' | 'expired';
+    title: string;
+    description?: string;
+    when_text?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    starts_on?: string | null;
+    ends_on?: string | null;
+    multi_day?: boolean;
+    place?: string | null;
+    conditions?: string | null;
+    audience?: 'group' | 'subgroup' | 'personal' | 'unknown';
+    audience_label?: string | null;
+    /**
+     * Retained same-group Telegram source only; null after source expiry or revision mismatch.
+     */
+    source_url?: string | null;
+    /**
+     * An approved historical revision has different confirmed dates.
+     */
+    rescheduled?: boolean;
+};
+
+export type RecognizedScheduleRow = {
+    weekday: number;
+    starts: string;
+    ends: string;
+    subject: string;
+    subgroup?: string | null;
+    week?: 'all' | 'first' | 'second';
+    valid_from?: string | null;
+    valid_until?: string | null;
+    room?: string | null;
+    teacher?: string | null;
+};
+
+export type ReviewSubgroup = {
+    id: string;
+    subject_id: string;
+    subject: string;
+    name: string;
+};
+
+export type ScheduleConfirmationRecord = {
+    rows: Array<ConfirmedScheduleRow>;
+    targets: Array<{
+        row_index: number;
+        lesson_id: string;
+        pattern_revision: number;
+        override_revision: number;
+        scope?: 'once' | 'recurring';
+    }>;
+    schedule_version_before: number;
+    source_schedule_version?: number;
+    acknowledged_schedule_change?: boolean;
+};
+
+export type ScheduleSuggestion = {
+    id: string;
+    revision: number;
+    state: 'pending' | 'confirmed';
+    schedule_version: number;
+    rows: Array<RecognizedScheduleRow>;
+    confirmation: ScheduleConfirmationRecord | null;
+    /**
+     * Current retained same-group Telegram source; absent after source expiry or revision change.
+     */
+    source_url?: string | null;
+};
+
+export type StaffEvent = {
+    id: string;
+    revision: number;
+    state: 'draft' | 'active' | 'cancelled';
+    /**
+     * Exclusive deletion instant: midnight after the seventh local day following event end.
+     */
+    retained_until: string;
+    source_availability: 'available' | 'expired' | null;
+    title: string;
+    description?: string;
+    when_text?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    starts_on?: string | null;
+    ends_on?: string | null;
+    multi_day?: boolean;
+    place?: string | null;
+    conditions?: string | null;
+    audience?: 'group' | 'subgroup' | 'personal' | 'unknown';
+    audience_label?: string | null;
+    /**
+     * Retained same-group Telegram source only; null after source expiry or revision mismatch.
+     */
+    source_url?: string | null;
+    /**
+     * An approved historical revision has different confirmed dates.
+     */
+    rescheduled?: boolean;
+};
+
+export type _1GroupEvents = unknown;
+
+export type _1GroupEvents1Id = unknown;
+
+export type _1Staff1ImageFindings1Events = unknown;
+
+export type _1Staff1ImageFindings1Events1Id = unknown;
+
+export type _1Staff1ImageFindings1Schedule = unknown;
+
+export type _1Staff1ImageFindings1Schedule1Id1Confirm = unknown;
+
 export type UpdateProfileRequestWritable = {
     first_name?: string | null;
     last_name?: string | null;
@@ -720,6 +927,228 @@ export type UpdateProfileRequestWritable = {
 export type StaffItemId = string;
 
 export type HomeworkId = string;
+
+export type ListPublishedGroupEventsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Inclusive first group-local calendar day. Requires end; at most 366 days.
+         */
+        start?: string;
+        /**
+         * Inclusive last group-local day. Multi-day events overlap the requested interval.
+         */
+        end?: string;
+        status?: 'active' | 'cancelled' | 'all';
+        /**
+         * Exclude ended events using group timezone; ongoing events remain visible.
+         */
+        upcoming?: boolean;
+    };
+    url: '/group-events';
+};
+
+export type ListPublishedGroupEventsErrors = {
+    /**
+     * Active authenticated membership required
+     */
+    401: unknown;
+    /**
+     * Publication disabled
+     */
+    404: unknown;
+};
+
+export type ListPublishedGroupEventsResponses = {
+    /**
+     * Approved active group events retained through local end date + 7 days inclusive; private source expiry never removes the approved record
+     */
+    200: {
+        events: Array<PublishedEvent>;
+    };
+};
+
+export type ListPublishedGroupEventsResponse = ListPublishedGroupEventsResponses[keyof ListPublishedGroupEventsResponses];
+
+export type GetPublishedGroupEventData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/group-events/{id}';
+};
+
+export type GetPublishedGroupEventErrors = {
+    /**
+     * Unknown, private, unapproved, expired, wrong group or feature disabled. Retained cancelled events remain accessible by ID.
+     */
+    404: unknown;
+};
+
+export type GetPublishedGroupEventResponses = {
+    /**
+     * Published event payload with id/revision/state
+     */
+    200: PublishedEvent;
+};
+
+export type GetPublishedGroupEventResponse = GetPublishedGroupEventResponses[keyof GetPublishedGroupEventResponses];
+
+export type ListImageEventDraftsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/staff/image-findings/events';
+};
+
+export type ListImageEventDraftsErrors = {
+    /**
+     * Membership role disallows review
+     */
+    403: unknown;
+    /**
+     * Review flag disabled
+     */
+    404: unknown;
+};
+
+export type ListImageEventDraftsResponses = {
+    /**
+     * Retained group events with revisions and applied/held source findings; staff only
+     */
+    200: {
+        events: Array<EventReview>;
+    };
+};
+
+export type ListImageEventDraftsResponse = ListImageEventDraftsResponses[keyof ListImageEventDraftsResponses];
+
+export type ReviewImageEventData = {
+    body: {
+        expected_revision: number;
+        state?: 'draft' | 'active' | 'cancelled';
+        accept_source_ids?: Array<string>;
+        payload: EventPayload;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/staff/image-findings/events/{id}';
+};
+
+export type ReviewImageEventErrors = {
+    /**
+     * Staff membership required
+     */
+    403: unknown;
+    /**
+     * Event not found or activation/publication flag disabled
+     */
+    404: unknown;
+    /**
+     * Stale revision/source or event is not publishable
+     */
+    409: unknown;
+};
+
+export type ReviewImageEventResponses = {
+    /**
+     * Updated event and revision; manual lock is retained
+     */
+    200: StaffEvent;
+};
+
+export type ReviewImageEventResponse = ReviewImageEventResponses[keyof ReviewImageEventResponses];
+
+export type ListImageScheduleSuggestionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/staff/image-findings/schedule';
+};
+
+export type ListImageScheduleSuggestionsErrors = {
+    /**
+     * Membership role disallows review
+     */
+    403: unknown;
+    /**
+     * Feature disabled or not allowlisted
+     */
+    404: unknown;
+};
+
+export type ListImageScheduleSuggestionsResponses = {
+    /**
+     * suggestions array: id, revision, state, schedule_version, rows
+     */
+    200: {
+        suggestions: Array<ScheduleSuggestion>;
+        /**
+         * Current official version, separately from the version captured in each suggestion.
+         */
+        current_schedule_version?: number;
+        subgroups?: Array<ReviewSubgroup>;
+    };
+};
+
+export type ListImageScheduleSuggestionsResponse = ListImageScheduleSuggestionsResponses[keyof ListImageScheduleSuggestionsResponses];
+
+export type ConfirmImageScheduleSuggestionData = {
+    body: {
+        expected_revision: number;
+        expected_schedule_version: number;
+        /**
+         * Optional editor-corrected full rows; preserve AI rows separately for audit. Each subgroup_id must belong to this group and subject.
+         */
+        corrected_rows?: Array<ConfirmedScheduleRow> | null;
+        targets?: Array<{
+            row_index: number;
+            lesson_id: string;
+            pattern_revision: number;
+            override_revision: number;
+            scope?: 'once' | 'recurring';
+        }>;
+        /**
+         * Explicit editor re-review after an official schedule change; requires corrected_rows and the current expected_schedule_version. Does not run AI.
+         */
+        acknowledge_schedule_change?: boolean;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/staff/image-findings/schedule/{id}/confirm';
+};
+
+export type ConfirmImageScheduleSuggestionErrors = {
+    /**
+     * Membership role disallows confirmation
+     */
+    403: unknown;
+    /**
+     * Not found or feature disabled
+     */
+    404: unknown;
+    /**
+     * Stale source/context/revision, missing dates or unresolved subgroup/lesson mapping
+     */
+    409: unknown;
+};
+
+export type ConfirmImageScheduleSuggestionResponses = {
+    /**
+     * Confirmed schedule_version; repeated confirmation has no repeated side effects
+     */
+    200: {
+        schedule_version: number;
+    };
+};
+
+export type ConfirmImageScheduleSuggestionResponse = ConfirmImageScheduleSuggestionResponses[keyof ConfirmImageScheduleSuggestionResponses];
 
 export type ListNotificationsData = {
     body?: never;

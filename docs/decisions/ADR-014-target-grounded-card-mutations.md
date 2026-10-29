@@ -37,3 +37,9 @@ not granted new publication authority by this compatibility rule.
   recent active cards remains an operational bound; provider context-limit failures are explicit
   package failures, never silent text truncation.
 
+Integration into Core v2 preserves image fact-reference checks after album reconciliation. Prompt
+17 combines the image provenance contract with explicit target/context roles and the stricter
+publication guard for unsupported fallback cards. An explicit terse
+cancellation may bypass the minimum-new-words check only when it directly replies to a persisted
+source of the same item. Thanks and unlinked terse cancellation remain held; this is a constrained
+mutation guard, not a general chat classifier.

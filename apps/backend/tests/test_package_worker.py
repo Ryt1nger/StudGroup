@@ -5,6 +5,7 @@ import json
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_analysis_shadow import context_payload, proposal
@@ -1106,3 +1107,32 @@ def test_a_visible_update_is_reported_with_the_card_title_and_the_changed_fields
     found = asyncio.run(run())
     # revision 2 changed only technical fields and is dropped; revision 3 changed two visible ones
     assert found == [("updated", "Решить задачи 1–3", ["описание", "срок"])]
+
+
+@pytest.mark.parametrize(
+    ("text", "reply", "expected"),
+    [("Отмена!", 31, "cancelled"), ("Спасибо!", 31, "active"), ("Отмена!", None, "active")],
+)
+def test_terse_cancellation_requires_explicit_intent_and_item_reply(client, text, reply, expected):
+    source(client, mid=31, text="По математике решить задачи 1–3", when=BASE)
+    make_new(client)
+    assert step(client, PackageProvider(cited=(31,))) == "completed"
+    source(client, mid=32, reply=reply, text=text, when=BASE + timedelta(minutes=20))
+
+    class CancelProvider(PackageProvider):
+        async def complete(self, request):
+            result = await super().complete(request)
+            if request.prompt_version.startswith("cplus-extraction"):
+                payload = json.loads(result.content)
+                payload["proposals"][0]["action"] = "cancel"
+                payload["proposals"][0]["description"] = "Решить задачи 1–3."
+                result.content = json.dumps(payload)
+            return result
+
+    assert step(client, CancelProvider(cited=(31, 32), update_existing=True)) == "completed"
+
+    async def inspect():
+        async with AsyncSession(client.app.state.engine) as db:
+            return (await db.scalar(select(CanonicalAcademicItem))).state
+
+    assert asyncio.run(inspect()) == expected

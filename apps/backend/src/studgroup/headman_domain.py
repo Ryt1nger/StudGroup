@@ -84,12 +84,18 @@ FIELDS = {
         "valid_until",
         "week",
         "teacher",
+        "subgroup_id",
         "location",
         "online_url",
         "cancelled",
         "revision",
     ],
     "x": [
+        "subject",
+        "teacher",
+        "subgroup_id",
+        "subgroup_overridden",
+        "teacher_overridden",
         "pattern_id",
         "occurrence_date",
         "starts_at",
@@ -629,6 +635,8 @@ async def undo(db, group, user, member, audit_id):
                 pattern.online_url,
                 False,
             )
+            row.subject, row.teacher, row.subgroup_id = None, None, None
+            row.teacher_overridden = row.subgroup_overridden = False
         elif kind == "p":
             row.cancelled = True
         row.revision += 1

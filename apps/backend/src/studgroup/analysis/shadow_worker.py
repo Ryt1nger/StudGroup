@@ -67,7 +67,9 @@ async def purge_expired_shadow_runs(engine, now=None):
         from studgroup.models import ImageAnalysisJob, ImageScheduleSuggestion
 
         await purge_events(db, now)
-        await db.execute(delete(ImageScheduleSuggestion).where(ImageScheduleSuggestion.delete_at <= now))
+        await db.execute(
+            delete(ImageScheduleSuggestion).where(ImageScheduleSuggestion.delete_at <= now)
+        )
         await db.execute(delete(ImageAnalysisJob).where(ImageAnalysisJob.delete_at <= now))
         await db.commit()
         return result.rowcount or 0
@@ -123,27 +125,54 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
         from studgroup.analysis.contracts import SourceAttachment
         from studgroup.models import MessageAttachment
 
-        saved_attachments = (await db.scalars(select(MessageAttachment).where(
-            MessageAttachment.group_id == group.id,
-            MessageAttachment.raw_message_id.in_([row.id for row in raws]),
-            MessageAttachment.active.is_(True), MessageAttachment.delete_at > now,
-        ))).all()
+        saved_attachments = (
+            await db.scalars(
+                select(MessageAttachment).where(
+                    MessageAttachment.group_id == group.id,
+                    MessageAttachment.raw_message_id.in_([row.id for row in raws]),
+                    MessageAttachment.active.is_(True),
+                    MessageAttachment.delete_at > now,
+                )
+            )
+        ).all()
         raw_by_message = {row.telegram_message_id: row.id for row in raws}
-        messages = [message.model_copy(update={"attachments": [SourceAttachment(
-            attachment_id=attachment.id, kind=attachment.kind, mime_type=attachment.mime_type,
-            size_bytes=attachment.size_bytes, media_group_id=attachment.media_group_id,
-            processing_state=attachment.processing_state, file_name=(attachment.file_name or "")[:255] or None,
-            width=attachment.width, height=attachment.height,
-        ) for attachment in saved_attachments
-            if attachment.raw_message_id == raw_by_message[message.telegram_message_id]]}) for message in messages]
+        messages = [
+            message.model_copy(
+                update={
+                    "attachments": [
+                        SourceAttachment(
+                            attachment_id=attachment.id,
+                            kind=attachment.kind,
+                            mime_type=attachment.mime_type,
+                            size_bytes=attachment.size_bytes,
+                            media_group_id=attachment.media_group_id,
+                            processing_state=attachment.processing_state,
+                            file_name=(attachment.file_name or "")[:255] or None,
+                            width=attachment.width,
+                            height=attachment.height,
+                        )
+                        for attachment in saved_attachments
+                        if attachment.raw_message_id == raw_by_message[message.telegram_message_id]
+                    ]
+                }
+            )
+            for message in messages
+        ]
     if images:
         from studgroup.analysis.image_evidence import display_metadata
 
         metadata = await display_metadata(db, group.id, images)
-        messages = [message.model_copy(update={"attachments": [
-            attachment.model_copy(update=metadata.get(attachment.attachment_id, {}))
-            for attachment in message.attachments
-        ]}) for message in messages]
+        messages = [
+            message.model_copy(
+                update={
+                    "attachments": [
+                        attachment.model_copy(update=metadata.get(attachment.attachment_id, {}))
+                        for attachment in message.attachments
+                    ]
+                }
+            )
+            for message in messages
+        ]
     facts = (
         await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
     ).all()
@@ -423,11 +452,19 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
                 ShadowEvaluationRun.id != row.id,
             )
         )
-        image_day = await db.scalar(select(func.coalesce(func.sum(
-            ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd), 0)).where(
-                ImageAnalysisCall.group_id == row.group_id, ImageAnalysisCall.created_at >= day_start,
-            ))
-        committed = Decimal(charged or 0) + Decimal(reserved_elsewhere or 0) + Decimal(image_day or 0)
+        image_day = await db.scalar(
+            select(
+                func.coalesce(
+                    func.sum(ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd), 0
+                )
+            ).where(
+                ImageAnalysisCall.group_id == row.group_id,
+                ImageAnalysisCall.created_at >= day_start,
+            )
+        )
+        committed = (
+            Decimal(charged or 0) + Decimal(reserved_elsewhere or 0) + Decimal(image_day or 0)
+        )
         if committed + SHADOW_RESERVATION_USD > Decimal(route_row.shadow_daily_budget_usd):
             row.state = "budget_deferred"
             row.last_error = "shadow_budget_exhausted"
@@ -453,13 +490,19 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
                     ShadowEvaluationRun.id != row.id,
                 )
             )
-            image_hour = await db.scalar(select(func.coalesce(func.sum(
-                ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd), 0)).where(
-                    ImageAnalysisCall.group_id == row.group_id, ImageAnalysisCall.created_at >= hour_start,
-                ))
-            if Decimal(hour_charged or 0) + Decimal(
-                hour_reserved or 0
-            ) + Decimal(image_hour or 0) + SHADOW_RESERVATION_USD > Decimal(hourly_cap):
+            image_hour = await db.scalar(
+                select(
+                    func.coalesce(
+                        func.sum(ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd), 0
+                    )
+                ).where(
+                    ImageAnalysisCall.group_id == row.group_id,
+                    ImageAnalysisCall.created_at >= hour_start,
+                )
+            )
+            if Decimal(hour_charged or 0) + Decimal(hour_reserved or 0) + Decimal(
+                image_hour or 0
+            ) + SHADOW_RESERVATION_USD > Decimal(hourly_cap):
                 row.state = "budget_deferred"
                 row.last_error = "shadow_hourly_budget_exhausted"
                 row.available_at = _utc(now) + timedelta(minutes=10)

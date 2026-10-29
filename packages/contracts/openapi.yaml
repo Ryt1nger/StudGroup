@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.18.0
+  version: 0.19.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -19,6 +19,18 @@ tags:
   - name: Staff
     description: Headman/deputy cabinet. Every route re-checks the active membership role.
 paths:
+  /group-events:
+    $ref: "./image-findings.openapi.yaml#/paths/~1group-events"
+  /group-events/{id}:
+    $ref: "./image-findings.openapi.yaml#/paths/~1group-events~1{id}"
+  /staff/image-findings/events:
+    $ref: "./image-findings.openapi.yaml#/paths/~1staff~1image-findings~1events"
+  /staff/image-findings/events/{id}:
+    $ref: "./image-findings.openapi.yaml#/paths/~1staff~1image-findings~1events~1{id}"
+  /staff/image-findings/schedule:
+    $ref: "./image-findings.openapi.yaml#/paths/~1staff~1image-findings~1schedule"
+  /staff/image-findings/schedule/{id}/confirm:
+    $ref: "./image-findings.openapi.yaml#/paths/~1staff~1image-findings~1schedule~1{id}~1confirm"
   /notifications:
     get:
       operationId: listNotifications
@@ -1738,6 +1750,10 @@ components:
       properties:
         id: { type: string }
         subject: { type: string }
+        subgroup_id:
+          type: [string, "null"]
+          format: uuid
+          description: Optional confirmed subgroup; absent on existing group-wide lessons.
         starts_at: { type: string, format: date-time }
         ends_at: { type: string, format: date-time }
         teacher: { type: [string, "null"] }
@@ -1799,6 +1815,20 @@ components:
           uniqueItems: true
           items:
             $ref: "#/components/schemas/Permission"
+        features:
+          type: object
+          additionalProperties: false
+          description: Optional per-group capabilities; absent fields mean disabled on older servers. Every endpoint still checks its own flag and permissions.
+          properties:
+            events:
+              type: boolean
+              default: false
+            event_review:
+              type: boolean
+              default: false
+            schedule_review:
+              type: boolean
+              default: false
         server_time:
           type: string
           format: date-time

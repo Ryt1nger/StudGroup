@@ -758,10 +758,12 @@ Updated 2026-10-27 against the 2026-10-26 `origin/main` baseline `dbc5963`. This
 existing C+ implementation, not a new engine or architecture rewrite. The earlier PR sequence
 above records the foundation; this section is the current image-quality delivery sequence.
 See [stage-0 evidence](ai-analysis-integration-report.md). Owner agreement at the stage-0 gate
-was accepted on 2026-10-26. Safe technical implementation of stages 1a–6 is complete; stage 7
-has offline evaluation/rollout tooling. Real-provider measurement and production/public API
-activation remain separately blocked. See the living integration report for per-stage commits,
-checks, limitations and OWNER_DECISIONS_REQUIRED.
+was accepted on 2026-10-26. Technical implementation of stages 1a–6 is complete. Owner decisions
+of 2026-10-27 added independent event retention and explicit editor corrections. Stage 7 now
+includes an authorized real-provider run on all 16 synthetic PNGs and all 11 C+ scenarios.
+See the living integration report and recorded observations for results, all calls and costs.
+Real-group shadow, deployment and public activation remain unapproved. Synthetic success does
+not prove handwriting, complex tables or real-group quality; display selection remains conservative.
 
 Each numbered step is a separate reviewable change, with its own acceptance checklist. Split
 steps 1, 2 and 5 into schema/contracts first and behaviour second where needed. Do not combine

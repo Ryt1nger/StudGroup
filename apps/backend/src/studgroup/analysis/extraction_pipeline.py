@@ -97,6 +97,18 @@ def _mutation_has_target_novelty(proposal, analysis_input, existing_item_snapsho
         for part in [by_id[message_id].text, *by_id[message_id].image_facts]
         if part
     ).strip()
+    # A terse cancellation contains no new exercise/date and must not depend on word count.
+    # Require both explicit cancellation and a direct reply to this item's persisted source.
+    # "Thanks" replying to a card cannot stand in for cancellation evidence.
+    if proposal.action == "cancel" and any(
+        by_id[message_id].reply_to_message_id in set(snapshot.get("source_message_ids", []))
+        and re.fullmatch(
+            r"(?:отмена|отменено|отменяется|не надо(?: делать)?|делать не надо)[.!\s]*",
+            normalized(by_id[message_id].text),
+        )
+        for message_id in cited_targets
+    ):
+        return True
     if not supplement_adds_information(known, target_text):
         return False
     if proposal.action in {"cancel", "reschedule"}:
@@ -192,17 +204,29 @@ def validate_single(
 
     image_problem = proposal_image_problem(proposal, analysis_input)
     if image_problem:
-        return None, RejectedItem(proposal_ordinal=ordinal, reason_code=image_problem), False, adapted.actions
+        return (
+            None,
+            RejectedItem(proposal_ordinal=ordinal, reason_code=image_problem),
+            False,
+            adapted.actions,
+        )
     if analysis_input.image_evidence:
         # Persist provenance of the explicitly activated semantic path. Student display must
         # never change just because shadow jobs happen to exist for an older published card.
         first = proposal.evidence[0]
         paths = list(dict.fromkeys([*first.fact_paths, "image_analysis"]))
         if len(paths) > 20:
-            return None, RejectedItem(proposal_ordinal=ordinal, reason_code="image_evidence_overflow"), False, adapted.actions
-        proposal = proposal.model_copy(update={"evidence": [
-            first.model_copy(update={"fact_paths": paths}), *proposal.evidence[1:]
-        ]})
+            return (
+                None,
+                RejectedItem(proposal_ordinal=ordinal, reason_code="image_evidence_overflow"),
+                False,
+                adapted.actions,
+            )
+        proposal = proposal.model_copy(
+            update={
+                "evidence": [first.model_copy(update={"fact_paths": paths}), *proposal.evidence[1:]]
+            }
+        )
     return proposal, None, False, adapted.actions
 
 
@@ -336,4 +360,29 @@ def adapt_and_validate(
         candidates=held,
     )
     result = reconcile_validation(result, analysis_input.messages)
+    if analysis_input.image_evidence:
+        # Reconciliation can add album sources. Recheck the final sources before publication.
+        from studgroup.analysis.image_evidence import proposal_image_problem
+
+        kept, kept_ordinals = [], []
+        rejected_after = list(result.rejected)
+        held_after = list(result.candidates)
+        for ordinal, proposal in zip(result.accepted_ordinals, result.accepted):
+            problem = proposal_image_problem(proposal, analysis_input)
+            if problem is None:
+                kept.append(proposal)
+                kept_ordinals.append(ordinal)
+                continue
+            rejected_after.append(RejectedItem(proposal_ordinal=ordinal, reason_code=problem))
+            item = salvage_rejected(ordinal, raw[ordinal], problem, [], analysis_input, actions)
+            if item is not None:
+                held_after.append(item)
+        result = result.model_copy(
+            update={
+                "accepted": kept,
+                "accepted_ordinals": kept_ordinals,
+                "rejected": rejected_after,
+                "candidates": held_after[:MAX_CANDIDATES],
+            }
+        )
     return AdaptedValidation(result, candidates)

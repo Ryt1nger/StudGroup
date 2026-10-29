@@ -38,3 +38,7 @@ apps/backend/tests/fixtures/ai_analysis/private/
 
 # Local frontend review captures
 Claude outputs/
+
+# Generated local browser verification output
+apps/frontend/test-results/
+apps/frontend/playwright-report/

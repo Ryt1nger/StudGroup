@@ -96,12 +96,22 @@ def derive_materials(cited, messages, chat_id, required_ids=None):
     confirmed, candidates, seen = [], [], set()
     from studgroup.photo_dedupe import select_evidence_images
 
-    eligible = [row for row in messages if row.telegram_message_id in cited_ids
-                or row.reply_to_message_id in cited_ids
-                or any(a.media_group_id in albums for a in row.attachments if a.media_group_id)]
-    metadata = [attachment.model_dump(mode="python") for row in eligible for attachment in row.attachments]
+    eligible = [
+        row
+        for row in messages
+        if row.telegram_message_id in cited_ids
+        or row.reply_to_message_id in cited_ids
+        or any(a.media_group_id in albums for a in row.attachments if a.media_group_id)
+    ]
+    metadata = [
+        attachment.model_dump(mode="python") for row in eligible for attachment in row.attachments
+    ]
     selected = select_evidence_images(metadata, required_ids)
-    selected_ids = {str(item["attachment_id"]) for item in selected if item.get("image_analysis_state") is not None}
+    selected_ids = {
+        str(item["attachment_id"])
+        for item in selected
+        if item.get("image_analysis_state") is not None
+    }
     has_structured = any(item.get("image_analysis_state") is not None for item in metadata)
 
     def add(target, item):
@@ -119,11 +129,20 @@ def derive_materials(cited, messages, chat_id, required_ids=None):
         elif albums and any(a.media_group_id in albums for a in row.attachments):
             via = "album"
         if via:
-            selected_row = row.model_copy(update={"attachments": [
-                attachment for attachment in row.attachments
-                if attachment.image_analysis_state is None
-                or str(attachment.attachment_id) in selected_ids
-            ]}) if has_structured else row
+            selected_row = (
+                row.model_copy(
+                    update={
+                        "attachments": [
+                            attachment
+                            for attachment in row.attachments
+                            if attachment.image_analysis_state is None
+                            or str(attachment.attachment_id) in selected_ids
+                        ]
+                    }
+                )
+                if has_structured
+                else row
+            )
             for item in _from_message(selected_row, chat_id, via, required_ids):
                 add(confirmed, item)
     nearby = []

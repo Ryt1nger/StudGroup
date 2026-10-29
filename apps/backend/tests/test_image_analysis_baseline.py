@@ -30,8 +30,14 @@ pytest_plugins = ["test_schedule_api"]
 
 def attachment(ident, text):
     return SimpleNamespace(
-        id=ident, kind="photo", processing_state="ready", photo_text=text,
-        photo_summary="", width=1000, height=800, size_bytes=100,
+        id=ident,
+        kind="photo",
+        processing_state="ready",
+        photo_text=text,
+        photo_summary="",
+        width=1000,
+        height=800,
+        size_bytes=100,
     )
 
 
@@ -105,8 +111,7 @@ def test_baseline_three_crops_lose_unique_facts_before_semantic_analysis(client,
 def test_baseline_reading_and_enrichment_silently_truncate_content():
     assert len(parse_reading(reading(text="я" * 2600))[2]) == 2500
     items = [
-        {"kind": "photo", "processing_state": "ready", "photo_text": "я" * 2500}
-        for _ in range(6)
+        {"kind": "photo", "processing_state": "ready", "photo_text": "я" * 2500} for _ in range(6)
     ]
     assert len(enriched_text("", items)) == 12000
 

@@ -9,8 +9,16 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 IMAGE_VERSION = "image-analysis-1"
 ImageState = Literal["pending", "running", "retry", "budget_deferred", "ready", "failed", "stale"]
 SemanticType = Literal[
-    "homework", "in_class_task", "material", "schedule", "schedule_change",
-    "event", "assessment", "organizational", "irrelevant", "unknown",
+    "homework",
+    "in_class_task",
+    "material",
+    "schedule",
+    "schedule_change",
+    "event",
+    "assessment",
+    "organizational",
+    "irrelevant",
+    "unknown",
 ]
 
 
@@ -56,6 +64,10 @@ class ImageEvent(ImageDTO):
     description: str = Field(default="", max_length=8000)
     when_text: str | None = Field(default=None, max_length=1000)
     starts_at: AwareDatetime | None = None
+    ends_at: AwareDatetime | None = None
+    starts_on: date | None = None
+    ends_on: date | None = None
+    multi_day: bool = False
     place: str | None = Field(default=None, max_length=500)
     conditions: str | None = Field(default=None, max_length=2000)
     audience: Literal["group", "subgroup", "personal", "unknown"] = "unknown"
@@ -66,6 +78,10 @@ class ImageEvent(ImageDTO):
 
     @model_validator(mode="after")
     def identity(self):
+        if self.starts_at and self.ends_at and self.ends_at < self.starts_at:
+            raise ValueError("event_end_before_start")
+        if self.starts_on and self.ends_on and self.ends_on < self.starts_on:
+            raise ValueError("event_end_before_start")
         if self.action != "create" and (
             self.existing_event_id is None or self.expected_revision is None
         ):
@@ -102,7 +118,6 @@ class ImageEvidence(ImageDTO):
     reading: VisualReading | None = None
     error: str | None = Field(default=None, max_length=100)
 
-
     @model_validator(mode="after")
     def ready_requires_complete_reading(self):
         if self.state == "ready" and (self.reading is None or not self.reading.complete):
@@ -110,3 +125,19 @@ class ImageEvidence(ImageDTO):
         if self.state != "ready" and self.reading is not None:
             raise ValueError("unfinished_image_cannot_confirm_facts")
         return self
+
+
+def fact_reference_index(evidence):
+    """Copyable exact references; no inference or change to stored facts."""
+    return [
+        {
+            "reference": f"image:{image.attachment_id}:{index}",
+            "telegram_message_id": image.telegram_message_id,
+            "revision": image.source_revision,
+            "text": fact.text,
+        }
+        for image in evidence
+        if image.state == "ready" and image.reading
+        for index, fact in enumerate(image.reading.facts)
+        if fact.certainty == "confirmed"
+    ]

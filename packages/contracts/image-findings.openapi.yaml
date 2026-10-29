@@ -1,10 +1,9 @@
 openapi: 3.1.0
 info:
   title: StudGroup image findings review (pilot, disabled by default)
-  version: 0.1.0
-  description: >-
-    Additive draft backend contract. Requires explicit group allowlist and review feature flags.
-    Frontend integration and public social-event publication await owner approval.
+  version: 0.3.1
+  description: Additive Core v2 contract for persisted events and editor-confirmed image findings. Group
+    allowlist and independent feature flags are required. Reads and manual mutations never invoke AI.
 servers:
   - url: https://api.studgroup.example/v1
 security:
@@ -14,22 +13,55 @@ paths:
     get:
       operationId: imageAnalysisDiagnostics
       responses:
-        '200': {description: Latest 200 group-local job statuses, sanitized errors, usage, conservative cost and latency; never source pixels or raw reading text}
-        '403': {description: Headman/deputy membership required}
-        '404': {description: Diagnostics flag or group allowlist disabled}
+        "200":
+          description: Latest 200 group-local job statuses, sanitized errors, usage, conservative cost and latency;
+            never source pixels or raw reading text.
+        "403":
+          description: Headman/deputy membership required
+        "404":
+          description: Diagnostics flag or group allowlist disabled
   /staff/image-findings/schedule:
     get:
       operationId: listImageScheduleSuggestions
       description: Headman/deputy only; returns retained group-local draft rows and source schedule version.
       responses:
-        '200': {description: 'suggestions array: id, revision, state, schedule_version, rows'}
-        '403': {description: Membership role disallows review}
-        '404': {description: Feature disabled or not allowlisted}
+        "200":
+          description: "suggestions array: id, revision, state, schedule_version, rows"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - suggestions
+                properties:
+                  suggestions:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: "#/components/schemas/ScheduleSuggestion"
+                  current_schedule_version:
+                    type: integer
+                    minimum: 0
+                    description: Current official version, separately from the version captured in each suggestion.
+                  subgroups:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ReviewSubgroup"
+        "403":
+          description: Membership role disallows review
+        "404":
+          description: Feature disabled or not allowlisted
   /staff/image-findings/schedule/{id}/confirm:
     post:
       operationId: confirmImageScheduleSuggestion
       parameters:
-        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -37,38 +69,110 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [expected_revision, expected_schedule_version]
+              required:
+                - expected_revision
+                - expected_schedule_version
               properties:
-                expected_revision: {type: integer, minimum: 1}
-                expected_schedule_version: {type: integer, minimum: 0}
+                expected_revision:
+                  type: integer
+                  minimum: 1
+                expected_schedule_version:
+                  type: integer
+                  minimum: 0
+                corrected_rows:
+                  description: Optional editor-corrected full rows; preserve AI rows separately for audit. Each subgroup_id must
+                    belong to this group and subject.
+                  type:
+                    - array
+                    - "null"
+                  maxItems: 100
+                  items:
+                    $ref: "#/components/schemas/ConfirmedScheduleRow"
                 targets:
                   type: array
                   items:
                     type: object
-                    required: [row_index, lesson_id, pattern_revision, override_revision]
+                    required:
+                      - row_index
+                      - lesson_id
+                      - pattern_revision
+                      - override_revision
                     properties:
-                      row_index: {type: integer, minimum: 0}
-                      lesson_id: {type: string}
-                      pattern_revision: {type: integer, minimum: 1}
-                      override_revision: {type: integer, minimum: 0}
-                      scope: {type: string, enum: [once, recurring], default: once}
+                      row_index:
+                        type: integer
+                        minimum: 0
+                      lesson_id:
+                        type: string
+                      pattern_revision:
+                        type: integer
+                        minimum: 1
+                      override_revision:
+                        type: integer
+                        minimum: 0
+                      scope:
+                        type: string
+                        enum:
+                          - once
+                          - recurring
+                        default: once
+                acknowledge_schedule_change:
+                  type: boolean
+                  default: false
+                  description: Explicit editor re-review after an official schedule change; requires corrected_rows and the
+                    current expected_schedule_version. Does not run AI.
       responses:
-        '200': {description: Confirmed schedule_version; repeated confirmation has no repeated side effects}
-        '403': {description: Membership role disallows confirmation}
-        '404': {description: Not found or feature disabled}
-        '409': {description: 'Stale source/context/revision, missing dates or unresolved subgroup/lesson mapping'}
+        "200":
+          description: Confirmed schedule_version; repeated confirmation has no repeated side effects
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - schedule_version
+                properties:
+                  schedule_version:
+                    type: integer
+                    minimum: 0
+        "403":
+          description: Membership role disallows confirmation
+        "404":
+          description: Not found or feature disabled
+        "409":
+          description: Stale source/context/revision, missing dates or unresolved subgroup/lesson mapping
   /staff/image-findings/events:
     get:
       operationId: listImageEventDrafts
       responses:
-        '200': {description: Retained group events with revisions and applied/held source findings; staff only}
-        '403': {description: Membership role disallows review}
-        '404': {description: Review flag disabled}
+        "200":
+          description: Retained group events with revisions and applied/held source findings; staff only
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - events
+                properties:
+                  events:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: "#/components/schemas/EventReview"
+        "403":
+          description: Membership role disallows review
+        "404":
+          description: Review flag disabled
   /staff/image-findings/events/{id}:
     put:
       operationId: reviewImageEvent
       parameters:
-        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -76,49 +180,765 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [expected_revision, payload]
+              required:
+                - expected_revision
+                - payload
               properties:
-                expected_revision: {type: integer, minimum: 1}
-                state: {type: string, enum: [draft, active, cancelled], default: draft}
-                accept_source_ids: {type: array, items: {type: string, format: uuid}}
-                payload: {$ref: '#/components/schemas/EventPayload'}
+                expected_revision:
+                  type: integer
+                  minimum: 1
+                state:
+                  type: string
+                  enum:
+                    - draft
+                    - active
+                    - cancelled
+                  default: draft
+                accept_source_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                payload:
+                  $ref: "#/components/schemas/EventPayload"
       responses:
-        '200': {description: Updated event and revision; manual lock is retained}
-        '403': {description: Staff membership required}
-        '404': {description: Event not found or activation/publication flag disabled}
-        '409': {description: Stale revision/source or event is not publishable}
+        "200":
+          description: Updated event and revision; manual lock is retained
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffEvent"
+        "403":
+          description: Staff membership required
+        "404":
+          description: Event not found or activation/publication flag disabled
+        "409":
+          description: Stale revision/source or event is not publishable
   /group-events:
     get:
       operationId: listPublishedGroupEvents
       responses:
-        '200': {description: Only future active group-audience events with current retained sources}
-        '401': {description: Active authenticated membership required}
-        '404': {description: Publication disabled}
+        "200":
+          description: Approved active group events retained through local end date + 7 days inclusive; private source
+            expiry never removes the approved record
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - events
+                properties:
+                  events:
+                    type: array
+                    maxItems: 200
+                    items:
+                      $ref: "#/components/schemas/PublishedEvent"
+        "401":
+          description: Active authenticated membership required
+        "404":
+          description: Publication disabled
+      parameters:
+        - in: query
+          name: start
+          schema:
+            type: string
+            format: date
+          description: Inclusive first group-local calendar day. Requires end; at most 366 days.
+        - in: query
+          name: end
+          schema:
+            type: string
+            format: date
+          description: Inclusive last group-local day. Multi-day events overlap the requested interval.
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum:
+              - active
+              - cancelled
+              - all
+            default: active
+        - in: query
+          name: upcoming
+          schema:
+            type: boolean
+            default: false
+          description: Exclude ended events using group timezone; ongoing events remain visible.
   /group-events/{id}:
     get:
       operationId: getPublishedGroupEvent
       parameters:
-        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
-        '200': {description: Published event payload with id/revision/state}
-        '404': {description: Private, unknown, expired, cancelled, stale, wrong group or feature disabled}
+        "200":
+          description: Published event payload with id/revision/state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishedEvent"
+        "404":
+          description: Unknown, private, unapproved, expired, wrong group or feature disabled. Retained cancelled events
+            remain accessible by ID.
 components:
   schemas:
+    ConfirmedScheduleRow:
+      type: object
+      additionalProperties: false
+      required:
+        - weekday
+        - starts
+        - ends
+        - subject
+        - valid_from
+        - valid_until
+      properties:
+        weekday:
+          type: integer
+          minimum: 0
+          maximum: 6
+        starts:
+          type: string
+          format: time
+        ends:
+          type: string
+          format: time
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 255
+        subject_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        subgroup:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        subgroup_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        week:
+          type: string
+          enum:
+            - all
+            - first
+            - second
+          default: all
+        valid_from:
+          type: string
+          format: date
+        valid_until:
+          type: string
+          format: date
+        room:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        teacher:
+          type:
+            - string
+            - "null"
+          maxLength: 255
     EventPayload:
       type: object
       additionalProperties: false
-      required: [title]
+      required:
+        - title
       properties:
-        title: {type: string, minLength: 1, maxLength: 255}
-        description: {type: string, maxLength: 8000, default: ''}
-        when_text: {type: [string, 'null'], maxLength: 1000}
-        starts_at: {type: [string, 'null'], format: date-time}
-        place: {type: [string, 'null'], maxLength: 500}
-        conditions: {type: [string, 'null'], maxLength: 2000}
-        audience: {type: string, enum: [group, subgroup, personal, unknown], default: unknown}
-        audience_label: {type: [string, 'null'], maxLength: 255}
-        action: {type: string, enum: [create, update, cancel], default: create}
-        existing_event_id: {type: [string, 'null'], format: uuid}
-        expected_revision: {type: [integer, 'null'], minimum: 1}
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 8000
+          default: ""
+        when_text:
+          type:
+            - string
+            - "null"
+          maxLength: 1000
+        starts_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        ends_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        starts_on:
+          type:
+            - string
+            - "null"
+          format: date
+        ends_on:
+          type:
+            - string
+            - "null"
+          format: date
+        multi_day:
+          type: boolean
+          default: false
+        place:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+        conditions:
+          type:
+            - string
+            - "null"
+          maxLength: 2000
+        audience:
+          type: string
+          enum:
+            - group
+            - subgroup
+            - personal
+            - unknown
+          default: unknown
+        audience_label:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        action:
+          type: string
+          enum:
+            - create
+            - update
+            - cancel
+          default: create
+        existing_event_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        expected_revision:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+    PublishedEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - revision
+        - state
+        - title
+        - retained_until
+        - source_availability
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+        state:
+          type: string
+          enum:
+            - active
+            - cancelled
+        retained_until:
+          type: string
+          format: date-time
+          description: "Exclusive deletion instant: midnight after the seventh local day following event end."
+        source_availability:
+          type: string
+          enum:
+            - available
+            - expired
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 8000
+          default: ""
+        when_text:
+          type:
+            - string
+            - "null"
+          maxLength: 1000
+        starts_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        ends_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        starts_on:
+          type:
+            - string
+            - "null"
+          format: date
+        ends_on:
+          type:
+            - string
+            - "null"
+          format: date
+        multi_day:
+          type: boolean
+          default: false
+        place:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+        conditions:
+          type:
+            - string
+            - "null"
+          maxLength: 2000
+        audience:
+          type: string
+          enum:
+            - group
+            - subgroup
+            - personal
+            - unknown
+          default: unknown
+        audience_label:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        source_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Retained same-group Telegram source only; null after source expiry or revision mismatch.
+        rescheduled:
+          type: boolean
+          default: false
+          description: An approved historical revision has different confirmed dates.
+    StaffEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - revision
+        - state
+        - title
+        - retained_until
+        - source_availability
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+        state:
+          type: string
+          enum:
+            - draft
+            - active
+            - cancelled
+        retained_until:
+          type: string
+          format: date-time
+          description: "Exclusive deletion instant: midnight after the seventh local day following event end."
+        source_availability:
+          type:
+            - string
+            - "null"
+          enum:
+            - available
+            - expired
+            - null
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 8000
+          default: ""
+        when_text:
+          type:
+            - string
+            - "null"
+          maxLength: 1000
+        starts_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        ends_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        starts_on:
+          type:
+            - string
+            - "null"
+          format: date
+        ends_on:
+          type:
+            - string
+            - "null"
+          format: date
+        multi_day:
+          type: boolean
+          default: false
+        place:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+        conditions:
+          type:
+            - string
+            - "null"
+          maxLength: 2000
+        audience:
+          type: string
+          enum:
+            - group
+            - subgroup
+            - personal
+            - unknown
+          default: unknown
+        audience_label:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        source_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Retained same-group Telegram source only; null after source expiry or revision mismatch.
+        rescheduled:
+          type: boolean
+          default: false
+          description: An approved historical revision has different confirmed dates.
+    EventFinding:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - state
+        - payload
+        - source_revision
+      properties:
+        id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum:
+            - applied
+            - held
+            - superseded
+        payload:
+          $ref: "#/components/schemas/EventPayload"
+        source_revision:
+          type: integer
+          minimum: 1
+        source_url:
+          type:
+            - string
+            - "null"
+          format: uri
+    EventReview:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - revision
+        - state
+        - title
+        - retained_until
+        - source_availability
+        - manual_lock
+        - findings
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+        state:
+          type: string
+          enum:
+            - draft
+            - active
+            - cancelled
+        retained_until:
+          type: string
+          format: date-time
+          description: "Exclusive deletion instant: midnight after the seventh local day following event end."
+        source_availability:
+          type:
+            - string
+            - "null"
+          enum:
+            - available
+            - expired
+            - null
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 8000
+          default: ""
+        when_text:
+          type:
+            - string
+            - "null"
+          maxLength: 1000
+        starts_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        ends_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        starts_on:
+          type:
+            - string
+            - "null"
+          format: date
+        ends_on:
+          type:
+            - string
+            - "null"
+          format: date
+        multi_day:
+          type: boolean
+          default: false
+        place:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+        conditions:
+          type:
+            - string
+            - "null"
+          maxLength: 2000
+        audience:
+          type: string
+          enum:
+            - group
+            - subgroup
+            - personal
+            - unknown
+          default: unknown
+        audience_label:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        manual_lock:
+          type: boolean
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventFinding"
+        source_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Retained same-group Telegram source only; null after source expiry or revision mismatch.
+        rescheduled:
+          type: boolean
+          default: false
+          description: An approved historical revision has different confirmed dates.
+    RecognizedScheduleRow:
+      type: object
+      additionalProperties: false
+      required:
+        - weekday
+        - starts
+        - ends
+        - subject
+      properties:
+        weekday:
+          type: integer
+          minimum: 0
+          maximum: 6
+        starts:
+          type: string
+          format: time
+        ends:
+          type: string
+          format: time
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 255
+        subgroup:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        week:
+          type: string
+          enum:
+            - all
+            - first
+            - second
+          default: all
+        valid_from:
+          type:
+            - string
+            - "null"
+          format: date
+        valid_until:
+          type:
+            - string
+            - "null"
+          format: date
+        room:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+        teacher:
+          type:
+            - string
+            - "null"
+          maxLength: 255
+    ScheduleConfirmationRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - rows
+        - targets
+        - schedule_version_before
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfirmedScheduleRow"
+        targets:
+          type: array
+          items:
+            type: object
+            required:
+              - row_index
+              - lesson_id
+              - pattern_revision
+              - override_revision
+            properties:
+              row_index:
+                type: integer
+                minimum: 0
+              lesson_id:
+                type: string
+              pattern_revision:
+                type: integer
+                minimum: 1
+              override_revision:
+                type: integer
+                minimum: 0
+              scope:
+                type: string
+                enum:
+                  - once
+                  - recurring
+                default: once
+        schedule_version_before:
+          type: integer
+          minimum: 0
+        source_schedule_version:
+          type: integer
+          minimum: 0
+        acknowledged_schedule_change:
+          type: boolean
+    ScheduleSuggestion:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - revision
+        - state
+        - schedule_version
+        - rows
+        - confirmation
+      properties:
+        id:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+        state:
+          type: string
+          enum:
+            - pending
+            - confirmed
+        schedule_version:
+          type: integer
+          minimum: 0
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecognizedScheduleRow"
+        confirmation:
+          anyOf:
+            - $ref: "#/components/schemas/ScheduleConfirmationRecord"
+            - type: "null"
+        source_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Current retained same-group Telegram source; absent after source expiry or revision change.
+    ReviewSubgroup:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - subject_id
+        - subject
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+        subject_id:
+          type: string
+          format: uuid
+        subject:
+          type: string
+        name:
+          type: string
+          maxLength: 80
   securitySchemes:
-    bearerAuth: {type: http, scheme: bearer}
+    bearerAuth:
+      type: http
+      scheme: bearer

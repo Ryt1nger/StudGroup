@@ -493,3 +493,33 @@ PostgreSQL database before deployment. The draft additive API is
 `packages/contracts/image-findings.openapi.yaml`; frontend adoption, event retention and subgroup
 mapping require owner coordination. See the living integration report for completed gates and
 `OWNER_DECISIONS_REQUIRED`.
+
+Owner decisions 2026-10-27: approved structured events survive private-source expiry and are
+retained through the event's local end date plus seven full calendar days. Drafts remain bounded
+by source retention. Missing dates or a multi-day event without an end prevent publication.
+Expired private-source links are unavailable; approved events never preserve copied raw chat.
+Schedule confirmation accepts optional corrected_rows and explicit subgroup/lesson mapping;
+AI rows remain immutable. Migration 0044 and the additive LessonOccurrence.subgroup_id field
+support the pending frontend integration. No public/review flags are activated by these changes.
+
+The owner-authorized synthetic-only provider check is `tools/synthetic_vision_check.py`.
+It accepts only the committed 16 PNG hashes, never opens the production database, and shares
+one durable USD 2 ledger across restarts. Run with `--out /absolute/private-ledger.json`.
+No automatic paid retries occur. Unknown outcomes retain their full reservation; default
+execution holds an identical request. An explicitly reviewed synthetic-only retest may use
+`--retest-ambiguous` within that same ledger and cap, retaining all unknown reservations.
+That option is not part of the production image worker and never relaxes its ambiguous-call hold.
+The local check uses HTTP/2 with certificate verification after transient handshake failures; production transport
+is unchanged. Raw responses contain only synthetic fixture content; never use this runner with
+student photos or private chats. A new output path must not be used to reset the authorized cap.
+
+
+The authorized 2026-10-27 run is complete. Recorded synthetic responses, every attempted call,
+usage, held unknown charges and final C+ output are in
+`tests/fixtures/ai_analysis/image-provider-observations.json`; the canonical Russian assessment
+is `docs/architecture/ai-analysis-integration-report.md` at repository root. This file is a raw
+provider ledger, not the normalized ObservationRun input format. No real-group quality or
+production activation follows from it. Configure test credentials through DEEPSEEK_API_KEY or
+STUDGROUP_SYNTHETIC_ENV_FILE pointing to an ignored local .env; never commit that file.
+Only TCP/TLS connection establishment may retry automatically in the local check; paid read/write
+failures retain the hold. All already recorded expenses count against the original USD 2 cap.
