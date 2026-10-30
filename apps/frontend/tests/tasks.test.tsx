@@ -153,7 +153,7 @@ describe('Tasks screen', () => {
     expect(
       within(screen.getByRole('link', { name: /Открыть задание: Доклад по экологии/ })).queryByText('Отменено'),
     ).not.toBeInTheDocument();
-    
+
   });
 
   it('passes the selected filter to the server and restarts the list on every change', async () => {
@@ -198,7 +198,7 @@ describe('Tasks screen', () => {
     await userEvent.click(await screen.findByRole('button', { name: filter }));
     expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
     expect(cards()).toHaveLength(0);
-    
+
   });
 
   it('shows an error with retry when the list cannot be loaded', { timeout: 15000 }, async () => {
@@ -243,7 +243,7 @@ describe('Tasks pagination', () => {
     await waitFor(() => expect(cards()).toHaveLength(100));
     await reachEnd();
     await waitFor(() => expect(cards()).toHaveLength(124));
-    
+
     expect(urls.map((u) => (u.searchParams.get('cursor') ? 'cursor' : 'first'))).toEqual([
       'first',
       'cursor',
