@@ -1169,3 +1169,17 @@ class GroupEventRevision(Base):
     actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     origin: Mapped[str] = mapped_column(String(24))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class OwnerPreviewReview(Base):
+    """Owner feedback on an isolated shadow preview; never a publish instruction."""
+
+    __tablename__ = "owner_preview_reviews"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    wave_key: Mapped[str] = mapped_column(String(64), index=True)
+    card_id: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(32))
+    comment: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

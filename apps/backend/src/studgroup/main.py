@@ -335,6 +335,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from studgroup.group_event_api import router as group_event_router
 
     app.include_router(group_event_router)
+    from studgroup.owner_preview_api import router as owner_preview_router
+
+    app.include_router(owner_preview_router)
 
     @app.exception_handler(ApiError)
     async def api_error(request, error):

@@ -18,6 +18,7 @@ import { AcademicDeadlineScreen } from './features/deadlines/AcademicDeadlineScr
 import { LessonSubjectScreen } from './features/subjects/LessonSubjectScreen';
 import { SubjectScreen } from './features/subjects/SubjectScreen';
 import { ProfileScreen } from './features/profile/ProfileScreen';
+import { OwnerAiPreviewDetailScreen, OwnerAiPreviewScreen } from './features/ownerPreview/OwnerAiPreviewScreen';
 import { StateButton, StateView } from './ui/Blocks';
 
 function RouteError() {
@@ -53,6 +54,8 @@ export function appRoutes(startParam: string | null) {
         { path: 'events/review', Component: EventReviewScreen },
         { path: 'events/review/:eventId', Component: EventReviewDetailScreen },
         { path: 'events/:eventId', Component: GroupEventScreen },
+        { path: 'owner/ai-preview/:waveKey', Component: OwnerAiPreviewScreen },
+        { path: 'owner/ai-preview/:waveKey/cards/:cardId', Component: OwnerAiPreviewDetailScreen },
         { path: 'homework/:homeworkId', Component: HomeworkScreen },
         { path: 'homework/:homeworkId/edit', Component: HomeworkEditScreen },
         { path: 'cards/new', Component: CreateCardScreen },
