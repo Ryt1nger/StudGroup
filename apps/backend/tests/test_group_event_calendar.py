@@ -116,7 +116,11 @@ def test_capabilities_follow_group_flags_and_staff_role(client):
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
             member = await db.scalar(select(Membership).where(Membership.group_id == group.id))
             settings = client.app.state.settings
-            assert not any(group_features(settings, group, member).values())
+            assert group_features(settings, group, member) == {
+                "events": True,
+                "event_review": False,
+                "schedule_review": False,
+            }
             settings.image_analysis_groups = [str(group.id)]
             settings.image_event_publication_enabled = settings.image_event_review_enabled = True
             settings.image_schedule_review_enabled = True
@@ -128,7 +132,11 @@ def test_capabilities_follow_group_flags_and_staff_role(client):
             member.role = "headman"
             assert all(group_features(settings, group, member).values())
             settings.image_analysis_groups = []
-            assert not any(group_features(settings, group, member).values())
+            assert group_features(settings, group, member) == {
+                "events": True,
+                "event_review": False,
+                "schedule_review": False,
+            }
 
     asyncio.run(check())
 

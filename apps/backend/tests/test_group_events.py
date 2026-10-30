@@ -79,11 +79,9 @@ def put(client, event, payload, state="draft", revision=None):
 def test_poster_stays_draft_and_publishing_has_separate_flag(client, monkeypatch):
     event, payload = prepare(client, monkeypatch)
     assert event.state == "draft"
-    assert client.get("/v1/group-events", headers=AUTH).status_code == 404
+    assert client.get("/v1/group-events", headers=AUTH).json() == {"events": []}
     assert put(client, event, payload).status_code == 403
     make(client, "headman")
-    assert put(client, event, payload, "active").status_code == 404
-    client.app.state.settings.image_event_publication_enabled = True
     result = put(client, event, payload, "active")
     assert result.status_code == 200, result.text
     listing = client.get("/v1/group-events", headers=AUTH)

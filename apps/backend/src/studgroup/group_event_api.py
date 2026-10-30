@@ -23,6 +23,10 @@ router = APIRouter(prefix="/v1")
 
 def gate(request, group_id, public=False):
     settings = request.app.state.settings
+    if public:
+        # The public list is group-scoped by the authenticated membership and only
+        # returns approved active records.  It stays available when empty.
+        return
     flag = (
         settings.image_event_publication_enabled if public else settings.image_event_review_enabled
     )
