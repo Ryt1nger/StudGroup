@@ -87,4 +87,3 @@ describe('cardStatus priority', () => {
     expect(showUrgent(item({ urgency: 'normal' }))).toBe(false);
   });
 });
-

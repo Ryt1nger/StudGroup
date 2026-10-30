@@ -98,4 +98,3 @@ export function AccessGate({ children }: { children: ReactNode }) {
       return <Screen><StateView icon="lock" title={ru.gate.noGroupTitle} body={ru.gate.noGroupBody} /></Screen>;
   }
 }
-
