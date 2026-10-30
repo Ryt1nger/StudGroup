@@ -95,7 +95,7 @@ def test_published_event_survives_private_source_expiry_and_remains_readable(cli
     assert len(client.get("/v1/group-events", headers=AUTH).json()["events"]) == 1
     # An authorized editor can reschedule the approved record without restoring private data.
     result = put(
-        client, record, payload | {"starts_at": "2027-02-01T18:00:00+03:00"}, "active", revision=2
+        client, record, payload | {"starts_at": "2027-02-01T18:00:00+03:00"}, "active", revision=response.json()["revision"]
     )
     assert result.status_code == 200, result.text
     assert stored(client, GroupEvent)[0].delete_at.replace(tzinfo=UTC) == datetime(
@@ -111,7 +111,7 @@ def test_date_only_event_and_cancelled_record_are_retained_through_seventh_day(c
     payload |= {"starts_at": None, "starts_on": "2026-12-20", "when_text": "20 декабря 2026"}
     result = put(client, event, payload, "active")
     assert result.status_code == 200, result.text
-    result = put(client, event, payload, "cancelled", revision=2)
+    result = put(client, event, payload, "cancelled", revision=result.json()["revision"])
     assert result.status_code == 200
     assert client.get("/v1/group-events", headers=AUTH).json()["events"] == []
     assert client.get(f"/v1/group-events/{event.id}", headers=AUTH).json()["state"] == "cancelled"
