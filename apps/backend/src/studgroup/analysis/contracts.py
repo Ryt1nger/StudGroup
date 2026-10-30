@@ -41,17 +41,30 @@ NON_REPAIRABLE_RULE_CODES = frozenset(
 )
 
 
+from studgroup.analysis.image_contracts import ImageEvidence
+
+
 class StrictDTO(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
 class SourceAttachment(StrictDTO):
+    attachment_id: UUID | None = None
+    pixel_sha256: str | None = None
+    visual_hash: str | None = None
+    content_signature: str | None = None
+    display_covers: list[str] = Field(default_factory=list, max_length=1000)
+    display_readability: int | None = None
+    image_analysis_state: str | None = None
+    semantic_types: list[str] = Field(default_factory=list)
+    width: int | None = None
+    height: int | None = None
     kind: Literal["photo", "document", "video", "audio", "voice", "animation"]
     mime_type: str | None = Field(default=None, max_length=255)
     size_bytes: int | None = Field(default=None, ge=0)
     media_group_id: str | None = Field(default=None, max_length=255)
-    processing_state: Literal["metadata_only", "ready", "failed"] = "metadata_only"
-    # Metadata only: C+ never reads file contents. Optional for old frozen snapshots.
+    processing_state: Literal["metadata_only", "ready", "failed", "irrelevant"] = "metadata_only"
+    # Metadata only (what the vision pass read on a photo goes into the message text). Optional for old frozen snapshots.
     file_name: str | None = Field(default=None, max_length=255)
 
 
@@ -66,6 +79,7 @@ class SourceMessage(StrictDTO):
     author_alias: str | None = Field(default=None, max_length=64)
     # Group role of the sender (headman clarifications outrank ordinary messages).
     author_role: Literal["student", "deputy", "headman"] | None = None
+    image_facts: list[str] = Field(default_factory=list, max_length=1000)
     attachments: list[SourceAttachment] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
@@ -77,6 +91,13 @@ class SourceMessage(StrictDTO):
         return self
 
 
+class SubgroupEntry(StrictDTO):
+    """One subgroup of a subject taught in subgroups, with the headman's recognition signals."""
+
+    name: str = Field(min_length=1, max_length=80)
+    signals: list[str] = Field(default_factory=list, max_length=12)
+
+
 class SubjectEntry(StrictDTO):
     """One real subject of a group, as the trusted catalog states it."""
 
@@ -84,6 +105,7 @@ class SubjectEntry(StrictDTO):
     name: str = Field(min_length=1, max_length=255)
     aliases: list[str] = Field(default_factory=list, max_length=20)
     teachers: list[str] = Field(default_factory=list, max_length=10)
+    subgroups: list[SubgroupEntry] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
     def validate_labels(self):
@@ -125,6 +147,7 @@ class AnalysisInput(StrictDTO):
     # Not part of the source snapshot (see shadow.source_snapshot_sha256): reference data the
     # frozen run was analysed with. Absent on every run created before the catalog existed.
     subject_catalog: SubjectCatalog | None = None
+    image_evidence: list[ImageEvidence] = Field(default_factory=list, max_length=1000)
 
     @model_validator(mode="after")
     def validate_scope(self):
@@ -134,6 +157,12 @@ class AnalysisInput(StrictDTO):
             raise ValueError("duplicate_source_message_id")
         if not set(self.target_message_ids).issubset(ids):
             raise ValueError("target_outside_source_envelope")
+        scope = {row.telegram_message_id: row.revision for row in self.messages}
+        if any(
+            scope.get(image.telegram_message_id) != image.source_revision
+            for image in self.image_evidence
+        ):
+            raise ValueError("image_evidence_outside_source_envelope")
         return self
 
 

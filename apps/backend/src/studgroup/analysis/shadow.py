@@ -109,6 +109,24 @@ def _sum_usage(*rows):
 def source_snapshot_sha256(analysis_input):
     # The subject catalog is reference data, not source: the snapshot hash stays what it was.
     payload = analysis_input.model_dump(mode="json", exclude={"subject_catalog"})
+    if not payload["image_evidence"]:
+        payload.pop("image_evidence")
+    for message in payload["messages"]:
+        if not message["image_facts"]:
+            message.pop("image_facts")
+        for attachment in message["attachments"]:
+            for key in (
+                "attachment_id",
+                "pixel_sha256",
+                "visual_hash",
+                "content_signature",
+                "image_analysis_state",
+                "semantic_types",
+                "width",
+                "height",
+            ):
+                if not attachment.get(key):
+                    attachment.pop(key, None)
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
     ).hexdigest()

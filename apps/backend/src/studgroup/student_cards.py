@@ -9,6 +9,7 @@ from datetime import UTC
 
 from sqlalchemy import select
 
+from studgroup.analysis.deadline_policy import DeadlineDecision, student_label
 from studgroup.materials import links
 from studgroup.models import (
     AcademicDeadline,
@@ -17,10 +18,12 @@ from studgroup.models import (
     CanonicalItemRevision,
     CanonicalProjectionLink,
     Group,
+    HeadmanDecision,
     Homework,
     MessageAttachment,
     RawMessage,
 )
+from studgroup.photo_dedupe import distinct as distinct_photos
 from studgroup.subject_identity import subject_uuid
 
 CARD_KINDS = {
@@ -32,6 +35,7 @@ CARD_KINDS = {
     "exam",
     "other_academic_deadline",
 }
+PHOTO_CARD_MAX_CAPTION = 120
 ATTACHMENT_KINDS = {"photo", "document", "video", "audio", "voice", "animation"}
 ATTACHMENT_TITLES = {
     "photo": "Фотография",
@@ -131,8 +135,47 @@ async def projected_sources(db, group, row, now, link):
     return [source_detail(group, raw, now, revision) for raw, revision in unique.values()]
 
 
-def deadline_metadata(row, item):
+def locked_fields(item):
+    try:
+        return set(json.loads(getattr(item, "locked_fields", None) or "[]"))
+    except ValueError:
+        return set()
+
+
+def deadline_decision(item):
+    return DeadlineDecision(
+        item.deadline_at, item.deadline_date_only, item.deadline_basis, item.deadline_reason
+    )
+
+
+def deadline_label(row, item):
+    """Neutral student wording (spec 3.4); a deadline the headman set or confirmed needs none."""
     if item is not None:
+        if "deadline" in locked_fields(item):
+            return None if item.deadline_at else "Срок уточняется"
+        return student_label(deadline_decision(item))
+    if row.deadline_at is None:
+        return "Срок уточняется"
+    if getattr(row, "verification_state", None) == "inferred":
+        return "К следующему занятию"
+    return None
+
+
+async def headman_resolved(db, key):
+    """True once the headman or deputy has confirmed or edited the card (it is locked for the AI)."""
+    decision = await db.get(HeadmanDecision, key)
+    return decision is not None and decision.locked
+
+
+def deadline_metadata(row, item, resolved=False):
+    if resolved and (
+        getattr(row, "deadline_at", None) is not None or getattr(row, "window_start", None)
+    ):
+        # A person decided: the earlier "needs clarification" of the model no longer applies.
+        return "confirmed", "manual"
+    if item is not None:
+        if "deadline" in locked_fields(item):  # set or confirmed by the headman/deputy
+            return "confirmed", "manual"
         mapping = {
             "explicit": ("from_source", "explicit_message"),
             "relative_resolved": ("from_source", "explicit_message"),
@@ -234,7 +277,14 @@ async def projected_updates(db, link):
 
 async def projected_materials(db, group_id, entity_key, now, sources):
     result = [
-        {**item, "kind": "link", "file_name": None, "mime_type": None, "size_bytes": None}
+        {
+            "kind": "link",
+            "file_name": None,
+            "mime_type": None,
+            "size_bytes": None,
+            "replaces_description": False,
+            **item,
+        }
         for item in await links(db, group_id, [entity_key])
     ]
     source_urls = {
@@ -262,6 +312,91 @@ async def projected_materials(db, group_id, entity_key, now, sources):
             str(attachment.id),
         )
     )
+    from studgroup.analysis.contracts import SourceMessage
+    from studgroup.analysis.image_evidence import display_metadata, load_image_evidence
+    from studgroup.photo_dedupe import select_evidence_images
+
+    raw_rows = (
+        await db.scalars(
+            select(RawMessage).where(
+                RawMessage.group_id == group_id,
+                RawMessage.id.in_(source_urls),
+            )
+        )
+    ).all()
+    messages = [
+        SourceMessage(
+            telegram_message_id=raw.telegram_message_id,
+            revision=raw.revision,
+            message_date=utc(raw.message_date),
+            text=raw.text or "[attachment source]",
+        )
+        for raw in raw_rows
+    ]
+    image_rows = await load_image_evidence(db, group_id, messages, now)
+    image_rows = [item for item in image_rows if item.error != "image_not_scheduled"]
+    metadata = await display_metadata(db, group_id, image_rows)
+    structured_ids = set(metadata)
+    legacy = distinct_photos([item for item in attachments if item.id not in structured_ids])
+    kept = {item.id for item in legacy}
+    from uuid import UUID
+
+    entity_type = "homework" if entity_key.startswith("h:") else "deadline"
+    projection = await db.scalar(
+        select(CanonicalProjectionLink).where(
+            CanonicalProjectionLink.entity_type == entity_type,
+            CanonicalProjectionLink.entity_id == UUID(entity_key.split(":", 1)[1]),
+        )
+    )
+    source_paths = (
+        (
+            await db.scalars(
+                select(CanonicalItemEvidence.fact_path)
+                .join(
+                    CanonicalAcademicItem, CanonicalAcademicItem.id == CanonicalItemEvidence.item_id
+                )
+                .where(
+                    CanonicalAcademicItem.group_id == group_id,
+                    CanonicalItemEvidence.item_id == projection.item_id,
+                    CanonicalItemEvidence.item_revision == projection.projected_revision,
+                )
+            )
+        ).all()
+        if projection
+        else []
+    )
+    required_images = {path.split(":")[1] for path in source_paths if path.startswith("image:")}
+    uses_structured = "image_analysis" in source_paths or bool(required_images)
+    if not uses_structured:
+        metadata, structured_ids = {}, set()
+        kept = {item.id for item in distinct_photos(attachments)}
+    selected = (
+        select_evidence_images(
+            [
+                {
+                    "attachment_id": item.id,
+                    "width": item.width,
+                    "height": item.height,
+                    **metadata[item.id],
+                }
+                for item in attachments
+                if item.id in structured_ids
+            ],
+            required_images,
+        )
+        if required_images
+        else []
+    )
+    kept.update(item["attachment_id"] for item in selected)
+    attachments = [item for item in attachments if item.id in kept]
+    captions = {
+        raw_id: text or ""
+        for raw_id, text in (
+            await db.execute(
+                select(RawMessage.id, RawMessage.text).where(RawMessage.id.in_(source_urls))
+            )
+        ).all()
+    }
     for attachment in attachments:
         if attachment.kind not in ATTACHMENT_KINDS:
             continue
@@ -270,6 +405,15 @@ async def projected_materials(db, group_id, entity_key, now, sources):
             continue
         result.append(
             {
+                # A photo the vision pass read as study material, posted with at most a short
+                # caption, IS the task: the card shows it instead of a text description.
+                "replaces_description": (
+                    attachment.id not in structured_ids
+                    and attachment.kind == "photo"
+                    and attachment.processing_state == "ready"
+                    and len(captions.get(attachment.raw_message_id, "").strip())
+                    <= PHOTO_CARD_MAX_CAPTION
+                ),
                 "id": attachment.id,
                 "title": attachment.file_name or ATTACHMENT_TITLES[attachment.kind],
                 "url": url,
@@ -285,7 +429,7 @@ async def projected_materials(db, group_id, entity_key, now, sources):
 async def enrich_homework(db, group, row, now):
     link, item = await published_projection(db, row)
     sources = await projected_sources(db, group, row, now, link)
-    certainty, origin = deadline_metadata(row, item)
+    certainty, origin = deadline_metadata(row, item, await headman_resolved(db, f"h:{row.id}"))
     return {
         "card_kind": (
             item.semantic_kind if item and item.semantic_kind in CARD_KINDS else "homework"
@@ -293,6 +437,7 @@ async def enrich_homework(db, group, row, now):
         "confirmed_subject": confirmed_subject(row, item),
         "deadline_certainty": certainty,
         "deadline_origin": origin,
+        "deadline_label": deadline_label(row, item),
         "sources": sources,
         "materials": await projected_materials(db, row.group_id, f"h:{row.id}", now, sources),
         "updates": await projected_updates(db, link),
@@ -352,7 +497,7 @@ async def enrich_deadline(db, group, row: AcademicDeadline, now):
         raw = await db.get(RawMessage, row.raw_message_id) if row.raw_message_id else None
         sources = [source_detail(group, raw, now)]
     if item:
-        certainty, origin = deadline_metadata(row, item)
+        certainty, origin = deadline_metadata(row, item, await headman_resolved(db, f"e:{row.id}"))
         kind = item.semantic_kind if item.semantic_kind in CARD_KINDS else row.kind
         subject = (
             {
@@ -363,16 +508,19 @@ async def enrich_deadline(db, group, row: AcademicDeadline, now):
             else None
         )
     else:
-        certainty = (
-            "needs_clarification"
-            if row.needs_clarification
-            else ("from_source" if row.deadline_at else "unknown")
-        )
-        origin = (
-            "ambiguous_message"
-            if row.needs_clarification
-            else ("explicit_message" if row.deadline_at else "unknown")
-        )
+        resolved = await headman_resolved(db, f"e:{row.id}")
+        certainty, origin = deadline_metadata(row, None, resolved) if resolved else (None, None)
+        if certainty is None:
+            certainty = (
+                "needs_clarification"
+                if row.needs_clarification
+                else ("from_source" if row.deadline_at else "unknown")
+            )
+            origin = (
+                "ambiguous_message"
+                if row.needs_clarification
+                else ("explicit_message" if row.deadline_at else "unknown")
+            )
         kind = row.kind if row.kind in CARD_KINDS else "other_academic_deadline"
         subject = (
             None
@@ -387,6 +535,7 @@ async def enrich_deadline(db, group, row: AcademicDeadline, now):
         "confirmed_subject": subject,
         "deadline_certainty": certainty,
         "deadline_origin": origin,
+        "deadline_label": deadline_label(row, item),
         "sources": sources,
         "materials": await projected_materials(db, row.group_id, f"e:{row.id}", now, sources),
         "updates": await projected_updates(db, link),

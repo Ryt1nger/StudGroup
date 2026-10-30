@@ -5,18 +5,23 @@ from typing import Annotated, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from studgroup import subgroups
 from studgroup.academic_deadlines import items as deadline_items
 from studgroup.api import ApiError, active_group, database, edit_permissions, schedule_data
 from studgroup.materials import links
 from studgroup.models import (
+    AcademicDeadline,
+    CanonicalItemEvidence,
+    CanonicalProjectionLink,
     Group,
     Homework,
     Membership,
+    MessageAttachment,
     PersonalCompletion,
     RawMessage,
     ScheduleException,
@@ -75,6 +80,7 @@ async def representation(db, row, user, now):
         "card_kind": enrichment["card_kind"],
         "title": row.title,
         "subject": {"id": row.subject_id, "name": row.subject_name},
+        "subgroup": await subgroups.label(db, row.subgroup_id),
         "confirmed_subject": enrichment["confirmed_subject"],
         "summary": row.description,
         "description": row.description,
@@ -84,6 +90,7 @@ async def representation(db, row, user, now):
             "date_only": row.deadline_date_only,
             "certainty": enrichment["deadline_certainty"],
             "origin": enrichment["deadline_origin"],
+            "label": enrichment["deadline_label"],
         },
         "status": row.status,
         "urgency": row.urgency,
@@ -167,7 +174,7 @@ async def homework_list(
     group: CurrentGroup,
     db: Database,
     authorization: str = Header(),
-    filter: Literal["all", "today", "week", "mine", "archive"] = "all",
+    filter: Literal["all", "today", "week", "mine", "archive", "review"] = "all",
     limit: int = Query(default=50, ge=1, le=100),
     cursor: str | None = Query(default=None, max_length=2048),
 ):
@@ -183,6 +190,10 @@ async def homework_list(
             and_(Homework.created_at == created, Homework.id > last_id),
         )
     user = await user_id(db, authorization)
+    # The review queue (cards the editors must look at) exists only for headman and deputy.
+    editor = bool(await edit_permissions(db, group.id, user))
+    if filter == "review" and not editor:
+        raise ApiError("permission_denied", "Очередь проверки доступна старосте и помощнику", 403)
     query = (
         select(Homework)
         .outerjoin(
@@ -197,6 +208,7 @@ async def homework_list(
             Homework.status.in_(["published", "needs_clarification", "completed", "cancelled"]),
             Homework.delete_at > generated,
             Homework.created_at <= selected_at,
+            subgroups.visible(Homework.subgroup_id, await subgroups.hidden(db, group.id, user)),
         )
     )
     archived = archived_condition(generated, group.timezone)
@@ -205,7 +217,14 @@ async def homework_list(
         Homework.status != "cancelled",
         ~archived,
     )
+    # Needs a look from an editor: the AI could not settle the card (status or verification).
+    needs_review = or_(
+        Homework.status == "needs_clarification",
+        Homework.verification_state == "needs_clarification",
+    )
     query = query.where(archived if filter == "archive" else active)
+    if filter == "review":
+        query = query.where(needs_review)
     if filter == "mine":
         query = query.where(
             PersonalCompletion.completed_at.is_not(None), Homework.status != "cancelled"
@@ -252,7 +271,7 @@ async def homework_list(
         .where(RawMessage.group_id == group.id, RawMessage.processing_state == "pending")
         .limit(1)
     )
-    return {
+    response = {
         "server_time": selected_at,
         "generated_at": generated,
         "group_timezone": group.timezone,
@@ -264,6 +283,20 @@ async def homework_list(
         "items": items,
         "next_cursor": next_cursor,
     }
+    if editor:
+        # Lets the client show the review tab only while there is something to review.
+        response["review_count"] = await db.scalar(
+            select(func.count())
+            .select_from(Homework)
+            .where(
+                Homework.group_id == group.id,
+                Homework.status.in_(["published", "needs_clarification"]),
+                Homework.delete_at > generated,
+                active,
+                needs_review,
+            )
+        )
+    return response
 
 
 @router.get("/homework/{homework_id}")
@@ -271,7 +304,102 @@ async def detail(
     homework_id: UUID, group: CurrentGroup, db: Database, authorization: str = Header()
 ):
     row = await find_card(db, group, homework_id)
-    return await representation(db, row, await user_id(db, authorization), datetime.now(UTC))
+    user = await user_id(db, authorization)
+    if row.subgroup_id in await subgroups.hidden(db, group.id, user):
+        raise ApiError("not_found", "Задание не найдено", 404)  # another subgroup's card
+    return await representation(db, row, user, datetime.now(UTC))
+
+
+async def ensure_visible(db, group, row, user):
+    if row.subgroup_id in await subgroups.hidden(db, group.id, user):
+        raise ApiError("not_found", "Задание не найдено", 404)
+
+
+@router.get("/attachments/{attachment_id}/image")
+async def attachment_image(
+    attachment_id: UUID,
+    group: CurrentGroup,
+    db: Database,
+    request: Request,
+    authorization: str = Header(),
+):
+    """The photo of a card, fetched from Telegram on demand; only for members of its own group."""
+    from studgroup.analysis.photo_reading import download_telegram_file, sniff_mime
+
+    row = await db.scalar(
+        select(MessageAttachment).where(
+            MessageAttachment.id == attachment_id,
+            MessageAttachment.group_id == group.id,
+            MessageAttachment.kind == "photo",
+            MessageAttachment.active.is_(True),
+            MessageAttachment.delete_at > datetime.now(UTC),
+        )
+    )
+    if row is None:
+        raise ApiError("not_found", "Фото не найдено", 404)
+    hidden = await subgroups.hidden(db, group.id, await user_id(db, authorization))
+    if hidden:
+        audiences = set(
+            (
+                await db.scalars(
+                    select(Homework.subgroup_id).where(
+                        Homework.raw_message_id == row.raw_message_id
+                    )
+                )
+            ).all()
+        )
+        audiences.update(
+            (
+                await db.scalars(
+                    select(AcademicDeadline.subgroup_id).where(
+                        AcademicDeadline.raw_message_id == row.raw_message_id
+                    )
+                )
+            ).all()
+        )
+        links = (
+            await db.execute(
+                select(CanonicalProjectionLink.entity_type, CanonicalProjectionLink.entity_id)
+                .join(
+                    CanonicalItemEvidence,
+                    CanonicalItemEvidence.item_id == CanonicalProjectionLink.item_id,
+                )
+                .where(CanonicalItemEvidence.raw_message_id == row.raw_message_id)
+            )
+        ).all()
+        homework_ids = [entity_id for kind, entity_id in links if kind == "homework"]
+        deadline_ids = [entity_id for kind, entity_id in links if kind == "deadline"]
+        if homework_ids:
+            audiences.update(
+                (
+                    await db.scalars(
+                        select(Homework.subgroup_id).where(Homework.id.in_(homework_ids))
+                    )
+                ).all()
+            )
+        if deadline_ids:
+            audiences.update(
+                (
+                    await db.scalars(
+                        select(AcademicDeadline.subgroup_id).where(
+                            AcademicDeadline.id.in_(deadline_ids)
+                        )
+                    )
+                ).all()
+            )
+        if audiences and all(audience in hidden for audience in audiences):
+            raise ApiError("not_found", "Фото не найдено", 404)
+    image = await download_telegram_file(
+        request.app.state.settings.telegram_bot_token, row.telegram_file_id
+    )
+    mime = sniff_mime(image) if image else None
+    if mime is None:
+        raise ApiError("photo_unavailable", "Фото сейчас недоступно", 503)
+    return Response(
+        content=image,
+        media_type=mime,
+        headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 class CompletionBody(BaseModel):
@@ -291,6 +419,7 @@ async def completion(
     if row.revision != body.expected_revision:
         raise ApiError("revision_conflict", "Данные задания изменились. Обновите карточку", 409)
     user = await user_id(db, authorization)
+    await ensure_visible(db, group, row, user)
     mark = await db.scalar(
         select(PersonalCompletion).where(
             PersonalCompletion.homework_id == row.id, PersonalCompletion.user_id == user
@@ -341,6 +470,7 @@ async def lesson_subject(
     now = datetime.now(UTC)
     starts = datetime.fromisoformat(lesson["starts_at"])
     user = await user_id(db, authorization)
+    hidden = await subgroups.hidden(db, group.id, user)
     rows = (
         await db.scalars(
             select(Homework).where(
@@ -357,7 +487,7 @@ async def lesson_subject(
 
     matching = []
     for row in rows:
-        if normalize(row.subject_name) != normalize(lesson["subject"]):
+        if normalize(row.subject_name) != normalize(lesson["subject"]) or row.subgroup_id in hidden:
             continue
         raw = await db.get(RawMessage, row.raw_message_id) if row.raw_message_id else None
         if utc(raw.message_date if raw else row.created_at) > starts:
@@ -381,7 +511,7 @@ async def lesson_subject(
         "homework": [await representation(db, row, user, now) for row in matching[:100]],
         "homework_total": len(matching),
         "events_state": "ready",
-        "events": await deadline_items(db, group, now, subject=lesson["subject"]),
+        "events": await deadline_items(db, group, now, subject=lesson["subject"], hidden=hidden),
         "materials_state": "ready",
         "materials": await links(
             db,
@@ -389,7 +519,9 @@ async def lesson_subject(
             [f"h:{r.id}" for r in matching]
             + [
                 f"e:{r['id']}"
-                for r in await deadline_items(db, group, now, subject=lesson["subject"])
+                for r in await deadline_items(
+                    db, group, now, subject=lesson["subject"], hidden=hidden
+                )
             ],
         ),
     }
@@ -413,6 +545,7 @@ async def today(
                 Homework.status.in_(["published", "needs_clarification"]),
                 Homework.delete_at > now,
                 ~archived_condition(now, group.timezone),
+                subgroups.visible(Homework.subgroup_id, await subgroups.hidden(db, group.id, user)),
             )
         )
     ).all()

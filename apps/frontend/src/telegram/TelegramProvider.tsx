@@ -4,8 +4,15 @@ import type { ColorScheme, TelegramAdapter } from './adapter';
 interface TelegramContextValue {
   adapter: TelegramAdapter | null;
   scheme: ColorScheme;
-  setTheme: (scheme: ColorScheme) => void;
+  /** `preference`: the user's choice; `setTheme(null)` goes back to following Telegram. */
+  preference: ColorScheme | null;
+  setTheme: (scheme: ColorScheme | null) => void;
+  accent: Accent;
+  setAccent: (accent: Accent) => void;
 }
+
+export const ACCENTS = ['violet', 'blue', 'green', 'red', 'yellow', 'gray'] as const;
+export type Accent = (typeof ACCENTS)[number];
 
 const TelegramContext = createContext<TelegramContextValue | null>(null);
 
@@ -18,17 +25,36 @@ function savedTheme(): ColorScheme | null {
   } catch { return null; }
 }
 
+const ACCENT_COOKIE = 'studgroup_accent';
+function savedAccent(): Accent {
+  try {
+    const value = document.cookie.split('; ').find((part) => part.startsWith(`${ACCENT_COOKIE}=`))?.split('=')[1];
+    return ACCENTS.find((accent) => accent === value) ?? 'violet';
+  } catch { return 'violet'; }
+}
+
 export function TelegramProvider({ adapter, children }: { adapter: TelegramAdapter | null; children: ReactNode }) {
   const subscribe = useCallback((notify: () => void) => adapter?.onThemeChange(notify) ?? (() => undefined), [adapter]);
   const telegramScheme = useSyncExternalStore<ColorScheme>(subscribe, () => adapter?.colorScheme ?? 'light', () => 'light');
   const [preferred, setPreferred] = useState<ColorScheme | null>(savedTheme);
   const scheme = preferred ?? telegramScheme;
-  const setTheme = useCallback((next: ColorScheme) => {
+  const setTheme = useCallback((next: ColorScheme | null) => {
     setPreferred(next);
     try {
-      document.cookie = `${THEME_COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+      document.cookie = `${THEME_COOKIE}=${next ?? ''}; Path=/; Max-Age=${next ? 31536000 : 0}; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
     } catch { /* Appearance still works when persistent cookies are blocked. */ }
   }, []);
+
+  const [accent, setAccentState] = useState<Accent>(savedAccent);
+  const setAccent = useCallback((next: Accent) => {
+    setAccentState(next);
+    try {
+      document.cookie = `${ACCENT_COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+    } catch { /* The accent still applies for this visit when persistent cookies are blocked. */ }
+  }, []);
+  useEffect(() => {
+    document.documentElement.dataset.accent = accent;
+  }, [accent]);
 
   useEffect(() => {
     adapter?.ready();
@@ -52,7 +78,7 @@ export function TelegramProvider({ adapter, children }: { adapter: TelegramAdapt
     return adapter.onViewportChange(apply);
   }, [adapter]);
 
-  const value = useMemo(() => ({ adapter, scheme, setTheme }), [adapter, scheme, setTheme]);
+  const value = useMemo(() => ({ adapter, scheme, preference: preferred, setTheme, accent, setAccent }), [adapter, scheme, preferred, setTheme, accent, setAccent]);
   return <TelegramContext.Provider value={value}>{children}</TelegramContext.Provider>;
 }
 

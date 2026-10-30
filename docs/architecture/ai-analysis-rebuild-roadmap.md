@@ -445,8 +445,9 @@ stable.
   conflict/material ambiguity produces a held review proposal.
 - A factual deterministic display fallback is used only when AI display text is missing,
   malformed or factually invalid, and is marked for headman attention.
-- Explicitly different subgroup assignments produce separate labelled proposals, both
-  visible to the whole group in the initial version.
+- Explicitly different subgroup assignments produce separate proposals. Configured split subjects
+  are filtered by membership after projection; unresolved targeting stays visible to all and enters
+  editor review.
 - Prompt-injection text cannot alter schema, system policy or allowed source IDs.
 - Repeated unchanged input produces semantically stable display fields.
 - No product or notification row is written.
@@ -534,13 +535,14 @@ PR-7.
 - Generated display fields populate current title/description only after validation.
 - Students receive neutral schedule-inferred wording and no technical uncertainty badge;
   the headman view can expose source basis and `needs_attention` reason.
-- Subgroup-labelled cards remain visible to all group members until membership-based
-  filtering is implemented as a later product capability.
+- Configured subgroup cards are filtered by the member's per-subject choice; unanswered members see
+  all variants and editors always see all variants.
 - Projection and outbox records commit atomically.
 - Update/reschedule/cancel recalculates future notifications without duplicates.
 - Explicitly personal content cannot trigger a group-wide card or push. Unknown audience
   follows the serious-ambiguity review policy; an explicit subgroup label is publishable
-  under the initial all-members-visible rule.
+  only when it resolves to a configured subgroup; otherwise the card requires editor review and
+  remains visible to all.
 - Manual corrections remain authoritative in both canonical and projected views.
 
 ### Risks, compatibility and rollback
@@ -647,7 +649,7 @@ The following are separate product slices, not hidden inside the core rollout:
 
 - OCR/vision for photos, then documents/PDFs and albums, each with cost and retention caps;
 - complete event vocabulary and approved UI mapping;
-- subgroup/conditional membership and recipient-aware delivery;
+- conditional audiences beyond the implemented per-subject subgroup membership;
 - revised reminder cadence and morning digest;
 - broader multi-group scale/fairness testing;
 - eventual legacy schema/code retirement after a separate decision.
@@ -748,3 +750,40 @@ architecture alone.
   The complete suite passed with **423 passed, 0 skipped** including the concurrent claim test.
 - C+ shadow execution is not yet connected to worker dispatch, and `new` groups are intentionally
   left queued. Current verdict remains **offline-ready**, not shadow-ready.
+
+
+## 18. Core v2 image-quality work
+
+Updated 2026-10-27 against the 2026-10-26 `origin/main` baseline `dbc5963`. This is a targeted continuation of the
+existing C+ implementation, not a new engine or architecture rewrite. The earlier PR sequence
+above records the foundation; this section is the current image-quality delivery sequence.
+See [stage-0 evidence](ai-analysis-integration-report.md). Owner agreement at the stage-0 gate
+was accepted on 2026-10-26. Technical implementation of stages 1a–6 is complete. Owner decisions
+of 2026-10-27 added independent event retention and explicit editor corrections. Stage 7 now
+includes an authorized real-provider run on all 16 synthetic PNGs and all 11 C+ scenarios.
+See the living integration report and recorded observations for results, all calls and costs.
+Real-group shadow, deployment and public activation remain unapproved. Synthetic success does
+not prove handwriting, complex tables or real-group quality; display selection remains conservative.
+
+Each numbered step is a separate reviewable change, with its own acceptance checklist. Split
+steps 1, 2 and 5 into schema/contracts first and behaviour second where needed. Do not combine
+all steps into one PR. Preserve original source snapshots, manual locks and existing APIs.
+
+| Stage | Files / smallest change | Dependency | Tests and completion gate |
+|---|---|---|---|
+| 0 — audit | `test_image_analysis_baseline.py`, synthetic image scenarios, this roadmap, integration report | Current remote main and project instructions | Reproduce coverage/crop/slide/document/budget failures, run focused/full tests, lint and real PostgreSQL checks. Agree unfinished-image publication policy before stage 1. |
+| 1a — image job contract | `models.py`, new additive migration, `analysis/contracts.py`, typed image input/result module | 0 approved | Versioned source attachment identity + source/context revision, per-pass status/attempts, error reason, next retry, lease, budget reservation and usage. Migration upgrade/downgrade/re-upgrade on disposable PostgreSQL; old snapshots still parse. |
+| 1b — full coverage | `ingestion.py`, `package_worker.py`, `photo_reading.py`, image job worker | 1a | JPEG/PNG/WebP supported by byte inspection for photo and image-document inputs; define terminal unsupported formats explicitly. Test 1/6/7/12, albums, no caption, duplicate delivery, edits, replacement, Telegram outage, rate limit, restarts, stale commits, parallel workers and budget deferral. Six is a work chunk, never completion. No unexplained unread image. All paid calls reserve funds first. |
+| 2a — two visual passes | `photo_reading.py`, image contracts/job storage, `ai.py`, feature settings | 1b | Pass A preserves blocks/facts/uncertainty; B gets original pixels + saved A + relevant versioned context. Test both requests contain pixels, strict output schemas, text/tables/dates/handwriting fixtures, conflicting readings and token truncation. No silent string slicing. |
+| 2b — resume and costs | image jobs, `package_worker.py`, provider usage/accounting | 2a | Save each successful pass before next; independent usage/latency/prompt version per call. Cap image/package/group spend, bounded retries/backoff; cancel/stale-context checks; failure after A resumes B without paying A twice. PostgreSQL concurrency and crash-recovery tests. |
+| 3 — semantic integration | `context_strategy.py`, `extraction_strategy.py`, `extraction_pipeline.py`, `card_editor.py`, `candidates.py`, `contracts.py` | 2b | All image facts reach C+ before display selection; typed image evidence, multi-label classwork/homework/material/event/schedule/organisation. Remove conflicting general-photo-description rule. Cases A–G from brief, later corrections and existing-card updates. No in-class task published as homework; facts remain unknown when unsupported. Deterministic tests first, actual classification quality measured only with authorized model sample. |
+| 4 — display selection | `photo_dedupe.py`, `package_worker._source_messages`, `card_materials.py`, `student_cards.py`, internal selection storage | 3 | Remove semantic suppression entirely; select by combined visual comparison, text/structure and unique facts only after merge. Keep source evidence for hidden images. Crops, duplicate screenshots, different templates/slides, 4 pages, unique details, unrelated images. One common selection for preview/API; no fixed 1–2 limit. Document shared contract implications of `replaces_description` before changing client expectations. |
+| 5a — timetable suggestions | image results, new schedule suggestion adapter/store, `headman_schedule.py`, `schedule_audit.py` | 3 and approved confirmation policy | Weeks/subgroups/rooms, single replacement, old image, unknown effective date, combined timetable + check. Extract suggestions only; authorized confirmation applies existing audited write. No silent official schedule mutation. |
+| 5b — public events | `candidates.py`, `EventRecord` contract, models/migration, event service, `api.py`, `packages/contracts/*`, event-records documentation | 3 and owner-approved API/visibility/retention; frontend coordination | Existing candidates stay compatible. Durable event with date/time/place/audience, deduplication/update/cancel lifecycle. Poster, repeated poster, time change, no date, personal invite, mixed homework. Group isolation/access tests, compatibility notes and migration checks. Do not reuse graded-event entity for social events. |
+| 6 — integration | `dispatch.py`, shadow/input assembly, worker/API tests, existing fixture corpus | 4, 5a, 5b | Identical image snapshots for shadow/live/preview; full backend + PostgreSQL, migration cycle; old text-only paths, multi-message merges, locks, stale edits, no duplicate cards/notifications, budget/error handling, no cross-group evidence. All required tests pass. |
+| 7 — controlled validation | settings, image evaluation runner, rollout/rollback documentation, measured report | 6 and explicit paid-shadow/deployment approvals | Off by default, per-group flag; same inputs old/new; measure image coverage, fact recall/precision, classification/linking, fact preservation, display, schedules/events, cost and latency. Owner sets thresholds after measured baseline. Limited shadow first; writer mode and production deployment approved separately; rollback preserves recorded results. |
+
+At every gate report changed files, concrete outcome, commands/counts, migration result, risks,
+AI spend, PASS/FAIL/BLOCKED and next action. A failing test blocks progression. Stub answers prove
+pipeline mechanics only. Until rendered labelled fixtures and authorized model runs exist,
+report semantic/vision precision and recall as unmeasured. Numeric thresholds are not invented.

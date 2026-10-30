@@ -17,6 +17,9 @@ class WriterBatchResult:
     outcomes: tuple[ApplicationOutcome, ...]
     product_writes: int
     notifications_requested: int
+    # (item id, item revision, "created" | "updated") of every card this batch wrote; ids and
+    # numbers only, so the owner report can diff the revision against the one before it.
+    changes: tuple = ()
 
 
 async def apply_validated_batch(
@@ -39,6 +42,7 @@ async def apply_validated_batch(
     outcomes = []
     writes = 0
     notifications = 0
+    changes = []
     for rejected in validation.rejected:
         outcomes.append(
             ApplicationOutcome(
@@ -112,6 +116,8 @@ async def apply_validated_batch(
             "type_change_blocked": "review",
         }[projection.action]
         writes += projection.action in {"created", "updated"}
+        if projection.action in {"created", "updated"}:
+            changes.append((str(resolution.item.id), resolution.item.revision, projection.action))
         notifications += emit_notifications and projection.action in {"created", "updated"}
         outcomes.append(
             ApplicationOutcome(
@@ -122,4 +128,4 @@ async def apply_validated_batch(
                 reason_code=f"projection_{projection.action}",
             )
         )
-    return WriterBatchResult(tuple(outcomes), writes, notifications)
+    return WriterBatchResult(tuple(outcomes), writes, notifications, tuple(changes))

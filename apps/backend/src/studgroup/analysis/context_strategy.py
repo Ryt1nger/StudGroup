@@ -7,6 +7,7 @@ from collections import Counter
 from pydantic import ValidationError
 
 from studgroup.analysis.contracts import AnalysisInput, ContextUnderstandingOutput
+from studgroup.analysis.image_contracts import fact_reference_index
 from studgroup.analysis.memory import validate_fact_value
 from studgroup.analysis.provider import PreparedRequest
 
@@ -64,8 +65,18 @@ def prepare_context_request(analysis_input: AnalysisInput, memory_context):
             "group_timezone": analysis_input.group_timezone,
             "source_revision": analysis_input.source_revision,
             "target_message_ids": analysis_input.target_message_ids,
-            "messages": [row.model_dump(mode="json") for row in analysis_input.messages],
+            "messages": [
+                row.model_dump(
+                    mode="json",
+                    exclude={"attachments": {"__all__": {"display_covers", "display_readability"}}},
+                )
+                for row in analysis_input.messages
+            ],
             "structured_memory": memory_context,
+            "image_fact_reference_index": fact_reference_index(analysis_input.image_evidence),
+            "image_evidence": [
+                item.model_dump(mode="json") for item in analysis_input.image_evidence
+            ],
         },
         schema_version=analysis_input.schema_version,
         prompt_version=CONTEXT_PROMPT_VERSION,

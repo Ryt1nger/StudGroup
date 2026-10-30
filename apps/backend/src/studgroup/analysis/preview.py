@@ -350,7 +350,13 @@ def _assemble(entries, final, snapshots, chat_id, tz):
                 "needs_attention": True,
             }
         cited = [snapshots[i] for i in cited_ids if i in snapshots]
-        confirmed, candidates = derive_materials(cited, all_messages, chat_id)
+        required_images = {
+            path.split(":")[1]
+            for ref in proposal.evidence
+            for path in ref.fact_paths
+            if path.startswith("image:")
+        }
+        confirmed, candidates = derive_materials(cited, all_messages, chat_id, required_images)
         when, trust = reliability(
             body["deadline_at"],
             body["deadline_date_only"],

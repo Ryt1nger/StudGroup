@@ -312,6 +312,7 @@ class DeepSeekProvider:
         base_url="https://api.deepseek.com",
         transport: httpx.AsyncBaseTransport | None = None,
         allow_technical_repair: bool = False,
+        request_accounting=None,
     ):
         # Never send the credential to an arbitrary host, HTTP endpoint or redirect.
         if base_url.rstrip("/") not in {"https://api.deepseek.com", "https://api.deepseek.com/v1"}:
@@ -323,6 +324,7 @@ class DeepSeekProvider:
         self._base_url = base_url.rstrip("/")
         self._transport = transport
         self._allow_technical_repair = allow_technical_repair
+        self._request_accounting = request_accounting
 
     async def complete(self, request: PreparedRequest) -> ProviderResponse:
         """Implement the C+ transport port without exposing publication behaviour."""
@@ -354,6 +356,27 @@ class DeepSeekProvider:
             model=body["model"],
             finish_reason=body["choices"][0]["finish_reason"],
             payload_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        )
+
+    async def complete_vision(self, *, system_prompt, user_text, image_data_url, max_output_tokens):
+        """One chat completion with a single image in the user message (no JSON mode)."""
+        return await self._complete(
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": user_text},
+                            {"type": "image_url", "image_url": {"url": image_data_url}},
+                        ],
+                    },
+                ],
+                "thinking": {"type": "disabled"},
+                "max_tokens": max_output_tokens,
+                "stream": False,
+            }
         )
 
     async def screen_batch(self, messages, timezone, target_message_id):
@@ -1026,6 +1049,11 @@ merely because no single due date is given. Preserve task content and topics.
         )
 
     async def _complete(self, payload):
+        if self._request_accounting is not None:
+            return await self._request_accounting.execute(payload, lambda: self._send(payload))
+        return await self._send(payload)
+
+    async def _send(self, payload):
         try:
             async with httpx.AsyncClient(
                 timeout=45, follow_redirects=False, transport=self._transport, trust_env=False

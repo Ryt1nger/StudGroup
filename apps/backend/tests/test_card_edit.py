@@ -128,6 +128,26 @@ def test_the_headman_sees_the_edit_permissions_and_edits_any_field(client):
     assert asyncio.run(decision()) == (True, True)
 
 
+def test_the_headman_can_mark_a_card_urgent_and_back(client):
+    card = seed_card(client)
+    set_role(client, "headman")
+    marked = client.patch(
+        f"/v1/homework/{card}", json={"expected_revision": 1, "urgency": "urgent"}, headers=HEADERS
+    )
+    assert marked.status_code == 200, marked.text
+    assert marked.json()["urgency"] == "urgent" and marked.json()["revision"] == 2
+    cleared = client.patch(
+        f"/v1/homework/{card}", json={"expected_revision": 2, "urgency": "normal"}, headers=HEADERS
+    )
+    assert cleared.json()["urgency"] == "normal"
+    bad = client.patch(
+        f"/v1/homework/{card}",
+        json={"expected_revision": 3, "urgency": "super_urgent"},
+        headers=HEADERS,
+    )
+    assert bad.status_code == 422
+
+
 def test_a_stale_revision_is_rejected_with_a_conflict_and_nothing_changes(client):
     card = seed_card(client)
     set_role(client, "headman")
@@ -322,3 +342,225 @@ def test_a_student_cannot_edit_a_deadline_and_an_unknown_kind_is_rejected(client
         headers=HEADERS,
     )
     assert stale.status_code == 409
+
+
+def test_an_edit_clears_the_clarification_mark_for_good(client):
+    set_role(client, "headman")
+    card = seed_card(client)
+
+    async def unsettle():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.get(Homework, uuid.UUID(card))
+            row.status, row.verification_state = "needs_clarification", "needs_clarification"
+            await db.commit()
+
+    asyncio.run(unsettle())
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).json()["verification_state"] == (
+        "needs_clarification"
+    )
+    deadline = {"at": "2026-11-05T10:00:00+03:00", "date_only": False}
+    response = client.patch(
+        f"/v1/homework/{card}",
+        json={"expected_revision": 1, "deadline": deadline},
+        headers=HEADERS,
+    )
+    body = response.json()
+    assert response.status_code == 200
+    assert (
+        body["verification_state"] == "manual_confirmed" and body["status"] != "needs_clarification"
+    )
+    assert body["deadline"]["certainty"] == "confirmed" and body["deadline"]["origin"] == "manual"
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).json()["deadline"]["certainty"] == (
+        "confirmed"
+    )
+
+
+def test_an_event_edit_clears_its_clarification_mark(client):
+    set_role(client, "headman")
+    event = seed_deadline(client)
+    first = client.get(f"/v1/deadlines/{event}", headers=HEADERS).json()["item"]
+    assert first["needs_clarification"] is True
+    response = client.patch(
+        f"/v1/deadlines/{event}",
+        json={
+            "expected_revision": 1,
+            "deadline": {"at": "2026-11-05T00:00:00+03:00", "date_only": True},
+        },
+        headers=HEADERS,
+    )
+    item = response.json()["item"]
+    assert item["needs_clarification"] is False
+    assert item["deadline_certainty"] == "confirmed" and item["deadline_origin"] == "manual"
+
+
+def test_a_student_cannot_create_or_delete_cards(client):
+    card = seed_card(client)
+    body = {"title": "Новое", "subject": "Математика"}
+    assert client.post("/v1/homework", json=body, headers=HEADERS).status_code == 403
+    assert client.post("/v1/deadlines", json=body, headers=HEADERS).status_code == 403
+    response = client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS)
+    assert response.status_code == 403
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).status_code == 200
+
+
+def test_the_headman_creates_a_homework_card_students_then_see(client):
+    from studgroup.models import Notification
+
+    set_role(client, "headman")
+    response = client.post(
+        "/v1/homework",
+        json={
+            "title": "  Номера   1–5 ",
+            "subject": "Математика",
+            "description": "Решить письменно",
+            "deadline": {"at": "2026-11-02T10:00:00+03:00", "date_only": False},
+        },
+        headers=HEADERS,
+    )
+    assert response.status_code == 201, response.text
+    data = response.json()
+    assert data["title"] == "Номера 1–5" and data["subject"]["name"] == "Математика"
+    assert data["verification_state"] == "manual_confirmed" and data["revision"] == 1
+    assert data["deadline"]["at"].startswith("2026-11-02T07:00")
+    listed = client.get("/v1/homework", headers=HEADERS).json()["items"]
+    assert [item["id"] for item in listed] == [data["id"]]
+    assert count(client, HeadmanAudit) == 1 and count(client, Notification) == 1
+
+
+def test_creating_requires_a_title_and_a_subject_and_rejects_unknown_fields(client):
+    set_role(client, "headman")
+    for body in (
+        {"subject": "Математика"},
+        {"title": "x"},
+        {"title": "   ", "subject": "Математика"},
+        {"title": "x", "subject": "Математика", "status": "published"},
+        {"title": "x", "subject": "Математика", "deadline": {"at": "2026-11-02T10:00:00"}},
+    ):
+        assert client.post("/v1/homework", json=body, headers=HEADERS).status_code == 422, body
+    assert count(client, Homework) == 0
+
+
+def test_the_headman_creates_an_event_with_a_kind_and_a_date_hint(client):
+    set_role(client, "headman")
+    response = client.post(
+        "/v1/deadlines",
+        json={
+            "title": "КТ по алгебре",
+            "subject": "Алгебра",
+            "kind": "test",
+            "date_hint": "на следующей неделе",
+        },
+        headers=HEADERS,
+    )
+    assert response.status_code == 201, response.text
+    item = response.json()["item"]
+    assert (item["kind"], item["title"], item["date_hint"]) == (
+        "test",
+        "КТ по алгебре",
+        "на следующей неделе",
+    )
+    assert item["deadline_at"] is None and item["revision"] == 1
+    bad = client.post(
+        "/v1/deadlines", json={"title": "x", "subject": "y", "kind": "party"}, headers=HEADERS
+    )
+    assert bad.status_code == 422
+
+
+def test_deleting_hides_the_card_for_everyone_without_notifying_and_can_be_undone(client):
+    from studgroup import headman_domain as domain
+    from studgroup.models import Notification, User
+
+    card = seed_card(client)
+    set_role(client, "headman")
+    before = count(client, Notification)
+    stale = client.delete(f"/v1/homework/{card}?expected_revision=7", headers=HEADERS)
+    assert stale.status_code == 409 and stale.json()["error"]["code"] == "revision_conflict"
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).status_code == 200
+    response = client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS)
+    assert response.status_code == 200 and response.json()["undo_id"]
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).status_code in {404, 410}
+    for filter_name in ("all", "archive"):
+        items = client.get(f"/v1/homework?filter={filter_name}", headers=HEADERS).json()["items"]
+        assert card not in [item["id"] for item in items]
+    assert client.delete(
+        f"/v1/homework/{card}?expected_revision=2", headers=HEADERS
+    ).status_code in {
+        404,
+        410,
+    }
+    assert count(client, Notification) == before  # nobody is told about a card they cannot open
+
+    async def undo(db):
+        member = await db.scalar(select(Membership))
+        user = await db.get(User, member.user_id)
+        group = await db.get(Group, member.group_id)
+        audit = await db.scalar(select(HeadmanAudit).where(HeadmanAudit.operation == "delete"))
+        await domain.undo(db, group, user, member, audit.id)
+        await db.commit()
+
+    asyncio.run(_in_session(client, undo))
+    restored = client.get(f"/v1/homework/{card}", headers=HEADERS)
+    assert restored.status_code == 200 and restored.json()["status"] != "cancelled"
+
+
+async def _in_session(client, fn):
+    async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+        return await fn(db)
+
+
+def test_deleting_an_event_and_a_card_of_another_group(client):
+    event = seed_deadline(client)
+    set_role(client, "headman")
+    assert client.get(f"/v1/deadlines/{event}", headers=HEADERS).status_code == 200
+    assert (
+        client.delete(f"/v1/deadlines/{event}?expected_revision=1", headers=HEADERS).status_code
+        == 200
+    )
+    assert client.get(f"/v1/deadlines/{event}", headers=HEADERS).status_code == 404
+    assert (
+        client.delete(f"/v1/deadlines/{event}?expected_revision=1", headers=HEADERS).status_code
+        == 404
+    )
+    missing = client.delete(f"/v1/homework/{uuid.uuid4()}?expected_revision=1", headers=HEADERS)
+    assert missing.status_code == 404
+
+
+def test_a_removed_card_can_be_brought_back_once_from_the_app(client):
+    card = seed_card(client)
+    set_role(client, "headman")
+    removed = client.delete(f"/v1/homework/{card}?expected_revision=1", headers=HEADERS)
+    undo_id = removed.json()["undo_id"]
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).status_code in {404, 410}
+    # a student cannot, an unknown or foreign id is not found
+    assert client.post(f"/v1/card-removals/{uuid.uuid4()}/undo", headers=HEADERS).status_code == 404
+    restored = client.post(f"/v1/card-removals/{undo_id}/undo", headers=HEADERS)
+    assert restored.status_code == 200, restored.text
+    assert restored.json() == {"entity_type": "homework", "entity_id": card}
+    assert client.get(f"/v1/homework/{card}", headers=HEADERS).status_code == 200
+    again = client.post(f"/v1/card-removals/{undo_id}/undo", headers=HEADERS)
+    assert again.status_code == 409 and again.json()["error"]["code"] == "action_rejected"
+
+
+def test_only_removals_can_be_undone_from_the_app_and_students_cannot(client):
+    card = seed_card(client)
+    set_role(client, "headman")
+    edited = client.patch(
+        f"/v1/homework/{card}", json={"expected_revision": 1, "title": "Другое"}, headers=HEADERS
+    )
+    assert edited.status_code == 200
+
+    async def audit_id(db):
+        return (await db.scalar(select(HeadmanAudit).where(HeadmanAudit.operation == "edit"))).id
+
+    edit_audit = asyncio.run(_in_session(client, audit_id))
+    assert client.post(f"/v1/card-removals/{edit_audit}/undo", headers=HEADERS).status_code == 404
+    set_role(client, "student")
+    assert client.post(f"/v1/card-removals/{edit_audit}/undo", headers=HEADERS).status_code == 403
+
+
+def test_session_permissions_offer_creating_only_to_staff(client):
+    from studgroup.api import role_permissions
+
+    assert "homework.create" not in role_permissions("student")
+    assert "homework.create" in role_permissions("deputy")
+    assert "homework.create" in role_permissions("headman")

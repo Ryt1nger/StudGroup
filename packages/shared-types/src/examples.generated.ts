@@ -2,6 +2,51 @@
 // Do not edit by hand.
 
 export const contractExamples = {
+  "StaffDeadlineQueue": {
+    "items": [
+      {
+        "id": "7b0f8c1e-5a7d-4c55-9a36-1f0f2b3c4d5e",
+        "revision": 1,
+        "state": "active",
+        "card_kind": "homework",
+        "destination": "task",
+        "subject": "Математический анализ",
+        "title": "Номер 5 письменно",
+        "description": "Решить номер 5 письменно.",
+        "deadline": {
+          "at": "2026-10-14T12:10:00+03:00",
+          "date_only": false,
+          "basis": "schedule_inferred",
+          "reason": "next_subject_lesson",
+          "timezone_confirmed": true,
+          "label": "К следующему занятию"
+        },
+        "staff_note": "Дата не найдена в сообщении, она выведена по расписанию. Уточните срок.",
+        "attention_reasons": [
+          "deadline_inferred_confirm"
+        ],
+        "locked_fields": [],
+        "sources": [
+          {
+            "kind": "telegram_group_message",
+            "imported": false,
+            "availability": {
+              "state": "available",
+              "reason": null
+            },
+            "message_date": "2026-10-12T09:00:00Z",
+            "excerpt": "номер 5 письменно",
+            "action": {
+              "type": "open_telegram_link",
+              "url": "https://t.me/c/1234567890/1"
+            }
+          }
+        ],
+        "created_at": "2026-10-12T09:00:05Z",
+        "updated_at": "2026-10-12T09:00:05Z"
+      }
+    ]
+  },
   "HomeworkListEmpty": {
     "server_time": "2026-10-05T06:00:00Z",
     "generated_at": "2026-10-05T06:00:00Z",
@@ -16,6 +61,22 @@ export const contractExamples = {
     },
     "items": [],
     "next_cursor": null
+  },
+  "HomeworkListReviewQueue": {
+    "server_time": "2026-10-05T06:00:00Z",
+    "generated_at": "2026-10-05T06:00:00Z",
+    "group_timezone": "Europe/Moscow",
+    "freshness": {
+      "last_successful_sync_at": "2026-10-05T06:00:00Z",
+      "stale": false
+    },
+    "processing": {
+      "state": "idle",
+      "retry_after_seconds": null
+    },
+    "items": [],
+    "next_cursor": null,
+    "review_count": 0
   },
   "SchedulePopulated": {
     "generated_at": "2026-10-05T06:00:00Z",

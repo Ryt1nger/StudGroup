@@ -35,8 +35,14 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 
-from studgroup.analysis.contracts import AnalysisInput, SubjectCatalog, SubjectEntry
+from studgroup.analysis.contracts import (
+    AnalysisInput,
+    SubgroupEntry,
+    SubjectCatalog,
+    SubjectEntry,
+)
 from studgroup.models import SchedulePattern
+from studgroup.subgroups import signals_of, splits
 from studgroup.subject_identity import match_key, subject_uuid
 
 MAX_ALIASES = 20
@@ -118,6 +124,11 @@ def prompt_payload(catalog):
             {"id": row.id, "name": row.name}
             | ({"aliases": row.aliases} if row.aliases else {})
             | ({"teachers": row.teachers} if row.teachers else {})
+            | (
+                {"subgroups": [{"name": g.name, "signals": g.signals} for g in row.subgroups]}
+                if row.subgroups
+                else {}
+            )
             for row in catalog.subjects
         ],
     }
@@ -137,6 +148,7 @@ def catalog_fingerprint(catalog):
                     "aliases": sorted(row.aliases),
                     "teachers": sorted(row.teachers),
                 }
+                | ({"subgroups": [g.model_dump() for g in row.subgroups]} if row.subgroups else {})
                 for row in catalog.subjects
             ),
             key=lambda row: row["id"],
@@ -244,8 +256,30 @@ async def load_subject_catalog(db, group_id, facts=()):
     rows = (
         await db.scalars(select(SchedulePattern).where(SchedulePattern.group_id == group_id))
     ).all()
-    catalog = build_catalog(group_id, rows, facts)
+    catalog = with_subgroups(build_catalog(group_id, rows, facts), await splits(db, group_id))
     return catalog if catalog.subjects else None
+
+
+def with_subgroups(catalog, group_splits):
+    """The catalog with each split subject's subgroups (a split subject missing from the schedule
+    is added, since the headman named it)."""
+    if not group_splits:
+        return catalog
+    entries = list(catalog.subjects)
+    for split, members in group_splits:
+        subgroups = [
+            SubgroupEntry(name=m.name, signals=[s[:80] for s in signals_of(m)][:12])
+            for m in members[:6]
+        ]
+        sid = str(split.subject_id)
+        index = next((n for n, e in enumerate(entries) if e.id == sid), None)
+        if index is None:
+            if len(entries) >= MAX_SUBJECTS:
+                continue
+            entries.append(SubjectEntry(id=sid, name=split.subject_name[:255], subgroups=subgroups))
+        else:
+            entries[index] = entries[index].model_copy(update={"subgroups": subgroups})
+    return catalog.model_copy(update={"subjects": entries})
 
 
 async def load_current_catalog(db, group_id):

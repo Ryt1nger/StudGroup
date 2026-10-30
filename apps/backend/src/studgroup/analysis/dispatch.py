@@ -18,6 +18,10 @@ async def dispatch_next(engine, settings, provider=None, now=None):
     The legacy engine is locked by default: it runs only when ``legacy_engine_enabled`` is
     explicitly true, so ``AI_ENABLED`` alone cannot make it publish cards.
     """
+    from studgroup.analysis.image_jobs import process_images_next
+
+    # Independent jobs continue even after the text package has completed.
+    await process_images_next(engine, settings, provider=provider, now=now)
     await purge_expired_shadow_runs(engine, now=now)
     shadow_status = await process_shadow_next(engine, settings, provider=provider, now=now)
     if shadow_status not in {"idle", "disabled"}:

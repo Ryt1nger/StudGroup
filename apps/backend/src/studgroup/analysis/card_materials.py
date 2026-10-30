@@ -50,10 +50,16 @@ def _group_of(kind):
     return "media"
 
 
-def _from_message(message, chat_id, via):
+def _from_message(message, chat_id, via, required_ids=None):
     items = []
     link = telegram_link(chat_id, message.telegram_message_id)
-    for attachment in message.attachments:
+    from studgroup.analysis.contracts import SourceAttachment
+    from studgroup.photo_dedupe import select_evidence_images
+
+    for selected in select_evidence_images(
+        [attachment.model_dump(mode="python") for attachment in message.attachments], required_ids
+    ):
+        attachment = SourceAttachment.model_validate(selected)
         items.append(
             {
                 "group": _group_of(attachment.kind),
@@ -83,11 +89,30 @@ def _from_message(message, chat_id, via):
     return items
 
 
-def derive_materials(cited, messages, chat_id):
+def derive_materials(cited, messages, chat_id, required_ids=None):
     """Return (confirmed materials, unconfirmed candidates) for one card, deduplicated."""
     cited_ids = {row.telegram_message_id for row in cited}
     albums = {a.media_group_id for row in cited for a in row.attachments if a.media_group_id}
     confirmed, candidates, seen = [], [], set()
+    from studgroup.photo_dedupe import select_evidence_images
+
+    eligible = [
+        row
+        for row in messages
+        if row.telegram_message_id in cited_ids
+        or row.reply_to_message_id in cited_ids
+        or any(a.media_group_id in albums for a in row.attachments if a.media_group_id)
+    ]
+    metadata = [
+        attachment.model_dump(mode="python") for row in eligible for attachment in row.attachments
+    ]
+    selected = select_evidence_images(metadata, required_ids)
+    selected_ids = {
+        str(item["attachment_id"])
+        for item in selected
+        if item.get("image_analysis_state") is not None
+    }
+    has_structured = any(item.get("image_analysis_state") is not None for item in metadata)
 
     def add(target, item):
         key = (item["message_id"], item["group"], item["title"], item.get("url"))
@@ -104,7 +129,21 @@ def derive_materials(cited, messages, chat_id):
         elif albums and any(a.media_group_id in albums for a in row.attachments):
             via = "album"
         if via:
-            for item in _from_message(row, chat_id, via):
+            selected_row = (
+                row.model_copy(
+                    update={
+                        "attachments": [
+                            attachment
+                            for attachment in row.attachments
+                            if attachment.image_analysis_state is None
+                            or str(attachment.attachment_id) in selected_ids
+                        ]
+                    }
+                )
+                if has_structured
+                else row
+            )
+            for item in _from_message(selected_row, chat_id, via, required_ids):
                 add(confirmed, item)
     nearby = []
     for row in messages:

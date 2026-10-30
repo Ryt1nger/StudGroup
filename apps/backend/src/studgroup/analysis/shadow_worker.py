@@ -23,6 +23,7 @@ from studgroup.models import (
     Group,
     GroupAnalysisSettings,
     GroupKnowledgeFact,
+    ImageAnalysisCall,
     RawMessage,
     ShadowEvaluationRun,
 )
@@ -62,6 +63,15 @@ async def purge_expired_shadow_runs(engine, now=None):
         result = await db.execute(
             delete(ShadowEvaluationRun).where(ShadowEvaluationRun.delete_at <= now)
         )
+        from studgroup.analysis.group_events import purge_events
+        from studgroup.models import AnalysisBudgetCall, ImageAnalysisJob, ImageScheduleSuggestion
+
+        await purge_events(db, now)
+        await db.execute(
+            delete(ImageScheduleSuggestion).where(ImageScheduleSuggestion.delete_at <= now)
+        )
+        await db.execute(delete(ImageAnalysisJob).where(ImageAnalysisJob.delete_at <= now))
+        await db.execute(delete(AnalysisBudgetCall).where(AnalysisBudgetCall.delete_at <= now))
         await db.commit()
         return result.rowcount or 0
 
@@ -106,6 +116,64 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
         )
         for row in context
     ]
+    from studgroup.analysis.image_evidence import add_image_facts, load_image_evidence
+
+    images = await load_image_evidence(db, group.id, messages, now)
+    # Keep old source snapshots unchanged when the new queue has not produced jobs.
+    images = [item for item in images if item.error != "image_not_scheduled"]
+    messages = add_image_facts(messages, images)
+    if images:
+        from studgroup.analysis.contracts import SourceAttachment
+        from studgroup.models import MessageAttachment
+
+        saved_attachments = (
+            await db.scalars(
+                select(MessageAttachment).where(
+                    MessageAttachment.group_id == group.id,
+                    MessageAttachment.raw_message_id.in_([row.id for row in raws]),
+                    MessageAttachment.active.is_(True),
+                    MessageAttachment.delete_at > now,
+                )
+            )
+        ).all()
+        raw_by_message = {row.telegram_message_id: row.id for row in raws}
+        messages = [
+            message.model_copy(
+                update={
+                    "attachments": [
+                        SourceAttachment(
+                            attachment_id=attachment.id,
+                            kind=attachment.kind,
+                            mime_type=attachment.mime_type,
+                            size_bytes=attachment.size_bytes,
+                            media_group_id=attachment.media_group_id,
+                            processing_state=attachment.processing_state,
+                            file_name=(attachment.file_name or "")[:255] or None,
+                            width=attachment.width,
+                            height=attachment.height,
+                        )
+                        for attachment in saved_attachments
+                        if attachment.raw_message_id == raw_by_message[message.telegram_message_id]
+                    ]
+                }
+            )
+            for message in messages
+        ]
+    if images:
+        from studgroup.analysis.image_evidence import display_metadata
+
+        metadata = await display_metadata(db, group.id, images)
+        messages = [
+            message.model_copy(
+                update={
+                    "attachments": [
+                        attachment.model_copy(update=metadata.get(attachment.attachment_id, {}))
+                        for attachment in message.attachments
+                    ]
+                }
+            )
+            for message in messages
+        ]
     facts = (
         await db.scalars(select(GroupKnowledgeFact).where(GroupKnowledgeFact.group_id == group.id))
     ).all()
@@ -116,6 +184,7 @@ async def enqueue_shadow(db, *, group, job, raw, context, now, screening=False):
         target_message_ids=[raw.telegram_message_id],
         messages=messages,
         subject_catalog=await load_subject_catalog(db, group.id, facts),
+        image_evidence=images,
     )
     memory = assemble_memory_context(group.id, " ".join(row.text for row in messages), facts)
     selected = sampled(group.id, sample_key, route.shadow_sample_percent)
@@ -368,6 +437,18 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
             .where(GroupAnalysisSettings.group_id == row.group_id)
             .with_for_update()
         )
+        if row.state == "running":
+            from studgroup.analysis.release_budget import hold_lost_attempt
+
+            await hold_lost_attempt(db, route_row, f"cplus:{row.id}:{row.attempts}", now)
+            row.charged_usd += row.reserved_usd
+            row.reserved_usd, row.lease_until = Decimal(0), None
+            row.state, row.last_error, row.completed_at = "failed", "ambiguous_paid_attempt", now
+            await db.commit()
+            return "ambiguous_paid_attempt"
+        if route_row.paid_outcome_hold:
+            await db.commit()
+            return "paid_outcome_held"
         # The settings-row lock serializes reserve decisions for this group's cap.
         day = _utc(now)
         day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
@@ -384,7 +465,19 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
                 ShadowEvaluationRun.id != row.id,
             )
         )
-        committed = Decimal(charged or 0) + Decimal(reserved_elsewhere or 0)
+        image_day = await db.scalar(
+            select(
+                func.coalesce(
+                    func.sum(ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd), 0
+                )
+            ).where(
+                ImageAnalysisCall.group_id == row.group_id,
+                ImageAnalysisCall.created_at >= day_start,
+            )
+        )
+        committed = (
+            Decimal(charged or 0) + Decimal(reserved_elsewhere or 0) + Decimal(image_day or 0)
+        )
         if committed + SHADOW_RESERVATION_USD > Decimal(route_row.shadow_daily_budget_usd):
             row.state = "budget_deferred"
             row.last_error = "shadow_budget_exhausted"
@@ -410,8 +503,18 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
                     ShadowEvaluationRun.id != row.id,
                 )
             )
-            if Decimal(hour_charged or 0) + Decimal(
-                hour_reserved or 0
+            image_hour = await db.scalar(
+                select(
+                    func.coalesce(
+                        func.sum(ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd), 0
+                    )
+                ).where(
+                    ImageAnalysisCall.group_id == row.group_id,
+                    ImageAnalysisCall.created_at >= hour_start,
+                )
+            )
+            if Decimal(hour_charged or 0) + Decimal(hour_reserved or 0) + Decimal(
+                image_hour or 0
             ) + SHADOW_RESERVATION_USD > Decimal(hourly_cap):
                 row.state = "budget_deferred"
                 row.last_error = "shadow_hourly_budget_exhausted"
@@ -457,15 +560,17 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
     try:
         analysis_input = AnalysisInput.model_validate_json(input_json)
         memory = json.loads(memory_json or "[]")
-        if provider is None:
-            from studgroup.ai import DeepSeekProvider
+        from studgroup.analysis.release_budget import provider_for
 
-            provider = DeepSeekProvider(
-                settings.deepseek_api_key.get_secret_value(),
-                model=settings.deepseek_model,
-                base_url=settings.deepseek_base_url,
-                allow_technical_repair=settings.ai_technical_repair_enabled,
-            )
+        provider = provider_for(
+            engine,
+            settings,
+            row.group_id,
+            provider,
+            kind="cplus",
+            attempt_key=f"cplus:{run_id}:{generation}",
+            mode="shadow",
+        )
         result = await run_shadow(
             provider,
             analysis_input,
@@ -530,7 +635,11 @@ async def process_shadow_next(engine, settings, provider=None, now=None):
         if len(failure.raw_results) > 1:
             row.validation_result_json = failure.raw_results[1]
         row.last_error = failure.code
-        if failure.retryable and row.attempts - attempt_base(row) < SHADOW_MAX_ATTEMPTS:
+        if (
+            failure.usage_complete
+            and failure.retryable
+            and row.attempts - attempt_base(row) < SHADOW_MAX_ATTEMPTS
+        ):
             row.state = "retry"
             row.available_at = now + timedelta(seconds=15 * 2 ** (row.attempts - 1))
             outcome = "retry"

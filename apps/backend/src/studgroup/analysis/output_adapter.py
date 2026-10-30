@@ -106,7 +106,7 @@ _MONTHS = {
     "ноября": 11,
     "декабря": 12,
 }
-_NUMERIC_DATE = re.compile(r"(?<![\d.,])(\d{1,2})[./](\d{2})(?![\d])(?![.,]\d)")
+_NUMERIC_DATE = re.compile(r"(?<![\d.,])(\d{1,2})[./](\d{2})(?:[./]20\d{2})?(?![\d])(?![.,]\d)")
 _NAMED_DATE = re.compile(
     r"(?<!\d)(\d{1,2})\s+(" + "|".join(_MONTHS) + r")(?![а-яё])", re.IGNORECASE
 )
@@ -434,6 +434,26 @@ class _Normalizer:
         literal = set()
         for source in ordered:
             literal |= explicit_source_dates(source.text)
+        if len(literal) == 1:
+            from studgroup.deadlines import contextual_deadline
+
+            full_dates = []
+            for source in ordered:
+                if not re.search(r"\b\d{1,2}[./]\d{2}[./]20\d{2}\b", source.text):
+                    continue
+                candidate = contextual_deadline(source.text, source.message_date, str(self.tz))
+                if (
+                    candidate
+                    and candidate.at
+                    and candidate.basis.startswith("explicit_source_date")
+                ):
+                    full_dates.append(candidate)
+            if full_dates and len({row.at.date() for row in full_dates}) == 1:
+                resolved = full_dates[-1]
+                if deadline["at"] != resolved.at or deadline["date_only"] != resolved.date_only:
+                    self.extra_reasons.append(DEADLINE_CORRECTED_REASON)
+                    self.note("deadline_corrected_from_text")
+                return {"at": resolved.at, "date_only": resolved.date_only, "basis": "explicit"}
         if literal:
             # A proposal that ignores every written date is held for review, not published.
             if (local.day, local.month) not in literal:
@@ -485,7 +505,7 @@ class _Normalizer:
                 _reject("evidence_fact_path_invalid", path, item, expected="string")
             text = item.strip()
             root = text.split(".", 1)[0]
-            if root not in FACT_PATH_ROOTS:
+            if root not in FACT_PATH_ROOTS and not text.startswith("image:"):
                 self.note("unsupported_fact_path_dropped")
                 continue
             if text not in kept:
@@ -751,10 +771,12 @@ def adapt_proposal(
     subject_catalog=None,
 ) -> AdaptedProposal:
     """Normalize one provider proposal; failure never affects sibling proposals."""
+    from studgroup.analysis.image_evidence import fact_source
+
     normalizer = _Normalizer(
         ordinal,
         group_timezone=group_timezone,
-        messages=messages,
+        messages={key: fact_source(value) for key, value in messages.items()},
         allowed_sources=allowed_sources,
         existing_items=existing_items,
         subject_catalog=subject_catalog,

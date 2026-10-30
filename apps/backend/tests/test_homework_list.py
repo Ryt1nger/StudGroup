@@ -232,3 +232,76 @@ def test_list_requires_active_session(client):
     assert (
         client.get("/v1/homework", headers={"Authorization": "Bearer expired"}).status_code == 401
     )
+
+
+def set_role(client, role):
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            session = await db.get(WebSession, token_hash("valid"))
+            membership = await db.get(Membership, session.membership_id)
+            membership.role = role
+            await db.commit()
+
+    asyncio.run(run())
+
+
+def flag_for_review(client, title):
+    async def run():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(Homework).where(Homework.title == title))
+            row.verification_state = "needs_clarification"
+            await db.commit()
+
+    asyncio.run(run())
+
+
+def test_review_filter_is_the_editors_queue_of_active_unsettled_cards(client, cards):
+    set_role(client, "headman")
+    flag_for_review(client, "today")  # known deadline, but the AI is not sure
+    flag_for_review(client, "overdue")  # archived: no longer needs a look
+    response = client.get("/v1/homework?filter=review", headers=HEADERS)
+    assert titles(response) == {"unknown", "today"}
+    assert response.json()["review_count"] == 2
+    # cancelled cards never enter the queue, even when flagged
+    flag_for_review(client, "cancelled_unknown")
+    assert titles(client.get("/v1/homework?filter=review", headers=HEADERS)) == {"unknown", "today"}
+
+
+def test_review_count_is_reported_to_editors_only_on_every_filter(client, cards):
+    set_role(client, "deputy")
+    for name in ("all", "today", "week", "mine", "archive", "review"):
+        assert (
+            client.get(f"/v1/homework?filter={name}", headers=HEADERS).json()["review_count"] == 1
+        )
+    set_role(client, "student")
+    assert "review_count" not in client.get("/v1/homework", headers=HEADERS).json()
+
+
+def test_review_filter_is_forbidden_for_students(client, cards):
+    set_role(client, "student")
+    response = client.get("/v1/homework?filter=review", headers=HEADERS)
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "permission_denied"
+
+
+def test_completed_overdue_cards_are_archived_not_active(client, cards):
+    """A past deadline archives the card regardless of personal completion."""
+
+    async def complete_overdue():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(Homework).where(Homework.title == "overdue"))
+            user = await db.scalar(select(User).where(User.telegram_user_id == 1))
+            db.add(
+                PersonalCompletion(
+                    homework_id=row.id,
+                    user_id=user.id,
+                    completed_at=NOW - timedelta(hours=7),
+                    completed_revision=1,
+                )
+            )
+            await db.commit()
+
+    asyncio.run(complete_overdue())
+    assert "overdue" in titles(client.get("/v1/homework?filter=archive", headers=HEADERS))
+    for name in ("all", "mine", "today", "week"):
+        assert "overdue" not in titles(client.get(f"/v1/homework?filter={name}", headers=HEADERS))

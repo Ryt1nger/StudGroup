@@ -26,3 +26,30 @@ afterEach(() => {
   server.resetHandlers();
 });
 afterAll(() => server.close());
+
+// jsdom has no IntersectionObserver: a controllable stand-in lets tests "scroll to the end" of a list.
+type Observer = { callback: IntersectionObserverCallback; nodes: Set<Element> };
+const observers = new Set<Observer>();
+class FakeIntersectionObserver {
+  private readonly entry: Observer;
+  constructor(callback: IntersectionObserverCallback) {
+    this.entry = { callback, nodes: new Set() };
+    observers.add(this.entry);
+  }
+  observe(node: Element) { this.entry.nodes.add(node); }
+  unobserve(node: Element) { this.entry.nodes.delete(node); }
+  disconnect() { observers.delete(this.entry); }
+  takeRecords() { return []; }
+}
+Object.defineProperty(globalThis, 'IntersectionObserver', { value: FakeIntersectionObserver, configurable: true, writable: true });
+(globalThis as Record<string, unknown>).__reachEnd = (): number => {
+  let fired = 0;
+  for (const entry of [...observers]) {
+    const records = [...entry.nodes].map((target) => ({ isIntersecting: true, target }) as IntersectionObserverEntry);
+    if (records.length) {
+      entry.callback(records, {} as IntersectionObserver);
+      fired += 1;
+    }
+  }
+  return fired;
+};

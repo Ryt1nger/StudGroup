@@ -148,15 +148,19 @@ def test_postgres_a_lost_lease_is_recovered_without_publishing_twice():
             assert row.state == "running" and row.reserved_usd > 0
         provider = PackageProvider()
         later = now + timedelta(minutes=10)  # lease (3 min) has expired
-        assert await process_package_next(engine, settings, provider, later) == "completed"
+        assert (
+            await process_package_next(engine, settings, provider, later)
+            == "ambiguous_paid_attempt"
+        )
         assert await process_package_next(engine, settings, provider, later) == "idle"
         async with AsyncSession(engine) as db:
             assert (
                 await db.scalar(
                     select(func.count()).select_from(Homework).where(Homework.group_id == group_id)
                 )
-                == 1
+                == 0
             )
+            assert provider.requests == []
             group = await db.get(Group, group_id)
             group.pilot_authorized = False
             await db.commit()

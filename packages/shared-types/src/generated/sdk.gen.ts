@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses } from './types.gen';
+import type { AddNoLessonDayData, AddNoLessonDayErrors, AddNoLessonDayResponses, BootstrapSessionData, BootstrapSessionErrors, BootstrapSessionResponses, ChangeGroupSettingsData, ChangeGroupSettingsErrors, ChangeGroupSettingsResponses, ChangeStaffLessonData, ChangeStaffLessonErrors, ChangeStaffLessonResponses, ChooseMySubgroupData, ChooseMySubgroupErrors, ChooseMySubgroupResponses, ConfirmImageScheduleSuggestionData, ConfirmImageScheduleSuggestionErrors, ConfirmImageScheduleSuggestionResponses, CreateAcademicEventData, CreateAcademicEventErrors, CreateAcademicEventResponses, CreateHomeworkData, CreateHomeworkErrors, CreateHomeworkResponses, CreateStaffLessonData, CreateStaffLessonErrors, CreateStaffLessonResponses, DecideItemDeadlineData, DecideItemDeadlineErrors, DecideItemDeadlineResponses, DeleteAcademicEventData, DeleteAcademicEventErrors, DeleteAcademicEventResponses, DeleteHomeworkData, DeleteHomeworkErrors, DeleteHomeworkResponses, EditAcademicDeadlineData, EditAcademicDeadlineErrors, EditAcademicDeadlineResponses, EditHomeworkData, EditHomeworkErrors, EditHomeworkResponses, GetAcademicDeadlineData, GetAcademicDeadlineErrors, GetAcademicDeadlineResponses, GetAttachmentImageData, GetAttachmentImageErrors, GetAttachmentImageResponses, GetDeadlineFileLinkData, GetDeadlineFileLinkErrors, GetDeadlineFileLinkResponses, GetDeadlineQueueData, GetDeadlineQueueErrors, GetDeadlineQueueResponses, GetHomeworkData, GetHomeworkErrors, GetHomeworkFileLinkData, GetHomeworkFileLinkErrors, GetHomeworkFileLinkResponses, GetHomeworkResponses, GetLessonSubjectData, GetLessonSubjectErrors, GetLessonSubjectResponses, GetProfileData, GetProfileErrors, GetProfileResponses, GetPublishedGroupEventData, GetPublishedGroupEventErrors, GetPublishedGroupEventResponses, GetScheduleData, GetScheduleErrors, GetScheduleResponses, GetStaffItemData, GetStaffItemErrors, GetStaffItemResponses, GetStaffScheduleData, GetStaffScheduleErrors, GetStaffScheduleResponses, GetTodayData, GetTodayErrors, GetTodayResponses, ListAcademicDeadlinesData, ListAcademicDeadlinesErrors, ListAcademicDeadlinesResponses, ListHomeworkData, ListHomeworkErrors, ListHomeworkResponses, ListImageEventDraftsData, ListImageEventDraftsErrors, ListImageEventDraftsResponses, ListImageScheduleSuggestionsData, ListImageScheduleSuggestionsErrors, ListImageScheduleSuggestionsResponses, ListMySubgroupsData, ListMySubgroupsErrors, ListMySubgroupsResponses, ListNoLessonDaysData, ListNoLessonDaysErrors, ListNoLessonDaysResponses, ListNotificationsData, ListNotificationsErrors, ListNotificationsResponses, ListPublishedGroupEventsData, ListPublishedGroupEventsErrors, ListPublishedGroupEventsResponses, ListSubjectsData, ListSubjectsErrors, ListSubjectsResponses, ReadAllNotificationsData, ReadAllNotificationsErrors, ReadAllNotificationsResponses, ReadNotificationData, ReadNotificationErrors, ReadNotificationResponses, RecheckMembershipData, RecheckMembershipErrors, RecheckMembershipResponses, RemoveNoLessonDayData, RemoveNoLessonDayErrors, RemoveNoLessonDayResponses, ReviewImageEventData, ReviewImageEventErrors, ReviewImageEventResponses, SetHomeworkCompletionData, SetHomeworkCompletionErrors, SetHomeworkCompletionResponses, SetItemLocksData, SetItemLocksErrors, SetItemLocksResponses, UndoCardRemovalData, UndoCardRemovalErrors, UndoCardRemovalResponses, UpdateProfileData, UpdateProfileErrors, UpdateProfileResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -18,6 +18,53 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
 
+export const listPublishedGroupEvents = <ThrowOnError extends boolean = false>(options?: Options<ListPublishedGroupEventsData, ThrowOnError>): RequestResult<ListPublishedGroupEventsResponses, ListPublishedGroupEventsErrors, ThrowOnError> => (options?.client ?? client).get<ListPublishedGroupEventsResponses, ListPublishedGroupEventsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/group-events',
+    ...options
+});
+
+export const getPublishedGroupEvent = <ThrowOnError extends boolean = false>(options: Options<GetPublishedGroupEventData, ThrowOnError>): RequestResult<GetPublishedGroupEventResponses, GetPublishedGroupEventErrors, ThrowOnError> => (options.client ?? client).get<GetPublishedGroupEventResponses, GetPublishedGroupEventErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/group-events/{id}',
+    ...options
+});
+
+export const listImageEventDrafts = <ThrowOnError extends boolean = false>(options?: Options<ListImageEventDraftsData, ThrowOnError>): RequestResult<ListImageEventDraftsResponses, ListImageEventDraftsErrors, ThrowOnError> => (options?.client ?? client).get<ListImageEventDraftsResponses, ListImageEventDraftsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/image-findings/events',
+    ...options
+});
+
+export const reviewImageEvent = <ThrowOnError extends boolean = false>(options: Options<ReviewImageEventData, ThrowOnError>): RequestResult<ReviewImageEventResponses, ReviewImageEventErrors, ThrowOnError> => (options.client ?? client).put<ReviewImageEventResponses, ReviewImageEventErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/image-findings/events/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Headman/deputy only; returns retained group-local draft rows and source schedule version.
+ */
+export const listImageScheduleSuggestions = <ThrowOnError extends boolean = false>(options?: Options<ListImageScheduleSuggestionsData, ThrowOnError>): RequestResult<ListImageScheduleSuggestionsResponses, ListImageScheduleSuggestionsErrors, ThrowOnError> => (options?.client ?? client).get<ListImageScheduleSuggestionsResponses, ListImageScheduleSuggestionsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/image-findings/schedule',
+    ...options
+});
+
+export const confirmImageScheduleSuggestion = <ThrowOnError extends boolean = false>(options: Options<ConfirmImageScheduleSuggestionData, ThrowOnError>): RequestResult<ConfirmImageScheduleSuggestionResponses, ConfirmImageScheduleSuggestionErrors, ThrowOnError> => (options.client ?? client).post<ConfirmImageScheduleSuggestionResponses, ConfirmImageScheduleSuggestionErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/image-findings/schedule/{id}/confirm',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
 /**
  * Real retained notifications for the active group and current user
  */
@@ -28,12 +75,65 @@ export const listNotifications = <ThrowOnError extends boolean = false>(options?
 });
 
 /**
+ * Mark one notification of the current group read for the current user
+ */
+export const readNotification = <ThrowOnError extends boolean = false>(options: Options<ReadNotificationData, ThrowOnError>): RequestResult<ReadNotificationResponses, ReadNotificationErrors, ThrowOnError> => (options.client ?? client).post<ReadNotificationResponses, ReadNotificationErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/notifications/{notification_id}/read',
+    ...options
+});
+
+/**
  * Mark current user's visible group notifications read
  */
 export const readAllNotifications = <ThrowOnError extends boolean = false>(options?: Options<ReadAllNotificationsData, ThrowOnError>): RequestResult<ReadAllNotificationsResponses, ReadAllNotificationsErrors, ThrowOnError> => (options?.client ?? client).post<ReadAllNotificationsResponses, ReadAllNotificationsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/notifications/read-all',
     ...options
+});
+
+/**
+ * The caller's own profile
+ */
+export const getProfile = <ThrowOnError extends boolean = false>(options?: Options<GetProfileData, ThrowOnError>): RequestResult<GetProfileResponses, GetProfileErrors, ThrowOnError> => (options?.client ?? client).get<GetProfileResponses, GetProfileErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/profile',
+    ...options
+});
+
+/**
+ * Change the caller's own profile (only the sent fields change)
+ */
+export const updateProfile = <ThrowOnError extends boolean = false>(options: Options<UpdateProfileData, ThrowOnError>): RequestResult<UpdateProfileResponses, UpdateProfileErrors, ThrowOnError> => (options.client ?? client).patch<UpdateProfileResponses, UpdateProfileErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/profile',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Subjects split into subgroups and the caller's current choices
+ */
+export const listMySubgroups = <ThrowOnError extends boolean = false>(options?: Options<ListMySubgroupsData, ThrowOnError>): RequestResult<ListMySubgroupsResponses, ListMySubgroupsErrors, ThrowOnError> => (options?.client ?? client).get<ListMySubgroupsResponses, ListMySubgroupsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/subgroups',
+    ...options
+});
+
+/**
+ * Choose or change the caller's subgroup for one subject
+ */
+export const chooseMySubgroup = <ThrowOnError extends boolean = false>(options: Options<ChooseMySubgroupData, ThrowOnError>): RequestResult<ChooseMySubgroupResponses, ChooseMySubgroupErrors, ThrowOnError> => (options.client ?? client).put<ChooseMySubgroupResponses, ChooseMySubgroupErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/subgroups/{split_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**
@@ -98,6 +198,52 @@ export const listAcademicDeadlines = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
+ * Headman or deputy creates a graded event (test, control point, ...) in the Mini App
+ *
+ * Same rules as creating one through the Telegram bot: audited, undoable, locked against AI overwrites and announced to students. `deadline` is optional; a date without time (`date_only`) keeps the whole day. Students receive 403.
+ */
+export const createAcademicEvent = <ThrowOnError extends boolean = false>(options: Options<CreateAcademicEventData, ThrowOnError>): RequestResult<CreateAcademicEventResponses, CreateAcademicEventErrors, ThrowOnError> => (options.client ?? client).post<CreateAcademicEventResponses, CreateAcademicEventErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/deadlines',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Telegram deep link where an editor sends a file for this card
+ *
+ * Headman or deputy only. The link opens the bot, which waits for one file (up to 20 MB) and, after the headman confirms, attaches it to the card as a material. The file stays in Telegram.
+ */
+export const getHomeworkFileLink = <ThrowOnError extends boolean = false>(options: Options<GetHomeworkFileLinkData, ThrowOnError>): RequestResult<GetHomeworkFileLinkResponses, GetHomeworkFileLinkErrors, ThrowOnError> => (options.client ?? client).get<GetHomeworkFileLinkResponses, GetHomeworkFileLinkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/homework/{homework_id}/file-link',
+    ...options
+});
+
+/**
+ * Telegram deep link where an editor sends a file for this event
+ */
+export const getDeadlineFileLink = <ThrowOnError extends boolean = false>(options: Options<GetDeadlineFileLinkData, ThrowOnError>): RequestResult<GetDeadlineFileLinkResponses, GetDeadlineFileLinkErrors, ThrowOnError> => (options.client ?? client).get<GetDeadlineFileLinkResponses, GetDeadlineFileLinkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/deadlines/{deadline_id}/file-link',
+    ...options
+});
+
+/**
+ * Headman or deputy removes an event for everyone
+ *
+ * The event disappears from every list and detail at once and students are not notified. It is audited and the headman bot's correction journal can undo it. `expected_revision` guards against removing an event that changed meanwhile. Students receive 403.
+ */
+export const deleteAcademicEvent = <ThrowOnError extends boolean = false>(options: Options<DeleteAcademicEventData, ThrowOnError>): RequestResult<DeleteAcademicEventResponses, DeleteAcademicEventErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAcademicEventResponses, DeleteAcademicEventErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/deadlines/{deadline_id}',
+    ...options
+});
+
+/**
  * Retained event details for the active group
  */
 export const getAcademicDeadline = <ThrowOnError extends boolean = false>(options: Options<GetAcademicDeadlineData, ThrowOnError>): RequestResult<GetAcademicDeadlineResponses, GetAcademicDeadlineErrors, ThrowOnError> => (options.client ?? client).get<GetAcademicDeadlineResponses, GetAcademicDeadlineErrors, ThrowOnError>({
@@ -133,6 +279,32 @@ export const listHomework = <ThrowOnError extends boolean = false>(options?: Opt
 });
 
 /**
+ * Headman or deputy creates a homework card in the Mini App
+ *
+ * Same rules as creating one through the Telegram bot: audited, undoable, locked against AI overwrites and announced to students. A date-only deadline resolves to the subject's lesson that day, as in the bot. Students receive 403.
+ */
+export const createHomework = <ThrowOnError extends boolean = false>(options: Options<CreateHomeworkData, ThrowOnError>): RequestResult<CreateHomeworkResponses, CreateHomeworkErrors, ThrowOnError> => (options.client ?? client).post<CreateHomeworkResponses, CreateHomeworkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/homework',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Headman or deputy removes a homework card for everyone
+ *
+ * The card disappears from every list and detail at once (including the archive) and students are not notified. It is audited and the headman bot's correction journal can undo it. `expected_revision` guards against removing a card that changed meanwhile. Students receive 403.
+ */
+export const deleteHomework = <ThrowOnError extends boolean = false>(options: Options<DeleteHomeworkData, ThrowOnError>): RequestResult<DeleteHomeworkResponses, DeleteHomeworkErrors, ThrowOnError> => (options.client ?? client).delete<DeleteHomeworkResponses, DeleteHomeworkErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/homework/{homework_id}',
+    ...options
+});
+
+/**
  * Get one homework card with source details
  */
 export const getHomework = <ThrowOnError extends boolean = false>(options: Options<GetHomeworkData, ThrowOnError>): RequestResult<GetHomeworkResponses, GetHomeworkErrors, ThrowOnError> => (options.client ?? client).get<GetHomeworkResponses, GetHomeworkErrors, ThrowOnError>({
@@ -157,6 +329,29 @@ export const editHomework = <ThrowOnError extends boolean = false>(options: Opti
 });
 
 /**
+ * Headman or deputy brings back a card they just removed
+ *
+ * Only removals made with `deleteHomework` / `deleteAcademicEvent` can be undone here; other edits are undone in the bot's correction journal. A card that changed since, or a removal that was already undone, answers 409 `action_rejected`. Students receive 403.
+ */
+export const undoCardRemoval = <ThrowOnError extends boolean = false>(options: Options<UndoCardRemovalData, ThrowOnError>): RequestResult<UndoCardRemovalResponses, UndoCardRemovalErrors, ThrowOnError> => (options.client ?? client).post<UndoCardRemovalResponses, UndoCardRemovalErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/card-removals/{undo_id}/undo',
+    ...options
+});
+
+/**
+ * Get the image of a photo material of a card
+ *
+ * Streams the photo from Telegram on demand. Only photos of the caller's active group are served; the id is the `id` of a `MaterialLink` with `kind` photo. Send the bearer token: fetch the bytes with the client and show them through an object URL.
+ *
+ */
+export const getAttachmentImage = <ThrowOnError extends boolean = false>(options: Options<GetAttachmentImageData, ThrowOnError>): RequestResult<GetAttachmentImageResponses, GetAttachmentImageErrors, ThrowOnError> => (options.client ?? client).get<GetAttachmentImageResponses, GetAttachmentImageErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/attachments/{attachment_id}/image',
+    ...options
+});
+
+/**
  * Set or undo the current student's completion mark
  */
 export const setHomeworkCompletion = <ThrowOnError extends boolean = false>(options: Options<SetHomeworkCompletionData, ThrowOnError>): RequestResult<SetHomeworkCompletionResponses, SetHomeworkCompletionErrors, ThrowOnError> => (options.client ?? client).put<SetHomeworkCompletionResponses, SetHomeworkCompletionErrors, ThrowOnError>({
@@ -176,4 +371,139 @@ export const recheckMembership = <ThrowOnError extends boolean = false>(options?
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/membership/recheck',
     ...options
+});
+
+/**
+ * Group timetable with the revisions the editor needs and days without lessons
+ */
+export const getStaffSchedule = <ThrowOnError extends boolean = false>(options: Options<GetStaffScheduleData, ThrowOnError>): RequestResult<GetStaffScheduleResponses, GetStaffScheduleErrors, ThrowOnError> => (options.client ?? client).get<GetStaffScheduleResponses, GetStaffScheduleErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/schedule',
+    ...options
+});
+
+/**
+ * Add a one-off group lesson
+ *
+ * Recomputes timetable-derived deadlines in the same transaction. No notification.
+ */
+export const createStaffLesson = <ThrowOnError extends boolean = false>(options: Options<CreateStaffLessonData, ThrowOnError>): RequestResult<CreateStaffLessonResponses, CreateStaffLessonErrors, ThrowOnError> => (options.client ?? client).post<CreateStaffLessonResponses, CreateStaffLessonErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/schedule/lessons',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Move, relocate or cancel one occurrence or the whole recurring rule
+ *
+ * Only fields present in the body change; starts_at and ends_at come together. Revisions come from StaffScheduleResponse.lesson_edits. Timetable-derived deadlines are recomputed in the same transaction; locked, explicit and past deadlines never change.
+ */
+export const changeStaffLesson = <ThrowOnError extends boolean = false>(options: Options<ChangeStaffLessonData, ThrowOnError>): RequestResult<ChangeStaffLessonResponses, ChangeStaffLessonErrors, ThrowOnError> => (options.client ?? client).patch<ChangeStaffLessonResponses, ChangeStaffLessonErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/schedule/lessons/{lesson_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Days without lessons, optionally within a date range
+ */
+export const listNoLessonDays = <ThrowOnError extends boolean = false>(options?: Options<ListNoLessonDaysData, ThrowOnError>): RequestResult<ListNoLessonDaysResponses, ListNoLessonDaysErrors, ThrowOnError> => (options?.client ?? client).get<ListNoLessonDaysResponses, ListNoLessonDaysErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/no-lesson-days',
+    ...options
+});
+
+/**
+ * Mark a day without lessons for the whole group
+ *
+ * Timetable-derived deadlines whose window crosses this day become unknown and are sent to the headman. The student schedule still lists the lessons of that day in this version.
+ */
+export const addNoLessonDay = <ThrowOnError extends boolean = false>(options: Options<AddNoLessonDayData, ThrowOnError>): RequestResult<AddNoLessonDayResponses, AddNoLessonDayErrors, ThrowOnError> => (options.client ?? client).post<AddNoLessonDayResponses, AddNoLessonDayErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/no-lesson-days',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove a day without lessons
+ */
+export const removeNoLessonDay = <ThrowOnError extends boolean = false>(options: Options<RemoveNoLessonDayData, ThrowOnError>): RequestResult<RemoveNoLessonDayResponses, RemoveNoLessonDayErrors, ThrowOnError> => (options.client ?? client).delete<RemoveNoLessonDayResponses, RemoveNoLessonDayErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/no-lesson-days/{day}',
+    ...options
+});
+
+/**
+ * Change the group timezone or first-week anchor (headman only)
+ *
+ * Guarded by schedule_version. Deputies receive 403. Timetable-derived deadlines are recomputed because both values change the group's calendar.
+ */
+export const changeGroupSettings = <ThrowOnError extends boolean = false>(options: Options<ChangeGroupSettingsData, ThrowOnError>): RequestResult<ChangeGroupSettingsResponses, ChangeGroupSettingsErrors, ThrowOnError> => (options.client ?? client).patch<ChangeGroupSettingsResponses, ChangeGroupSettingsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/group/settings',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Active cards waiting for the headman to set or confirm a deadline
+ */
+export const getDeadlineQueue = <ThrowOnError extends boolean = false>(options?: Options<GetDeadlineQueueData, ThrowOnError>): RequestResult<GetDeadlineQueueResponses, GetDeadlineQueueErrors, ThrowOnError> => (options?.client ?? client).get<GetDeadlineQueueResponses, GetDeadlineQueueErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/deadline-queue',
+    ...options
+});
+
+/**
+ * One card with staff-only deadline explanation and field locks
+ */
+export const getStaffItem = <ThrowOnError extends boolean = false>(options: Options<GetStaffItemData, ThrowOnError>): RequestResult<GetStaffItemResponses, GetStaffItemErrors, ThrowOnError> => (options.client ?? client).get<GetStaffItemResponses, GetStaffItemErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/items/{item_id}',
+    ...options
+});
+
+/**
+ * Set or confirm a card deadline
+ *
+ * Both actions lock the deadline field (AI and timetable rebuilds no longer change it), remove the deadline request from attention_reasons and create a new revision with history. `set` stores basis `explicit` with reason `headman_set`; a date_only value is normalised to the start of that day in the group timezone. `confirm` keeps the shown date and stores reason `headman_confirmed`. No notification is sent.
+ */
+export const decideItemDeadline = <ThrowOnError extends boolean = false>(options: Options<DecideItemDeadlineData, ThrowOnError>): RequestResult<DecideItemDeadlineResponses, DecideItemDeadlineErrors, ThrowOnError> => (options.client ?? client).post<DecideItemDeadlineResponses, DecideItemDeadlineErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/items/{item_id}/deadline',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Replace the set of fields the AI may not overwrite
+ *
+ * Send the full list; an empty list releases every lock.
+ */
+export const setItemLocks = <ThrowOnError extends boolean = false>(options: Options<SetItemLocksData, ThrowOnError>): RequestResult<SetItemLocksResponses, SetItemLocksErrors, ThrowOnError> => (options.client ?? client).put<SetItemLocksResponses, SetItemLocksErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/staff/items/{item_id}/locks',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });

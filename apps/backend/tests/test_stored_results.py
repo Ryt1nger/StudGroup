@@ -202,6 +202,30 @@ def test_conflicting_literal_date_is_corrected_from_the_text_and_flagged_not_hel
     assert edit_card(item, wrong[0].messages).visibility == "headman_attention"
 
 
+@pytest.mark.parametrize(
+    "proposed",
+    ["2026-10-29T18:00:00+03:00", "2026-11-06T00:00:00+03:00", "2027-11-06T18:00:00+03:00"],
+)
+def test_full_numeric_source_date_preserves_year_and_submission_hour_in_effective_card(proposed):
+    data, output = stored(
+        3,
+        "К 06.11.2026 решить задачи 17–19. Решения загрузить в LMS до 18:00.",
+        old_proposal(
+            3,
+            title="Решить задачи",
+            description="Решить задачи 17–19.",
+            deadline={
+                "at": datetime.fromisoformat(proposed),
+                "date_only": proposed.endswith("00:00:00+03:00"),
+                "basis": "explicit",
+            },
+        ),
+    )
+    (item,) = effective_validation(output, data.messages, "Europe/Moscow").accepted
+    assert item.deadline.at == datetime(2026, 11, 6, 18, 0, tzinfo=MSK)
+    assert item.deadline.date_only is False
+
+
 def test_effective_view_is_idempotent_and_keeps_sources():
     for build in (old_4575, old_4597):
         data, validation = build()

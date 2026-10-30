@@ -1,5 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createBrowserRouter, createMemoryRouter, Navigate, useRouteError } from 'react-router';
+import { EventReviewScreen, EventsScreen, GroupEventScreen } from './features/events/EventsScreen';
+import { EventReviewDetailScreen } from './features/events/EventReviewDetailScreen';
 import { TodayScreen } from './features/today/TodayScreen';
 import { HomeworkScreen } from './features/homework/HomeworkScreen';
 import { ru } from './i18n/ru';
@@ -7,25 +9,26 @@ import { homeworkIdFromStartParam } from './lib/deeplink';
 import { AppShell } from './shell/AppShell';
 import { TasksScreen } from './features/tasks/TasksScreen';
 import { ScheduleScreen } from './features/schedule/ScheduleScreen';
+import { ImageScheduleReviewScreen } from './features/schedule/ImageScheduleReviewScreen';
 import { LessonScreen } from './features/schedule/LessonScreen';
 import { SubjectsScreen } from './features/subjects/SubjectsScreen';
-import { LessonSubjectScreen } from './features/subjects/LessonSubjectScreen';
 import { DeadlinesScreen } from './features/deadlines/DeadlinesScreen';
+import { CreateCardScreen, EventEditScreen, HomeworkEditScreen } from './features/cardEdit/EditCardScreens';
 import { AcademicDeadlineScreen } from './features/deadlines/AcademicDeadlineScreen';
-import { StateView } from './ui/StateView';
-import { Button } from './ui/Button';
-import { AlertCircle } from './ui/icons';
+import { LessonSubjectScreen } from './features/subjects/LessonSubjectScreen';
+import { SubjectScreen } from './features/subjects/SubjectScreen';
+import { ProfileScreen } from './features/profile/ProfileScreen';
+import { StateButton, StateView } from './ui/Blocks';
 
 function RouteError() {
   const error = useRouteError();
   if (import.meta.env.DEV) console.error(error);
   return (
     <StateView
-      role="alert"
-      icon={<AlertCircle />}
+      icon="alert"
       title={ru.states.errorTitle}
       body={ru.states.errorBody}
-      action={<Button onClick={() => window.location.reload()}>{ru.states.retry}</Button>}
+      action={<StateButton icon="refresh" onClick={() => window.location.reload()}>{ru.states.retry}</StateButton>}
     />
   );
 }
@@ -38,16 +41,6 @@ export function appRoutes(startParam: string | null) {
   // `start_param` is an untrusted navigation hint: it can only select a homework route, and the
   // backend still enforces session, membership and ownership on the resulting request.
   const deepLinkId = homeworkIdFromStartParam(startParam);
-  const devRoutes = import.meta.env.DEV
-    ? [
-        {
-          path: 'preview/schedule',
-          lazy: async () => ({
-            Component: (await import('./features/schedule/SchedulePreview')).SchedulePreview,
-          }),
-        },
-      ]
-    : [];
   return [
     {
       path: '/',
@@ -56,15 +49,25 @@ export function appRoutes(startParam: string | null) {
       children: [
         { index: true, element: <Navigate to={deepLinkId ? `/homework/${deepLinkId}` : '/today'} replace /> },
         { path: 'today', Component: TodayScreen },
+        { path: 'events', Component: EventsScreen },
+        { path: 'events/review', Component: EventReviewScreen },
+        { path: 'events/review/:eventId', Component: EventReviewDetailScreen },
+        { path: 'events/:eventId', Component: GroupEventScreen },
         { path: 'homework/:homeworkId', Component: HomeworkScreen },
+        { path: 'homework/:homeworkId/edit', Component: HomeworkEditScreen },
+        { path: 'cards/new', Component: CreateCardScreen },
         { path: 'tasks', Component: TasksScreen },
         { path: 'schedule', Component: ScheduleScreen },
+        { path: 'schedule/review', Component: ImageScheduleReviewScreen },
         { path: 'schedule/lesson/:lessonId', Component: LessonScreen },
         { path: 'subjects', Component: SubjectsScreen },
         { path: 'subjects/lessons/:lessonId', Component: LessonSubjectScreen },
+        { path: 'subjects/:subjectId', Component: SubjectScreen },
+        { path: 'profile', Component: ProfileScreen },
+        { path: 'profile/:section', Component: ProfileScreen },
         { path: 'deadlines', Component: DeadlinesScreen },
         { path: 'deadlines/:deadlineId', Component: AcademicDeadlineScreen },
-        ...devRoutes,
+        { path: 'deadlines/:deadlineId/edit', Component: EventEditScreen },
         { path: '*', Component: NotFound },
       ],
     },

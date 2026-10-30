@@ -89,3 +89,13 @@ def test_alternating_weeks_use_the_matching_week_pattern():
         schedule_subject(second_wed, lessons, timezone=TZ, first_week_anchor=date(2026, 10, 12))
         is None
     )
+
+
+def test_a_midweek_anchor_counts_whole_monday_weeks_like_the_schedule_screen():
+    lessons = [Lesson(0, time(9, 0), time(10, 20), "Основы информатики", week="second")]
+    anchor = date(2026, 10, 7)  # Wednesday of a "first" week
+    next_monday = datetime(2026, 10, 12, 6, 30, tzinfo=UTC)  # 09:30 Moscow, second week
+    assert (
+        schedule_subject(next_monday, lessons, timezone=TZ, first_week_anchor=anchor)
+        == "Основы информатики"
+    )

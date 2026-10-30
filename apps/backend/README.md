@@ -2,6 +2,25 @@
 
 Owner: Codex.
 
+## Core v2 release funding
+
+The current owner-approved allowance is **USD 1 total**, including previous conservative
+charges of USD 0.181507560, comparisons, vision, text and all retries. Older standalone probe
+ceilings below are not additional authorization for this release. Keep the original private
+journal; never start a fresh journal to regain money. Its pilot allocation is reserved before
+database provisioning and cannot be reset or automatically refunded after a provisioning error.
+
+Migration 0047 stores an optional funded allowance on the group's analysis settings and a
+source-independent per-HTTP-request journal. Configure it only for the explicitly approved
+pilot group after reserving the same amount in the original journal. Set
+`AI_RELEASE_BUDGET_REQUIRED_GROUPS` to that group UUID before enabling paid pilot work:
+missing funding then fails closed. `release_budget.configure` requires active pilot permission,
+an exact funding receipt and a window no longer than 48 hours; repeat configuration must be
+identical. Text and vision share this allowance, daily/hourly ceilings and an unknown-outcome
+hold. Source purge, midnight, restarts and route changes never reset spent money. Unknown
+delivery, missing usage, cancellation or a lost paid lease stop further paid work. There is no
+automatic unhold or funding-increase API. Default flags and required-group list remain empty.
+
 ## Private read-only shadow wave export
 
 To export stored C+ results without another provider call, set `DATABASE_URL` through the
@@ -255,6 +274,78 @@ Question delivery uses the existing web process, so a sleeping free Render insta
 catches up on waking; it is not a guaranteed always-on scheduler. Questions are off
 by default; no production role or notification preference is enabled automatically.
 
+## Private /start walkthrough (migration 0036)
+
+`/start` opens a button-only panel (`bot_start.py`, callback prefix `t`) built on the same
+durable panel mechanism as `/st` and `/admin`: one message edited in place, every new `/start`
+removes the previous screen and the person's own messages, buttons go stale with their screen.
+Student path: welcome -> «Я студент» -> «Ввести код» -> paste a code -> «Готово» with the app
+button. A wrong typed code keeps the panel waiting for another try. A person who is already
+connected sees their group and the app button instead of the role question. Info topics
+(how it works, FAQ, support) are buttons on the welcome screen; the old commands still work.
+
+Invitation codes are secrets: the message carrying one (typed code or `/start invite_<code>`)
+is deleted at once. Set `BOT_USERNAME` (without `@`) so the headman's «Создать приглашения» shows
+tap-to-join links `https://t.me/<bot>?start=invite_<code>`; unset, it shows the old command text.
+
+### Connecting a new group (`bot_connect.py`)
+
+Adding the bot to a Telegram group is enough: the bot creates the group and its environment
+(group row with `pilot_authorized`, bot-added boundary now, timezone Europe/Moscow until changed
+in the cabinet, AI profile) and starts at once, with no approval, and **the person who added the
+bot becomes the group's single headman**. The bot never writes in the group; the new headman gets
+the «группа подключена» screen in private chat (it is only delivered if they ever opened the bot,
+and it warns when the bot is not a chat administrator and therefore cannot see messages).
+
+The adder is named by `my_chat_member` or by the service message "X invited the bot"; they are
+made headman unless Telegram positively says they are only an ordinary member (if Telegram cannot
+say, they are trusted). `/start` typed in the group is a fallback for when those updates are not
+delivered and requires a confirmed administrator. The administrator list is read with
+`getChatAdministrators`, which works before the bot is made an administrator.
+
+If nobody qualified (an ordinary member added the bot, or the adder already belongs to another
+group) the group exists with «староста не выбран»; the owner's `/admin` list marks it and any
+administrator of that chat can take the role later on the «Я староста» screen (it lists only
+headman-less groups the person administers) or with `/start` in the group.
+
+Guards: a group that already has a headman is never changed; one person belongs to one group; the
+role is assigned under a lock on the group row, so two people cannot both win; names of groups the
+person does not administer are never shown. The webhook must deliver `my_chat_member` (part of
+Telegram's default update set). The owner's `/admin` assignment also refuses a second active
+headman in one group.
+
+Cost note: every group the bot is added to now starts AI analysis, and several owner tools
+(`/explain`, `/shadowstatus`, the first-run preview) still assume exactly one authorized group.
+
+### Headman cabinet by buttons
+
+Headmen and deputies see «Кабинет старосты» on the start screen (and after connecting a group).
+It opens the same cabinet `/st` opens, straight into the main menu for the usual single group:
+the start screen is removed and the cabinet takes its place; «‹ В начало» in the cabinet menu
+returns the other way. Cabinet texts no longer ask people to type commands; the `/st` command
+still works as a shortcut. A stale button or expired session now re-opens a fresh menu or says
+to use the latest message. Text input steps (titles, dates, links) remain typed by nature.
+
+Not built yet: the promo-code step from the flow diagram (no partner model to record the code).
+There is no database-level unique index on one active headman per group; add it once production
+data is checked for duplicates.
+
+## Cabinet API /v1/staff (contract 0.10.0)
+
+HTTP entry point to the same headman/deputy rules for the Mini App cabinet. Apply
+migration 0035 (`groups.schedule_version`) before startup. Every route re-reads and
+locks the membership; students get 403. Deputies can edit lessons, days without lessons
+and card deadlines; timezone and first-week anchor are headman-only, as in `/st`.
+
+Every group timetable change from the bot, the cabinet, undo or reviewed publication goes
+through `schedule_audit.schedule_changed`: one `schedule_changes` row, a new
+`schedule_version`, then `rebuild_after_schedule_change` in the same transaction. Setting
+or confirming a card deadline locks the `deadline` field and clears the deadline request;
+`PUT /items/{id}/locks` replaces the locked field set. No notifications are sent.
+
+Not in this release: schedule import, personal (per-student) schedule, rollback journal
+in the cabinet, and showing days without lessons on the student schedule.
+
 ## Profile, inbox and private bot administration (contract 0.7.0)
 
 The production header reads the authenticated session, not demo data. Its profile
@@ -364,3 +455,90 @@ are stored separately. Important approximate dates remain hints, not fabricated 
 timestamps. Media-only messages cannot be resolved when the exported attachments are
 absent. Production requires migration 0007; Base metadata creation here is limited
 to the explicit isolated preview setup, not a production migration substitute.
+
+## Core v2 image pilot (disabled)
+
+The durable two-pass image path is off by default. Offline tools do not import an AI provider,
+HTTP client or database writer. From `apps/backend`, render only the synthetic test corpus:
+
+```sh
+uv run python -m studgroup.analysis.image_evaluation render \
+  --gold tests/fixtures/ai_analysis/image-scenarios.json \
+  --font /path/to/installed-unicode-font.ttf --out /tmp/studgroup-image-fixtures
+uv run python -m studgroup.analysis.image_evaluation evaluate \
+  --gold tests/fixtures/ai_analysis/image-scenarios.json
+```
+
+The second command deliberately reports null measurements and `UNMEASURED / AWAITING OWNER
+APPROVAL` without observations. Add `--observations recording.json` to evaluate an annotated
+recording; `compare --baseline baseline-recording.json --observations candidate-recording.json`
+requires the same `input_sha256` (pixels AND chat/annotation snapshot). Observation format is
+`analysis.image_evaluation.ObservationRun`: evidence_kind, input_sha256, per-case image states,
+canonical fact annotations, types, card/display counts, schedule/event fields, optional measured
+cost/latency. Matching is exact normalized annotation text; paraphrases need human adjudication.
+Synthetic stub success must never be called measured model quality.
+
+Activation requires separate owner approval. Necessary settings (none changed here):
+
+- `IMAGE_ANALYSIS_ENABLED=true`, explicit JSON `IMAGE_ANALYSIS_GROUPS=["<group uuid>"]`,
+  and timezone-aware `IMAGE_ANALYSIS_SINCE=<approved start>`. Missing start disables work.
+- Begin with `IMAGE_ANALYSIS_MODE=shadow`: persist image evidence/drafts without reopening
+  messages or altering published cards. Do not enable legacy photo reading for this same pilot.
+- The pass reservation (default USD 0.02), image total (0.12), album/message batch (0.20), rolling
+  hour (0.25), and group's existing daily C+ budget apply before calls. These are configurable
+  safety reservations, not measured provider prices. Image and text accounting share group locks.
+  Usage above a reservation fails explicitly and stops further work at the relevant cap.
+- `IMAGE_DIAGNOSTICS_ENABLED`, `IMAGE_SCHEDULE_REVIEW_ENABLED`, `IMAGE_EVENT_REVIEW_ENABLED`,
+  `IMAGE_EVENT_PUBLICATION_ENABLED` remain false. Each endpoint also requires the group allowlist;
+  diagnostics/review require a freshly checked headman/deputy membership. Student events have a
+  separate publication gate; personal/unknown source audiences and unmapped subgroups stay hidden.
+
+Before an authorized shadow sample, verify both visual calls are supported by the configured
+provider/model and approve its rates, source corpus, retention and monetary caps. Compare the
+same rendered manifest/context with the baseline, inspect every critical number/date and every
+false homework, then agree precision/recall/cost/latency thresholds. Check unknown paid outcomes,
+retry counts and cost reservations in staff image diagnostics. Do not activate live processing,
+student publication, historical reprocessing or a writer-mode change from these instructions alone.
+
+Rollback is feature-only: first disable public event/schedule review gates, then image processing
+and diagnostics, retaining stored sources/results. Do not drop production tables or change writer
+mode automatically. Legacy published-card display remains intact; images published through the
+new canonical evidence path retain their full task text. An ambiguous paid lease is held for
+review rather than purchased again. Oversized combined evidence is explicitly held for review;
+all completed image readings are retained, never string-truncated.
+
+Migrations 0040–0042 are additive. Verify upgrade/downgrade/re-upgrade only on a disposable
+PostgreSQL database before deployment. The draft additive API is
+`packages/contracts/image-findings.openapi.yaml`; frontend adoption, event retention and subgroup
+mapping require owner coordination. See the living integration report for completed gates and
+`OWNER_DECISIONS_REQUIRED`.
+
+Owner decisions 2026-10-27: approved structured events survive private-source expiry and are
+retained through the event's local end date plus seven full calendar days. Drafts remain bounded
+by source retention. Missing dates or a multi-day event without an end prevent publication.
+Expired private-source links are unavailable; approved events never preserve copied raw chat.
+Schedule confirmation accepts optional corrected_rows and explicit subgroup/lesson mapping;
+AI rows remain immutable. Migration 0044 and the additive LessonOccurrence.subgroup_id field
+support the pending frontend integration. No public/review flags are activated by these changes.
+
+The owner-authorized synthetic-only provider check is `tools/synthetic_vision_check.py`.
+It accepts only the committed 16 PNG hashes, never opens the production database, and shares
+one durable USD 2 ledger across restarts. Run with `--out /absolute/private-ledger.json`.
+No automatic paid retries occur. Unknown outcomes retain their full reservation; default
+execution holds an identical request. An explicitly reviewed synthetic-only retest may use
+`--retest-ambiguous` within that same ledger and cap, retaining all unknown reservations.
+That option is not part of the production image worker and never relaxes its ambiguous-call hold.
+The local check uses HTTP/2 with certificate verification after transient handshake failures; production transport
+is unchanged. Raw responses contain only synthetic fixture content; never use this runner with
+student photos or private chats. A new output path must not be used to reset the authorized cap.
+
+
+The authorized 2026-10-27 run is complete. Recorded synthetic responses, every attempted call,
+usage, held unknown charges and final C+ output are in
+`tests/fixtures/ai_analysis/image-provider-observations.json`; the canonical Russian assessment
+is `docs/architecture/ai-analysis-integration-report.md` at repository root. This file is a raw
+provider ledger, not the normalized ObservationRun input format. No real-group quality or
+production activation follows from it. Configure test credentials through DEEPSEEK_API_KEY or
+STUDGROUP_SYNTHETIC_ENV_FILE pointing to an ignored local .env; never commit that file.
+Only TCP/TLS connection establishment may retry automatically in the local check; paid read/write
+failures retain the hold. All already recorded expenses count against the original USD 2 cap.

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from studgroup import subgroups
 from studgroup.api import ApiError, active_group, database, edit_permissions
 from studgroup.models import AcademicDeadline, Group, WebSession
 from studgroup.security import token_hash
@@ -42,6 +43,7 @@ async def representation(db, group, row, now):
         "kind": row.kind,
         "card_kind": enrichment["card_kind"],
         "subject": row.subject,
+        "subgroup": await subgroups.label(db, row.subgroup_id),
         "confirmed_subject": enrichment["confirmed_subject"],
         "title": row.title,
         "description": row.description,
@@ -53,6 +55,7 @@ async def representation(db, group, row, now):
         "needs_clarification": row.needs_clarification,
         "deadline_certainty": enrichment["deadline_certainty"],
         "deadline_origin": enrichment["deadline_origin"],
+        "deadline_label": enrichment["deadline_label"],
         "source_message_ids": json.loads(row.source_message_ids),
         "sources": enrichment["sources"],
         "updates": enrichment["updates"],
@@ -62,7 +65,7 @@ async def representation(db, group, row, now):
     }
 
 
-async def items(db, group, now, archive=False, subject=None):
+async def items(db, group, now, archive=False, subject=None, review=False, hidden=frozenset()):
     rows = (
         await db.scalars(
             select(AcademicDeadline).where(
@@ -79,6 +82,8 @@ async def items(db, group, now, archive=False, subject=None):
         row
         for row in rows
         if archived(row, now, group.timezone) == archive
+        and row.subgroup_id not in hidden
+        and (not review or row.needs_clarification)
         and (subject is None or normalized(row.subject) == normalized(subject))
     ]
     selected.sort(
@@ -96,18 +101,49 @@ async def items(db, group, now, archive=False, subject=None):
     return result
 
 
+async def review_count(db, group, now):
+    """Active events an editor still has to settle (no representation work needed)."""
+    rows = await db.scalars(
+        select(AcademicDeadline).where(
+            AcademicDeadline.group_id == group.id,
+            AcademicDeadline.delete_at > now,
+            AcademicDeadline.needs_clarification.is_(True),
+        )
+    )
+    return sum(1 for row in rows if not archived(row, now, group.timezone))
+
+
 @router.get("/deadlines")
 async def list_deadlines(
     group: Annotated[Group, Depends(active_group)],
     db: Annotated[AsyncSession, Depends(database)],
+    authorization: str = Header(),
     archive: bool = False,
+    review: bool = False,
 ):
     now = datetime.now(UTC)
-    return {
+    session = await db.get(WebSession, token_hash(authorization[7:]))
+    editor = bool(await edit_permissions(db, group.id, session.user_id))
+    if review and not editor:
+        raise ApiError("permission_denied", "Очередь проверки доступна старосте и помощнику", 403)
+    if review and archive:
+        raise ApiError("invalid_request", "Проверка относится только к актуальным событиям", 422)
+    response = {
         "generated_at": now,
         "group_timezone": group.timezone,
-        "items": await items(db, group, now, archive),
+        "items": await items(
+            db,
+            group,
+            now,
+            archive,
+            review=review,
+            hidden=await subgroups.hidden(db, group.id, session.user_id),
+        ),
     }
+    if editor:
+        # Lets the client show the review tab only while there is something to review.
+        response["review_count"] = await review_count(db, group, now)
+    return response
 
 
 @router.get("/deadlines/{deadline_id}")
@@ -125,10 +161,10 @@ async def get_deadline(
             AcademicDeadline.delete_at > now,
         )
     )
-    if row is None:
+    session = await db.get(WebSession, token_hash(authorization[7:]))
+    if row is None or row.subgroup_id in await subgroups.hidden(db, group.id, session.user_id):
         raise ApiError("not_found", "Событие не найдено", 404)
     item = await representation(db, group, row, now)
-    session = await db.get(WebSession, token_hash(authorization[7:]))
     return {
         "generated_at": now,
         "group_timezone": group.timezone,

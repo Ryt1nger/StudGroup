@@ -11,27 +11,29 @@ const event = (patch: Partial<AcademicDeadline>): AcademicDeadline => ({
 });
 
 describe('Today upcoming deadlines', () => {
-  it('excludes unknown, distant and passed deadlines, keeping the seven-day boundary', () => {
+  it('keeps only today and tomorrow, excluding unknown, distant and passed deadlines', () => {
     const values = [
       event({ date_hint: 'В декабре' }),
       event({ deadline_at: '2026-11-01T12:00:00+03:00' }),
       event({ deadline_at: now }),
       event({ deadline_at: '2026-10-13T12:00:00+03:00' }),
+      event({ deadline_at: '2026-10-07T23:30:00+03:00' }),
+      event({ deadline_at: '2026-10-08T00:30:00+03:00' }),
     ];
-    expect(upcomingDeadlines(values, now, 'Europe/Moscow')).toEqual([values[3]]);
+    expect(upcomingDeadlines(values, now, 'Europe/Moscow')).toEqual([values[4]]);
   });
   it('keeps a date-only deadline through the group day', () => {
     const value = event({ deadline_at: '2026-10-06T00:00:00+03:00', date_only: true });
     expect(upcomingDeadlines([value], now, 'Europe/Moscow')).toEqual([value]);
     expect(upcomingDeadlines([value], '2026-10-07T00:00:00+03:00', 'Europe/Moscow')).toEqual([]);
   });
-  it('keeps near and ongoing windows, excluding ended and distant windows', () => {
+  it('keeps ongoing windows that start by tomorrow, excluding ended and later windows', () => {
     const values = [
       event({ window_start: '2026-10-10T00:00:00+03:00', window_end: '2026-10-16T00:00:00+03:00' }),
       event({ window_start: '2026-10-01T00:00:00+03:00', window_end: '2026-10-07T00:00:00+03:00' }),
       event({ window_start: '2026-10-01T00:00:00+03:00', window_end: now }),
       event({ window_start: '2026-12-01T00:00:00+03:00', window_end: '2026-12-03T00:00:00+03:00' }),
     ];
-    expect(upcomingDeadlines(values, now, 'Europe/Moscow')).toEqual(values.slice(0, 2));
+    expect(upcomingDeadlines(values, now, 'Europe/Moscow')).toEqual([values[1]]);
   });
 });

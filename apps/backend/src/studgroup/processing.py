@@ -14,6 +14,7 @@ from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from studgroup import subgroups
 from studgroup.academic_context import build_context, has_date_cue
 from studgroup.ai import (
     BATCH_PROMPT_VERSION,
@@ -950,10 +951,16 @@ async def context_for(db, raw, group, now, *, semantic_neighborhood=False):
         return context, None
     start = max(span[0], min(source_day, today))
     end = min(span[1], today + timedelta(days=14))
-    calendar = await schedule_data(start, end, group, db)
-    schedule = ScheduleDeadlineContext(
-        calendar["lessons"], start, end, calendar["week_state"] == "ready"
-    )
+    # A retained source can be 30 days old, plus 14 days of future timetable. Keep the
+    # public 32-day guard and fetch the internal evidence span in non-overlapping chunks.
+    lessons, ready, cursor = [], True, start
+    while cursor <= end:
+        chunk_end = min(end, cursor + timedelta(days=31))
+        calendar = await schedule_data(cursor, chunk_end, group, db)
+        lessons.extend(calendar["lessons"])
+        ready = ready and calendar["week_state"] == "ready"
+        cursor = chunk_end + timedelta(days=1)
+    schedule = ScheduleDeadlineContext(lessons, start, end, ready)
     return context, schedule
 
 
@@ -1107,6 +1114,13 @@ async def publish(db, raw, extraction, now, statistics=None):
             else "from_group_message",
             "source_message_at": utc(original.message_date),
         }
+        # A subject taught in subgroups: the card goes to the recognised subgroup only; an
+        # unrecognised one is shown to everyone and waits for the headman.
+        values["subgroup_id"], unresolved = await subgroups.assign(
+            db, raw.group_id, extraction.subject, None, raw.text + "\n" + original.text
+        )
+        if unresolved:
+            values["verification_state"] = "needs_clarification"
         if existing:
             # A missing/model-assumed date never erases a previously explicit deadline.
             if existing.deadline_at and (deadline is None or is_inferred):
@@ -1225,6 +1239,10 @@ async def publish(db, raw, extraction, now, statistics=None):
         row.needs_clarification = (
             extraction.confidence < 85 or row.deadline_at is None and row.window_start is None
         )
+        row.subgroup_id, unresolved = await subgroups.assign(
+            db, raw.group_id, extraction.subject, None, raw.text + "\n" + original.text
+        )
+        row.needs_clarification = row.needs_clarification or unresolved
         row.delete_at = max(
             utc(row.delete_at), retain_until(row.created_at, row.deadline_at, row.window_end)
         )
@@ -1360,11 +1378,16 @@ async def process_next(engine, settings, provider=None, now=None):
     failure = None
     failure_at = None
     try:
+        from studgroup.analysis.release_budget import RequestAccounting
+
         provider = provider or DeepSeekProvider(
             settings.deepseek_api_key.get_secret_value(),
             model=settings.deepseek_model,
             base_url=settings.deepseek_base_url,
             allow_technical_repair=settings.ai_technical_repair_enabled,
+            request_accounting=RequestAccounting(
+                engine, settings, raw.group_id, kind="legacy", attempt_key=f"legacy:{attempt_id}"
+            ),
         )
         remaining = (min(cutoffs) - clock()).total_seconds() if cutoffs else None
         if remaining is not None and remaining <= 0:

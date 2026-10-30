@@ -4,6 +4,56 @@ export type ClientOptions = {
     baseUrl: 'https://api.studgroup.example/v1' | (string & {});
 };
 
+export type CardRemoval = {
+    undo_id: string;
+};
+
+export type NotificationSettings = {
+    enabled?: boolean;
+    new_cards?: boolean;
+    changes?: boolean;
+    deadlines?: boolean;
+    deadline_lead?: '3h' | '1d' | '2d';
+    lessons?: boolean;
+    lesson_lead_minutes?: 10 | 15 | 30;
+    quiet?: boolean;
+    quiet_range?: '23-08' | '22-09' | '00-07';
+};
+
+export type UserProfile = {
+    telegram_user_id: number;
+    username?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+    sdu: {
+        platform?: string | null;
+        url?: string | null;
+        login?: string | null;
+        calendar_url?: string | null;
+        password_set: boolean;
+    };
+    settings: NotificationSettings;
+};
+
+export type UpdateProfileRequest = {
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+    sdu_platform?: string | null;
+    /**
+     * https only, no credentials
+     */
+    sdu_url?: string | null;
+    sdu_login?: string | null;
+    /**
+     * https only, no credentials
+     */
+    sdu_calendar_url?: string | null;
+    clear_sdu_password?: boolean;
+    settings?: NotificationSettings;
+};
+
 export type NotificationInbox = {
     generated_at: string;
     unread_count: number;
@@ -32,6 +82,10 @@ export type ScheduleResponse = {
 export type LessonOccurrence = {
     id: string;
     subject: string;
+    /**
+     * Optional confirmed subgroup; absent on existing group-wide lessons.
+     */
+    subgroup_id?: string | null;
     starts_at: string;
     ends_at: string;
     teacher: string | null;
@@ -69,6 +123,14 @@ export type SessionContext = {
     membership?: Membership | null;
     group?: Group | null;
     permissions: Array<Permission>;
+    /**
+     * Optional per-group capabilities; absent fields mean disabled on older servers. Every endpoint still checks its own flag and permissions.
+     */
+    features?: {
+        events?: boolean;
+        event_review?: boolean;
+        schedule_review?: boolean;
+    };
     server_time: string;
 };
 
@@ -102,7 +164,10 @@ export type AccessState = 'active' | 'no_active_group' | 'membership_suspended' 
 
 export type MemberRole = 'student' | 'deputy' | 'headman';
 
-export type Permission = 'schedule.read' | 'today.read' | 'homework.read' | 'homework.completion.write' | 'homework.edit' | 'homework.material.write';
+/**
+ * Staff permissions are a UI hint: headman gets schedule.write, deadline.manage, homework.create and group.settings.write, deputy all but the last. The backend re-checks the role on every request.
+ */
+export type Permission = 'schedule.read' | 'today.read' | 'homework.read' | 'homework.completion.write' | 'homework.edit' | 'homework.material.write' | 'homework.create' | 'schedule.write' | 'deadline.manage' | 'group.settings.write';
 
 export type HomeworkListResponse = {
     /**
@@ -118,6 +183,10 @@ export type HomeworkListResponse = {
      * Pass unchanged with the same filter and session; null means no further page.
      */
     next_cursor: string | null;
+    /**
+     * Number of active cards waiting in the review queue, independent of the selected filter. Present only for the headman and deputy, so the client can show the review tab only while something needs a look. Omitted for students.
+     */
+    review_count?: number;
 };
 
 export type TodayResponse = {
@@ -136,7 +205,7 @@ export type TodayResponse = {
     processing: FeedProcessing;
     empty: boolean;
     /**
-     * Ordered by backend (due_today, new_or_changed, upcoming); the client preserves order. new_or_changed contains only existing assignments with a significant update within the last 24 hours, not newly created or imported assignments. Import normalization and initial inferred timetable dates do not count as live updates. Personally completed items with a known active deadline remain eligible in their normal sections with my_state preserved; completed items without a known deadline are excluded. Cancelled and past-deadline items are archived and excluded immediately; date-only deadlines remain active through their group calendar day. Empty sections are omitted. These display rules do not delete stored homework. Legacy overdue section kind remains accepted but is no longer returned.
+     * Ordered by backend (due_today, upcoming, new_or_changed); the client preserves order. new_or_changed contains only existing assignments with a significant update within the last 5 hours; assignments created within the last 5 hours count as new and are never listed there, nor are imported assignments. Import normalization and initial inferred timetable dates do not count as live updates. Personally completed items with a known active deadline remain eligible in their normal sections with my_state preserved; completed items without a known deadline are excluded. Cancelled and past-deadline items are archived and excluded immediately; date-only deadlines remain active through their group calendar day. Empty sections are omitted. These display rules do not delete stored homework. Legacy overdue section kind remains accepted but is no longer returned.
      */
     sections: Array<TodaySection>;
 };
@@ -151,6 +220,7 @@ export type AcademicDeadline = {
     kind: 'control_point' | 'assessment' | 'test' | 'credit' | 'exam' | 'other_academic_deadline';
     card_kind?: LearningCardKind;
     subject: string;
+    subgroup?: SubgroupRef | null;
     confirmed_subject?: SubjectRef | null;
     title: string;
     description: string;
@@ -158,6 +228,10 @@ export type AcademicDeadline = {
     date_only: boolean;
     deadline_certainty?: 'confirmed' | 'from_source' | 'inferred' | 'needs_clarification' | 'unknown';
     deadline_origin?: 'explicit_message' | 'schedule_inferred' | 'ambiguous_message' | 'manual' | 'imported' | 'unknown';
+    /**
+     * Neutral student wording for an uncertain deadline («К следующему занятию», «Срок уточняется»); null when nothing needs saying.
+     */
+    deadline_label?: string | null;
     window_start: string | null;
     window_end: string | null;
     date_hint: string | null;
@@ -170,14 +244,26 @@ export type AcademicDeadline = {
     materials?: Array<MaterialLink>;
 };
 
+export type FileUploadLink = {
+    url: string;
+};
+
 export type MaterialLink = {
     id: string;
     title: string;
+    /**
+     * An absolute https link, or, for a file kept in Telegram (`kind` other than `link`), an API-relative signed path `/v1/files/{id}?exp=..&sig=..` valid for 6 hours. Resolve it against the API base URL; it needs no Authorization header.
+     */
     url: string;
     kind?: 'link' | 'photo' | 'document' | 'video' | 'audio' | 'voice' | 'animation';
     file_name?: string | null;
     mime_type?: string | null;
     size_bytes?: number | null;
+    /**
+     * True for a photo that is itself the task (read as study material, posted with at most a short caption). The client shows this image instead of the text description.
+     *
+     */
+    replaces_description?: boolean;
 };
 
 export type LearningCardUpdate = {
@@ -246,6 +332,7 @@ export type HomeworkSummary = {
     card_kind?: LearningCardKind;
     title: string;
     subject: SubjectRef;
+    subgroup?: SubgroupRef | null;
     /**
      * Confirmed subject for new clients. Null means that publication did not establish a subject. The legacy subject field remains populated during the compatibility window.
      */
@@ -285,6 +372,26 @@ export type HomeworkDetail = HomeworkSummary & {
     generated_at: string;
 };
 
+export type SubgroupRef = {
+    id: string;
+    name: string;
+};
+
+export type MySubgroupSubject = {
+    split_id: string;
+    subject: SubjectRef;
+    options: Array<SubgroupRef>;
+    selected_subgroup_id: string | null;
+};
+
+export type MySubgroupsResponse = {
+    items: Array<MySubgroupSubject>;
+};
+
+export type ChooseSubgroupRequest = {
+    subgroup_id: string;
+};
+
 export type SubjectRef = {
     id: string;
     name: string;
@@ -308,6 +415,10 @@ export type Deadline = {
      * Student-safe origin; no model confidence, prompt or internal evidence metadata.
      */
     origin?: 'explicit_message' | 'schedule_inferred' | 'ambiguous_message' | 'manual' | 'imported' | 'unknown';
+    /**
+     * Neutral student wording for an uncertain deadline («К следующему занятию», «Срок уточняется»); null when nothing needs saying.
+     */
+    label?: string | null;
 };
 
 /**
@@ -391,6 +502,10 @@ export type EditHomeworkRequest = {
     title?: string;
     description?: string | null;
     subject_name?: string;
+    /**
+     * The red «Срочно» mark of the card; only the headman and deputy may set it.
+     */
+    urgency?: 'normal' | 'urgent';
     deadline?: DeadlineInput | null;
 };
 
@@ -404,9 +519,173 @@ export type EditAcademicDeadlineRequest = {
     date_hint?: string | null;
 };
 
+export type CreateHomeworkRequest = {
+    title: string;
+    subject: string;
+    description?: string;
+    deadline?: DeadlineInput | null;
+};
+
+export type CreateAcademicEventRequest = {
+    kind?: 'control_point' | 'assessment' | 'test' | 'credit' | 'exam' | 'other_academic_deadline';
+    title: string;
+    subject: string;
+    description?: string;
+    deadline?: DeadlineInput | null;
+    date_hint?: string | null;
+};
+
 export type SetCompletionRequest = {
     completed: boolean;
     expected_revision: number;
+};
+
+export type StaffScheduleResponse = {
+    schedule: ScheduleResponse;
+    lesson_edits: Array<LessonEdit>;
+    no_lesson_days: Array<NoLessonDay>;
+    schedule_version: number;
+};
+
+export type LessonEdit = {
+    lesson_id: string;
+    pattern_revision: number;
+    /**
+     * 0 when this occurrence has no one-off change yet.
+     */
+    override_revision: number;
+    week: 'all' | 'first' | 'second';
+    /**
+     * True for a one-off lesson; scope recurring then edits only that day.
+     */
+    single_day: boolean;
+};
+
+export type NoLessonDay = {
+    day: string;
+    reason?: string | null;
+};
+
+export type NoLessonDayList = {
+    items: Array<NoLessonDay>;
+};
+
+export type LessonCreateRequest = {
+    subject: string;
+    /**
+     * Must carry a UTC offset.
+     */
+    starts_at: string;
+    /**
+     * Same group day
+     */
+    ends_at: string;
+    location?: string | null;
+};
+
+export type LessonChangeRequest = {
+    /**
+     * once changes this occurrence; recurring changes the rule for every week it applies to.
+     */
+    scope: 'once' | 'recurring';
+    pattern_revision: number;
+    override_revision: number;
+    starts_at?: string;
+    ends_at?: string;
+    location?: string | null;
+    /**
+     * HTTPS only.
+     */
+    online_url?: string | null;
+    cancelled?: boolean;
+};
+
+export type ScheduleMutationResult = {
+    schedule_version: number;
+};
+
+export type GroupSettingsChangeRequest = {
+    schedule_version: number;
+    /**
+     * IANA zone
+     */
+    timezone?: string;
+    /**
+     * Any day of a «first» week; weeks are counted Monday to Sunday.
+     */
+    first_week_anchor?: string;
+};
+
+export type GroupSettingsResult = {
+    schedule_version: number;
+    timezone: string;
+    first_week_anchor: string | null;
+};
+
+export type LockableField = 'deadline' | 'subject' | 'kind' | 'title' | 'description';
+
+export type StaffDeadline = {
+    at: string | null;
+    date_only: boolean;
+    /**
+     * explicit | relative_resolved | schedule_inferred | unknown (older rows may hold ambiguous_range).
+     */
+    basis: string;
+    /**
+     * Machine code, e.g. next_subject_lesson, no_lesson_day_in_window, headman_set, headman_confirmed.
+     */
+    reason: string;
+    timezone_confirmed: boolean;
+    /**
+     * The wording students see for this deadline.
+     */
+    label: string | null;
+};
+
+export type StaffItem = {
+    id: string;
+    revision: number;
+    /**
+     * active | cancelled | archived
+     */
+    state: string;
+    card_kind: string;
+    destination: 'task' | 'deadline';
+    subject: string | null;
+    title: string;
+    description: string;
+    deadline: StaffDeadline;
+    /**
+     * Explanation for the headman; null once the deadline is set or confirmed.
+     */
+    staff_note: string | null;
+    /**
+     * Machine codes. deadline_needs_headman asks to set a deadline, deadline_inferred_confirm asks to confirm a timetable-derived one; other codes may appear.
+     */
+    attention_reasons: Array<string>;
+    locked_fields: Array<LockableField>;
+    sources: Array<SourceDetail>;
+    created_at: string;
+    updated_at: string;
+};
+
+export type StaffItemList = {
+    items: Array<StaffItem>;
+};
+
+export type DeadlineActionRequest = {
+    action: 'set' | 'confirm';
+    revision: number;
+    /**
+     * Required for set; must carry a UTC offset.
+     */
+    deadline_at?: string | null;
+    date_only?: boolean;
+};
+
+export type FieldLocksRequest = {
+    revision: number;
+    locked_fields: Array<LockableField>;
 };
 
 export type ErrorResponse = {
@@ -414,7 +693,7 @@ export type ErrorResponse = {
 };
 
 export type ApiError = {
-    code: 'invalid_request' | 'unauthenticated' | 'initdata_invalid' | 'initdata_expired' | 'session_expired' | 'no_active_group' | 'not_group_member' | 'membership_suspended' | 'membership_left' | 'group_not_authorized_for_pilot' | 'invitation_expired' | 'invitation_consumed' | 'group_deletion_pending' | 'permission_denied' | 'not_found' | 'gone' | 'revision_conflict' | 'rate_limited' | 'service_unavailable' | 'internal_error';
+    code: 'invalid_request' | 'unauthenticated' | 'initdata_invalid' | 'initdata_expired' | 'session_expired' | 'no_active_group' | 'not_group_member' | 'membership_suspended' | 'membership_left' | 'group_not_authorized_for_pilot' | 'invitation_expired' | 'invitation_consumed' | 'group_deletion_pending' | 'permission_denied' | 'not_found' | 'gone' | 'revision_conflict' | 'action_rejected' | 'rate_limited' | 'service_unavailable' | 'internal_error';
     message: string;
     correlation_id: string;
     retryable: boolean;
@@ -428,7 +707,448 @@ export type ApiError = {
     } | null;
 };
 
+export type ConfirmedScheduleRow = {
+    weekday: number;
+    starts: string;
+    ends: string;
+    subject: string;
+    subject_id?: string | null;
+    subgroup?: string | null;
+    subgroup_id?: string | null;
+    week?: 'all' | 'first' | 'second';
+    valid_from: string;
+    valid_until: string;
+    room?: string | null;
+    teacher?: string | null;
+};
+
+export type EventFinding = {
+    id: string;
+    state: 'applied' | 'held' | 'superseded';
+    payload: EventPayload;
+    source_revision: number;
+    source_url?: string | null;
+};
+
+export type EventPayload = {
+    title: string;
+    description?: string;
+    when_text?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    starts_on?: string | null;
+    ends_on?: string | null;
+    multi_day?: boolean;
+    place?: string | null;
+    conditions?: string | null;
+    audience?: 'group' | 'subgroup' | 'personal' | 'unknown';
+    audience_label?: string | null;
+    action?: 'create' | 'update' | 'cancel';
+    existing_event_id?: string | null;
+    expected_revision?: number | null;
+};
+
+export type EventReview = {
+    id: string;
+    revision: number;
+    state: 'draft' | 'active' | 'cancelled';
+    /**
+     * Exclusive deletion instant: midnight after the seventh local day following event end.
+     */
+    retained_until: string;
+    source_availability: 'available' | 'expired' | null;
+    title: string;
+    description?: string;
+    when_text?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    starts_on?: string | null;
+    ends_on?: string | null;
+    multi_day?: boolean;
+    place?: string | null;
+    conditions?: string | null;
+    audience?: 'group' | 'subgroup' | 'personal' | 'unknown';
+    audience_label?: string | null;
+    manual_lock: boolean;
+    findings: Array<EventFinding>;
+    /**
+     * Retained same-group Telegram source only; null after source expiry or revision mismatch.
+     */
+    source_url?: string | null;
+    /**
+     * An approved historical revision has different confirmed dates.
+     */
+    rescheduled?: boolean;
+};
+
+export type PublishedEvent = {
+    id: string;
+    revision: number;
+    state: 'active' | 'cancelled';
+    /**
+     * Exclusive deletion instant: midnight after the seventh local day following event end.
+     */
+    retained_until: string;
+    source_availability: 'available' | 'expired';
+    title: string;
+    description?: string;
+    when_text?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    starts_on?: string | null;
+    ends_on?: string | null;
+    multi_day?: boolean;
+    place?: string | null;
+    conditions?: string | null;
+    audience?: 'group' | 'subgroup' | 'personal' | 'unknown';
+    audience_label?: string | null;
+    /**
+     * Retained same-group Telegram source only; null after source expiry or revision mismatch.
+     */
+    source_url?: string | null;
+    /**
+     * An approved historical revision has different confirmed dates.
+     */
+    rescheduled?: boolean;
+};
+
+export type RecognizedScheduleRow = {
+    weekday: number;
+    starts: string;
+    ends: string;
+    subject: string;
+    subgroup?: string | null;
+    week?: 'all' | 'first' | 'second';
+    valid_from?: string | null;
+    valid_until?: string | null;
+    room?: string | null;
+    teacher?: string | null;
+};
+
+export type ReviewSubgroup = {
+    id: string;
+    subject_id: string;
+    subject: string;
+    name: string;
+};
+
+export type ScheduleConfirmationRecord = {
+    rows: Array<ConfirmedScheduleRow>;
+    targets: Array<{
+        row_index: number;
+        lesson_id: string;
+        pattern_revision: number;
+        override_revision: number;
+        scope?: 'once' | 'recurring';
+    }>;
+    schedule_version_before: number;
+    source_schedule_version?: number;
+    acknowledged_schedule_change?: boolean;
+};
+
+export type ScheduleSuggestion = {
+    id: string;
+    revision: number;
+    state: 'pending' | 'confirmed';
+    schedule_version: number;
+    rows: Array<RecognizedScheduleRow>;
+    confirmation: ScheduleConfirmationRecord | null;
+    /**
+     * Current retained same-group Telegram source; absent after source expiry or revision change.
+     */
+    source_url?: string | null;
+};
+
+export type StaffEvent = {
+    id: string;
+    revision: number;
+    state: 'draft' | 'active' | 'cancelled';
+    /**
+     * Exclusive deletion instant: midnight after the seventh local day following event end.
+     */
+    retained_until: string;
+    source_availability: 'available' | 'expired' | null;
+    title: string;
+    description?: string;
+    when_text?: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
+    starts_on?: string | null;
+    ends_on?: string | null;
+    multi_day?: boolean;
+    place?: string | null;
+    conditions?: string | null;
+    audience?: 'group' | 'subgroup' | 'personal' | 'unknown';
+    audience_label?: string | null;
+    /**
+     * Retained same-group Telegram source only; null after source expiry or revision mismatch.
+     */
+    source_url?: string | null;
+    /**
+     * An approved historical revision has different confirmed dates.
+     */
+    rescheduled?: boolean;
+};
+
+export type _1GroupEvents = unknown;
+
+export type _1GroupEvents1Id = unknown;
+
+export type _1Staff1ImageFindings1Events = unknown;
+
+export type _1Staff1ImageFindings1Events1Id = unknown;
+
+export type _1Staff1ImageFindings1Schedule = unknown;
+
+export type _1Staff1ImageFindings1Schedule1Id1Confirm = unknown;
+
+export type UpdateProfileRequestWritable = {
+    first_name?: string | null;
+    last_name?: string | null;
+    email?: string | null;
+    sdu_platform?: string | null;
+    /**
+     * https only, no credentials
+     */
+    sdu_url?: string | null;
+    sdu_login?: string | null;
+    /**
+     * https only, no credentials
+     */
+    sdu_calendar_url?: string | null;
+    sdu_password?: string;
+    clear_sdu_password?: boolean;
+    settings?: NotificationSettings;
+};
+
+/**
+ * Canonical card id from the staff endpoints (not the homework/deadline id).
+ */
+export type StaffItemId = string;
+
 export type HomeworkId = string;
+
+export type ListPublishedGroupEventsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Inclusive first group-local calendar day. Requires end; at most 366 days.
+         */
+        start?: string;
+        /**
+         * Inclusive last group-local day. Multi-day events overlap the requested interval.
+         */
+        end?: string;
+        status?: 'active' | 'cancelled' | 'all';
+        /**
+         * Exclude ended events using group timezone; ongoing events remain visible.
+         */
+        upcoming?: boolean;
+    };
+    url: '/group-events';
+};
+
+export type ListPublishedGroupEventsErrors = {
+    /**
+     * Active authenticated membership required
+     */
+    401: unknown;
+    /**
+     * Publication disabled
+     */
+    404: unknown;
+};
+
+export type ListPublishedGroupEventsResponses = {
+    /**
+     * Approved active group events retained through local end date + 7 days inclusive; private source expiry never removes the approved record
+     */
+    200: {
+        events: Array<PublishedEvent>;
+    };
+};
+
+export type ListPublishedGroupEventsResponse = ListPublishedGroupEventsResponses[keyof ListPublishedGroupEventsResponses];
+
+export type GetPublishedGroupEventData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/group-events/{id}';
+};
+
+export type GetPublishedGroupEventErrors = {
+    /**
+     * Unknown, private, unapproved, expired, wrong group or feature disabled. Retained cancelled events remain accessible by ID.
+     */
+    404: unknown;
+};
+
+export type GetPublishedGroupEventResponses = {
+    /**
+     * Published event payload with id/revision/state
+     */
+    200: PublishedEvent;
+};
+
+export type GetPublishedGroupEventResponse = GetPublishedGroupEventResponses[keyof GetPublishedGroupEventResponses];
+
+export type ListImageEventDraftsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/staff/image-findings/events';
+};
+
+export type ListImageEventDraftsErrors = {
+    /**
+     * Membership role disallows review
+     */
+    403: unknown;
+    /**
+     * Review flag disabled
+     */
+    404: unknown;
+};
+
+export type ListImageEventDraftsResponses = {
+    /**
+     * Retained group events with revisions and applied/held source findings; staff only
+     */
+    200: {
+        events: Array<EventReview>;
+    };
+};
+
+export type ListImageEventDraftsResponse = ListImageEventDraftsResponses[keyof ListImageEventDraftsResponses];
+
+export type ReviewImageEventData = {
+    body: {
+        expected_revision: number;
+        state?: 'draft' | 'active' | 'cancelled';
+        accept_source_ids?: Array<string>;
+        payload: EventPayload;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/staff/image-findings/events/{id}';
+};
+
+export type ReviewImageEventErrors = {
+    /**
+     * Staff membership required
+     */
+    403: unknown;
+    /**
+     * Event not found or activation/publication flag disabled
+     */
+    404: unknown;
+    /**
+     * Stale revision/source or event is not publishable
+     */
+    409: unknown;
+};
+
+export type ReviewImageEventResponses = {
+    /**
+     * Updated event and revision; manual lock is retained
+     */
+    200: StaffEvent;
+};
+
+export type ReviewImageEventResponse = ReviewImageEventResponses[keyof ReviewImageEventResponses];
+
+export type ListImageScheduleSuggestionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/staff/image-findings/schedule';
+};
+
+export type ListImageScheduleSuggestionsErrors = {
+    /**
+     * Membership role disallows review
+     */
+    403: unknown;
+    /**
+     * Feature disabled or not allowlisted
+     */
+    404: unknown;
+};
+
+export type ListImageScheduleSuggestionsResponses = {
+    /**
+     * suggestions array: id, revision, state, schedule_version, rows
+     */
+    200: {
+        suggestions: Array<ScheduleSuggestion>;
+        /**
+         * Current official version, separately from the version captured in each suggestion.
+         */
+        current_schedule_version?: number;
+        subgroups?: Array<ReviewSubgroup>;
+    };
+};
+
+export type ListImageScheduleSuggestionsResponse = ListImageScheduleSuggestionsResponses[keyof ListImageScheduleSuggestionsResponses];
+
+export type ConfirmImageScheduleSuggestionData = {
+    body: {
+        expected_revision: number;
+        expected_schedule_version: number;
+        /**
+         * Optional editor-corrected full rows; preserve AI rows separately for audit. Each subgroup_id must belong to this group and subject.
+         */
+        corrected_rows?: Array<ConfirmedScheduleRow> | null;
+        targets?: Array<{
+            row_index: number;
+            lesson_id: string;
+            pattern_revision: number;
+            override_revision: number;
+            scope?: 'once' | 'recurring';
+        }>;
+        /**
+         * Explicit editor re-review after an official schedule change; requires corrected_rows and the current expected_schedule_version. Does not run AI.
+         */
+        acknowledge_schedule_change?: boolean;
+    };
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/staff/image-findings/schedule/{id}/confirm';
+};
+
+export type ConfirmImageScheduleSuggestionErrors = {
+    /**
+     * Membership role disallows confirmation
+     */
+    403: unknown;
+    /**
+     * Not found or feature disabled
+     */
+    404: unknown;
+    /**
+     * Stale source/context/revision, missing dates or unresolved subgroup/lesson mapping
+     */
+    409: unknown;
+};
+
+export type ConfirmImageScheduleSuggestionResponses = {
+    /**
+     * Confirmed schedule_version; repeated confirmation has no repeated side effects
+     */
+    200: {
+        schedule_version: number;
+    };
+};
+
+export type ConfirmImageScheduleSuggestionResponse = ConfirmImageScheduleSuggestionResponses[keyof ConfirmImageScheduleSuggestionResponses];
 
 export type ListNotificationsData = {
     body?: never;
@@ -459,6 +1179,41 @@ export type ListNotificationsResponses = {
 
 export type ListNotificationsResponse = ListNotificationsResponses[keyof ListNotificationsResponses];
 
+export type ReadNotificationData = {
+    body?: never;
+    path: {
+        notification_id: string;
+    };
+    query?: never;
+    url: '/notifications/{notification_id}/read';
+};
+
+export type ReadNotificationErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type ReadNotificationError = ReadNotificationErrors[keyof ReadNotificationErrors];
+
+export type ReadNotificationResponses = {
+    /**
+     * Updated notification inbox
+     */
+    200: NotificationInbox;
+};
+
+export type ReadNotificationResponse = ReadNotificationResponses[keyof ReadNotificationResponses];
+
 export type ReadAllNotificationsData = {
     body?: never;
     path?: never;
@@ -487,6 +1242,132 @@ export type ReadAllNotificationsResponses = {
 };
 
 export type ReadAllNotificationsResponse = ReadAllNotificationsResponses[keyof ReadAllNotificationsResponses];
+
+export type GetProfileData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/profile';
+};
+
+export type GetProfileErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+};
+
+export type GetProfileError = GetProfileErrors[keyof GetProfileErrors];
+
+export type GetProfileResponses = {
+    /**
+     * Profile; the study-platform password is never returned, only whether one is set
+     */
+    200: UserProfile;
+};
+
+export type GetProfileResponse = GetProfileResponses[keyof GetProfileResponses];
+
+export type UpdateProfileData = {
+    body: UpdateProfileRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/profile';
+};
+
+export type UpdateProfileErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+    /**
+     * The server cannot store a study-platform password right now (no encryption key)
+     */
+    503: ErrorResponse;
+};
+
+export type UpdateProfileError = UpdateProfileErrors[keyof UpdateProfileErrors];
+
+export type UpdateProfileResponses = {
+    /**
+     * Updated profile
+     */
+    200: UserProfile;
+};
+
+export type UpdateProfileResponse = UpdateProfileResponses[keyof UpdateProfileResponses];
+
+export type ListMySubgroupsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/subgroups';
+};
+
+export type ListMySubgroupsErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+};
+
+export type ListMySubgroupsError = ListMySubgroupsErrors[keyof ListMySubgroupsErrors];
+
+export type ListMySubgroupsResponses = {
+    /**
+     * Current active-group subgroup choices
+     */
+    200: MySubgroupsResponse;
+};
+
+export type ListMySubgroupsResponse = ListMySubgroupsResponses[keyof ListMySubgroupsResponses];
+
+export type ChooseMySubgroupData = {
+    body: ChooseSubgroupRequest;
+    path: {
+        split_id: string;
+    };
+    query?: never;
+    url: '/subgroups/{split_id}';
+};
+
+export type ChooseMySubgroupErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type ChooseMySubgroupError = ChooseMySubgroupErrors[keyof ChooseMySubgroupErrors];
+
+export type ChooseMySubgroupResponses = {
+    /**
+     * Updated subgroup choices
+     */
+    200: MySubgroupsResponse;
+};
+
+export type ChooseMySubgroupResponse = ChooseMySubgroupResponses[keyof ChooseMySubgroupResponses];
 
 export type GetScheduleData = {
     body?: never;
@@ -660,6 +1541,10 @@ export type ListAcademicDeadlinesData = {
     path?: never;
     query?: {
         archive?: boolean;
+        /**
+         * Editors' queue: active events flagged needs_clarification. Headman and deputy only (students get 403 permission_denied); cannot be combined with archive (422).
+         */
+        review?: boolean;
     };
     url: '/deadlines';
 };
@@ -685,10 +1570,167 @@ export type ListAcademicDeadlinesResponses = {
         generated_at: string;
         group_timezone: string;
         items: Array<AcademicDeadline>;
+        /**
+         * Number of active events in the review queue; present only for the headman and deputy, omitted for students.
+         */
+        review_count?: number;
     };
 };
 
 export type ListAcademicDeadlinesResponse = ListAcademicDeadlinesResponses[keyof ListAcademicDeadlinesResponses];
+
+export type CreateAcademicEventData = {
+    body: CreateAcademicEventRequest;
+    path?: never;
+    query?: never;
+    url: '/deadlines';
+};
+
+export type CreateAcademicEventErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type CreateAcademicEventError = CreateAcademicEventErrors[keyof CreateAcademicEventErrors];
+
+export type CreateAcademicEventResponses = {
+    /**
+     * The created event
+     */
+    201: {
+        generated_at: string;
+        group_timezone: string;
+        item: AcademicDeadline;
+        permissions: Array<Permission>;
+    };
+};
+
+export type CreateAcademicEventResponse = CreateAcademicEventResponses[keyof CreateAcademicEventResponses];
+
+export type GetHomeworkFileLinkData = {
+    body?: never;
+    path: {
+        homework_id: string;
+    };
+    query?: never;
+    url: '/homework/{homework_id}/file-link';
+};
+
+export type GetHomeworkFileLinkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type GetHomeworkFileLinkError = GetHomeworkFileLinkErrors[keyof GetHomeworkFileLinkErrors];
+
+export type GetHomeworkFileLinkResponses = {
+    /**
+     * Deep link
+     */
+    200: FileUploadLink;
+};
+
+export type GetHomeworkFileLinkResponse = GetHomeworkFileLinkResponses[keyof GetHomeworkFileLinkResponses];
+
+export type GetDeadlineFileLinkData = {
+    body?: never;
+    path: {
+        deadline_id: string;
+    };
+    query?: never;
+    url: '/deadlines/{deadline_id}/file-link';
+};
+
+export type GetDeadlineFileLinkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type GetDeadlineFileLinkError = GetDeadlineFileLinkErrors[keyof GetDeadlineFileLinkErrors];
+
+export type GetDeadlineFileLinkResponses = {
+    /**
+     * Deep link
+     */
+    200: FileUploadLink;
+};
+
+export type GetDeadlineFileLinkResponse = GetDeadlineFileLinkResponses[keyof GetDeadlineFileLinkResponses];
+
+export type DeleteAcademicEventData = {
+    body?: never;
+    path: {
+        deadline_id: string;
+    };
+    query: {
+        expected_revision: number;
+    };
+    url: '/deadlines/{deadline_id}';
+};
+
+export type DeleteAcademicEventErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type DeleteAcademicEventError = DeleteAcademicEventErrors[keyof DeleteAcademicEventErrors];
+
+export type DeleteAcademicEventResponses = {
+    /**
+     * Removed; `undo_id` brings the event back (`undoCardRemoval`)
+     */
+    200: CardRemoval;
+};
+
+export type DeleteAcademicEventResponse = DeleteAcademicEventResponses[keyof DeleteAcademicEventResponses];
 
 export type GetAcademicDeadlineData = {
     body?: never;
@@ -786,9 +1828,9 @@ export type ListHomeworkData = {
     path?: never;
     query?: {
         /**
-         * all includes active items, including personally completed; mine is active personal completion. today excludes completed and selects active deadlines on the group's current calendar day. week excludes completed and selects active deadlines in the current group calendar week Monday through Sunday. archive includes all cancelled or past-deadline items. Unknown deadlines never archive automatically unless cancelled.
+         * all includes active items, including personally completed; mine is active personal completion. today excludes completed and selects active deadlines on the group's current calendar day. week excludes completed and selects active deadlines in the current group calendar week Monday through Sunday. archive includes all cancelled or past-deadline items. Unknown deadlines never archive automatically unless cancelled. review is the editors' queue: active (not archived, not cancelled) cards whose status or verification_state is needs_clarification, regardless of personal completion. Only the headman and deputy may request it; students get 403 permission_denied.
          */
-        filter?: 'all' | 'today' | 'week' | 'mine' | 'archive';
+        filter?: 'all' | 'today' | 'week' | 'mine' | 'archive' | 'review';
         limit?: number;
         cursor?: string;
     };
@@ -820,6 +1862,84 @@ export type ListHomeworkResponses = {
 };
 
 export type ListHomeworkResponse = ListHomeworkResponses[keyof ListHomeworkResponses];
+
+export type CreateHomeworkData = {
+    body: CreateHomeworkRequest;
+    path?: never;
+    query?: never;
+    url: '/homework';
+};
+
+export type CreateHomeworkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type CreateHomeworkError = CreateHomeworkErrors[keyof CreateHomeworkErrors];
+
+export type CreateHomeworkResponses = {
+    /**
+     * The created homework card
+     */
+    201: HomeworkDetail;
+};
+
+export type CreateHomeworkResponse = CreateHomeworkResponses[keyof CreateHomeworkResponses];
+
+export type DeleteHomeworkData = {
+    body?: never;
+    path: {
+        homework_id: string;
+    };
+    query: {
+        expected_revision: number;
+    };
+    url: '/homework/{homework_id}';
+};
+
+export type DeleteHomeworkErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * Resource existed but is no longer retained
+     */
+    410: ErrorResponse;
+};
+
+export type DeleteHomeworkError = DeleteHomeworkErrors[keyof DeleteHomeworkErrors];
+
+export type DeleteHomeworkResponses = {
+    /**
+     * Removed; `undo_id` brings the card back for a short while (`undoCardRemoval`)
+     */
+    200: CardRemoval;
+};
+
+export type DeleteHomeworkResponse = DeleteHomeworkResponses[keyof DeleteHomeworkResponses];
 
 export type GetHomeworkData = {
     body?: never;
@@ -907,6 +2027,87 @@ export type EditHomeworkResponses = {
 
 export type EditHomeworkResponse = EditHomeworkResponses[keyof EditHomeworkResponses];
 
+export type UndoCardRemovalData = {
+    body?: never;
+    path: {
+        undo_id: string;
+    };
+    query?: never;
+    url: '/card-removals/{undo_id}/undo';
+};
+
+export type UndoCardRemovalErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * The action conflicts with current data or a group rule; message explains why
+     */
+    409: ErrorResponse;
+};
+
+export type UndoCardRemovalError = UndoCardRemovalErrors[keyof UndoCardRemovalErrors];
+
+export type UndoCardRemovalResponses = {
+    /**
+     * The card is back in every list
+     */
+    200: {
+        entity_type: 'homework' | 'deadline';
+        entity_id: string;
+    };
+};
+
+export type UndoCardRemovalResponse = UndoCardRemovalResponses[keyof UndoCardRemovalResponses];
+
+export type GetAttachmentImageData = {
+    body?: never;
+    path: {
+        attachment_id: string;
+    };
+    query?: never;
+    url: '/attachments/{attachment_id}/image';
+};
+
+export type GetAttachmentImageErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * Telegram cannot deliver the photo right now; retry later
+     */
+    503: unknown;
+};
+
+export type GetAttachmentImageError = GetAttachmentImageErrors[keyof GetAttachmentImageErrors];
+
+export type GetAttachmentImageResponses = {
+    /**
+     * Image bytes (JPEG, PNG, WebP or GIF)
+     */
+    200: Blob | File;
+};
+
+export type GetAttachmentImageResponse = GetAttachmentImageResponses[keyof GetAttachmentImageResponses];
+
 export type SetHomeworkCompletionData = {
     body: SetCompletionRequest;
     path: {
@@ -978,3 +2179,418 @@ export type RecheckMembershipResponses = {
 };
 
 export type RecheckMembershipResponse = RecheckMembershipResponses[keyof RecheckMembershipResponses];
+
+export type GetStaffScheduleData = {
+    body?: never;
+    path?: never;
+    query: {
+        start: string;
+        end: string;
+    };
+    url: '/staff/schedule';
+};
+
+export type GetStaffScheduleErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type GetStaffScheduleError = GetStaffScheduleErrors[keyof GetStaffScheduleErrors];
+
+export type GetStaffScheduleResponses = {
+    /**
+     * The student schedule unchanged plus editor metadata
+     */
+    200: StaffScheduleResponse;
+};
+
+export type GetStaffScheduleResponse = GetStaffScheduleResponses[keyof GetStaffScheduleResponses];
+
+export type CreateStaffLessonData = {
+    body: LessonCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/staff/schedule/lessons';
+};
+
+export type CreateStaffLessonErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The action conflicts with current data or a group rule; message explains why
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type CreateStaffLessonError = CreateStaffLessonErrors[keyof CreateStaffLessonErrors];
+
+export type CreateStaffLessonResponses = {
+    /**
+     * Lesson added
+     */
+    201: ScheduleMutationResult;
+};
+
+export type CreateStaffLessonResponse = CreateStaffLessonResponses[keyof CreateStaffLessonResponses];
+
+export type ChangeStaffLessonData = {
+    body: LessonChangeRequest;
+    path: {
+        /**
+         * LessonOccurrence.id (`<pattern uuid>:<YYYY-MM-DD>`).
+         */
+        lesson_id: string;
+    };
+    query?: never;
+    url: '/staff/schedule/lessons/{lesson_id}';
+};
+
+export type ChangeStaffLessonErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The action conflicts with current data or a group rule; message explains why
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type ChangeStaffLessonError = ChangeStaffLessonErrors[keyof ChangeStaffLessonErrors];
+
+export type ChangeStaffLessonResponses = {
+    /**
+     * Change saved
+     */
+    200: ScheduleMutationResult;
+};
+
+export type ChangeStaffLessonResponse = ChangeStaffLessonResponses[keyof ChangeStaffLessonResponses];
+
+export type ListNoLessonDaysData = {
+    body?: never;
+    path?: never;
+    query?: {
+        start?: string;
+        end?: string;
+    };
+    url: '/staff/no-lesson-days';
+};
+
+export type ListNoLessonDaysErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+};
+
+export type ListNoLessonDaysError = ListNoLessonDaysErrors[keyof ListNoLessonDaysErrors];
+
+export type ListNoLessonDaysResponses = {
+    /**
+     * Days ordered by date
+     */
+    200: NoLessonDayList;
+};
+
+export type ListNoLessonDaysResponse = ListNoLessonDaysResponses[keyof ListNoLessonDaysResponses];
+
+export type AddNoLessonDayData = {
+    body: NoLessonDay;
+    path?: never;
+    query?: never;
+    url: '/staff/no-lesson-days';
+};
+
+export type AddNoLessonDayErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The action conflicts with current data or a group rule; message explains why
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type AddNoLessonDayError = AddNoLessonDayErrors[keyof AddNoLessonDayErrors];
+
+export type AddNoLessonDayResponses = {
+    /**
+     * Day added
+     */
+    201: ScheduleMutationResult;
+};
+
+export type AddNoLessonDayResponse = AddNoLessonDayResponses[keyof AddNoLessonDayResponses];
+
+export type RemoveNoLessonDayData = {
+    body?: never;
+    path: {
+        day: string;
+    };
+    query?: never;
+    url: '/staff/no-lesson-days/{day}';
+};
+
+export type RemoveNoLessonDayErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type RemoveNoLessonDayError = RemoveNoLessonDayErrors[keyof RemoveNoLessonDayErrors];
+
+export type RemoveNoLessonDayResponses = {
+    /**
+     * Day removed
+     */
+    200: ScheduleMutationResult;
+};
+
+export type RemoveNoLessonDayResponse = RemoveNoLessonDayResponses[keyof RemoveNoLessonDayResponses];
+
+export type ChangeGroupSettingsData = {
+    body: GroupSettingsChangeRequest;
+    path?: never;
+    query?: never;
+    url: '/staff/group/settings';
+};
+
+export type ChangeGroupSettingsErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The resource changed after the client last read it
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type ChangeGroupSettingsError = ChangeGroupSettingsErrors[keyof ChangeGroupSettingsErrors];
+
+export type ChangeGroupSettingsResponses = {
+    /**
+     * Settings saved
+     */
+    200: GroupSettingsResult;
+};
+
+export type ChangeGroupSettingsResponse = ChangeGroupSettingsResponses[keyof ChangeGroupSettingsResponses];
+
+export type GetDeadlineQueueData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/staff/deadline-queue';
+};
+
+export type GetDeadlineQueueErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+};
+
+export type GetDeadlineQueueError = GetDeadlineQueueErrors[keyof GetDeadlineQueueErrors];
+
+export type GetDeadlineQueueResponses = {
+    /**
+     * Oldest first, at most 200 cards
+     */
+    200: StaffItemList;
+};
+
+export type GetDeadlineQueueResponse = GetDeadlineQueueResponses[keyof GetDeadlineQueueResponses];
+
+export type GetStaffItemData = {
+    body?: never;
+    path: {
+        /**
+         * Canonical card id from the staff endpoints (not the homework/deadline id).
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/staff/items/{item_id}';
+};
+
+export type GetStaffItemErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+};
+
+export type GetStaffItemError = GetStaffItemErrors[keyof GetStaffItemErrors];
+
+export type GetStaffItemResponses = {
+    /**
+     * Card
+     */
+    200: StaffItem;
+};
+
+export type GetStaffItemResponse = GetStaffItemResponses[keyof GetStaffItemResponses];
+
+export type DecideItemDeadlineData = {
+    body: DeadlineActionRequest;
+    path: {
+        /**
+         * Canonical card id from the staff endpoints (not the homework/deadline id).
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/staff/items/{item_id}/deadline';
+};
+
+export type DecideItemDeadlineErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * Stale revision (revision_conflict) or inactive card / no deadline to confirm (action_rejected)
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type DecideItemDeadlineError = DecideItemDeadlineErrors[keyof DecideItemDeadlineErrors];
+
+export type DecideItemDeadlineResponses = {
+    /**
+     * Updated card
+     */
+    200: StaffItem;
+};
+
+export type DecideItemDeadlineResponse = DecideItemDeadlineResponses[keyof DecideItemDeadlineResponses];
+
+export type SetItemLocksData = {
+    body: FieldLocksRequest;
+    path: {
+        /**
+         * Canonical card id from the staff endpoints (not the homework/deadline id).
+         */
+        item_id: string;
+    };
+    query?: never;
+    url: '/staff/items/{item_id}/locks';
+};
+
+export type SetItemLocksErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Resource is unknown within the active group
+     */
+    404: ErrorResponse;
+    /**
+     * Stale revision (revision_conflict) or inactive card (action_rejected)
+     */
+    409: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type SetItemLocksError = SetItemLocksErrors[keyof SetItemLocksErrors];
+
+export type SetItemLocksResponses = {
+    /**
+     * Updated card
+     */
+    200: StaffItem;
+};
+
+export type SetItemLocksResponse = SetItemLocksResponses[keyof SetItemLocksResponses];

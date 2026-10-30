@@ -95,11 +95,7 @@ async def bootstrap(
         )
     )
     await db.commit()
-    permissions = (
-        ["today.read", "homework.read", "homework.completion.write", "schedule.read"]
-        if member
-        else []
-    )
+    permissions = role_permissions(member.role) if member else []
     return {
         "access_token": token,
         "token_type": "Bearer",
@@ -130,14 +126,43 @@ async def bootstrap(
             if group
             else None,
             "permissions": permissions,
+            "features": group_features(settings, group, member),
             "server_time": now,
         },
     }
 
 
+def group_features(settings, group, member):
+    allowed = bool(group and str(group.id) in settings.image_analysis_groups)
+    editor = bool(member and member.role in {"headman", "deputy"})
+    return {
+        "events": allowed and settings.image_event_publication_enabled,
+        "event_review": allowed and editor and settings.image_event_review_enabled,
+        "schedule_review": allowed and editor and settings.image_schedule_review_enabled,
+    }
+
+
+STUDENT_PERMISSIONS = ["today.read", "homework.read", "homework.completion.write", "schedule.read"]
+# Deputies follow the headman bot rules: timetable and card deadlines yes, group settings no.
+STAFF_PERMISSIONS = {
+    "deputy": ["schedule.write", "deadline.manage", "homework.create"],
+    "headman": ["schedule.write", "deadline.manage", "homework.create", "group.settings.write"],
+}
+
+
+def role_permissions(role):
+    return STUDENT_PERMISSIONS + STAFF_PERMISSIONS.get(role, [])
+
+
 async def active_group(
     db: Annotated[AsyncSession, Depends(database)], authorization: str | None = Header(None)
 ):
+    group, _ = await active_membership(db, authorization)
+    return group
+
+
+async def active_membership(db, authorization):
+    """The bearer session's active group and membership; every route re-checks it per request."""
     if not authorization or not authorization.startswith("Bearer "):
         raise ApiError("unauthenticated", "Откройте приложение из Telegram")
     credential = await db.get(WebSession, token_hash(authorization[7:]))
@@ -158,7 +183,7 @@ async def active_group(
         raise ApiError("no_active_group", "Нет активной группы", 403)
     if not group.pilot_authorized or group.status != "active":
         raise ApiError("permission_denied", "Доступ к группе недоступен", 403)
-    return group
+    return group, member
 
 
 @router.get("/schedule")
@@ -210,6 +235,8 @@ async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):
         )
         for lesson in expanded:
             lesson["online_url"] = row.online_url
+            if row.subgroup_id is not None:
+                lesson["subgroup_id"] = str(row.subgroup_id)
             if row.cancelled:
                 lesson["status"] = "cancelled"
         lessons.extend(expanded)
@@ -245,8 +272,8 @@ async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):
         lessons.append(
             {
                 "id": ident,
-                "subject": pattern.subject,
-                "teacher": pattern.teacher,
+                "subject": exception.subject or pattern.subject,
+                "teacher": exception.teacher if exception.teacher_overridden else pattern.teacher,
                 "starts_at": stamp.isoformat(),
                 "ends_at": (
                     exception.ends_at.replace(tzinfo=UTC)
@@ -256,6 +283,13 @@ async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):
                 "location": exception.location,
                 "online_url": exception.online_url,
                 "status": "cancelled" if exception.cancelled else "scheduled",
+                **(
+                    {"subgroup_id": str(exception.subgroup_id) if exception.subgroup_id else None}
+                    if exception.subgroup_overridden
+                    else {"subgroup_id": str(pattern.subgroup_id)}
+                    if pattern.subgroup_id
+                    else {}
+                ),
             }
         )
     lessons.sort(key=lambda lesson: (lesson["starts_at"], lesson["id"]))

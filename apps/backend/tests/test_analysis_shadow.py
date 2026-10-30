@@ -154,7 +154,7 @@ class HybridProvider(LegacyProvider, FakeProvider):
     async def complete(self, request):
         if self.shadow_failure and not self.requests:
             self.requests.append(request)
-            raise ProviderFailure(self.shadow_failure, True)
+            raise ProviderFailure(self.shadow_failure, True, reservation_releasable=True)
         self.requests.append(request)
         revision = request.user_payload["source_revision"]
         message = request.user_payload["messages"][-1]
@@ -698,7 +698,7 @@ def test_canary_only_claims_the_single_prepared_run_without_enqueuing_another(cl
     asyncio.run(inspect())
 
 
-def test_shadow_canary_recovers_only_one_stranded_run_and_does_not_enqueue(client):
+def test_shadow_canary_holds_one_stranded_paid_run_and_does_not_enqueue(client):
     enable_shadow(client)
     source(client, text="ДЗ: решить задачи 1–3")
     provider = HybridProvider()
@@ -725,18 +725,18 @@ def test_shadow_canary_recovers_only_one_stranded_run_and_does_not_enqueue(clien
     before = product_snapshot(client)
     assert (
         asyncio.run(dispatch_next(client.app.state.engine, canary, provider, NOW))
-        == "shadow_completed"
+        == "shadow_ambiguous_paid_attempt"
     )
     assert asyncio.run(dispatch_next(client.app.state.engine, canary, provider, NOW)) == "disabled"
     assert product_snapshot(client) == before
-    assert len(provider.requests) == 2
+    assert len(provider.requests) == 0
 
     async def inspect():
         async with AsyncSession(client.app.state.engine) as db:
             rows = (await db.scalars(select(ShadowEvaluationRun))).all()
             assert len(rows) == 1
-            assert rows[0].state == "completed"
-            assert rows[0].attempts == 2
+            assert rows[0].state == "failed"
+            assert rows[0].attempts == 1
 
     asyncio.run(inspect())
 
@@ -759,7 +759,7 @@ def test_shadow_failure_is_retryable_and_cannot_mutate_products(client):
             row = await db.scalar(select(ShadowEvaluationRun))
             assert row.state == "completed"
             assert row.attempts == 2
-            assert row.charged_usd >= Decimal("0.04")
+            assert Decimal(0) < row.charged_usd < Decimal("0.04")
 
     asyncio.run(inspect())
 
@@ -776,13 +776,13 @@ def test_shadow_extraction_pass_failure_is_durable_and_read_only(client):
     provider = ExtractionFailureProvider()
     assert dispatch(client, provider) == "completed"
     before = product_snapshot(client)
-    assert dispatch(client, provider) == "shadow_retry"
+    assert dispatch(client, provider) == "shadow_failed"
     assert product_snapshot(client) == before
 
     async def inspect():
         async with AsyncSession(client.app.state.engine) as db:
             row = await db.scalar(select(ShadowEvaluationRun))
-            assert row.last_error == "extraction_provider_unreachable"
+            assert row.last_error == "extraction_ambiguous_paid_attempt"
             assert row.context_result_json
             assert row.prompt_tokens == 10
             assert row.charged_usd == Decimal("0.04")

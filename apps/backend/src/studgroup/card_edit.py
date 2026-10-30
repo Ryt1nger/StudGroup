@@ -10,17 +10,20 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import headman_domain as domain
+from studgroup import staff_items
 from studgroup.academic_deadlines import representation as deadline_representation
 from studgroup.api import EDIT_PERMISSIONS, ApiError, active_group, database
 from studgroup.homework import find_card
 from studgroup.homework import representation as homework_representation
-from studgroup.models import AcademicDeadline, Group, User, WebSession
+from studgroup.models import AcademicDeadline, Group, HeadmanAudit, User, WebSession
 from studgroup.security import token_hash
 from studgroup.subject_identity import subject_uuid
 
@@ -70,6 +73,7 @@ class EditHomeworkRequest(BaseModel):
     description: str | None = None
     subject_name: str | None = None
     deadline: DeadlineValue | None = None
+    urgency: Literal["normal", "urgent"] | None = None
 
     @field_validator("title", "subject_name")
     @classmethod
@@ -123,18 +127,20 @@ def provided(body):
     return body.model_fields_set - {"expected_revision"}
 
 
-async def apply(db, group, user, member, key, row, expected, values, only_description):
+async def apply(
+    db, group, user, member, key, row, expected, values, only_description, operation=None
+):
     if row.revision != expected:
         raise ApiError("revision_conflict", "Данные карточки изменились. Обновите карточку", 409)
     try:
-        await domain.mutate(
+        return await domain.mutate(
             db,
             group,
             user,
             member,
             key,
             expected,
-            "description" if only_description else "edit",
+            operation or ("description" if only_description else "edit"),
             values,
         )
     except domain.StError as error:
@@ -166,6 +172,10 @@ async def edit_homework(
             raise ApiError("invalid_request", "Предмет не может быть пустым", 422)
         values["subject_name"] = body.subject_name
         values["subject_id"] = subject_uuid(group.id, body.subject_name)
+    if "urgency" in fields:
+        if body.urgency is None:
+            raise ApiError("invalid_request", "Срочность не может быть пустой", 422)
+        values["urgency"] = body.urgency
     if "deadline" in fields:
         deadline = body.deadline or DeadlineValue()
         at, date_only = deadline.at, deadline.date_only
@@ -252,3 +262,238 @@ async def edit_deadline(
         "item": item,
         "permissions": list(EDIT_PERMISSIONS),
     }
+
+
+class CreateHomeworkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str
+    subject: str
+    description: str = ""
+    deadline: DeadlineValue | None = None
+
+    @field_validator("title", "subject")
+    @classmethod
+    def short_text(cls, value):
+        return clean(value, required=True, limit=255)
+
+    @field_validator("description")
+    @classmethod
+    def long_text(cls, value):
+        return clean(value, required=False, limit=8000)
+
+
+class CreateEventRequest(CreateHomeworkRequest):
+    kind: Literal[DEADLINE_KINDS] = "control_point"
+    date_hint: str | None = None
+
+    @field_validator("date_hint")
+    @classmethod
+    def hint(cls, value):
+        return None if value is None else (clean(value, required=False, limit=1000) or None)
+
+
+@router.post("/homework", status_code=201)
+async def create_homework(
+    body: CreateHomeworkRequest,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    """A card made in the Mini App: same rules, audit and notification as one made in the bot."""
+    user, member = await editor(db, group, authorization)
+    deadline = body.deadline or DeadlineValue()
+    try:
+        key, _ = await domain.create_card(
+            db,
+            group,
+            user,
+            member,
+            "h",
+            {
+                "subject": body.subject,
+                "title": body.title,
+                "description": body.description or None,
+                "deadline_at": deadline.at,
+                "date_only": deadline.date_only,
+            },
+        )
+    except domain.StError as error:
+        raise ApiError("permission_denied", str(error), 403) from None
+    row = await find_card(db, group, uuid.UUID(key.split(":", 1)[1]))
+    result = await homework_representation(db, row, user.id, datetime.now(UTC))
+    await db.commit()
+    return JSONResponse(jsonable_encoder(result), status_code=201)
+
+
+@router.post("/deadlines", status_code=201)
+async def create_event(
+    body: CreateEventRequest,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    user, member = await editor(db, group, authorization)
+    deadline = body.deadline or DeadlineValue()
+    try:
+        key, _ = await domain.create_card(
+            db,
+            group,
+            user,
+            member,
+            "e",
+            {
+                "kind": body.kind,
+                "subject": body.subject,
+                "title": body.title,
+                "description": body.description,
+                "deadline_at": deadline.at,
+                "date_only": deadline.date_only,
+            },
+        )
+    except domain.StError as error:
+        raise ApiError("permission_denied", str(error), 403) from None
+    now = datetime.now(UTC)
+    row = await db.get(AcademicDeadline, uuid.UUID(key.split(":", 1)[1]))
+    row.date_hint = body.date_hint
+    item = await deadline_representation(db, group, row, now)
+    await db.commit()
+    return JSONResponse(
+        jsonable_encoder(
+            {
+                "generated_at": now,
+                "group_timezone": group.timezone,
+                "item": item,
+                "permissions": list(EDIT_PERMISSIONS),
+            }
+        ),
+        status_code=201,
+    )
+
+
+@router.delete("/homework/{homework_id}")
+async def delete_homework(
+    homework_id: uuid.UUID,
+    expected_revision: Annotated[int, Query(ge=1)],
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    """Remove a card for everyone. The card is hidden at once; the correction journal can undo it."""
+    user, member = await editor(db, group, authorization)
+    row = await find_card(db, group, homework_id)
+    undo_id = await apply(
+        db, group, user, member, f"h:{row.id}", row, expected_revision, {}, False, "delete"
+    )
+    await staff_items.retire_canonical(db, "homework", row.id, datetime.now(UTC))
+    await db.commit()
+    return {"undo_id": undo_id}
+
+
+@router.delete("/deadlines/{deadline_id}")
+async def delete_event(
+    deadline_id: uuid.UUID,
+    expected_revision: Annotated[int, Query(ge=1)],
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    user, member = await editor(db, group, authorization)
+    now = datetime.now(UTC)
+    row = await db.scalar(
+        select(AcademicDeadline)
+        .where(
+            AcademicDeadline.id == deadline_id,
+            AcademicDeadline.group_id == group.id,
+            AcademicDeadline.delete_at > now,
+        )
+        .with_for_update()
+    )
+    if row is None:
+        raise ApiError("not_found", "Событие не найдено", 404)
+    undo_id = await apply(
+        db, group, user, member, f"e:{row.id}", row, expected_revision, {}, False, "delete"
+    )
+    await staff_items.retire_canonical(db, "deadline", row.id, now)
+    await db.commit()
+    return {"undo_id": undo_id}
+
+
+@router.post("/card-removals/{undo_id}/undo")
+async def undo_removal(
+    undo_id: uuid.UUID,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    """Bring back a card that was just removed. Only removals can be undone here; other edits are
+    undone in the bot's correction journal. A card that changed since, or an already undone removal,
+    answers 409."""
+    user, member = await editor(db, group, authorization)
+    audit = await db.get(HeadmanAudit, undo_id)
+    if audit is None or audit.group_id != group.id or audit.operation != "delete":
+        raise ApiError("not_found", "Удаление не найдено", 404)
+    try:
+        await domain.undo(db, group, user, member, undo_id)
+    except domain.StError as error:
+        raise ApiError("action_rejected", str(error), 409) from None
+    await db.commit()
+    kind, _, entity_id = audit.entity_key.partition(":")
+    return {
+        "entity_type": "homework" if kind == "h" else "deadline",
+        "entity_id": uuid.UUID(entity_id),
+    }
+
+
+_bot_username = None
+
+
+async def bot_username(settings):
+    """The bot's @name, asked from Telegram once per process."""
+    global _bot_username
+    if _bot_username is None:
+        from studgroup.bot_admin import telegram_request
+
+        info = await telegram_request(settings, "getMe", {})
+        name = info.get("result", {}).get("username") if info.get("ok") else None
+        if not name:
+            raise ApiError("service_unavailable", "Бот временно недоступен", 503)
+        _bot_username = name
+    return _bot_username
+
+
+async def upload_link(request, db, group, authorization, key):
+    await editor(db, group, authorization)
+    name = await bot_username(request.app.state.settings)
+    return {"url": f"https://t.me/{name}?start=file_{key.replace(':', '_')}"}
+
+
+@router.get("/homework/{homework_id}/file-link")
+async def homework_file_link(
+    homework_id: uuid.UUID,
+    request: Request,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    row = await find_card(db, group, homework_id)
+    return await upload_link(request, db, group, authorization, f"h:{row.id}")
+
+
+@router.get("/deadlines/{deadline_id}/file-link")
+async def deadline_file_link(
+    deadline_id: uuid.UUID,
+    request: Request,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    row = await db.scalar(
+        select(AcademicDeadline).where(
+            AcademicDeadline.id == deadline_id,
+            AcademicDeadline.group_id == group.id,
+            AcademicDeadline.delete_at > datetime.now(UTC),
+        )
+    )
+    if row is None:
+        raise ApiError("not_found", "Событие не найдено", 404)
+    return await upload_link(request, db, group, authorization, f"e:{row.id}")

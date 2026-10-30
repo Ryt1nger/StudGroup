@@ -1,0 +1,87 @@
+{
+  "version": "image-pixels-1",
+  "provenance": "synthetic printed fixtures; not handwriting or real chat",
+  "images": [
+    {
+      "image_id": "three_crops:0",
+      "path": "three_crops-0.png",
+      "sha256": "8bf7dd7f6a5505db2b5f2343417b0878c1f55ff60048a1fa869e22e019d88fc3"
+    },
+    {
+      "image_id": "three_crops:1",
+      "path": "three_crops-1.png",
+      "sha256": "88a1076f56e0702fe4d54c334f66dab1a1787bdf0014950ffb6b7f5ac002c3fc"
+    },
+    {
+      "image_id": "three_crops:2",
+      "path": "three_crops-2.png",
+      "sha256": "7a85d0ca99ee502b3b14598346cb18055956bc06d63ebe89ddf944a07cb4ce3a"
+    },
+    {
+      "image_id": "four_pages:0",
+      "path": "four_pages-0.png",
+      "sha256": "cfe5872872a73f26ceb4905b0a9a5b22b7e78b48ed7cd8b416c03b27e173a046"
+    },
+    {
+      "image_id": "four_pages:1",
+      "path": "four_pages-1.png",
+      "sha256": "cbb561649ad899c18f28dbe1fcf02ecb701e1c6e391d30fc8a1c620c7a086f33"
+    },
+    {
+      "image_id": "four_pages:2",
+      "path": "four_pages-2.png",
+      "sha256": "c374e925828335422386ecbb2774c75fae049a1d8cf8c3330b7e2081414e957b"
+    },
+    {
+      "image_id": "four_pages:3",
+      "path": "four_pages-3.png",
+      "sha256": "c80720925f95831207c89a8fc93e4f1c76209b46235e33b3914918ac1871cfc9"
+    },
+    {
+      "image_id": "in_class:0",
+      "path": "in_class-0.png",
+      "sha256": "caefcbdc772f8ad1bdccc1b908bc4ab3ca126732dfe6adbf72bcb50b1fc83978"
+    },
+    {
+      "image_id": "finish_at_home:0",
+      "path": "finish_at_home-0.png",
+      "sha256": "f93afd2ae20e5bc105796cdad2c95a0d7b163e33eb0feb934f2934c74c6a63dc"
+    },
+    {
+      "image_id": "ambiguous_exercises:0",
+      "path": "ambiguous_exercises-0.png",
+      "sha256": "0a76f1e8f754b181dde7cd40d01bb3f33197086bfc8eaa0b80dc6dcf1f263942"
+    },
+    {
+      "image_id": "schedule:0",
+      "path": "schedule-0.png",
+      "sha256": "806b1389cf66429b49261e4e28912e495a65030f1024b539272edc103bf36372"
+    },
+    {
+      "image_id": "poster:0",
+      "path": "poster-0.png",
+      "sha256": "9f4994fa7179376d7ac4db3fdc3e7106943f2e1b85183f84cd2f043bf6fe9dce"
+    },
+    {
+      "image_id": "personal_poster:0",
+      "path": "personal_poster-0.png",
+      "sha256": "d41e224987be3991254da459ee76d9a2435c8d73b666e4ca5c19c4c331708b8f"
+    },
+    {
+      "image_id": "mixed_schedule_check:0",
+      "path": "mixed_schedule_check-0.png",
+      "sha256": "76a1133cc5b20f1a96b48afe2aa95a15004d98b7e4045a3bdfffdbe4fb104498"
+    },
+    {
+      "image_id": "correction:0",
+      "path": "correction-0.png",
+      "sha256": "a9d4284676adcdbbda3808784042c2560cbf8de855cf8dff061ac9e9a83c5dff"
+    },
+    {
+      "image_id": "unreadable:0",
+      "path": "unreadable-0.png",
+      "sha256": "bb6461c4f67353ae2f114ccf24326f8f2a6bfa1923fbb085a11eede67aea867d"
+    }
+  ],
+  "input_sha256": "6eb029f28e0c59315b023dbbd3cc3cf378e27667e85da0ea06fa4d63ad70922e"
+}

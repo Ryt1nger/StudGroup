@@ -236,6 +236,12 @@ def test_published_canonical_card_reaches_student_api_without_shadow_or_private_
     assert card["source_detail"] == card["sources"][0]
     assert [material["kind"] for material in card["materials"]] == ["link", "photo", "document"]
     assert card["materials"][2]["file_name"] == "условия.pdf"
+    # an unread photo is only a material; it never replaces the description
+    assert [material["replaces_description"] for material in card["materials"]] == [
+        False,
+        False,
+        False,
+    ]
     assert "private-photo-id" not in response.text
     assert "private-document-id" not in response.text
     assert card["updates"][0]["kind"] == "supplement"
@@ -366,3 +372,29 @@ def test_published_non_homework_card_keeps_kind_sources_and_deadline_evidence(cl
     assert item["deadline_origin"] == "explicit_message"
     assert item["sources"][0]["telegram_message_id"] == 7201
     assert item["sources"][0]["action"]["type"] == "open_telegram_link"
+
+
+def test_a_photo_read_as_study_material_with_a_short_caption_replaces_the_description(client):
+    card_id, _ = seed_published_card(client)
+
+    async def mark(state, caption=None):
+        async with AsyncSession(client.app.state.engine) as db:
+            attachment = await db.scalar(
+                select(MessageAttachment).where(MessageAttachment.kind == "photo")
+            )
+            attachment.processing_state = state
+            if caption is not None:
+                raw = await db.get(RawMessage, attachment.raw_message_id)
+                raw.text = caption
+            await db.commit()
+
+    def flags():
+        card = client.get(f"/v1/homework/{card_id}", headers={"Authorization": "Bearer valid"})
+        return [material["replaces_description"] for material in card.json()["materials"]]
+
+    asyncio.run(mark("ready"))
+    assert flags() == [False, True, False]
+    asyncio.run(mark("irrelevant"))
+    assert flags() == [False, False, False]
+    asyncio.run(mark("ready", caption="Подробное описание задания. " * 10))
+    assert flags() == [False, False, False]  # a long caption is the task text, the photo is extra

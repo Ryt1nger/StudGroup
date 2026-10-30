@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -33,6 +34,8 @@ class Group(Base):
     name: Mapped[str] = mapped_column(String(255))
     timezone: Mapped[str] = mapped_column(String(64))
     first_week_anchor: Mapped[date | None] = mapped_column(Date)
+    # Bumped by every group timetable change; schedule_changes rows record the value they produced.
+    schedule_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     status: Mapped[str] = mapped_column(String(32), default="active")
     pilot_authorized: Mapped[bool] = mapped_column(Boolean, default=False)
     bot_added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -57,6 +60,9 @@ class SchedulePattern(Base):
     valid_from: Mapped[date] = mapped_column(Date)
     valid_until: Mapped[date] = mapped_column(Date)
     week: Mapped[str] = mapped_column(String(8))
+    subgroup_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="SET NULL")
+    )
     teacher: Mapped[str | None] = mapped_column(String(255))
     location: Mapped[str | None] = mapped_column(String(512))
     revision: Mapped[int] = mapped_column(Integer, default=1)
@@ -72,6 +78,29 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(64))
 
 
+class UserProfile(Base):
+    """What a person tells the app about themselves: name, contact, study platform and preferences.
+
+    The study-platform password is stored only encrypted (``sdu_password_encrypted``) and never read
+    back by any endpoint; ``settings`` holds the notification preferences.
+    """
+
+    __tablename__ = "user_profiles"
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    first_name: Mapped[str | None] = mapped_column(String(60))
+    last_name: Mapped[str | None] = mapped_column(String(60))
+    email: Mapped[str | None] = mapped_column(String(120))
+    sdu_platform: Mapped[str | None] = mapped_column(String(60))
+    sdu_url: Mapped[str | None] = mapped_column(String(200))
+    sdu_login: Mapped[str | None] = mapped_column(String(80))
+    sdu_calendar_url: Mapped[str | None] = mapped_column(String(300))
+    sdu_password_encrypted: Mapped[str | None] = mapped_column(Text)
+    settings: Mapped[dict | None] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class Membership(Base):
     __tablename__ = "memberships"
     __table_args__ = (
@@ -84,6 +113,56 @@ class Membership(Base):
     group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
     role: Mapped[str] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16))
+
+
+class SubjectSplit(Base):
+    """A subject the headman says is taught in separate subgroups (two English groups and so on).
+
+    ``subject_id`` is the shared ``subject_identity.subject_uuid`` of the subject name, the same id
+    the cards and the AI subject catalog use.
+    """
+
+    __tablename__ = "subject_splits"
+    __table_args__ = (UniqueConstraint("group_id", "subject_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    subject_name: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Subgroup(Base):
+    """One subgroup of a split subject: the name students pick and the signals that recognise it
+    in chat messages (teacher's surname, group number, room: whatever the headman wrote)."""
+
+    __tablename__ = "subgroups"
+    __table_args__ = (UniqueConstraint("split_id", "position"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    split_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("subject_splits.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(80))
+    signals: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of strings
+
+
+class MemberSubgroup(Base):
+    """The subgroup a member chose for one split subject. No row: the member has not answered yet
+    and sees the cards of every subgroup of that subject."""
+
+    __tablename__ = "member_subgroups"
+    membership_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("memberships.id", ondelete="CASCADE"), primary_key=True
+    )
+    split_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("subject_splits.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    subgroup_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="CASCADE"), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class WebSession(Base):
@@ -139,6 +218,10 @@ class MessageAttachment(Base):
     height: Mapped[int | None] = mapped_column(Integer)
     media_group_id: Mapped[str | None] = mapped_column(String(255))
     processing_state: Mapped[str] = mapped_column(String(24), default="metadata_only")
+    # Photos only: what the vision model read (``processing_state`` ready) or nothing (failed).
+    photo_text: Mapped[str | None] = mapped_column(Text)
+    photo_summary: Mapped[str | None] = mapped_column(String(500))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
@@ -175,6 +258,10 @@ class Homework(Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revision: Mapped[int] = mapped_column(Integer, default=1)
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Set only for a subject taught in subgroups: the card is shown to that subgroup alone.
+    subgroup_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="SET NULL"), index=True
+    )
 
 
 class AcademicDeadline(Base):
@@ -203,6 +290,9 @@ class AcademicDeadline(Base):
     delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revision: Mapped[int] = mapped_column(Integer, default=1)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    subgroup_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="SET NULL"), index=True
+    )
 
 
 class PersonalCompletion(Base):
@@ -589,7 +679,35 @@ class GroupAnalysisSettings(Base):
     engine_version: Mapped[str] = mapped_column(String(64), default="cplus-shadow-1")
     shadow_daily_budget_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8))
     shadow_sample_percent: Mapped[int] = mapped_column(Integer, default=100)
+    release_budget_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 8))
+    release_budget_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    release_budget_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    release_budget_receipt: Mapped[str | None] = mapped_column(String(64))
+    paid_outcome_hold: Mapped[str | None] = mapped_column(String(64))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AnalysisBudgetCall(Base):
+    """Per-HTTP-attempt financial metadata, independent of source/job deletion."""
+
+    __tablename__ = "analysis_budget_calls"
+    __table_args__ = (
+        CheckConstraint(
+            "reserved_usd >= 0 AND charged_usd >= 0", name="analysis_budget_nonnegative"
+        ),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("group_analysis_settings.group_id", ondelete="CASCADE"), index=True
+    )
+    attempt_key: Mapped[str] = mapped_column(String(160))
+    kind: Mapped[str] = mapped_column(String(16))
+    state: Mapped[str] = mapped_column(String(16))
+    reserved_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8))
+    charged_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class ShadowEvaluationRun(Base):
@@ -717,6 +835,17 @@ class BotAdminSession(Base):
     candidate_role: Mapped[str] = mapped_column(String(16), default="student")
 
 
+class StartSession(Base):
+    """Where a person is in the private /start walkthrough; buttons carry this row's nonce."""
+
+    __tablename__ = "start_sessions"
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nonce: Mapped[str] = mapped_column(String(24))
+    step: Mapped[str] = mapped_column(String(24))
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class BotOutbox(Base):
     __tablename__ = "bot_outbox"
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -825,6 +954,15 @@ class ScheduleException(Base):
     occurrence_date: Mapped[date] = mapped_column(Date)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    subject: Mapped[str | None] = mapped_column(String(255))
+    teacher: Mapped[str | None] = mapped_column(String(255))
+    subgroup_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("subgroups.id", ondelete="SET NULL")
+    )
+    teacher_overridden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    subgroup_overridden: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     location: Mapped[str | None] = mapped_column(String(512))
     online_url: Mapped[str | None] = mapped_column(String(2048))
     cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -917,3 +1055,145 @@ class HeadmanQuestionDelivery(Base):
     )
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     escalated: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ImageAnalysisJob(Base):
+    """One pass of one attachment in one immutable source/context snapshot."""
+
+    __tablename__ = "image_analysis_jobs"
+    __table_args__ = (
+        UniqueConstraint("attachment_id", "source_revision", "context_sha256", "pass_number"),
+        CheckConstraint("pass_number IN (1, 2)"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    attachment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("message_attachments.id", ondelete="CASCADE"), index=True
+    )
+    raw_message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="CASCADE"), index=True
+    )
+    source_revision: Mapped[int] = mapped_column(Integer)
+    context_sha256: Mapped[str] = mapped_column(String(64))
+    context_json: Mapped[str] = mapped_column(Text)
+    version: Mapped[str] = mapped_column(String(64))
+    pass_number: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(24), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    error: Mapped[str | None] = mapped_column(String(100))
+    result_json: Mapped[str | None] = mapped_column(Text)
+    pixel_sha256: Mapped[str | None] = mapped_column(String(64))
+    visual_hash: Mapped[str | None] = mapped_column(String(256))
+    visual_coverage_json: Mapped[str | None] = mapped_column(Text)
+    model_key: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    reused_from_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("image_analysis_jobs.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class ImageAnalysisCall(Base):
+    """Per-attempt ledger. Ambiguous failures keep the conservative reserved charge."""
+
+    __tablename__ = "image_analysis_calls"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"), index=True
+    )
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    claim_token: Mapped[uuid.UUID] = mapped_column(Uuid, unique=True)
+    state: Mapped[str] = mapped_column(String(24))
+    reserved_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=0)
+    charged_usd: Mapped[Decimal] = mapped_column(Numeric(12, 8), default=0)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cache_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class ImageScheduleSuggestion(Base):
+    __tablename__ = "image_schedule_suggestions"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    image_job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("image_analysis_jobs.id", ondelete="CASCADE"), unique=True
+    )
+    schedule_version: Mapped[int] = mapped_column(Integer)
+    rows_json: Mapped[str] = mapped_column(Text)
+    confirmation_json: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(String(24), default="pending")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class GroupEvent(Base):
+    """Social/organisational event, distinct from graded AcademicDeadline."""
+
+    __tablename__ = "group_events"
+    __table_args__ = (UniqueConstraint("group_id", "fingerprint"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    title_key: Mapped[str] = mapped_column(String(255), index=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    approved_payload_sha256: Mapped[str | None] = mapped_column(String(64))
+    event_end_date: Mapped[date | None] = mapped_column(Date)
+    payload_json: Mapped[str] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(String(24), default="draft")
+    manual_lock: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class GroupEventSource(Base):
+    __tablename__ = "group_event_sources"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("group_events.id", ondelete="CASCADE"), index=True
+    )
+    image_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("image_analysis_jobs.id", ondelete="CASCADE")
+    )
+    raw_message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("raw_messages.id", ondelete="CASCADE")
+    )
+    source_revision: Mapped[int] = mapped_column(Integer)
+    incoming_json: Mapped[str] = mapped_column(Text)
+    apply_state: Mapped[str] = mapped_column(String(24))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GroupEventRevision(Base):
+    __tablename__ = "group_event_revisions"
+    __table_args__ = (UniqueConstraint("event_id", "revision"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("group_events.id", ondelete="CASCADE"), index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer)
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    origin: Mapped[str] = mapped_column(String(24))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

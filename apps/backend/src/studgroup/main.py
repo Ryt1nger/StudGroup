@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AwareDatetime, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
@@ -24,7 +24,12 @@ from studgroup.card_edit import router as card_edit_router
 from studgroup.homework import router as homework_router
 from studgroup.ingestion import router as ingestion_router
 from studgroup.notifications import router as notifications_router
+from studgroup.profile import router as profile_router
+from studgroup.staff_api import router as staff_router
+from studgroup.subgroup_api import router as subgroup_router
 from studgroup.subjects import router as subjects_router
+from studgroup.telegram_files import configure as configure_file_links
+from studgroup.telegram_files import router as files_router
 
 
 class Settings(BaseSettings):
@@ -34,9 +39,12 @@ class Settings(BaseSettings):
     webapp_origin: str = "http://localhost:5173"
     telegram_bot_token: str = ""
     telegram_webhook_secret: str = ""
+    # Fernet key (urlsafe base64, 32 bytes) that protects study-platform passwords; empty disables them.
+    profile_encryption_key: SecretStr = SecretStr("")
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
+    ai_release_budget_required_groups: list[str] = Field(default_factory=list)
     ai_daily_group_budget_usd: float = 0.05
     ai_hourly_group_budget_usd: float = 0.25
     ai_total_budget_usd: float = 1.70
@@ -53,6 +61,25 @@ class Settings(BaseSettings):
     new_engine_enabled_until: datetime | None = None
     # Student notifications for cards the new engine creates; keep off while backfilling history.
     new_engine_notifications: bool = False
+    # Vision pass over photos of homework before a package is analysed (costs one image call each).
+    # Internal pilot only: never inferred from PHOTO_READING_ENABLED.
+    image_diagnostics_enabled: bool = False
+    image_event_review_enabled: bool = False
+    image_event_publication_enabled: bool = False
+    image_schedule_review_enabled: bool = False
+    image_analysis_since: AwareDatetime | None = None
+    image_analysis_enabled: bool = False
+    image_model_revision: str = Field(default="", max_length=128)
+    image_analysis_groups: list[str] = Field(default_factory=list)
+    image_analysis_mode: Literal["shadow", "live"] = "shadow"
+    image_pass_reservation_usd: float = Field(default=0.02, gt=0, allow_inf_nan=False)
+    image_total_budget_usd: float = Field(default=0.12, ge=0, allow_inf_nan=False)
+    image_package_budget_usd: float = Field(default=0.20, ge=0, allow_inf_nan=False)
+    image_hourly_budget_usd: float = Field(default=0.25, ge=0, allow_inf_nan=False)
+    photo_reading_enabled: bool = False
+    # With photo reading on: stored messages since this moment whose photos were never read are
+    # analysed again once (e.g. PHOTO_BACKFILL_SINCE=2026-10-17T00:00:00+03:00). Idempotent.
+    photo_backfill_since: datetime | None = None
     # Rolling one-hour spend cap of the new engine, on top of the group's daily cap.
     new_engine_hourly_budget_usd: float = Field(default=0.50, ge=0)
     ai_enabled_until: datetime | None = None
@@ -82,6 +109,7 @@ class Settings(BaseSettings):
     owner_update_notifications_since: datetime | None = None
     bot_admin_user_id: int | None = None
     support_contact: str = ""
+    bot_username: str = ""  # without @; builds t.me invitation links, else code text is shown
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -92,7 +120,11 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "ai_enabled_until", "ai_shadow_enabled_until", "new_engine_enabled_until", mode="before"
+        "ai_enabled_until",
+        "ai_shadow_enabled_until",
+        "new_engine_enabled_until",
+        "photo_backfill_since",
+        mode="before",
     )
     @classmethod
     def empty_cutoff(cls, value):
@@ -123,6 +155,7 @@ class Settings(BaseSettings):
         "ai_shadow_enabled_until",
         "new_engine_enabled_until",
         "owner_update_notifications_since",
+        "photo_backfill_since",
     )
     @classmethod
     def deadline_requires_timezone(cls, value):
@@ -285,13 +318,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="StudGroup", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    configure_file_links(settings.telegram_webhook_secret)
     app.include_router(router)
     app.include_router(ingestion_router)
     app.include_router(homework_router)
     app.include_router(card_edit_router)
+    app.include_router(files_router)
     app.include_router(subjects_router)
     app.include_router(deadlines_router)
     app.include_router(notifications_router)
+    app.include_router(profile_router)
+    app.include_router(subgroup_router)
+    app.include_router(staff_router)
+    from studgroup.image_review_api import router as image_review_router
+
+    app.include_router(image_review_router)
+    from studgroup.group_event_api import router as group_event_router
+
+    app.include_router(group_event_router)
 
     @app.exception_handler(ApiError)
     async def api_error(request, error):
@@ -318,7 +362,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=[settings.webapp_origin],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "PUT"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
     )
 

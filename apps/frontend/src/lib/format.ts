@@ -86,3 +86,30 @@ export function formatDayKey(key: string): string {
 }
 
 export { addDays };
+
+/** Russian plural form: `plural(2, 'день', 'дня', 'дней')`. */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const hundreds = n % 100;
+  const units = n % 10;
+  return hundreds > 10 && hundreds < 20 ? many : units === 1 ? one : units > 1 && units < 5 ? few : many;
+}
+
+/**
+ * Short deadline phrase for list cards and card headers: «Сегодня до 19:00», «Завтра до 10:00»,
+ * «Через 3 дня». An unknown deadline is «Срок уточняется»; a passed one is «Срок прошёл».
+ */
+export function whenLabel(deadline: DeadlineInput, nowMs: number, timeZone: string): { text: string; known: boolean } {
+  if (deadline.state !== 'known' || !deadline.at) return { text: 'Срок уточняется', known: false };
+  const at = Date.parse(deadline.at);
+  const day = dayKey(at, timeZone);
+  const today = dayKey(nowMs, timeZone);
+  const passed = deadline.date_only ? day < today : at < nowMs;
+  if (passed) return { text: 'Срок прошёл', known: true };
+  const until = deadline.date_only ? '' : ` до ${formatTime(deadline.at, timeZone)}`;
+  if (day === today) return { text: `Сегодня${until}`, known: true };
+  if (day === addDays(today, 1)) return { text: `Завтра${until}`, known: true };
+  const [ty, tm, td] = today.split('-').map(Number) as [number, number, number];
+  const [dy, dm, dd] = day.split('-').map(Number) as [number, number, number];
+  const days = Math.round((Date.UTC(dy, dm - 1, dd) - Date.UTC(ty, tm - 1, td)) / 86_400_000);
+  return { text: `Через ${days} ${plural(days, 'день', 'дня', 'дней')}`, known: true };
+}

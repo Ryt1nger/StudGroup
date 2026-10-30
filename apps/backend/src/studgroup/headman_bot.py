@@ -9,11 +9,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 
+from studgroup import bot_start, headman_schedule, subgroups, telegram_files
 from studgroup import headman_domain as domain
-from studgroup import headman_schedule
 from studgroup.api import schedule_data
 from studgroup.bot_admin import enqueue, say
-from studgroup.deadline_rebuild import rebuild_after_schedule_change
 from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, resolve_deadline
 from studgroup.homework import utc
 from studgroup.models import (
@@ -28,8 +27,11 @@ from studgroup.models import (
     Homework,
     Membership,
     RawMessage,
+    Subgroup,
+    SubjectSplit,
     User,
 )
+from studgroup.schedule_audit import schedule_changed
 from studgroup.subject_identity import subject_uuid
 
 
@@ -70,13 +72,26 @@ async def menu(db, session, group):
             [("Домашние задания", "tasks")],
             [("КТ", "control_points")],
             [("Расписание", "schedule")],
+            [("Подгруппы по предметам", "subgroup_settings")],
             [("Участники", "members")],
             [("Сводка группы", "summary")],
             [("Настройки", "settings")],
             [("Журнал правок / откат", "journal")],
             [("Выбрать другую группу", "groups")],
+            [("‹ В начало", "to_start")],
         ],
     )
+
+
+async def enter(db, session):
+    """Open the cabinet: straight to the menu for the usual single group, else the group list."""
+    allowed = await domain.memberships(db, session.telegram_user_id)
+    if len(allowed) != 1:
+        await groups(db, session)
+        return
+    _, _, group = await domain.access(db, session.telegram_user_id, allowed[0][2].id)
+    session.group_id = group.id
+    await menu(db, session, group)
 
 
 async def groups(db, session, forward=None):
@@ -85,7 +100,8 @@ async def groups(db, session, forward=None):
         await screen(
             db,
             session,
-            "Нет роли старосты/помощника. Роль назначает владелец через /admin; /st не выдаёт её автоматически.",
+            "Нет роли старосты/помощника. Староста становится им, подключив группу кнопкой "
+            "«Я староста» на стартовом экране; помощника назначает владелец проекта.",
             [],
             "closed",
         )
@@ -249,21 +265,33 @@ async def detail(db, session, group, key):
         text += "Требует проверки: ИИ не уверен в распознавании.\n"
     if kind == "e" and row.window_end:
         text += f"Период до {utc(row.window_end).astimezone(ZoneInfo(group.timezone)).strftime('%d.%m.%Y %H:%M')}\n"
+    subject = row.subject_name if kind == "h" else row.subject
+    split = subgroups.split_for(await subgroups.splits(db, group.id), group.id, subject)
+    subgroup = await db.get(Subgroup, row.subgroup_id) if row.subgroup_id else None
+    if split:
+        text += (
+            f"Подгруппа: {subgroup.name if subgroup else 'не определена — карточка видна всем'}\n"
+        )
     text += f"\nИсточник: {raw.text[:1500] if raw and utc(raw.delete_at) > datetime.now(UTC) else 'вручную или срок хранения истёк'}"
+    buttons = [
+        [("Подтвердить", "confirm")],
+        [("Предмет", "edit_subject"), ("Название", "edit_title")],
+        [("Описание", "edit_description"), ("Срок", "edit_deadline")],
+    ]
+    if split:
+        buttons.append([("Назначить подгруппу", "subgroup_assign")])
+    buttons += [
+        [("Добавить материал-ссылку", "material"), ("Добавить файл", "file")],
+        [("Это КТ" if kind == "h" else "Это ДЗ", "convert"), ("Объединить", "merge")],
+        [("Отменить", "cancel"), ("Не задание", "reject")],
+        [("Вернуться позже", "defer")],
+        back(),
+    ]
     await screen(
         db,
         session,
         text,
-        [
-            [("Подтвердить", "confirm")],
-            [("Предмет", "edit_subject"), ("Название", "edit_title")],
-            [("Описание", "edit_description"), ("Срок", "edit_deadline")],
-            [("Добавить материал-ссылку", "material")],
-            [("Это КТ" if kind == "h" else "Это ДЗ", "convert"), ("Объединить", "merge")],
-            [("Отменить", "cancel"), ("Не задание", "reject")],
-            [("Вернуться позже", "defer")],
-            back(),
-        ],
+        buttons,
         "detail",
         {"key": key, "revision": row.revision},
     )
@@ -458,6 +486,72 @@ async def members_screen(db, session, group, member, page=0):
     )
 
 
+async def subgroup_settings_screen(db, session, group):
+    configured = await subgroups.splits(db, group.id)
+    lines = ["Подгруппы по предметам"]
+    if configured:
+        lines.append("Откройте предмет, чтобы изменить названия или удалить разделение.")
+    else:
+        lines.append("Укажите предметы, по которым студенты учатся в разных подгруппах.")
+    await screen(
+        db,
+        session,
+        "\n\n".join(lines),
+        [
+            [(f"{split.subject_name} · {len(rows)}"[:55], f"subgroup_open_{n}")]
+            for n, (split, rows) in enumerate(configured)
+        ]
+        + [[("Добавить предмет", "subgroup_add")], back()],
+        "subgroup_list",
+        {"splits": [str(split.id) for split, _ in configured]},
+    )
+
+
+async def subgroup_detail(db, session, group, split_id):
+    found = next(
+        (
+            (split, rows)
+            for split, rows in await subgroups.splits(db, group.id)
+            if split.id == split_id
+        ),
+        None,
+    )
+    if found is None:
+        raise domain.StError("Настройка уже изменилась. Откройте список заново.")
+    split, rows = found
+    text = [f"{split.subject_name}", "Сигналы помогают распознавать подгруппу в сообщениях:"]
+    text += [f"{row.position}. {row.name} — {', '.join(subgroups.signals_of(row))}" for row in rows]
+    await screen(
+        db,
+        session,
+        "\n".join(text),
+        [
+            [(f"Переименовать · {row.name}"[:55], f"subgroup_rename_{n}")]
+            for n, row in enumerate(rows)
+        ]
+        + [[("Удалить разделение", "subgroup_delete")], [("‹ К предметам", "subgroup_settings")]],
+        "subgroup_detail",
+        {"split_id": str(split.id), "subgroups": [str(row.id) for row in rows]},
+    )
+
+
+async def subgroup_draft_screen(db, session, data):
+    lines = [f"{data['subject']} — проверьте названия:"]
+    lines += [f"{n + 1}. {name}" for n, name in enumerate(data["names"])]
+    await screen(
+        db,
+        session,
+        "\n".join(lines),
+        [
+            [(f"Изменить · {name}"[:55], f"subgroup_draft_name_{n}")]
+            for n, name in enumerate(data["names"])
+        ]
+        + [[("Сохранить", "subgroup_save")], [("‹ Отмена", "subgroup_settings")]],
+        "subgroup_draft",
+        data,
+    )
+
+
 async def handle(db, update, settings):
     callback = update.callback_query
     message = callback.message if callback else update.message
@@ -465,28 +559,11 @@ async def handle(db, update, settings):
     if not message or not sender or message.chat.type != "private" or message.chat.id != sender.id:
         return False
     text = (message.text or "").strip()
-    if not callback and text.startswith("/start invite_"):
-        try:
-            async with db.begin_nested():
-                group = await domain.redeem_invite(
-                    db, settings, sender.id, text.split("invite_", 1)[1]
-                )
-            await say(
-                db,
-                sender.id,
-                f"Ты подключён к «{group.name}». Открой приложение заново.",
-                {
-                    "inline_keyboard": [
-                        [{"text": "Открыть StudGroup", "web_app": {"url": settings.webapp_origin}}]
-                    ]
-                },
-            )
-        except domain.StError as error:
-            await say(db, sender.id, str(error))
-        return True
     session = await db.scalar(
         select(HeadmanSession).where(HeadmanSession.telegram_user_id == sender.id).with_for_update()
     )
+    if not callback and (link := FILE_LINK.fullmatch(text)):
+        return await file_link(db, session, sender.id, f"{link['kind']}:{link['id']}")
     command = text.split("@")[0]
     requested = not callback and command in {"/st", "/st_cancel"}
     own_callback = callback and (callback.data or "").startswith("s:")
@@ -554,7 +631,16 @@ async def handle(db, update, settings):
         await groups(db, session)
         return True
     if not session or utc(session.expires_at) <= datetime.now(UTC):
-        await say(db, sender.id, "Сессия истекла. Отправь /st заново.")
+        if session is None:
+            session = HeadmanSession(
+                telegram_user_id=sender.id,
+                nonce="",
+                step="groups",
+                payload="{}",
+                expires_at=datetime.now(UTC),
+            )
+            db.add(session)
+        await enter(db, session)  # a fresh main menu instead of «send the command again»
         return True
     try:
         data = payload(session)
@@ -562,10 +648,88 @@ async def handle(db, update, settings):
         if callback:
             parts = (callback.data or "").split(":", 2)
             if len(parts) != 3 or not secrets.compare_digest(parts[1], session.nonce):
-                raise domain.StError("Кнопка устарела. Отправь /st заново.")
+                raise domain.StError("Экран устарел. Используйте кнопки последнего сообщения.")
             action = parts[2]
+        if action == "to_start":
+            await bot_start.open_start(db, settings, sender.id)
+            return True
         if action == "groups":
             await groups(db, session)
+            return True
+        if action == "subgroup_settings" or session.step in {
+            "subgroup_list",
+            "subgroup_detail",
+            "subgroup_delete",
+            "subgroup_draft",
+        }:
+            user, member, group = await domain.access(db, sender.id, session.group_id)
+        if action == "subgroup_settings":
+            domain.headman_only(member)
+            await subgroup_settings_screen(db, session, group)
+            return True
+        if session.step == "subgroup_list" and action == "subgroup_add":
+            domain.headman_only(member)
+            await ask(
+                db,
+                session,
+                "Как называется предмет с разделением на подгруппы?",
+                {},
+                "subgroup_subject",
+            )
+            return True
+        if session.step == "subgroup_list" and action.startswith("subgroup_open_"):
+            domain.headman_only(member)
+            index = int(action.removeprefix("subgroup_open_"))
+            await subgroup_detail(db, session, group, uuid.UUID(data["splits"][index]))
+            return True
+        if session.step == "subgroup_detail" and action.startswith("subgroup_rename_"):
+            domain.headman_only(member)
+            index = int(action.removeprefix("subgroup_rename_"))
+            await ask(
+                db,
+                session,
+                "Новое короткое название подгруппы:",
+                {**data, "subgroup_id": data["subgroups"][index]},
+                "subgroup_existing_name",
+            )
+            return True
+        if session.step == "subgroup_detail" and action == "subgroup_delete":
+            domain.headman_only(member)
+            await screen(
+                db,
+                session,
+                "Удалить разделение по этому предмету? Карточки снова станут общими для всей группы.",
+                [[("Удалить", "subgroup_delete_yes")], [("‹ Отмена", "subgroup_settings")]],
+                "subgroup_delete",
+                data,
+            )
+            return True
+        if session.step == "subgroup_delete" and action == "subgroup_delete_yes":
+            domain.headman_only(member)
+            await subgroups.delete_split(db, group.id, uuid.UUID(data["split_id"]))
+            await subgroup_settings_screen(db, session, group)
+            return True
+        if session.step == "subgroup_draft" and action.startswith("subgroup_draft_name_"):
+            domain.headman_only(member)
+            await ask(
+                db,
+                session,
+                "Новое короткое название подгруппы:",
+                {**data, "name_index": int(action.removeprefix("subgroup_draft_name_"))},
+                "subgroup_draft_name",
+            )
+            return True
+        if session.step == "subgroup_draft" and action == "subgroup_save":
+            domain.headman_only(member)
+            entries = list(zip(data["names"], data["signals"], strict=True))
+            split = await subgroups.create_split(db, group, data["subject"], entries)
+            await subgroups.notify_students(db, settings, group, split)
+            await screen(
+                db,
+                session,
+                "Подгруппы сохранены. Студенты получили просьбу выбрать свою.",
+                [[("К предметам", "subgroup_settings")], back()],
+            )
             return True
         if session.step == "groups" and action.startswith("group"):
             selected = data["groups"][int(action[5:])]
@@ -641,6 +805,40 @@ async def handle(db, update, settings):
                 await ask(
                     db, session, f"Новое значение: {field}. Отправь текст.", data, "edit_" + field
                 )
+        elif session.step == "detail" and action == "subgroup_assign":
+            kind, row = await domain.entity(db, group, data["key"])
+            subject = row.subject_name if kind == "h" else row.subject
+            split = subgroups.split_for(await subgroups.splits(db, group.id), group.id, subject)
+            if split is None:
+                raise domain.StError("Для предмета больше не настроены подгруппы.")
+            await screen(
+                db,
+                session,
+                "Для какой подгруппы эта карточка?",
+                [[(row.name, f"subgroup_card_{n}")] for n, row in enumerate(split[1])]
+                + [[("Общая для всех", "subgroup_card_all")], back()],
+                "subgroup_card",
+                {
+                    **data,
+                    "subgroups": [str(row.id) for row in split[1]],
+                },
+            )
+        elif session.step == "subgroup_card" and action.startswith("subgroup_card_"):
+            chosen = action.removeprefix("subgroup_card_")
+            subgroup_id = None if chosen == "all" else uuid.UUID(data["subgroups"][int(chosen)])
+            await domain.mutate(
+                db,
+                group,
+                user,
+                member,
+                data["key"],
+                data["revision"],
+                "subgroup",
+                {"subgroup_id": subgroup_id},
+            )
+            await detail(db, session, group, data["key"])
+        elif session.step == "detail" and action == "file":
+            await ask_file(db, session, data)
         elif session.step == "detail" and action == "material":
             await ask(
                 db,
@@ -862,7 +1060,7 @@ async def handle(db, update, settings):
             domain.headman_only(member)
             target = await db.get(Membership, uuid.UUID(data["members"][int(action[6:])]))
             if target.group_id != group.id or target.role != "student":
-                raise domain.StError("Роли старост и помощников меняет владелец через /admin.")
+                raise domain.StError("Роли старост и помощников меняет владелец проекта.")
             await preview(
                 db,
                 session,
@@ -969,25 +1167,167 @@ async def handle(db, update, settings):
             async with db.begin_nested():
                 await apply(db, session, group, user, member, data, settings)
         elif session.step == "text" and not callback:
-            await typed(db, session, group, user, member, data, text, message)
+            await typed(db, session, group, user, member, data, text, message, settings)
         else:
-            raise domain.StError("Открой раздел заново через /st.")
+            raise domain.StError("Откройте раздел заново кнопками главного меню.")
     except (domain.StError, ValueError, IndexError, KeyError, ZoneInfoNotFoundError) as error:
         await say(
             db,
             sender.id,
             str(error)
             if isinstance(error, domain.StError)
-            else "Некорректный ввод или устаревшее меню. Для нового меню — /st.",
+            else "Некорректный ввод или устаревшее меню. Вернитесь в главное меню кнопкой.",
         )
     return True
 
 
-async def typed(db, session, group, user, member, data, text, message):
+def sent_file(message):
+    """(kind, file, title) of the single file in a message, or None; the largest photo size wins."""
+    for kind in ("document", "video", "audio", "voice", "animation"):
+        file = getattr(message, kind)
+        if file is not None:
+            return kind, file, file.file_name or message.caption
+    if message.photo:
+        return "photo", max(message.photo, key=lambda p: p.file_size or 0), message.caption
+    return None
+
+
+FILE_LINK = re.compile(
+    r"/start(?:@\w+)? file_(?P<kind>[he])_(?P<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+)
+
+
+async def file_link(db, session, telegram_id, key):
+    """Deep link from the Mini App: open the card in the bot and wait for the file."""
+    for _, _, group in await domain.memberships(db, telegram_id):
+        try:
+            _, _, group = await domain.access(db, telegram_id, group.id)
+            _, row = await domain.entity(db, group, key)
+        except domain.StError:
+            continue
+        if session is None:
+            session = HeadmanSession(
+                telegram_user_id=telegram_id,
+                nonce="",
+                step="groups",
+                payload="{}",
+                expires_at=datetime.now(UTC),
+            )
+            db.add(session)
+        session.group_id = group.id
+        await ask_file(db, session, {"key": key, "revision": row.revision})
+        return True
+    await say(db, telegram_id, "Карточка недоступна или у тебя нет прав старосты в её группе.")
+    return True
+
+
+async def ask_file(db, session, data):
+    await screen(
+        db,
+        session,
+        "Пришли файл одним сообщением: документ, фото, видео или аудио до 20 МБ. "
+        "Подпись к файлу станет названием материала. Сам файл останется в Telegram.",
+        [back()],
+        "text",
+        {"key": data["key"], "revision": data["revision"], "field": "file"},
+    )
+
+
+async def file_received(db, session, data, message):
+    found = sent_file(message)
+    if found is None:
+        raise domain.StError("Жду файл: документ, фото, видео или аудио.")
+    kind, file, name = found
+    if file.file_size and file.file_size > telegram_files.MAX_BYTES:
+        raise domain.StError(
+            "Файл больше 20 МБ: Telegram не отдаёт такие ботам. Сожми или раздели его."
+        )
+    default = {"photo": "Фото", "video": "Видео", "audio": "Аудио", "voice": "Голосовое сообщение"}
+    title_text = (name or default.get(kind) or "Файл").strip().splitlines()[0][:255]
+    await preview(
+        db,
+        session,
+        f"Файл «{title_text}» прикрепится к карточке. Он останется в Telegram, студенты откроют его по ссылке в карточке.",
+        {
+            "action": "material",
+            "key": data["key"],
+            "revision": data["revision"],
+            "title": title_text,
+            "url": telegram_files.encode(kind, file.file_size, file.file_id),
+        },
+    )
+
+
+async def typed(db, session, group, user, member, data, text, message, settings):
     field = data["field"]
+    if field == "file":
+        return await file_received(db, session, data, message)
     if not text or len(text) > 12000:
         raise domain.StError("Нужен текст до 12 000 символов.")
-    if field == "search":
+    if field == "subgroup_subject":
+        domain.headman_only(member)
+        if len(text) > 255:
+            raise domain.StError("Название предмета — до 255 символов.")
+        await ask(
+            db,
+            session,
+            "На сколько подгрупп делится предмет? От 2 до 6.",
+            {"subject": text},
+            "subgroup_count",
+        )
+    elif field == "subgroup_count":
+        domain.headman_only(member)
+        count = int(text)
+        if not 2 <= count <= subgroups.MAX_SUBGROUPS:
+            raise domain.StError("Количество подгрупп — от 2 до 6.")
+        await ask(
+            db,
+            session,
+            "Сигналы для подгруппы 1 через запятую: фамилия преподавателя, номер группы, аудитория или другие слова из сообщений.",
+            {**data, "count": count, "signals": []},
+            "subgroup_signals",
+        )
+    elif field == "subgroup_signals":
+        domain.headman_only(member)
+        parsed = subgroups.parse_signals(text)
+        if not parsed:
+            raise domain.StError("Укажите хотя бы один сигнал.")
+        signals = [*data["signals"], parsed]
+        if len(signals) < data["count"]:
+            await ask(
+                db,
+                session,
+                f"Сигналы для подгруппы {len(signals) + 1} через запятую:",
+                {**data, "signals": signals},
+                "subgroup_signals",
+            )
+        else:
+            names = await subgroups.suggest_names(settings, data["subject"], signals)
+            await subgroup_draft_screen(db, session, {**data, "signals": signals, "names": names})
+    elif field == "subgroup_draft_name":
+        domain.headman_only(member)
+        name = " ".join(text.split())
+        if len(name) > subgroups.MAX_NAME:
+            raise domain.StError("Название подгруппы — до 40 символов.")
+        names = list(data["names"])
+        names[data["name_index"]] = name
+        if len({subgroups.match_key(value) for value in names}) != len(names):
+            raise domain.StError("Названия подгрупп должны отличаться.")
+        await subgroup_draft_screen(db, session, {**data, "names": names})
+    elif field == "subgroup_existing_name":
+        domain.headman_only(member)
+        subgroup = await db.get(Subgroup, uuid.UUID(data["subgroup_id"]))
+        if subgroup is None:
+            raise domain.StError("Подгруппа уже удалена.")
+        split = await db.get(SubjectSplit, subgroup.split_id)
+        if split is None or split.group_id != group.id:
+            raise domain.StError("Подгруппа принадлежит другой группе.")
+        name = " ".join(text.split())
+        if not name or len(name) > subgroups.MAX_NAME:
+            raise domain.StError("Название подгруппы — от 1 до 40 символов.")
+        subgroup.name = name
+        await subgroup_detail(db, session, group, split.id)
+    elif field == "search":
         await listing(
             db,
             session,
@@ -1249,8 +1589,9 @@ async def apply(db, session, group, user, member, data, settings):
         await screen(
             db,
             session,
-            "Одноразовые коды (24 часа). Передай участникам: отправить боту /start invite_КОД.\n\n"
-            + "\n".join(f"/start invite_{code}" for code in codes),
+            "Одноразовые приглашения на 24 часа. Перешли каждую ссылку одному студенту: "
+            "достаточно нажать на неё в Telegram.\n\n"
+            + "\n".join(bot_start.invite_link(settings, code) for code in codes),
             [back()],
         )
         return
@@ -1301,7 +1642,9 @@ async def apply(db, session, group, user, member, data, settings):
         group.timezone = data["timezone"]
         await db.flush()
         # Derived deadlines depend on the group's calendar day, so the zone change rebuilds them.
-        await rebuild_after_schedule_change(db, group, datetime.now(UTC))
+        await schedule_changed(
+            db, group, method="bot", operation="timezone", user=user, member=member
+        )
     else:
         raise domain.StError("Неизвестное действие.")
     await db.flush()

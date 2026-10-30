@@ -6,6 +6,7 @@ nothing the adapter produces can bypass validation.
 """
 
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
@@ -52,7 +53,98 @@ def source_maps(analysis_input: AnalysisInput):
     return messages, allowed
 
 
-def validate_single(ordinal, raw, analysis_input, *, existing_items=None):
+def _mutation_has_target_novelty(proposal, analysis_input, existing_item_snapshots):
+    """Whether a mutation is grounded in new target evidence, not only old context.
+
+    This is a publication invariant, independent of the prompt. It deliberately uses the generic
+    fact-difference checker rather than a list of conversational keywords. A one-word reply may
+    still carry a cancel/update when it directly replies to a source already attached to the item.
+    """
+    # Old frozen shadow/evaluation inputs did not persist the item snapshots required to prove a
+    # delta. The live package writer always supplies the list (including an empty one); historical
+    # replay remains parse-compatible and publication continues to have its own resolver guards.
+    if existing_item_snapshots is None:
+        return True
+    target_ids = set(analysis_input.target_message_ids)
+    cited_targets = target_ids & {ref.telegram_message_id for ref in proposal.evidence}
+    if not cited_targets:
+        return False
+    if proposal.action == "create":
+        target_text = "\n".join(
+            part
+            for row in analysis_input.messages
+            if row.telegram_message_id in cited_targets
+            for part in [row.text, *row.image_facts]
+            if part
+        ).strip()
+        from studgroup.analysis.card_editor import supplement_adds_information
+
+        return supplement_adds_information("", target_text)
+    snapshot = (existing_item_snapshots or {}).get(proposal.existing_item_id, {})
+    if not snapshot:
+        return False
+
+    from studgroup.analysis.card_editor import normalized, supplement_adds_information
+
+    by_id = {row.telegram_message_id: row for row in analysis_input.messages}
+    known = "\n".join(
+        str(snapshot.get(key) or "") for key in ("subject", "title", "description", "deadline_at")
+    )
+    target_text = "\n".join(
+        part
+        for message_id in cited_targets
+        for part in [by_id[message_id].text, *by_id[message_id].image_facts]
+        if part
+    ).strip()
+    # A terse cancellation contains no new exercise/date and must not depend on word count.
+    # Require both explicit cancellation and a direct reply to this item's persisted source.
+    # "Thanks" replying to a card cannot stand in for cancellation evidence.
+    if proposal.action == "cancel" and any(
+        by_id[message_id].reply_to_message_id in set(snapshot.get("source_message_ids", []))
+        and re.fullmatch(
+            r"(?:отмена|отменено|отменяется|не надо(?: делать)?|делать не надо)[.!\s]*",
+            normalized(by_id[message_id].text),
+        )
+        for message_id in cited_targets
+    ):
+        return True
+    if not supplement_adds_information(known, target_text):
+        return False
+    if proposal.action in {"cancel", "reschedule"}:
+        return True
+
+    proposed = "\n".join(
+        str(value or "")
+        for value in (
+            proposal.subject,
+            proposal.title,
+            proposal.description,
+            proposal.deadline.at.isoformat() if proposal.deadline.at else None,
+        )
+    )
+    # Publication requires a content-bearing overlap between what changed and what the targets
+    # actually say. This is language-agnostic provenance matching, not a conversational keyword
+    # allow/deny list. Numbers are kept whole; words use the same conservative stems as the card
+    # editor. Old facts may remain in a merged description without being repeated by the target.
+    tokens = lambda value: set(re.findall(r"\d+|[a-zа-яё]{4,}", normalized(value)))
+    changed = tokens(proposed) - tokens(known)
+    removed = tokens(known) - tokens(proposed)
+    supported = tokens(target_text)
+    if (changed | removed) & supported:
+        return True
+    # Image facts have already passed their typed provenance validator. A target image may add a
+    # fact whose wording is normalized differently by the editor, so do not require stem identity.
+    return any(by_id[message_id].image_facts for message_id in cited_targets)
+
+
+def validate_single(
+    ordinal,
+    raw,
+    analysis_input,
+    *,
+    existing_items=None,
+    existing_item_snapshots=None,
+):
     """Return (accepted_item|None, rejected|None, repairable, actions)."""
     messages, allowed = source_maps(analysis_input)
     catalog, _why = usable_catalog(analysis_input.subject_catalog, analysis_input.group_id)
@@ -94,6 +186,43 @@ def validate_single(ordinal, raw, analysis_input, *, existing_items=None):
             RejectedItem(proposal_ordinal=ordinal, reason_code="evidence_outside_envelope"),
             False,
             adapted.actions,
+        )
+    if not _mutation_has_target_novelty(proposal, analysis_input, existing_item_snapshots):
+        return (
+            None,
+            RejectedItem(
+                proposal_ordinal=ordinal,
+                reason_code="mutation_not_supported_by_target",
+            ),
+            False,
+            adapted.actions,
+        )
+    from studgroup.analysis.image_evidence import proposal_image_problem
+
+    image_problem = proposal_image_problem(proposal, analysis_input)
+    if image_problem:
+        return (
+            None,
+            RejectedItem(proposal_ordinal=ordinal, reason_code=image_problem),
+            False,
+            adapted.actions,
+        )
+    if analysis_input.image_evidence:
+        # Persist provenance of the explicitly activated semantic path. Student display must
+        # never change just because shadow jobs happen to exist for an older published card.
+        first = proposal.evidence[0]
+        paths = list(dict.fromkeys([*first.fact_paths, "image_analysis"]))
+        if len(paths) > 20:
+            return (
+                None,
+                RejectedItem(proposal_ordinal=ordinal, reason_code="image_evidence_overflow"),
+                False,
+                adapted.actions,
+            )
+        proposal = proposal.model_copy(
+            update={
+                "evidence": [first.model_copy(update={"fact_paths": paths}), *proposal.evidence[1:]]
+            }
         )
     return proposal, None, False, adapted.actions
 
@@ -158,7 +287,11 @@ def _held_candidates(payload, raw, rejected, accepted, analysis_input, actions):
 
 
 def adapt_and_validate(
-    content, analysis_input: AnalysisInput, *, existing_items=None
+    content,
+    analysis_input: AnalysisInput,
+    *,
+    existing_items=None,
+    existing_item_snapshots=None,
 ) -> AdaptedValidation:
     actions: Counter = Counter()
     payload, raw = parse_envelope(content, analysis_input, actions)
@@ -170,7 +303,11 @@ def adapt_and_validate(
     seen = set()
     for ordinal, item in enumerate(raw[:MAX_PROPOSALS]):
         proposal, reject, repairable, item_actions = validate_single(
-            ordinal, item, analysis_input, existing_items=existing_items
+            ordinal,
+            item,
+            analysis_input,
+            existing_items=existing_items,
+            existing_item_snapshots=existing_item_snapshots,
         )
         actions.update(item_actions)
         if reject is not None:
@@ -220,4 +357,29 @@ def adapt_and_validate(
         candidates=held,
     )
     result = reconcile_validation(result, analysis_input.messages)
+    if analysis_input.image_evidence:
+        # Reconciliation can add album sources. Recheck the final sources before publication.
+        from studgroup.analysis.image_evidence import proposal_image_problem
+
+        kept, kept_ordinals = [], []
+        rejected_after = list(result.rejected)
+        held_after = list(result.candidates)
+        for ordinal, proposal in zip(result.accepted_ordinals, result.accepted):
+            problem = proposal_image_problem(proposal, analysis_input)
+            if problem is None:
+                kept.append(proposal)
+                kept_ordinals.append(ordinal)
+                continue
+            rejected_after.append(RejectedItem(proposal_ordinal=ordinal, reason_code=problem))
+            item = salvage_rejected(ordinal, raw[ordinal], problem, [], analysis_input, actions)
+            if item is not None:
+                held_after.append(item)
+        result = result.model_copy(
+            update={
+                "accepted": kept,
+                "accepted_ordinals": kept_ordinals,
+                "rejected": rejected_after,
+                "candidates": held_after[:MAX_CANDIDATES],
+            }
+        )
     return AdaptedValidation(result, candidates)

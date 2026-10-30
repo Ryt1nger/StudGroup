@@ -1,5 +1,79 @@
 # Contract changelog
 
+## 0.18.0 — 2026-10-24
+
+- Added optional nullable `subgroup` (`id`, `name`) to homework and academic-deadline cards. The
+  server filters cards to the student's selected subgroup; cards without a recognised subgroup and
+  all cards for students who have not answered remain visible.
+- Added `GET /subgroups` and `PUT /subgroups/{split_id}` so the Mini App profile can list and change
+  the caller's per-subject subgroup choices. Additive; subgroup setup remains in the headman bot.
+
+## 0.17.0 — 2026-10-23
+
+- `DELETE /homework/{id}` and `DELETE /deadlines/{id}` now answer 200 with `{ undo_id }` instead of
+  204 (nothing was released with the 204 shape for more than hours; clients that ignore the body keep
+  working).
+- Added `POST /card-removals/{undo_id}/undo`: the headman or deputy brings back a card they removed
+  (409 `action_rejected` when it changed or was already restored). Additive.
+
+## 0.16.0 — 2026-10-23
+
+- Added `POST /homework` and `POST /deadlines`: a headman or deputy creates a homework card or a
+  graded event in the Mini App (same rules, audit and announcement as creating one in the bot).
+- Added `DELETE /homework/{id}` and `DELETE /deadlines/{id}?expected_revision=`: the card is removed
+  for everyone at once without notifying students; the bot's correction journal can undo it.
+- Added permission `homework.create` to the session permissions of a headman and a deputy (UI hint).
+
+## 0.15.0 — 2026-10-23
+
+- Added `POST /notifications/{notification_id}/read`: marks one notification of the caller's group
+  read for the caller and returns the updated inbox (404 for an unknown or foreign id). Additive.
+- Added optional `urgency` (`normal` | `urgent`) to `EditHomeworkRequest`: the headman and deputy can
+  set or clear the «Срочно» mark when editing a card. Additive; omitted means unchanged.
+- Added `GET`/`PATCH /profile`: the caller's own name, e-mail, study-platform data (platform, https
+  URL, login, https calendar URL) and notification preferences. The study-platform password is
+  write-only (`sdu_password`, cleared with `clear_sdu_password`) and is never returned, only
+  `sdu.password_set`; the server stores it encrypted and answers 503 when it has no key. Additive.
+
+## 0.14.0 — 2026-10-23
+
+- Added `review` to `listHomework` `filter` and a `review` query flag to `listAcademicDeadlines`: the
+  editors' queue of active cards/events flagged `needs_clarification`. Headman and deputy only;
+  students get 403 `permission_denied`. `review` cannot be combined with `archive` on deadlines (422).
+- Added optional `review_count` to the homework list and the deadlines list responses, present only
+  for the headman and deputy, so a client shows the review tab only while something needs a look.
+- Clarified (no behaviour change): a card whose known deadline has passed is archived regardless of
+  personal completion, so a completed overdue card appears only under `filter=archive`.
+
+## 0.13.0 — 2026-10-22
+
+- Added `GET /attachments/{attachment_id}/image`: the photo of a card, streamed from Telegram for
+  members of the owning group. Added optional `MaterialLink.replaces_description` (default false):
+  when true on a `kind: photo` material the client shows that image instead of the text
+  description (the description is still sent as a text fallback). Additive; nothing else changed.
+
+## 0.12.0 — 2026-10-21
+
+- Added the headman/deputy cabinet API under `/staff` (tag `Staff`): timetable view with editor
+  revisions, add/change/cancel lessons, days without lessons, group timezone and first-week
+  anchor (headman only), the "deadline needs the headman" queue, set/confirm a card deadline and
+  per-field locks.
+- Added permissions `schedule.write`, `deadline.manage` (headman and deputy) and
+  `group.settings.write` (headman). Students keep the four existing permissions.
+- Added error code `action_rejected` (409) for actions refused by current data or a group rule.
+- Added nullable `Deadline.label` (homework) and `AcademicDeadline.deadline_label` with the neutral
+  student wording for uncertain deadlines.
+- A deadline set or confirmed by the headman/deputy is reported as certainty `confirmed`,
+  origin `manual`.
+
+## 0.11.0 — 2026-10-21
+
+- Files that stay in Telegram: a card material with `kind` other than `link` may now carry an
+  API-relative signed `url` (`/v1/files/{id}?exp=..&sig=..`, valid 6 hours, no Authorization header).
+  Clients must resolve it against the API base URL. Absolute https links are unchanged.
+- Added `GET /homework/{id}/file-link` and `GET /deadlines/{id}/file-link` (headman/deputy only): a
+  `t.me` deep link where the editor sends the file to the bot.
+
 ## 0.10.0 — 2026-10-21
 
 - Added `PATCH /homework/{id}` and `PATCH /deadlines/{id}`: a headman or deputy edits title,
@@ -55,3 +129,11 @@
 - Added optimistic concurrency and the `revision_conflict` error.
 - Made `urgency` the sole source of urgent UI styling.
 - Kept invitations bot-only and omitted placeholder APIs for prepared screens.
+
+## 2026-10-27 — Core v2 editor confirmation (additive)
+
+- Image findings 0.2.0: explicit corrected schedule rows and same-group/subject subgroup mapping.
+- Published events: structured response, source availability and exclusive retained_until;
+  editor approval required, local event end date plus seven calendar days inclusive.
+- Optional LessonOccurrence.subgroup_id and regenerated shared TypeScript type.
+- Frontend UI and real-group activation remain pending; all review/publication gates stay off.

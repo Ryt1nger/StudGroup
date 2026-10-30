@@ -35,7 +35,8 @@ def private(client, text, uid=9001, update=100, shared=None, callback=None):
                 "data": callback,
             },
         }
-    assert send(client, body).status_code == 200
+    response = send(client, body)
+    assert response.status_code == 200, response.text
 
 
 def session(client):
@@ -85,6 +86,35 @@ def test_admin_id_flow_requires_confirmation_and_is_idempotent(client):
             assert (m.role, m.status) == ("student", "active")
 
     asyncio.run(check())
+
+
+def test_owner_cannot_assign_a_second_headman_to_one_group(client):
+    def assign(target, update):
+        private(client, "/admin", update=update)
+        _, msg = session(client)
+        group = msg[-1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+        private(client, "", update=update + 1, callback=group)
+        s, _ = session(client)
+        private(client, "", update=update + 2, callback=f"a:{s.nonce}:headman")
+        private(client, str(target), update=update + 3)
+        s, _ = session(client)
+        private(client, "", update=update + 4, callback=f"a:{s.nonce}:yes")
+
+    def role(target):
+        async def read():
+            async with AsyncSession(client.app.state.engine) as db:
+                user = await db.scalar(select(User).where(User.telegram_user_id == target))
+                if user is None:
+                    return None
+                return await db.scalar(select(Membership.role).where(Membership.user_id == user.id))
+
+        return asyncio.run(read())
+
+    assign(123456789, 200)
+    assert role(123456789) == "headman"
+    assign(987654321, 210)
+    assert role(987654321) is None  # refused before anything was created
+    assert any("уже есть староста" in m["text"] for m in session(client)[1])
 
 
 def test_nonowner_has_no_admin_session_or_group_list(client):

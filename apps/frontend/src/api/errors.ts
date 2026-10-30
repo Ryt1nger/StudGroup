@@ -67,7 +67,8 @@ export async function unwrap<T>(request: Promise<FieldsResult<T>>): Promise<T> {
   } catch {
     throw new ApiRequestError('network', null, null);
   }
-  if (result.error !== undefined || !result.response?.ok) {
+  if (!result.response) throw new ApiRequestError('network', null, null);
+  if (result.error !== undefined || !result.response.ok) {
     throw new ApiRequestError('http', result.response?.status ?? null, parseApiError(result.error));
   }
   if (result.data === undefined) throw new ApiRequestError('http', result.response.status, null);

@@ -26,7 +26,9 @@ numbers, pages or actions are prohibited.
 - Partial but actionable cards are student-visible; unknown optional fields stay unknown.
 - A reliable next lesson of the identified subject supplies a `schedule_inferred` homework
   date. Students see neutral next-lesson wording; only the headman sees its unconfirmed basis.
-- Explicit subgroup assignments become separate labelled cards, initially visible to all
+- Explicit subgroup assignments become separate cards. For configured split subjects, recognised
+  cards are visible only to the selected subgroup; uncertain subgroup cards stay visible to all and
+  require editor review
   group members. Membership-based filtering is deferred.
 
 ## Consequences

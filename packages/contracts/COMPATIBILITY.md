@@ -1,5 +1,65 @@
 # Contract compatibility
 
+## Subject subgroups (0.18.0, 2026-10-24)
+
+Additive wire change. Older clients ignore the optional `subgroup` object and never call the two new
+membership endpoints; server-side filtering still gives them only common cards and cards for the
+student's chosen subgroup. A student with no choice sees every subgroup until answering, preventing
+a silent missed assignment. Editors always see every subgroup. An unrecognised subgroup produces a
+common visible card marked for editor review, so filtering never hides uncertain information.
+
+## Undoing a removal (0.17.0)
+
+The two delete operations change their success status from 204 to 200 with a small JSON body. A 0.16.0
+client that only checks for a 2xx status is unaffected; one that expects an empty body must not parse
+it. `undoCardRemoval` is new and optional. Restoring does not notify students, as removing did not.
+
+## Creating and removing cards in the Mini App (0.16.0)
+
+Additive only: new operations `createHomework`, `createAcademicEvent`, `deleteHomework`,
+`deleteAcademicEvent` and the permission value `homework.create`. Older clients never call them. A
+client MUST NOT treat the permission as authorization: students get 403 on every one of them.
+A removed card answers 404/410 on every read afterwards and is absent from lists, including the
+archive; students receive no notification for the removal. Removal is soft: the audit row keeps the
+data and the bot's correction journal restores it while the row exists.
+
+## Review queue (0.14.0, 2026-10-23)
+
+Additive only. Existing filters, query flags and fields keep their meaning. A 0.13.0 client never
+sends `filter=review` or `review=true` and may ignore the new optional `review_count`. A client
+that validates the `filter` enum strictly must add `review`. Students never receive `review_count`
+and get 403 `permission_denied` for the review queue; the server re-checks the role on every
+request, `permissions` stays a UI hint.
+
+## Headman/deputy cabinet API (0.12.0, 2026-10-21)
+
+Additive only: existing student routes, fields and enums keep their meaning. New optional
+fields `Deadline.label` and `AcademicDeadline.deadline_label` may be ignored by older clients.
+Clients that switch on `ApiError.code` must tolerate the new `action_rejected`.
+
+- `/staff/*` routes return 403 `permission_denied` for students and re-check the role on every
+  request; session `permissions` is a UI hint only. Group settings are headman-only; deputies
+  can edit lessons, days without lessons and card deadlines, as in the headman bot.
+- Lesson edits reuse the bot's revision guards: a stale `pattern_revision`/`override_revision`
+  or a deputy changing a headman-confirmed lesson gets 409 `action_rejected`.
+- Every group timetable change (bot, cabinet, undo, reviewed publication) writes one
+  `schedule_changes` row and bumps `schedule_version`, then recomputes `schedule_inferred`
+  deadlines in the same transaction. Locked, explicit/relative and past deadlines are not
+  changed; no notification is sent.
+- Days without lessons affect deadline inference only in this version; the student schedule
+  still lists lessons on such days until the owner decides how they are shown.
+- A set or confirmed deadline locks the `deadline` field; `set` stores basis `explicit` with
+  reason `headman_set`. Field locks are shared by headman and deputy: either can release them.
+- `StaffItem.id` is the canonical card id, not the homework/deadline id students see.
+
+## Files that stay in Telegram (0.11.0)
+
+Additive. A material with a `kind` other than `link` may carry an API-relative signed `url`
+(`/v1/files/...`). A 0.10.0 client that requires absolute https links simply hides such a material;
+nothing else changes. New read-only operations `getHomeworkFileLink` / `getDeadlineFileLink`
+(headman/deputy only; students get 403). The signed path expires after 6 hours; re-reading the card
+returns a fresh one.
+
 ## Card editing by the headman (0.10.0)
 
 Additive only. New operations `editHomework` and `editAcademicDeadline` (PATCH), new permission values
@@ -320,3 +380,69 @@ and never listed in new_or_changed. After the window the card leaves that sectio
 Tasks and detail are unaffected. No schema or enum change; clients that preserve server
 order need no update. Example: an assignment created 3 days ago and edited 1 hour ago
 → new_or_changed; edited 6 hours ago → upcoming (if due within 7 days) or absent.
+
+## One-notification read receipt and editable urgency (0.15.0)
+
+Both additions are optional and additive. Old clients keep using `read-all` and never send
+`urgency`; an old backend answers 404 to the new path, so the app falls back to `read-all`
+semantics (it only hides the item locally). Existing responses are unchanged.
+
+## Core v2 image pilot (2026-10-26)
+
+No existing card field is removed or renamed. For materials processed by the new explicitly
+allowlisted image pipeline, `replaces_description` is false: confirmed full task text remains
+visible and photos supplement it. Legacy materials retain their existing flag semantics. New
+internal SourceAttachment/ImageEvidence fields are not additions to the student API. The same
+card image references and display-only selector are used for owner preview and student materials.
+
+Image findings review and social-event endpoints are specified separately in
+`image-findings.openapi.yaml` as an additive, disabled pilot contract. They do not extend the
+seven academic kinds or replace `/deadlines`. Frontend/API adoption requires owner coordination.
+Review and publication each require their own flag and a group allowlist. Existing clients and
+existing EventRecord consumers remain compatible.
+
+
+## Owner-approved Core v2 refinements (2026-10-27)
+
+The image-findings contract 0.2.0 adds optional event end/date-only/multi-day fields and corrected
+schedule rows with explicit group-local subject/subgroup IDs. Existing requests remain valid.
+Published events use an independently approved snapshot and survive expiry of private sources
+through the group-local event end date + 7 days inclusive. Retained past/cancelled event details
+remain available; cancellation stays hidden from active lists. APIs will expose explicit source
+availability instead of linking to expired private evidence. Public activation remains off pending
+frontend handoff and separate permission. No existing academic card endpoint is replaced.
+
+Core v2 editor confirmation (2026-10-27): `corrected_rows` is optional; original AI rows remain
+immutable, confirmed rows and target revisions are retained separately. Subject/subgroup IDs
+must belong to the same group and subject. `LessonOccurrence.subgroup_id` is additive and optional.
+Existing group-wide schedule responses stay compatible. One-off replacements carry their own
+subject/teacher/subgroup, including an explicitly cleared teacher. Frontend confirmation UI
+and feature activation remain pending; all image review/publication flags default to off.
+
+Release continuation 2026-10-27: internal SourceAttachment adds optional display_covers and
+nullable display_readability for frozen preview consistency. These display-only properties are
+excluded from both AI requests. Public card/API schemas are unchanged. Old image jobs without a
+local visual proof remain visible unless their bytes are exactly identical; pHash/OCR similarity
+alone no longer hides an attachment. Migration 0045 adds only nullable job metadata.
+
+## Events/calendar integration — 2026-10-27
+
+Main API 0.19.0 references the canonical Image Findings API 0.3.0 path definitions; generated
+clients now consume those endpoints without duplicating event schemas. Existing paths and default
+active-event filtering remain valid. Optional start/end inclusive group-local dates, status and
+upcoming filters are additive; range requests reject missing boundaries, reversed ranges or more
+than 366 days. Lists are chronological and multi-day events overlap every confirmed day.
+Source URLs and rescheduled hints are additive, derived from retained same-group sources and
+approved history. Expired sources never regain links from an approved event snapshot.
+
+SessionContext adds optional per-group features (events/event_review/schedule_review). Missing
+fields mean disabled. These are display hints; every read and write still rechecks active
+membership, role, allowlist, feature flag, approval hash, audience and retention as appropriate.
+Public list/detail and editor actions read persisted structured data and perform no AI calls.
+
+Image Findings 0.3.1 adds optional current_schedule_version, group-scoped subgroup metadata and
+retained schedule-source URLs. Existing confirmation bodies preserve their previous version
+checks. The optional acknowledge_schedule_change flag permits an explicit editor re-review only
+with full corrected_rows and the current official version; stale source/revision, role and
+occurrence guards remain enforced. Confirmation history preserves both captured and applied
+schedule versions and the acknowledgement. No manual review operation starts a vision call.
