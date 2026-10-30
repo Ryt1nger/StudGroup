@@ -76,10 +76,10 @@ def put(client, event, payload, state="draft", revision=None):
     )
 
 
-def test_poster_stays_draft_and_publishing_has_separate_flag(client, monkeypatch):
+def test_verified_group_poster_is_published_without_a_separate_flag(client, monkeypatch):
     event, payload = prepare(client, monkeypatch)
-    assert event.state == "draft"
-    assert client.get("/v1/group-events", headers=AUTH).json() == {"events": []}
+    assert event.state == "active"
+    assert len(client.get("/v1/group-events", headers=AUTH).json()["events"]) == 1
     assert put(client, event, payload).status_code == 403
     make(client, "headman")
     result = put(client, event, payload, "active")
@@ -125,7 +125,7 @@ def test_manual_lock_preserves_event_and_keeps_model_change_as_held_finding(clie
     asyncio.run(change())
     current = stored(client, GroupEvent)[0]
     assert json.loads(current.payload_json)["place"] == "Ручной зал"
-    assert current.revision == 2 and current.manual_lock
+    assert current.revision == 3 and current.manual_lock
     assert any(source.apply_state == "held" for source in stored(client, GroupEventSource))
 
 

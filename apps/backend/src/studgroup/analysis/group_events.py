@@ -118,7 +118,6 @@ async def capture_event(db, group_id, raw, incoming, now, job=None):
         return "unchanged"
     held = not new and (
         event.manual_lock
-        or event.state != "draft"
         or (incoming.expected_revision is not None and incoming.expected_revision != event.revision)
     )
     if not held:
@@ -173,7 +172,48 @@ async def capture_event(db, group_id, raw, incoming, now, job=None):
             event.revision += 1
             event.updated_at = now
             snapshot(db, event, "model", now)
+    if not event.manual_lock:
+        await publish_verified_group_event(db, event, now)
     return "held" if held else "created" if new else "updated"
+
+
+async def publish_verified_group_event(db, event, now):
+    """Expose a verified group event without making up missing calendar data.
+
+    This is the single-group product policy: model findings with current evidence and
+    group audience are immediately visible.  A staff edit still sets ``manual_lock``
+    and thereafter wins over new model findings.
+    """
+    from studgroup.analysis.event_lifetime import payload_hash, retention_end
+
+    payload = ImageEvent.model_validate_json(event.payload_json)
+    if payload.audience != "group" or not await verified(db, event, now):
+        return False
+    try:
+        end_date, expires = retention_end(payload, (await db.get(Group, event.group_id)).timezone)
+    except ApiError as exc:
+        if exc.code not in {"event_date_required", "event_end_required"}:
+            return False
+        # Keep the source-retention expiry for an event whose date is only written
+        # in prose.  It is visible in Events, but never projected onto the calendar.
+        end_date, expires = None, event.delete_at
+    if expires <= now:
+        return False
+    changed = (
+        event.state != ("cancelled" if payload.action == "cancel" else "active")
+        or event.event_end_date != end_date
+        or event.delete_at != expires
+        or event.approved_payload_sha256 != payload_hash(event.payload_json)
+    )
+    event.state = "cancelled" if payload.action == "cancel" else "active"
+    event.event_end_date, event.delete_at = end_date, expires
+    event.published_at = event.published_at or now
+    event.approved_payload_sha256 = payload_hash(event.payload_json)
+    if changed:
+        event.revision += 1
+        event.updated_at = now
+        snapshot(db, event, "model_publication", now)
+    return True
 
 
 async def capture_image(db, job, reading, raw, now):

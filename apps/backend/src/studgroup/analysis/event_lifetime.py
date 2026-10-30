@@ -38,8 +38,6 @@ def retention_end(payload, timezone):
 def approved_snapshot(event):
     return bool(
         event.published_at
-        and event.event_end_date
         and event.approved_payload_sha256
         and event.approved_payload_sha256 == payload_hash(event.payload_json)
-        and event.manual_lock
     )

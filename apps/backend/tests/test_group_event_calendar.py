@@ -60,7 +60,7 @@ def test_move_and_cancel_update_same_record_and_history_without_ai(client, monke
     event, payload, current = published(client, monkeypatch, starts_at=None, starts_on=str(first))
     calls = len(stored(client, ImageAnalysisCall))
     assert current["source_url"].endswith("/31")
-    assert not current["rescheduled"]
+    assert current["rescheduled"]
     moved = put(client, event, payload | {"starts_on": str(second)}, "active", current["revision"])
     assert moved.status_code == 200, moved.text
     assert moved.json()["id"] == current["id"] and moved.json()["rescheduled"]

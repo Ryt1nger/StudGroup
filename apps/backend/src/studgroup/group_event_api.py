@@ -210,7 +210,10 @@ async def list_group_events(
             continue
         first, last = calendar_bounds(incoming, group.timezone)
         if first is None or last is None:
-            continue  # never guess a calendar cell for unknown dates
+            if start:
+                continue  # never guess a calendar cell for unknown dates
+            result.append((datetime.max.replace(tzinfo=UTC), str(event.id), event))
+            continue
         if start and (first > end or last < start):
             continue
         if upcoming and ((incoming.ends_at and incoming.ends_at <= now) or last < today):

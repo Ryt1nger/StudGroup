@@ -10,13 +10,13 @@ import type { IconName } from '../ui/iconData';
 import { AppRootContext } from './AppRoot';
 
 const NAV: ReadonlyArray<readonly [string, string, IconName]> = [
-  ['/today', 'Сегодня', 'today'],
   ['/tasks', 'Задания', 'tasks'],
   ['/schedule', 'Расписание', 'cal'],
+  ['/today', 'Сегодня', 'today'],
   ['/subjects', 'Предметы', 'book'],
 ];
 
-const ORDER: Record<string, number> = { today: 0, tasks: 1, deadlines: 1.5, schedule: 2, events: 3, subjects: 4 };
+const ORDER: Record<string, number> = { tasks: 0, deadlines: 0.5, schedule: 1, today: 2, events: 3, subjects: 4 };
 
 /** Which tab a path belongs to; `null` for screens outside the tab bar (profile). */
 function sectionOf(pathname: string): string | null {
@@ -59,7 +59,7 @@ function Frame() {
   const section = sectionOf(pathname);
   const features = useEventCapabilities();
   const items = [...NAV];
-  if (features.events || features.event_review) items.splice(3, 0, ['/events', 'События', 'cal']);
+  if (features.events || features.event_review) items.splice(3, 0, ['/events', 'События', 'event']);
   const index = Math.max(0, items.findIndex(([path]) => path === `/${section}`));
 
   useLayoutEffect(() => {

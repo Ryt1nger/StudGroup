@@ -937,12 +937,12 @@ async def process_package_next(engine, settings, provider=None, now=None):
             row.latency_ms = result.latency_ms
             row.state = "completed"
             row.completed_at = now
-            from studgroup.analysis.image_jobs import enabled
+            from studgroup.analysis.group_events import capture_candidates
 
-            if enabled(settings, row.group_id):
-                from studgroup.analysis.group_events import capture_candidates
-
-                await capture_candidates(db, row.group_id, result.validation, analysis_input, now)
+            # C+ has already completed validation for this package.  Event capture is
+            # not an image-pilot feature: the same evidence and group checks apply to
+            # every completed package, while no new model call is started here.
+            await capture_candidates(db, row.group_id, result.validation, analysis_input, now)
             if result.validation.accepted:
                 subjects = (
                     await db.scalars(

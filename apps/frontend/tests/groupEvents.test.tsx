@@ -27,6 +27,11 @@ describe('separate persisted group events', () => {
   it('publishes a draft, shares it with the calendar, moves and cancels the same entity', async () => {
     useScenario('events');
     const app = renderApp({ route: '/events' });
+    expect(
+      Array.from((await screen.findByRole('navigation', { name: 'Основная навигация' })).querySelectorAll('a')).map(
+        (link) => link.textContent,
+      ),
+    ).toEqual(['Задания', 'Расписание', 'Сегодня', 'События', 'Предметы']);
     expect(await screen.findByText('Пока нет событий')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('link', { name: 'Проверить черновики и изменения' }));
     await userEvent.click(await screen.findByRole('link', { name: /Открытая лекция о космосе/ }));
