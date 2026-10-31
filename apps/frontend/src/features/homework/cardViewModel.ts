@@ -81,10 +81,10 @@ function isSourceDetail(value: unknown): value is SourceDetail {
 }
 
 function sources(detail: HomeworkDetail, extension: UnknownRecord): SourceDetail[] {
-  if (detail.sources?.length) return detail.sources;
+  if (Array.isArray(detail.sources)) return detail.sources.filter(isSourceDetail);
   if (Array.isArray(extension.sources)) {
     const compatible = extension.sources.filter(isSourceDetail);
-    if (compatible.length) return compatible;
+    return compatible;
   }
   return [detail.source_detail];
 }

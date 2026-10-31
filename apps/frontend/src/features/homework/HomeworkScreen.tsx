@@ -20,7 +20,7 @@ import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
 import { DeleteCardButton } from '../shared/DeleteCard';
 import { AddFile, Collapsible, SourceRow, UpdatesBlock } from '../shared/CardParts';
-import { MaterialList, Photos } from '../shared/Materials';
+import { hasVisibleMaterials, MaterialList, Photos } from '../shared/Materials';
 import { changedAfterCompletion, showUrgent } from '../today/cardStatus';
 import { toHomeworkCardViewModel } from './cardViewModel';
 
@@ -69,6 +69,7 @@ function Body({ detail, nowMs, gaveUp, restart, refreshing }: { detail: Homework
   const when = whenLabel(detail.deadline, nowMs, timeZone);
   const description = detail.description ?? detail.summary ?? null;
   const photos = photoMaterials(view.materials);
+  const materials = remainingMaterials(view.materials);
   const editor = detail.permissions.includes('homework.edit');
   const cancelled = detail.status === 'cancelled';
   // Only the headman sees that the card needs a check, as a small mark; students see nothing.
@@ -111,16 +112,16 @@ function Body({ detail, nowMs, gaveUp, restart, refreshing }: { detail: Homework
         {photos.length ? <Photos items={photos} alt={detail.title} /> : <p>{description ?? ru.detail.noDescription}</p>}
       </div>
       {editor ? <AddFile fetchLink={() => api.homeworkFileLink(detail.id)} /> : null}
+      {hasVisibleMaterials(materials) ? <div className="block">
+        <h3 id="homework-materials">Материалы</h3>
+        <MaterialList items={materials} />
+      </div> : null}
       <UpdatesBlock items={updates} timeZone={timeZone} />
-      <Collapsible title={view.sources.length > 1 ? ru.detail.sources : ru.detail.source} label={view.sources.length > 1 ? ru.detail.sources : ru.detail.source}>
+      {view.sources.length ? <Collapsible title={view.sources.length > 1 ? ru.detail.sources : ru.detail.source} label={view.sources.length > 1 ? ru.detail.sources : ru.detail.source}>
         {view.sources.map((source, index) => (
           <SourceRow key={`${source.kind}-${source.message_date ?? 'undated'}-${index}`} source={source} timeZone={timeZone} />
         ))}
-      </Collapsible>
-      <div className="block">
-        <h3 id="homework-materials">Материалы</h3>
-        <MaterialList items={remainingMaterials(view.materials)} />
-      </div>
+      </Collapsible> : null}
       <div className="cta-space" />
       {canComplete ? <CompletionBar detail={detail} refreshing={refreshing} onError={setCompletionMessage} /> : null}
     </>

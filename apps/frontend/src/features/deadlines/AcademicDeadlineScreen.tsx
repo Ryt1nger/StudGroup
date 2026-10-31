@@ -11,7 +11,7 @@ import { RequestError } from '../../ui/RequestError';
 import { DeleteCardButton } from '../shared/DeleteCard';
 import { AddFile, Collapsible, SourceRow, UpdatesBlock } from '../shared/CardParts';
 import { EVENT_KIND } from '../shared/Cards';
-import { MaterialList, Photos } from '../shared/Materials';
+import { hasVisibleMaterials, MaterialList, Photos } from '../shared/Materials';
 import { formatEventDate } from './formatEventDate';
 
 export function AcademicDeadlineScreen() {
@@ -32,7 +32,8 @@ export function AcademicDeadlineScreen() {
   const subject = (Object.prototype.hasOwnProperty.call(item, 'confirmed_subject') ? item.confirmed_subject?.name : item.subject) ?? 'Без предмета';
   const editor = (data.permissions?.includes('homework.edit') ?? false) && item.revision !== undefined;
   const photos = photoMaterials(item.materials);
-  const updates = (item.updates ?? []).map((u) => ({ id: u.id, kind: u.kind, text: u.text, createdAt: u.created_at }));
+  const materials = remainingMaterials(item.materials);
+  const updates = (item.updates ?? []).filter((u) => u.text.trim()).map((u) => ({ id: u.id, kind: u.kind, text: u.text, createdAt: u.created_at }));
   // Only the headman sees that the card needs a check, as a small mark; students see the hint only
   // when it is their sole date information.
   const needsClarification =
@@ -56,16 +57,16 @@ export function AcademicDeadlineScreen() {
         {photos.length ? <Photos items={photos} alt={item.title} /> : <p>{item.description}</p>}
       </div>
       {editor ? <AddFile fetchLink={() => api.eventFileLink(item.id)} /> : null}
+      {hasVisibleMaterials(materials) ? <div className="block">
+        <h3>Материалы</h3>
+        <MaterialList items={materials} />
+      </div> : null}
       {editor ? <UpdatesBlock items={updates} timeZone={timeZone} /> : null}
       {item.sources?.length ? (
         <Collapsible title={item.sources.length > 1 ? ru.detail.sources : ru.detail.source} label={item.sources.length > 1 ? ru.detail.sources : ru.detail.source}>
           {item.sources.map((source, index) => <SourceRow key={`${source.kind}-${index}`} source={source} timeZone={timeZone} />)}
         </Collapsible>
       ) : null}
-      <div className="block">
-        <h3>Материалы</h3>
-        <MaterialList items={remainingMaterials(item.materials)} />
-      </div>
     </>
   );
 }

@@ -44,8 +44,7 @@ describe('important deadlines', () => {
     expect(await screen.findByRole('heading', { name: event.title, level: 1 })).toBeInTheDocument();
     expect(await screen.findByText('1000–1500 слов')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Что нужно сделать' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Материалы' })).toBeInTheDocument();
-    expect(screen.getByText('Материалы пока не подключены.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Материалы' })).not.toBeInTheDocument();
     expect(screen.queryByText('Выполнено мной')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('link', { name: 'Назад' }));
     expect(await screen.findByRole('button', { name: 'Актуальные' })).toBeInTheDocument();

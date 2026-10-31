@@ -36,6 +36,11 @@ function materialHref(raw: string): string | null {
   }
 }
 
+/** Only links that the user can actually open count as material content. */
+export function hasVisibleMaterials(items?: MaterialLink[]): boolean {
+  return items?.some((item) => materialHref(item.url) !== null) ?? false;
+}
+
 /** The «Материалы» list: files and links as buttons-looking anchors. */
 export function MaterialList({ items }: { items?: MaterialLink[] }) {
   if (items === undefined) return <p className="muted" style={{ margin: 0 }}>Материалы пока не подключены.</p>;

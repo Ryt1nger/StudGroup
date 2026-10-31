@@ -58,11 +58,12 @@ export function SourceRow({ source, timeZone }: { source: SourceDetail; timeZone
 }
 
 export function UpdatesBlock({ items, timeZone }: { items: LearningCardUpdateView[]; timeZone: string }) {
-  if (!items.length) return null;
+  const visible = items.filter((item) => item.text.trim().length > 0);
+  if (!visible.length) return null;
   return (
     <Collapsible title={ru.detail.updates} label={ru.detail.updates}>
       <ul className="upd">
-        {items.map((item) => (
+        {visible.map((item) => (
           <li key={item.id}>
             <span className={clsx('uk', item.kind)}>{ru.detail.updateKind[item.kind]}</span>
             <span className="ut2">{item.text}</span>

@@ -67,6 +67,9 @@ describe('published learning card readiness', () => {
     expect(within(materials).getByText('Документ')).toBeInTheDocument();
 
     expect(screen.getByRole('heading', { name: /^Источники/ })).toBeInTheDocument();
+    const headings = ['Материалы', 'Дополнения и изменения', 'Источники'].map((name) => screen.getByRole('heading', { name: new RegExp(`^${name}`) }));
+    expect(headings[0]!.compareDocumentPosition(headings[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(headings[1]!.compareDocumentPosition(headings[2]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // collapsed by default: the unavailable-source explanation is hidden until the arrow is used
     expect(screen.getByText('У вас нет доступа к исходному сообщению.')).not.toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: /^Источники:/ }));
@@ -74,6 +77,16 @@ describe('published learning card readiness', () => {
     await userEvent.click(screen.getByRole('button', { name: /Сообщение учебной группы/ }));
     expect(adapter?.openTelegramLink).toHaveBeenCalledWith('https://t.me/c/1234567890/42');
     expect(screen.queryByText('needs_clarification')).not.toBeInTheDocument();
+  });
+
+  it('hides empty materials, sources and changes', async () => {
+    useScenario();
+    server.use(http.get(`${API}/homework/${HW}`, () => HttpResponse.json({ ...base, materials: [], sources: [], updates: [] })));
+    renderApp({ route: `/homework/${HW}` });
+    await screen.findByRole('heading', { level: 1 });
+    expect(screen.queryByRole('heading', { name: 'Материалы' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^Источник/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Дополнения и изменения' })).not.toBeInTheDocument();
   });
 
   it('shows an honest absence of a deadline without inventing a date', async () => {
