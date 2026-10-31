@@ -14,6 +14,7 @@ import { useFeedback } from '../../ui/Feedback';
 import { Ic } from '../../ui/Ic';
 import type { IconName } from '../../ui/iconData';
 import { RequestError } from '../../ui/RequestError';
+import appPackage from '../../../package.json';
 
 const ROLE = { student: 'Студент', headman: 'Староста', deputy: 'Помощник старосты' } as const;
 
@@ -24,6 +25,8 @@ const ACCENT_INFO: Record<Accent, { name: string; h: number; s: string; l: strin
   blue: { name: 'Голубой', h: 212, s: '100%', l: '58%' },
   gray: { name: 'Серый', h: 230, s: '8%', l: '56%' },
   yellow: { name: 'Жёлтый', h: 44, s: '100%', l: '52%', on: '#1c1500' },
+  pink: { name: 'Нежно-розовый', h: 335, s: '82%', l: '78%', on: '#24101b' },
+  teal: { name: 'Бирюзовый', h: 177, s: '64%', l: '55%', on: '#062321' },
 };
 
 const THEMES = [
@@ -359,7 +362,7 @@ function Help() {
       <Group title="Приложение">
         <Kv title="Язык" value="Русский" />
       </Group>
-      <p className="foot">StudGroup · задания и расписание вашей группы в Telegram</p>
+      <p className="foot">StudGroup · версия {appPackage.version} · задания и расписание вашей группы в Telegram</p>
     </>
   );
 }

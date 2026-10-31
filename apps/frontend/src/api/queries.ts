@@ -325,6 +325,7 @@ export function useRestoreCard() {
 /** Drops loaded pages and cursor chains of every Tasks filter; active lists refetch their first page. */
 export function restartHomeworkLists(queryClient: QueryClient): void {
   void queryClient.resetQueries({ queryKey: queryKeys.homeworkList });
+  void queryClient.resetQueries({ queryKey: ['homework-counts'] });
 }
 
 export function resetLearningData(queryClient: QueryClient): void {

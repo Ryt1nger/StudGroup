@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import type { LessonOccurrence, PublishedEvent } from '@studgroup/shared-types';
 import { useScheduleQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
-import { dayKey, formatTime } from '../../lib/format';
+import { addDays, dayKey, formatTime } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
 import { safeLessonUrl, useLessonLinkClick } from '../../lib/lessonLink';
 import { subjectStyle } from '../../lib/subjectColor';
@@ -100,10 +100,10 @@ export function ScheduleScreen() {
   const serverNow = useSessionServerNow();
   const [startMs] = useState(() => serverNow() ?? Date.now());
   const today = dayKey(startMs, timeZone);
-  const [week, setWeek] = useState(0);
-  const start = new Date(Date.parse(`${today}T12:00:00Z`) + week * 7 * 86_400_000).toISOString().slice(0, 10);
-  const days = weekKeys(start);
-  const [selected, setSelected] = useState(0);
+  const [selectedKey, setSelectedKey] = useState(today);
+  const [displayedWeek, setDisplayedWeek] = useState(today);
+  const days = weekKeys(displayedWeek);
+  const selected = days.indexOf(selectedKey);
   const query = useScheduleQuery(days[0]!, days[6]!, allowed);
   const features = useEventCapabilities();
   const groupEvents = useGroupEvents({ start: days[0]!, end: days[6]! });
@@ -113,7 +113,7 @@ export function ScheduleScreen() {
   const ref = useRef<HTMLDivElement>(null);
   const eventsRef = useRef<HTMLDivElement>(null);
   const anchored = useRef('');
-  const key = days[selected]!;
+  const key = selected >= 0 ? selectedKey : days[0]!;
   const lessons = data ? lessonsOfDay(data.lessons, key, timeZone) : [];
   const marked = new Set(days.filter((d) => lessonsOfDay(data?.lessons ?? [], d, timeZone).length > 0 || eventItems.some((item) => groupEventOnDay(item, d, timeZone))));
 
@@ -157,7 +157,7 @@ export function ScheduleScreen() {
   const label = `${WEEKDAYS[new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay()]}, ${d} ${MONTHS[m - 1]}`;
   const clock = formatTime(new Date(nowMs).toISOString(), timeZone);
   const nowM = minutesOf(clock);
-  const nowOn = week === 0 && selected === 0 && nowM > 0 && nowM < (HR1 - HR0) * 60;
+  const nowOn = key === today && nowM > 0 && nowM < (HR1 - HR0) * 60;
   const nowY = (nowM * PX) / 60;
   const lineBehindLesson = nowOn && lessonAt(lessons, nowMs);
   const hours = Array.from({ length: HR1 - HR0 + 1 }, (_, i) => {
@@ -177,8 +177,12 @@ export function ScheduleScreen() {
         <h1 className="sr">{ru.nav.schedule}</h1>
         {features.schedule_review ? <Link className="pillb" to="/schedule/review">Проверить распознанное расписание</Link> : null}
         <div className="datel">{label}</div>
-        {features.events ? <div className="event-week-nav"><button type="button" className="pillb" onClick={() => { setWeek((value) => value - 1); anchored.current = ''; }}>Предыдущая неделя</button><button type="button" className="pillb" onClick={() => { setWeek((value) => value + 1); anchored.current = ''; }}>Следующая неделя</button></div> : null}
-        <WeekStrip days={days} selected={selected} marked={marked} onSelect={(i) => { setSelected(i); anchored.current = ''; }} />
+        <WeekStrip days={days} selected={selected} marked={marked} onSelect={(i) => { setSelectedKey(days[i]!); anchored.current = ''; }} onWeekChange={(direction) => {
+          const next = addDays(days[0]!, direction * 7);
+          setDisplayedWeek(next);
+          setSelectedKey(next);
+          anchored.current = '';
+        }} />
       </div>
       {features.events && groupEvents.isError ? <RequestError error={groupEvents.error} onRetry={() => void groupEvents.refetch()} /> : null}
       {features.events && groupEvents.isPending ? <Skeleton count={1} label="Загрузка событий календаря" /> : null}
@@ -194,7 +198,7 @@ export function ScheduleScreen() {
         <div ref={ref} className="tline" style={{ height: (HR1 - HR0) * PX + 20 }}>
           {hours}
           {nowOn ? <div className={`nowline${lineBehindLesson ? ' behind-event' : ''}`} style={{ top: nowY }}><span>{clock}</span></div> : null}
-          {lessons.map((lesson) => <Event key={lesson.id} lesson={lesson} timeZone={data.group_timezone} nowMs={nowMs} isToday={week === 0 && selected === 0} />)}
+          {lessons.map((lesson) => <Event key={lesson.id} lesson={lesson} timeZone={data.group_timezone} nowMs={nowMs} isToday={key === today} />)}
         </div>
       ) : null}
     </>

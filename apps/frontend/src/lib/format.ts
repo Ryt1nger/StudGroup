@@ -69,7 +69,10 @@ export function formatDeadline(deadline: DeadlineInput, nowMs: number, timeZone:
 
 /** Monday..Sunday (inclusive YYYY-MM-DD keys) of the week containing `nowMs` in the given timezone. */
 export function weekRange(nowMs: number, timeZone: string): { start: string; end: string } {
-  const today = dayKey(nowMs, timeZone);
+  return weekRangeForDayKey(dayKey(nowMs, timeZone));
+}
+
+export function weekRangeForDayKey(today: string): { start: string; end: string } {
   const [y, m, d] = today.split('-').map(Number) as [number, number, number];
   const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday
   const sinceMonday = (weekday + 6) % 7;

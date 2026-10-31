@@ -11,7 +11,7 @@ interface TelegramContextValue {
   setAccent: (accent: Accent) => void;
 }
 
-export const ACCENTS = ['violet', 'blue', 'green', 'red', 'yellow', 'gray'] as const;
+export const ACCENTS = ['violet', 'blue', 'green', 'red', 'yellow', 'gray', 'pink', 'teal'] as const;
 export type Accent = (typeof ACCENTS)[number];
 
 const TelegramContext = createContext<TelegramContextValue | null>(null);

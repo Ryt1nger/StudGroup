@@ -53,7 +53,8 @@ test('schedule opens from the navigation and shows lessons', async ({ page }) =>
   await page.goto('/?scenario=populated');
   await page.getByRole('link', { name: 'Расписание' }).click();
   await expect(page.getByRole('heading', { name: 'Расписание', level: 1 })).toBeAttached();
-  await expect(page.locator('.ev').first()).toBeInViewport();
+  await page.getByRole('group', { name: 'День' }).getByRole('button', { name: /^Пн,/ }).click();
+  await expect(page.locator('.ev').last()).toBeInViewport();
 });
 
 test('Today lesson opens the subject page for that lesson', async ({ page }) => {

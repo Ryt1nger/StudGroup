@@ -16,7 +16,7 @@ function Splash() {
     <div className="app">
       <div className="gate">
         <div className="splash" role="status" aria-live="polite">
-          <div className="logo" aria-hidden="true">SG</div>
+          <img className="logo" src={`${import.meta.env.BASE_URL}studgroup-logo.png`} alt="StudGroup" width="72" height="72" />
           <p>{ru.gate.bootLoading}</p>
           <div className="sk" style={{ width: '60%', height: 14, borderRadius: 8 }} />
           <div className="sk" style={{ width: '40%', height: 14, borderRadius: 8 }} />

@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures';
+import { selectCalendarDate } from './selectCalendarDate';
 
 test('editor corrects the recognized schedule and maps it to one official occurrence', async ({ page }) => {
   await page.goto('/schedule?scenario=schedule-review');
@@ -18,11 +19,7 @@ test('editor corrects the recognized schedule and maps it to one official occurr
   await mapping.selectOption(target!);
   await page.getByRole('button', { name: 'Подтвердить расписание', exact: true }).click();
   await expect(page).toHaveURL(/\/schedule$/);
-  const day = Number(date.slice(-2));
-  await page
-    .getByRole('group', { name: 'День', exact: true })
-    .getByRole('button', { name: new RegExp(`, ${day}$`) })
-    .click();
+  await selectCalendarDate(page, date);
   const changed = page.getByRole('link', { name: /Математический анализ.*13:00.*14:30.*305.*Петров/ });
   await expect(changed).toBeAttached();
   await expect(changed).toHaveCount(1);

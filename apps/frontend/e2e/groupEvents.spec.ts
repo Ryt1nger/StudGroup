@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures';
+import { selectCalendarDate } from './selectCalendarDate';
 
 for (const theme of ['light', 'dark']) {
   test(`event draft → publication → calendar → move → cancellation (${theme})`, async ({
@@ -19,7 +20,7 @@ for (const theme of ['light', 'dark']) {
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await page.screenshot({ animations: 'disabled', path: info.outputPath(`event-details-${theme}.png`) });
     await page.getByRole('link', { name: 'Расписание', exact: true }).click();
-    await page.getByRole('group', { name: 'День', exact: true }).getByRole('button').nth(1).click();
+    await selectCalendarDate(page, original);
     await expect(page.getByRole('heading', { name: 'Открытая лекция о космосе' })).toBeInViewport();
     await page.screenshot({ animations: 'disabled', path: info.outputPath(`calendar-event-${theme}.png`) });
     await page.getByRole('link', { name: /Открытая лекция о космосе/ }).click();
@@ -29,9 +30,9 @@ for (const theme of ['light', 'dark']) {
     await page.getByRole('button', { name: 'Сохранить изменения' }).click();
     await expect(page.getByText('Перенесено', { exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'Расписание', exact: true }).click();
-    await page.getByRole('group', { name: 'День', exact: true }).getByRole('button').nth(1).click();
+    await selectCalendarDate(page, original);
     await expect(page.getByRole('heading', { name: 'Открытая лекция о космосе' })).toHaveCount(0);
-    await page.getByRole('group', { name: 'День', exact: true }).getByRole('button').nth(3).click();
+    await selectCalendarDate(page, moved);
     await expect(page.getByRole('heading', { name: 'Открытая лекция о космосе' })).toBeInViewport();
     await page.getByRole('link', { name: /Открытая лекция о космосе/ }).click();
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
