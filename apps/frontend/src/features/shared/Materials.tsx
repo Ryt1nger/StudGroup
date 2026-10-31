@@ -81,11 +81,9 @@ export function MaterialList({ items }: { items?: MaterialLink[] }) {
   );
 }
 
-function Photo({ item, alt }: { item: MaterialLink; alt: string }) {
+function Photo({ item, alt, onOpen }: { item: MaterialLink; alt: string; onOpen: (url: string) => void }) {
   const query = useAttachmentImageQuery(item.id);
   const [url, setUrl] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
     const blob = query.data;
@@ -102,19 +100,6 @@ function Photo({ item, alt }: { item: MaterialLink; alt: string }) {
     };
   }, [query.data]);
 
-  useEffect(() => {
-    if (!open) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const key = (event: KeyboardEvent) => event.key === 'Escape' && setOpen(false);
-    document.addEventListener('keydown', key);
-    return () => {
-      document.removeEventListener('keydown', key);
-      document.body.style.overflow = previousOverflow;
-      setZoom(1);
-    };
-  }, [open]);
-
   if (query.isError) {
     return (
       <div className="pfail" role="alert">
@@ -128,69 +113,120 @@ function Photo({ item, alt }: { item: MaterialLink; alt: string }) {
   if (!url) return <Skeleton count={1} label={ru.states.loading} />;
   return (
     <>
-      <button
-        type="button"
-        className="thumb"
-        onClick={() => {
-          setZoom(1);
-          setOpen(true);
-        }}
-        aria-label={ru.card.photoOpen}
-      >
+      <button type="button" className="thumb" onClick={() => onOpen(url)} aria-label={ru.card.photoOpen}>
         <img src={url} alt={alt} />
       </button>
-      {open ? (
-        <div
-          className="photo-view"
-          role="dialog"
-          aria-modal="true"
-          aria-label={alt}
-          onClick={(event) => event.target === event.currentTarget && setOpen(false)}
-          onWheel={(event) => {
-            event.preventDefault();
-            setZoom((value) => Math.min(4, Math.max(1, value + (event.deltaY < 0 ? 0.2 : -0.2))));
-          }}
-        >
-          <div className="photo-toolbar" role="toolbar" aria-label="Масштаб фото">
-            <button
-              type="button"
-              onClick={() => setZoom((value) => Math.max(1, value - 0.25))}
-              aria-label="Уменьшить"
-            >
-              −
-            </button>
-            <span>{Math.round(zoom * 100)}%</span>
-            <button
-              type="button"
-              onClick={() => setZoom((value) => Math.min(4, value + 0.25))}
-              aria-label="Увеличить"
-            >
-              +
-            </button>
-            <button type="button" onClick={() => setOpen(false)} aria-label={ru.card.photoClose}>
-              ×
-            </button>
-          </div>
-          <img
-            className="photo-zoom"
-            src={url}
-            alt={alt}
-            style={{ transform: `scale(${zoom})` }}
-            onDoubleClick={() => setZoom((value) => (value > 1 ? 1 : 2))}
-          />
-        </div>
-      ) : null}
     </>
   );
 }
 
 /** Photos that are the task itself: shown instead of a text description. */
 export function Photos({ items, alt }: { items: MaterialLink[]; alt: string }) {
+  const [active, setActive] = useState<number | null>(null);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [zoom, setZoom] = useState(1);
+  const [startX, setStartX] = useState<number | null>(null);
+  useEffect(() => {
+    if (active === null) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActive(null);
+      if (event.key === 'ArrowLeft') setActive((value) => (value === null ? value : Math.max(0, value - 1)));
+      if (event.key === 'ArrowRight')
+        setActive((value) => (value === null ? value : Math.min(items.length - 1, value + 1)));
+    };
+    document.addEventListener('keydown', key);
+    return () => {
+      document.removeEventListener('keydown', key);
+      document.body.style.overflow = previous;
+    };
+  }, [active, items.length]);
+  const show = (index: number, url: string) => {
+    setUrls((value) => ({ ...value, [items[index]!.id]: url }));
+    setZoom(1);
+    setActive(index);
+  };
+  const move = (direction: -1 | 1) =>
+    setActive((value) =>
+      value === null ? value : Math.max(0, Math.min(items.length - 1, value + direction)),
+    );
   return (
     <div className="photos">
-      {items.map((item) => (
-        <Photo key={item.id} item={item} alt={alt} />
+      {items.map((item, index) => (
+        <Photo key={item.id} item={item} alt={alt} onOpen={(url) => show(index, url)} />
       ))}
+      {active !== null && urls[items[active]!.id] ? (
+        <div
+          className="photo-view"
+          role="dialog"
+          aria-modal="true"
+          aria-label={alt}
+          onClick={(event) => event.target === event.currentTarget && setActive(null)}
+          onTouchStart={(event) => setStartX(event.touches[0]?.clientX ?? null)}
+          onTouchEnd={(event) => {
+            if (
+              startX !== null &&
+              event.changedTouches[0] &&
+              Math.abs(event.changedTouches[0].clientX - startX) > 48
+            )
+              move(event.changedTouches[0].clientX > startX ? -1 : 1);
+            setStartX(null);
+          }}
+          onWheel={(event) => {
+            event.preventDefault();
+            setZoom((value) => Math.min(4, Math.max(1, value + (event.deltaY < 0 ? 0.2 : -0.2))));
+          }}
+        >
+          <button
+            type="button"
+            className="pclose"
+            onClick={() => setActive(null)}
+            aria-label={ru.card.photoClose}
+          >
+            ×
+          </button>
+          {items.length > 1 ? (
+            <>
+              <button
+                type="button"
+                className="photo-arrow photo-arrow-left"
+                onClick={() => move(-1)}
+                disabled={active === 0}
+                aria-label="Предыдущее фото"
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                className="photo-arrow photo-arrow-right"
+                onClick={() => move(1)}
+                disabled={active === items.length - 1}
+                aria-label="Следующее фото"
+              >
+                ›
+              </button>
+              <div className="photo-dots" aria-label="Фото в карточке">
+                {items.map((item, index) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={index === active ? 'on' : ''}
+                    onClick={() => setActive(index)}
+                    aria-label={`Фото ${index + 1}`}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
+          <img
+            className="photo-zoom"
+            src={urls[items[active]!.id]}
+            alt={alt}
+            style={{ transform: `scale(${zoom})` }}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

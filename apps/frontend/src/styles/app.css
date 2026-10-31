@@ -474,10 +474,13 @@ a.pcard:active { transform: scale(.98); }
 .pfail .sbtn { margin-top: 12px; }
 .photo-view { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: calc(var(--top-inset) + 64px) 14px calc(var(--bottom-inset) + 28px); background: rgba(4,4,8,.94); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); animation: mfade .18s ease-out; overflow: hidden; touch-action: none; }
 .photo-view .photo-zoom { max-width: 100%; max-height: 100%; border-radius: 10px; object-fit: contain; transition: transform .16s ease-out; user-select: none; touch-action: none; }
-.photo-toolbar { position: absolute; top: calc(var(--top-inset) + 14px); right: 14px; z-index: 1; display: flex; align-items: center; gap: 4px; padding: 5px; border-radius: 999px; color: #fff; background: rgba(30,30,38,.86); box-shadow: 0 8px 30px rgba(0,0,0,.35); }
-.photo-toolbar button { width: 38px; height: 38px; border-radius: 50%; color: #fff; font-size: 24px; line-height: 1; background: rgba(255,255,255,.13); }
-.photo-toolbar button:last-child { margin-left: 4px; font-size: 26px; }
-.photo-toolbar span { min-width: 48px; text-align: center; font-size: 12px; font-weight: 700; }
+.photo-arrow { position: absolute; top: 50%; z-index: 1; width: 46px; height: 46px; border-radius: 50%; color: #fff; font-size: 42px; line-height: 36px; background: rgba(20,20,28,.62); opacity: 0; transition: opacity .2s; }
+.photo-view:hover .photo-arrow, .photo-view:focus-within .photo-arrow { opacity: 1; }
+.photo-arrow:disabled { opacity: 0; pointer-events: none; }
+.photo-arrow-left { left: 16px; } .photo-arrow-right { right: 16px; }
+.photo-dots { position: absolute; left: 50%; bottom: calc(var(--bottom-inset) + 20px); z-index: 1; display: flex; gap: 7px; transform: translateX(-50%); padding: 7px 10px; border-radius: 99px; background: rgba(20,20,28,.62); }
+.photo-dots button { width: 7px; height: 7px; padding: 0; border-radius: 50%; background: rgba(255,255,255,.45); }
+.photo-dots button.on { background: #fff; transform: scale(1.25); }
 .erow { margin-top: 12px; }
 .sbtn2 { width: auto; padding: 12px 20px; font-size: 15px; }
 .sbtn2.busy svg { animation: spin .8s linear infinite; }
