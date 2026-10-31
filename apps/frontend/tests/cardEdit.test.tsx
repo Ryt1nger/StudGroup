@@ -55,9 +55,10 @@ describe('headman card editing', () => {
     );
     renderApp({ route: `/homework/${HW}/edit` });
     await screen.findByRole('heading', { name: /Редактирование/, level: 1 });
+    await userEvent.click(screen.getByRole('button', { name: '＋ Ссылка' }));
     await userEvent.type(screen.getByLabelText('Название ссылки'), 'Конспект');
     await userEvent.type(screen.getByLabelText('HTTPS-ссылка'), 'https://example.org/notes');
-    await userEvent.click(screen.getByRole('button', { name: 'Добавить ссылку' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ссылку' }));
     await waitFor(() =>
       expect(sent).toEqual({
         expected_revision: base.revision,

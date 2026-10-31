@@ -34,6 +34,7 @@ export function MaterialEditor({
   const [editingId, setEditingId] = useState<string>();
   const [editTitle, setEditTitle] = useState('');
   const [editUrl, setEditUrl] = useState('');
+  const [linkMode, setLinkMode] = useState(false);
 
   function queued(next: PendingMaterial[]) {
     setPending(next);
@@ -84,8 +85,14 @@ export function MaterialEditor({
     setError('');
   }
   return (
-    <div className="field" aria-label="Материалы">
-      <label>Материалы</label>
+    <div className="material-editor" aria-label="Материалы">
+      <div className="material-editor-head">
+        <div>
+          <label>Материалы</label>
+          <small>Фото и файлы будут сохранены в карточке</small>
+        </div>
+        <span>{items.length + pending.length}/20</span>
+      </div>
       {items.map((item) => (
         <div key={item.id}>
           <div className="srow" style={{ gap: 8, flexWrap: 'wrap' }}>
@@ -165,8 +172,12 @@ export function MaterialEditor({
         </div>
       ))}
       {pending.map((item, index) => (
-        <div className="srow" key={index} style={{ gap: 8 }}>
-          <span style={{ flex: 1 }}>{item.file?.name ?? item.title}</span>
+        <div className="material-pending" key={index}>
+          <span className="material-file-icon">{item.file?.type.startsWith('image/') ? '▣' : '▧'}</span>
+          <span>
+            <b>{item.file?.name ?? item.title}</b>
+            <small>Будет добавлено после сохранения</small>
+          </span>
           <button type="button" onClick={() => queued(pending.filter((_, at) => at !== index))}>
             Убрать
           </button>
@@ -175,27 +186,62 @@ export function MaterialEditor({
       <input
         ref={fileInput}
         type="file"
+        hidden
         aria-label="Выбрать фото или файл"
         onChange={(event) => chooseFile(event.target.files?.[0])}
       />
-      <input
-        type="text"
-        value={title}
-        maxLength={255}
-        placeholder="Название ссылки"
-        aria-label="Название ссылки"
-        onChange={(event) => setTitle(event.target.value)}
-      />
-      <input
-        type="url"
-        value={url}
-        placeholder="https://..."
-        aria-label="HTTPS-ссылка"
-        onChange={(event) => setUrl(event.target.value)}
-      />
-      <button type="button" disabled={busy} onClick={addLink}>
-        Добавить ссылку
-      </button>
+      <div className="material-actions">
+        <button
+          type="button"
+          className="material-add"
+          disabled={busy}
+          onClick={() => fileInput.current?.click()}
+        >
+          ＋ Фото или файл
+        </button>
+        <button
+          type="button"
+          className="material-add"
+          disabled={busy}
+          onClick={() => {
+            setError('');
+            setUrl('');
+            setTitle('');
+            setLinkMode(true);
+          }}
+        >
+          ＋ Ссылка
+        </button>
+      </div>
+      {linkMode ? (
+        <div className="material-link-form">
+          <input
+            type="text"
+            value={title}
+            maxLength={255}
+            placeholder="Название ссылки"
+            aria-label="Название ссылки"
+            onChange={(event) => setTitle(event.target.value)}
+          />
+          <input
+            type="url"
+            value={url}
+            placeholder="https://..."
+            aria-label="HTTPS-ссылка"
+            onChange={(event) => setUrl(event.target.value)}
+          />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              addLink();
+              setLinkMode(false);
+            }}
+          >
+            Сохранить ссылку
+          </button>
+        </div>
+      ) : null}
       {error ? (
         <p className="ferr" role="alert">
           {error}

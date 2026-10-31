@@ -37,7 +37,7 @@ export function EventsScreen() {
         unavailable
       ) : (
         <>
-          <div className="seg" role="group" aria-label="Период событий">
+          <div className="seg event-filters" role="group" aria-label="Период событий">
             <button
               type="button"
               className={!history ? 'on' : ''}
