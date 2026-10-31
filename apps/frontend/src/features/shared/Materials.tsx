@@ -1,4 +1,5 @@
 import { client, type MaterialLink } from '@studgroup/shared-types';
+import { createPortal } from 'react-dom';
 import { useEffect, useState } from 'react';
 import { useAttachmentImageQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
@@ -156,77 +157,80 @@ export function Photos({ items, alt }: { items: MaterialLink[]; alt: string }) {
       {items.map((item, index) => (
         <Photo key={item.id} item={item} alt={alt} onOpen={(url) => show(index, url)} />
       ))}
-      {active !== null && urls[items[active]!.id] ? (
-        <div
-          className="photo-view"
-          role="dialog"
-          aria-modal="true"
-          aria-label={alt}
-          onClick={(event) => event.target === event.currentTarget && setActive(null)}
-          onTouchStart={(event) => setStartX(event.touches[0]?.clientX ?? null)}
-          onTouchEnd={(event) => {
-            if (
-              startX !== null &&
-              event.changedTouches[0] &&
-              Math.abs(event.changedTouches[0].clientX - startX) > 48
-            )
-              move(event.changedTouches[0].clientX > startX ? -1 : 1);
-            setStartX(null);
-          }}
-          onWheel={(event) => {
-            event.preventDefault();
-            setZoom((value) => Math.min(4, Math.max(1, value + (event.deltaY < 0 ? 0.2 : -0.2))));
-          }}
-        >
-          <button
-            type="button"
-            className="pclose"
-            onClick={() => setActive(null)}
-            aria-label={ru.card.photoClose}
-          >
-            ×
-          </button>
-          {items.length > 1 ? (
-            <>
+      {active !== null && urls[items[active]!.id]
+        ? createPortal(
+            <div
+              className="photo-view"
+              role="dialog"
+              aria-modal="true"
+              aria-label={alt}
+              onClick={(event) => event.target === event.currentTarget && setActive(null)}
+              onTouchStart={(event) => setStartX(event.touches[0]?.clientX ?? null)}
+              onTouchEnd={(event) => {
+                if (
+                  startX !== null &&
+                  event.changedTouches[0] &&
+                  Math.abs(event.changedTouches[0].clientX - startX) > 48
+                )
+                  move(event.changedTouches[0].clientX > startX ? -1 : 1);
+                setStartX(null);
+              }}
+              onWheel={(event) => {
+                event.preventDefault();
+                setZoom((value) => Math.min(4, Math.max(1, value + (event.deltaY < 0 ? 0.2 : -0.2))));
+              }}
+            >
               <button
                 type="button"
-                className="photo-arrow photo-arrow-left"
-                onClick={() => move(-1)}
-                disabled={active === 0}
-                aria-label="Предыдущее фото"
+                className="pclose"
+                onClick={() => setActive(null)}
+                aria-label={ru.card.photoClose}
               >
-                ‹
+                ×
               </button>
-              <button
-                type="button"
-                className="photo-arrow photo-arrow-right"
-                onClick={() => move(1)}
-                disabled={active === items.length - 1}
-                aria-label="Следующее фото"
-              >
-                ›
-              </button>
-              <div className="photo-dots" aria-label="Фото в карточке">
-                {items.map((item, index) => (
+              {items.length > 1 ? (
+                <>
                   <button
-                    key={item.id}
                     type="button"
-                    className={index === active ? 'on' : ''}
-                    onClick={() => setActive(index)}
-                    aria-label={`Фото ${index + 1}`}
-                  />
-                ))}
-              </div>
-            </>
-          ) : null}
-          <img
-            className="photo-zoom"
-            src={urls[items[active]!.id]}
-            alt={alt}
-            style={{ transform: `scale(${zoom})` }}
-          />
-        </div>
-      ) : null}
+                    className="photo-arrow photo-arrow-left"
+                    onClick={() => move(-1)}
+                    disabled={active === 0}
+                    aria-label="Предыдущее фото"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    className="photo-arrow photo-arrow-right"
+                    onClick={() => move(1)}
+                    disabled={active === items.length - 1}
+                    aria-label="Следующее фото"
+                  >
+                    ›
+                  </button>
+                  <div className="photo-dots" aria-label="Фото в карточке">
+                    {items.map((item, index) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={index === active ? 'on' : ''}
+                        onClick={() => setActive(index)}
+                        aria-label={`Фото ${index + 1}`}
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : null}
+              <img
+                className="photo-zoom"
+                src={urls[items[active]!.id]}
+                alt={alt}
+                style={{ transform: `scale(${zoom})` }}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
