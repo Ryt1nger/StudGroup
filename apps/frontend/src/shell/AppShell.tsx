@@ -85,7 +85,7 @@ function Frame() {
   return (
     <>
       <div ref={scrollRef} className="scroll">
-        <div key={pathname} className={clsx('view', dir === 'none' && 'still')} data-dir={dir === 'none' ? 'none' : dir}>
+        <div key={pathname} className={clsx('view', section === 'today' && 'today-view', dir === 'none' && 'still')} data-dir={dir === 'none' ? 'none' : dir}>
           <Outlet />
         </div>
       </div>

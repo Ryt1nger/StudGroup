@@ -239,6 +239,7 @@ a:focus-visible, button:focus-visible, .task:focus-visible { outline: 2px solid 
 .view:not(.still) .prog i { transform-origin: left; animation: grow .45s cubic-bezier(.2,.8,.2,1) backwards .1s; }
 @keyframes grow { from { transform: scaleX(0); } }
 .view:not(.still) .wd[aria-pressed='true'] b { animation: pop .28s cubic-bezier(.3,1.6,.5,1) backwards; }
+.view.today-view :is(.stats, .stat, .hero, .sec, .task, .wd, .wd b, .datel, .empty) { animation: none; }
 @keyframes pop { 0% { transform: scale(.6); } 100% { transform: scale(1); } }
 .cb.just { animation: pop .3s cubic-bezier(.3,1.7,.5,1); }
 .cb.just svg { animation: tick .2s ease-out .05s backwards; }
