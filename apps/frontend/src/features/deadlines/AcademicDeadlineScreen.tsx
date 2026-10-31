@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router';
-import { api, useAcademicDeadlineQuery } from '../../api/queries';
+import { useAcademicDeadlineQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
 import { photoMaterials, remainingMaterials } from '../../lib/photoMaterials';
 import { subjectStyle } from '../../lib/subjectColor';
@@ -9,7 +9,7 @@ import { Banner, Skeleton } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
 import { DeleteCardButton } from '../shared/DeleteCard';
-import { AddFile, Collapsible, SourceRow, UpdatesBlock } from '../shared/CardParts';
+import { Collapsible, SourceRow, UpdatesBlock } from '../shared/CardParts';
 import { EVENT_KIND } from '../shared/Cards';
 import { hasVisibleMaterials, MaterialList, Photos } from '../shared/Materials';
 import { formatEventDate } from './formatEventDate';
@@ -56,7 +56,6 @@ export function AcademicDeadlineScreen() {
         <h3>Что нужно сделать</h3>
         {photos.length ? <Photos items={photos} alt={item.title} /> : <p>{item.description}</p>}
       </div>
-      {editor ? <AddFile fetchLink={() => api.eventFileLink(item.id)} /> : null}
       {hasVisibleMaterials(materials) ? <div className="block">
         <h3>Материалы</h3>
         <MaterialList items={materials} />

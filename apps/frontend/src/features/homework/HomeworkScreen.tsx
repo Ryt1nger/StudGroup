@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import type { HomeworkDetail } from '@studgroup/shared-types';
 import { isApiRequestError } from '../../api/errors';
-import { api, useCompletionMutation, useHomeworkQuery } from '../../api/queries';
+import { useCompletionMutation, useHomeworkQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
 import { whenLabel } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
@@ -19,7 +19,7 @@ import { Banner, Skeleton, Spinner } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
 import { DeleteCardButton } from '../shared/DeleteCard';
-import { AddFile, Collapsible, SourceRow, UpdatesBlock } from '../shared/CardParts';
+import { Collapsible, SourceRow, UpdatesBlock } from '../shared/CardParts';
 import { hasVisibleMaterials, MaterialList, Photos } from '../shared/Materials';
 import { changedAfterCompletion, showUrgent } from '../today/cardStatus';
 import { toHomeworkCardViewModel } from './cardViewModel';
@@ -111,7 +111,6 @@ function Body({ detail, nowMs, gaveUp, restart, refreshing }: { detail: Homework
         <h3 id="todo-title">{ru.detail.whatToDo}</h3>
         {photos.length ? <Photos items={photos} alt={detail.title} /> : <p>{description ?? ru.detail.noDescription}</p>}
       </div>
-      {editor ? <AddFile fetchLink={() => api.homeworkFileLink(detail.id)} /> : null}
       {hasVisibleMaterials(materials) ? <div className="block">
         <h3 id="homework-materials">Материалы</h3>
         <MaterialList items={materials} />
