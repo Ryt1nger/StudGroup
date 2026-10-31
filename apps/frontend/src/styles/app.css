@@ -445,7 +445,7 @@ a.pcard:active { transform: scale(.98); }
 .btn.busy, .cb.busy { opacity: .65; pointer-events: none; }
 .btn .spinner { width: 16px; height: 16px; border-width: 2px; }
 .cb.busy { border-top-color: transparent; animation: spin .8s linear infinite; }
-.material-editor { display: grid; gap: 10px; padding: 14px; border: .5px solid var(--card-edge); border-radius: 20px; background: var(--fill-2); }
+.material-editor { display: grid; gap: 10px; margin-top: 16px; padding: 14px; border: .5px solid var(--card-edge); border-radius: 20px; background: var(--fill-2); }
 .material-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .material-editor-head label { display: block; font-weight: 700; }
 .material-editor-head small, .material-pending small { display: block; margin-top: 3px; color: var(--label-3); font-size: 12px; }
