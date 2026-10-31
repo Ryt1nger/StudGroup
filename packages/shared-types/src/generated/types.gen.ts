@@ -248,6 +248,20 @@ export type FileUploadLink = {
     url: string;
 };
 
+export type MaterialChange = {
+    expected_revision: number;
+    title?: string;
+    /**
+     * HTTPS only
+     */
+    url?: string;
+};
+
+export type MaterialChangeResult = {
+    revision: number;
+    materials: Array<MaterialLink>;
+};
+
 export type MaterialLink = {
     id: string;
     title: string;
@@ -927,6 +941,90 @@ export type UpdateProfileRequestWritable = {
 export type StaffItemId = string;
 
 export type HomeworkId = string;
+
+export type AddCardMaterialData = {
+    body: MaterialChange;
+    path: {
+        kind: 'homework' | 'deadline';
+        card_id: string;
+    };
+    query?: never;
+    url: '/cards/{kind}/{card_id}/materials';
+};
+
+export type AddCardMaterialResponses = {
+    /**
+     * Updated materials
+     */
+    200: MaterialChangeResult;
+};
+
+export type AddCardMaterialResponse = AddCardMaterialResponses[keyof AddCardMaterialResponses];
+
+export type UploadCardMaterialData = {
+    body: {
+        expected_revision: number;
+        file: Blob | File;
+        replace_id?: string;
+    };
+    path: {
+        kind: 'homework' | 'deadline';
+        card_id: string;
+    };
+    query?: never;
+    url: '/cards/{kind}/{card_id}/materials/file';
+};
+
+export type UploadCardMaterialResponses = {
+    /**
+     * Updated materials
+     */
+    200: MaterialChangeResult;
+};
+
+export type UploadCardMaterialResponse = UploadCardMaterialResponses[keyof UploadCardMaterialResponses];
+
+export type RemoveCardMaterialData = {
+    body?: never;
+    path: {
+        kind: 'homework' | 'deadline';
+        card_id: string;
+        material_id: string;
+    };
+    query: {
+        expected_revision: number;
+    };
+    url: '/cards/{kind}/{card_id}/materials/{material_id}';
+};
+
+export type RemoveCardMaterialResponses = {
+    /**
+     * Updated materials
+     */
+    200: MaterialChangeResult;
+};
+
+export type RemoveCardMaterialResponse = RemoveCardMaterialResponses[keyof RemoveCardMaterialResponses];
+
+export type UpdateCardMaterialData = {
+    body: MaterialChange;
+    path: {
+        kind: 'homework' | 'deadline';
+        card_id: string;
+        material_id: string;
+    };
+    query?: never;
+    url: '/cards/{kind}/{card_id}/materials/{material_id}';
+};
+
+export type UpdateCardMaterialResponses = {
+    /**
+     * Updated materials
+     */
+    200: MaterialChangeResult;
+};
+
+export type UpdateCardMaterialResponse = UpdateCardMaterialResponses[keyof UpdateCardMaterialResponses];
 
 export type ListPublishedGroupEventsData = {
     body?: never;

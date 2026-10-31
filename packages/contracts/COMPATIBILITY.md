@@ -1,5 +1,9 @@
 # Contract compatibility
 
+## Mini App card materials (0.20.0, 2026-10-31)
+
+Additive operations under `/cards/{kind}/{card_id}/materials`. Existing clients can continue using the bot file link; existing card and material response fields are unchanged. The server checks group membership and card revision for every change. File uploads use multipart form data and retain the existing signed read URL shape; no raw Telegram file ID is exposed to clients. A client should refresh the card after a successful material change.
+
 ## Subject subgroups (0.18.0, 2026-10-24)
 
 Additive wire change. Older clients ignore the optional `subgroup` object and never call the two new

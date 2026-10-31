@@ -497,6 +497,38 @@ async def add_material(db, group, user, member, key, expected, title, url):
     return await save_audit(db, group, user, "material", before, [(key, kind, row)], False)
 
 
+async def change_material(
+    db, group, user, member, key, expected, material_id, *, title=None, url=None, remove=False
+):
+    """Rename, replace an ordinary link, or remove one material under the card revision guard."""
+    kind, row = await entity(db, group, key)
+    await guard(db, group, member, key, row, expected)
+    if kind not in {"h", "e"}:
+        raise StError("Материал относится только к ДЗ или КТ.")
+    material = await db.scalar(
+        select(MaterialLink)
+        .where(
+            MaterialLink.id == material_id,
+            MaterialLink.group_id == group.id,
+            MaterialLink.entity_key == key,
+        )
+        .with_for_update()
+    )
+    if material is None:
+        raise StError("Материал не найден в карточке.")
+    before = {key: await snapshot(db, key, kind, row)}
+    if remove:
+        await db.delete(material)
+    else:
+        if title is not None:
+            material.title = title[:255]
+        if url is not None:
+            material.url = material_url(url)
+    row.revision += 1
+    await db.flush()
+    return await save_audit(db, group, user, "material", before, [(key, kind, row)], False)
+
+
 async def convert(db, group, user, member, key, expected):
     kind, row = await entity(db, group, key)
     await guard(db, group, member, key, row, expected)

@@ -1,5 +1,9 @@
 # Contract changelog
 
+## 0.20.0 — 2026-10-31
+
+- Added card material operations for headmen and deputies: add HTTPS links, rename/change links, remove materials, and upload or replace files directly from the Mini App. Each operation requires the current card revision and returns the new revision and material list. Uploaded files are kept in Telegram and limited to 20 MB.
+
 ## 0.18.0 — 2026-10-24
 
 - Added optional nullable `subgroup` (`id`, `name`) to homework and academic-deadline cards. The

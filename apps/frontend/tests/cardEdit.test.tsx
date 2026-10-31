@@ -34,6 +34,39 @@ const eventResponse = (permissions: string[], item = event) => ({
 });
 
 describe('headman card editing', () => {
+  it('adds a material link inside the edit form and uses the card revision', async () => {
+    useScenario();
+    let sent: unknown = null;
+    server.use(
+      http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
+      http.post(`${API}/cards/homework/${HW}/materials`, async ({ request }) => {
+        sent = await request.json();
+        return HttpResponse.json({
+          revision: base.revision + 1,
+          materials: [
+            {
+              id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              title: 'Конспект',
+              url: 'https://example.org/notes',
+            },
+          ],
+        });
+      }),
+    );
+    renderApp({ route: `/homework/${HW}/edit` });
+    await screen.findByRole('heading', { name: /Редактирование/, level: 1 });
+    await userEvent.type(screen.getByLabelText('Название ссылки'), 'Конспект');
+    await userEvent.type(screen.getByLabelText('HTTPS-ссылка'), 'https://example.org/notes');
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить ссылку' }));
+    await waitFor(() =>
+      expect(sent).toEqual({
+        expected_revision: base.revision,
+        title: 'Конспект',
+        url: 'https://example.org/notes',
+      }),
+    );
+    expect(await screen.findByText('Конспект')).toBeInTheDocument();
+  });
   it('opens the edit form on its own page and returns to the card after saving', async () => {
     useScenario();
     server.use(
@@ -101,7 +134,12 @@ describe('headman card editing', () => {
     await userEvent.click(mark);
     expect(mark).toHaveAttribute('aria-checked', String(editable.urgency === 'normal'));
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
-    await waitFor(() => expect(sent).toEqual({ expected_revision: base.revision, urgency: editable.urgency === 'normal' ? 'urgent' : 'normal' }));
+    await waitFor(() =>
+      expect(sent).toEqual({
+        expected_revision: base.revision,
+        urgency: editable.urgency === 'normal' ? 'urgent' : 'normal',
+      }),
+    );
   });
 
   it('sets a date with time in the group timezone as an offset-aware instant', async () => {

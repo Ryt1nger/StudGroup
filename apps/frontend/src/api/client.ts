@@ -13,6 +13,11 @@ export function hasAccessToken(): boolean {
   return accessToken !== null;
 }
 
+/** Multipart uploads use the same in-memory session as the generated JSON client. */
+export function apiAuthorization(): string | null {
+  return accessToken ? `Bearer ${accessToken}` : null;
+}
+
 export function configureApiClient(fetchImplementation?: typeof fetch): void {
   const baseUrl = import.meta.env.VITE_API_BASE_URL;
   client.setConfig({

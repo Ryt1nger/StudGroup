@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.19.0
+  version: 0.20.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -19,6 +19,62 @@ tags:
   - name: Staff
     description: Headman/deputy cabinet. Every route re-checks the active membership role.
 paths:
+  /cards/{kind}/{card_id}/materials:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [homework, deadline] } }
+      - { name: card_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: addCardMaterial
+      summary: Add an HTTPS material link to an editable card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaterialChange' }
+      responses:
+        '200': { description: Updated materials, content: { application/json: { schema: { $ref: '#/components/schemas/MaterialChangeResult' } } } }
+  /cards/{kind}/{card_id}/materials/file:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [homework, deadline] } }
+      - { name: card_id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: uploadCardMaterial
+      summary: Upload or replace a file from the Mini App (20 MB maximum)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [expected_revision, file]
+              properties:
+                expected_revision: { type: integer, minimum: 1 }
+                file: { type: string, format: binary }
+                replace_id: { type: string, format: uuid }
+      responses:
+        '200': { description: Updated materials, content: { application/json: { schema: { $ref: '#/components/schemas/MaterialChangeResult' } } } }
+  /cards/{kind}/{card_id}/materials/{material_id}:
+    parameters:
+      - { name: kind, in: path, required: true, schema: { type: string, enum: [homework, deadline] } }
+      - { name: card_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: material_id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      operationId: updateCardMaterial
+      summary: Rename a material or change its HTTPS link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaterialChange' }
+      responses:
+        '200': { description: Updated materials, content: { application/json: { schema: { $ref: '#/components/schemas/MaterialChangeResult' } } } }
+    delete:
+      operationId: removeCardMaterial
+      summary: Remove a material
+      parameters:
+        - { name: expected_revision, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Updated materials, content: { application/json: { schema: { $ref: '#/components/schemas/MaterialChangeResult' } } } }
   /group-events:
     $ref: "./image-findings.openapi.yaml#/paths/~1group-events"
   /group-events/{id}:
@@ -2093,6 +2149,21 @@ components:
       required: [url]
       properties:
         url: { type: string, format: uri }
+    MaterialChange:
+      type: object
+      additionalProperties: false
+      required: [expected_revision]
+      properties:
+        expected_revision: { type: integer, minimum: 1 }
+        title: { type: string, maxLength: 255 }
+        url: { type: string, format: uri, description: HTTPS only }
+    MaterialChangeResult:
+      type: object
+      additionalProperties: false
+      required: [revision, materials]
+      properties:
+        revision: { type: integer, minimum: 1 }
+        materials: { type: array, items: { $ref: '#/components/schemas/MaterialLink' } }
     MaterialLink:
       type: object
       required: [id, title, url]

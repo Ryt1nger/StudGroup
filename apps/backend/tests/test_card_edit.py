@@ -564,3 +564,88 @@ def test_session_permissions_offer_creating_only_to_staff(client):
     assert "homework.create" not in role_permissions("student")
     assert "homework.create" in role_permissions("deputy")
     assert "homework.create" in role_permissions("headman")
+
+
+def test_material_links_are_editable_and_group_scoped(client):
+    card = seed_card(client)
+    path = f"/v1/cards/homework/{card}/materials"
+    body = {"expected_revision": 1, "title": "Конспект", "url": "https://example.org/notes"}
+    assert client.post(path, json=body, headers=HEADERS).status_code == 403
+    set_role(client, "headman")
+    added = client.post(path, json=body, headers=HEADERS)
+    assert added.status_code == 200, added.text
+    material = added.json()["materials"][0]
+    assert added.json()["revision"] == 2
+    assert client.post(path, json=body, headers=HEADERS).status_code == 409
+    assert (
+        client.post(
+            path,
+            json={**body, "expected_revision": 2, "url": "tgfile:photo:1:forged"},
+            headers=HEADERS,
+        ).status_code
+        == 422
+    )
+    foreign = client.patch(
+        f"/v1/cards/deadline/{card}/materials/{material['id']}",
+        json={"expected_revision": 2, "title": "X"},
+        headers=HEADERS,
+    )
+    assert foreign.status_code == 422
+    renamed = client.patch(
+        f"{path}/{material['id']}",
+        json={"expected_revision": 2, "title": "Новый конспект"},
+        headers=HEADERS,
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["materials"][0]["title"] == "Новый конспект"
+    removed = client.delete(f"{path}/{material['id']}?expected_revision=3", headers=HEADERS)
+    assert removed.status_code == 200, removed.text
+    assert removed.json() == {"revision": 4, "materials": []}
+
+
+def test_direct_file_upload_and_replacement(client, monkeypatch):
+    card = seed_card(client)
+    set_role(client, "headman")
+    client.app.state.settings.telegram_bot_token = "test-token"
+    from studgroup import card_edit
+
+    class FakeResponse:
+        def json(self):
+            return {"ok": True, "result": {"document": {"file_id": "telegram-id"}}}
+
+    class FakeTelegram:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, url, **kwargs):
+            assert url.endswith("/sendDocument")
+            assert kwargs["data"]["chat_id"] == "1"
+            return FakeResponse()
+
+    monkeypatch.setattr(card_edit.httpx, "AsyncClient", FakeTelegram)
+    path = f"/v1/cards/homework/{card}/materials/file"
+    uploaded = client.post(
+        path,
+        data={"expected_revision": "1"},
+        files={"file": ("notes.pdf", b"pdf", "application/pdf")},
+        headers=HEADERS,
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    material = uploaded.json()["materials"][0]
+    assert material["kind"] == "document" and material["title"] == "notes.pdf"
+    assert material["url"].startswith("/v1/files/")
+    replaced = client.post(
+        path,
+        data={"expected_revision": "2", "replace_id": material["id"]},
+        files={"file": ("new.pdf", b"new", "application/pdf")},
+        headers=HEADERS,
+    )
+    assert replaced.status_code == 200, replaced.text
+    assert len(replaced.json()["materials"]) == 1
+    assert replaced.json()["materials"][0]["title"] == "new.pdf"

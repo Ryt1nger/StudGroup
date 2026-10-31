@@ -10,7 +10,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+import httpx
+from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -18,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import headman_domain as domain
-from studgroup import staff_items
+from studgroup import staff_items, telegram_files
 from studgroup.academic_deadlines import representation as deadline_representation
 from studgroup.api import EDIT_PERMISSIONS, ApiError, active_group, database
 from studgroup.homework import find_card
@@ -121,6 +122,208 @@ async def editor(db, group, authorization):
     except domain.StError as error:
         raise ApiError("permission_denied", str(error), 403) from None
     return user, member
+
+
+def material_key(kind: Literal["homework", "deadline"], card_id: uuid.UUID) -> str:
+    return f"{'h' if kind == 'homework' else 'e'}:{card_id}"
+
+
+def material_error(error: domain.StError) -> ApiError:
+    message = str(error)
+    status = 409 if "изменилась" in message or "заново" in message else 422
+    return ApiError("revision_conflict" if status == 409 else "invalid_request", message, status)
+
+
+class MaterialChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    title: str | None = None
+    url: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def title_text(cls, value):
+        return None if value is None else clean(value, required=True, limit=255)
+
+
+async def material_result(db, group, key):
+    from studgroup.models import MaterialLink
+
+    _, card = await domain.entity(db, group, key)
+    rows = (
+        await db.scalars(
+            select(MaterialLink)
+            .where(MaterialLink.group_id == group.id, MaterialLink.entity_key == key)
+            .order_by(MaterialLink.title, MaterialLink.id)
+        )
+    ).all()
+    return {"revision": card.revision, "materials": [telegram_files.present(row) for row in rows]}
+
+
+@router.post("/cards/{kind}/{card_id}/materials")
+async def add_card_material(
+    kind: Literal["homework", "deadline"],
+    card_id: uuid.UUID,
+    body: MaterialChange,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    if not body.title or not body.url:
+        raise ApiError("invalid_request", "Укажите название и HTTPS-ссылку", 422)
+    user, member = await editor(db, group, authorization)
+    key = material_key(kind, card_id)
+    try:
+        await domain.add_material(
+            db,
+            group,
+            user,
+            member,
+            key,
+            body.expected_revision,
+            body.title,
+            domain.safe_url(body.url),
+        )
+        result = await material_result(db, group, key)
+        await db.commit()
+        return result
+    except domain.StError as error:
+        raise material_error(error) from None
+
+
+@router.patch("/cards/{kind}/{card_id}/materials/{material_id}")
+async def update_card_material(
+    kind: Literal["homework", "deadline"],
+    card_id: uuid.UUID,
+    material_id: uuid.UUID,
+    body: MaterialChange,
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    if body.title is None and body.url is None:
+        raise ApiError("invalid_request", "Нет изменений", 422)
+    user, member = await editor(db, group, authorization)
+    key = material_key(kind, card_id)
+    try:
+        await domain.change_material(
+            db,
+            group,
+            user,
+            member,
+            key,
+            body.expected_revision,
+            material_id,
+            title=body.title,
+            url=domain.safe_url(body.url) if body.url is not None else None,
+        )
+        result = await material_result(db, group, key)
+        await db.commit()
+        return result
+    except domain.StError as error:
+        raise material_error(error) from None
+
+
+@router.delete("/cards/{kind}/{card_id}/materials/{material_id}")
+async def remove_card_material(
+    kind: Literal["homework", "deadline"],
+    card_id: uuid.UUID,
+    material_id: uuid.UUID,
+    expected_revision: Annotated[int, Query(ge=1)],
+    group: CurrentGroup,
+    db: Database,
+    authorization: str = Header(),
+):
+    user, member = await editor(db, group, authorization)
+    key = material_key(kind, card_id)
+    try:
+        await domain.change_material(
+            db, group, user, member, key, expected_revision, material_id, remove=True
+        )
+        result = await material_result(db, group, key)
+        await db.commit()
+        return result
+    except domain.StError as error:
+        raise material_error(error) from None
+
+
+@router.post("/cards/{kind}/{card_id}/materials/file")
+async def upload_card_material(
+    kind: Literal["homework", "deadline"],
+    card_id: uuid.UUID,
+    request: Request,
+    group: CurrentGroup,
+    db: Database,
+    expected_revision: Annotated[int, Form(ge=1)],
+    file: Annotated[UploadFile, File()],
+    replace_id: Annotated[uuid.UUID | None, Form()] = None,
+    authorization: str = Header(),
+):
+    user, member = await editor(db, group, authorization)
+    key = material_key(kind, card_id)
+    try:
+        _, card = await domain.entity(db, group, key)
+        await domain.guard(db, group, member, key, card, expected_revision)
+    except domain.StError as error:
+        raise material_error(error) from None
+    data = await file.read(telegram_files.MAX_BYTES + 1)
+    if not data or len(data) > telegram_files.MAX_BYTES:
+        raise ApiError("invalid_request", "Файл должен быть не больше 20 МБ", 422)
+    title = (file.filename or "Файл").split("/")[-1].split("\\")[-1][:255]
+    token = request.app.state.settings.telegram_bot_token
+    if not token:
+        raise ApiError("service_unavailable", "Загрузка файлов временно недоступна", 503)
+    photo = len(data) <= 10 * 1024 * 1024 and file.content_type in {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }
+    method, field = ("sendPhoto", "photo") if photo else ("sendDocument", "document")
+    try:
+        async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{token}/{method}",
+                data={"chat_id": str(user.telegram_user_id), "disable_notification": "true"},
+                files={field: (title, data, file.content_type or "application/octet-stream")},
+            )
+            payload = response.json()
+        result = payload.get("result", {}) if payload.get("ok") else {}
+        attachment = (
+            result.get("photo", [])[-1] if photo and result.get("photo") else result.get("document")
+        )
+        if not attachment or not attachment.get("file_id"):
+            raise ValueError("telegram_upload_failed")
+    except (httpx.HTTPError, ValueError):
+        raise ApiError(
+            "service_unavailable",
+            "Не удалось сохранить файл. Откройте чат с ботом и повторите попытку",
+            503,
+        ) from None
+    encoded = telegram_files.encode(
+        "photo" if photo else "document", len(data), attachment["file_id"]
+    )
+    try:
+        if replace_id:
+            await domain.change_material(
+                db,
+                group,
+                user,
+                member,
+                key,
+                expected_revision,
+                replace_id,
+                title=title,
+                url=encoded,
+            )
+        else:
+            await domain.add_material(
+                db, group, user, member, key, expected_revision, title, encoded
+            )
+        result = await material_result(db, group, key)
+        await db.commit()
+        return result
+    except domain.StError as error:
+        raise material_error(error) from None
 
 
 def provided(body):
