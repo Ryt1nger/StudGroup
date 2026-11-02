@@ -28,6 +28,7 @@ from studgroup.deadlines import (
     ScheduleDeadlineContext,
     contextual_deadline,
     deadline_evidence_text,
+    submission_clock,
 )
 from studgroup.subject_identity import match_key
 
@@ -96,11 +97,25 @@ def decide_deadline(
     basis = found.basis if found else None
     if basis in _EXPLICIT:
         return DeadlineDecision(found.at, found.date_only, "explicit", basis)
-    if basis == "source_day_inferred_clock" and model_evidence and model_deadline:
+    if basis == "source_day_inferred_clock" and model_deadline:
         at, date_only = model_deadline
         if at.utcoffset() is None:
             raise ValueError("deadline_requires_offset")
-        return DeadlineDecision(at, bool(date_only), "relative_resolved", "model_cited_source")
+        if model_evidence:
+            # The model chooses the day, while literal clock time is independently verifiable.
+            local = at.astimezone(ZoneInfo(timezone))
+            explicit_times = [
+                clock
+                for text, _stamp in ordered
+                if (clock := submission_clock(text.casefold().replace("ё", "е"))[0]) is not None
+            ]
+            if date_only or (
+                explicit_times and local.time().replace(tzinfo=None) != explicit_times[-1]
+            ):
+                return _unknown("model_clock_conflicts_with_source")
+            return DeadlineDecision(at, False, "relative_resolved", "model_cited_source")
+        if at != found.at or bool(date_only) != found.date_only:
+            return _unknown("model_date_not_supported_by_source")
     if basis in _RELATIVE:
         return DeadlineDecision(found.at, found.date_only, "relative_resolved", basis)
     if basis in _NOT_A_DATE:
