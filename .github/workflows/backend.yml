@@ -30,8 +30,6 @@ jobs:
         with:
           python-version: '3.13'
       - run: uv sync --dev --frozen
-      - run: uv run ruff check --diff . || true
-      - run: uv run ruff format --diff . || true
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run alembic upgrade head
