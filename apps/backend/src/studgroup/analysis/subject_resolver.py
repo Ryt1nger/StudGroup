@@ -148,3 +148,48 @@ def resolve_card_subject(
     if count * 2 > len(messages) and not (rest and rest[0][1] == count):
         return Resolution(top, "schedule")
     return Resolution(None, None)
+
+
+def in_session_last_resort(messages, evidence, calendars, *, timezone):
+    """A *tentative* subject only if task-bearing messages were sent during one real lesson.
+
+    The AI, explicit hashtags and catalog checks run earlier. Only direct title/description
+    evidence counts; a later deadline clarification, nearby chat, or the fact that a message
+    arrived in a lesson is not in itself proof of its subject. Calendar snapshots include
+    cancellations and reschedules. Conflicting parallel lessons or subjects abstain.
+    """
+    if not messages or not evidence or not calendars:
+        return Resolution(None, None)
+    topical_ids = {
+        ref.telegram_message_id
+        for ref in evidence
+        if {"title", "description"} & set(ref.fact_paths)
+    }
+    if not topical_ids:
+        return Resolution(None, None)
+    zone = ZoneInfo(timezone)
+    matched = set()
+    for message in messages:
+        if message.telegram_message_id not in topical_ids:
+            continue
+        at = message.message_date.astimezone(zone)
+        calendar = calendars.get(at.date())
+        if not calendar or calendar.get("week_state") != "ready":
+            continue
+        running = set()
+        for lesson in calendar.get("lessons", []):
+            if lesson.get("status") != "scheduled":
+                continue
+            start = datetime.fromisoformat(lesson["starts_at"])
+            end = datetime.fromisoformat(lesson["ends_at"])
+            if start <= at < end:
+                running.add(lesson["subject"])
+        # Simultaneous subgroup lessons of different subjects provide no unique hint.
+        if len(running) > 1:
+            return Resolution(None, None)
+        matched.update(running)
+        if len(matched) > 1:
+            return Resolution(None, None)
+    if len(matched) == 1:
+        return Resolution(next(iter(matched)), "schedule_tentative")
+    return Resolution(None, None)

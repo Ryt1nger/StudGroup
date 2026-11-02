@@ -15,6 +15,33 @@ async function go(router: ReturnType<typeof renderApp>['router'], route: string)
 }
 
 describe('separate persisted group events', () => {
+  it('never shows an academic subject pill on a group event', async () => {
+    useScenario('events');
+    server.use(
+      http.get(`${API}/group-events`, () =>
+        HttpResponse.json({
+          events: [
+            {
+              id: ID,
+              title: 'День первокурсника',
+              description: 'Встреча студентов',
+              starts_on: '2026-10-08',
+              state: 'active',
+              audience: 'group',
+              revision: 1,
+              retained_until: '2026-10-16T00:00:00+03:00',
+              subject: 'Математический анализ',
+            },
+          ],
+        }),
+      ),
+    );
+    renderApp({ route: '/events' });
+    expect(await screen.findByRole('heading', { name: 'День первокурсника' })).toBeInTheDocument();
+    expect(screen.queryByText('Математический анализ')).not.toBeInTheDocument();
+    expect(screen.getByText('Событие')).toBeInTheDocument();
+  });
+
   it('hides navigation and makes no event requests when capabilities are absent', async () => {
     useScenario();
     renderApp({ route: '/events' });

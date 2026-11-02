@@ -1,6 +1,7 @@
 """Apply validated proposals through the canonical resolver and compatibility projection."""
 
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 
 from studgroup.analysis.card_editor import edit_card
 from studgroup.analysis.contracts import ApplicationOutcome
@@ -9,7 +10,7 @@ from studgroup.analysis.manual_dedupe import possible_manual_match, recent_manua
 from studgroup.analysis.projection import project_item
 from studgroup.analysis.resolver import resolve_proposal
 from studgroup.analysis.stored import effective_validation
-from studgroup.analysis.subject_resolver import hashtag_subject, resolve_card_subject
+from studgroup.analysis.subject_resolver import hashtag_subject, in_session_last_resort
 from studgroup.models import Group
 
 
@@ -45,6 +46,7 @@ async def apply_validated_batch(
     notifications = 0
     changes = []
     manual_cards = None  # lazy: only load if a candidate would create a task
+    subject_days = {}  # today's actual timetable loaded only for unresolved academic subjects
     for rejected in validation.rejected:
         outcomes.append(
             ApplicationOutcome(
@@ -57,25 +59,59 @@ async def apply_validated_batch(
         )
     for ordinal, proposal in zip(validation.accepted_ordinals, validation.accepted, strict=True):
         card = edit_card(proposal, messages, verified_subjects=verified_subjects)
+        inferred_from_lesson = False
         if card.subject is None and subject_context is not None:
-            # No source-backed subject: take it from the timetable. Always one of the timetable
-            # names, never invented; a split vote leaves the subject empty.
             cited = {ref.telegram_message_id for ref in proposal.evidence}
-            texts = [(m.message_date, m.text) for m in messages if m.telegram_message_id in cited]
-            if proposal.subject:
-                # The model NAMED a subject the sources do not support (e.g. a subject that is not
-                # in the timetable). The lesson that happened to be running says nothing about it,
-                # so only an unambiguous hashtag may replace it; otherwise the subject stays empty.
-                tagged = {hashtag_subject(text, subject_context["names"]) for _, text in texts}
-                tagged.discard(None)
-                found_subject = next(iter(tagged)) if len(tagged) == 1 else None
-            else:
-                # The model named none: hashtag, or the lesson running when the messages were sent.
-                found_subject = resolve_card_subject(texts, **subject_context).subject
-            if found_subject:
-                card = card.model_copy(update={"subject": found_subject})
+            texts = [m.text for m in messages if m.telegram_message_id in cited]
+            tagged = {hashtag_subject(text, subject_context["names"]) for text in texts}
+            tagged.discard(None)
+            if len(tagged) == 1:
+                # An unambiguous, source-written hashtag has stronger evidence than the clock.
+                card = card.model_copy(update={"subject": next(iter(tagged))})
+            elif not tagged and proposal.subject is None and card.visibility != "held" and group:
+                # Last resort only. The subject must still be blank AFTER model, catalog,
+                # text validation and hashtags. Load the ACTUAL calendar for the source day:
+                # cancelled/moved classes and overlapping subgroups cannot silently assign
+                # the subject of an unrelated task posted during the lesson.
+                topical_ids = {
+                    ref.telegram_message_id
+                    for ref in proposal.evidence
+                    if {"title", "description"} & set(ref.fact_paths)
+                }
+                zone = ZoneInfo(group.timezone)
+                days = {
+                    m.message_date.astimezone(zone).date()
+                    for m in messages
+                    if m.telegram_message_id in topical_ids
+                }
+                if days:
+                    from studgroup.api import schedule_data
+
+                    for day in sorted(days):
+                        if day not in subject_days:
+                            subject_days[day] = await schedule_data(day, day, group, db)
+                    hint = in_session_last_resort(
+                        messages, proposal.evidence, subject_days, timezone=group.timezone
+                    )
+                    if hint.subject and hint.subject in subject_context["names"]:
+                        inferred_from_lesson = True
+                        card = card.model_copy(
+                            update={
+                                "subject": hint.subject,
+                                "visibility": "headman_attention",
+                                "attention_reasons": [
+                                    *card.attention_reasons,
+                                    "subject_inferred_from_current_lesson",
+                                ],
+                            }
+                        )
         applied = (
-            apply_policy(proposal, messages, card.subject, deadline_context)
+            apply_policy(
+                proposal,
+                messages,
+                None if inferred_from_lesson else card.subject,
+                deadline_context,
+            )
             if deadline_context is not None
             else None
         )

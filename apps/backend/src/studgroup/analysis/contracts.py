@@ -346,6 +346,14 @@ class CandidateProposal(StrictDTO):
     confidence: int = Field(default=50, ge=0, le=100)
     evidence: list[EvidenceRef] = Field(min_length=1, max_length=24)
 
+    @model_validator(mode="after")
+    def events_have_no_subject(self):
+        # A social/group event is not an academic subject-bearing card. Strip the
+        # model's spurious subject even in the held candidate and saved report.
+        if self.category == "event":
+            self.subject = None
+        return self
+
 
 class UnpublishedCandidate(CandidateProposal):
     """A stored, non-publishable finding. The fields below are set by code, never by the model.

@@ -132,12 +132,14 @@ def test_student_event_is_a_held_candidate_not_a_card():
         "Встреча студентов с выпускниками",
         "Встреча студентов с выпускниками кафедры.",
         when_text="в четверг после пар",
+        subject="Основы российской государственности",
         reason="Событие: карточки событий не публикуются",
     )
     result = validate(messages, [], [event])
     assert result.accepted == [] and result.explicit_empty is True
     (held,) = result.candidates
     assert held.category == "event" and held.hold_code == "category_not_published"
+    assert held.subject is None  # events never carry an academic subject
     assert held.origin == "model_candidate" and held.when_text == "в четверг после пар"
     assert [ref.telegram_message_id for ref in held.evidence] == [1]
     assert result.adapter_actions["candidate_from_model"] == 1
