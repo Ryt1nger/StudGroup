@@ -7,7 +7,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from studgroup.analysis.image_contracts import ScheduleRow
 from studgroup.api import ApiError
@@ -22,6 +22,7 @@ from studgroup.models import (
     SchedulePattern,
 )
 from studgroup.schedule_audit import schedule_changed
+from studgroup.analysis.schedule_scope import suggest_review_rows
 
 
 class ScheduleTarget(BaseModel):
@@ -62,14 +63,20 @@ async def capture(db, job, reading, now):
     ):
         return
     context = json.loads(job.context_json)
+    group = await db.get(Group, job.group_id)
+    horizon = await db.scalar(
+        select(func.max(SchedulePattern.valid_until)).where(
+            SchedulePattern.group_id == job.group_id,
+            SchedulePattern.cancelled.is_(False),
+        )
+    )
+    rows = suggest_review_rows(reading, group.first_week_anchor if group else None, horizon)
     db.add(
         ImageScheduleSuggestion(
             group_id=job.group_id,
             image_job_id=job.id,
             schedule_version=context["schedule_version"],
-            rows_json=json.dumps(
-                [row.model_dump(mode="json") for row in reading.schedule], ensure_ascii=False
-            ),
+            rows_json=json.dumps(rows, ensure_ascii=False),
             state="pending",
             revision=1,
             created_at=now,
