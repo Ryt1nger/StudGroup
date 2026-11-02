@@ -165,9 +165,7 @@ def test_last_resort_abstains_on_parallel_subgroups_and_conflicting_messages():
         )
     }
     assert _last_subject([_source(1, 11)], [_evidence(1)], simultaneous) is None
-    distinct = {
-        day: _calendar(("Матан", 10, 12, "scheduled"), ("Физика", 12, 14, "scheduled"))
-    }
+    distinct = {day: _calendar(("Матан", 10, 12, "scheduled"), ("Физика", 12, 14, "scheduled"))}
     messages = [_source(1, 11), _source(2, 13)]
     assert _last_subject(messages, [_evidence(1), _evidence(2)], distinct) is None
     # A later message giving only the deadline must not vote for its own lesson.
