@@ -163,6 +163,10 @@ overlapping lessons. A pictured whole-week replacement does not implicitly
 delete lessons omitted from the picture; such deletions require an independently
 approved, audited editor workflow. The shadow/review gate remains off by default.
 
+Pass A keeps its previous A4 prompt and schema: the B-only optional interpretation
+is excluded from the A request so cached pixel transcriptions are not invalidated
+by this classification change.
+
 The pass-B prompt/schema version advances from B8 to B9. Existing B8 snapshots
 remain source records; upgraded B9 readings can incur new provider work if
 reprocessing is enabled. Roll out only under existing group allowlist and funded
