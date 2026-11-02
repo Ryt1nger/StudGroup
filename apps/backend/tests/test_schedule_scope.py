@@ -1,5 +1,6 @@
 """No provider requests or production timetable writes are involved in these tests."""
 
+import json
 from datetime import date, timedelta
 
 from studgroup.analysis.image_contracts import ScheduleInterpretation, ScheduleRow, VisualReading
@@ -18,7 +19,7 @@ def reading(*, duration="recurring", coverage="full_week", start=MONDAY, row_pat
     return VisualReading(
         summary="Расписание", extracted_text="Расписание на неделю", complete=True,
         semantic_types=["schedule"],
-        schedule=[ScheduleRow.model_validate(row)],
+        schedule=[ScheduleRow.model_validate_json(json.dumps(row))],
         schedule_interpretation=ScheduleInterpretation(
             duration=duration, coverage=coverage, week_start=start,
             explanation="Контекст переписки", source_message_ids=[31, 32],
@@ -88,6 +89,6 @@ def test_explicit_one_week_contradiction_needs_editor_not_an_override():
 def test_existing_cached_readings_without_new_field_stay_compatible():
     value = VisualReading(
         summary="", extracted_text="", complete=True, semantic_types=["schedule"],
-        schedule=[ScheduleRow(weekday=0, starts="10:00", ends="11:30", subject="Физика")],
+        schedule=[ScheduleRow.model_validate_json(json.dumps(dict(weekday=0, starts="10:00", ends="11:30", subject="Физика")))],
     )
     assert suggest_review_rows(value, ANCHOR, HORIZON)[0]["valid_until"] is None
