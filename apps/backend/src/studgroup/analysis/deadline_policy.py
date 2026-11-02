@@ -95,6 +95,34 @@ def decide_deadline(
         if resolved is not None:
             found = resolved
     basis = found.basis if found else None
+    # Reuse the existing DeepSeek extraction result; do not make a new provider call.
+    # A clock alone is weak evidence for a source-day deadline. If the model
+    # resolves an otherwise unhandled relative-day expression, validate it before
+    # ever letting the same-day fallback overwrite the model's interpretation.
+    if basis == "source_day_inferred_clock" and model_deadline and model_deadline[0] is not None:
+        model_at, model_date_only = model_deadline
+        if model_at.utcoffset() is None:
+            raise ValueError("deadline_requires_offset")
+        zone = ZoneInfo(timezone)
+        model_local = model_at.astimezone(zone)
+        fallback_local = found.at.astimezone(zone)
+        if model_local.date() != fallback_local.date():
+            relative_sources = [
+                (text, stamp) for text, stamp in ordered if model_relative_date_supported(text)
+            ]
+            if relative_sources:
+                relevant_text, relative_stamp = relative_sources[-1]
+                clock, _inferred = submission_clock(relevant_text.casefold().replace("ё", "е"))
+                source_day = relative_stamp.astimezone(zone).date()
+                if (
+                    0 <= (model_local.date() - source_day).days <= 14
+                    and (clock is None or model_local.time().replace(tzinfo=None) == clock)
+                    and not model_date_only
+                ):
+                    return DeadlineDecision(
+                        model_at, False, "relative_resolved", "model_supported_relative_day"
+                    )
+            return _unknown("model_date_not_supported_by_source")
     if basis in _EXPLICIT:
         return DeadlineDecision(found.at, found.date_only, "explicit", basis)
     if basis in _RELATIVE:
