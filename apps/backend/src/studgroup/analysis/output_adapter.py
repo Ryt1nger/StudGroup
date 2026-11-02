@@ -484,18 +484,13 @@ class _Normalizer:
                     from studgroup.deadlines import submission_clock
 
                     supported = [
-                        row
-                        for row in ordered
-                        if row.telegram_message_id in deadline_evidence_ids
+                        row for row in ordered if row.telegram_message_id in deadline_evidence_ids
                     ]
                     clocks = [
                         clock
                         for row in supported
-                        if (
-                            clock := submission_clock(
-                                row.text.casefold().replace("ё", "е")
-                            )[0]
-                        ) is not None
+                        if (clock := submission_clock(row.text.casefold().replace("ё", "е"))[0])
+                        is not None
                     ]
                     if deadline["date_only"] or (
                         clocks and local.time().replace(tzinfo=None) != clocks[-1]
