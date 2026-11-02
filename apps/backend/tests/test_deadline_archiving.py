@@ -46,6 +46,8 @@ def test_homework_list_uses_the_same_boundaries(client):
             async with AsyncSession(client.app.state.engine) as db:
                 row_ = await db.get(Homework, uuid.UUID(card_id))
                 row_.deadline_at, row_.deadline_date_only = at, True
+                # No matching lesson: a true calendar-only deadline stays until midnight.
+                row_.subject_name = "Предмет вне расписания"
                 await db.commit()
 
         asyncio.run(update())
