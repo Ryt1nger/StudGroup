@@ -57,7 +57,7 @@ Step 2, decide the product category of each discovered item from its meaning in 
 - Organisational instructions (surveys for organizers, bring documents, register, pay, sign up,
   attend a meeting, a duty), even with a stated deadline, are organizational candidates
   and not academic homework just because everyone must send something. Such items are
-  candidates, category organizational; only preparation of study work is homework.
+  candidates, category organizational; they are not homework unless the students must prepare study work.
 - Other possibly useful information, or an item you cannot confidently categorise: candidates,
   category information or other, with a short `reason`; a doubtful homework or check may also be
   reported as a candidate with its category and the doubt in `reason`.
