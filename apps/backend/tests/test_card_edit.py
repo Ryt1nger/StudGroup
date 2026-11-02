@@ -407,13 +407,14 @@ def test_the_headman_creates_a_homework_card_students_then_see(client):
     from studgroup.models import Notification
 
     set_role(client, "headman")
+    future_deadline = (datetime.now(UTC) + timedelta(days=1)).replace(microsecond=0)
     response = client.post(
         "/v1/homework",
         json={
             "title": "  Номера   1–5 ",
             "subject": "Математика",
             "description": "Решить письменно",
-            "deadline": {"at": "2026-11-02T10:00:00+03:00", "date_only": False},
+            "deadline": {"at": future_deadline.isoformat(), "date_only": False},
         },
         headers=HEADERS,
     )
@@ -421,7 +422,7 @@ def test_the_headman_creates_a_homework_card_students_then_see(client):
     data = response.json()
     assert data["title"] == "Номера 1–5" and data["subject"]["name"] == "Математика"
     assert data["verification_state"] == "manual_confirmed" and data["revision"] == 1
-    assert data["deadline"]["at"].startswith("2026-11-02T07:00")
+    assert datetime.fromisoformat(data["deadline"]["at"]) == future_deadline
     listed = client.get("/v1/homework", headers=HEADERS).json()["items"]
     assert [item["id"] for item in listed] == [data["id"]]
     assert count(client, HeadmanAudit) == 1 and count(client, Notification) == 1

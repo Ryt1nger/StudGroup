@@ -236,33 +236,54 @@ describe('headman card editing', () => {
     expect(screen.queryByRole('link', { name: 'Редактировать' })).not.toBeInTheDocument();
   });
 
-  it('opens the bot to send a file, and hides the button from students', async () => {
+  it('uploads a file directly from the editor using the current revision', async () => {
     useScenario();
+    let sent: { revision: string | null; fileSize: number | null } | null = null;
     server.use(
       http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
-      http.get(`${API}/homework/${HW}/file-link`, () =>
-        HttpResponse.json({ url: `https://t.me/studgroup_rf_bot?start=file_h_${HW}` }),
-      ),
+      http.post(`${API}/cards/homework/${HW}/materials/file`, async ({ request }) => {
+        const form = await request.formData();
+        const file = form.get('file');
+        sent = {
+          revision: String(form.get('expected_revision')),
+          fileSize: file && typeof file === 'object' && 'size' in file ? Number(file.size) : null,
+        };
+        return HttpResponse.json({
+          revision: base.revision + 1,
+          materials: [{ id: 'm1', title: 'Конспект.pdf', url: '/v1/files/m1', kind: 'document' }],
+        });
+      }),
     );
-    const { adapter } = renderApp({ route: `/homework/${HW}` });
-    await userEvent.click(await screen.findByRole('button', { name: 'Добавить файл' }));
+    renderApp({ route: `/homework/${HW}/edit` });
+    await screen.findByRole('heading', { name: /Редактирование/, level: 1 });
+    await userEvent.upload(
+      screen.getByLabelText('Выбрать фото или файл'),
+      new File(['PDF'], 'Конспект.pdf', { type: 'application/pdf' }),
+    );
     await waitFor(() =>
-      expect(adapter?.openTelegramLink).toHaveBeenCalledWith(
-        `https://t.me/studgroup_rf_bot?start=file_h_${HW}`,
-      ),
+      expect(sent).toEqual({ revision: String(base.revision), fileSize: 3 }),
     );
+    expect(await screen.findByText('Конспект.pdf')).toBeInTheDocument();
   });
 
-  it('refuses to open a deep link that is not on t.me', async () => {
+  it('rejects an insecure material URL without submitting a request', async () => {
     useScenario();
+    let posted = false;
     server.use(
       http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
-      http.get(`${API}/homework/${HW}/file-link`, () => HttpResponse.json({ url: 'https://evil.example/x' })),
+      http.post(`${API}/cards/homework/${HW}/materials`, () => {
+        posted = true;
+        return HttpResponse.json({ revision: base.revision + 1, materials: [] });
+      }),
     );
-    const { adapter } = renderApp({ route: `/homework/${HW}` });
-    await userEvent.click(await screen.findByRole('button', { name: 'Добавить файл' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Добавить файл' })).toBeEnabled());
-    expect(adapter?.openTelegramLink).not.toHaveBeenCalled();
+    renderApp({ route: `/homework/${HW}/edit` });
+    await screen.findByRole('heading', { name: /Редактирование/, level: 1 });
+    await userEvent.click(screen.getByRole('button', { name: '＋ Ссылка' }));
+    await userEvent.type(screen.getByLabelText('Название ссылки'), 'Вредоносная ссылка');
+    await userEvent.type(screen.getByLabelText('HTTPS-ссылка'), 'http://evil.example/x');
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ссылку' }));
+    expect(await screen.findByText('Укажите название и HTTPS-ссылку')).toBeInTheDocument();
+    expect(posted).toBe(false);
   });
 
   it('opens a Telegram-kept file through the API origin and never as a relative page link', async () => {

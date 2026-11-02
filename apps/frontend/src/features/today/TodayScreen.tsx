@@ -113,14 +113,18 @@ export function TodayScreen() {
     }
   }, [manualSelected, today, timeZone, data, future.data, futureEvents.data, features.events, deadlines.data, all.data, nowMs, setParams]);
   const refetch = query.refetch;
+  const refetchHomework = all.refetch;
+  const refetchDeadlines = deadlines.refetch;
   useEffect(() => {
     if (query.isError || data?.day_lessons_state !== 'scheduled' || !data.next_lesson) return;
-    // Re-check the backend at the lesson boundary; never infer that the whole day
-    // finished just because this one lesson ended. Cleanup also covers navigation.
+    // A finished lesson changes active/archive membership for its date-only cards.
+    // Refresh all three backend views at the boundary, not only the Today summary.
     const delay = Math.max(0, Date.parse(data.next_lesson.lesson.ends_at) - nowMs) + 100;
-    const timer = window.setTimeout(() => { void refetch(); }, delay);
+    const timer = window.setTimeout(() => {
+      void Promise.all([refetch(), refetchHomework(), refetchDeadlines()]);
+    }, delay);
     return () => window.clearTimeout(timer);
-  }, [data, nowMs, refetch, query.isError]);
+  }, [data, nowMs, refetch, refetchHomework, refetchDeadlines, query.isError]);
 
   const processingActive = data !== undefined && data.processing.state !== 'idle';
   const { gaveUp, restart } = useProcessingPoll(processingActive, query.refetch);

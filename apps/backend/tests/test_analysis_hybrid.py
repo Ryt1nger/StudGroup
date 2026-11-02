@@ -798,6 +798,241 @@ def test_relative_lesson_date_is_not_presented_as_an_explicit_deadline():
     assert result.adapter_actions["unsupported_explicit_deadline_cleared"] == 1
 
 
+def test_existing_ai_extraction_keeps_supported_relative_date_without_extra_model_call():
+    # This is the existing Pass-2 response, not a separate deadline AI call.
+    sent = datetime(2026, 10, 30, 22, 29, tzinfo=MSK)
+    data = AnalysisInput(
+        group_id=GROUP_ID,
+        group_timezone="Europe/Moscow",
+        source_revision=1,
+        target_message_ids=[9901],
+        messages=[
+            SourceMessage(
+                telegram_message_id=9901,
+                revision=1,
+                message_date=sent,
+                text="Отправить документ до 17:00 следующего рабочего дня",
+            )
+        ],
+    )
+    output = envelope(
+        [
+            {
+                "destination": "task",
+                "semantic_kind": "homework",
+                "title": "Отправить документ",
+                "description": "Отправить документ по заданию.",
+                "deadline": {
+                    "at": "2026-11-02T17:00:00+03:00",
+                    "date_only": False,
+                    "basis": "explicit",
+                },
+                "confidence": 95,
+                "evidence": [
+                    {
+                        "telegram_message_id": 9901,
+                        "revision": 1,
+                        "fact_paths": ["title", "description", "deadline"],
+                    }
+                ],
+            }
+        ]
+    )
+    validation = validate_extraction_adapted(output, data).result
+    assert len(validation.accepted) == 1, validation.rejected
+    proposed = validation.accepted[0]
+    assert proposed.deadline.at.astimezone(MSK).isoformat() == "2026-11-02T17:00:00+03:00"
+    assert validation.adapter_actions["model_deadline_supported_by_evidence"] == 1
+
+
+def test_existing_ai_extraction_clears_unsupported_relative_day():
+    sent = datetime(2026, 11, 1, 22, 29, tzinfo=MSK)
+    data = AnalysisInput(
+        group_id=GROUP_ID,
+        group_timezone="Europe/Moscow",
+        source_revision=1,
+        target_message_ids=[9902],
+        messages=[
+            SourceMessage(
+                telegram_message_id=9902,
+                revision=1,
+                message_date=sent,
+                text="Отправить документ до 17:00",
+            )
+        ],
+    )
+    output = envelope(
+        [
+            {
+                "destination": "task",
+                "semantic_kind": "homework",
+                "title": "Отправить документ",
+                "description": "Отправить документ по заданию.",
+                "deadline": {
+                    "at": "2026-11-02T17:00:00+03:00",
+                    "date_only": False,
+                    "basis": "explicit",
+                },
+                "confidence": 90,
+                "evidence": [
+                    {
+                        "telegram_message_id": 9902,
+                        "revision": 1,
+                        "fact_paths": ["title", "description"],
+                    }
+                ],
+            }
+        ]
+    )
+    validation = validate_extraction_adapted(output, data).result
+    assert len(validation.accepted) == 1, validation.rejected
+    proposed = validation.accepted[0]
+    assert proposed.deadline.at is None
+    assert proposed.deadline.basis == "unknown"
+    assert "relative_deadline_unresolved" in proposed.attention_reasons
+
+
+def test_full_package_with_distant_semantic_deadline_keeps_model_decision():
+    # A whole package: task, unrelated chat, then a later clarification in slang.
+    # The date is grounded in the later cited message, not the message next to the task.
+    data = AnalysisInput(
+        group_id=GROUP_ID,
+        group_timezone="Europe/Moscow",
+        source_revision=1,
+        target_message_ids=[9103],
+        messages=[
+            SourceMessage(
+                telegram_message_id=9101,
+                revision=1,
+                message_date=datetime(2026, 10, 30, 16, 0, tzinfo=MSK),
+                text="Физика: доделать лабораторную работу по оптике и прислать отчёт",
+            ),
+            SourceMessage(
+                telegram_message_id=9102,
+                revision=1,
+                message_date=datetime(2026, 10, 30, 19, 0, tzinfo=MSK),
+                text="Кстати, завтра тренировка, кто пойдёт?",
+            ),
+            SourceMessage(
+                telegram_message_id=9103,
+                revision=1,
+                message_date=datetime(2026, 10, 30, 22, 29, tzinfo=MSK),
+                text="По лабе: закинуть отчёт к пяти вечера следующего рабочего дня",
+                reply_to_message_id=9101,
+            ),
+        ],
+    )
+    content = envelope(
+        [
+            {
+                "destination": "task",
+                "semantic_kind": "homework",
+                "subject": "Физика",
+                "title": "Доделать лабораторную по оптике",
+                "description": "Доделать лабораторную работу по оптике и прислать отчёт.",
+                "deadline": {
+                    "at": "2026-11-02T17:00:00+03:00",
+                    "date_only": False,
+                    "basis": "explicit",
+                },
+                "confidence": 95,
+                "evidence": [
+                    {"telegram_message_id": 9101, "revision": 1, "fact_paths": ["description"]},
+                    {"telegram_message_id": 9103, "revision": 1, "fact_paths": ["deadline"]},
+                ],
+            }
+        ]
+    )
+    result = validate_extraction_adapted(content, data).result
+    assert len(result.accepted) == 1, result.rejected
+    item = result.accepted[0]
+    assert item.deadline.at.astimezone(MSK).isoformat() == "2026-11-02T17:00:00+03:00"
+    assert "deadline_not_in_source" not in item.attention_reasons
+
+
+def test_math_control_point_in_chat_and_photo_context_keeps_november_fifth():
+    # Regression for: announced "в след четверг", then task details and a
+    # photographed worksheet stating the calendar day. The model must not
+    # lose the date while connecting several pieces of one discussion.
+    data = AnalysisInput(
+        group_id=GROUP_ID,
+        group_timezone="Europe/Moscow",
+        source_revision=1,
+        target_message_ids=[9203],
+        messages=[
+            SourceMessage(
+                telegram_message_id=9201,
+                revision=1,
+                message_date=datetime(2026, 10, 29, 10, 49, tzinfo=MSK),
+                text="В след четверг еще одна КТ по пределам. Практика и теория.",
+            ),
+            SourceMessage(
+                telegram_message_id=9202,
+                revision=1,
+                message_date=datetime(2026, 10, 29, 10, 51, tzinfo=MSK),
+                text="5 заданий: 3 предела, 2 точки разрыва.",
+            ),
+            SourceMessage(
+                telegram_message_id=9203,
+                revision=1,
+                message_date=datetime(2026, 10, 29, 10, 51, tzinfo=MSK),
+                text="#матан. На фото задания к 5 ноября.",
+                reply_to_message_id=9201,
+            ),
+        ],
+    )
+    output = envelope(
+        [
+            {
+                "destination": "deadline",
+                "semantic_kind": "control_point",
+                "subject": "Математический анализ",
+                "title": "Контрольная точка по пределам",
+                "description": "Практическая и теоретическая части. Три предела и две точки разрыва.",
+                "deadline": {
+                    "at": "2026-11-05",
+                    "date_only": True,
+                    "basis": "explicit",
+                },
+                "confidence": 95,
+                "evidence": [
+                    {"telegram_message_id": 9201, "revision": 1, "fact_paths": ["title"]},
+                    {"telegram_message_id": 9202, "revision": 1, "fact_paths": ["description"]},
+                    {"telegram_message_id": 9203, "revision": 1, "fact_paths": ["deadline"]},
+                ],
+            }
+        ]
+    )
+    result = validate_extraction_adapted(output, data).result
+    assert len(result.accepted) == 1, result.rejected
+    card = result.accepted[0]
+    assert card.semantic_kind == "control_point"
+    assert card.deadline.at.astimezone(MSK).date().isoformat() == "2026-11-05"
+    assert card.deadline.date_only
+
+
+def test_extraction_pass_receives_compact_group_memory_alongside_full_packet():
+    data = build_input(CASES[0])
+    memory = [
+        {
+            "fact_type": "subject_alias",
+            "key": "физра",
+            "value": {"alias": "физра", "subject": "Физическая культура"},
+            "status": "verified",
+            "revision": 2,
+        }
+    ]
+    request = prepare_extraction_request(
+        data,
+        {"relevant_source_ids": []},
+        structured_memory=memory,
+    )
+    assert request.user_payload["messages"]
+    assert request.user_payload["structured_memory"] == memory
+    assert "evidence.fact_paths" in request.system_prompt
+    assert "PACKET-WIDE" in request.system_prompt
+
+
 def test_written_dates_still_win_over_the_new_origin_check():
     case = next(row for row in CASES if row["id"] == "homework_iso_datetime_with_offset")
     _data, result = _adapted(case["id"])

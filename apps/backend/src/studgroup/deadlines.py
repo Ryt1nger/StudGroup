@@ -231,6 +231,15 @@ def contextual_deadline(text: str, sent_at: datetime, timezone: str) -> Deadline
         )
     if re.search(r"(?:до|к)\s+конц[ау]\s+(?:этой\s+|текущей\s+)?недели", text):
         return calendar(6 - local.weekday())
+    # A named next day outranks the same-day fallback for a bare submission clock.
+    # Examples: "до 17:00 следующего дня", "на следующий день до 17",
+    # "до конца завтрашнего дня". Always anchor to the source message timestamp.
+    if re.search(
+        r"\b(?:следующ(?:ий|его|ему|ем)|завтрашн(?:ий|его|ему|ем))\s+"
+        r"д(?:ень|ня|ню|нем)\b",
+        text,
+    ):
+        return calendar(1)
     if re.search(r"\bпослезавтра\b", text):
         return calendar(2)
     if re.search(r"\bзавтра\b", text):

@@ -38,7 +38,15 @@ def _renormalized(ordinal, proposal, messages, timezone, actions):
         "audience": {"scope": proposal.audience.scope, "label": proposal.audience.label},
         "subject": proposal.subject,
     }
-    normalizer.semantic_rules(value, [ref.telegram_message_id for ref in proposal.evidence])
+    normalizer.semantic_rules(
+        value,
+        [ref.telegram_message_id for ref in proposal.evidence],
+        [
+            ref.telegram_message_id
+            for ref in proposal.evidence
+            if any(path.split(".", 1)[0] == "deadline" for path in ref.fact_paths)
+        ],
+    )
     actions.update(normalizer.actions)
     reasons = list(proposal.attention_reasons)
     for reason in normalizer.extra_reasons:

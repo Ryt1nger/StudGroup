@@ -183,6 +183,7 @@ async def run_shadow(
                 analysis_input,
                 context.model_dump(mode="json"),
                 existing_items,
+                structured_memory=memory_context,
             )
         )
     except ProviderFailure as error:

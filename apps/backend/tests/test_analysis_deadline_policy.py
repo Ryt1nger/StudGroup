@@ -61,6 +61,79 @@ def test_relative_date_is_computed_from_the_source_timestamp_and_is_repeatable()
     ).at.date() == date(2026, 10, 21)
 
 
+def test_next_day_deadline_overrides_model_and_uses_later_clarification_timestamp():
+    sources = [
+        (
+            "Здравствуйте! По игре авторы просят пройти опрос. Соберите ответы в единый файл.",
+            datetime(2026, 11, 1, 21, 16, tzinfo=MOSCOW),
+        ),
+        (
+            "Составители просят до 17:00 следующего дня. Можно максимально кратко.",
+            datetime(2026, 11, 1, 22, 29, tzinfo=MOSCOW),
+        ),
+    ]
+    result = decide_deadline(
+        kind="other_academic_deadline",
+        sources=sources,
+        timezone=TZ,
+        subject=None,
+        model_deadline=(datetime(2026, 11, 1, 17, 0, tzinfo=MOSCOW), False),
+    )
+    assert result.at == datetime(2026, 11, 2, 17, 0, tzinfo=MOSCOW)
+    assert (result.date_only, result.basis, result.reason) == (
+        False,
+        "relative_resolved",
+        "relative_message_date",
+    )
+
+
+def test_existing_ai_pass_resolves_unhandled_relative_day_before_clock_fallback():
+    # Friday night -> next WORKING day is Monday, not Friday.
+    friday = datetime(2026, 10, 30, 22, 29, tzinfo=MOSCOW)
+    monday = datetime(2026, 11, 2, 17, 0, tzinfo=MOSCOW)
+    result = decide_deadline(
+        kind="homework",
+        sources=[("Отправить до 17:00 следующего рабочего дня", friday)],
+        timezone=TZ,
+        model_deadline=(monday, False),
+        model_evidence=True,
+    )
+    assert (result.at, result.basis, result.reason) == (
+        monday,
+        "relative_resolved",
+        "model_cited_source",
+    )
+
+
+def test_ai_cannot_invent_another_day_from_a_bare_clock():
+    result = decide_deadline(
+        kind="homework",
+        sources=[("Отправить анкету до 17:00", datetime(2026, 11, 1, 22, 29, tzinfo=MOSCOW))],
+        timezone=TZ,
+        model_deadline=(datetime(2026, 11, 2, 17, 0, tzinfo=MOSCOW), False),
+    )
+    assert (result.at, result.basis, result.reason) == (
+        None,
+        "unknown",
+        "model_date_not_supported_by_source",
+    )
+
+
+def test_model_relative_day_cannot_override_explicit_source_clock():
+    result = decide_deadline(
+        kind="homework",
+        sources=[
+            (
+                "Отправить до 17:00 следующего рабочего дня",
+                datetime(2026, 10, 30, 22, 29, tzinfo=MOSCOW),
+            )
+        ],
+        timezone=TZ,
+        model_deadline=(datetime(2026, 11, 2, 18, 0, tzinfo=MOSCOW), False),
+    )
+    assert (result.at, result.basis) == (None, "unknown")
+
+
 def test_conversational_clock_and_exercise_numbers():
     thursday = homework("до 12.00 в четверг прислать", msk(13), schedule=WEEK)
     assert (thursday.at.astimezone(MOSCOW).hour, thursday.at.astimezone(MOSCOW).minute) == (12, 0)

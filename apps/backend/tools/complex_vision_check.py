@@ -66,6 +66,46 @@ class ReplayRecordedProvider(RecordedProvider):
                 self.ledger.save()
                 return {"choices": call["response"], "usage": call["usage"], "model": call["model"]}
         if self.offline:
+            # A prompt change intentionally changes the request hash. The offline
+            # regression benchmark still needs to revalidate the OLD provider
+            # responses using the NEW parser, without contacting DeepSeek or
+            # claiming that the new prompt would produce the same response.
+            # Match only the same frozen scenario AND the same pipeline pass.
+            if self.label.endswith("/cplus"):
+                system_text = payload["messages"][0]["content"]
+                context_pass = system_text.startswith(
+                    "You understand an academic group discussion before extraction."
+                )
+                for index in range(len(self.ledger.data["calls"]) - 1, -1, -1):
+                    call = self.ledger.data["calls"][index]
+                    if (
+                        call.get("label") != self.label
+                        or call.get("state") != "completed"
+                        or not call.get("response")
+                    ):
+                        continue
+                    try:
+                        archived = json.loads(call["response"][0]["message"]["content"])
+                    except (ValueError, KeyError, IndexError, TypeError):
+                        continue
+                    if not isinstance(archived, dict) or (
+                        ("discussion_facts" in archived) != context_pass
+                    ):
+                        continue
+                    if not context_pass and "proposals" not in archived:
+                        continue
+                    self.ledger.data.setdefault("complex_local_replays", []).append(
+                        {
+                            "call_index": index,
+                            "reason": "historic provider reply revalidated; prompt differs; no HTTP",
+                        }
+                    )
+                    self.ledger.save()
+                    return {
+                        "choices": call["response"],
+                        "usage": call["usage"],
+                        "model": call["model"],
+                    }
             raise ProviderFailure(
                 "offline_provider_response_missing", False, reservation_releasable=True
             )

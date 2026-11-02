@@ -316,7 +316,7 @@ def test_event_lifecycle_deduplicates_concurrent_findings_and_retention_cascades
                 rows = (
                     await db.scalars(select(GroupEvent).where(GroupEvent.group_id == group_id))
                 ).all()
-                assert len(rows) == 1 and rows[0].revision == 1
+                assert len(rows) == 1 and rows[0].revision == 2
                 event_id = rows[0].id
                 assert (
                     await db.scalar(
@@ -331,19 +331,19 @@ def test_event_lifecycle_deduplicates_concurrent_findings_and_retention_cascades
                     update={
                         "action": "update",
                         "existing_event_id": event_id,
-                        "expected_revision": 1,
+                        "expected_revision": rows[0].revision,
                         "place": "New hall",
                     }
                 )
                 await capture_event(db, group_id, raw, updated, now)
                 await db.commit()
-                assert (await db.get(GroupEvent, event_id)).revision == 2
+                assert (await db.get(GroupEvent, event_id)).revision == 4
                 raw = await db.get(RawMessage, values["raw_message_id"])
                 await capture_event(
                     db,
                     group_id,
                     raw,
-                    updated.model_copy(update={"action": "cancel", "expected_revision": 2}),
+                    updated.model_copy(update={"action": "cancel", "expected_revision": 4}),
                     now,
                 )
                 await db.commit()
@@ -354,9 +354,11 @@ def test_event_lifecycle_deduplicates_concurrent_findings_and_retention_cascades
                         .select_from(GroupEventRevision)
                         .where(GroupEventRevision.event_id == event_id)
                     )
-                    == 3
+                    == 6
                 )
-                await purge_events(db, now + timedelta(days=2))
+                # Source evidence expires after one day, but the confirmed public
+                # event must retain its independent event-end archive lifetime.
+                assert await purge_events(db, now + timedelta(days=2)) == 0
                 await db.commit()
                 assert (
                     await db.scalar(
@@ -366,6 +368,18 @@ def test_event_lifecycle_deduplicates_concurrent_findings_and_retention_cascades
                     )
                     == 0
                 )
+                assert (
+                    await db.scalar(
+                        select(func.count())
+                        .select_from(GroupEventRevision)
+                        .where(GroupEventRevision.event_id == event_id)
+                    )
+                    == 6
+                )
+                expires = (await db.get(GroupEvent, event_id)).delete_at
+                assert await purge_events(db, expires) == 1
+                await db.commit()
+                assert await db.get(GroupEvent, event_id) is None
                 assert (
                     await db.scalar(
                         select(func.count())
@@ -407,7 +421,13 @@ def test_approved_event_is_independent_of_expired_and_deleted_private_sources():
                 event = await db.scalar(select(GroupEvent).where(GroupEvent.group_id == group_id))
                 event_id = event.id
                 await review_update(
-                    db, event, 1, incoming.model_dump(mode="json"), "active", user.id, now
+                    db,
+                    event,
+                    event.revision,
+                    incoming.model_dump(mode="json"),
+                    "active",
+                    user.id,
+                    now,
                 )
                 await db.commit()
                 assert event.delete_at == datetime(2026, 12, 27, 21, tzinfo=UTC)
