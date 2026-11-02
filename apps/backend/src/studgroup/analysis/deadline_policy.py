@@ -24,7 +24,13 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from studgroup.analysis.output_adapter import explicit_source_dates
-from studgroup.deadlines import ScheduleDeadlineContext, contextual_deadline, deadline_evidence_text
+from studgroup.deadlines import (
+    ScheduleDeadlineContext,
+    contextual_deadline,
+    deadline_evidence_text,
+    model_relative_date_supported,
+    submission_clock,
+)
 from studgroup.subject_identity import match_key
 
 # The stored/API vocabulary of ``deadline_basis`` (spec section 4, owner decision 18 Oct 2026). The
