@@ -16,6 +16,32 @@ from studgroup.models import GroupEvent, GroupEventRevision, GroupEventSource, R
 pytest_plugins = ["test_schedule_api"]
 
 
+def test_event_api_never_exposes_an_academic_subject_even_from_legacy_payload():
+    from types import SimpleNamespace
+
+    from studgroup.group_event_api import view
+
+    raw = {
+        "title": "Встреча студентов",
+        "description": "Организационное мероприятие",
+        "subject": "Математический анализ",
+        "subject_id": "stale-subject",
+        "subject_name": "Математический анализ",
+        "category": "event",
+    }
+    event = SimpleNamespace(
+        id=__import__("uuid").uuid4(),
+        revision=1,
+        state="active",
+        delete_at=datetime.now(UTC) + timedelta(days=7),
+        payload_json=json.dumps(raw),
+    )
+    result = view(event)
+    assert result["title"] == "Встреча студентов"
+    assert "subject" not in result and "subject_id" not in result
+    assert "subject_name" not in result
+
+
 def test_a_lesson_change_cannot_create_a_parallel_event_even_if_model_fills_events(monkeypatch):
     from types import SimpleNamespace
 
