@@ -94,3 +94,15 @@ def test_pass_b_cannot_drop_unique_confirmed_facts_from_pass_a():
         assert b.facts[0].text == "задачи 6–8"
 
     asyncio.run(run())
+
+
+def test_schedule_scope_is_only_in_context_pass_not_cached_pixel_pass():
+    async def run():
+        provider = VisionProvider(reading())
+        first, _ = await read_pass(provider, JPEG, "image/jpeg", 1, context={})
+        await read_pass(provider, JPEG, "image/jpeg", 2, context={}, first=first)
+        assert "schedule_interpretation" not in provider.vision[0]["system_prompt"]
+        assert "ScheduleInterpretation" not in provider.vision[0]["system_prompt"]
+        assert "schedule_interpretation" in provider.vision[1]["system_prompt"]
+
+    asyncio.run(run())
