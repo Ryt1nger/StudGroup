@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import subgroups
 from studgroup.api import ApiError, active_group, database, edit_permissions
-from studgroup.models import AcademicDeadline, Group, WebSession
 from studgroup.lesson_archive import lesson_day_archived, today_lesson_cutoffs
+from studgroup.models import AcademicDeadline, Group, WebSession
 from studgroup.security import token_hash
 from studgroup.student_cards import enrich_deadline
 
