@@ -1,10 +1,12 @@
 """Timetable-only subject resolution: hashtag hint, running lesson, honest abstention."""
 
 from datetime import UTC, date, datetime, time
+from types import SimpleNamespace
 
 from studgroup.analysis.subject_resolver import (
     Lesson,
     hashtag_subject,
+    in_session_last_resort,
     resolve_card_subject,
     schedule_subject,
 )
@@ -99,3 +101,88 @@ def test_a_midweek_anchor_counts_whole_monday_weeks_like_the_schedule_screen():
         schedule_subject(next_monday, lessons, timezone=TZ, first_week_anchor=anchor)
         == "Основы информатики"
     )
+
+def _source(mid, hour, minute=0, *, day=14):
+    return SimpleNamespace(telegram_message_id=mid, message_date=at(hour, minute, day))
+
+
+def _evidence(mid, paths=("description",)):
+    return SimpleNamespace(telegram_message_id=mid, fact_paths=list(paths))
+
+
+def _calendar(*rows, ready=True):
+    return {
+        "week_state": "ready" if ready else "needs_clarification",
+        "lessons": [
+            {
+                "subject": subject,
+                "status": status,
+                "starts_at": datetime(2026, 10, 14, begin - 3, 0, tzinfo=UTC).isoformat(),
+                "ends_at": datetime(2026, 10, 14, finish - 3, 0, tzinfo=UTC).isoformat(),
+            }
+            for subject, begin, finish, status in rows
+        ],
+    }
+
+
+def test_last_resort_current_lesson_is_tentative_only_from_task_evidence():
+    day = date(2026, 10, 14)
+    cal = {day: _calendar(("Матан", 10, 12, "scheduled"))}
+    result = in_session_last_resort(
+        [_source(1, 11)], [_evidence(1)], cal, timezone=TZ
+    )
+    assert (result.subject, result.source) == ("Матан", "schedule_tentative")
+    assert in_session_last_resort(
+        [_source(1, 11)], [_evidence(1, ("deadline",))], cal, timezone=TZ
+    ).subject is None
+
+
+def test_last_resort_does_not_use_break_after_class_or_other_day():
+    cal = {date(2026, 10, 14): _calendar(("Матан", 10, 12, "scheduled"))}
+    assert in_session_last_resort(
+        [_source(1, 12, 0)], [_evidence(1)], cal, timezone=TZ
+    ).subject is None
+    assert in_session_last_resort(
+        [_source(1, 12, 15)], [_evidence(1)], cal, timezone=TZ
+    ).subject is None
+    assert in_session_last_resort(
+        [_source(1, 11, day=15)], [_evidence(1)], cal, timezone=TZ
+    ).subject is None
+
+
+def test_last_resort_respects_cancellation_reschedule_and_unknown_week():
+    day = date(2026, 10, 14)
+    messages = [_source(1, 11)]
+    refs = [_evidence(1)]
+    cancelled = {day: _calendar(("Матан", 10, 12, "cancelled"))}
+    assert in_session_last_resort(messages, refs, cancelled, timezone=TZ).subject is None
+    moved = {day: _calendar(("Физика", 10, 12, "scheduled"))}
+    assert in_session_last_resort(messages, refs, moved, timezone=TZ).subject == "Физика"
+    unresolved = {day: _calendar(("Матан", 10, 12, "scheduled"), ready=False)}
+    assert in_session_last_resort(messages, refs, unresolved, timezone=TZ).subject is None
+
+
+def test_last_resort_abstains_on_parallel_subgroups_and_conflicting_messages():
+    day = date(2026, 10, 14)
+    simultaneous = {
+        day: _calendar(("Матан", 10, 12, "scheduled"), ("Иностранный язык", 10, 12, "scheduled"))
+    }
+    assert in_session_last_resort(
+        [_source(1, 11)], [_evidence(1)], simultaneous, timezone=TZ
+    ).subject is None
+    distinct = {
+        day: _calendar(("Матан", 10, 12, "scheduled"), ("Физика", 12, 14, "scheduled"))
+    }
+    assert in_session_last_resort(
+        [_source(1, 11), _source(2, 13)],
+        [_evidence(1), _evidence(2)],
+        distinct,
+        timezone=TZ,
+    ).subject is None
+    # The second message only adjusts the deadline; it must not vote for its own class.
+    assert in_session_last_resort(
+        [_source(1, 11), _source(2, 13)],
+        [_evidence(1), _evidence(2, ("deadline",))],
+        distinct,
+        timezone=TZ,
+    ).subject == "Матан"
