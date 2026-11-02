@@ -163,7 +163,9 @@ async def completed_lesson_bindings(db, group, now):
 def archived_condition(now, timezone, completed_lessons=()):
     day = now.astimezone(ZoneInfo(timezone)).date()
     start = datetime.combine(day, time.min, ZoneInfo(timezone)).astimezone(UTC)
-    next_day = datetime.combine(day + timedelta(days=1), time.min, ZoneInfo(timezone)).astimezone(UTC)
+    next_day = datetime.combine(day + timedelta(days=1), time.min, ZoneInfo(timezone)).astimezone(
+        UTC
+    )
     completed_today = [
         and_(
             Homework.deadline_date_only.is_(True),
