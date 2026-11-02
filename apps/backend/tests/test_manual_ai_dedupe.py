@@ -72,6 +72,24 @@ def test_manual_cards_of_another_subject_or_later_assignment_are_not_blocked():
     )
 
 
+def test_same_subject_distinct_numbered_assignments_remain_publishable():
+    manual = record("Решить задачи 1–3", description="Решить задачи письменно.", subject="Математика")
+    assert not possible_manual_match(
+        manual,
+        subject="Математика",
+        title="Решить задачи 4–6",
+        description="Решить задачи письменно.",
+        deadline_at=None,
+    )
+    assert possible_manual_match(
+        manual,
+        subject="Математика",
+        title="Решить задачи 1–4",
+        description="Решить задачи письменно.",
+        deadline_at=None,
+    )
+
+
 def test_later_telegram_repeat_is_held_before_publish_without_third_ai_call(client):
     set_role(client, "headman")
     response = client.post(
