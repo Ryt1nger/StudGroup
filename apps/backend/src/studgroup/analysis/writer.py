@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from studgroup.analysis.card_editor import edit_card
 from studgroup.analysis.contracts import ApplicationOutcome
 from studgroup.analysis.deadline_application import apply_policy
+from studgroup.analysis.manual_dedupe import possible_manual_match, recent_manual_cards
 from studgroup.analysis.projection import project_item
 from studgroup.analysis.resolver import resolve_proposal
 from studgroup.analysis.stored import effective_validation
@@ -43,6 +44,7 @@ async def apply_validated_batch(
     writes = 0
     notifications = 0
     changes = []
+    manual_cards = None  # lazy: only load if a candidate would create a task
     for rejected in validation.rejected:
         outcomes.append(
             ApplicationOutcome(
@@ -77,6 +79,34 @@ async def apply_validated_batch(
             if deadline_context is not None
             else None
         )
+        if (
+            proposal.action == "create"
+            and proposal.destination == "task"
+            and proposal.existing_item_id is None
+        ):
+            if manual_cards is None:
+                manual_cards = await recent_manual_cards(db, group_id, now)
+            proposed_deadline = applied.decision.at if applied is not None else proposal.deadline.at
+            if any(
+                possible_manual_match(
+                    old,
+                    subject=card.subject,
+                    title=card.title,
+                    description=card.description,
+                    deadline_at=proposed_deadline,
+                )
+                for old in manual_cards
+            ):
+                outcomes.append(
+                    ApplicationOutcome(
+                        source_revision=validation.source_revision,
+                        proposal_ordinal=ordinal,
+                        technical_status="parsed",
+                        application_status="review",
+                        reason_code="possible_manual_duplicate",
+                    )
+                )
+                continue
         resolution = await resolve_proposal(
             db,
             group_id=group_id,

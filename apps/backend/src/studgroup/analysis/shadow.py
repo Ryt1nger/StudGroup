@@ -139,6 +139,7 @@ async def run_shadow(
     *,
     repair_enabled=False,
     existing_items=None,
+    manual_cards=None,
     lenient_context=False,
 ):
     started = monotonic()
@@ -184,6 +185,7 @@ async def run_shadow(
                 context.model_dump(mode="json"),
                 existing_items,
                 structured_memory=memory_context,
+                manual_cards=manual_cards,
             )
         )
     except ProviderFailure as error:
