@@ -486,9 +486,7 @@ class _Normalizer:
                 relative = [row for row in ordered if model_relative_date_supported(row.text)]
                 if relative:
                     source = relative[-1]
-                    clock, _inferred = submission_clock(
-                        source.text.casefold().replace("ё", "е")
-                    )
+                    clock, _inferred = submission_clock(source.text.casefold().replace("ё", "е"))
                     source_day = source.message_date.astimezone(self.tz).date()
                     if (
                         0 <= (local.date() - source_day).days <= 14
