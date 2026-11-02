@@ -9,7 +9,9 @@ from datetime import date, timedelta
 from studgroup.schedule import week_kind
 
 
-def suggest_review_rows(reading, first_week_anchor: date | None, horizon: date | None) -> list[dict]:
+def suggest_review_rows(
+    reading, first_week_anchor: date | None, horizon: date | None
+) -> list[dict]:
     """Set proposed validity/parity from pass-B scope and the group's trusted calendar.
 
     Unknown scope/date/anchor/horizon remains editable but unresolved.  Never
@@ -58,9 +60,7 @@ def suggest_review_rows(reading, first_week_anchor: date | None, horizon: date |
                 and row.valid_from is not None
                 and row.valid_from == row.valid_until
             )
-            start, end = (
-                (row.valid_from, row.valid_until) if single_day else (monday, sunday)
-            )
+            start, end = (row.valid_from, row.valid_until) if single_day else (monday, sunday)
         else:
             # A source may explicitly specify a longer confirmed validity range.
             # Dates printed only for the shown week do not end a recurring rule.
@@ -70,9 +70,12 @@ def suggest_review_rows(reading, first_week_anchor: date | None, horizon: date |
                 if row.valid_until is not None and row.valid_until > sunday
                 else horizon
             )
-        rows.append(source | {
-            "week": parity,
-            "valid_from": start.isoformat(),
-            "valid_until": end.isoformat(),
-        })
+        rows.append(
+            source
+            | {
+                "week": parity,
+                "valid_from": start.isoformat(),
+                "valid_until": end.isoformat(),
+            }
+        )
     return rows
