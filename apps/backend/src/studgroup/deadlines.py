@@ -132,22 +132,6 @@ def submission_clock(text: str) -> tuple[time | None, bool]:
     return (time(hour), False) if hour < 24 else (None, False)
 
 
-_MODEL_RELATIVE_DATE_CUE = re.compile(
-    r"\b(?:следующ\w*\s+(?:рабоч\w*\s+)?д(?:ень|ня|ню|нем)|"
-    r"завтрашн\w*\s+д(?:ень|ня|ню|нем)|через\s+сутк\w*|наутро)\b",
-    re.IGNORECASE,
-)
-
-
-def model_relative_date_supported(text: str) -> bool:
-    """Whether source wording can ground a model-resolved relative day.
-
-    This is evidence detection, not a second calendar parser. In particular, "следующая
-    пара" and a lone "до 17:00" do NOT license a model to invent a calendar day.
-    """
-    return bool(_MODEL_RELATIVE_DATE_CUE.search(text.casefold().replace("ё", "е")))
-
-
 def contextual_deadline(text: str, sent_at: datetime, timezone: str) -> DeadlineResolution | None:
     """None means no recognized deadline. Unknown means explicit ambiguity: no fallback."""
     if sent_at.utcoffset() is None:
