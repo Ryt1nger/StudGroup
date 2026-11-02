@@ -102,6 +102,7 @@ def test_a_midweek_anchor_counts_whole_monday_weeks_like_the_schedule_screen():
         == "Основы информатики"
     )
 
+
 def _source(mid, hour, minute=0, *, day=14):
     return SimpleNamespace(telegram_message_id=mid, message_date=at(hour, minute, day))
 
@@ -125,29 +126,22 @@ def _calendar(*rows, ready=True):
     }
 
 
+def _last_subject(messages, evidence, calendars):
+    return in_session_last_resort(messages, evidence, calendars, timezone=TZ).subject
+
+
 def test_last_resort_current_lesson_is_tentative_only_from_task_evidence():
-    day = date(2026, 10, 14)
-    cal = {day: _calendar(("Матан", 10, 12, "scheduled"))}
-    result = in_session_last_resort(
-        [_source(1, 11)], [_evidence(1)], cal, timezone=TZ
-    )
+    cal = {date(2026, 10, 14): _calendar(("Матан", 10, 12, "scheduled"))}
+    result = in_session_last_resort([_source(1, 11)], [_evidence(1)], cal, timezone=TZ)
     assert (result.subject, result.source) == ("Матан", "schedule_tentative")
-    assert in_session_last_resort(
-        [_source(1, 11)], [_evidence(1, ("deadline",))], cal, timezone=TZ
-    ).subject is None
+    assert _last_subject([_source(1, 11)], [_evidence(1, ("deadline",))], cal) is None
 
 
 def test_last_resort_does_not_use_break_after_class_or_other_day():
     cal = {date(2026, 10, 14): _calendar(("Матан", 10, 12, "scheduled"))}
-    assert in_session_last_resort(
-        [_source(1, 12, 0)], [_evidence(1)], cal, timezone=TZ
-    ).subject is None
-    assert in_session_last_resort(
-        [_source(1, 12, 15)], [_evidence(1)], cal, timezone=TZ
-    ).subject is None
-    assert in_session_last_resort(
-        [_source(1, 11, day=15)], [_evidence(1)], cal, timezone=TZ
-    ).subject is None
+    assert _last_subject([_source(1, 12, 0)], [_evidence(1)], cal) is None
+    assert _last_subject([_source(1, 12, 15)], [_evidence(1)], cal) is None
+    assert _last_subject([_source(1, 11, day=15)], [_evidence(1)], cal) is None
 
 
 def test_last_resort_respects_cancellation_reschedule_and_unknown_week():
@@ -155,34 +149,27 @@ def test_last_resort_respects_cancellation_reschedule_and_unknown_week():
     messages = [_source(1, 11)]
     refs = [_evidence(1)]
     cancelled = {day: _calendar(("Матан", 10, 12, "cancelled"))}
-    assert in_session_last_resort(messages, refs, cancelled, timezone=TZ).subject is None
+    assert _last_subject(messages, refs, cancelled) is None
     moved = {day: _calendar(("Физика", 10, 12, "scheduled"))}
-    assert in_session_last_resort(messages, refs, moved, timezone=TZ).subject == "Физика"
+    assert _last_subject(messages, refs, moved) == "Физика"
     unresolved = {day: _calendar(("Матан", 10, 12, "scheduled"), ready=False)}
-    assert in_session_last_resort(messages, refs, unresolved, timezone=TZ).subject is None
+    assert _last_subject(messages, refs, unresolved) is None
 
 
 def test_last_resort_abstains_on_parallel_subgroups_and_conflicting_messages():
     day = date(2026, 10, 14)
     simultaneous = {
-        day: _calendar(("Матан", 10, 12, "scheduled"), ("Иностранный язык", 10, 12, "scheduled"))
+        day: _calendar(
+            ("Матан", 10, 12, "scheduled"),
+            ("Иностранный язык", 10, 12, "scheduled"),
+        )
     }
-    assert in_session_last_resort(
-        [_source(1, 11)], [_evidence(1)], simultaneous, timezone=TZ
-    ).subject is None
+    assert _last_subject([_source(1, 11)], [_evidence(1)], simultaneous) is None
     distinct = {
         day: _calendar(("Матан", 10, 12, "scheduled"), ("Физика", 12, 14, "scheduled"))
     }
-    assert in_session_last_resort(
-        [_source(1, 11), _source(2, 13)],
-        [_evidence(1), _evidence(2)],
-        distinct,
-        timezone=TZ,
-    ).subject is None
-    # The second message only adjusts the deadline; it must not vote for its own class.
-    assert in_session_last_resort(
-        [_source(1, 11), _source(2, 13)],
-        [_evidence(1), _evidence(2, ("deadline",))],
-        distinct,
-        timezone=TZ,
-    ).subject == "Матан"
+    messages = [_source(1, 11), _source(2, 13)]
+    assert _last_subject(messages, [_evidence(1), _evidence(2)], distinct) is None
+    # A later message giving only the deadline must not vote for its own lesson.
+    refs = [_evidence(1), _evidence(2, ("deadline",))]
+    assert _last_subject(messages, refs, distinct) == "Матан"
