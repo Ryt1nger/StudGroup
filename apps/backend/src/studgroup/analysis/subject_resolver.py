@@ -149,6 +149,7 @@ def resolve_card_subject(
         return Resolution(top, "schedule")
     return Resolution(None, None)
 
+
 def in_session_last_resort(messages, evidence, calendars, *, timezone):
     """A *tentative* subject only if task-bearing messages were sent during one real lesson.
 
@@ -175,13 +176,14 @@ def in_session_last_resort(messages, evidence, calendars, *, timezone):
         calendar = calendars.get(at.date())
         if not calendar or calendar.get("week_state") != "ready":
             continue
-        running = {
-            lesson["subject"]
-            for lesson in calendar.get("lessons", [])
-            if lesson.get("status") == "scheduled"
-            and datetime.fromisoformat(lesson["starts_at"]) <= at
-            < datetime.fromisoformat(lesson["ends_at"])
-        }
+        running = set()
+        for lesson in calendar.get("lessons", []):
+            if lesson.get("status") != "scheduled":
+                continue
+            start = datetime.fromisoformat(lesson["starts_at"])
+            end = datetime.fromisoformat(lesson["ends_at"])
+            if start <= at < end:
+                running.add(lesson["subject"])
         # Simultaneous subgroup lessons of different subjects provide no unique hint.
         if len(running) > 1:
             return Resolution(None, None)
