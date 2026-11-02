@@ -417,7 +417,7 @@ class _Normalizer:
                 return {"at": at, "date_only": True, "basis": "explicit"}
         return {"at": None, "date_only": False, "basis": "unknown"}
 
-    def deterministic_conflict(self, deadline, base):
+    def deterministic_conflict(self, deadline, base, deadline_evidence_ids=()):
         """Verify the origin of an ``explicit`` date; flag a contradiction, clear a guess.
 
         A calendar date written in the cited text outranks every heuristic. A date that no
@@ -427,6 +427,7 @@ class _Normalizer:
         """
         if deadline["at"] is None or deadline["basis"] != "explicit":
             return deadline
+        grounded = bool(set(deadline_evidence_ids) & set(base))
         ordered = sorted(
             (self.messages[i] for i in base if i in self.messages), key=lambda row: row.message_date
         )
@@ -475,33 +476,24 @@ class _Normalizer:
             else:
                 unresolved_basis = candidate.basis
         if resolved is not None:
-            # DeepSeek already proposed a date in the existing extraction pass.
-            # The source-day clock fallback is NOT a source-stated calendar date;
-            # don't silently replace a supported relative-day interpretation.
-            if resolved.basis == "source_day_inferred_clock" and (
-                resolved.at.astimezone(self.tz).date() != local.date()
-            ):
-                from studgroup.deadlines import model_relative_date_supported, submission_clock
-
-                relative = [row for row in ordered if model_relative_date_supported(row.text)]
-                if relative:
-                    source = relative[-1]
-                    clock, _inferred = submission_clock(source.text.casefold().replace("ё", "е"))
-                    source_day = source.message_date.astimezone(self.tz).date()
-                    if (
-                        0 <= (local.date() - source_day).days <= 14
-                        and (clock is None or local.time().replace(tzinfo=None) == clock)
-                        and not deadline["date_only"]
-                    ):
-                        self.note("model_relative_deadline_preserved")
-                        return deadline
-                self.extra_reasons.append(RELATIVE_UNRESOLVED_REASON)
-                self.note("model_date_unsupported_by_source")
-                return {"at": None, "date_only": False, "basis": "unknown"}
+            # An inferred source-day from a clock is weak evidence, not the author's
+            # calendar date. Prefer the Pass-2 interpretation when DeepSeek cites
+            # a source for the deadline, even with informal student slang.
+            if resolved.basis == "source_day_inferred_clock":
+                if grounded:
+                    self.note("model_deadline_supported_by_evidence")
+                    return deadline
+                if resolved.at.astimezone(self.tz).date() != local.date():
+                    self.extra_reasons.append(RELATIVE_UNRESOLVED_REASON)
+                    self.note("model_date_unsupported_by_source")
+                    return {"at": None, "date_only": False, "basis": "unknown"}
             if resolved.at.astimezone(self.tz).date() != local.date():
                 self.extra_reasons.append(DEADLINE_CORRECTED_REASON)
                 self.note("deadline_corrected_from_text")
                 return {"at": resolved.at, "date_only": resolved.date_only, "basis": "explicit"}
+            return deadline
+        if grounded and unresolved_basis not in UNRESOLVED_RELATIVE_BASES:
+            self.note("model_deadline_supported_by_evidence")
             return deadline
         if ordered and weekday_supports(
             [row.text for row in ordered], local, ordered[0].message_date.astimezone(self.tz)
@@ -584,13 +576,15 @@ class _Normalizer:
             result.append((entry.get("fact_paths"), message_id, revision))
         return result
 
-    def semantic_rules(self, value, evidence_ids):
+    def semantic_rules(self, value, evidence_ids, deadline_evidence_ids=()):
         """Deterministic source-checked rules; also re-applied to stored proposals on read.
 
         Works on the plain value dict: deadline origin, collective address -> group audience,
         service tag is not a subject. Idempotent by construction.
         """
-        value["deadline"] = self.deterministic_conflict(value["deadline"], evidence_ids)
+        value["deadline"] = self.deterministic_conflict(
+            value["deadline"], evidence_ids, deadline_evidence_ids
+        )
         if value["audience"]["scope"] == "personal" and collective_address_only(
             self.messages[i].text for i in evidence_ids if i in self.messages
         ):
@@ -775,7 +769,15 @@ class _Normalizer:
             }
             for paths, message_id, revision in refs
         ]
-        self.semantic_rules(value, evidence_ids)
+        self.semantic_rules(
+            value,
+            evidence_ids,
+            [
+                message_id
+                for paths, message_id, _revision in refs
+                if any(path.split(".", 1)[0] == "deadline" for path in paths or ())
+            ],
+        )
         for reason in self.extra_reasons:
             if reason not in reasons:
                 reasons.append(reason)
