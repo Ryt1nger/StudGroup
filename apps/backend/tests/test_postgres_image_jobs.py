@@ -407,7 +407,13 @@ def test_approved_event_is_independent_of_expired_and_deleted_private_sources():
                 event = await db.scalar(select(GroupEvent).where(GroupEvent.group_id == group_id))
                 event_id = event.id
                 await review_update(
-                    db, event, event.revision, incoming.model_dump(mode="json"), "active", user.id, now
+                    db,
+                    event,
+                    event.revision,
+                    incoming.model_dump(mode="json"),
+                    "active",
+                    user.id,
+                    now,
                 )
                 await db.commit()
                 assert event.delete_at == datetime(2026, 12, 27, 21, tzinfo=UTC)
