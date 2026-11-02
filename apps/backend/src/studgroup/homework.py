@@ -30,6 +30,7 @@ from studgroup.models import (
 )
 from studgroup.pagination import decode_cursor, encode_cursor
 from studgroup.schedule import next_lesson
+from studgroup.lesson_archive import lesson_cutoff, today_lesson_cutoffs
 from studgroup.security import token_hash
 from studgroup.student_cards import enrich_homework
 
@@ -140,11 +141,42 @@ async def find_card(db, group, homework_id):
     return row
 
 
-def archived_condition(now, timezone):
+async def completed_lesson_bindings(db, group, now):
+    """Matching subject/subgroup pairs whose last scheduled lesson has finished today."""
+    cutoffs = await today_lesson_cutoffs(db, group, now)
+    if not cutoffs:
+        return []
+    identities = (
+        await db.execute(
+            select(Homework.subject_name, Homework.subgroup_id)
+            .where(Homework.group_id == group.id)
+            .distinct()
+        )
+    ).all()
+    return [
+        (subject, subgroup_id)
+        for subject, subgroup_id in identities
+        if (end := lesson_cutoff(subject, subgroup_id, cutoffs)) is not None and end <= now
+    ]
+
+
+def archived_condition(now, timezone, completed_lessons=()):
     day = now.astimezone(ZoneInfo(timezone)).date()
     start = datetime.combine(day, time.min, ZoneInfo(timezone)).astimezone(UTC)
+    next_day = datetime.combine(day + timedelta(days=1), time.min, ZoneInfo(timezone)).astimezone(UTC)
+    completed_today = [
+        and_(
+            Homework.deadline_date_only.is_(True),
+            Homework.deadline_at >= start,
+            Homework.deadline_at < next_day,
+            Homework.subject_name == subject,
+            Homework.subgroup_id == subgroup_id,
+        )
+        for subject, subgroup_id in completed_lessons
+    ]
     return or_(
         Homework.status == "cancelled",
+        *completed_today,
         and_(
             Homework.deadline_at.is_not(None),
             Homework.deadline_date_only.is_(True),
@@ -211,7 +243,9 @@ async def homework_list(
             subgroups.visible(Homework.subgroup_id, await subgroups.hidden(db, group.id, user)),
         )
     )
-    archived = archived_condition(generated, group.timezone)
+    archived = archived_condition(
+        generated, group.timezone, await completed_lesson_bindings(db, group, generated)
+    )
     # SQL comparisons to NULL must not make an unknown deadline disappear.
     active = and_(
         Homework.status != "cancelled",
@@ -477,7 +511,9 @@ async def lesson_subject(
                 Homework.group_id == group.id,
                 Homework.status.in_(["published", "needs_clarification"]),
                 Homework.delete_at > now,
-                ~archived_condition(now, group.timezone),
+                ~archived_condition(
+                    now, group.timezone, await completed_lesson_bindings(db, group, now)
+                ),
             )
         )
     ).all()
@@ -544,7 +580,9 @@ async def today(
                 Homework.group_id == group.id,
                 Homework.status.in_(["published", "needs_clarification"]),
                 Homework.delete_at > now,
-                ~archived_condition(now, group.timezone),
+                ~archived_condition(
+                    now, group.timezone, await completed_lesson_bindings(db, group, now)
+                ),
                 subgroups.visible(Homework.subgroup_id, await subgroups.hidden(db, group.id, user)),
             )
         )
