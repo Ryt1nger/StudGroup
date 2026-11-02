@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
 from studgroup.analysis.image_contracts import ScheduleRow
+from studgroup.analysis.schedule_scope import suggest_review_rows
 from studgroup.api import ApiError
 from studgroup.headman_domain import guard, lock_decision, save_audit
 from studgroup.models import (
@@ -22,7 +23,6 @@ from studgroup.models import (
     SchedulePattern,
 )
 from studgroup.schedule_audit import schedule_changed
-from studgroup.analysis.schedule_scope import suggest_review_rows
 
 
 class ScheduleTarget(BaseModel):
