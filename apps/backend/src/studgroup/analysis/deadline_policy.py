@@ -28,8 +28,6 @@ from studgroup.deadlines import (
     ScheduleDeadlineContext,
     contextual_deadline,
     deadline_evidence_text,
-    model_relative_date_supported,
-    submission_clock,
 )
 from studgroup.subject_identity import match_key
 
@@ -83,6 +81,7 @@ def decide_deadline(
     subject=None,
     schedule: ScheduleDeadlineContext | None = None,
     model_deadline=None,
+    model_evidence=False,
     no_lesson_days=frozenset(),
 ):
     """``sources`` = ``[(text, sent_at), ...]`` of one card; ``model_deadline`` = ``(at, date_only)``."""
@@ -95,36 +94,13 @@ def decide_deadline(
         if resolved is not None:
             found = resolved
     basis = found.basis if found else None
-    # Reuse the existing DeepSeek extraction result; do not make a new provider call.
-    # A clock alone is weak evidence for a source-day deadline. If the model
-    # resolves an otherwise unhandled relative-day expression, validate it before
-    # ever letting the same-day fallback overwrite the model's interpretation.
-    if basis == "source_day_inferred_clock" and model_deadline and model_deadline[0] is not None:
-        model_at, model_date_only = model_deadline
-        if model_at.utcoffset() is None:
-            raise ValueError("deadline_requires_offset")
-        zone = ZoneInfo(timezone)
-        model_local = model_at.astimezone(zone)
-        fallback_local = found.at.astimezone(zone)
-        if model_local.date() != fallback_local.date():
-            relative_sources = [
-                (text, stamp) for text, stamp in ordered if model_relative_date_supported(text)
-            ]
-            if relative_sources:
-                relevant_text, relative_stamp = relative_sources[-1]
-                clock, _inferred = submission_clock(relevant_text.casefold().replace("ё", "е"))
-                source_day = relative_stamp.astimezone(zone).date()
-                if (
-                    0 <= (model_local.date() - source_day).days <= 14
-                    and (clock is None or model_local.time().replace(tzinfo=None) == clock)
-                    and not model_date_only
-                ):
-                    return DeadlineDecision(
-                        model_at, False, "relative_resolved", "model_supported_relative_day"
-                    )
-            return _unknown("model_date_not_supported_by_source")
     if basis in _EXPLICIT:
         return DeadlineDecision(found.at, found.date_only, "explicit", basis)
+    if basis == "source_day_inferred_clock" and model_evidence and model_deadline:
+        at, date_only = model_deadline
+        if at.utcoffset() is None:
+            raise ValueError("deadline_requires_offset")
+        return DeadlineDecision(at, bool(date_only), "relative_resolved", "model_cited_source")
     if basis in _RELATIVE:
         return DeadlineDecision(found.at, found.date_only, "relative_resolved", basis)
     if basis in _NOT_A_DATE:
@@ -132,6 +108,15 @@ def decide_deadline(
     literal = _literal_date(ordered, timezone, model_deadline)
     if literal is not None:
         return literal
+    # Trust a cited semantic interpretation from Pass 2 even when the expression
+    # is unfamiliar to the local parser. References must be supplied by the
+    # model as deadline evidence and validated against the package snapshot.
+    # Unknown / ambiguous ranges and next-lesson references are NOT date proof.
+    if model_evidence and model_deadline and basis != "next_subject_lesson_reference":
+        at, date_only = model_deadline
+        if at.utcoffset() is None:
+            raise ValueError("deadline_requires_offset")
+        return DeadlineDecision(at, bool(date_only), "relative_resolved", "model_cited_source")
     joined = "\n".join(deadline_evidence_text(text) for text, _ in ordered)
     if model_deadline and model_deadline[0] is not None and _DATE_SIGNAL.search(joined):
         at, date_only = model_deadline
