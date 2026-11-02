@@ -94,6 +94,35 @@ def test_explicit_day_and_colloquial_time_can_be_in_either_order():
     assert result.basis == "explicit_source_date_inferred_clock"
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Составители просят до 17:00 следующего дня. Можно максимально кратко.",
+        "Сдать анкету до 17 часов следующего дня",
+        "Отправить на следующий день до 17:00",
+        "Отправить до 17:00 завтрашнего дня",
+        "Отправить до 17:00 следующего дня",
+    ],
+)
+def test_next_day_wording_beats_same_day_clock_fallback(text):
+    # Original sent late at night; the requested deadline is still tomorrow at 17:00.
+    sent = datetime.fromisoformat("2026-11-01T22:29:00+03:00")
+    result = contextual_deadline(text, sent, TZ)
+    assert result.at.isoformat() == "2026-11-02T17:00:00+03:00"
+    assert result.date_only is False
+    assert result.basis == "relative_message_date"
+
+
+def test_next_day_wording_uses_group_local_date_not_utc_date():
+    result = contextual_deadline(
+        "До 17:00 следующего дня",
+        datetime.fromisoformat("2026-11-01T21:29:00+00:00"),
+        TZ,
+    )
+    # UTC is still Sunday, while in Moscow the message arrived Monday at 00:29.
+    assert result.at.isoformat() == "2026-11-03T17:00:00+03:00"
+
+
 def test_bare_submission_clock_uses_original_day_and_marks_inference():
     result = contextual_deadline(
         "Сделать домашку до 4", datetime.fromisoformat("2026-10-08T10:00:00+03:00"), TZ
