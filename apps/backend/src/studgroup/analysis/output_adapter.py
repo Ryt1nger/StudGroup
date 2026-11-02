@@ -481,6 +481,28 @@ class _Normalizer:
             # a source for the deadline, even with informal student slang.
             if resolved.basis == "source_day_inferred_clock":
                 if grounded:
+                    from studgroup.deadlines import submission_clock
+
+                    supported = [
+                        row
+                        for row in ordered
+                        if row.telegram_message_id in deadline_evidence_ids
+                    ]
+                    clocks = [
+                        clock
+                        for row in supported
+                        if (
+                            clock := submission_clock(
+                                row.text.casefold().replace("ё", "е")
+                            )[0]
+                        ) is not None
+                    ]
+                    if deadline["date_only"] or (
+                        clocks and local.time().replace(tzinfo=None) != clocks[-1]
+                    ):
+                        self.extra_reasons.append(RELATIVE_UNRESOLVED_REASON)
+                        self.note("model_clock_conflicts_with_source")
+                        return {"at": None, "date_only": False, "basis": "unknown"}
                     self.note("model_deadline_supported_by_evidence")
                     return deadline
                 if resolved.at.astimezone(self.tz).date() != local.date():
