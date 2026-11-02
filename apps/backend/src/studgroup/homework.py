@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from studgroup import subgroups
 from studgroup.academic_deadlines import items as deadline_items
 from studgroup.api import ApiError, active_group, database, edit_permissions, schedule_data
+from studgroup.lesson_archive import lesson_cutoff, today_lesson_cutoffs
 from studgroup.materials import links
 from studgroup.models import (
     AcademicDeadline,
@@ -30,7 +31,6 @@ from studgroup.models import (
 )
 from studgroup.pagination import decode_cursor, encode_cursor
 from studgroup.schedule import next_lesson
-from studgroup.lesson_archive import lesson_cutoff, today_lesson_cutoffs
 from studgroup.security import token_hash
 from studgroup.student_cards import enrich_homework
 
