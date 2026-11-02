@@ -13,7 +13,7 @@ from studgroup.models import ImageScheduleSuggestion, ScheduleChange, SchedulePa
 pytest_plugins = ["test_schedule_api"]
 
 
-def prepare(client, monkeypatch, **row_patch):
+def prepare(client, monkeypatch, schedule_interpretation=None, **row_patch):
     download_ok(monkeypatch)
     photo_message(client)
     make_new(client)
@@ -29,6 +29,8 @@ def prepare(client, monkeypatch, **row_patch):
         "valid_until": "2026-12-31",
     } | row_patch
     payload = json.loads(reading()) | {"semantic_types": ["schedule"], "schedule": [row]}
+    if schedule_interpretation is not None:
+        payload["schedule_interpretation"] = schedule_interpretation
     config = cfg(client)
     provider = VisionProvider(json.dumps(payload))
     assert tick(client, provider, config) == "ready"
@@ -454,3 +456,43 @@ def test_schedule_review_metadata_never_exposes_other_group_or_expired_sources(c
 
     asyncio.run(expire())
     assert client.get("/v1/staff/image-findings/schedule", headers=AUTH).json()["suggestions"] == []
+
+
+def test_full_week_image_proposes_anchored_recurring_template_without_live_write(client, monkeypatch):
+    from datetime import date
+
+    from studgroup.schedule import week_kind
+
+    suggestion = prepare(
+        client, monkeypatch, valid_from=None, valid_until=None,
+        schedule_interpretation={
+            "coverage": "full_week",
+            "duration": "recurring",
+            "week_start": "2026-11-02",
+            "explanation": "Новое расписание, нет одноразового исключения",
+            "source_message_ids": [31],
+        },
+    )
+    rows = json.loads(suggestion.rows_json)
+    assert len(rows) == 1
+    assert rows[0]["week"] == week_kind(date(2026, 11, 2), date(2026, 10, 5))
+    assert rows[0]["valid_from"] == "2026-11-02"
+    assert rows[0]["valid_until"] == "2027-01-31"
+    assert stored(client, ScheduleChange) == []
+
+
+def test_one_week_exception_image_stays_date_limited_and_never_writes_live(client, monkeypatch):
+    suggestion = prepare(
+        client, monkeypatch, valid_from=None, valid_until=None,
+        schedule_interpretation={
+            "coverage": "full_week",
+            "duration": "one_week",
+            "week_start": "2026-11-02",
+            "explanation": "В ответе сказано, что замены только на одну неделю",
+            "source_message_ids": [31, 32],
+        },
+    )
+    row = json.loads(suggestion.rows_json)[0]
+    assert row["week"] == "all"
+    assert (row["valid_from"], row["valid_until"]) == ("2026-11-02", "2026-11-08")
+    assert stored(client, ScheduleChange) == []
