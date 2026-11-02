@@ -37,7 +37,7 @@ def gate(request, group_id, public=False):
 def view(event, source_availability=None):
     payload = json.loads(event.payload_json)
     # Model linking hints and internal identifiers are not public event properties.
-    for field in ("action", "existing_event_id", "expected_revision"):
+    for field in ("action", "existing_event_id", "expected_revision", "subject", "subject_id", "subject_name"):
         payload.pop(field, None)
     return {
         "id": event.id,
