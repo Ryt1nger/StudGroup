@@ -238,7 +238,7 @@ describe('headman card editing', () => {
 
   it('uploads a file directly from the editor using the current revision', async () => {
     useScenario();
-    let sent: { revision: string | null; fileName: string | null } | null = null;
+    let sent: { revision: string | null; fileSize: number | null } | null = null;
     server.use(
       http.get(`${API}/homework/${HW}`, () => HttpResponse.json(editable)),
       http.post(`${API}/cards/homework/${HW}/materials/file`, async ({ request }) => {
@@ -246,7 +246,7 @@ describe('headman card editing', () => {
         const file = form.get('file');
         sent = {
           revision: String(form.get('expected_revision')),
-          fileName: file && typeof file === 'object' && 'name' in file ? String(file.name) : null,
+          fileSize: file && typeof file === 'object' && 'size' in file ? Number(file.size) : null,
         };
         return HttpResponse.json({
           revision: base.revision + 1,
@@ -261,7 +261,7 @@ describe('headman card editing', () => {
       new File(['PDF'], 'Конспект.pdf', { type: 'application/pdf' }),
     );
     await waitFor(() =>
-      expect(sent).toEqual({ revision: String(base.revision), fileName: 'Конспект.pdf' }),
+      expect(sent).toEqual({ revision: String(base.revision), fileSize: 3 }),
     );
     expect(await screen.findByText('Конспект.pdf')).toBeInTheDocument();
   });
