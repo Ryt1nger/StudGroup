@@ -246,7 +246,7 @@ describe('headman card editing', () => {
         const file = form.get('file');
         sent = {
           revision: String(form.get('expected_revision')),
-          fileName: file instanceof File ? file.name : null,
+          fileName: file && typeof file === 'object' && 'name' in file ? String(file.name) : null,
         };
         return HttpResponse.json({
           revision: base.revision + 1,
