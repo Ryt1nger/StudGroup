@@ -475,6 +475,31 @@ class _Normalizer:
             else:
                 unresolved_basis = candidate.basis
         if resolved is not None:
+            # DeepSeek already proposed a date in the existing extraction pass.
+            # The source-day clock fallback is NOT a source-stated calendar date;
+            # don't silently replace a supported relative-day interpretation.
+            if resolved.basis == "source_day_inferred_clock" and (
+                resolved.at.astimezone(self.tz).date() != local.date()
+            ):
+                from studgroup.deadlines import model_relative_date_supported, submission_clock
+
+                relative = [row for row in ordered if model_relative_date_supported(row.text)]
+                if relative:
+                    source = relative[-1]
+                    clock, _inferred = submission_clock(
+                        source.text.casefold().replace("ё", "е")
+                    )
+                    source_day = source.message_date.astimezone(self.tz).date()
+                    if (
+                        0 <= (local.date() - source_day).days <= 14
+                        and (clock is None or local.time().replace(tzinfo=None) == clock)
+                        and not deadline["date_only"]
+                    ):
+                        self.note("model_relative_deadline_preserved")
+                        return deadline
+                self.extra_reasons.append(RELATIVE_UNRESOLVED_REASON)
+                self.note("model_date_unsupported_by_source")
+                return {"at": None, "date_only": False, "basis": "unknown"}
             if resolved.at.astimezone(self.tz).date() != local.date():
                 self.extra_reasons.append(DEADLINE_CORRECTED_REASON)
                 self.note("deadline_corrected_from_text")
