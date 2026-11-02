@@ -492,7 +492,7 @@ class _Normalizer:
                 self.note("deadline_corrected_from_text")
                 return {"at": resolved.at, "date_only": resolved.date_only, "basis": "explicit"}
             return deadline
-        if grounded and unresolved_basis not in UNRESOLVED_RELATIVE_BASES:
+        if grounded and unresolved_basis != "next_subject_lesson_reference":
             self.note("model_deadline_supported_by_evidence")
             return deadline
         if ordered and weekday_supports(
