@@ -458,13 +458,18 @@ def test_schedule_review_metadata_never_exposes_other_group_or_expired_sources(c
     assert client.get("/v1/staff/image-findings/schedule", headers=AUTH).json()["suggestions"] == []
 
 
-def test_full_week_image_proposes_anchored_recurring_template_without_live_write(client, monkeypatch):
+def test_full_week_image_proposes_anchored_recurring_template_without_live_write(
+    client, monkeypatch
+):
     from datetime import date
 
     from studgroup.schedule import week_kind
 
     suggestion = prepare(
-        client, monkeypatch, valid_from=None, valid_until=None,
+        client,
+        monkeypatch,
+        valid_from=None,
+        valid_until=None,
         schedule_interpretation={
             "coverage": "full_week",
             "duration": "recurring",
@@ -483,7 +488,10 @@ def test_full_week_image_proposes_anchored_recurring_template_without_live_write
 
 def test_one_week_exception_image_stays_date_limited_and_never_writes_live(client, monkeypatch):
     suggestion = prepare(
-        client, monkeypatch, valid_from=None, valid_until=None,
+        client,
+        monkeypatch,
+        valid_from=None,
+        valid_until=None,
         schedule_interpretation={
             "coverage": "full_week",
             "duration": "one_week",
