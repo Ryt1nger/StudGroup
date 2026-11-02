@@ -168,3 +168,9 @@ remain source records; upgraded B9 readings can incur new provider work if
 reprocessing is enabled. Roll out only under existing group allowlist and funded
 budgets, with a narrow source window and an explicit paid-run approval. No paid
 runs, production enablement or source-history backfill are authorized by this ADR.
+
+The frozen complex-vision regression uses archived same-image/same-pass successful
+responses when a prompt/schema version changes: it revalidates historical output
+against the current parser with **zero HTTP**. It explicitly does not claim that
+DeepSeek would produce identical output under the new prompt. Only a separately
+authorized paid test can measure B9's actual model quality.
