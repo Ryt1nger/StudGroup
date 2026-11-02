@@ -34,6 +34,10 @@ def apply_policy(proposal, messages, subject, context):
         (m.text, m.message_date) for m in messages if m.telegram_message_id in cited and m.text
     ]
     model = (proposal.deadline.at, proposal.deadline.date_only) if proposal.deadline.at else None
+    model_evidence = any(
+        any(path.split(".", 1)[0] == "deadline" for path in ref.fact_paths)
+        for ref in proposal.evidence
+    )
     if not sources:  # attachment-only evidence proves no date (spec section 5)
         decision = DeadlineDecision(None, False, "unknown", "no_text_source")
     else:
@@ -44,6 +48,7 @@ def apply_policy(proposal, messages, subject, context):
             subject=subject,
             schedule=context.schedule,
             model_deadline=model,
+            model_evidence=model_evidence,
             no_lesson_days=context.no_lesson_days,
         )
     request = headman_request(decision, proposal.semantic_kind)
