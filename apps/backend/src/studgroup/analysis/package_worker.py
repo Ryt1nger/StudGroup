@@ -28,6 +28,7 @@ from studgroup.ai_schedule import window
 from studgroup.analysis import duplicate_guard, photo_reading
 from studgroup.analysis.backfill import promote_run
 from studgroup.analysis.context import assemble_memory_context
+from studgroup.analysis.manual_dedupe import prompt_memory, recent_manual_cards
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
 from studgroup.analysis.package_run import DEFAULT_MAX_TARGETS, plan_packages
 from studgroup.analysis.shadow import (
@@ -862,6 +863,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
         row = await db.get(ShadowEvaluationRun, run_id)
         input_json, memory_json = row.input_json, row.memory_json
         existing_items = await _existing_items(db, row.group_id, now)
+        manual_cards = prompt_memory(await recent_manual_cards(db, row.group_id, now))
     failure = None
     result = None
     try:
@@ -884,6 +886,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
             memory,
             repair_enabled=getattr(settings, "ai_output_repair_enabled", False),
             existing_items=existing_items,
+            manual_cards=manual_cards,
             # an out-of-window reference in the advisory context must not lose a 24-message package
             lenient_context=True,
         )
