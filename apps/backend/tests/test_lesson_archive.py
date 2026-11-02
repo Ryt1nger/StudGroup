@@ -126,7 +126,7 @@ def test_homework_sql_archive_predicate_uses_subject_and_date_only(client, monke
             )
             assert completed == [("Математика", None)]
             before_query = select(Homework.id).where(
-                Homework.id == card_id, archived_condition(before, TZ, completed)
+                Homework.id == card_id, archived_condition(before, TZ, [])
             )
             after_query = select(Homework.id).where(
                 Homework.id == card_id, archived_condition(after, TZ, completed)
