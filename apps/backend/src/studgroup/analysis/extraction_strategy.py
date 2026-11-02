@@ -44,7 +44,9 @@ Step 2, decide the product category of each discovered item from its meaning in 
 - КТ / проверочные (proposals, destination deadline, semantic_kind test, control_point,
   assessment, credit or exam): any check of knowledge: control work, test, самостоятельная,
   quiz or knowledge-check опрос, зачёт, экзамен, КТ. A quiz or a самостоятельная is test or assessment, never
-  homework, even when preparation is needed. An опрос about students' preferences,\n  attendance or organizational feedback is NOT a test of knowledge; classify by\n  actual purpose, not the word опрос. other_academic_deadline is only for a dated academic
+  homework, even when preparation is needed. An опрос about students' preferences,
+  attendance or organizational feedback is NOT a test of knowledge; classify by
+  actual purpose, not the word опрос. other_academic_deadline is only for a dated academic
   obligation that is neither homework nor a check.
 - События (candidates, category event): study or extracurricular events, seminars, meetings,
   excursions, competitions and other occasions that concern the group. The product does not
@@ -54,8 +56,8 @@ Step 2, decide the product category of each discovered item from its meaning in 
   date) and reason (one short sentence: why this is an event and not homework or a check).
 - Organisational instructions (surveys for organizers, bring documents, register, pay, sign up,
   attend a meeting, a duty), even with a stated deadline, are organizational candidates
-  and not academic homework just because everyone must send something.
-  are not homework unless the students must prepare study work: candidates, category organizational.
+  and not academic homework just because everyone must send something. Such items are
+  candidates, category organizational; only preparation of study work is homework.
 - Other possibly useful information, or an item you cannot confidently categorise: candidates,
   category information or other, with a short `reason`; a doubtful homework or check may also be
   reported as a candidate with its category and the doubt in `reason`.
@@ -216,7 +218,11 @@ def _local_message(row, timezone):
 
 
 def prepare_extraction_request(
-    analysis_input: AnalysisInput, understood_context, existing_items=None, *, structured_memory=None
+    analysis_input: AnalysisInput,
+    understood_context,
+    existing_items=None,
+    *,
+    structured_memory=None,
 ):
     catalog, _why = usable_catalog(analysis_input.subject_catalog, analysis_input.group_id)
     extra = {} if catalog is None else {"subject_catalog": prompt_payload(catalog)}
