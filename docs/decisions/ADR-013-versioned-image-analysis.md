@@ -135,3 +135,36 @@ An optional acknowledgement plus full corrected rows and current expected schedu
 the existing authorized confirmation path to proceed. Without all three, the original stale-version
 guard is unchanged. Source validity and row/subject/subgroup/occurrence locks still apply. Both
 source and applied versions and acknowledgement are stored with the manual confirmation.
+
+
+## Timetable screenshots and week scope — 2026-11-02
+
+A full-week schedule screenshot is a reviewable timetable proposal, not homework or
+an extracurricular event. In existing vision pass B, DeepSeek classifies coverage
+(full week/partial), target calendar Monday, and applicability (recurring/one week/
+uncertain) against caption, replies and subsequent corrections. A plain statement
+"schedule for this week" identifies the target week and does **not** by itself
+mean a one-week exception. A clearly temporary message takes precedence; conflicting
+or unanchored context stays uncertain. Pixel transcriptions never absorb chat-only
+facts. The same two vision passes remain; no third AI classifier is added.
+
+The review-only normalizer converts a confidently dated recurring proposal into
+the group's `first`/`second` pattern using `first_week_anchor` (never ISO parity),
+beginning with the target week and ending at the existing timetable's recorded
+end-of-term boundary. A one-week exception ends that Sunday, or preserves an
+explicit one-day partial change. Missing/contradictory week start, official parity
+anchor, end-of-term horizon or duration leaves the editable suggestion unresolved.
+An explicit longer validity range is preserved. This code never writes official
+schedule patterns, cancels lessons, publishes results or changes existing cards.
+
+The current authorized image-schedule confirmation still requires a headman or
+deputy, an unchanged source, current version/revisions and explicit mapping of
+overlapping lessons. A pictured whole-week replacement does not implicitly
+delete lessons omitted from the picture; such deletions require an independently
+approved, audited editor workflow. The shadow/review gate remains off by default.
+
+The pass-B prompt/schema version advances from B8 to B9. Existing B8 snapshots
+remain source records; upgraded B9 readings can incur new provider work if
+reprocessing is enabled. Roll out only under existing group allowlist and funded
+budgets, with a narrow source window and an explicit paid-run approval. No paid
+runs, production enablement or source-history backfill are authorized by this ADR.
