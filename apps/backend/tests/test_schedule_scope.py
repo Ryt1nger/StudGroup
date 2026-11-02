@@ -1,6 +1,6 @@
 """No provider requests or production timetable writes are involved in these tests."""
 
-from datetime import date
+from datetime import date, timedelta
 
 from studgroup.analysis.image_contracts import ScheduleInterpretation, ScheduleRow, VisualReading
 from studgroup.analysis.schedule_scope import suggest_review_rows
@@ -31,7 +31,7 @@ def test_default_weekly_timetable_repeats_only_in_its_anchored_parity():
     assert result["week"] == week_kind(MONDAY, ANCHOR)
     assert result["valid_from"] == "2026-11-02"
     assert result["valid_until"] == "2027-01-31"
-    assert result["week"] != week_kind(MONDAY + __import__("datetime").timedelta(days=7), ANCHOR)
+    assert result["week"] != week_kind(MONDAY + timedelta(days=7), ANCHOR)
 
 
 def test_temporary_week_ends_that_sunday_and_never_changes_base_parity():
