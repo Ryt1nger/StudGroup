@@ -102,11 +102,17 @@ async def read_pass(provider, image, mime, pass_number, *, context, first=None):
     serialized = json.dumps(payload, ensure_ascii=False)
     if len(serialized.encode()) > 160000:
         raise ProviderFailure("image_context_too_large", False, reservation_releasable=True)
+    schema = VisualReading.model_json_schema()
+    if pass_number == 1:
+        # Freeze the existing A4 request schema: timetable scope is a B-only,
+        # chat-derived conclusion. Do not invalidate pixel-reading cache identity.
+        schema["properties"].pop("schedule_interpretation", None)
+        schema.get("$defs", {}).pop("ScheduleInterpretation", None)
     body = await provider.complete_vision(
         system_prompt=BASE_PROMPT
         + (PASS_A if pass_number == 1 else PASS_B)
         + "\nSchema:\n"
-        + json.dumps(VisualReading.model_json_schema(), ensure_ascii=False),
+        + json.dumps(schema, ensure_ascii=False),
         user_text=serialized,
         image_data_url=f"data:{mime};base64,{base64.b64encode(image).decode()}",
         max_output_tokens=6000,
