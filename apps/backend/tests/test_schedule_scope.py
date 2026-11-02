@@ -3,7 +3,11 @@
 import json
 from datetime import date, timedelta
 
-from studgroup.analysis.image_contracts import ScheduleInterpretation, ScheduleRow, VisualReading
+from studgroup.analysis.image_contracts import (
+    ScheduleInterpretation,
+    ScheduleRow,
+    VisualReading,
+)
 from studgroup.analysis.schedule_scope import suggest_review_rows
 from studgroup.schedule import week_kind
 
