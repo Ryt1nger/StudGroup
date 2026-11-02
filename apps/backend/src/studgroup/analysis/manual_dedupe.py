@@ -38,7 +38,9 @@ def possible_manual_match(manual, *, subject, title, description, deadline_at):
     normal = lambda value: " ".join(value.casefold().replace("ё", "е").split())
     if normal(subject) != normal(manual["subject"]):
         return False
-    left = Candidate("manual", manual["subject"], manual["title"], manual["description"] or "", frozenset())
+    left = Candidate(
+        "manual", manual["subject"], manual["title"], manual["description"] or "", frozenset()
+    )
     right = Candidate("model", subject, title, description or "", frozenset())
     shared = topic_tokens(left) & topic_tokens(right)
     if len(shared) < 2:
