@@ -70,9 +70,7 @@ def test_subgroups_and_missing_schedule_do_not_archive_wrong_cards(monkeypatch):
         }
 
     monkeypatch.setattr(lesson_archive, "schedule_data", schedule_data)
-    cutoffs = asyncio.run(
-        today_lesson_cutoffs(None, SimpleNamespace(timezone=TZ), stamp(11))
-    )
+    cutoffs = asyncio.run(today_lesson_cutoffs(None, SimpleNamespace(timezone=TZ), stamp(11)))
     assert lesson_cutoff("Иностранный язык", "subgroup-1", cutoffs) == stamp(11).astimezone(UTC)
     assert lesson_cutoff("Иностранный язык", "subgroup-2", cutoffs) is None
     assert lesson_cutoff("Иностранный язык", None, cutoffs) is None
@@ -81,9 +79,7 @@ def test_subgroups_and_missing_schedule_do_not_archive_wrong_cards(monkeypatch):
         return {"week_state": "unknown", "lessons": [lesson("Математика", 9, 10)]}
 
     monkeypatch.setattr(lesson_archive, "schedule_data", missing)
-    assert asyncio.run(
-        today_lesson_cutoffs(None, SimpleNamespace(timezone=TZ), stamp(14))
-    ) == {}
+    assert asyncio.run(today_lesson_cutoffs(None, SimpleNamespace(timezone=TZ), stamp(14))) == {}
 
 
 def test_date_only_academic_deadline_archives_at_lesson_end():
@@ -122,8 +118,12 @@ def test_homework_sql_archive_predicate_uses_subject_and_date_only(client, monke
             await db.flush()
             before = stamp(10, 59).astimezone(UTC)
             after = stamp(11).astimezone(UTC)
-            assert await completed_lesson_bindings(db, SimpleNamespace(id=item.group_id), before) == []
-            completed = await completed_lesson_bindings(db, SimpleNamespace(id=item.group_id), after)
+            assert (
+                await completed_lesson_bindings(db, SimpleNamespace(id=item.group_id), before) == []
+            )
+            completed = await completed_lesson_bindings(
+                db, SimpleNamespace(id=item.group_id), after
+            )
             assert completed == [("Математика", None)]
             before_query = select(Homework.id).where(
                 Homework.id == card_id, archived_condition(before, TZ, completed)
