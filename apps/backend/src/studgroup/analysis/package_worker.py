@@ -28,8 +28,8 @@ from studgroup.ai_schedule import window
 from studgroup.analysis import duplicate_guard, photo_reading
 from studgroup.analysis.backfill import promote_run
 from studgroup.analysis.context import assemble_memory_context
-from studgroup.analysis.manual_dedupe import prompt_memory, recent_manual_cards
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
+from studgroup.analysis.manual_dedupe import prompt_memory, recent_manual_cards
 from studgroup.analysis.package_run import DEFAULT_MAX_TARGETS, plan_packages
 from studgroup.analysis.shadow import (
     ShadowPassFailure,
