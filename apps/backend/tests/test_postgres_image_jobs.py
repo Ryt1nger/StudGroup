@@ -356,7 +356,9 @@ def test_event_lifecycle_deduplicates_concurrent_findings_and_retention_cascades
                     )
                     == 6
                 )
-                await purge_events(db, now + timedelta(days=2))
+                # Source evidence expires after one day, but the confirmed public
+                # event must retain its independent event-end archive lifetime.
+                assert await purge_events(db, now + timedelta(days=2)) == 0
                 await db.commit()
                 assert (
                     await db.scalar(
@@ -366,6 +368,18 @@ def test_event_lifecycle_deduplicates_concurrent_findings_and_retention_cascades
                     )
                     == 0
                 )
+                assert (
+                    await db.scalar(
+                        select(func.count())
+                        .select_from(GroupEventRevision)
+                        .where(GroupEventRevision.event_id == event_id)
+                    )
+                    == 6
+                )
+                expires = (await db.get(GroupEvent, event_id)).delete_at
+                assert await purge_events(db, expires) == 1
+                await db.commit()
+                assert await db.get(GroupEvent, event_id) is None
                 assert (
                     await db.scalar(
                         select(func.count())
