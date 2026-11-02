@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_homework import seed_card
 
-import studgroup.lesson_archive as lesson_archive
+from studgroup import lesson_archive
 from studgroup.academic_deadlines import archived as archived_deadline
 from studgroup.homework import archived_condition, completed_lesson_bindings
 from studgroup.lesson_archive import lesson_cutoff, lesson_day_archived, today_lesson_cutoffs
