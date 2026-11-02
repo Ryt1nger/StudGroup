@@ -950,6 +950,67 @@ def test_full_package_with_distant_semantic_deadline_keeps_model_decision():
     assert "deadline_not_in_source" not in item.attention_reasons
 
 
+def test_math_control_point_in_chat_and_photo_context_keeps_november_fifth():
+    # Regression for: announced "в след четверг", then task details and a
+    # photographed worksheet stating the calendar day. The model must not
+    # lose the date while connecting several pieces of one discussion.
+    data = AnalysisInput(
+        group_id=GROUP_ID,
+        group_timezone="Europe/Moscow",
+        source_revision=1,
+        target_message_ids=[9203],
+        messages=[
+            SourceMessage(
+                telegram_message_id=9201,
+                revision=1,
+                message_date=datetime(2026, 10, 29, 10, 49, tzinfo=MSK),
+                text="В след четверг еще одна КТ по пределам. Практика и теория.",
+            ),
+            SourceMessage(
+                telegram_message_id=9202,
+                revision=1,
+                message_date=datetime(2026, 10, 29, 10, 51, tzinfo=MSK),
+                text="5 заданий: 3 предела, 2 точки разрыва.",
+            ),
+            SourceMessage(
+                telegram_message_id=9203,
+                revision=1,
+                message_date=datetime(2026, 10, 29, 10, 51, tzinfo=MSK),
+                text="#матан. На фото задания к 5 ноября.",
+                reply_to_message_id=9201,
+            ),
+        ],
+    )
+    output = envelope(
+        [
+            {
+                "destination": "deadline",
+                "semantic_kind": "control_point",
+                "subject": "Математический анализ",
+                "title": "Контрольная точка по пределам",
+                "description": "Практическая и теоретическая части. Три предела и две точки разрыва.",
+                "deadline": {
+                    "at": "2026-11-05",
+                    "date_only": True,
+                    "basis": "explicit",
+                },
+                "confidence": 95,
+                "evidence": [
+                    {"telegram_message_id": 9201, "revision": 1, "fact_paths": ["title"]},
+                    {"telegram_message_id": 9202, "revision": 1, "fact_paths": ["description"]},
+                    {"telegram_message_id": 9203, "revision": 1, "fact_paths": ["deadline"]},
+                ],
+            }
+        ]
+    )
+    result = validate_extraction_adapted(output, data).result
+    assert len(result.accepted) == 1, result.rejected
+    card = result.accepted[0]
+    assert card.semantic_kind == "control_point"
+    assert card.deadline.at.astimezone(MSK).date().isoformat() == "2026-11-05"
+    assert card.deadline.date_only
+
+
 def test_extraction_pass_receives_compact_group_memory_alongside_full_packet():
     data = build_input(CASES[0])
     memory = [
