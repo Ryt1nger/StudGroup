@@ -178,7 +178,9 @@ def worst_case_call_usd(request):
 def estimate_package_usd(package, memory=None):
     """Upper bound for both passes: no cache, full output ceilings, pessimistic tokenizer."""
     first = prepare_context_request(package.analysis_input, memory or [])
-    second = prepare_extraction_request(package.analysis_input, {"relevant_source_ids": []})
+    second = prepare_extraction_request(
+        package.analysis_input, {"relevant_source_ids": []}, structured_memory=memory or []
+    )
     # Pass 2 also carries Pass 1's answer; allow for a full-size one.
     understood = Decimal(_PASS1_MAX_OUTPUT) * _MISS_USD_PER_TOKEN
     return worst_case_call_usd(first) + worst_case_call_usd(second) + understood
