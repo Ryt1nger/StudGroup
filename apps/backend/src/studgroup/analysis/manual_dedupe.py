@@ -6,6 +6,7 @@ new canonical create must be held for review BEFORE projection. We never
 silently merge, delete, or overwrite the headman's card.
 """
 
+import re
 from datetime import UTC, timedelta
 
 from sqlalchemy import select
@@ -18,6 +19,13 @@ MANUAL_WINDOW = timedelta(days=35)
 MAX_DUE_GAP = timedelta(days=2)
 TOPIC_OVERLAP_FLOOR = 0.18
 NO_DEADLINE_OVERLAP_FLOOR = 0.35
+_TASK_RANGE = re.compile(r"(?<!\\d)(\\d{1,3})\\s*[–—-]\\s*(\\d{1,3})(?!\\d)")
+
+
+def numbered_ranges(title):
+    return [set(range(min(int(a), int(b)), max(int(a), int(b)) + 1)) for a, b in _TASK_RANGE.findall(title)]
+
+
 
 
 def utc(value):
@@ -37,6 +45,11 @@ def possible_manual_match(manual, *, subject, title, description, deadline_at):
         return False
     normal = lambda value: " ".join(value.casefold().replace("ё", "е").split())
     if normal(subject) != normal(manual["subject"]):
+        return False
+    # "Tasks 1–3" and "tasks 4–6" are different homework despite identical
+    # generic vocabulary. Do not hold a genuinely new assignment as a duplicate.
+    old_ranges, new_ranges = numbered_ranges(manual["title"]), numbered_ranges(title)
+    if old_ranges and new_ranges and not any(a & b for a in old_ranges for b in new_ranges):
         return False
     left = Candidate(
         "manual", manual["subject"], manual["title"], manual["description"] or "", frozenset()
