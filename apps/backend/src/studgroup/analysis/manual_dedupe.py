@@ -19,12 +19,14 @@ MANUAL_WINDOW = timedelta(days=35)
 MAX_DUE_GAP = timedelta(days=2)
 TOPIC_OVERLAP_FLOOR = 0.18
 NO_DEADLINE_OVERLAP_FLOOR = 0.35
-_TASK_RANGE = re.compile(r"(?<!\\d)(\\d{1,3})\\s*[–—-]\\s*(\\d{1,3})(?!\\d)")
+_TASK_RANGE = re.compile(r"(?<!\d)(\d{1,3})\s*[–—-]\s*(\d{1,3})(?!\d)")
 
 
 def numbered_ranges(title):
-    return [set(range(min(int(a), int(b)), max(int(a), int(b)) + 1)) for a, b in _TASK_RANGE.findall(title)]
-
+    return [
+        set(range(min(int(a), int(b)), max(int(a), int(b)) + 1))
+        for a, b in _TASK_RANGE.findall(title)
+    ]
 
 
 
