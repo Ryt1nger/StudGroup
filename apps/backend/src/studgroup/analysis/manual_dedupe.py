@@ -6,7 +6,7 @@ new canonical create must be held for review BEFORE projection. We never
 silently merge, delete, or overwrite the headman's card.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, timedelta
 
 from sqlalchemy import select
 
