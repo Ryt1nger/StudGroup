@@ -45,7 +45,11 @@ def lesson_cutoff(subject, subgroup_id, cutoffs):
     """A whole-group occurrence covers the group; subgroup lessons cover only their subgroup."""
     name = normalized_subject(subject)
     subgroup = str(subgroup_id) if subgroup_id is not None else None
-    matches = [end for (name_, subgroup_), end in cutoffs.items() if name_ == name and (subgroup_ is None or subgroup_ == subgroup)]
+    matches = [
+        end
+        for (name_, subgroup_), end in cutoffs.items()
+        if name_ == name and (subgroup_ is None or subgroup_ == subgroup)
+    ]
     return max(matches) if matches else None
 
 
@@ -54,7 +58,7 @@ def lesson_day_archived(subject, subgroup_id, due_at, date_only, now, timezone, 
     if not date_only or due_at is None:
         return False
     zone = ZoneInfo(timezone)
-    due = (due_at.replace(tzinfo=UTC) if due_at.tzinfo is None else due_at)
+    due = due_at.replace(tzinfo=UTC) if due_at.tzinfo is None else due_at
     if due.astimezone(zone).date() != now.astimezone(zone).date():
         return False
     cutoff = lesson_cutoff(subject, subgroup_id, cutoffs)
