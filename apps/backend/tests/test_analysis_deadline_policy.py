@@ -96,11 +96,12 @@ def test_existing_ai_pass_resolves_unhandled_relative_day_before_clock_fallback(
         sources=[("Отправить до 17:00 следующего рабочего дня", friday)],
         timezone=TZ,
         model_deadline=(monday, False),
+        model_evidence=True,
     )
     assert (result.at, result.basis, result.reason) == (
         monday,
         "relative_resolved",
-        "model_supported_relative_day",
+        "model_cited_source",
     )
 
 
