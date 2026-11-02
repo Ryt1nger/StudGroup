@@ -842,7 +842,7 @@ def test_existing_ai_extraction_keeps_supported_relative_date_without_extra_mode
     assert len(validation.accepted) == 1, validation.rejected
     proposed = validation.accepted[0]
     assert proposed.deadline.at.astimezone(MSK).isoformat() == "2026-11-02T17:00:00+03:00"
-    assert validation.adapter_actions["model_relative_deadline_preserved"] == 1
+    assert validation.adapter_actions["model_deadline_supported_by_evidence"] == 1
 
 
 def test_existing_ai_extraction_clears_unsupported_relative_day():
@@ -878,7 +878,7 @@ def test_existing_ai_extraction_clears_unsupported_relative_day():
                     {
                         "telegram_message_id": 9902,
                         "revision": 1,
-                        "fact_paths": ["title", "description", "deadline"],
+                        "fact_paths": ["title", "description"],
                     }
                 ],
             }
@@ -890,6 +890,86 @@ def test_existing_ai_extraction_clears_unsupported_relative_day():
     assert proposed.deadline.at is None
     assert proposed.deadline.basis == "unknown"
     assert "relative_deadline_unresolved" in proposed.attention_reasons
+
+
+def test_full_package_with_distant_semantic_deadline_keeps_model_decision():
+    # A whole package: task, unrelated chat, then a later clarification in slang.
+    # The date is grounded in the later cited message, not the message next to the task.
+    data = AnalysisInput(
+        group_id=GROUP_ID,
+        group_timezone="Europe/Moscow",
+        source_revision=1,
+        target_message_ids=[9103],
+        messages=[
+            SourceMessage(
+                telegram_message_id=9101,
+                revision=1,
+                message_date=datetime(2026, 10, 30, 16, 0, tzinfo=MSK),
+                text="Физика: доделать лабораторную работу по оптике и прислать отчёт",
+            ),
+            SourceMessage(
+                telegram_message_id=9102,
+                revision=1,
+                message_date=datetime(2026, 10, 30, 19, 0, tzinfo=MSK),
+                text="Кстати, завтра тренировка, кто пойдёт?",
+            ),
+            SourceMessage(
+                telegram_message_id=9103,
+                revision=1,
+                message_date=datetime(2026, 10, 30, 22, 29, tzinfo=MSK),
+                text="По лабе: закинуть отчёт к пяти вечера следующего рабочего дня",
+                reply_to_message_id=9101,
+            ),
+        ],
+    )
+    content = envelope(
+        [
+            {
+                "destination": "task",
+                "semantic_kind": "homework",
+                "subject": "Физика",
+                "title": "Доделать лабораторную по оптике",
+                "description": "Доделать лабораторную работу по оптике и прислать отчёт.",
+                "deadline": {
+                    "at": "2026-11-02T17:00:00+03:00",
+                    "date_only": False,
+                    "basis": "explicit",
+                },
+                "confidence": 95,
+                "evidence": [
+                    {"telegram_message_id": 9101, "revision": 1, "fact_paths": ["description"]},
+                    {"telegram_message_id": 9103, "revision": 1, "fact_paths": ["deadline"]},
+                ],
+            }
+        ]
+    )
+    result = validate_extraction_adapted(content, data).result
+    assert len(result.accepted) == 1, result.rejected
+    item = result.accepted[0]
+    assert item.deadline.at.astimezone(MSK).isoformat() == "2026-11-02T17:00:00+03:00"
+    assert "deadline_not_in_source" not in item.attention_reasons
+
+
+def test_extraction_pass_receives_compact_group_memory_alongside_full_packet():
+    data = build_input(CASES[0])
+    memory = [
+        {
+            "fact_type": "subject_alias",
+            "key": "физра",
+            "value": {"alias": "физра", "subject": "Физическая культура"},
+            "status": "verified",
+            "revision": 2,
+        }
+    ]
+    request = prepare_extraction_request(
+        data,
+        {"relevant_source_ids": []},
+        structured_memory=memory,
+    )
+    assert request.user_payload["messages"]
+    assert request.user_payload["structured_memory"] == memory
+    assert "evidence.fact_paths" in request.system_prompt
+    assert "PACKET-WIDE" in request.system_prompt
 
 
 def test_written_dates_still_win_over_the_new_origin_check():
