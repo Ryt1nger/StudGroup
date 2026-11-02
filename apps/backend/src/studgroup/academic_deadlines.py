@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from studgroup import subgroups
 from studgroup.api import ApiError, active_group, database, edit_permissions
 from studgroup.models import AcademicDeadline, Group, WebSession
+from studgroup.lesson_archive import lesson_day_archived, today_lesson_cutoffs
 from studgroup.security import token_hash
 from studgroup.student_cards import enrich_deadline
 
@@ -23,11 +24,21 @@ def utc(value):
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def archived(row, now, timezone):
+def archived(row, now, timezone, lesson_cutoffs=None):
     if row.cancelled_at:
         return True
     if row.deadline_at:
         at = utc(row.deadline_at)
+        if lesson_cutoffs and lesson_day_archived(
+            row.subject,
+            row.subgroup_id,
+            at,
+            row.date_only,
+            now,
+            timezone,
+            lesson_cutoffs,
+        ):
+            return True
         return (
             at.astimezone(ZoneInfo(timezone)).date() < now.astimezone(ZoneInfo(timezone)).date()
             if row.date_only
@@ -66,6 +77,7 @@ async def representation(db, group, row, now):
 
 
 async def items(db, group, now, archive=False, subject=None, review=False, hidden=frozenset()):
+    cutoffs = await today_lesson_cutoffs(db, group, now)
     rows = (
         await db.scalars(
             select(AcademicDeadline).where(
@@ -81,7 +93,7 @@ async def items(db, group, now, archive=False, subject=None, review=False, hidde
     selected = [
         row
         for row in rows
-        if archived(row, now, group.timezone) == archive
+        if archived(row, now, group.timezone, cutoffs) == archive
         and row.subgroup_id not in hidden
         and (not review or row.needs_clarification)
         and (subject is None or normalized(row.subject) == normalized(subject))
@@ -102,6 +114,7 @@ async def items(db, group, now, archive=False, subject=None, review=False, hidde
 
 
 async def review_count(db, group, now):
+    cutoffs = await today_lesson_cutoffs(db, group, now)
     """Active events an editor still has to settle (no representation work needed)."""
     rows = await db.scalars(
         select(AcademicDeadline).where(
@@ -110,7 +123,7 @@ async def review_count(db, group, now):
             AcademicDeadline.needs_clarification.is_(True),
         )
     )
-    return sum(1 for row in rows if not archived(row, now, group.timezone))
+    return sum(1 for row in rows if not archived(row, now, group.timezone, cutoffs))
 
 
 @router.get("/deadlines")
