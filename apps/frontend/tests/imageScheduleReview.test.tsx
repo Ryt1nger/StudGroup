@@ -1,6 +1,6 @@
 import { client, type ConfirmImageScheduleSuggestionData, type ScheduleSuggestion } from '@studgroup/shared-types';
 import { cabinetScheduleUrl } from '../src/features/schedule/cabinetScheduleApi';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { expect, it } from 'vitest';
@@ -295,7 +295,9 @@ it('keeps upload messaging simple when AI funding is unavailable', async () => {
     screen.getByLabelText(/Скриншот \(PNG/),
     new File(['test'], 'schedule.png', { type: 'image/png' }),
   );
-  await userEvent.click(screen.getByRole('button', { name: 'Распознать и проверить' }));
+  // JSDOM's native file-form constraint handling can block userEvent.click.
+  // Submit the form to test the actual mutation and its error presentation.
+  fireEvent.submit(form);
   await waitFor(() => expect(attempts).toBe(1));
   expect(await screen.findByRole('alert')).toHaveTextContent('Распознавание сейчас недоступно');
   expect(form).not.toHaveTextContent('Платный анализ не настроен');
