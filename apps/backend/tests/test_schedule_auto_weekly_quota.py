@@ -6,7 +6,7 @@ No provider requests, scheduling worker, or production timetable changes are use
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 from test_staff_api import db_run
 
 from studgroup.models import Group, ScheduleChange
