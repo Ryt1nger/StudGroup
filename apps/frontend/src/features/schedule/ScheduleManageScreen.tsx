@@ -132,7 +132,7 @@ function LessonEditor({
       </label></div>
       <label className="manage-check">
         <input type="checkbox" checked={cancelled} onChange={(event) => setCancelled(event.target.checked)} />
-        Отменить эту пару
+        Отменить занятия в выбранной области
       </label>
       <p className="manage-subtle">
         {scope === 'once'
@@ -273,7 +273,7 @@ export function ScheduleManageScreen() {
               <Ic name="chev" size={17} />
             </Link>
           </div>
-          <div className="block">
+          <div className="block manage-week-block">
             <h2>Действующее расписание</h2>
             <div className="manage-toolbar">
               <button type="button" aria-label="Предыдущая неделя" onClick={() => moveWeek(-1)}>
