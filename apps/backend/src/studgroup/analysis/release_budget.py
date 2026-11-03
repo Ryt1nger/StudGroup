@@ -188,11 +188,16 @@ class RequestAccounting:
                             # Double the soft daily/hourly caps for manual cabinet
                             # timetable scans only. Never bypass the funded release
                             # ceiling, holds, or per-request accounting.
-                            cabinet_multiplier = Decimal(2) if self.kind == "cabinet_image" else Decimal(1)
-                            hourly_cap = min(
-                                Decimal(str(self.settings.image_hourly_budget_usd)),
-                                Decimal(str(self.settings.new_engine_hourly_budget_usd)),
-                            ) * cabinet_multiplier
+                            cabinet_multiplier = (
+                                Decimal(2) if self.kind == "cabinet_image" else Decimal(1)
+                            )
+                            hourly_cap = (
+                                min(
+                                    Decimal(str(self.settings.image_hourly_budget_usd)),
+                                    Decimal(str(self.settings.new_engine_hourly_budget_usd)),
+                                )
+                                * cabinet_multiplier
+                            )
                             if await spent(db, self.group_id) + ceiling > route.release_budget_usd:
                                 reason = "release_budget_exhausted"
                             elif (
