@@ -261,3 +261,43 @@ it('shows an empty explanation for staff with no drafts when Telegram review is 
   renderApp({ route: '/schedule/review' });
   expect(await screen.findByText('Пока нет черновиков')).toBeInTheDocument();
 });
+
+
+it('keeps upload messaging simple when AI funding is unavailable', async () => {
+  loadScenario();
+  let attempts = 0;
+  server.use(
+    http.post(`${API}/session/bootstrap`, () =>
+      HttpResponse.json(sessionAt(exampleSession, Date.now(), (session) => ({
+        ...session,
+        features: { schedule_review: false },
+        membership: session.membership ? { ...session.membership, role: 'headman' } : null,
+        permissions: [...new Set([...session.permissions, 'schedule.write' as const])],
+      }))),
+    ),
+    http.get(`${API}/staff/schedule-upload`, () =>
+      HttpResponse.json({ current_schedule_version: 0, subgroups: [], suggestions: [] })),
+    http.post(`${API}/staff/schedule-upload`, () => {
+      attempts += 1;
+      return HttpResponse.json({
+        error: {
+          code: 'analysis_budget_closed',
+          message: 'Платный анализ не настроен. Требуется ранее подтверждённый лимит расходов.',
+        },
+      }, { status: 409 });
+    }),
+  );
+  renderApp({ route: '/schedule/review' });
+  const form = await screen.findByRole('form', { name: 'Загрузка скриншота расписания' });
+  expect(form).toHaveTextContent('Загрузите скриншот и проверьте распознанные пары перед сохранением.');
+  expect(form).not.toHaveTextContent('два платных запроса');
+  await userEvent.upload(
+    screen.getByLabelText(/Скриншот \(PNG/),
+    new File(['test'], 'schedule.png', { type: 'image/png' }),
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'Распознать и проверить' }));
+  await waitFor(() => expect(attempts).toBe(1));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Распознавание сейчас недоступно');
+  expect(form).not.toHaveTextContent('Платный анализ не настроен');
+  expect(screen.getByRole('button', { name: 'Распознать и проверить' })).toBeEnabled();
+});
