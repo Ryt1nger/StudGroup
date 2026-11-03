@@ -173,13 +173,22 @@ export function ScheduleScreen() {
   return (
     <>
       <div className="pinned">
-        <SectionTop title="Расписание" />
+        <SectionTop
+          title="Расписание"
+          titleAction={
+            state.status === 'ready' && state.session.permissions.includes('schedule.write') ? (
+              <Link
+                className="schedule-edit-link"
+                to="/schedule/manage"
+                aria-label="Управление расписанием"
+                title="Управление расписанием"
+              >
+                <Ic name="edit" size={18} />
+              </Link>
+            ) : undefined
+          }
+        />
         <h1 className="sr">{ru.nav.schedule}</h1>
-        {state.status === 'ready' && state.session.permissions.includes('schedule.write') ? (
-          <Link className="pillb" to="/schedule/review">Добавить расписание по скриншоту</Link>
-        ) : features.schedule_review ? (
-          <Link className="pillb" to="/schedule/review">Проверить распознанное расписание</Link>
-        ) : null}
         <div className="datel">{label}</div>
         <WeekStrip days={days} selected={selected} marked={marked} onSelect={(i) => { setSelectedKey(days[i]!); anchored.current = ''; }} onWeekChange={(direction) => {
           const next = addDays(days[0]!, direction * 7);
