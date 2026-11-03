@@ -13,7 +13,10 @@ from studgroup.security import token_hash
 
 @pytest.fixture
 def client(tmp_path):
-    settings = Settings(database_url=f"sqlite+aiosqlite:///{tmp_path}/test.db")
+    settings = Settings(
+        database_url=f"sqlite+aiosqlite:///{tmp_path}/test.db",
+        cabinet_schedule_background_enabled=False,
+    )
     app = create_app(settings)
     with TestClient(app) as http:
 

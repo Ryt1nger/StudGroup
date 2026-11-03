@@ -8,7 +8,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { detailQueryOptions } from '../../api/cachePolicy';
 import { apiAuthorization } from '../../api/client';
 
-export type CabinetSuggestion = ScheduleSuggestion & {
+export type CabinetSuggestion = Omit<ScheduleSuggestion, 'state'> & {
+  state: 'queued' | 'processing' | 'pending' | 'confirmed' | 'failed';
+  progress_percent: number;
+  progress_stage: string;
+  can_retry: boolean;
   week_start: string;
   duration: 'one_week' | 'recurring';
 };
@@ -62,6 +66,12 @@ export function useCabinetScheduleReview(enabled: boolean) {
     queryFn: async (): Promise<CabinetList> =>
       (await authorized('/v1/staff/schedule-upload')).json() as Promise<CabinetList>,
     enabled,
+    // Only poll when there is an active server-side job. After closing Telegram,
+    // reopening the page fetches the same persisted status from the database.
+    refetchInterval: (query) =>
+      query.state.data?.suggestions.some(
+        (item) => item.state === 'queued' || item.state === 'processing',
+      ) ? 3000 : false,
   });
 }
 
@@ -95,6 +105,18 @@ export function useCabinetImage(id: string | null) {
     enabled: !!id,
     staleTime: 0,
     gcTime: 60_000,
+  });
+}
+
+export function useRetryCabinetUpload(id: string) {
+  const queries = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<CabinetSuggestion> =>
+      (await authorized(`/v1/staff/schedule-upload/${id}/retry`, { method: 'POST' }))
+        .json() as Promise<CabinetSuggestion>,
+    onSuccess: async () => {
+      await queries.invalidateQueries({ queryKey: ['cabinet-schedule-review'] });
+    },
   });
 }
 

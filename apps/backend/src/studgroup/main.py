@@ -102,6 +102,9 @@ class Settings(BaseSettings):
     # Paid structural repair of rejected C+ proposals; off until separately approved.
     ai_output_repair_enabled: bool = False
     ai_schedule_timezone: str = "Europe/Moscow"
+    # The production Render web service has no Celery worker. Manual screenshot
+    # drafts need their own durable embedded consumer, irrespective of text AI mode.
+    cabinet_schedule_background_enabled: bool = True
     processing_mode: Literal["external", "embedded"] = "external"
     ai_loop_pause_seconds: float = Field(default=4, ge=0, le=60)
     owner_telegram_user_id: int | None = None
@@ -305,6 +308,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             processor = asyncio.create_task(processing_loop(app.state.engine, settings))
         app.state.processor = processor
+        cabinet_processor = None
+        if settings.cabinet_schedule_background_enabled:
+            from studgroup.cabinet_schedule_worker import processing_loop as cabinet_loop
+
+            cabinet_processor = asyncio.create_task(cabinet_loop(app.state.engine, settings))
+        app.state.cabinet_processor = cabinet_processor
         delivery = None
         if settings.bot_admin_user_id is not None or settings.owner_update_notifications_enabled:
             from studgroup.bot_admin import delivery_loop
@@ -317,6 +326,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 delivery.cancel()
                 with suppress(asyncio.CancelledError):
                     await delivery
+            if cabinet_processor is not None:
+                cabinet_processor.cancel()
+                with suppress(asyncio.CancelledError):
+                    await cabinet_processor
             if processor is not None:
                 processor.cancel()
                 with suppress(asyncio.CancelledError):

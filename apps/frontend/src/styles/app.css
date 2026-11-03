@@ -696,3 +696,16 @@ a.pcard:active { transform: scale(.98); }
 .manage-lesson button:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
 .manage-form > strong { display: block; font-size: 16px; }
 .manage-week-block > h2 { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+
+/* Durable screenshot analysis: stage percentages, not fabricated time estimates. */
+.cabinet-progress { padding: 18px; }
+.cabinet-progress-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.cabinet-progress-heading strong { font-size: 17px; }
+.cabinet-progress-heading b { font-size: 23px; font-variant-numeric: tabular-nums; color: var(--accent-text); }
+.cabinet-progress-track { width: 100%; height: 9px; overflow: hidden; border-radius: 100px; background: var(--fill-2); }
+.cabinet-progress-fill { height: 100%; border-radius: 100px; background: var(--accent-text); transition: width .35s ease; }
+.cabinet-progress p { color: var(--label-2); font-size: 14px; line-height: 1.45; margin: 12px 0 0; }
+.cabinet-progress .btn { margin-top: 14px; }
+@media (prefers-reduced-motion: reduce) {
+  .cabinet-progress-fill { transition: none; }
+}

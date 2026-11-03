@@ -1,4 +1,5 @@
 import type { ConfirmedScheduleRow, ReviewSubgroup, ScheduleSuggestion } from '@studgroup/shared-types';
+import type { CabinetSuggestion } from './cabinetScheduleApi';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -18,6 +19,7 @@ import {
   useCabinetScheduleReview,
   useCabinetUpload,
   useConfirmCabinetSchedule,
+  useRetryCabinetUpload,
 } from './cabinetScheduleApi';
 import { useEventCapabilities } from '../events/api';
 import { useConfirmImageSchedule, useImageScheduleReview, useReviewScheduleWeek } from './imageReviewApi';
@@ -33,15 +35,17 @@ export function ImageScheduleReviewScreen() {
   const [params, setParams] = useSearchParams();
   const [reload, setReload] = useState(0);
   const items = [
-    ...(cabinet.data?.suggestions ?? []).filter((item) => item.state === 'pending' || item.state === 'confirmed')
-      .map((item) => ({ ...item, cabinet: true })),
+    ...(cabinet.data?.suggestions ?? []).map((item) => ({ ...item, cabinet: true })),
     ...(query.data?.suggestions ?? []).map((item) => ({ ...item, cabinet: false })),
   ];
   const selected =
     items.find((item) => item.id === params.get('suggestion')) ??
     items.find((item) => item.state === 'pending') ??
     items[0];
-  const image = useCabinetImage(selected?.cabinet ? selected.id : null);
+  const image = useCabinetImage(
+    selected?.cabinet && (selected.state === 'pending' || selected.state === 'confirmed')
+      ? selected.id : null,
+  );
 
   return (
     <>
@@ -82,18 +86,25 @@ export function ImageScheduleReviewScreen() {
                 >
                   {items.map((item, index) => (
                     <option key={item.id} value={item.id}>
-                      {item.state === 'confirmed' ? 'Подтверждено' : 'Ожидает проверки'} · {index + 1}
+                      {item.state === 'confirmed' ? 'Подтверждено' :
+                         item.state === 'failed' ? 'Ошибка' :
+                         item.state === 'queued' || item.state === 'processing' ? 'Распознаётся' :
+                         'Ожидает проверки'} · {index + 1}
                     </option>
                   ))}
                 </select>
               </label>
             </div>
           ) : null}
-          {selected ? (
+          {selected?.cabinet && (
+            selected.state === 'queued' || selected.state === 'processing' || selected.state === 'failed'
+          ) ? (
+            <CabinetProgress suggestion={selected} />
+          ) : null}
+          {selected && (selected.state === 'pending' || selected.state === 'confirmed') ? (
             <ScheduleReviewForm
               key={`${selected.id}:${reload}`}
-
-              suggestion={selected}
+              suggestion={selected as ScheduleSuggestion}
               cabinet={selected.cabinet}
               sourceBlob={selected.cabinet ? (image.data ?? null) : null}
               currentVersion={cabinet.data?.current_schedule_version ?? query.data?.current_schedule_version ?? selected.schedule_version}
@@ -107,6 +118,54 @@ export function ImageScheduleReviewScreen() {
         </>
       )}
     </>
+  );
+}
+
+const PROGRESS_LABELS: Record<string, string> = {
+  queued_a: 'Скриншот в очереди',
+  reading_a: 'Читаем текст и таблицу',
+  queued_b: 'Текст получен, готовимся проверить расписание',
+  reading_b: 'Проверяем пары и даты',
+  preparing: 'Собираем черновик',
+  failed: 'Не удалось завершить распознавание',
+};
+
+function CabinetProgress({ suggestion }: {
+  suggestion: CabinetSuggestion;
+}) {
+  const retry = useRetryCabinetUpload(suggestion.id);
+  const failed = suggestion.state === 'failed';
+  const progress = Math.min(100, Math.max(0, suggestion.progress_percent));
+  return (
+    <section className="block cabinet-progress" aria-label="Прогресс распознавания">
+      <div className="cabinet-progress-heading">
+        <strong>{failed ? 'Обработка остановлена' : 'Распознаём расписание'}</strong>
+        <b>{progress}%</b>
+      </div>
+      <div className="cabinet-progress-track" role="progressbar"
+        aria-label="Готовность распознавания"
+        aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+        <div className="cabinet-progress-fill" style={{ width: `${progress}%` }} />
+      </div>
+      <p role="status" aria-live="polite">
+        {PROGRESS_LABELS[suggestion.progress_stage] ?? 'Подготавливаем расписание'}
+      </p>
+      {failed ? (
+        <>
+          <p>Исходный скриншот сохранён. Можно попробовать ещё раз, если доступен лимит распознавания.</p>
+          {suggestion.can_retry ? (
+            <button className="btn" type="button" disabled={retry.isPending}
+              onClick={() => retry.mutate()}>
+              {retry.isPending ? 'Повторяем…' : 'Повторить распознавание'}
+            </button>
+          ) : null}
+          {retry.isError ? <RequestError error={retry.error} /> : null}
+        </>
+      ) : (
+        <p>Можно закрыть приложение. Результат сохранится здесь и появится автоматически,
+          когда обработка закончится.</p>
+      )}
+    </section>
   );
 }
 
@@ -163,7 +222,7 @@ function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise
       </label></div>
       {upload.isError ? <p role="alert">{upload.error.message}</p> : null}
       <button className="btn on" type="submit" disabled={!file || upload.isPending}>
-        {upload.isPending ? 'Распознаём…' : 'Распознать и проверить'}
+        {upload.isPending ? 'Отправляем скриншот…' : 'Распознать и проверить'}
       </button>
     </form>
   );
