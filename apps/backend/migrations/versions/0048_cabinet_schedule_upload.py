@@ -18,6 +18,8 @@ def upgrade():
         ),
         sa.Column("created_by", sa.Uuid(), sa.ForeignKey("users.id", ondelete="SET NULL")),
         sa.Column("schedule_version", sa.Integer(), nullable=False),
+        sa.Column("week_start", sa.Date(), nullable=False),
+        sa.Column("duration", sa.String(16), nullable=False),
         sa.Column("rows_json", sa.Text(), nullable=False),
         sa.Column("image_bytes", sa.LargeBinary(), nullable=False),
         sa.Column("image_mime", sa.String(32), nullable=False),
