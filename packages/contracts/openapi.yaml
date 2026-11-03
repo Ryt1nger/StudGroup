@@ -2743,6 +2743,8 @@ components:
           description: once changes this occurrence; recurring changes the rule for every week it applies to.
         pattern_revision: { type: integer }
         override_revision: { type: integer }
+        subject: { type: string, minLength: 1, maxLength: 255 }
+        teacher: { type: [string, "null"], maxLength: 255 }
         starts_at: { type: string, format: date-time }
         ends_at: { type: string, format: date-time }
         location: { type: [string, "null"], maxLength: 512 }

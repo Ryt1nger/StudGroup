@@ -97,7 +97,7 @@ it('corrects rows, maps a subgroup and an existing occurrence, then confirms onc
   await userEvent.selectOptions(screen.getByLabelText('Заменить существующую пару'), lesson.id);
   await userEvent.selectOptions(screen.getByLabelText('Область изменения'), 'recurring');
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
-  await waitFor(() => expect(app.router.state.location.pathname).toBe('/schedule'));
+  await waitFor(() => expect(app.router.state.location.pathname).toBe('/schedule/manage'));
   expect(requests).toHaveLength(1);
   expect(requests[0]).toMatchObject({
     expected_revision: 1,

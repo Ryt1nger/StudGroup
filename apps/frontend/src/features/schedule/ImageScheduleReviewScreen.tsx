@@ -45,8 +45,8 @@ export function ImageScheduleReviewScreen() {
 
   return (
     <>
-      <BackTop fallback="/schedule" />
-      <h1 className="ptitle">Проверка расписания</h1>
+      <BackTop fallback="/schedule/manage" />
+      <h1 className="ptitle">Загрузка расписания</h1>
       {!editor ? (
         <StateView
           icon="lock"
@@ -290,7 +290,10 @@ function ScheduleReviewForm({
       },
       {
         onSuccess: () => {
-          void navigate('/schedule', { replace: true });
+          // Return to the manager without leaving duplicate manager entries in browser history.
+          const historyIndex = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+          if (historyIndex > 0) void navigate(-1);
+          else void navigate('/schedule/manage', { replace: true });
         },
       },
     );

@@ -604,6 +604,8 @@ export type LessonChangeRequest = {
     scope: 'once' | 'recurring';
     pattern_revision: number;
     override_revision: number;
+    subject?: string;
+    teacher?: string | null;
     starts_at?: string;
     ends_at?: string;
     location?: string | null;

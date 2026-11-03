@@ -157,6 +157,8 @@ class LessonChange(BaseModel):
     scope: Literal["once", "recurring"]
     pattern_revision: int
     override_revision: int
+    subject: str | None = Field(None, min_length=1, max_length=255)
+    teacher: str | None = Field(None, max_length=255)
     starts_at: AwareDatetime | None = None
     ends_at: AwareDatetime | None = None
     location: str | None = Field(None, max_length=512)
@@ -168,9 +170,21 @@ class LessonChange(BaseModel):
 async def change_lesson(lesson_id: str, body: LessonChange, context: CurrentStaff, db: Db):
     patch = {
         field: getattr(body, field)
-        for field in ("starts_at", "ends_at", "location", "online_url", "cancelled")
+        for field in (
+            "subject",
+            "teacher",
+            "starts_at",
+            "ends_at",
+            "location",
+            "online_url",
+            "cancelled",
+        )
         if field in body.model_fields_set
     }
+    if "subject" in patch:
+        patch["subject"] = (patch["subject"] or "").strip()
+        if not patch["subject"]:
+            raise ApiError("invalid_request", "Название предмета не может быть пустым", 422)
     if ("starts_at" in patch) != ("ends_at" in patch):
         raise ApiError("invalid_request", "Укажите и начало, и конец пары", 422)
     if None in (patch.get("starts_at", 0), patch.get("ends_at", 0), patch.get("cancelled", 0)):

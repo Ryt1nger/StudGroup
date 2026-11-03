@@ -131,6 +131,7 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
               ...session,
               features: { schedule_review: true },
               membership: session.membership ? { ...session.membership, role: 'headman' } : null,
+              permissions: [...new Set([...session.permissions, 'schedule.write' as const])],
             } : scenario === 'events' ? {
               ...session,
               features: { events: true, event_review: true, schedule_review: false },
