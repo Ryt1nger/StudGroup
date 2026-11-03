@@ -93,6 +93,31 @@ def get_draft(client, ident):
     return next(x for x in response.json()["suggestions"] if x["id"] == ident)
 
 
+def test_old_cabinet_uploads_are_deleted_without_touching_new_tasks(client):
+    from datetime import UTC
+
+    make(client, "headman")
+    authorize_analysis(client)
+    submitted = upload(client, week(), picture()).json()
+
+    async def age_one(db):
+        row = await db.get(CabinetScheduleUpload, uuid.UUID(submitted["id"]))
+        row.created_at = datetime(2026, 11, 3, 14, 0, tzinfo=UTC)
+
+    db_run(client, age_one)
+    listed = client.get("/v1/staff/schedule-upload", headers=AUTH)
+    assert listed.status_code == 200
+    assert listed.json()["suggestions"] == []
+    assert (
+        client.get(f"/v1/staff/schedule-upload/{submitted['id']}/image", headers=AUTH).status_code
+        == 404
+    )
+
+    newer = upload(client, week(), picture()).json()
+    assert newer["id"] != submitted["id"]
+    assert get_draft(client, newer["id"])["state"] == "queued"
+
+
 def test_only_staff_may_upload_or_view_private_schedule_source(client):
     today = week()
     response = upload(client, today, picture())
