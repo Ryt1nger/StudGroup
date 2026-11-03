@@ -142,13 +142,15 @@ def test_vision_draft_requires_explicit_confirmation_and_deduplicates(client, mo
             "expected_revision": 1,
             "expected_schedule_version": 0,
             "corrected_rows": suggestion["rows"],
-            "targets": [{
-                "row_index": 0,
-                "lesson_id": before["lesson_id"],
-                "pattern_revision": before["pattern_revision"],
-                "override_revision": before["override_revision"],
-                "scope": "once",
-            }],
+            "targets": [
+                {
+                    "row_index": 0,
+                    "lesson_id": before["lesson_id"],
+                    "pattern_revision": before["pattern_revision"],
+                    "override_revision": before["override_revision"],
+                    "scope": "once",
+                }
+            ],
         },
     )
     assert confirmed.status_code == 200, confirmed.text
