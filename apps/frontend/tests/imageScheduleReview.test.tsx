@@ -289,7 +289,7 @@ it('keeps upload messaging simple when AI funding is unavailable', async () => {
   );
   renderApp({ route: '/schedule/review' });
   const form = await screen.findByRole('form', { name: 'Загрузка скриншота расписания' });
-  expect(form).toHaveTextContent('Загрузите скриншот и проверьте распознанные пары перед сохранением.');
+  expect(form).toHaveTextContent('Загрузить расписание');
   expect(form).not.toHaveTextContent('два платных запроса');
   await userEvent.upload(
     screen.getByLabelText(/Скриншот расписания/),
