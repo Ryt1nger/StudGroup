@@ -1134,6 +1134,11 @@ class ImageScheduleSuggestion(Base):
     rows_json: Mapped[str] = mapped_column(Text)
     confirmation_json: Mapped[str | None] = mapped_column(Text)
     state: Mapped[str] = mapped_column(String(24), default="pending")
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    progress_stage: Mapped[str] = mapped_column(String(32), default="legacy", server_default="legacy")
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    first_pass_json: Mapped[str | None] = mapped_column(Text)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     revision: Mapped[int] = mapped_column(Integer, default=1)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
