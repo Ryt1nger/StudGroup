@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_staff_api import db_run
 
-from studgroup.analysis.release_budget import provider_for
+from studgroup.analysis.release_budget import provider_for, utc
 from studgroup.cabinet_vision_budget_bootstrap import APPROVAL_DIGEST, apply
 from studgroup.models import AnalysisBudgetCall, Group, GroupAnalysisSettings
 
@@ -62,7 +62,7 @@ def test_five_cent_manual_vision_approval_is_immutable_and_does_not_enable_group
     assert budget(client, since=since, until=until, now=now)["state"] == "configured"
     with pytest.raises(ValueError, match="release_budget_cannot_reset"):
         budget(client, since=since, until=until + timedelta(hours=1), now=now)
-    assert route(client).release_budget_until == until
+    assert utc(route(client).release_budget_until) == until
 
 
 def test_operator_approval_rejects_other_groups_bad_receipts_and_expired_windows(client):
