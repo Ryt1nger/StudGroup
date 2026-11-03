@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import os
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
@@ -30,7 +31,20 @@ RETENTION = timedelta(days=7)
 MAX_PIXELS = 20_000_000
 
 
-def metadata(row):
+def unlimited_retry_for(row, context):
+    """Personal, authenticated exception for explicitly initiated retries only."""
+    try:
+        configured_id = int(os.environ.get("CABINET_UNLIMITED_RETRY_TELEGRAM_ID", "0"))
+    except ValueError:
+        return False
+    return (
+        configured_id > 0
+        and context.user.telegram_user_id == configured_id
+        and row.created_by == context.user.id
+    )
+
+
+def metadata(row, context):
     return {
         "id": row.id,
         "revision": row.revision,
@@ -43,7 +57,9 @@ def metadata(row):
         "confirmation": json.loads(row.confirmation_json) if row.confirmation_json else None,
         "progress_percent": row.progress_percent,
         "progress_stage": row.progress_stage,
-        "can_retry": row.state == "failed" and row.retry_count < 1,
+        "can_retry": row.state == "failed" and (
+            row.retry_count < 1 or unlimited_retry_for(row, context)
+        ),
     }
 
 
@@ -146,7 +162,7 @@ async def list_uploads(context: CurrentStaff, db: Db):
             }
             for subgroup, split in subgroups
         ],
-        "suggestions": [metadata(row) for row in rows],
+        "suggestions": [metadata(row, context) for row in rows],
     }
 
 
@@ -185,7 +201,7 @@ async def upload_schedule(
     if previous is not None:
         if previous.state in {"queued", "processing", "pending", "confirmed"}:
             await db.commit()
-            return metadata(previous)
+            return metadata(previous, context)
         await db.commit()
         raise ApiError(
             "already_processing",
@@ -212,7 +228,7 @@ async def upload_schedule(
         delete_at=now + RETENTION,
     )
     db.add(item)
-    payload = metadata(item)
+    payload = metadata(item, context)
     await db.commit()
     # AI runs from the durable server-side queue, not from this HTTP request.
     return payload
@@ -233,7 +249,9 @@ async def retry_upload(ident: uuid.UUID, context: CurrentStaff, db: Db):
     )
     if row is None:
         raise ApiError("not_found", "Черновик недоступен", 404)
-    if row.state != "failed" or row.retry_count >= 1:
+    if row.state != "failed" or (
+        row.retry_count >= 1 and not unlimited_retry_for(row, context)
+    ):
         raise ApiError("retry_unavailable", "Повторная обработка недоступна", 409)
     await eligible(db, context.group, now)
     row.retry_count += 1
@@ -241,7 +259,7 @@ async def retry_upload(ident: uuid.UUID, context: CurrentStaff, db: Db):
     row.progress_stage = "queued_b" if row.first_pass_json else "queued_a"
     row.state = "queued"
     row.claimed_at = None
-    payload = metadata(row)
+    payload = metadata(row, context)
     await db.commit()
     return payload
 
