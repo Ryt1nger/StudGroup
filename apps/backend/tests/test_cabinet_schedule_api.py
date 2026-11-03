@@ -175,9 +175,7 @@ def test_reject_bad_image_without_spending_or_draft(client, monkeypatch):
     assert client.get("/v1/staff/schedule-upload", headers=AUTH).json()["suggestions"] == []
 
 
-def test_editor_selected_week_gives_safe_dates_when_vision_coverage_is_unknown(
-    client, monkeypatch
-):
+def test_editor_selected_week_gives_safe_dates_when_vision_coverage_is_unknown(client, monkeypatch):
     """Unknown screenshot coverage must not force a date field on every visible cell."""
     from studgroup.analysis import release_budget
 
