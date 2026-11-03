@@ -113,7 +113,6 @@ def test_lesson_patch_validates_its_fields(client):
     assert statuses[lesson["id"]] == "cancelled"
 
 
-
 def test_cabinet_can_edit_subject_and_teacher_with_existing_audit_guards(client):
     make(client, "headman")
     lesson = week(client)["schedule"]["lessons"][0]
@@ -142,11 +141,10 @@ def test_cabinet_subject_rejects_empty_value_and_can_clear_teacher(client):
     for value in ("", "  ", None):
         response = client.patch(path, json={**base, "subject": value}, headers=AUTH)
         assert response.status_code == 422
-    response = client.patch(
-        path, json={**base, "subject": "Физика", "teacher": None}, headers=AUTH
-    )
+    response = client.patch(path, json={**base, "subject": "Физика", "teacher": None}, headers=AUTH)
     assert response.status_code == 200, response.text
     assert week(client)["schedule"]["lessons"][0]["subject"] == "Физика"
+
 
 def test_adding_a_one_off_lesson(client):
     make(client, "headman")
