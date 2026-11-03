@@ -1,4 +1,5 @@
-import type { ConfirmImageScheduleSuggestionData, ScheduleSuggestion } from '@studgroup/shared-types';
+import { client, type ConfirmImageScheduleSuggestionData, type ScheduleSuggestion } from '@studgroup/shared-types';
+import { cabinetScheduleUrl } from '../src/features/schedule/cabinetScheduleApi';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -156,4 +157,107 @@ it('does not query editor data without the group capability', async () => {
     await screen.findByText('Подтверждать расписание может староста или заместитель.'),
   ).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Подтвердить расписание' })).not.toBeInTheDocument();
+});
+
+
+it('uses the configured API URL once for private screenshot uploads', () => {
+  const original = client.getConfig().baseUrl;
+  try {
+    client.setConfig({ baseUrl: 'https://api.studgroup.example/v1' });
+    expect(cabinetScheduleUrl('/v1/staff/schedule-upload'))
+      .toBe('https://api.studgroup.example/v1/staff/schedule-upload');
+    client.setConfig({ baseUrl: 'https://api.studgroup.example/v1/' });
+    expect(cabinetScheduleUrl('/v1/staff/schedule-upload/123/image'))
+      .toBe('https://api.studgroup.example/v1/staff/schedule-upload/123/image');
+  } finally {
+    client.setConfig({ baseUrl: original });
+  }
+});
+
+it('shows private screenshot review without Telegram image-review capability', async () => {
+  loadScenario();
+  const schedule = buildSchedule('2026-10-05', '2026-10-11', Date.now());
+  const lesson = schedule.lessons[0]!;
+  let officialReads = 0;
+  let telegramReads = 0;
+  server.use(
+    http.post(`${API}/session/bootstrap`, () =>
+      HttpResponse.json(sessionAt(exampleSession, Date.now(), (session) => ({
+        ...session,
+        features: { schedule_review: false },
+        membership: session.membership ? { ...session.membership, role: 'headman' } : null,
+        permissions: [...new Set([...session.permissions, 'schedule.write' as const])],
+      }))),
+    ),
+    http.get(`${API}/staff/schedule-upload`, () => HttpResponse.json({
+      current_schedule_version: 0,
+      subgroups: [],
+      suggestions: [{
+        id: ID,
+        state: 'pending',
+        revision: 1,
+        schedule_version: 0,
+        week_start: '2026-10-05',
+        duration: 'one_week',
+        source_url: null,
+        confirmation: null,
+        rows: [{
+          weekday: 0,
+          starts: '09:00',
+          ends: '10:20',
+          subject: 'Математический анализ',
+          teacher: 'Иванов',
+          room: '305',
+          week: 'all',
+          valid_from: '2026-10-05',
+          valid_until: '2026-10-11',
+        }],
+      }],
+    })),
+    http.get(`${API}/staff/schedule-upload/${ID}/image`, () =>
+      new HttpResponse(new Uint8Array([137, 80, 78, 71]), {
+        headers: { 'Content-Type': 'image/png' },
+      })),
+    http.get(`${API}/staff/schedule`, () => {
+      officialReads += 1;
+      return HttpResponse.json({
+        schedule, schedule_version: 0, no_lesson_days: [],
+        lesson_edits: [{
+          lesson_id: lesson.id,
+          pattern_revision: 1,
+          override_revision: 0,
+          week: 'all',
+          single_day: false,
+        }],
+      });
+    }),
+    http.get(`${API}/staff/image-findings/schedule`, () => {
+      telegramReads += 1;
+      return HttpResponse.json({ suggestions: [] });
+    }),
+  );
+  renderApp({ route: '/schedule/review' });
+  const mapping = await screen.findByRole('combobox', { name: 'Заменить существующую пару' });
+  await waitFor(() => expect(mapping).toContainHTML(lesson.id));
+  expect(officialReads).toBeGreaterThan(0);
+  expect(telegramReads).toBe(0);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Подтвердить расписание' }))
+    .toBeEnabled());
+});
+
+it('shows an empty explanation for staff with no drafts when Telegram review is off', async () => {
+  loadScenario();
+  server.use(
+    http.post(`${API}/session/bootstrap`, () =>
+      HttpResponse.json(sessionAt(exampleSession, Date.now(), (session) => ({
+        ...session,
+        features: { schedule_review: false },
+        membership: session.membership ? { ...session.membership, role: 'deputy' } : null,
+      }))),
+    ),
+    http.get(`${API}/staff/schedule-upload`, () =>
+      HttpResponse.json({ current_schedule_version: 0, subgroups: [], suggestions: [] })),
+  );
+  renderApp({ route: '/schedule/review' });
+  expect(await screen.findByText('Пока нет черновиков')).toBeInTheDocument();
 });

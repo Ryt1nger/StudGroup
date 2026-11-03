@@ -21,8 +21,9 @@ def picture():
 
 
 class Vision:
-    def __init__(self):
+    def __init__(self, coverage="full_week"):
         self.calls = []
+        self.coverage = coverage
 
     async def complete_vision(self, **kwargs):
         self.calls.append(kwargs)
@@ -47,7 +48,7 @@ class Vision:
                                     }
                                 ],
                                 "schedule_interpretation": {
-                                    "coverage": "full_week",
+                                    "coverage": self.coverage,
                                     "duration": "one_week",
                                 },
                             },
@@ -172,3 +173,25 @@ def test_reject_bad_image_without_spending_or_draft(client, monkeypatch):
     assert response.status_code == 422
     assert vision.calls == []
     assert client.get("/v1/staff/schedule-upload", headers=AUTH).json()["suggestions"] == []
+
+
+def test_editor_selected_week_gives_safe_dates_when_vision_coverage_is_unknown(client, monkeypatch):
+    """Unknown screenshot coverage must not force a date field on every visible cell."""
+    from studgroup.analysis import release_budget
+
+    make(client, "headman")
+    authorize_analysis(client)
+    vision = Vision(coverage="unknown")
+    monkeypatch.setattr(release_budget, "provider_for", lambda *args, **kwargs: vision)
+    monday = week()
+    response = upload(client, monday, picture())
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["state"] == "pending"
+    assert result["duration"] == "one_week"
+    assert result["rows"][0]["valid_from"] == monday.isoformat()
+    assert result["rows"][0]["valid_until"] == (monday + timedelta(days=6)).isoformat()
+    assert len(vision.calls) == 2
+    assert client.get("/v1/staff/schedule-upload", headers=AUTH).status_code == 200
+    # Preview only: no official write before explicit confirmation.
+    assert result["confirmation"] is None

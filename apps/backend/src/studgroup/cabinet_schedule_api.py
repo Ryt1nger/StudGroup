@@ -239,9 +239,15 @@ async def upload_schedule(
             raise ApiError("not_a_schedule", "DeepSeek не смог надёжно распознать расписание", 422)
         # The editor's explicit date/scope selection is authoritative; DeepSeek reads the cells.
         scope = ScheduleInterpretation(
-            coverage=second.schedule_interpretation.coverage
-            if second.schedule_interpretation is not None
-            else "unknown",
+            # The editor explicitly selected the week and validity. Unknown image
+            # coverage means "only these visible cells", not "no valid dates".
+            # Treat it as partial; never infer missing lessons or delete old ones.
+            coverage=(
+                second.schedule_interpretation.coverage
+                if second.schedule_interpretation is not None
+                and second.schedule_interpretation.coverage != "unknown"
+                else "partial"
+            ),
             duration=duration,
             week_start=week_start,
             explanation="Период подтверждён старостой при загрузке",

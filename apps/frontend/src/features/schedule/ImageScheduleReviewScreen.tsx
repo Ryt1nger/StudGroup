@@ -66,7 +66,7 @@ export function ImageScheduleReviewScreen() {
           {cabinet.isError ? <RequestError error={cabinet.error} onRetry={() => void cabinet.refetch()} /> : null}
           {query.isPending && features.schedule_review ? <Skeleton label="Загрузка предложений из Telegram" /> : null}
           {query.isError && features.schedule_review ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
-          {!cabinet.isPending && !query.isPending && !items.length ? (
+          {!cabinet.isPending && (!features.schedule_review || !query.isPending) && !items.length ? (
             <Empty
               title="Пока нет черновиков"
               body="Загрузите скриншот выше, чтобы DeepSeek подготовил расписание для проверки."
