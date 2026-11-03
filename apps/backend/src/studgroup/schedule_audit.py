@@ -14,7 +14,6 @@ from sqlalchemy.orm.attributes import set_committed_value
 from studgroup.deadline_rebuild import rebuild_after_schedule_change
 from studgroup.models import Group, ScheduleChange
 
-
 # A schedule change is one committed, group-level audit/version entry, not one
 # screenshot, lesson row, recognition attempt, or notification.
 # Human-confirmed Telegram, cabinet and image-review changes are intentionally excluded.
