@@ -145,6 +145,23 @@ def authorize_analysis(client):
     db_run(client, seed)
 
 
+def test_exhausted_release_budget_rejects_upload_before_queue(client, monkeypatch):
+    from decimal import Decimal
+    from studgroup.analysis import release_budget
+
+    make(client, "headman")
+    authorize_analysis(client)
+
+    async def exhausted(*args, **kwargs):
+        return Decimal("0.15")
+
+    monkeypatch.setattr(release_budget, "spent", exhausted)
+    response = upload(client, week(), picture())
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "analysis_budget_closed"
+    assert client.get("/v1/staff/schedule-upload", headers=AUTH).json()["suggestions"] == []
+
+
 def test_vision_draft_requires_explicit_confirmation_and_deduplicates(client, monkeypatch):
     from studgroup.analysis import release_budget
 
