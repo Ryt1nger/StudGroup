@@ -196,3 +196,40 @@ image from review. This safeguard is additive and does not modify the photo,
 document, album, or homework processing pipelines. The pass-B prompt changes
 to B10; pass A remains A4. This is a deterministic layout/policy regression,
 **not** proof that DeepSeek recognized the actual screenshot correctly.
+
+## Automated timetable publication quota and one-time BI 1.2 budget — 2026-11-03
+
+Each group gets at most **2 committed, group-wide automatic timetable updates
+per local Monday–Sunday week**. The central schedule audit checks
+`ai_auto`, `image_auto` and `schedule_auto` publication methods under a
+database group-row lock **before** advancing the official schedule version.
+The durable `schedule_changes` audit is the counter. Multiple lessons in
+one atomic publication count as one update. Rejected/stale proposals, image
+reads, and private drafts count as zero. Group-local timezones (including DST)
+define the week; no universal ISO-week/UTC shortcut is used.
+
+Manual headman/deputy edits through the web cabinet, Telegram bot and
+explicitly confirmed image-review drafts remain **unlimited in number** and
+never consume automatic slots. This does not waive the separate monetary
+budget for DeepSeek calls. This guard does **not** turn on automatic timetable
+publication: the current vision path still creates review-only drafts until
+a separately audited/safe automatic writer is enabled.
+
+For the explicitly approved BI 1.2 test, an operator-controlled **one-time**
+startup opt-in can allocate **exactly USD 0.05 for at most 48 hours** to the
+existing shared release-budget ledger (no restart replenishment). It locates
+one active authorized pilot group with the exact display name, uses an
+immutable consent digest, and refuses other matches/approval mismatches.
+The `legacy` analysis mode remains unchanged and shadow sampling stays zero
+if settings are first created. Manual cabinet vision is accounted as
+`cabinet_image`; it is permitted in legacy mode only with the same active
+release-budget window, hourly/day safeguards and provider accounting. The
+operator opt-in does not enable Telegram history backfill, image worker
+allowlists, or automatic group schedule publication.
+
+Render startup uses
+`STUDGROUP_BI12_IMAGE_TEST_APPROVAL_SHA256`,
+`STUDGROUP_BI12_IMAGE_TEST_SINCE_UTC`, and
+`STUDGROUP_BI12_IMAGE_TEST_UNTIL_UTC`. Without all approved parameters,
+no budget is allocated. Failures are logged without group IDs or paid
+provider data; normal application readiness continues.

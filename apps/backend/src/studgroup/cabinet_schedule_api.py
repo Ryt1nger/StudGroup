@@ -82,7 +82,10 @@ async def eligible(db, group, now):
     route = await db.get(GroupAnalysisSettings, group.id)
     if group.status != "active" or not group.pilot_authorized or route is None:
         raise ApiError("analysis_unavailable", "Для этой группы анализ не настроен", 409)
-    if route.analysis_mode not in {"new", "shadow"} or route.paid_outcome_hold:
+    # Manual staff uploads are isolated from automatic chat-analysis routing.
+    # A legacy-mode group may run explicitly funded screenshot recognition without
+    # waking background AI processing or changing its normal publication mode.
+    if route.paid_outcome_hold:
         raise ApiError("analysis_unavailable", "Анализ временно недоступен", 409)
     if route.release_budget_usd is None:
         raise ApiError(
@@ -208,7 +211,7 @@ async def upload_schedule(
             request.app.state.engine,
             request.app.state.settings,
             group.id,
-            kind="image",
+            kind="cabinet_image",
             attempt_key=f"cabinet-schedule:{item.id}",
         )
         first, _ = await read_pass(provider, data, mime, 1, context={})
