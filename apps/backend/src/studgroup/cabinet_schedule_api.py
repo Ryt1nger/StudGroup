@@ -84,15 +84,20 @@ async def eligible(db, group, now):
         raise ApiError("analysis_unavailable", "Для этой группы анализ не настроен", 409)
     if route.analysis_mode not in {"new", "shadow"} or route.paid_outcome_hold:
         raise ApiError("analysis_unavailable", "Анализ временно недоступен", 409)
-    if route.release_budget_usd is not None:
-        from studgroup.analysis.release_budget import utc
+    if route.release_budget_usd is None:
+        raise ApiError(
+            "analysis_budget_closed",
+            "Платный анализ не настроен. Требуется ранее подтверждённый лимит расходов.",
+            409,
+        )
+    from studgroup.analysis.release_budget import utc
 
-        if (
-            route.release_budget_since is None
-            or route.release_budget_until is None
-            or not utc(route.release_budget_since) <= now < utc(route.release_budget_until)
-        ):
-            raise ApiError("analysis_budget_closed", "Лимит платного теста завершён", 409)
+    if (
+        route.release_budget_since is None
+        or route.release_budget_until is None
+        or not utc(route.release_budget_since) <= now < utc(route.release_budget_until)
+    ):
+        raise ApiError("analysis_budget_closed", "Лимит платного теста завершён", 409)
     return route
 
 
