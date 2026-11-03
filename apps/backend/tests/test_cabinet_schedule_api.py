@@ -11,6 +11,7 @@ from PIL import Image
 from sqlalchemy import select
 from test_staff_api import AUTH, db_run, make
 
+from studgroup.ai import ProviderFailure
 from studgroup.models import CabinetScheduleUpload, Group, GroupAnalysisSettings, ScheduleChange
 
 pytest_plugins = ["test_schedule_api"]
@@ -272,3 +273,68 @@ def test_stale_paid_stage_fails_closed_and_requires_explicit_retry(client, monke
         client.post(f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH).status_code
         == 409
     )
+
+
+class IncompleteSecondPassVision(Vision):
+    async def complete_vision(self, **kwargs):
+        result = await super().complete_vision(**kwargs)
+        if len(self.calls) == 2:
+            payload = json.loads(result["choices"][0]["message"]["content"])
+            payload["complete"] = False
+            payload["semantic_types"] = ["unknown"]
+            result["choices"][0]["message"]["content"] = json.dumps(payload)
+        return result
+
+
+class FailingSecondPassVision(Vision):
+    async def complete_vision(self, **kwargs):
+        if self.calls:
+            self.calls.append(kwargs)
+            raise ProviderFailure(
+                "release_budget_exhausted",
+                False,
+                reservation_releasable=True,
+            )
+        return await super().complete_vision(**kwargs)
+
+
+def test_incomplete_second_pass_keeps_editable_partial_draft(client, monkeypatch):
+    make(client, "headman")
+    authorize_analysis(client)
+    model = IncompleteSecondPassVision()
+    submitted = upload(client, week(), picture()).json()
+    assert advance(client, monkeypatch, model) == "pass_a_ready"
+    assert advance(client, monkeypatch, model) == "ready"
+    result = get_draft(client, submitted["id"])
+    assert result["state"] == "pending"
+    assert result["progress_percent"] == 100
+    assert result["progress_stage"] == "ready_partial"
+    assert len(result["rows"]) == 1
+    assert result["rows"][0]["valid_from"] == week().isoformat()
+    assert result["confirmation"] is None
+
+    async def count(db):
+        return len((await db.scalars(select(ScheduleChange))).all())
+
+    assert db_run(client, count) == 0
+
+
+def test_failed_second_pass_records_safe_reason_without_hidden_provider_text(client, monkeypatch):
+    make(client, "headman")
+    authorize_analysis(client)
+    model = FailingSecondPassVision()
+    submitted = upload(client, week(), picture()).json()
+    assert advance(client, monkeypatch, model) == "pass_a_ready"
+    assert advance(client, monkeypatch, model) == "failed"
+    result = get_draft(client, submitted["id"])
+    assert result["state"] == "failed"
+    assert result["progress_percent"] == 65
+    assert result["progress_stage"] == "failed_budget"
+    assert result["can_retry"] is True
+    assert len(model.calls) == 2
+    retry = client.post(f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH)
+    assert retry.status_code == 202
+    assert retry.json()["progress_stage"] == "queued_b"
+    # First successful, charged visual pass stays checkpointed: retry B only.
+    assert advance(client, monkeypatch, Vision()) == "ready"
+    assert get_draft(client, submitted["id"])["state"] == "pending"

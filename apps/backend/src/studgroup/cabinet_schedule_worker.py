@@ -22,6 +22,33 @@ from studgroup.models import CabinetScheduleUpload, Group, SchedulePattern
 
 LEASE = timedelta(minutes=6)
 
+# Codes are deliberately finite and contain no provider text, image content, or IDs.
+# progress_stage is already durable in SQL; no new columns are needed.
+SAFE_PROVIDER_FAILURES = {
+    "release_budget_exhausted": "failed_budget",
+    "release_daily_budget_exhausted": "failed_budget",
+    "release_hourly_budget_exhausted": "failed_budget",
+    "release_budget_window_closed": "failed_window",
+    "release_paid_outcome_held": "failed_hold",
+    "image_output_incomplete": "failed_output",
+    "invalid_image_output": "failed_format",
+    "image_context_too_large": "failed_context",
+    "image_fact_overflow": "failed_context",
+}
+
+
+def safe_failure_stage(error):
+    if isinstance(error, ProviderFailure):
+        return SAFE_PROVIDER_FAILURES.get(error.code, "failed_provider")
+    if isinstance(error, ApiError):
+        return {
+            "image_unclear": "failed_unreadable",
+            "not_a_schedule": "failed_no_lessons",
+        }.get(error.code, "failed_input")
+    if isinstance(error, (ValueError, TypeError, KeyError)):
+        return "failed_validation"
+    return "failed_internal"
+
 
 async def claim(engine, now):
     """Claim one stage with a short SQL lock; never hold locks during provider HTTP."""
@@ -41,7 +68,7 @@ async def claim(engine, now):
             # An old invocation may have reached the provider. Automatic retry can
             # charge twice, so fail closed; the headman can request one explicit retry.
             stale.state = "failed"
-            stale.progress_stage = "failed"
+            stale.progress_stage = "failed_interrupted"
             stale.claimed_at = None
             await db.commit()
             return "stale", None
@@ -60,7 +87,7 @@ async def claim(engine, now):
         group = await db.get(Group, row.group_id)
         if group is None or group.status != "active" or not group.pilot_authorized:
             row.state = "failed"
-            row.progress_stage = "failed"
+            row.progress_stage = "failed_group"
             await db.commit()
             return "failed", None
         phase = row.progress_stage
@@ -68,7 +95,7 @@ async def claim(engine, now):
             phase == "queued_b" and not row.first_pass_json
         ):
             row.state = "failed"
-            row.progress_stage = "failed"
+            row.progress_stage = "failed_checkpoint"
             await db.commit()
             return "failed", None
         row.state = "processing"
@@ -108,12 +135,12 @@ async def checkpoint(engine, ident, *, stage, state, progress, first=None, rows=
         return True
 
 
-async def fail(engine, ident):
+async def fail(engine, ident, *, stage="failed_internal"):
     async with AsyncSession(engine) as db:
         row = await db.get(CabinetScheduleUpload, ident, with_for_update=True)
         if row is not None and row.state == "processing":
             row.state = "failed"
-            row.progress_stage = "failed"
+            row.progress_stage = stage
             row.claimed_at = None
             await db.commit()
 
@@ -164,12 +191,14 @@ async def process_next(engine, settings, provider=None, now=None):
                 "group_timezone": task["timezone"],
             },
         )
-        if (
-            not second.complete
-            or not second.schedule
-            or not {"schedule", "schedule_change"}.intersection(second.semantic_types)
-        ):
-            raise ApiError("not_a_schedule", "Не удалось надёжно распознать пары", 422)
+        # This is a manually uploaded timetable, not a publication decision.
+        # If some cells are uncertain or semantic typing failed, retain legible
+        # rows for human correction instead of discarding a paid recognition.
+        if not second.schedule:
+            raise ApiError("not_a_schedule", "Не удалось найти читаемые пары", 422)
+        partial = not second.complete or not {"schedule", "schedule_change"}.intersection(
+            second.semantic_types
+        )
         await checkpoint(
             engine,
             task["id"],
@@ -180,7 +209,8 @@ async def process_next(engine, settings, provider=None, now=None):
         scope = ScheduleInterpretation(
             coverage=(
                 second.schedule_interpretation.coverage
-                if second.schedule_interpretation is not None
+                if not partial
+                and second.schedule_interpretation is not None
                 and second.schedule_interpretation.coverage != "unknown"
                 else "partial"
             ),
@@ -203,7 +233,7 @@ async def process_next(engine, settings, provider=None, now=None):
         saved = await checkpoint(
             engine,
             task["id"],
-            stage="ready",
+            stage="ready_partial" if partial else "ready",
             state="pending",
             progress=100,
             rows=rows,
@@ -212,11 +242,16 @@ async def process_next(engine, settings, provider=None, now=None):
     except asyncio.CancelledError:
         # Never automatically retry a potentially billable interrupted invocation.
         raise
-    except (ProviderFailure, ApiError, ValueError, TypeError, KeyError):
-        await fail(engine, task["id"])
+    except (ProviderFailure, ApiError, ValueError, TypeError, KeyError) as error:
+        code = safe_failure_stage(error)
+        print(f"CABINET_SCHEDULE_STAGE_FAILED phase={task['phase']} code={code}", flush=True)
+        await fail(engine, task["id"], stage=code)
         return "failed"
     except Exception:  # noqa: BLE001 -- redact all provider and image details
-        await fail(engine, task["id"])
+        print(
+            f"CABINET_SCHEDULE_STAGE_FAILED phase={task['phase']} code=failed_internal", flush=True
+        )
+        await fail(engine, task["id"], stage="failed_internal")
         return "failed"
 
 
