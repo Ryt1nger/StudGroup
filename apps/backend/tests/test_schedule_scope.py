@@ -135,39 +135,55 @@ def test_six_day_twenty_cell_timetable_keeps_every_slot_and_blank_sunday():
     data = []
     for weekday, intervals in slots.items():
         for index, (starts, ends) in enumerate(intervals):
-            data.append({
-                "weekday": weekday,
-                "starts": starts,
-                "ends": ends,
-                "subject": "Один предмет" if weekday == 0 and index in (2, 3)
-                else f"Обезличенный предмет {weekday}-{index}",
-            })
+            data.append(
+                {
+                    "weekday": weekday,
+                    "starts": starts,
+                    "ends": ends,
+                    "subject": "Один предмет"
+                    if weekday == 0 and index in (2, 3)
+                    else f"Обезличенный предмет {weekday}-{index}",
+                }
+            )
     assert len(data) == 20
     for duration in ("recurring", "one_week"):
         interpretation = VisualReading.model_validate_json(
-            json.dumps({
-                "summary": "Расписание на 2–8 ноября",
-                "extracted_text": "Таблица расписания",
-                "complete": True,
-                "semantic_types": ["schedule"],
-                "schedule": data,
-                "schedule_interpretation": {
-                    "coverage": "full_week",
-                    "duration": duration,
-                    "week_start": "2026-11-02",
-                    "source_message_ids": [31],
+            json.dumps(
+                {
+                    "summary": "Расписание на 2–8 ноября",
+                    "extracted_text": "Таблица расписания",
+                    "complete": True,
+                    "semantic_types": ["schedule"],
+                    "schedule": data,
+                    "schedule_interpretation": {
+                        "coverage": "full_week",
+                        "duration": duration,
+                        "week_start": "2026-11-02",
+                        "source_message_ids": [31],
+                    },
                 },
-            }, ensure_ascii=False)
+                ensure_ascii=False,
+            )
         )
         rows = suggest_review_rows(interpretation, ANCHOR, HORIZON)
         assert len(rows) == 20
         assert {day: sum(row["weekday"] == day for row in rows) for day in range(7)} == {
-            0: 4, 1: 4, 2: 3, 3: 4, 4: 2, 5: 3, 6: 0,
+            0: 4,
+            1: 4,
+            2: 3,
+            3: 4,
+            4: 2,
+            5: 3,
+            6: 0,
         }
         assert [row["starts"] for row in rows if row["weekday"] == 3][-1] == "15:40:00"
         assert sum(row["subject"] == "Один предмет" for row in rows) == 2
         assert all(row["valid_from"] == "2026-11-02" for row in rows)
-        assert all(row["valid_until"] == ("2026-11-08" if duration == "one_week"
-                                       else "2027-01-31") for row in rows)
-        assert all(row["week"] == ("all" if duration == "one_week"
-                                   else week_kind(MONDAY, ANCHOR)) for row in rows)
+        assert all(
+            row["valid_until"] == ("2026-11-08" if duration == "one_week" else "2027-01-31")
+            for row in rows
+        )
+        assert all(
+            row["week"] == ("all" if duration == "one_week" else week_kind(MONDAY, ANCHOR))
+            for row in rows
+        )
