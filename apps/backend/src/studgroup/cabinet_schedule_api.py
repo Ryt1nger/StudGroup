@@ -105,6 +105,15 @@ async def eligible(db, group, now):
 async def list_uploads(context: CurrentStaff, db: Db):
     now = datetime.now(UTC)
     await prune(db, context.group.id, now)
+    # Failed cabinet screenshot attempts are disposable; remove the stored image
+    # and checkpoints as well as the visible error record. Never touch active
+    # tasks, reviewable drafts, confirmed schedules, or other group data.
+    await db.execute(
+        delete(CabinetScheduleUpload).where(
+            CabinetScheduleUpload.group_id == context.group.id,
+            CabinetScheduleUpload.state == "failed",
+        )
+    )
     rows = (
         await db.scalars(
             select(CabinetScheduleUpload)
