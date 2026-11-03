@@ -7,25 +7,19 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import Response
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import delete, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, select
 
-from studgroup.ai import ProviderFailure
-from studgroup.analysis.image_contracts import ScheduleInterpretation
-from studgroup.analysis.image_reading import read_pass
 from studgroup.analysis.image_schedule import ScheduleConfirmation
 from studgroup.analysis.photo_reading import MAX_IMAGE_BYTES, sniff_mime
-from studgroup.analysis.schedule_scope import suggest_review_rows
 from studgroup.api import ApiError
 from studgroup.headman_domain import StError
 from studgroup.models import (
     CabinetScheduleUpload,
     Group,
     GroupAnalysisSettings,
-    SchedulePattern,
     Subgroup,
     SubjectSplit,
 )
@@ -47,6 +41,9 @@ def metadata(row):
         "rows": json.loads(row.rows_json),
         "source_url": None,
         "confirmation": json.loads(row.confirmation_json) if row.confirmation_json else None,
+        "progress_percent": row.progress_percent,
+        "progress_stage": row.progress_stage,
+        "can_retry": row.state == "failed" and row.retry_count < 1,
     }
 
 
@@ -148,7 +145,6 @@ async def upload_schedule(
     image: Annotated[UploadFile, File()],
     week_start: Annotated[date, Form()],
     duration: Annotated[Literal["one_week", "recurring"], Form()],
-    request: Request,
     context: CurrentStaff,
     db: Db,
 ):
@@ -177,13 +173,13 @@ async def upload_schedule(
         .limit(1)
     )
     if previous is not None:
-        if previous.state in {"pending", "confirmed"}:
+        if previous.state in {"queued", "processing", "pending", "confirmed"}:
             await db.commit()
             return metadata(previous)
         await db.commit()
         raise ApiError(
             "already_processing",
-            "Это изображение уже обрабатывается или попытка завершилась ошибкой. Проверьте черновики.",
+            "Этот скриншот уже был обработан с ошибкой. Повторите из списка задач.",
             409,
         )
     item = CabinetScheduleUpload(
@@ -197,102 +193,47 @@ async def upload_schedule(
         image_bytes=data,
         image_mime=mime,
         image_sha256=sha,
-        state="processing",
+        state="queued",
+        progress_percent=5,
+        progress_stage="queued_a",
+        retry_count=0,
         revision=1,
         created_at=now,
         delete_at=now + RETENTION,
     )
     db.add(item)
+    payload = metadata(item)
     await db.commit()
-    try:
-        from studgroup.analysis.release_budget import provider_for
+    # AI runs from the durable server-side queue, not from this HTTP request.
+    return payload
 
-        provider = provider_for(
-            request.app.state.engine,
-            request.app.state.settings,
-            group.id,
-            kind="cabinet_image",
-            attempt_key=f"cabinet-schedule:{item.id}",
+
+@router.post("/{ident}/retry", status_code=202)
+async def retry_upload(ident: uuid.UUID, context: CurrentStaff, db: Db):
+    """Explicit retry only; never silently repeat an unknown paid attempt."""
+    now = datetime.now(UTC)
+    row = await db.scalar(
+        select(CabinetScheduleUpload)
+        .where(
+            CabinetScheduleUpload.id == ident,
+            CabinetScheduleUpload.group_id == context.group.id,
+            CabinetScheduleUpload.delete_at > now,
         )
-        first, _ = await read_pass(provider, data, mime, 1, context={})
-        if not first.complete:
-            raise ApiError("image_unclear", "Не удалось полностью прочитать скриншот", 422)
-        hint = f"Староста явно выбрал расписание с {week_start.isoformat()} " + (
-            "только на эту неделю."
-            if duration == "one_week"
-            else "на постоянной основе для этой чётности."
-        )
-        second, _ = await read_pass(
-            provider,
-            data,
-            mime,
-            2,
-            first=first,
-            context={
-                "messages": [{"telegram_message_id": 0, "text": hint}],
-                "image_source_message_id": 0,
-                "group_timezone": group.timezone,
-            },
-        )
-        if (
-            not second.complete
-            or not second.schedule
-            or not {"schedule", "schedule_change"}.intersection(second.semantic_types)
-        ):
-            raise ApiError("not_a_schedule", "DeepSeek не смог надёжно распознать расписание", 422)
-        # The editor's explicit date/scope selection is authoritative; DeepSeek reads the cells.
-        scope = ScheduleInterpretation(
-            # The editor explicitly selected the week and validity. Unknown image
-            # coverage means "only these visible cells", not "no valid dates".
-            # Treat it as partial; never infer missing lessons or delete old ones.
-            coverage=(
-                second.schedule_interpretation.coverage
-                if second.schedule_interpretation is not None
-                and second.schedule_interpretation.coverage != "unknown"
-                else "partial"
-            ),
-            duration=duration,
-            week_start=week_start,
-            explanation="Период подтверждён старостой при загрузке",
-            source_message_ids=[],
-        )
-        second = second.model_copy(update={"schedule_interpretation": scope})
-        async with AsyncSession(request.app.state.engine) as lookup:
-            horizon = await lookup.scalar(
-                select(func.max(SchedulePattern.valid_until)).where(
-                    SchedulePattern.group_id == group.id,
-                    SchedulePattern.cancelled.is_(False),
-                )
-            )
-        rows = suggest_review_rows(second, group.first_week_anchor, horizon)
-        if not rows:
-            raise ApiError("not_a_schedule", "На скриншоте не найдены пары", 422)
-        async with AsyncSession(request.app.state.engine, expire_on_commit=False) as save:
-            saved = await save.get(CabinetScheduleUpload, item.id, with_for_update=True)
-            if saved is None or saved.state != "processing":
-                raise ApiError("upload_changed", "Черновик загрузки изменился", 409)
-            saved.rows_json = json.dumps(rows, ensure_ascii=False)
-            saved.state = "pending"
-            await save.commit()
-            return metadata(saved)
-    except (ApiError, ProviderFailure) as error:
-        async with AsyncSession(request.app.state.engine, expire_on_commit=False) as save:
-            saved = await save.get(CabinetScheduleUpload, item.id, with_for_update=True)
-            if saved and saved.state == "processing":
-                saved.state = "failed"
-                await save.commit()
-        if isinstance(error, ApiError):
-            raise
-        raise ApiError(
-            "analysis_unavailable", "DeepSeek недоступен или лимит исчерпан", 503
-        ) from None
-    except Exception:  # noqa: BLE001 - paid-vision boundary; redact provider details
-        async with AsyncSession(request.app.state.engine, expire_on_commit=False) as save:
-            saved = await save.get(CabinetScheduleUpload, item.id, with_for_update=True)
-            if saved and saved.state == "processing":
-                saved.state = "failed"
-                await save.commit()
-        raise ApiError("analysis_failed", "Ошибка обработки. Расписание не изменено", 503) from None
+        .with_for_update()
+    )
+    if row is None:
+        raise ApiError("not_found", "Черновик недоступен", 404)
+    if row.state != "failed" or row.retry_count >= 1:
+        raise ApiError("retry_unavailable", "Повторная обработка недоступна", 409)
+    await eligible(db, context.group, now)
+    row.retry_count += 1
+    row.progress_percent = 50 if row.first_pass_json else 5
+    row.progress_stage = "queued_b" if row.first_pass_json else "queued_a"
+    row.state = "queued"
+    row.claimed_at = None
+    payload = metadata(row)
+    await db.commit()
+    return payload
 
 
 @router.get("/{ident}/image")
