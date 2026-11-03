@@ -1,8 +1,8 @@
 import {
   client,
   type ConfirmImageScheduleSuggestionData,
-  ReviewSubgroup,
-  ScheduleSuggestion,
+  type ReviewSubgroup,
+  type ScheduleSuggestion,
 } from '@studgroup/shared-types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { detailQueryOptions } from '../../api/cachePolicy';
