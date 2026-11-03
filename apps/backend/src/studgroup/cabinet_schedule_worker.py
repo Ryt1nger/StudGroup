@@ -196,9 +196,8 @@ async def process_next(engine, settings, provider=None, now=None):
         # rows for human correction instead of discarding a paid recognition.
         if not second.schedule:
             raise ApiError("not_a_schedule", "Не удалось найти читаемые пары", 422)
-        partial = (
-            not second.complete
-            or not {"schedule", "schedule_change"}.intersection(second.semantic_types)
+        partial = not second.complete or not {"schedule", "schedule_change"}.intersection(
+            second.semantic_types
         )
         await checkpoint(
             engine,
@@ -249,7 +248,9 @@ async def process_next(engine, settings, provider=None, now=None):
         await fail(engine, task["id"], stage=code)
         return "failed"
     except Exception:  # noqa: BLE001 -- redact all provider and image details
-        print(f"CABINET_SCHEDULE_STAGE_FAILED phase={task['phase']} code=failed_internal", flush=True)
+        print(
+            f"CABINET_SCHEDULE_STAGE_FAILED phase={task['phase']} code=failed_internal", flush=True
+        )
         await fail(engine, task["id"], stage="failed_internal")
         return "failed"
 
