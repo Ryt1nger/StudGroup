@@ -509,7 +509,11 @@ def test_one_week_exception_image_stays_date_limited_and_never_writes_live(clien
 def test_clipped_timetable_names_require_editor_correction_before_live_write(client, monkeypatch):
     """Text displayed as '...' must not be stored as a complete official identity."""
     suggestion = prepare(
-        client, monkeypatch, subject="Курс по...", teacher="Иванова...", room="Ауд. 12…",
+        client,
+        monkeypatch,
+        subject="Курс по...",
+        teacher="Иванова...",
+        room="Ауд. 12…",
     )
     make(client, "headman")
     path = f"/v1/staff/image-findings/schedule/{suggestion.id}/confirm"
