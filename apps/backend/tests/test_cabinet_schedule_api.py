@@ -1,5 +1,6 @@
 """Isolated cabinet upload tests; model is faked and no provider HTTP is made."""
 
+import asyncio
 import io
 import json
 from datetime import datetime, timedelta
@@ -9,7 +10,7 @@ from PIL import Image
 from sqlalchemy import select
 from test_staff_api import AUTH, db_run, make
 
-from studgroup.models import Group, GroupAnalysisSettings, ScheduleChange
+from studgroup.models import CabinetScheduleUpload, Group, GroupAnalysisSettings, ScheduleChange
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -75,6 +76,21 @@ def upload(client, day, data, duration="one_week"):
     )
 
 
+def advance(client, monkeypatch, vision):
+    from studgroup import cabinet_schedule_worker
+
+    monkeypatch.setattr(cabinet_schedule_worker, "provider_for", lambda *args, **kwargs: vision)
+    return asyncio.run(
+        cabinet_schedule_worker.process_next(client.app.state.engine, client.app.state.settings)
+    )
+
+
+def get_draft(client, ident):
+    response = client.get("/v1/staff/schedule-upload", headers=AUTH)
+    assert response.status_code == 200
+    return next(x for x in response.json()["suggestions"] if x["id"] == ident)
+
+
 def test_only_staff_may_upload_or_view_private_schedule_source(client):
     today = week()
     response = upload(client, today, picture())
@@ -114,6 +130,17 @@ def test_vision_draft_requires_explicit_confirmation_and_deduplicates(client, mo
     response = upload(client, today, data)
     assert response.status_code == 201, response.text
     suggestion = response.json()
+    assert suggestion["state"] == "queued"
+    assert suggestion["progress_percent"] == 5
+    assert vision.calls == []
+    assert advance(client, monkeypatch, vision) == "pass_a_ready"
+    mid = get_draft(client, suggestion["id"])
+    assert mid["progress_percent"] == 50
+    assert mid["state"] == "queued"
+    assert advance(client, monkeypatch, vision) == "ready"
+    suggestion = get_draft(client, suggestion["id"])
+    assert suggestion["progress_percent"] == 100
+    assert suggestion["progress_stage"] == "ready"
     assert suggestion["state"] == "pending"
     assert len(suggestion["rows"]) == 1
     assert suggestion["rows"][0]["valid_from"] == today.isoformat()
@@ -187,6 +214,10 @@ def test_editor_selected_week_gives_safe_dates_when_vision_coverage_is_unknown(c
     response = upload(client, monday, picture())
     assert response.status_code == 201, response.text
     result = response.json()
+    assert result["state"] == "queued"
+    assert advance(client, monkeypatch, vision) == "pass_a_ready"
+    assert advance(client, monkeypatch, vision) == "ready"
+    result = get_draft(client, result["id"])
     assert result["state"] == "pending"
     assert result["duration"] == "one_week"
     assert result["rows"][0]["valid_from"] == monday.isoformat()
@@ -195,3 +226,49 @@ def test_editor_selected_week_gives_safe_dates_when_vision_coverage_is_unknown(c
     assert client.get("/v1/staff/schedule-upload", headers=AUTH).status_code == 200
     # Preview only: no official write before explicit confirmation.
     assert result["confirmation"] is None
+
+
+def test_recovery_of_queued_second_pass_without_repeating_paid_first_pass(client, monkeypatch):
+    make(client, "headman")
+    authorize_analysis(client)
+    vision = Vision()
+    submitted = upload(client, week(), picture()).json()
+    assert advance(client, monkeypatch, vision) == "pass_a_ready"
+    first = get_draft(client, submitted["id"])
+    assert first["progress_stage"] == "queued_b"
+    assert len(vision.calls) == 1
+    # A fresh worker invocation after a restart reads the SQL checkpoint.
+    assert advance(client, monkeypatch, vision) == "ready"
+    assert len(vision.calls) == 2
+    assert get_draft(client, submitted["id"])["state"] == "pending"
+
+
+def test_stale_paid_stage_fails_closed_and_requires_explicit_retry(client, monkeypatch):
+    make(client, "deputy")
+    authorize_analysis(client)
+    vision = Vision()
+    submitted = upload(client, week(), picture()).json()
+
+    async def lose_worker(db):
+        row = await db.get(CabinetScheduleUpload, submitted["id"])
+        row.state = "processing"
+        row.progress_stage = "reading_a"
+        row.progress_percent = 20
+        row.claimed_at = datetime.now(ZoneInfo("UTC")) - timedelta(minutes=20)
+
+    db_run(client, lose_worker)
+    assert advance(client, monkeypatch, vision) == "stale"
+    error = get_draft(client, submitted["id"])
+    assert error["state"] == "failed"
+    assert error["can_retry"] is True
+    assert not vision.calls
+    retry = client.post(
+        f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH
+    )
+    assert retry.status_code == 202
+    assert retry.json()["state"] == "queued"
+    assert advance(client, monkeypatch, vision) == "pass_a_ready"
+    assert advance(client, monkeypatch, vision) == "ready"
+    assert client.post(
+        f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH
+    ).status_code == 409
