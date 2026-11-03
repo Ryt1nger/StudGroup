@@ -1,5 +1,6 @@
-import type {
-  ConfirmImageScheduleSuggestionData,
+import {
+  client,
+  type ConfirmImageScheduleSuggestionData,
   ReviewSubgroup,
   ScheduleSuggestion,
 } from '@studgroup/shared-types';
@@ -17,8 +18,11 @@ type CabinetList = {
   suggestions: CabinetSuggestion[];
 };
 
-function base(path: string): string {
-  return `${import.meta.env.VITE_API_BASE_URL ?? ''}${path}`;
+/** Uses the same configured API origin as generated clients (already ending in /v1). */
+export function cabinetScheduleUrl(path: string): string {
+  const configured = client.getConfig().baseUrl ?? '';
+  const origin = configured.replace(/\/v1\/?$/, '').replace(/\/$/, '') || window.location.origin;
+  return new URL(`${origin}${path}`, window.location.origin).toString();
 }
 
 async function authorized(path: string, options: RequestInit = {}): Promise<Response> {
@@ -26,7 +30,7 @@ async function authorized(path: string, options: RequestInit = {}): Promise<Resp
   if (!authorization) throw new Error('Сессия завершилась. Откройте StudGroup из Telegram.');
   let response: Response;
   try {
-    response = await fetch(base(path), {
+    response = await fetch(cabinetScheduleUrl(path), {
       ...options,
       credentials: 'omit',
       headers: {
