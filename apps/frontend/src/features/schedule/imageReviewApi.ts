@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { detailQueryOptions } from '../../api/cachePolicy';
 import { unwrap } from '../../api/errors';
 import { useEventCapabilities } from '../events/api';
+import { useIsEditor } from '../../session/SessionProvider';
 
 export function useImageScheduleReview() {
   const features = useEventCapabilities();
@@ -19,12 +20,14 @@ export function useImageScheduleReview() {
   });
 }
 export function useReviewScheduleWeek(start: string, end: string) {
-  const features = useEventCapabilities();
+  const editor = useIsEditor();
   return useQuery({
     ...detailQueryOptions,
     queryKey: ['staff-schedule', start, end],
     queryFn: () => unwrap(getStaffSchedule({ query: { start, end } })),
-    enabled: features.schedule_review === true && !!start && !!end,
+    // The private cabinet upload is independent of the Telegram image-review rollout flag.
+    // This staff endpoint still checks membership on every request.
+    enabled: editor && !!start && !!end,
   });
 }
 export function useConfirmImageSchedule(id: string) {
