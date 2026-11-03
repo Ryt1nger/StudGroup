@@ -57,9 +57,8 @@ def metadata(row, context):
         "confirmation": json.loads(row.confirmation_json) if row.confirmation_json else None,
         "progress_percent": row.progress_percent,
         "progress_stage": row.progress_stage,
-        "can_retry": row.state == "failed" and (
-            row.retry_count < 1 or unlimited_retry_for(row, context)
-        ),
+        "can_retry": row.state == "failed"
+        and (row.retry_count < 1 or unlimited_retry_for(row, context)),
     }
 
 
@@ -249,9 +248,7 @@ async def retry_upload(ident: uuid.UUID, context: CurrentStaff, db: Db):
     )
     if row is None:
         raise ApiError("not_found", "Черновик недоступен", 404)
-    if row.state != "failed" or (
-        row.retry_count >= 1 and not unlimited_retry_for(row, context)
-    ):
+    if row.state != "failed" or (row.retry_count >= 1 and not unlimited_retry_for(row, context)):
         raise ApiError("retry_unavailable", "Повторная обработка недоступна", 409)
     await eligible(db, context.group, now)
     row.retry_count += 1
