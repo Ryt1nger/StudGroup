@@ -300,6 +300,63 @@ def test_stale_paid_stage_fails_closed_and_requires_explicit_retry(client, monke
     )
 
 
+class IncompleteFirstPassVision(Vision):
+    async def complete_vision(self, **kwargs):
+        result = await super().complete_vision(**kwargs)
+        if len(self.calls) == 1:
+            payload = json.loads(result["choices"][0]["message"]["content"])
+            payload["complete"] = False
+            payload["schedule"] = []
+            payload["semantic_types"] = ["unknown"]
+            result["choices"][0]["message"]["content"] = json.dumps(payload)
+        return result
+
+
+class UnreadableFirstPassVision(Vision):
+    async def complete_vision(self, **kwargs):
+        result = await super().complete_vision(**kwargs)
+        payload = json.loads(result["choices"][0]["message"]["content"])
+        payload.update(
+            complete=False,
+            extracted_text="",
+            facts=[],
+            blocks=[],
+            schedule=[],
+        )
+        result["choices"][0]["message"]["content"] = json.dumps(payload)
+        return result
+
+
+def test_incomplete_but_legible_first_pass_produces_partial_review(client, monkeypatch):
+    make(client, "headman")
+    authorize_analysis(client)
+    model = IncompleteFirstPassVision()
+    submitted = upload(client, week(), picture()).json()
+    assert advance(client, monkeypatch, model) == "pass_a_ready"
+    checkpoint = get_draft(client, submitted["id"])
+    assert checkpoint["progress_percent"] == 50
+    assert checkpoint["state"] == "queued"
+    assert advance(client, monkeypatch, model) == "ready"
+    result = get_draft(client, submitted["id"])
+    assert result["state"] == "pending"
+    assert result["progress_percent"] == 100
+    assert result["progress_stage"] == "ready_partial"
+    assert len(result["rows"]) == 1
+    assert len(model.calls) == 2
+
+
+def test_unreadable_first_pass_stops_without_second_paid_call(client, monkeypatch):
+    make(client, "headman")
+    authorize_analysis(client)
+    model = UnreadableFirstPassVision()
+    submitted = upload(client, week(), picture()).json()
+    assert advance(client, monkeypatch, model) == "failed"
+    result = get_draft(client, submitted["id"])
+    assert result["progress_stage"] == "failed_unreadable"
+    assert result["progress_percent"] == 20
+    assert len(model.calls) == 1
+
+
 class IncompleteSecondPassVision(Vision):
     async def complete_vision(self, **kwargs):
         result = await super().complete_vision(**kwargs)
