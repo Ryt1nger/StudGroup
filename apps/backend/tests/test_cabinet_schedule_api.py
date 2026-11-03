@@ -270,6 +270,56 @@ def test_recovery_of_queued_second_pass_without_repeating_paid_first_pass(client
     assert get_draft(client, submitted["id"])["state"] == "pending"
 
 
+def test_personal_manual_retries_allow_multiple_attempts_without_ai_calls(client, monkeypatch):
+    from studgroup.models import User
+
+    make(client, "headman")
+    authorize_analysis(client)
+
+    async def personal_user_id(db):
+        return await db.scalar(
+            select(User.telegram_user_id).join(
+                CabinetScheduleUpload,
+                CabinetScheduleUpload.created_by == User.id,
+            )
+            .limit(1)
+        )
+
+    submitted = upload(client, week(), picture()).json()
+    personal_id = db_run(client, personal_user_id)
+    assert personal_id is not None
+    monkeypatch.setenv("CABINET_UNLIMITED_RETRY_TELEGRAM_ID", str(personal_id))
+
+    async def fail_attempt(db):
+        record = await db.get(CabinetScheduleUpload, uuid.UUID(submitted["id"]))
+        record.state = "failed"
+        record.progress_stage = "failed_unreadable"
+
+    for attempt in range(3):
+        db_run(client, fail_attempt)
+        failed = get_draft(client, submitted["id"])
+        assert failed["can_retry"] is True
+        response = client.post(
+            f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH
+        )
+        assert response.status_code == 202
+        assert response.json()["state"] == "queued"
+        assert response.json()["can_retry"] is False
+
+    async def retries(db):
+        record = await db.get(CabinetScheduleUpload, uuid.UUID(submitted["id"]))
+        return record.retry_count
+
+    assert db_run(client, retries) == 3
+    monkeypatch.setenv("CABINET_UNLIMITED_RETRY_TELEGRAM_ID", "0")
+    db_run(client, fail_attempt)
+    assert get_draft(client, submitted["id"])["can_retry"] is False
+    response = client.post(
+        f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH
+    )
+    assert response.status_code == 409
+
+
 def test_stale_paid_stage_fails_closed_and_requires_explicit_retry(client, monkeypatch):
     make(client, "deputy")
     authorize_analysis(client)
