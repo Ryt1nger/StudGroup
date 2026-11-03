@@ -18,9 +18,7 @@ def upgrade():
         "cabinet_schedule_uploads",
         sa.Column("progress_stage", sa.String(32), nullable=False, server_default="legacy"),
     )
-    op.add_column(
-        "cabinet_schedule_uploads", sa.Column("claimed_at", sa.DateTime(timezone=True))
-    )
+    op.add_column("cabinet_schedule_uploads", sa.Column("claimed_at", sa.DateTime(timezone=True)))
     op.add_column("cabinet_schedule_uploads", sa.Column("first_pass_json", sa.Text()))
     op.add_column(
         "cabinet_schedule_uploads",
