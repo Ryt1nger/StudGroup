@@ -262,13 +262,12 @@ def test_stale_paid_stage_fails_closed_and_requires_explicit_retry(client, monke
     assert error["state"] == "failed"
     assert error["can_retry"] is True
     assert not vision.calls
-    retry = client.post(
-        f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH
-    )
+    retry = client.post(f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH)
     assert retry.status_code == 202
     assert retry.json()["state"] == "queued"
     assert advance(client, monkeypatch, vision) == "pass_a_ready"
     assert advance(client, monkeypatch, vision) == "ready"
-    assert client.post(
-        f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH
-    ).status_code == 409
+    assert (
+        client.post(f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH).status_code
+        == 409
+    )
