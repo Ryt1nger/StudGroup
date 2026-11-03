@@ -108,10 +108,11 @@ async def list_uploads(context: CurrentStaff, db: Db):
     # One-time cleanup of pre-reset cabinet uploads: delete historical images,
     # checkpoints and attempts, not the actual published timetable. The fixed
     # cutoff keeps every future upload (including retryable failures) intact.
+    cutoff = datetime(2026, 11, 3, 15, 0, tzinfo=UTC)
     await db.execute(
         delete(CabinetScheduleUpload).where(
             CabinetScheduleUpload.group_id == context.group.id,
-            CabinetScheduleUpload.created_at < datetime(2026, 11, 3, 15, 0, tzinfo=UTC),
+            CabinetScheduleUpload.created_at < cutoff,
         )
     )
     rows = (
