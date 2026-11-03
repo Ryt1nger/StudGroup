@@ -207,9 +207,7 @@ function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise
   const serverNow = useSessionServerNow();
   const zone = useGroupTimeZone();
   const [file, setFile] = useState<File | null>(null);
-  const [weekStart, setWeekStart] = useState(
-    () => weekKeys(dayKey(serverNow() ?? Date.now(), zone))[0] ?? '',
-  );
+  const weekStart = weekKeys(dayKey(serverNow() ?? Date.now(), zone))[0] ?? '';
   // Default to one-week review. Publishing or changing recurring patterns still requires staff confirmation.
   const upload = useCabinetUpload();
   return (
