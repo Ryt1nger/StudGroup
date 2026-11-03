@@ -44,6 +44,8 @@ def metadata(row):
         "progress_percent": row.progress_percent,
         "progress_stage": row.progress_stage,
         "can_retry": row.state == "failed" and row.retry_count < 1,
+        "failure_code": row.failure_code,
+        "needs_review": row.needs_review,
     }
 
 
@@ -230,6 +232,7 @@ async def retry_upload(ident: uuid.UUID, context: CurrentStaff, db: Db):
     row.progress_percent = 50 if row.first_pass_json else 5
     row.progress_stage = "queued_b" if row.first_pass_json else "queued_a"
     row.state = "queued"
+    row.failure_code = None
     row.claimed_at = None
     payload = metadata(row)
     await db.commit()
