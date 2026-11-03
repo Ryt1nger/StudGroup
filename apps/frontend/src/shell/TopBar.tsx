@@ -41,7 +41,7 @@ function Actions() {
 }
 
 /** Top row of a section: «Сегодня» greets the user, the other sections show the group name over their title. */
-export function SectionTop({ title }: { title?: string }) {
+export function SectionTop({ title, titleAction }: { title?: string; titleAction?: ReactNode }) {
   const { state } = useSession();
   const { first } = useOwnName();
   const ready = state.status === 'ready' ? state.session : null;
@@ -50,7 +50,14 @@ export function SectionTop({ title }: { title?: string }) {
     <div className="top">
       <div className="hi">
         <span>{title ? group : greeting()}</span>
-        <b>{(title ?? first) || '\u00a0'}</b>
+        {titleAction ? (
+          <div className="head-title-line">
+            <b>{(title ?? first) || '\u00a0'}</b>
+            {titleAction}
+          </div>
+        ) : (
+          <b>{(title ?? first) || '\u00a0'}</b>
+        )}
       </div>
       <Actions />
     </div>
