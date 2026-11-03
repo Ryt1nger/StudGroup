@@ -19,9 +19,7 @@ from studgroup.models import Group, GroupAnalysisSettings
 GROUP_NAME = "би 1.2"
 AMOUNT = Decimal("0.05")
 MAX_WINDOW = timedelta(hours=48)
-APPROVAL_MARKER = (
-    "StudGroup|БИ 1.2|2026-11-03|user-approved|USD0.05|manual-vision-only|no-backfill"
-)
+APPROVAL_MARKER = "StudGroup|БИ 1.2|2026-11-03|user-approved|USD0.05|manual-vision-only|no-backfill"
 APPROVAL_DIGEST = hashlib.sha256(APPROVAL_MARKER.encode()).hexdigest()
 ENV_APPROVAL = "STUDGROUP_BI12_IMAGE_TEST_APPROVAL_SHA256"
 ENV_SINCE = "STUDGROUP_BI12_IMAGE_TEST_SINCE_UTC"
@@ -39,9 +37,7 @@ async def apply(db, *, approval, since, until, now):
         raise ValueError("bi12_vision_window_closed")
     groups = (
         await db.scalars(
-            select(Group)
-            .where(func.lower(func.trim(Group.name)) == GROUP_NAME)
-            .with_for_update()
+            select(Group).where(func.lower(func.trim(Group.name)) == GROUP_NAME).with_for_update()
         )
     ).all()
     if len(groups) != 1:
@@ -69,9 +65,7 @@ async def apply(db, *, approval, since, until, now):
     if route.shadow_daily_budget_usd < AMOUNT:
         route.shadow_daily_budget_usd = AMOUNT
         route.updated_at = now
-    await configure(
-        db, group.id, amount=AMOUNT, since=since, until=until, receipt=approval
-    )
+    await configure(db, group.id, amount=AMOUNT, since=since, until=until, receipt=approval)
     return {"state": "configured", "until": until.isoformat(), "max_usd": "0.05"}
 
 
@@ -83,7 +77,9 @@ async def startup(engine):
     since = datetime.fromisoformat(os.environ[ENV_SINCE])
     until = datetime.fromisoformat(os.environ[ENV_UNTIL])
     async with AsyncSession(engine) as db:
-        outcome = await apply(db, approval=approval, since=since, until=until, now=datetime.now(UTC))
+        outcome = await apply(
+            db, approval=approval, since=since, until=until, now=datetime.now(UTC)
+        )
         await db.commit()
     print(
         f"BI12_MANUAL_VISION_BUDGET {outcome['state']} max_usd={outcome['max_usd']}"
