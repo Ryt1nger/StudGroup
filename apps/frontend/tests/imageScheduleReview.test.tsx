@@ -289,10 +289,10 @@ it('keeps upload messaging simple when AI funding is unavailable', async () => {
   );
   renderApp({ route: '/schedule/review' });
   const form = await screen.findByRole('form', { name: 'Загрузка скриншота расписания' });
-  expect(form).toHaveTextContent('Загрузите скриншот и проверьте распознанные пары перед сохранением.');
+  expect(form).toHaveTextContent('Загрузить расписание');
   expect(form).not.toHaveTextContent('два платных запроса');
   await userEvent.upload(
-    screen.getByLabelText(/Скриншот \(PNG/),
+    screen.getByLabelText(/Скриншот расписания/),
     new File(['test'], 'schedule.png', { type: 'image/png' }),
   );
   // JSDOM's native file-form constraint handling can block userEvent.click.
@@ -301,5 +301,5 @@ it('keeps upload messaging simple when AI funding is unavailable', async () => {
   await waitFor(() => expect(attempts).toBe(1));
   expect(await screen.findByRole('alert')).toHaveTextContent('Распознавание сейчас недоступно');
   expect(form).not.toHaveTextContent('Платный анализ не настроен');
-  expect(screen.getByRole('button', { name: 'Распознать и проверить' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Анализировать' })).toBeEnabled();
 });
