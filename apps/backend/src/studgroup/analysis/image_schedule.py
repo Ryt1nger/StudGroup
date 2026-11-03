@@ -1,5 +1,6 @@
 """Draft timetable proposals; an explicit authorized confirmation is the only write path."""
 
+import hashlib
 import json
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
@@ -14,6 +15,7 @@ from studgroup.analysis.schedule_scope import suggest_review_rows
 from studgroup.api import ApiError
 from studgroup.headman_domain import guard, lock_decision, save_audit
 from studgroup.models import (
+    CabinetScheduleUpload,
     Group,
     ImageAnalysisJob,
     ImageScheduleSuggestion,
@@ -130,7 +132,7 @@ async def current_source(db, job_id, group_id, now):
     return job
 
 
-async def confirm(db, group_id, user, member, ident, body, now=None):
+async def confirm(db, group_id, user, member, ident, body, now=None, *, cabinet=False):
     from studgroup.analysis.image_jobs import utc
 
     now = now or datetime.now(UTC)
@@ -154,13 +156,10 @@ async def confirm(db, group_id, user, member, ident, body, now=None):
         .with_for_update()
         .execution_options(populate_existing=True)
     )
+    model = CabinetScheduleUpload if cabinet else ImageScheduleSuggestion
     suggestion = await db.scalar(
-        select(ImageScheduleSuggestion)
-        .where(
-            ImageScheduleSuggestion.id == ident,
-            ImageScheduleSuggestion.group_id == group_id,
-            ImageScheduleSuggestion.delete_at > now,
-        )
+        select(model)
+        .where(model.id == ident, model.group_id == group_id, model.delete_at > now)
         .with_for_update()
     )
     if suggestion is None:
@@ -179,7 +178,9 @@ async def confirm(db, group_id, user, member, ident, body, now=None):
         raise ApiError(
             "revision_conflict", "Расписание изменилось; проверьте предложение заново", 409
         )
-    job = await current_source(db, suggestion.image_job_id, group_id, now)
+    job = None if cabinet else await current_source(db, suggestion.image_job_id, group_id, now)
+    if cabinet and suggestion.image_sha256 != hashlib.sha256(suggestion.image_bytes).hexdigest():
+        raise ApiError("stale_source", "Скриншот был изменён", 409)
     original_rows = json.loads(suggestion.rows_json)
     if body.corrected_rows is None and any(
         not value.get("valid_from") or not value.get("valid_until") for value in original_rows
@@ -399,5 +400,6 @@ async def confirm(db, group_id, user, member, ident, body, now=None):
     suggestion.state, suggestion.decided_by = "confirmed", user.id
     suggestion.revision += 1
     # Context state is retained; official writes are performed only in this caller transaction.
-    assert utc(job.delete_at) > now
+    if job is not None:
+        assert utc(job.delete_at) > now
     return group.schedule_version
