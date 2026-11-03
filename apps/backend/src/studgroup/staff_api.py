@@ -171,7 +171,13 @@ async def change_lesson(lesson_id: str, body: LessonChange, context: CurrentStaf
     patch = {
         field: getattr(body, field)
         for field in (
-            "subject", "teacher", "starts_at", "ends_at", "location", "online_url", "cancelled"
+            "subject",
+            "teacher",
+            "starts_at",
+            "ends_at",
+            "location",
+            "online_url",
+            "cancelled",
         )
         if field in body.model_fields_set
     }
