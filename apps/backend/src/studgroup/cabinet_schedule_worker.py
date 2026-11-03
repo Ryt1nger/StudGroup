@@ -161,8 +161,16 @@ async def process_next(engine, settings, provider=None, now=None):
         )
         if task["phase"] == "queued_a":
             first, _ = await read_pass(port, task["image"], task["mime"], 1, context={})
-            if not first.complete:
-                raise ApiError("image_unclear", "Не удалось полностью прочитать изображение", 422)
+            # Pass A extracts pixels, not structured timetable rows. A clipped
+            # subject can make complete=False even when readable text survives.
+            # Keep that paid checkpoint for pass B; only reject an empty read.
+            readable = (
+                bool(first.extracted_text.strip())
+                or bool(first.facts)
+                or any(block.content.strip() or block.rows for block in first.blocks)
+            )
+            if not first.complete and not readable:
+                raise ApiError("image_unclear", "Не удалось прочитать изображение", 422)
             ok = await checkpoint(
                 engine,
                 task["id"],
@@ -196,8 +204,10 @@ async def process_next(engine, settings, provider=None, now=None):
         # rows for human correction instead of discarding a paid recognition.
         if not second.schedule:
             raise ApiError("not_a_schedule", "Не удалось найти читаемые пары", 422)
-        partial = not second.complete or not {"schedule", "schedule_change"}.intersection(
-            second.semantic_types
+        partial = (
+            not first.complete
+            or not second.complete
+            or not {"schedule", "schedule_change"}.intersection(second.semantic_types)
         )
         await checkpoint(
             engine,
