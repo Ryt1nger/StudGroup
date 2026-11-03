@@ -72,7 +72,9 @@ def check_image(data: bytes):
                 raise ApiError("invalid_image", "Неподходящий размер изображения", 422)
             picture.verify()
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
-        raise ApiError("invalid_image", "Файл повреждён или не является изображением", 422) from None
+        raise ApiError(
+            "invalid_image", "Файл повреждён или не является изображением", 422
+        ) from None
     return mime
 
 
@@ -152,9 +154,7 @@ async def upload_schedule(
     sha = hashlib.sha256(data).hexdigest()
     await eligible(db, context.group, now)
     # Serialize concurrent identical submissions by group. Commit BEFORE DeepSeek HTTP.
-    group = await db.scalar(
-        select(Group).where(Group.id == context.group.id).with_for_update()
-    )
+    group = await db.scalar(select(Group).where(Group.id == context.group.id).with_for_update())
     await prune(db, context.group.id, now)
     previous = await db.scalar(
         select(CabinetScheduleUpload)
@@ -209,12 +209,17 @@ async def upload_schedule(
         first, _ = await read_pass(provider, data, mime, 1, context={})
         if not first.complete:
             raise ApiError("image_unclear", "Не удалось полностью прочитать скриншот", 422)
-        hint = (
-            f"Староста явно выбрал расписание с {week_start.isoformat()} "
-            + ("только на эту неделю." if duration == "one_week" else "на постоянной основе для этой чётности.")
+        hint = f"Староста явно выбрал расписание с {week_start.isoformat()} " + (
+            "только на эту неделю."
+            if duration == "one_week"
+            else "на постоянной основе для этой чётности."
         )
         second, _ = await read_pass(
-            provider, data, mime, 2, first=first,
+            provider,
+            data,
+            mime,
+            2,
+            first=first,
             context={
                 "messages": [{"telegram_message_id": 0, "text": hint}],
                 "image_source_message_id": 0,
@@ -230,7 +235,8 @@ async def upload_schedule(
         # The editor's explicit date/scope selection is authoritative; DeepSeek reads the cells.
         scope = ScheduleInterpretation(
             coverage=second.schedule_interpretation.coverage
-            if second.schedule_interpretation is not None else "unknown",
+            if second.schedule_interpretation is not None
+            else "unknown",
             duration=duration,
             week_start=week_start,
             explanation="Период подтверждён старостой при загрузке",
@@ -263,7 +269,9 @@ async def upload_schedule(
                 await save.commit()
         if isinstance(error, ApiError):
             raise
-        raise ApiError("analysis_unavailable", "DeepSeek недоступен или лимит исчерпан", 503) from None
+        raise ApiError(
+            "analysis_unavailable", "DeepSeek недоступен или лимит исчерпан", 503
+        ) from None
     except Exception:  # noqa: BLE001 - paid-vision boundary; redact provider details
         async with AsyncSession(request.app.state.engine) as save:
             saved = await save.get(CabinetScheduleUpload, item.id, with_for_update=True)
