@@ -504,3 +504,29 @@ def test_one_week_exception_image_stays_date_limited_and_never_writes_live(clien
     assert row["week"] == "all"
     assert (row["valid_from"], row["valid_until"]) == ("2026-11-02", "2026-11-08")
     assert stored(client, ScheduleChange) == []
+
+
+def test_clipped_timetable_names_require_editor_correction_before_live_write(client, monkeypatch):
+    """Text displayed as '...' must not be stored as a complete official identity."""
+    suggestion = prepare(
+        client, monkeypatch, subject="Курс по...", teacher="Иванова...", room="Ауд. 12…",
+    )
+    make(client, "headman")
+    path = f"/v1/staff/image-findings/schedule/{suggestion.id}/confirm"
+    body = {"expected_revision": 1, "expected_schedule_version": 0}
+    rejected = client.post(path, json=body, headers=AUTH)
+    assert rejected.status_code == 409
+    assert rejected.json()["error"]["code"] == "schedule_row_incomplete"
+    assert stored(client, ScheduleChange) == []
+    corrected = json.loads(suggestion.rows_json)[0] | {
+        "subject": "Полное название курса",
+        "teacher": "Иванова Анна",
+        "room": "Аудитория 12",
+    }
+    applied = client.post(
+        path,
+        json=body | {"corrected_rows": [corrected]},
+        headers=AUTH,
+    )
+    assert applied.status_code == 200, applied.text
+    assert len(stored(client, ScheduleChange)) == 1
