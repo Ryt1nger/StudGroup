@@ -3,6 +3,7 @@
 import asyncio
 import io
 import json
+import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -250,7 +251,7 @@ def test_stale_paid_stage_fails_closed_and_requires_explicit_retry(client, monke
     submitted = upload(client, week(), picture()).json()
 
     async def lose_worker(db):
-        row = await db.get(CabinetScheduleUpload, submitted["id"])
+        row = await db.get(CabinetScheduleUpload, uuid.UUID(submitted["id"]))
         row.state = "processing"
         row.progress_stage = "reading_a"
         row.progress_percent = 20
