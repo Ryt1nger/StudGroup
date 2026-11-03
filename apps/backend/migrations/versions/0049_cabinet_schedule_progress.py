@@ -32,6 +32,12 @@ def upgrade():
     op.execute(
         "UPDATE cabinet_schedule_uploads SET progress_stage = 'failed' WHERE state = 'failed'"
     )
+    # Old synchronous requests could be interrupted during rollout; they have
+    # no durable checkpoint. Never silently repurchase those paid calls.
+    op.execute(
+        "UPDATE cabinet_schedule_uploads SET state = 'failed', progress_stage = 'failed' "
+        "WHERE state = 'processing'"
+    )
 
 
 def downgrade():
