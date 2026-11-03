@@ -45,8 +45,8 @@ export function ImageScheduleReviewScreen() {
 
   return (
     <>
-      <BackTop fallback="/schedule" />
-      <h1 className="ptitle">Проверка расписания</h1>
+      <BackTop fallback="/schedule/manage" />
+      <h1 className="ptitle">Загрузка расписания</h1>
       {!editor ? (
         <StateView
           icon="lock"
@@ -290,7 +290,7 @@ function ScheduleReviewForm({
       },
       {
         onSuccess: () => {
-          void navigate('/schedule', { replace: true });
+          void navigate('/schedule/manage', { replace: true });
         },
       },
     );
