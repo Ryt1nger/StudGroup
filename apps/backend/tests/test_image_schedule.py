@@ -247,7 +247,7 @@ def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(clie
     asyncio.run(teacher())
     suggestion = prepare(client, monkeypatch)
     make(client, "headman")
-    lesson = client.get("/v1/staff/schedule?start=2026-11-02&end=2026-11-02", headers=AUTH).json()[
+    lesson = client.get("/v1/staff/schedule?start=2026-11-09&end=2026-11-09", headers=AUTH).json()[
         "lesson_edits"
     ][0]
     corrected = {
@@ -257,8 +257,8 @@ def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(clie
         "subject": "Информатика",
         "teacher": None,
         "room": "303",
-        "valid_from": "2026-11-02",
-        "valid_until": "2026-11-02",
+        "valid_from": "2026-11-09",
+        "valid_until": "2026-11-09",
     }
     response = client.post(
         f"/v1/staff/image-findings/schedule/{suggestion.id}/confirm",
@@ -279,7 +279,7 @@ def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(clie
         },
     )
     assert response.status_code == 200, response.text
-    result = client.get("/v1/schedule?start=2026-11-02&end=2026-11-02", headers=AUTH)
+    result = client.get("/v1/schedule?start=2026-11-09&end=2026-11-09", headers=AUTH)
     assert result.status_code == 200, result.text
     changed = next(row for row in result.json()["lessons"] if row["subject"] == "Информатика")
     assert changed["teacher"] is None
@@ -299,7 +299,7 @@ def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(clie
             await db.commit()
 
     asyncio.run(undo())
-    restored = client.get("/v1/schedule?start=2026-11-02&end=2026-11-02", headers=AUTH).json()[
+    restored = client.get("/v1/schedule?start=2026-11-09&end=2026-11-09", headers=AUTH).json()[
         "lessons"
     ]
     assert all(row["subject"] != "Информатика" for row in restored)
