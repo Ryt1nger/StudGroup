@@ -651,7 +651,7 @@ a.pcard:active { transform: scale(.98); }
 @media (max-width: 390px) {
   .head-title-line { gap: 6px; }
   .head-title-line > b { font-size: clamp(22px, 6.6vw, 27px); }
-  .schedule-edit-link { width: 32px; height: 32px; border-radius: 10px; }
+  .head-title-line .schedule-edit-link { width: 32px; height: 32px; border-radius: 10px; }
 }
 .schedule-edit-link {
   flex: none; display: inline-grid; place-items: center; width: 36px; height: 36px;
