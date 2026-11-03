@@ -22,7 +22,7 @@ test('editor corrects the recognized schedule and maps it to one official occurr
   await page.getByRole('button', { name: 'Подтвердить расписание', exact: true }).click();
   await expect(page).toHaveURL(/\/schedule\/manage$/);
   await page.getByRole('link', { name: 'Назад' }).click();
-  await expect(page).toHaveURL(/\/schedule$/);
+  await expect(page).toHaveURL(/\/schedule(?:\?|$)/);
   await selectCalendarDate(page, date);
   const changed = page.getByRole('link', { name: /Математический анализ.*13:00.*14:30.*305.*Петров/ });
   await expect(changed).toBeAttached();
