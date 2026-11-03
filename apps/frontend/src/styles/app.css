@@ -642,3 +642,44 @@ a.pcard:active { transform: scale(.98); }
 .nav.with-events a { font-size: clamp(9px, 2.3vw, 10px); letter-spacing: -.025em; min-width: 0; }
 @media (max-width: 360px) { .nav.with-events { left: 8px; right: 8px; } }
 .event-week-nav .pillb { font-size: 12px; padding: 8px 10px; white-space: nowrap; }
+
+
+/* Schedule management: discreet editor entry and compact staff-only controls. */
+.head-title-line { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.head-title-line > b { min-width: 0; }
+.schedule-edit-link {
+  flex: none; display: inline-grid; place-items: center; width: 36px; height: 36px;
+  border-radius: 12px; background: var(--card); color: var(--label-2);
+  border: .5px solid var(--card-edge); box-shadow: var(--card-hi);
+}
+.schedule-edit-link:active { transform: scale(.95); }
+.schedule-edit-link:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
+.manage-intro { color: var(--label-2); line-height: 1.45; margin: 4px 0 18px; font-size: 14px; }
+.manage-quick { display: flex; gap: 10px; align-items: stretch; margin: 12px 0 18px; }
+.manage-quick > a {
+  flex: 1; min-width: 0; display: flex; gap: 10px; align-items: center;
+  padding: 13px; border-radius: 18px; border: .5px solid var(--card-edge);
+  background: var(--card); color: var(--label);
+}
+.manage-quick > a > span { flex: 1; min-width: 0; }
+.manage-quick strong { font-size: 14px; font-weight: 650; display: block; }
+.manage-quick small { display: block; color: var(--label-2); font-size: 12px; margin-top: 2px; }
+.manage-toolbar { display: flex; align-items: center; gap: 8px; margin: 14px 0; }
+.manage-toolbar > span { flex: 1; font-weight: 650; font-size: 14px; text-align: center; }
+.manage-toolbar button { width: 36px; height: 36px; border: .5px solid var(--card-edge); border-radius: 12px; background: var(--card); display: grid; place-items: center; }
+.manage-subtle { color: var(--label-2); font-size: 13px; margin: 8px 0 12px; line-height: 1.4; }
+.manage-day { padding: 14px 0; border-bottom: .5px solid var(--card-edge); }
+.manage-day:last-child { border-bottom: 0; }
+.manage-day h3 { font-size: 14px; font-weight: 700; text-transform: none; letter-spacing: 0; margin-bottom: 8px; color: var(--label); }
+.manage-lesson { display: flex; gap: 9px; align-items: center; padding: 12px 0; }
+.manage-lesson + .manage-lesson { border-top: .5px solid var(--card-edge); }
+.manage-lesson-body { min-width: 0; flex: 1; }
+.manage-lesson-body strong { font-size: 15px; display: block; line-height: 1.3; overflow-wrap: anywhere; }
+.manage-lesson-body span { font-size: 12px; color: var(--label-2); line-height: 1.4; display: block; margin-top: 3px; }
+.manage-lesson button { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 12px; background: var(--fill-2); color: var(--label-2); }
+.manage-form { padding: 14px; margin: 8px 0 14px; border-radius: 18px; border: .5px solid var(--card-edge); background: var(--fill-2); }
+.manage-form .field { margin-top: 10px; }
+.manage-form .field :is(input, select) { background: var(--card); }
+.manage-form .manage-form-actions { display: flex; gap: 8px; margin-top: 16px; }
+.manage-form-actions > button { flex: 1; min-height: 44px; }
+.manage-empty-day { color: var(--label-3); font-size: 13px; }
