@@ -101,9 +101,7 @@ def test_legacy_mode_manual_photo_still_goes_through_shared_five_cent_ledger(cli
 
     async def check():
         async with AsyncSession(client.app.state.engine) as db:
-            group_id = await db.scalar(
-                select(Group.id).where(Group.telegram_chat_id == -1001)
-            )
+            group_id = await db.scalar(select(Group.id).where(Group.telegram_chat_id == -1001))
         stub = StubVision()
         port = provider_for(
             client.app.state.engine,
