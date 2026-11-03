@@ -105,13 +105,13 @@ async def eligible(db, group, now):
 async def list_uploads(context: CurrentStaff, db: Db):
     now = datetime.now(UTC)
     await prune(db, context.group.id, now)
-    # Failed cabinet screenshot attempts are disposable; remove the stored image
-    # and checkpoints as well as the visible error record. Never touch active
-    # tasks, reviewable drafts, confirmed schedules, or other group data.
+    # One-time cleanup of pre-reset cabinet uploads: delete historical images,
+    # checkpoints and attempts, not the actual published timetable. The fixed
+    # cutoff keeps every future upload (including retryable failures) intact.
     await db.execute(
         delete(CabinetScheduleUpload).where(
             CabinetScheduleUpload.group_id == context.group.id,
-            CabinetScheduleUpload.state == "failed",
+            CabinetScheduleUpload.created_at < datetime(2026, 11, 3, 15, 0, tzinfo=UTC),
         )
     )
     rows = (
