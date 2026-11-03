@@ -278,7 +278,8 @@ def test_personal_manual_retries_allow_multiple_attempts_without_ai_calls(client
 
     async def personal_user_id(db):
         return await db.scalar(
-            select(User.telegram_user_id).join(
+            select(User.telegram_user_id)
+            .join(
                 CabinetScheduleUpload,
                 CabinetScheduleUpload.created_by == User.id,
             )
@@ -299,9 +300,7 @@ def test_personal_manual_retries_allow_multiple_attempts_without_ai_calls(client
         db_run(client, fail_attempt)
         failed = get_draft(client, submitted["id"])
         assert failed["can_retry"] is True
-        response = client.post(
-            f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH
-        )
+        response = client.post(f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH)
         assert response.status_code == 202
         assert response.json()["state"] == "queued"
         assert response.json()["can_retry"] is False
@@ -314,9 +313,7 @@ def test_personal_manual_retries_allow_multiple_attempts_without_ai_calls(client
     monkeypatch.setenv("CABINET_UNLIMITED_RETRY_TELEGRAM_ID", "0")
     db_run(client, fail_attempt)
     assert get_draft(client, submitted["id"])["can_retry"] is False
-    response = client.post(
-        f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH
-    )
+    response = client.post(f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH)
     assert response.status_code == 409
 
 
