@@ -110,7 +110,7 @@ it('shows a failed persisted task and allows only an explicit retry', async () =
   renderApp({ route: '/schedule/review' });
   expect(await screen.findByText('Обработка остановлена')).toBeInTheDocument();
   expect(retried).toBe(false);
-  await userEvent.click(screen.getByRole('button', { name: 'Повторить распознавание' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Перезапустить анализ' }));
   await waitFor(() => expect(retried).toBe(true));
   expect(await screen.findByRole('progressbar')).toHaveAttribute('aria-valuenow', '20');
 });
