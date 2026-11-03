@@ -172,12 +172,18 @@ function CabinetProgress({ suggestion }: {
       {failed ? (
         <>
           <p>Исходный скриншот сохранён. Можно попробовать ещё раз, если доступен лимит распознавания.</p>
-          {suggestion.can_retry ? (
-            <button className="btn" type="button" disabled={retry.isPending}
-              onClick={() => retry.mutate()}>
-              {retry.isPending ? 'Повторяем…' : 'Повторить распознавание'}
-            </button>
-          ) : null}
+          <button className="btn" type="button"
+            disabled={!suggestion.can_retry || retry.isPending}
+            onClick={() => retry.mutate()}>
+            {retry.isPending ? 'Перезапускаем…' : 'Перезапустить анализ'}
+          </button>
+          {!suggestion.can_retry ? (
+            <p>Повторный запуск для этой задачи недоступен: одна попытка повтора уже использована.
+              Скриншот сохранён.</p>
+          ) : (
+            <p>Повторный запуск может потребовать оплачиваемого запроса DeepSeek.
+              Сохранённые этапы используются повторно, если это возможно.</p>
+          )}
           {retry.isError ? <RequestError error={retry.error} /> : null}
         </>
       ) : (
