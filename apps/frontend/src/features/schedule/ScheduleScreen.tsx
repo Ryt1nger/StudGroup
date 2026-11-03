@@ -175,7 +175,11 @@ export function ScheduleScreen() {
       <div className="pinned">
         <SectionTop title="Расписание" />
         <h1 className="sr">{ru.nav.schedule}</h1>
-        {features.schedule_review ? <Link className="pillb" to="/schedule/review">Проверить распознанное расписание</Link> : null}
+        {state.status === 'ready' && state.session.permissions.includes('schedule.write') ? (
+          <Link className="pillb" to="/schedule/review">Добавить расписание по скриншоту</Link>
+        ) : features.schedule_review ? (
+          <Link className="pillb" to="/schedule/review">Проверить распознанное расписание</Link>
+        ) : null}
         <div className="datel">{label}</div>
         <WeekStrip days={days} selected={selected} marked={marked} onSelect={(i) => { setSelectedKey(days[i]!); anchored.current = ''; }} onWeekChange={(direction) => {
           const next = addDays(days[0]!, direction * 7);
