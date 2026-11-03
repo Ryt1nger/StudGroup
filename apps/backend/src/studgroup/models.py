@@ -1156,6 +1156,8 @@ class CabinetScheduleUpload(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     schedule_version: Mapped[int] = mapped_column(Integer)
+    week_start: Mapped[date] = mapped_column(Date)
+    duration: Mapped[str] = mapped_column(String(16))
     rows_json: Mapped[str] = mapped_column(Text)
     image_bytes: Mapped[bytes] = mapped_column(LargeBinary)
     image_mime: Mapped[str] = mapped_column(String(32))
