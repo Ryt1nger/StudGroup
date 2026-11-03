@@ -62,7 +62,7 @@ it('submits a screenshot without waiting and shows server-confirmed progress acr
   const app = renderApp({ route: '/schedule/review' });
   const form = await screen.findByRole('form', { name: 'Загрузка скриншота расписания' });
   await userEvent.upload(
-    screen.getByLabelText(/Скриншот \(PNG/),
+    screen.getByLabelText(/Скриншот расписания/),
     new File(['fake pixels'], 'lesson.png', { type: 'image/png' }),
   );
   fireEvent.submit(form);
