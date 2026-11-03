@@ -113,6 +113,16 @@ async def eligible(db, group, now):
         or not utc(route.release_budget_since) <= now < utc(route.release_budget_until)
     ):
         raise ApiError("analysis_budget_closed", "Лимит платного теста завершён", 409)
+    # Refuse an obviously unfunded request before returning a queued job.
+    # Full provider accounting still performs the authoritative reservation.
+    from studgroup.analysis.release_budget import spent
+
+    if await spent(db, group.id) >= route.release_budget_usd:
+        raise ApiError(
+            "analysis_budget_closed",
+            "Бюджет распознавания исчерпан. Новые запросы не запускаются.",
+            409,
+        )
     return route
 
 
