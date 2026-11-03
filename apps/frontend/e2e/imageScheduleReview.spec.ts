@@ -3,8 +3,10 @@ import { selectCalendarDate } from './selectCalendarDate';
 
 test('editor corrects the recognized schedule and maps it to one official occurrence', async ({ page }) => {
   await page.goto('/schedule?scenario=schedule-review');
-  await page.getByRole('link', { name: 'Проверить распознанное расписание' }).click();
-  await expect(page.getByRole('heading', { name: 'Проверка расписания', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Управление расписанием' }).click();
+  await expect(page.getByRole('heading', { name: 'Управление расписанием', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Загрузить расписание и открыть черновики' }).click();
+  await expect(page.getByRole('heading', { name: 'Загрузка расписания', exact: true })).toBeVisible();
   const date = await page.getByLabel('Действует с', { exact: true }).inputValue();
   await page.getByLabel('Преподаватель', { exact: true }).fill('Петров');
   await page.getByLabel('Аудитория', { exact: true }).fill('305');
@@ -18,6 +20,8 @@ test('editor corrects the recognized schedule and maps it to one official occurr
   expect(target).toBeTruthy();
   await mapping.selectOption(target!);
   await page.getByRole('button', { name: 'Подтвердить расписание', exact: true }).click();
+  await expect(page).toHaveURL(/\/schedule\/manage$/);
+  await page.getByRole('link', { name: 'Назад' }).click();
   await expect(page).toHaveURL(/\/schedule$/);
   await selectCalendarDate(page, date);
   const changed = page.getByRole('link', { name: /Математический анализ.*13:00.*14:30.*305.*Петров/ });
