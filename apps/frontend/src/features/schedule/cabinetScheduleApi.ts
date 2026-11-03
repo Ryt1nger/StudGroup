@@ -42,7 +42,14 @@ async function authorized(path: string, options: RequestInit = {}): Promise<Resp
     throw new Error('Нет соединения с сервером');
   }
   if (!response.ok) {
-    const result = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+    const result = (await response.json().catch(() => null)) as {
+      error?: { code?: string; message?: string };
+    } | null;
+    // Funding and AI availability are operator-only details; keep the app error simple.
+    if (result?.error?.code === 'analysis_budget_closed' ||
+        result?.error?.code === 'analysis_unavailable') {
+      throw new Error('Распознавание сейчас недоступно. Попробуйте позже.');
+    }
     throw new Error(result?.error?.message ?? `Ошибка сервера: ${response.status}`);
   }
   return response;
