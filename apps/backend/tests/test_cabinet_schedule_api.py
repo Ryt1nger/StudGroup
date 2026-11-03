@@ -332,9 +332,7 @@ def test_failed_second_pass_records_safe_reason_without_hidden_provider_text(cli
     assert result["progress_stage"] == "failed_budget"
     assert result["can_retry"] is True
     assert len(model.calls) == 2
-    retry = client.post(
-        f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH
-    )
+    retry = client.post(f"/v1/staff/schedule-upload/{submitted['id']}/retry", headers=AUTH)
     assert retry.status_code == 202
     assert retry.json()["progress_stage"] == "queued_b"
     # First successful, charged visual pass stays checkpointed: retry B only.
