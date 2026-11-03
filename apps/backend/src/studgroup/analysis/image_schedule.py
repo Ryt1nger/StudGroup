@@ -53,6 +53,11 @@ class ScheduleConfirmation(BaseModel):
     )
 
 
+def clipped_field(value: str | None) -> bool:
+    """An interface ellipsis is missing source text, not part of a confirmed name."""
+    return value is not None and ("..." in value or "…" in value)
+
+
 async def capture(db, job, reading, now):
     if not reading.schedule or not {"schedule", "schedule_change"}.intersection(
         reading.semantic_types
@@ -197,6 +202,12 @@ async def confirm(db, group_id, user, member, ident, body, now=None):
         row.subject = row.subject.strip()
         if not row.subject:
             raise ApiError("invalid_request", "Предмет не может быть пустым", 422)
+        if any(clipped_field(value) for value in (row.subject, row.teacher, row.room)):
+            raise ApiError(
+                "schedule_row_incomplete",
+                "На скриншоте обрезаны сведения о паре. Уточните название, преподавателя и аудиторию перед подтверждением.",
+                409,
+            )
         expected_subject = subject_uuid(group.id, row.subject)
         if row.subject_id is not None and row.subject_id != expected_subject:
             raise ApiError(
