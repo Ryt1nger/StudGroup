@@ -171,19 +171,13 @@ function CabinetProgress({ suggestion }: {
       </p>
       {failed ? (
         <>
-          <p>Исходный скриншот сохранён. Можно попробовать ещё раз, если доступен лимит распознавания.</p>
+
           <button className="btn" type="button"
             disabled={!suggestion.can_retry || retry.isPending}
             onClick={() => retry.mutate()}>
             {retry.isPending ? 'Перезапускаем…' : 'Перезапустить анализ'}
           </button>
-          {!suggestion.can_retry ? (
-            <p>Повторный запуск для этой задачи недоступен: одна попытка повтора уже использована.
-              Скриншот сохранён.</p>
-          ) : (
-            <p>Повторный запуск может потребовать оплачиваемого запроса DeepSeek.
-              Сохранённые этапы используются повторно, если это возможно.</p>
-          )}
+          {!suggestion.can_retry ? <p>Повторный запуск недоступен.</p> : null}
           {retry.isError ? <RequestError error={retry.error} /> : null}
         </>
       ) : (
@@ -216,38 +210,27 @@ function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise
   const [weekStart, setWeekStart] = useState(
     () => weekKeys(dayKey(serverNow() ?? Date.now(), zone))[0] ?? '',
   );
-  const [duration, setDuration] = useState<'one_week' | 'recurring'>('one_week');
+  // Default to one-week review. Publishing or changing recurring patterns still requires staff confirmation.
   const upload = useCabinetUpload();
   return (
     <form className="form block" aria-label="Загрузка скриншота расписания" onSubmit={(event) => {
       event.preventDefault();
       if (!file) return;
-      upload.mutate({ file, weekStart, duration }, {
+      upload.mutate({ file, weekStart, duration: 'one_week' }, {
         onSuccess: (result) => {
           setFile(null);
           void onUploaded(result.id);
         },
       });
     }}>
-      <h2>Добавить расписание по скриншоту</h2>
-      <p>Загрузите скриншот и проверьте распознанные пары перед сохранением.</p>
-      <div className="field"><label>Скриншот (PNG, JPEG, WEBP; до 8 МБ)
+      <h2>Загрузить расписание</h2>
+      <div className="field"><label>Скриншот расписания
         <input type="file" accept="image/png,image/jpeg,image/webp" required
           onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
       </label></div>
-      <div className="field"><label>Понедельник нужной недели
-        <input type="date" value={weekStart} required
-          onChange={(event) => setWeekStart(event.target.value)} />
-      </label></div>
-      <div className="field"><label>Как долго действует расписание
-        <select value={duration} onChange={(event) => setDuration(event.target.value as 'one_week' | 'recurring')}>
-          <option value="one_week">Только выбранную неделю</option>
-          <option value="recurring">Постоянно для этой чётности</option>
-        </select>
-      </label></div>
       {upload.isError ? <p role="alert">{upload.error.message}</p> : null}
       <button className="btn on" type="submit" disabled={!file || upload.isPending}>
-        {upload.isPending ? 'Отправляем скриншот…' : 'Распознать и проверить'}
+        {upload.isPending ? 'Отправляем скриншот…' : 'Анализировать'}
       </button>
     </form>
   );
