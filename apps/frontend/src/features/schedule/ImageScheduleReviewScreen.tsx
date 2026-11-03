@@ -1,4 +1,5 @@
 import type { ConfirmedScheduleRow, ReviewSubgroup, ScheduleSuggestion } from '@studgroup/shared-types';
+import type { CabinetSuggestion } from './cabinetScheduleApi';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -130,7 +131,7 @@ const PROGRESS_LABELS: Record<string, string> = {
 };
 
 function CabinetProgress({ suggestion }: {
-  suggestion: import('./cabinetScheduleApi').CabinetSuggestion;
+  suggestion: CabinetSuggestion;
 }) {
   const retry = useRetryCabinetUpload(suggestion.id);
   const failed = suggestion.state === 'failed';
