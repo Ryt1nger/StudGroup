@@ -106,6 +106,10 @@ export function ImageScheduleReviewScreen() {
               key={`${selected.id}:${reload}`}
               suggestion={selected as ScheduleSuggestion}
               cabinet={selected.cabinet}
+              partialReview={
+                selected.cabinet && 'progress_stage' in selected &&
+                selected.progress_stage === 'ready_partial'
+              }
               sourceBlob={selected.cabinet ? (image.data ?? null) : null}
               currentVersion={cabinet.data?.current_schedule_version ?? query.data?.current_schedule_version ?? selected.schedule_version}
               subgroups={cabinet.data?.subgroups ?? query.data?.subgroups ?? []}
@@ -127,7 +131,22 @@ const PROGRESS_LABELS: Record<string, string> = {
   queued_b: 'Текст получен, готовимся проверить расписание',
   reading_b: 'Проверяем пары и даты',
   preparing: 'Собираем черновик',
-  failed: 'Не удалось завершить распознавание',
+  failed: 'Не удалось завершить распознавание. Причина предыдущего сбоя неизвестна.',
+  failed_budget: 'Лимит распознавания исчерпан.',
+  failed_window: 'Период доступного распознавания завершился.',
+  failed_hold: 'Распознавание временно заблокировано.',
+  failed_output: 'DeepSeek не завершил формирование ответа.',
+  failed_format: 'Ответ DeepSeek не удалось прочитать.',
+  failed_context: 'Слишком много информации для распознавания.',
+  failed_provider: 'Не удалось получить корректный ответ DeepSeek.',
+  failed_no_lessons: 'Не удалось найти читаемые пары на скриншоте.',
+  failed_unreadable: 'Не удалось прочитать изображение.',
+  failed_input: 'Не удалось обработать содержимое изображения.',
+  failed_validation: 'Не удалось проверить распознанные данные.',
+  failed_internal: 'Внутренняя ошибка обработки. Скриншот сохранён.',
+  failed_interrupted: 'Обработка была прервана. Скриншот сохранён.',
+  failed_checkpoint: 'Не удалось восстановить этап обработки.',
+  failed_group: 'Настройки группы не позволяют выполнить распознавание.',
 };
 
 function CabinetProgress({ suggestion }: {
@@ -238,6 +257,7 @@ type EditableRow = {
 function ScheduleReviewForm({
   suggestion,
   cabinet,
+  partialReview,
   sourceBlob,
   currentVersion,
   subgroups,
@@ -245,6 +265,7 @@ function ScheduleReviewForm({
 }: {
   suggestion: ScheduleSuggestion;
   cabinet: boolean;
+  partialReview: boolean;
   sourceBlob: Blob | null;
   currentVersion: number;
   subgroups: ReviewSubgroup[];
@@ -358,6 +379,12 @@ function ScheduleReviewForm({
   }
   return (
     <>
+      {partialReview ? (
+        <Banner tone="warning" icon="alert">
+          DeepSeek распознал только часть расписания или не уверен в его типе.
+          Проверьте все строки по скриншоту. Отсутствующие пары автоматически не удаляются.
+        </Banner>
+      ) : null}
       {cabinet ? (
         sourceBlob ? (
           <CabinetImagePreview blob={sourceBlob} />
