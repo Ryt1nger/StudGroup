@@ -167,8 +167,8 @@ Pass A keeps its previous A4 prompt and schema: the B-only optional interpretati
 is excluded from the A request so cached pixel transcriptions are not invalidated
 by this classification change.
 
-The pass-B prompt/schema version advances from B8 to B9. Existing B8 snapshots
-remain source records; upgraded B9 readings can incur new provider work if
+The pass-B prompt/schema version advances from B8 to B10. Existing B8 snapshots
+remain source records; upgraded B10 readings can incur new provider work if
 reprocessing is enabled. Roll out only under existing group allowlist and funded
 budgets, with a narrow source window and an explicit paid-run approval. No paid
 runs, production enablement or source-history backfill are authorized by this ADR.
@@ -177,4 +177,22 @@ The frozen complex-vision regression uses archived same-image/same-pass successf
 responses when a prompt/schema version changes: it revalidates historical output
 against the current parser with **zero HTTP**. It explicitly does not claim that
 DeepSeek would produce identical output under the new prompt. Only a separately
-authorized paid test can measure B9's actual model quality.
+authorized paid test can measure B10's actual model quality.
+
+## Real screenshot shape regression — 2026-11-03
+
+A user-provided weekly timetable image for 2–8 November 2026 was inspected
+locally without sending it to any provider or checking it into this public
+repository. Its anonymized structural regression covers 20 distinct lesson
+cards: Monday 4, Tuesday 4, Wednesday 3, Thursday 4, Friday 2,
+Saturday 3, Sunday 0; time slots include 09:00–10:20 and 15:40–17:00.
+Consecutive cells may represent the same subject and must stay separate.
+
+The screenshot UI visibly truncates many course, teacher and room strings with
+ellipses. The contextual vision prompt must preserve only visible fragments,
+not invent hidden full names. Official image-schedule confirmation now rejects
+clipped field values pending editor correction; it does not reject the whole
+image from review. This safeguard is additive and does not modify the photo,
+document, album, or homework processing pipelines. The pass-B prompt changes
+to B10; pass A remains A4. This is a deterministic layout/policy regression,
+**not** proof that DeepSeek recognized the actual screenshot correctly.
