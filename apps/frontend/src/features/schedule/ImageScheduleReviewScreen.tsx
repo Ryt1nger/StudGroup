@@ -146,7 +146,7 @@ function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise
       });
     }}>
       <h2>Добавить расписание по скриншоту</h2>
-      <p>Загрузите изображение: DeepSeek распознает занятия, затем вы проверите их перед сохранением. Неясные или обрезанные названия нужно будет исправить.</p>
+      <p>Загрузите скриншот и проверьте распознанные пары перед сохранением.</p>
       <div className="field"><label>Скриншот (PNG, JPEG, WEBP; до 8 МБ)
         <input type="file" accept="image/png,image/jpeg,image/webp" required
           onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
@@ -161,10 +161,9 @@ function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise
           <option value="recurring">Постоянно для этой чётности</option>
         </select>
       </label></div>
-      <p>Распознавание выполняет два платных запроса DeepSeek в рамках доступного лимита группы. До подтверждения студентам ничего не меняется.</p>
       {upload.isError ? <p role="alert">{upload.error.message}</p> : null}
       <button className="btn on" type="submit" disabled={!file || upload.isPending}>
-        {upload.isPending ? 'DeepSeek анализирует скриншот…' : 'Распознать и проверить'}
+        {upload.isPending ? 'Распознаём…' : 'Распознать и проверить'}
       </button>
     </form>
   );
