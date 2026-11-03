@@ -147,6 +147,7 @@ def authorize_analysis(client):
 
 def test_exhausted_release_budget_rejects_upload_before_queue(client, monkeypatch):
     from decimal import Decimal
+
     from studgroup.analysis import release_budget
 
     make(client, "headman")
