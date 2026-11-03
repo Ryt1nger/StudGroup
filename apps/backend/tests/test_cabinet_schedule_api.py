@@ -90,6 +90,10 @@ def authorize_analysis(client):
                 analysis_mode="shadow",
                 shadow_daily_budget_usd=1,
                 shadow_sample_percent=100,
+                release_budget_usd=0.15,
+                release_budget_since=datetime.now(ZoneInfo("UTC")) - timedelta(minutes=5),
+                release_budget_until=datetime.now(ZoneInfo("UTC")) + timedelta(hours=1),
+                release_budget_receipt="f" * 64,
                 updated_at=datetime.now(ZoneInfo("UTC")),
             )
         )
