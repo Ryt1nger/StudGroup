@@ -218,6 +218,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception as error:  # noqa: BLE001 -- startup must not expose private SQL payloads
             print("REVIEWED_PUBLICATION_FAILED " + type(error).__name__, flush=True)
             raise RuntimeError("reviewed_publication_failed") from None
+        # One-off, owner-approved BI 1.2 manual screenshot pilot: immutable $0.05
+        # ledger window. Missing environment approval makes this a no-op.
+        try:
+            from studgroup.cabinet_vision_budget_bootstrap import startup as fund_cabinet_vision
+
+            await fund_cabinet_vision(app.state.engine)
+        except Exception as error:  # noqa: BLE001 -- never expose funding parameters in logs
+            print("BI12_MANUAL_VISION_BUDGET_UNAVAILABLE " + type(error).__name__, flush=True)
         app.state.redis = Redis.from_url(settings.redis_url, socket_connect_timeout=2)
         from studgroup.online_lessons import backfill as backfill_online_links
 
