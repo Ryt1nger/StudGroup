@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.ai import ProviderFailure
 from studgroup.analysis.image_contracts import ScheduleInterpretation
-from studgroup.analysis.image_schedule import ScheduleConfirmation
 from studgroup.analysis.image_reading import read_pass
+from studgroup.analysis.image_schedule import ScheduleConfirmation
 from studgroup.analysis.photo_reading import MAX_IMAGE_BYTES, sniff_mime
 from studgroup.analysis.schedule_scope import suggest_review_rows
 from studgroup.api import ApiError
@@ -264,7 +264,7 @@ async def upload_schedule(
         if isinstance(error, ApiError):
             raise
         raise ApiError("analysis_unavailable", "DeepSeek недоступен или лимит исчерпан", 503) from None
-    except Exception:
+    except Exception:  # noqa: BLE001 - paid-vision boundary; redact provider details
         async with AsyncSession(request.app.state.engine) as save:
             saved = await save.get(CabinetScheduleUpload, item.id, with_for_update=True)
             if saved and saved.state == "processing":
