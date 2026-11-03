@@ -31,8 +31,12 @@ def upgrade():
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("delete_at", sa.DateTime(timezone=True), nullable=False),
     )
-    op.create_index("ix_cabinet_schedule_uploads_group_id", "cabinet_schedule_uploads", ["group_id"])
-    op.create_index("ix_cabinet_schedule_uploads_delete_at", "cabinet_schedule_uploads", ["delete_at"])
+    op.create_index(
+        "ix_cabinet_schedule_uploads_group_id", "cabinet_schedule_uploads", ["group_id"]
+    )
+    op.create_index(
+        "ix_cabinet_schedule_uploads_delete_at", "cabinet_schedule_uploads", ["delete_at"]
+    )
 
 
 def downgrade():
