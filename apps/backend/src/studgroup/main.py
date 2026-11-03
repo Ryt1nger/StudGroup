@@ -333,6 +333,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from studgroup.image_review_api import router as image_review_router
 
     app.include_router(image_review_router)
+    from studgroup.cabinet_schedule_api import router as cabinet_schedule_router
+
+    app.include_router(cabinet_schedule_router)
     from studgroup.group_event_api import router as group_event_router
 
     app.include_router(group_event_router)
