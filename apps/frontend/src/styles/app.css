@@ -683,3 +683,10 @@ a.pcard:active { transform: scale(.98); }
 .manage-form .manage-form-actions { display: flex; gap: 8px; margin-top: 16px; }
 .manage-form-actions > button { flex: 1; min-height: 44px; }
 .manage-empty-day { color: var(--label-3); font-size: 13px; }
+.manage-chevron-back { transform: rotate(180deg); }
+.manage-check { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-size: 14px; color: var(--label); }
+.manage-check input { width: 19px; height: 19px; accent-color: var(--accent-text); }
+.manage-quick > a:focus-visible, .manage-toolbar button:focus-visible,
+.manage-lesson button:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
+.manage-form > strong { display: block; font-size: 16px; }
+.block > h2 { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
