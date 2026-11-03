@@ -93,7 +93,6 @@ def get_draft(client, ident):
     return next(x for x in response.json()["suggestions"] if x["id"] == ident)
 
 
-
 def test_old_cabinet_uploads_are_deleted_without_touching_new_tasks(client):
     from datetime import UTC
 
@@ -116,7 +115,6 @@ def test_old_cabinet_uploads_are_deleted_without_touching_new_tasks(client):
     newer = upload(client, week(), picture()).json()
     assert newer["id"] != submitted["id"]
     assert get_draft(client, newer["id"])["state"] == "queued"
-
 
 
 def test_only_staff_may_upload_or_view_private_schedule_source(client):
