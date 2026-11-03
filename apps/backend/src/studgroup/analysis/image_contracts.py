@@ -75,6 +75,19 @@ class ScheduleRow(ImageDTO):
         return self
 
 
+class ScheduleInterpretation(ImageDTO):
+    """Pass-B interpretation of a timetable image AND its linked chat discussion.
+
+    This is a review hint, never an authorization to change official lessons.
+    """
+
+    coverage: Literal["full_week", "partial", "unknown"] = "unknown"
+    duration: Literal["recurring", "one_week", "uncertain"] = "uncertain"
+    week_start: date | None = None
+    explanation: str | None = Field(default=None, max_length=1000)
+    source_message_ids: list[int] = Field(default_factory=list, max_length=30)
+
+
 class ImageEvent(ImageDTO):
     title: str = Field(min_length=1, max_length=255)
     description: str = Field(default="", max_length=8000)
@@ -122,6 +135,7 @@ class VisualReading(ImageDTO):
     required_actions: list[str] = Field(default_factory=list, max_length=100)
     academic_context: str | None = Field(default=None, max_length=4000)
     schedule: list[ScheduleRow] = Field(default_factory=list, max_length=100)
+    schedule_interpretation: ScheduleInterpretation | None = None
     events: list[ImageEvent] = Field(default_factory=list, max_length=40)
 
 

@@ -1,17 +1,24 @@
 import type { ConfirmedScheduleRow, ReviewSubgroup, ScheduleSuggestion } from '@studgroup/shared-types';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { detailQueryOptions } from '../../api/cachePolicy';
 import { isApiRequestError } from '../../api/errors';
 import { api } from '../../api/queries';
 import { addDays, dayKey, formatTime } from '../../lib/format';
-import { useSessionServerNow } from '../../session/SessionProvider';
+import { useIsEditor, useSessionServerNow } from '../../session/SessionProvider';
 import { useGroupTimeZone } from '../../session/useGroupTimeZone';
 import { BackTop } from '../../shell/TopBar';
 import { Banner, Empty, Skeleton, StateView } from '../../ui/Blocks';
 import { RequestError } from '../../ui/RequestError';
 import { EventSource } from '../events/EventCard';
+import { weekKeys } from '../shared/WeekStrip';
+import {
+  useCabinetImage,
+  useCabinetScheduleReview,
+  useCabinetUpload,
+  useConfirmCabinetSchedule,
+} from './cabinetScheduleApi';
 import { useEventCapabilities } from '../events/api';
 import { useConfirmImageSchedule, useImageScheduleReview, useReviewScheduleWeek } from './imageReviewApi';
 
@@ -20,19 +27,27 @@ const normalize = (name: string) => name.trim().toLocaleLowerCase('ru').replaceA
 
 export function ImageScheduleReviewScreen() {
   const features = useEventCapabilities();
+  const editor = useIsEditor();
   const query = useImageScheduleReview();
+  const cabinet = useCabinetScheduleReview(editor);
   const [params, setParams] = useSearchParams();
   const [reload, setReload] = useState(0);
-  const items = query.data?.suggestions ?? [];
+  const items = [
+    ...(cabinet.data?.suggestions ?? []).filter((item) => item.state === 'pending' || item.state === 'confirmed')
+      .map((item) => ({ ...item, cabinet: true })),
+    ...(query.data?.suggestions ?? []).map((item) => ({ ...item, cabinet: false })),
+  ];
   const selected =
     items.find((item) => item.id === params.get('suggestion')) ??
     items.find((item) => item.state === 'pending') ??
     items[0];
+  const image = useCabinetImage(selected?.cabinet ? selected.id : null);
+
   return (
     <>
       <BackTop fallback="/schedule" />
       <h1 className="ptitle">Проверка расписания</h1>
-      {!features.schedule_review ? (
+      {!editor ? (
         <StateView
           icon="lock"
           title="Нет доступа"
@@ -40,12 +55,21 @@ export function ImageScheduleReviewScreen() {
         />
       ) : (
         <>
-          {query.isPending ? <Skeleton label="Загрузка предложений расписания" /> : null}
-          {query.isError ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
-          {query.data && !items.length ? (
+          <CabinetUploadForm
+            onUploaded={async (id) => {
+              setParams({ suggestion: id });
+              await cabinet.refetch();
+              setReload((value) => value + 1);
+            }}
+          />
+          {cabinet.isPending ? <Skeleton label="Загрузка загруженных расписаний" /> : null}
+          {cabinet.isError ? <RequestError error={cabinet.error} onRetry={() => void cabinet.refetch()} /> : null}
+          {query.isPending && features.schedule_review ? <Skeleton label="Загрузка предложений из Telegram" /> : null}
+          {query.isError && features.schedule_review ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
+          {!cabinet.isPending && !query.isPending && !items.length ? (
             <Empty
-              title="Нет предложений"
-              body="Новые фотографии расписания появятся здесь после распознавания."
+              title="Пока нет черновиков"
+              body="Загрузите скриншот выше, чтобы DeepSeek подготовил расписание для проверки."
             />
           ) : null}
           {items.length > 1 ? (
@@ -68,11 +92,14 @@ export function ImageScheduleReviewScreen() {
           {selected ? (
             <ScheduleReviewForm
               key={`${selected.id}:${reload}`}
+
               suggestion={selected}
-              currentVersion={query.data?.current_schedule_version ?? selected.schedule_version}
-              subgroups={query.data?.subgroups ?? []}
+              cabinet={selected.cabinet}
+              sourceBlob={selected.cabinet ? (image.data ?? null) : null}
+              currentVersion={cabinet.data?.current_schedule_version ?? query.data?.current_schedule_version ?? selected.schedule_version}
+              subgroups={cabinet.data?.subgroups ?? query.data?.subgroups ?? []}
               reload={async () => {
-                await query.refetch();
+                await Promise.all([cabinet.refetch(), query.refetch()]);
                 setReload((value) => value + 1);
               }}
             />
@@ -80,6 +107,66 @@ export function ImageScheduleReviewScreen() {
         </>
       )}
     </>
+  );
+}
+
+function CabinetImagePreview({ blob }: { blob: Blob }) {
+  const imageRef = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    const element = imageRef.current;
+    if (!element) return;
+    const url = URL.createObjectURL(blob);
+    element.src = url;
+    return () => {
+      element.removeAttribute('src');
+      URL.revokeObjectURL(url);
+    };
+  }, [blob]);
+  return <img ref={imageRef} alt="Загруженный скриншот расписания" style={{ maxWidth: '100%', borderRadius: 12 }} />;
+}
+
+function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise<void> }) {
+  const serverNow = useSessionServerNow();
+  const zone = useGroupTimeZone();
+  const [file, setFile] = useState<File | null>(null);
+  const [weekStart, setWeekStart] = useState(
+    () => weekKeys(dayKey(serverNow() ?? Date.now(), zone))[0] ?? '',
+  );
+  const [duration, setDuration] = useState<'one_week' | 'recurring'>('one_week');
+  const upload = useCabinetUpload();
+  return (
+    <form className="form block" aria-label="Загрузка скриншота расписания" onSubmit={(event) => {
+      event.preventDefault();
+      if (!file) return;
+      upload.mutate({ file, weekStart, duration }, {
+        onSuccess: (result) => {
+          setFile(null);
+          void onUploaded(result.id);
+        },
+      });
+    }}>
+      <h2>Добавить расписание по скриншоту</h2>
+      <p>Загрузите изображение: DeepSeek распознает занятия, затем вы проверите их перед сохранением. Неясные или обрезанные названия нужно будет исправить.</p>
+      <div className="field"><label>Скриншот (PNG, JPEG, WEBP; до 8 МБ)
+        <input type="file" accept="image/png,image/jpeg,image/webp" required
+          onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+      </label></div>
+      <div className="field"><label>Понедельник нужной недели
+        <input type="date" value={weekStart} required
+          onChange={(event) => setWeekStart(event.target.value)} />
+      </label></div>
+      <div className="field"><label>Как долго действует расписание
+        <select value={duration} onChange={(event) => setDuration(event.target.value as 'one_week' | 'recurring')}>
+          <option value="one_week">Только выбранную неделю</option>
+          <option value="recurring">Постоянно для этой чётности</option>
+        </select>
+      </label></div>
+      <p>Распознавание выполняет два платных запроса DeepSeek в рамках доступного лимита группы. До подтверждения студентам ничего не меняется.</p>
+      {upload.isError ? <p role="alert">{upload.error.message}</p> : null}
+      <button className="btn on" type="submit" disabled={!file || upload.isPending}>
+        {upload.isPending ? 'DeepSeek анализирует скриншот…' : 'Распознать и проверить'}
+      </button>
+    </form>
   );
 }
 
@@ -92,11 +179,15 @@ type EditableRow = {
 
 function ScheduleReviewForm({
   suggestion,
+  cabinet,
+  sourceBlob,
   currentVersion,
   subgroups,
   reload,
 }: {
   suggestion: ScheduleSuggestion;
+  cabinet: boolean;
+  sourceBlob: Blob | null;
   currentVersion: number;
   subgroups: ReviewSubgroup[];
   reload: () => Promise<void>;
@@ -112,7 +203,9 @@ function ScheduleReviewForm({
   );
   const official = useReviewScheduleWeek(weekStart, weekStart ? addDays(weekStart, 6) : '');
   const subjects = useQuery({ ...detailQueryOptions, queryKey: ['subjects'], queryFn: api.subjects });
-  const mutation = useConfirmImageSchedule(initial.id);
+  const telegramMutation = useConfirmImageSchedule(initial.id);
+  const cabinetMutation = useConfirmCabinetSchedule(initial.id);
+  const mutation = cabinet ? cabinetMutation : telegramMutation;
   const navigate = useNavigate();
   const [rows, setRows] = useState<EditableRow[]>(() =>
     initial.rows.map((row) => ({
@@ -204,12 +297,24 @@ function ScheduleReviewForm({
   }
   return (
     <>
-      <EventSource url={initial.source_url} />
-      {!initial.source_url ? (
-        <Banner tone="warning" icon="alert">
-          Источник изменился или недоступен. Подтверждение этого предложения заблокировано.
-        </Banner>
-      ) : null}
+      {cabinet ? (
+        sourceBlob ? (
+          <CabinetImagePreview blob={sourceBlob} />
+        ) : (
+          <Banner tone="warning" icon="alert">
+            Исходный скриншот не загружен. Подтверждение недоступно.
+          </Banner>
+        )
+      ) : (
+        <>
+          <EventSource url={initial.source_url} />
+          {!initial.source_url ? (
+            <Banner tone="warning" icon="alert">
+              Источник изменился или недоступен. Подтверждение этого предложения заблокировано.
+            </Banner>
+          ) : null}
+        </>
+      )}
       {official.data && official.data.schedule_version !== version ? (
         <Banner
           tone="warning"
@@ -487,7 +592,7 @@ function ScheduleReviewForm({
               type="submit"
               className="btn on"
               disabled={
-                !initial.source_url ||
+                !(cabinet ? sourceBlob : initial.source_url) ||
                 !official.data ||
                 official.isError ||
                 subjects.isPending ||

@@ -1,5 +1,6 @@
 """Draft timetable proposals; an explicit authorized confirmation is the only write path."""
 
+import hashlib
 import json
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
@@ -7,12 +8,14 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from studgroup.analysis.image_contracts import ScheduleRow
+from studgroup.analysis.schedule_scope import suggest_review_rows
 from studgroup.api import ApiError
 from studgroup.headman_domain import guard, lock_decision, save_audit
 from studgroup.models import (
+    CabinetScheduleUpload,
     Group,
     ImageAnalysisJob,
     ImageScheduleSuggestion,
@@ -52,6 +55,11 @@ class ScheduleConfirmation(BaseModel):
     )
 
 
+def clipped_field(value: str | None) -> bool:
+    """An interface ellipsis is missing source text, not part of a confirmed name."""
+    return value is not None and ("..." in value or "…" in value)
+
+
 async def capture(db, job, reading, now):
     if not reading.schedule or not {"schedule", "schedule_change"}.intersection(
         reading.semantic_types
@@ -62,14 +70,20 @@ async def capture(db, job, reading, now):
     ):
         return
     context = json.loads(job.context_json)
+    group = await db.get(Group, job.group_id)
+    horizon = await db.scalar(
+        select(func.max(SchedulePattern.valid_until)).where(
+            SchedulePattern.group_id == job.group_id,
+            SchedulePattern.cancelled.is_(False),
+        )
+    )
+    rows = suggest_review_rows(reading, group.first_week_anchor if group else None, horizon)
     db.add(
         ImageScheduleSuggestion(
             group_id=job.group_id,
             image_job_id=job.id,
             schedule_version=context["schedule_version"],
-            rows_json=json.dumps(
-                [row.model_dump(mode="json") for row in reading.schedule], ensure_ascii=False
-            ),
+            rows_json=json.dumps(rows, ensure_ascii=False),
             state="pending",
             revision=1,
             created_at=now,
@@ -118,7 +132,7 @@ async def current_source(db, job_id, group_id, now):
     return job
 
 
-async def confirm(db, group_id, user, member, ident, body, now=None):
+async def confirm(db, group_id, user, member, ident, body, now=None, *, cabinet=False):
     from studgroup.analysis.image_jobs import utc
 
     now = now or datetime.now(UTC)
@@ -142,13 +156,10 @@ async def confirm(db, group_id, user, member, ident, body, now=None):
         .with_for_update()
         .execution_options(populate_existing=True)
     )
+    model = CabinetScheduleUpload if cabinet else ImageScheduleSuggestion
     suggestion = await db.scalar(
-        select(ImageScheduleSuggestion)
-        .where(
-            ImageScheduleSuggestion.id == ident,
-            ImageScheduleSuggestion.group_id == group_id,
-            ImageScheduleSuggestion.delete_at > now,
-        )
+        select(model)
+        .where(model.id == ident, model.group_id == group_id, model.delete_at > now)
         .with_for_update()
     )
     if suggestion is None:
@@ -167,7 +178,9 @@ async def confirm(db, group_id, user, member, ident, body, now=None):
         raise ApiError(
             "revision_conflict", "Расписание изменилось; проверьте предложение заново", 409
         )
-    job = await current_source(db, suggestion.image_job_id, group_id, now)
+    job = None if cabinet else await current_source(db, suggestion.image_job_id, group_id, now)
+    if cabinet and suggestion.image_sha256 != hashlib.sha256(suggestion.image_bytes).hexdigest():
+        raise ApiError("stale_source", "Скриншот был изменён", 409)
     original_rows = json.loads(suggestion.rows_json)
     if body.corrected_rows is None and any(
         not value.get("valid_from") or not value.get("valid_until") for value in original_rows
@@ -190,6 +203,12 @@ async def confirm(db, group_id, user, member, ident, body, now=None):
         row.subject = row.subject.strip()
         if not row.subject:
             raise ApiError("invalid_request", "Предмет не может быть пустым", 422)
+        if any(clipped_field(value) for value in (row.subject, row.teacher, row.room)):
+            raise ApiError(
+                "schedule_row_incomplete",
+                "На скриншоте обрезаны сведения о паре. Уточните название, преподавателя и аудиторию перед подтверждением.",
+                409,
+            )
         expected_subject = subject_uuid(group.id, row.subject)
         if row.subject_id is not None and row.subject_id != expected_subject:
             raise ApiError(
@@ -381,5 +400,6 @@ async def confirm(db, group_id, user, member, ident, body, now=None):
     suggestion.state, suggestion.decided_by = "confirmed", user.id
     suggestion.revision += 1
     # Context state is retained; official writes are performed only in this caller transaction.
-    assert utc(job.delete_at) > now
+    if job is not None:
+        assert utc(job.delete_at) > now
     return group.schedule_version

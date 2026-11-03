@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -1131,6 +1132,34 @@ class ImageScheduleSuggestion(Base):
     )
     schedule_version: Mapped[int] = mapped_column(Integer)
     rows_json: Mapped[str] = mapped_column(Text)
+    confirmation_json: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str] = mapped_column(String(24), default="pending")
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    delete_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class CabinetScheduleUpload(Base):
+    """Short-lived private screenshot + reviewable rows from an authorized staff upload."""
+
+    __tablename__ = "cabinet_schedule_uploads"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    schedule_version: Mapped[int] = mapped_column(Integer)
+    week_start: Mapped[date] = mapped_column(Date)
+    duration: Mapped[str] = mapped_column(String(16))
+    rows_json: Mapped[str] = mapped_column(Text)
+    image_bytes: Mapped[bytes] = mapped_column(LargeBinary)
+    image_mime: Mapped[str] = mapped_column(String(32))
+    image_sha256: Mapped[str] = mapped_column(String(64))
     confirmation_json: Mapped[str | None] = mapped_column(Text)
     state: Mapped[str] = mapped_column(String(24), default="pending")
     revision: Mapped[int] = mapped_column(Integer, default=1)

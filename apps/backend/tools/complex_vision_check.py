@@ -66,6 +66,34 @@ class ReplayRecordedProvider(RecordedProvider):
                 self.ledger.save()
                 return {"choices": call["response"], "usage": call["usage"], "model": call["model"]}
         if self.offline:
+            # Vision prompt/schema revisions also change the request hash. Revalidate
+            # only a prior successful reading for the SAME frozen image and pass;
+            # never contact the provider or imply the new prompt was benchmarked.
+            if self.label.startswith("complex/") and self.label.endswith(("/a", "/b")):
+                for index in range(len(self.ledger.data["calls"]) - 1, -1, -1):
+                    call = self.ledger.data["calls"][index]
+                    if (
+                        call.get("label") != self.label
+                        or call.get("state") != "completed"
+                        or not call.get("response")
+                    ):
+                        continue
+                    try:
+                        VisualReading.model_validate_json(call["response"][0]["message"]["content"])
+                    except (ValueError, KeyError, IndexError, TypeError):
+                        continue
+                    self.ledger.data.setdefault("complex_local_replays", []).append(
+                        {
+                            "call_index": index,
+                            "reason": "historic same-image/pass vision reply revalidated; no HTTP",
+                        }
+                    )
+                    self.ledger.save()
+                    return {
+                        "choices": call["response"],
+                        "usage": call["usage"],
+                        "model": call["model"],
+                    }
             # A prompt change intentionally changes the request hash. The offline
             # regression benchmark still needs to revalidate the OLD provider
             # responses using the NEW parser, without contacting DeepSeek or

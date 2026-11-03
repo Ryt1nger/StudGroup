@@ -135,3 +135,64 @@ An optional acknowledgement plus full corrected rows and current expected schedu
 the existing authorized confirmation path to proceed. Without all three, the original stale-version
 guard is unchanged. Source validity and row/subject/subgroup/occurrence locks still apply. Both
 source and applied versions and acknowledgement are stored with the manual confirmation.
+
+
+## Timetable screenshots and week scope — 2026-11-02
+
+A full-week schedule screenshot is a reviewable timetable proposal, not homework or
+an extracurricular event. In existing vision pass B, DeepSeek classifies coverage
+(full week/partial), target calendar Monday, and applicability (recurring/one week/
+uncertain) against caption, replies and subsequent corrections. A plain statement
+"schedule for this week" identifies the target week and does **not** by itself
+mean a one-week exception. A clearly temporary message takes precedence; conflicting
+or unanchored context stays uncertain. Pixel transcriptions never absorb chat-only
+facts. The same two vision passes remain; no third AI classifier is added.
+
+The review-only normalizer converts a confidently dated recurring proposal into
+the group's `first`/`second` pattern using `first_week_anchor` (never ISO parity),
+beginning with the target week and ending at the existing timetable's recorded
+end-of-term boundary. A one-week exception ends that Sunday, or preserves an
+explicit one-day partial change. Missing/contradictory week start, official parity
+anchor, end-of-term horizon or duration leaves the editable suggestion unresolved.
+An explicit longer validity range is preserved. This code never writes official
+schedule patterns, cancels lessons, publishes results or changes existing cards.
+
+The current authorized image-schedule confirmation still requires a headman or
+deputy, an unchanged source, current version/revisions and explicit mapping of
+overlapping lessons. A pictured whole-week replacement does not implicitly
+delete lessons omitted from the picture; such deletions require an independently
+approved, audited editor workflow. The shadow/review gate remains off by default.
+
+Pass A keeps its previous A4 prompt and schema: the B-only optional interpretation
+is excluded from the A request so cached pixel transcriptions are not invalidated
+by this classification change.
+
+The pass-B prompt/schema version advances from B8 to B10. Existing B8 snapshots
+remain source records; upgraded B10 readings can incur new provider work if
+reprocessing is enabled. Roll out only under existing group allowlist and funded
+budgets, with a narrow source window and an explicit paid-run approval. No paid
+runs, production enablement or source-history backfill are authorized by this ADR.
+
+The frozen complex-vision regression uses archived same-image/same-pass successful
+responses when a prompt/schema version changes: it revalidates historical output
+against the current parser with **zero HTTP**. It explicitly does not claim that
+DeepSeek would produce identical output under the new prompt. Only a separately
+authorized paid test can measure B10's actual model quality.
+
+## Real screenshot shape regression — 2026-11-03
+
+A user-provided weekly timetable image for 2–8 November 2026 was inspected
+locally without sending it to any provider or checking it into this public
+repository. Its anonymized structural regression covers 20 distinct lesson
+cards: Monday 4, Tuesday 4, Wednesday 3, Thursday 4, Friday 2,
+Saturday 3, Sunday 0; time slots include 09:00–10:20 and 15:40–17:00.
+Consecutive cells may represent the same subject and must stay separate.
+
+The screenshot UI visibly truncates many course, teacher and room strings with
+ellipses. The contextual vision prompt must preserve only visible fragments,
+not invent hidden full names. Official image-schedule confirmation now rejects
+clipped field values pending editor correction; it does not reject the whole
+image from review. This safeguard is additive and does not modify the photo,
+document, album, or homework processing pipelines. The pass-B prompt changes
+to B10; pass A remains A4. This is a deterministic layout/policy regression,
+**not** proof that DeepSeek recognized the actual screenshot correctly.
