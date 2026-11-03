@@ -36,7 +36,7 @@ describe('Headman schedule management', () => {
   it('does not show the pencil or request the private timetable for students', async () => {
     useScenario();
     const student = renderApp({ route: '/schedule' });
-    await screen.findByText('Расписание');
+    expect((await screen.findAllByText('Расписание')).length).toBeGreaterThan(0);
     expect(screen.queryByRole('link', { name: 'Управление расписанием' })).not.toBeInTheDocument();
     student.unmount();
 
