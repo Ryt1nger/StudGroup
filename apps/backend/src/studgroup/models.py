@@ -1169,8 +1169,6 @@ class CabinetScheduleUpload(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     first_pass_json: Mapped[str | None] = mapped_column(Text)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    failure_code: Mapped[str | None] = mapped_column(String(48))
-    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     revision: Mapped[int] = mapped_column(Integer, default=1)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
