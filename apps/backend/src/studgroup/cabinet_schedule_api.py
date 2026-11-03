@@ -258,7 +258,7 @@ async def upload_schedule(
         rows = suggest_review_rows(second, group.first_week_anchor, horizon)
         if not rows:
             raise ApiError("not_a_schedule", "На скриншоте не найдены пары", 422)
-        async with AsyncSession(request.app.state.engine) as save:
+        async with AsyncSession(request.app.state.engine, expire_on_commit=False) as save:
             saved = await save.get(CabinetScheduleUpload, item.id, with_for_update=True)
             if saved is None or saved.state != "processing":
                 raise ApiError("upload_changed", "Черновик загрузки изменился", 409)
@@ -267,7 +267,7 @@ async def upload_schedule(
             await save.commit()
             return metadata(saved)
     except (ApiError, ProviderFailure) as error:
-        async with AsyncSession(request.app.state.engine) as save:
+        async with AsyncSession(request.app.state.engine, expire_on_commit=False) as save:
             saved = await save.get(CabinetScheduleUpload, item.id, with_for_update=True)
             if saved and saved.state == "processing":
                 saved.state = "failed"
@@ -278,7 +278,7 @@ async def upload_schedule(
             "analysis_unavailable", "DeepSeek недоступен или лимит исчерпан", 503
         ) from None
     except Exception:  # noqa: BLE001 - paid-vision boundary; redact provider details
-        async with AsyncSession(request.app.state.engine) as save:
+        async with AsyncSession(request.app.state.engine, expire_on_commit=False) as save:
             saved = await save.get(CabinetScheduleUpload, item.id, with_for_update=True)
             if saved and saved.state == "processing":
                 saved.state = "failed"
