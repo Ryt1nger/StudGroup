@@ -8,11 +8,10 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from PIL import Image
-
-from studgroup.ai import ProviderFailure
 from sqlalchemy import select
 from test_staff_api import AUTH, db_run, make
 
+from studgroup.ai import ProviderFailure
 from studgroup.models import CabinetScheduleUpload, Group, GroupAnalysisSettings, ScheduleChange
 
 pytest_plugins = ["test_schedule_api"]
