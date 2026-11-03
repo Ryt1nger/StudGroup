@@ -108,9 +108,10 @@ def test_old_cabinet_uploads_are_deleted_without_touching_new_tasks(client):
     listed = client.get("/v1/staff/schedule-upload", headers=AUTH)
     assert listed.status_code == 200
     assert listed.json()["suggestions"] == []
-    assert client.get(
-        f"/v1/staff/schedule-upload/{submitted['id']}/image", headers=AUTH
-    ).status_code == 404
+    assert (
+        client.get(f"/v1/staff/schedule-upload/{submitted['id']}/image", headers=AUTH).status_code
+        == 404
+    )
 
     newer = upload(client, week(), picture()).json()
     assert newer["id"] != submitted["id"]
