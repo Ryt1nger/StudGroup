@@ -1,6 +1,6 @@
 import type { ConfirmedScheduleRow, ReviewSubgroup, ScheduleSuggestion } from '@studgroup/shared-types';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { detailQueryOptions } from '../../api/cachePolicy';
 import { isApiRequestError } from '../../api/errors';
@@ -42,16 +42,7 @@ export function ImageScheduleReviewScreen() {
     items.find((item) => item.state === 'pending') ??
     items[0];
   const image = useCabinetImage(selected?.cabinet ? selected.id : null);
-  const [sourcePreview, setSourcePreview] = useState<string | null>(null);
-  useEffect(() => {
-    if (!image.data) {
-      setSourcePreview(null);
-      return;
-    }
-    const url = URL.createObjectURL(image.data);
-    setSourcePreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [image.data]);
+
   return (
     <>
       <BackTop fallback="/schedule" />
@@ -104,7 +95,7 @@ export function ImageScheduleReviewScreen() {
 
               suggestion={selected}
               cabinet={selected.cabinet}
-              sourcePreview={selected.cabinet ? sourcePreview : null}
+              sourceBlob={selected.cabinet ? (image.data ?? null) : null}
               currentVersion={cabinet.data?.current_schedule_version ?? query.data?.current_schedule_version ?? selected.schedule_version}
               subgroups={cabinet.data?.subgroups ?? query.data?.subgroups ?? []}
               reload={async () => {
@@ -117,6 +108,21 @@ export function ImageScheduleReviewScreen() {
       )}
     </>
   );
+}
+
+function CabinetImagePreview({ blob }: { blob: Blob }) {
+  const imageRef = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    const element = imageRef.current;
+    if (!element) return;
+    const url = URL.createObjectURL(blob);
+    element.src = url;
+    return () => {
+      element.removeAttribute('src');
+      URL.revokeObjectURL(url);
+    };
+  }, [blob]);
+  return <img ref={imageRef} alt="Загруженный скриншот расписания" style={{ maxWidth: '100%', borderRadius: 12 }} />;
 }
 
 function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise<void> }) {
@@ -174,14 +180,14 @@ type EditableRow = {
 function ScheduleReviewForm({
   suggestion,
   cabinet,
-  sourcePreview,
+  sourceBlob,
   currentVersion,
   subgroups,
   reload,
 }: {
   suggestion: ScheduleSuggestion;
   cabinet: boolean;
-  sourcePreview: string | null;
+  sourceBlob: Blob | null;
   currentVersion: number;
   subgroups: ReviewSubgroup[];
   reload: () => Promise<void>;
@@ -292,8 +298,8 @@ function ScheduleReviewForm({
   return (
     <>
       {cabinet ? (
-        sourcePreview ? (
-          <img src={sourcePreview} alt="Загруженный скриншот расписания" style={{ maxWidth: '100%', borderRadius: 12 }} />
+        sourceBlob ? (
+          <CabinetImagePreview blob={sourceBlob} />
         ) : (
           <Banner tone="warning" icon="alert">
             Исходный скриншот не загружен. Подтверждение недоступно.
@@ -586,7 +592,7 @@ function ScheduleReviewForm({
               type="submit"
               className="btn on"
               disabled={
-                !(cabinet ? sourcePreview : initial.source_url) ||
+                !(cabinet ? sourceBlob : initial.source_url) ||
                 !official.data ||
                 official.isError ||
                 subjects.isPending ||
