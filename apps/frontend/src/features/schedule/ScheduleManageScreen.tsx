@@ -22,7 +22,7 @@ import { RequestError } from '../../ui/RequestError';
 const DAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 
 /** Only issue local wall-clock times with an explicit offset, never reinterpret them in the device TZ. */
-export function localScheduleTime(day: string, clock: string, timeZone: string): string {
+function localScheduleTime(day: string, clock: string, timeZone: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !/^\d{2}:\d{2}$/.test(clock)) {
     throw new Error('Неверная дата или время');
   }
