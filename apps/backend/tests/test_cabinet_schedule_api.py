@@ -27,26 +27,35 @@ class Vision:
     async def complete_vision(self, **kwargs):
         self.calls.append(kwargs)
         return {
-            "choices": [{
-                "finish_reason": "stop",
-                "message": {"content": json.dumps({
-                    "summary": "Расписание",
-                    "extracted_text": "Математика",
-                    "complete": True,
-                    "semantic_types": ["schedule"],
-                    "schedule": [{
-                        "weekday": 0,
-                        "starts": "09:00",
-                        "ends": "10:20",
-                        "subject": "Математика",
-                        "week": "all",
-                    }],
-                    "schedule_interpretation": {
-                        "coverage": "full_week",
-                        "duration": "one_week",
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "summary": "Расписание",
+                                "extracted_text": "Математика",
+                                "complete": True,
+                                "semantic_types": ["schedule"],
+                                "schedule": [
+                                    {
+                                        "weekday": 0,
+                                        "starts": "09:00",
+                                        "ends": "10:20",
+                                        "subject": "Математика",
+                                        "week": "all",
+                                    }
+                                ],
+                                "schedule_interpretation": {
+                                    "coverage": "full_week",
+                                    "duration": "one_week",
+                                },
+                            },
+                            ensure_ascii=False,
+                        )
                     },
-                }, ensure_ascii=False)},
-            }],
+                }
+            ],
             "usage": {"prompt_tokens": 50, "completion_tokens": 100},
         }
 
@@ -109,11 +118,10 @@ def test_vision_draft_requires_explicit_confirmation_and_deduplicates(client, mo
     listed = client.get("/v1/staff/schedule-upload", headers=AUTH)
     assert listed.status_code == 200
     assert len(listed.json()["suggestions"]) == 1
-    image = client.get(
-        f"/v1/staff/schedule-upload/{suggestion['id']}/image", headers=AUTH
-    )
+    image = client.get(f"/v1/staff/schedule-upload/{suggestion['id']}/image", headers=AUTH)
     assert image.content == data
     assert image.headers["cache-control"] == "private, no-store"
+
     async def count(db):
         return len((await db.scalars(select(ScheduleChange))).all())
 
