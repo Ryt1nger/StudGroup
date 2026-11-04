@@ -461,26 +461,43 @@ function ScheduleReviewForm({
                 marked={markedDays}
                 onSelect={(index) => setSelectedDay(index)}
               />
-              {visibleRows.length === 0 ? <p>Пар нет</p> : null}
-              {visibleRows.map(({ value, index }) => (
-                <button
-                  type="button"
-                  className="task lrow"
-                  style={{ ...subjectStyle(value.row.subject), width: '100%', textAlign: 'left' }}
-                  key={index}
-                  aria-label={`Редактировать пару: ${value.row.subject}`}
-                  onClick={() => setEditingIndex(index)}
-                >
-                  <span className="bar" />
-                  <span className="tm">{value.row.starts}<small>{value.row.ends}</small></span>
-                  <span className="tb">
-                    <span className="t">{value.row.subject}</span>
-                    <span className="s">
-                      {[value.row.room, value.row.teacher, value.row.subgroup].filter(Boolean).join(' · ') || ' '}
-                    </span>
-                  </span>
-                </button>
-              ))}
+              <div className="review-day-heading">
+                <strong>{WEEKDAYS[selectedDay]}</strong>
+                <span>{visibleRows.length} пар</span>
+              </div>
+              {visibleRows.length === 0 ? <p className="review-empty">В этот день пар нет</p> : null}
+              <div className="review-lesson-list">
+                {visibleRows.map(({ value, index }) => {
+                  const incomplete = initial.state === 'pending' && incompleteLesson(value);
+                  return (
+                    <button
+                      type="button"
+                      className={`task review-lesson${incomplete ? ' is-incomplete' : ''}`}
+                      style={subjectStyle(value.row.subject)}
+                      key={index}
+                      aria-label={`Редактировать пару: ${value.row.subject}`}
+                      onClick={() => setEditingIndex(index)}
+                    >
+                      <span className="bar" aria-hidden="true" />
+                      <span className="review-lesson-time">
+                        <strong>{abbreviatedTime(value.row.starts)}</strong>
+                        <small>{abbreviatedTime(value.row.ends)}</small>
+                      </span>
+                      <span className="review-lesson-body">
+                        <strong className="review-lesson-title">{value.row.subject}</strong>
+                        <span className="review-lesson-meta">
+                          {[value.row.room, value.row.teacher, value.row.subgroup].filter(Boolean).join(' · ')
+                            || 'Без дополнительных сведений'}
+                        </span>
+                        {incomplete ? (
+                          <span className="review-lesson-flag">Неполные данные · Изменить</span>
+                        ) : null}
+                      </span>
+                      <span className="review-lesson-chevron" aria-hidden="true">›</span>
+                    </button>
+                  );
+                })}
+              </div>
             </>
           ) : (
             <button type="button" className="btn" onClick={() => setEditingIndex(null)}>Назад к расписанию</button>
@@ -494,7 +511,7 @@ function ScheduleReviewForm({
             );
             const subgroupValue = row.subgroup_id ?? (value.unresolvedSubgroup ? 'unresolved' : '');
             return (
-              <fieldset className="block" key={index}>
+              <fieldset className="block review-edit" key={index}>
                 <legend>Редактирование пары</legend>
                 <div className="field">
                   <label>
@@ -530,7 +547,7 @@ function ScheduleReviewForm({
                     Начало пары
                     <input
                       type="time"
-                      value={row.starts}
+                      value={abbreviatedTime(row.starts)}
                       required
                       onChange={(event) => update(index, { starts: event.target.value })}
                     />
@@ -541,7 +558,7 @@ function ScheduleReviewForm({
                     Окончание пары
                     <input
                       type="time"
-                      value={row.ends}
+                      value={abbreviatedTime(row.ends)}
                       required
                       onChange={(event) => update(index, { ends: event.target.value })}
                     />
@@ -676,11 +693,11 @@ function ScheduleReviewForm({
                 <button
                   type="button"
                   className="pillb"
-                  onClick={() => setRows((values) => values.filter((_item, i) => i !== index))}
+                  onClick={() => { setRows((values) => values.filter((_item, i) => i !== index)); setEditingIndex(null); }}
                 >
                   Убрать строку
                 </button>
-                <button type="button" className="btn on" onClick={() => setEditingIndex(null)}>Готово</button>
+                <button type="button" className="btn on" onClick={() => { setSelectedDay(row.weekday); setEditingIndex(null); }}>Готово</button>
               </fieldset>
             );
           }) : null}
@@ -699,7 +716,7 @@ function ScheduleReviewForm({
               Действующее расписание изменилось после распознавания. Я заново проверил строки и сопоставления.
             </label>
           ) : null}
-          {problem ? <p role="alert">{problem}</p> : null}
+          {problem ? <p className="review-error" role="alert">{problem}</p> : null}
           {conflict ? (
             <Banner
               tone="warning"
@@ -714,22 +731,29 @@ function ScheduleReviewForm({
             </Banner>
           ) : null}
           {mutation.isError && !conflict ? (
-            <p role="alert">{confirmationError ?? 'Не удалось подтвердить расписание.'}</p>
+            <p className="review-error" role="alert">{confirmationError ?? 'Не удалось подтвердить расписание.'}</p>
           ) : null}
           {initial.state === 'pending' && editingIndex === null ? (
-            <button
-              type="submit"
-              className="btn on"
-              disabled={
-                !(cabinet ? sourceBlob : initial.source_url) ||
-                !official.data ||
-                official.isError ||
-                subjects.isPending ||
-                subjects.isError
-              }
-            >
-              Подтвердить расписание
-            </button>
+            <div className="review-submit">
+              {skippedCount > 0 ? (
+                <p className="review-publish-hint" role="status">
+                  Будет опубликовано {publishableCount} из {rows.length} пар. Остальные не добавятся.
+                </p>
+              ) : null}
+              <button
+                type="submit"
+                className="btn on"
+                disabled={
+                  !(cabinet ? sourceBlob : initial.source_url) ||
+                  !official.data ||
+                  official.isError ||
+                  publishableCount === 0 ||
+                  mutation.isPending
+                }
+              >
+                {mutation.isPending ? 'Подтверждаем…' : 'Подтвердить расписание'}
+              </button>
+            </div>
           ) : null}
         </fieldset>
       </form>
