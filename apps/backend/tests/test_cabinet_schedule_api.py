@@ -93,6 +93,28 @@ def get_draft(client, ident):
     return next(x for x in response.json()["suggestions"] if x["id"] == ident)
 
 
+def test_ready_draft_triggers_one_admin_report_without_extra_ai_call(client, monkeypatch):
+    from studgroup import cabinet_review_push
+
+    make(client, "headman")
+    authorize_analysis(client)
+    vision = Vision()
+    reports = []
+
+    async def report(engine, settings, ident):
+        reports.append(ident)
+        return True
+
+    monkeypatch.setattr(cabinet_review_push, "notify_completed", report)
+    submitted = upload(client, week(), picture()).json()
+    assert advance(client, monkeypatch, vision) == "pass_a_ready"
+    assert reports == []
+    assert advance(client, monkeypatch, vision) == "ready"
+    assert reports == [uuid.UUID(submitted["id"])]
+    assert len(vision.calls) == 2
+    assert get_draft(client, submitted["id"])["state"] == "pending"
+
+
 def test_group_subject_catalogue_keeps_new_timetable_subject_after_week_ends(client):
     from datetime import date, time
 
