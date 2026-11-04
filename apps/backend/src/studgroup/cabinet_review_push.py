@@ -37,8 +37,8 @@ async def notify_completed(engine, settings, ident):
                 )
             )
         ).all()
-        charged = sum((item.charged_usd for item in attempts), Decimal("0"))
-        reserved = sum((item.reserved_usd for item in attempts), Decimal("0"))
+        charged = sum((item.charged_usd for item in attempts), Decimal(0))
+        reserved = sum((item.reserved_usd for item in attempts), Decimal(0))
         unsettled = sum(item.state != "settled" for item in attempts)
         rows_count = len(json.loads(row.rows_json))
         description = (
