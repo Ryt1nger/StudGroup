@@ -11,7 +11,7 @@ from sqlalchemy import select
 from test_cabinet_vision_budget_bootstrap import budget, qualify, route
 from test_staff_api import db_run
 
-from studgroup.analysis.release_budget import spent
+from studgroup.analysis.release_budget import spent, utc
 from studgroup.cabinet_vision_budget_topup import RECEIPT, apply
 from studgroup.models import AnalysisBudgetCall, Group
 
@@ -36,9 +36,9 @@ def test_approved_topup_grants_one_extra_dollar_once_without_resetting_ledger(cl
     assert row.release_budget_usd == Decimal("1.00")
     assert row.release_budget_receipt == RECEIPT
     assert row.shadow_daily_budget_usd >= Decimal("1.00")
-    assert row.release_budget_until == before + timedelta(hours=24)
+    assert utc(row.release_budget_until) == before + timedelta(hours=24)
     assert topup(client, now=before + timedelta(hours=1))["state"] == "already_configured"
-    assert route(client).release_budget_until == before + timedelta(hours=24)
+    assert utc(route(client).release_budget_until) == before + timedelta(hours=24)
 
 
 def test_topup_counts_prior_paid_attempts_in_total_and_preserves_call_rows(client):
