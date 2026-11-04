@@ -675,7 +675,7 @@ function ScheduleReviewForm({
                 <button type="button" className="btn on" onClick={() => setEditingIndex(null)}>Готово</button>
               </fieldset>
             );
-          })}
+          }) : null}
           <datalist id="review-subjects">
             {subjects.data?.items.map((subject) => (
               <option key={subject.id} value={subject.name} />
