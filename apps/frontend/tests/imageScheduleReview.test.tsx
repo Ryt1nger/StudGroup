@@ -135,7 +135,7 @@ it('does not invent effective dates and requires the editor to map a recognized 
   expect(requests).toHaveLength(0);
   await userEvent.click(screen.getByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   await userEvent.selectOptions(screen.getByLabelText('Подгруппа'), '');
-  await userEvent.click(screen.getByRole('button', { name: 'Готово' });
+  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(requests[0]?.corrected_rows?.[0]?.subgroup_id).toBeNull();
