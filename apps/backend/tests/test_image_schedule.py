@@ -506,8 +506,8 @@ def test_one_week_exception_image_stays_date_limited_and_never_writes_live(clien
     assert stored(client, ScheduleChange) == []
 
 
-def test_clipped_timetable_names_require_editor_correction_before_live_write(client, monkeypatch):
-    """Text displayed as '...' must not be stored as a complete official identity."""
+def test_clipped_timetable_fragments_can_be_confirmed_without_guessing(client, monkeypatch):
+    """Only the visible fragment is written; missing details are never invented."""
     suggestion = prepare(
         client,
         monkeypatch,
@@ -517,20 +517,16 @@ def test_clipped_timetable_names_require_editor_correction_before_live_write(cli
     )
     make(client, "headman")
     path = f"/v1/staff/image-findings/schedule/{suggestion.id}/confirm"
-    body = {"expected_revision": 1, "expected_schedule_version": 0}
-    rejected = client.post(path, json=body, headers=AUTH)
-    assert rejected.status_code == 409
-    assert rejected.json()["error"]["code"] == "schedule_row_incomplete"
-    assert stored(client, ScheduleChange) == []
-    corrected = json.loads(suggestion.rows_json)[0] | {
-        "subject": "Полное название курса",
-        "teacher": "Иванова Анна",
-        "room": "Аудитория 12",
-    }
     applied = client.post(
         path,
-        json=body | {"corrected_rows": [corrected]},
+        json={"expected_revision": 1, "expected_schedule_version": 0},
         headers=AUTH,
     )
     assert applied.status_code == 200, applied.text
     assert len(stored(client, ScheduleChange)) == 1
+
+    saved = stored(client, ImageScheduleSuggestion)[0]
+    confirmed = json.loads(saved.confirmation_json)["rows"][0]
+    assert confirmed["subject"] == "Курс по..."
+    assert confirmed["teacher"] == "Иванова..."
+    assert confirmed["room"] == "Ауд. 12…"

@@ -77,26 +77,6 @@ export function ImageScheduleReviewScreen() {
               body="Загрузите скриншот выше, чтобы DeepSeek подготовил расписание для проверки."
             />
           ) : null}
-          {items.length > 1 ? (
-            <div className="field">
-              <label>
-                Предложение
-                <select
-                  value={selected?.id}
-                  onChange={(event) => setParams({ suggestion: event.target.value })}
-                >
-                  {items.map((item, index) => (
-                    <option key={item.id} value={item.id}>
-                      {item.state === 'confirmed' ? 'Подтверждено' :
-                         item.state === 'failed' ? 'Ошибка' :
-                         item.state === 'queued' || item.state === 'processing' ? 'Распознаётся' :
-                         'Ожидает проверки'} · {index + 1}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          ) : null}
           {selected?.cabinet && (
             selected.state === 'queued' || selected.state === 'processing' || selected.state === 'failed'
           ) ? (
@@ -190,6 +170,7 @@ function CabinetProgress({ suggestion }: {
 
 function CabinetImagePreview({ blob }: { blob: Blob }) {
   const imageRef = useRef<HTMLImageElement>(null);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     const element = imageRef.current;
     if (!element) return;
@@ -200,7 +181,17 @@ function CabinetImagePreview({ blob }: { blob: Blob }) {
       URL.revokeObjectURL(url);
     };
   }, [blob]);
-  return <img ref={imageRef} alt="Загруженный скриншот расписания" style={{ maxWidth: '100%', borderRadius: 12 }} />;
+  return (
+    <div className="review-source">
+      <button type="button" className="review-source-toggle" aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}>
+        <span>Исходный скриншот</span>
+        <span>{expanded ? 'Свернуть' : 'Показать'}</span>
+      </button>
+      <img ref={imageRef} className={expanded ? 'review-source-img open' : 'review-source-img'}
+        alt="Загруженный скриншот расписания" />
+    </div>
+  );
 }
 
 function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise<void> }) {
@@ -240,6 +231,28 @@ type EditableRow = {
   scope: 'once' | 'recurring';
   unresolvedSubgroup: string | null;
 };
+
+const abbreviatedTime = (value: string) => value.slice(0, 5);
+const clipped = (value: string | null | undefined) => Boolean(value && (value.includes('...') || value.includes('…')));
+
+// Missing optional details are warnings only, not publication blockers.
+function incompleteLesson(value: EditableRow) {
+  const { row } = value;
+  return !row.subject.trim() || !row.teacher?.trim() || !row.room?.trim()
+    || clipped(row.subject) || clipped(row.teacher) || clipped(row.room)
+    || !row.starts || !row.ends || !row.valid_from || !row.valid_until
+    || Boolean(value.unresolvedSubgroup && !row.subgroup_id);
+}
+
+// A usable timetable row needs a known subject, a valid slot, dates and
+// correctly scoped subgroups. Do not publish unknown subgroup rows to everyone.
+function publishableLesson(value: EditableRow) {
+  const { row } = value;
+  return Boolean(row.subject.trim() && row.starts && row.ends && row.ends > row.starts
+    && row.valid_from && row.valid_until && row.valid_until >= row.valid_from
+    && !(value.unresolvedSubgroup && !row.subgroup_id));
+}
+
 
 function ScheduleReviewForm({
   suggestion,
@@ -296,6 +309,9 @@ function ScheduleReviewForm({
     .map((value, index) => ({ value, index }))
     .filter(({ value }) => value.row.weekday === selectedDay)
     .sort((a, b) => a.value.row.starts.localeCompare(b.value.row.starts));
+  const incompleteCount = rows.filter(incompleteLesson).length;
+  const publishableCount = rows.filter(publishableLesson).length;
+  const skippedCount = rows.length - publishableCount;
 
   const stale = version !== initial.schedule_version;
   const conflict = isApiRequestError(mutation.error) && mutation.error.code === 'revision_conflict';
@@ -322,30 +338,18 @@ function ScheduleReviewForm({
     );
   }
   function confirm() {
-    if (!rows.length) return setProblem('Нужна хотя бы одна строка расписания');
-    if (stale && !acknowledged) return setProblem('Подтвердите повторную проверку действующего расписания');
+    if (!rows.length) return setProblem('Добавьте хотя бы одну пару');
+    if (stale && !acknowledged) return setProblem('Проверьте изменившееся расписание');
     if (!official.data || official.data.schedule_version !== version)
-      return setProblem('Расписание изменилось. Загрузите актуальную версию предложения');
-    if (
-      rows.some(
-        ({ row }) =>
-          !row.subject.trim() ||
-          !row.valid_from ||
-          !row.valid_until ||
-          row.valid_until < row.valid_from ||
-          !row.starts ||
-          !row.ends ||
-          row.ends <= row.starts,
-      )
-    )
-      return setProblem('Проверьте предмет, период действия и время каждой пары');
-    if (rows.some(({ row, unresolvedSubgroup }) => unresolvedSubgroup && !row.subgroup_id))
-      return setProblem('Сопоставьте распознанную подгруппу или явно выберите общую пару');
+      return setProblem('Расписание изменилось. Обновите данные');
+    const readyRows = rows.filter(publishableLesson);
+    if (!readyRows.length)
+      return setProblem('Нет пар с предметом, временем и датами. Исправьте хотя бы одну');
     const targets = [];
-    for (const [index, value] of rows.entries()) {
+    for (const [index, value] of readyRows.entries()) {
       if (!value.mapping) continue;
       const edit = official.data.lesson_edits.find((item) => item.lesson_id === value.mapping);
-      if (!edit) return setProblem('Выбранная пара недоступна. Обновите действующее расписание');
+      if (!edit) return setProblem('Выбранная пара недоступна. Обновите расписание');
       targets.push({
         row_index: index,
         lesson_id: edit.lesson_id,
@@ -359,11 +363,12 @@ function ScheduleReviewForm({
       {
         expected_revision: initial.revision,
         expected_schedule_version: version,
-        corrected_rows: rows.map(({ row }) => ({
+        corrected_rows: readyRows.map(({ row }) => ({
           ...row,
+          starts: abbreviatedTime(row.starts),
+          ends: abbreviatedTime(row.ends),
           subject: row.subject.trim(),
-          // The server derives the stable UUID from the exact confirmed name.
-          // Fuzzy matching the subjects list can attach a mismatched UUID.
+          // The backend derives the subject identity from the confirmed name.
           subject_id: null,
         })),
         targets,
@@ -371,7 +376,6 @@ function ScheduleReviewForm({
       },
       {
         onSuccess: () => {
-          // Return to the manager without leaving duplicate manager entries in browser history.
           const historyIndex = (window.history.state as { idx?: number } | null)?.idx ?? 0;
           if (historyIndex > 0) void navigate(-1);
           else void navigate('/schedule/manage', { replace: true });
@@ -381,7 +385,14 @@ function ScheduleReviewForm({
   }
   return (
     <>
-      {partialReview ? <p role="status">Распознано частично</p> : null}
+      {(partialReview || incompleteCount > 0) && initial.state === 'pending' ? (
+        <div className="review-note" role="status">
+          <span className="review-note-dot" aria-hidden="true" />
+          <span>{incompleteCount > 0
+            ? `${incompleteCount} пар требуют проверки — выделены жёлтым`
+            : 'Частичное распознавание — проверьте пары'}</span>
+        </div>
+      ) : null}
       {cabinet ? (
         sourceBlob ? (
           <CabinetImagePreview blob={sourceBlob} />
@@ -418,7 +429,7 @@ function ScheduleReviewForm({
           Это предложение уже подтверждено. Повторных изменений не будет.
         </Banner>
       ) : null}
-      <div className="field">
+      <div className="field review-week-field">
         <label>
           Неделя
           <input type="date" value={weekStart} onChange={(event) => setWeekStart(event.target.value)} />
@@ -450,26 +461,43 @@ function ScheduleReviewForm({
                 marked={markedDays}
                 onSelect={(index) => setSelectedDay(index)}
               />
-              {visibleRows.length === 0 ? <p>Пар нет</p> : null}
-              {visibleRows.map(({ value, index }) => (
-                <button
-                  type="button"
-                  className="task lrow"
-                  style={{ ...subjectStyle(value.row.subject), width: '100%', textAlign: 'left' }}
-                  key={index}
-                  aria-label={`Редактировать пару: ${value.row.subject}`}
-                  onClick={() => setEditingIndex(index)}
-                >
-                  <span className="bar" />
-                  <span className="tm">{value.row.starts}<small>{value.row.ends}</small></span>
-                  <span className="tb">
-                    <span className="t">{value.row.subject}</span>
-                    <span className="s">
-                      {[value.row.room, value.row.teacher, value.row.subgroup].filter(Boolean).join(' · ') || ' '}
-                    </span>
-                  </span>
-                </button>
-              ))}
+              <div className="review-day-heading">
+                <strong>{WEEKDAYS[selectedDay]}</strong>
+                <span>{visibleRows.length} пар</span>
+              </div>
+              {visibleRows.length === 0 ? <p className="review-empty">В этот день пар нет</p> : null}
+              <div className="review-lesson-list">
+                {visibleRows.map(({ value, index }) => {
+                  const incomplete = initial.state === 'pending' && incompleteLesson(value);
+                  return (
+                    <button
+                      type="button"
+                      className={`task review-lesson${incomplete ? ' is-incomplete' : ''}`}
+                      style={subjectStyle(value.row.subject)}
+                      key={index}
+                      aria-label={`Редактировать пару: ${value.row.subject}`}
+                      onClick={() => setEditingIndex(index)}
+                    >
+                      <span className="bar" aria-hidden="true" />
+                      <span className="review-lesson-time">
+                        <strong>{abbreviatedTime(value.row.starts)}</strong>
+                        <small>{abbreviatedTime(value.row.ends)}</small>
+                      </span>
+                      <span className="review-lesson-body">
+                        <strong className="review-lesson-title">{value.row.subject}</strong>
+                        <span className="review-lesson-meta">
+                          {[value.row.room, value.row.teacher, value.row.subgroup].filter(Boolean).join(' · ')
+                            || 'Без дополнительных сведений'}
+                        </span>
+                        {incomplete ? (
+                          <span className="review-lesson-flag">Неполные данные · Изменить</span>
+                        ) : null}
+                      </span>
+                      <span className="review-lesson-chevron" aria-hidden="true">›</span>
+                    </button>
+                  );
+                })}
+              </div>
             </>
           ) : (
             <button type="button" className="btn" onClick={() => setEditingIndex(null)}>Назад к расписанию</button>
@@ -483,7 +511,7 @@ function ScheduleReviewForm({
             );
             const subgroupValue = row.subgroup_id ?? (value.unresolvedSubgroup ? 'unresolved' : '');
             return (
-              <fieldset className="block" key={index}>
+              <fieldset className="block review-edit" key={index}>
                 <legend>Редактирование пары</legend>
                 <div className="field">
                   <label>
@@ -519,7 +547,7 @@ function ScheduleReviewForm({
                     Начало пары
                     <input
                       type="time"
-                      value={row.starts}
+                      value={abbreviatedTime(row.starts)}
                       required
                       onChange={(event) => update(index, { starts: event.target.value })}
                     />
@@ -530,7 +558,7 @@ function ScheduleReviewForm({
                     Окончание пары
                     <input
                       type="time"
-                      value={row.ends}
+                      value={abbreviatedTime(row.ends)}
                       required
                       onChange={(event) => update(index, { ends: event.target.value })}
                     />
@@ -665,11 +693,11 @@ function ScheduleReviewForm({
                 <button
                   type="button"
                   className="pillb"
-                  onClick={() => setRows((values) => values.filter((_item, i) => i !== index))}
+                  onClick={() => { setRows((values) => values.filter((_item, i) => i !== index)); setEditingIndex(null); }}
                 >
                   Убрать строку
                 </button>
-                <button type="button" className="btn on" onClick={() => setEditingIndex(null)}>Готово</button>
+                <button type="button" className="btn on" onClick={() => { setSelectedDay(row.weekday); setEditingIndex(null); }}>Готово</button>
               </fieldset>
             );
           }) : null}
@@ -688,7 +716,7 @@ function ScheduleReviewForm({
               Действующее расписание изменилось после распознавания. Я заново проверил строки и сопоставления.
             </label>
           ) : null}
-          {problem ? <p role="alert">{problem}</p> : null}
+          {problem ? <p className="review-error" role="alert">{problem}</p> : null}
           {conflict ? (
             <Banner
               tone="warning"
@@ -703,22 +731,29 @@ function ScheduleReviewForm({
             </Banner>
           ) : null}
           {mutation.isError && !conflict ? (
-            <p role="alert">{confirmationError ?? 'Не удалось подтвердить расписание.'}</p>
+            <p className="review-error" role="alert">{confirmationError ?? 'Не удалось подтвердить расписание.'}</p>
           ) : null}
           {initial.state === 'pending' && editingIndex === null ? (
-            <button
-              type="submit"
-              className="btn on"
-              disabled={
-                !(cabinet ? sourceBlob : initial.source_url) ||
-                !official.data ||
-                official.isError ||
-                subjects.isPending ||
-                subjects.isError
-              }
-            >
-              Подтвердить расписание
-            </button>
+            <div className="review-submit">
+              {skippedCount > 0 ? (
+                <p className="review-publish-hint" role="status">
+                  Будет опубликовано {publishableCount} из {rows.length} пар. Остальные не добавятся.
+                </p>
+              ) : null}
+              <button
+                type="submit"
+                className="btn on"
+                disabled={
+                  !(cabinet ? sourceBlob : initial.source_url) ||
+                  !official.data ||
+                  official.isError ||
+                  publishableCount === 0 ||
+                  mutation.isPending
+                }
+              >
+                {mutation.isPending ? 'Подтверждаем…' : 'Подтвердить расписание'}
+              </button>
+            </div>
           ) : null}
         </fieldset>
       </form>

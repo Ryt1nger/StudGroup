@@ -203,12 +203,8 @@ async def confirm(db, group_id, user, member, ident, body, now=None, *, cabinet=
         row.subject = row.subject.strip()
         if not row.subject:
             raise ApiError("invalid_request", "Предмет не может быть пустым", 422)
-        if any(clipped_field(value) for value in (row.subject, row.teacher, row.room)):
-            raise ApiError(
-                "schedule_row_incomplete",
-                "На скриншоте обрезаны сведения о паре. Уточните название, преподавателя и аудиторию перед подтверждением.",
-                409,
-            )
+        # Store exactly the visible fragment when the editor confirms a partial
+        # reading. Never infer missing words, room details or teacher names.
         expected_subject = subject_uuid(group.id, row.subject)
         if row.subject_id is not None and row.subject_id != expected_subject:
             raise ApiError(
