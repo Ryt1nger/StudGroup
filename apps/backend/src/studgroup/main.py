@@ -229,6 +229,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await fund_cabinet_vision(app.state.engine)
         except Exception as error:  # noqa: BLE001 -- never expose funding parameters in logs
             print("BI12_MANUAL_VISION_BUDGET_UNAVAILABLE " + type(error).__name__, flush=True)
+        # Explicit, idempotent owner-approved USD 1 manual-vision top-up.
+        # No top-up happens without the Render approval marker.
+        try:
+            from studgroup.cabinet_vision_budget_topup import startup as apply_bi12_topup
+
+            await apply_bi12_topup(app.state.engine)
+        except Exception as error:  # noqa: BLE001 -- never log private funding metadata
+            print("BI12_MANUAL_TOPUP_FAILED " + type(error).__name__, flush=True)
         app.state.redis = Redis.from_url(settings.redis_url, socket_connect_timeout=2)
         from studgroup.online_lessons import backfill as backfill_online_links
 
