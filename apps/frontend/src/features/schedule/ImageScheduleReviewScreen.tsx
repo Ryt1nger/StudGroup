@@ -338,30 +338,18 @@ function ScheduleReviewForm({
     );
   }
   function confirm() {
-    if (!rows.length) return setProblem('Нужна хотя бы одна строка расписания');
-    if (stale && !acknowledged) return setProblem('Подтвердите повторную проверку действующего расписания');
+    if (!rows.length) return setProblem('Добавьте хотя бы одну пару');
+    if (stale && !acknowledged) return setProblem('Проверьте изменившееся расписание');
     if (!official.data || official.data.schedule_version !== version)
-      return setProblem('Расписание изменилось. Загрузите актуальную версию предложения');
-    if (
-      rows.some(
-        ({ row }) =>
-          !row.subject.trim() ||
-          !row.valid_from ||
-          !row.valid_until ||
-          row.valid_until < row.valid_from ||
-          !row.starts ||
-          !row.ends ||
-          row.ends <= row.starts,
-      )
-    )
-      return setProblem('Проверьте предмет, период действия и время каждой пары');
-    if (rows.some(({ row, unresolvedSubgroup }) => unresolvedSubgroup && !row.subgroup_id))
-      return setProblem('Сопоставьте распознанную подгруппу или явно выберите общую пару');
+      return setProblem('Расписание изменилось. Обновите данные');
+    const readyRows = rows.filter(publishableLesson);
+    if (!readyRows.length)
+      return setProblem('Нет пар с предметом, временем и датами. Исправьте хотя бы одну');
     const targets = [];
-    for (const [index, value] of rows.entries()) {
+    for (const [index, value] of readyRows.entries()) {
       if (!value.mapping) continue;
       const edit = official.data.lesson_edits.find((item) => item.lesson_id === value.mapping);
-      if (!edit) return setProblem('Выбранная пара недоступна. Обновите действующее расписание');
+      if (!edit) return setProblem('Выбранная пара недоступна. Обновите расписание');
       targets.push({
         row_index: index,
         lesson_id: edit.lesson_id,
@@ -375,11 +363,12 @@ function ScheduleReviewForm({
       {
         expected_revision: initial.revision,
         expected_schedule_version: version,
-        corrected_rows: rows.map(({ row }) => ({
+        corrected_rows: readyRows.map(({ row }) => ({
           ...row,
+          starts: abbreviatedTime(row.starts),
+          ends: abbreviatedTime(row.ends),
           subject: row.subject.trim(),
-          // The server derives the stable UUID from the exact confirmed name.
-          // Fuzzy matching the subjects list can attach a mismatched UUID.
+          // The backend derives the subject identity from the confirmed name.
           subject_id: null,
         })),
         targets,
@@ -387,7 +376,6 @@ function ScheduleReviewForm({
       },
       {
         onSuccess: () => {
-          // Return to the manager without leaving duplicate manager entries in browser history.
           const historyIndex = (window.history.state as { idx?: number } | null)?.idx ?? 0;
           if (historyIndex > 0) void navigate(-1);
           else void navigate('/schedule/manage', { replace: true });
@@ -397,7 +385,14 @@ function ScheduleReviewForm({
   }
   return (
     <>
-      {partialReview ? <p role="status">Распознано частично</p> : null}
+      {(partialReview || incompleteCount > 0) && initial.state === 'pending' ? (
+        <div className="review-note" role="status">
+          <span className="review-note-dot" aria-hidden="true" />
+          <span>{incompleteCount > 0
+            ? `${incompleteCount} пар требуют проверки — выделены жёлтым`
+            : 'Частичное распознавание — проверьте пары'}</span>
+        </div>
+      ) : null}
       {cabinet ? (
         sourceBlob ? (
           <CabinetImagePreview blob={sourceBlob} />
@@ -434,7 +429,7 @@ function ScheduleReviewForm({
           Это предложение уже подтверждено. Повторных изменений не будет.
         </Banner>
       ) : null}
-      <div className="field">
+      <div className="field review-week-field">
         <label>
           Неделя
           <input type="date" value={weekStart} onChange={(event) => setWeekStart(event.target.value)} />
