@@ -288,6 +288,48 @@ def test_recovery_of_queued_second_pass_without_repeating_paid_first_pass(client
     assert get_draft(client, submitted["id"])["state"] == "pending"
 
 
+class NoLessonsSecondPassVision(Vision):
+    async def complete_vision(self, **kwargs):
+        result = await super().complete_vision(**kwargs)
+        if len(self.calls) == 2:
+            data = json.loads(result["choices"][0]["message"]["content"])
+            data["schedule"] = []
+            result["choices"][0]["message"]["content"] = json.dumps(data)
+        return result
+
+
+def test_manual_screenshot_uses_focused_timetable_prompt_not_generic_chat_analysis(
+    client, monkeypatch
+):
+    make(client, "headman")
+    authorize_analysis(client)
+    model = Vision()
+    submitted = upload(client, week(), picture()).json()
+    assert advance(client, monkeypatch, model) == "pass_a_ready"
+    assert advance(client, monkeypatch, model) == "ready"
+    assert get_draft(client, submitted["id"])["state"] == "pending"
+    assert len(model.calls) == 2
+    prompt = model.calls[1]["system_prompt"]
+    assert "Прочитай изображение РАСПИСАНИЯ" in prompt
+    assert "homework" not in prompt
+    assert "ImageEvent" not in prompt
+    assert "ScheduleRow" in prompt
+    assert model.calls[1]["max_output_tokens"] == 6000
+
+
+def test_no_lessons_still_fails_without_fabricating_scheduled_classes(client, monkeypatch):
+    make(client, "headman")
+    authorize_analysis(client)
+    model = NoLessonsSecondPassVision()
+    submitted = upload(client, week(), picture()).json()
+    assert advance(client, monkeypatch, model) == "pass_a_ready"
+    assert advance(client, monkeypatch, model) == "failed"
+    result = get_draft(client, submitted["id"])
+    assert result["progress_stage"] == "failed_no_lessons"
+    assert result["rows"] == []
+    assert len(model.calls) == 2
+
+
 def test_personal_manual_retries_allow_multiple_attempts_without_ai_calls(client, monkeypatch):
     from studgroup.models import User
 
