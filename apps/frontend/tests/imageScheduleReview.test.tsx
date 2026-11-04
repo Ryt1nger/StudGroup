@@ -257,10 +257,12 @@ it('shows private screenshot review without Telegram image-review capability', a
     }),
   );
   renderApp({ route: '/schedule/review' });
+  await userEvent.click(await screen.findByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   const mapping = await screen.findByRole('combobox', { name: 'Заменить существующую пару' });
   await waitFor(() => expect(mapping).toContainHTML(lesson.id));
   expect(officialReads).toBeGreaterThan(0);
   expect(telegramReads).toBe(0);
+  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Подтвердить расписание' }))
     .toBeEnabled());
 });
