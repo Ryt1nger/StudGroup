@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from test_image_jobs import cfg, download_ok, reading, stored, tick
 from test_package_worker import make_new
 from test_photo_reading import VisionProvider, photo_message
-from test_staff_api import AUTH, make
+from test_staff_api import AUTH, db_run, make
 
 from studgroup.models import ImageScheduleSuggestion, ScheduleChange, SchedulePattern
 
@@ -524,7 +524,10 @@ def test_clipped_timetable_fragments_can_be_confirmed_without_guessing(client, m
     )
     assert applied.status_code == 200, applied.text
     assert len(stored(client, ScheduleChange)) == 1
-    rows = stored(client, SchedulePattern)
+    async def patterns(db):
+        return (await db.scalars(select(SchedulePattern))).all()
+
+    rows = db_run(client, patterns)
     assert len(rows) == 1
     assert rows[0].subject == "Курс по..."
     assert rows[0].teacher == "Иванова..."
