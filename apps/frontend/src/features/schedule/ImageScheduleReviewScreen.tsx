@@ -284,7 +284,8 @@ function ScheduleReviewForm({
   const [acknowledged, setAcknowledged] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const stale = version !== initial.schedule_version;
-  const conflict = isApiRequestError(mutation.error) && mutation.error.status === 409;
+  const conflict = isApiRequestError(mutation.error) && mutation.error.code === 'revision_conflict';
+  const confirmationError = mutation.error instanceof Error ? mutation.error.message : null;
   function update(index: number, patch: Partial<ConfirmedScheduleRow>) {
     setRows((values) =>
       values.map((value, i) =>
@@ -347,9 +348,9 @@ function ScheduleReviewForm({
         corrected_rows: rows.map(({ row }) => ({
           ...row,
           subject: row.subject.trim(),
-          subject_id:
-            subjects.data?.items.find((subject) => normalize(subject.name) === normalize(row.subject))?.id ??
-            null,
+          // The server derives the stable UUID from the exact confirmed name.
+          // Fuzzy matching the subjects list can attach a mismatched UUID.
+          subject_id: null,
         })),
         targets,
         ...(stale ? { acknowledge_schedule_change: true } : {}),
@@ -661,7 +662,9 @@ function ScheduleReviewForm({
               Источник или расписание изменились. Нужна повторная проверка.
             </Banner>
           ) : null}
-          {mutation.isError && !conflict ? <RequestError error={mutation.error} /> : null}
+          {mutation.isError && !conflict ? (
+            <p role="alert">{confirmationError ?? 'Не удалось подтвердить расписание.'}</p>
+          ) : null}
           {initial.state === 'pending' ? (
             <button
               type="submit"
