@@ -107,7 +107,7 @@ it('corrects rows, maps a subgroup and an existing occurrence, then confirms onc
     expected_schedule_version: 0,
     corrected_rows: [
       {
-        subject_id: SUBJECT,
+        subject_id: null,
         subgroup_id: SUBGROUP,
         teacher: 'Петров',
         valid_from: '2026-10-05',
@@ -133,7 +133,9 @@ it('does not invent effective dates and requires the editor to map a recognized 
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   expect(await screen.findByText(/Сопоставьте распознанную подгруппу/)).toBeInTheDocument();
   expect(requests).toHaveLength(0);
+  await userEvent.click(screen.getByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   await userEvent.selectOptions(screen.getByLabelText('Подгруппа'), '');
+  await userEvent.click(screen.getByRole('button', { name: 'Готово' });
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(requests[0]?.corrected_rows?.[0]?.subgroup_id).toBeNull();
@@ -144,13 +146,13 @@ it('requires explicit re-review when the official schedule changed since recogni
   renderApp({ route: '/schedule/review' });
   await userEvent.click(await screen.findByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   await userEvent.selectOptions(await screen.findByLabelText('Подгруппа'), SUBGROUP);
+  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   expect(
     await screen.findByText('Подтвердите повторную проверку действующего расписания'),
   ).toBeInTheDocument();
   expect(requests).toHaveLength(0);
   await userEvent.click(screen.getByRole('checkbox', { name: /Действующее расписание изменилось/ }));
-  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(requests[0]).toMatchObject({ expected_schedule_version: 1, acknowledge_schedule_change: true });
