@@ -4,7 +4,7 @@ Sends only to the configured admin user. A failed Telegram request never
 changes a saved review, triggers new AI calls, or publishes a timetable.
 """
 
-import uuid
+import json
 from decimal import Decimal
 
 import httpx
@@ -40,7 +40,7 @@ async def notify_completed(engine, settings, ident):
         charged = sum((item.charged_usd for item in attempts), Decimal("0"))
         reserved = sum((item.reserved_usd for item in attempts), Decimal("0"))
         unsettled = sum(item.state != "settled" for item in attempts)
-        rows_count = len(__import__("json").loads(row.rows_json))
+        rows_count = len(json.loads(row.rows_json))
         description = (
             f"📚 Расписание распознано — {group.name}\n"
             f"Статус: черновик на проверке\n"
