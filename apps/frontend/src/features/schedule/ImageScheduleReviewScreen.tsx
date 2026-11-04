@@ -77,26 +77,6 @@ export function ImageScheduleReviewScreen() {
               body="Загрузите скриншот выше, чтобы DeepSeek подготовил расписание для проверки."
             />
           ) : null}
-          {items.length > 1 ? (
-            <div className="field">
-              <label>
-                Предложение
-                <select
-                  value={selected?.id}
-                  onChange={(event) => setParams({ suggestion: event.target.value })}
-                >
-                  {items.map((item, index) => (
-                    <option key={item.id} value={item.id}>
-                      {item.state === 'confirmed' ? 'Подтверждено' :
-                         item.state === 'failed' ? 'Ошибка' :
-                         item.state === 'queued' || item.state === 'processing' ? 'Распознаётся' :
-                         'Ожидает проверки'} · {index + 1}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          ) : null}
           {selected?.cabinet && (
             selected.state === 'queued' || selected.state === 'processing' || selected.state === 'failed'
           ) ? (
@@ -190,6 +170,7 @@ function CabinetProgress({ suggestion }: {
 
 function CabinetImagePreview({ blob }: { blob: Blob }) {
   const imageRef = useRef<HTMLImageElement>(null);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     const element = imageRef.current;
     if (!element) return;
@@ -200,7 +181,17 @@ function CabinetImagePreview({ blob }: { blob: Blob }) {
       URL.revokeObjectURL(url);
     };
   }, [blob]);
-  return <img ref={imageRef} alt="Загруженный скриншот расписания" style={{ maxWidth: '100%', borderRadius: 12 }} />;
+  return (
+    <div className="review-source">
+      <button type="button" className="review-source-toggle" aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}>
+        <span>Исходный скриншот</span>
+        <span>{expanded ? 'Свернуть' : 'Показать'}</span>
+      </button>
+      <img ref={imageRef} className={expanded ? 'review-source-img open' : 'review-source-img'}
+        alt="Загруженный скриншот расписания" />
+    </div>
+  );
 }
 
 function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise<void> }) {
@@ -240,6 +231,28 @@ type EditableRow = {
   scope: 'once' | 'recurring';
   unresolvedSubgroup: string | null;
 };
+
+const abbreviatedTime = (value: string) => value.slice(0, 5);
+const clipped = (value: string | null | undefined) => Boolean(value && (value.includes('...') || value.includes('…')));
+
+// Missing optional details are warnings only, not publication blockers.
+function incompleteLesson(value: EditableRow) {
+  const { row } = value;
+  return !row.subject.trim() || !row.teacher?.trim() || !row.room?.trim()
+    || clipped(row.subject) || clipped(row.teacher) || clipped(row.room)
+    || !row.starts || !row.ends || !row.valid_from || !row.valid_until
+    || Boolean(value.unresolvedSubgroup && !row.subgroup_id);
+}
+
+// A usable timetable row needs a known subject, a valid slot, dates and
+// correctly scoped subgroups. Do not publish unknown subgroup rows to everyone.
+function publishableLesson(value: EditableRow) {
+  const { row } = value;
+  return Boolean(row.subject.trim() && row.starts && row.ends && row.ends > row.starts
+    && row.valid_from && row.valid_until && row.valid_until >= row.valid_from
+    && !(value.unresolvedSubgroup && !row.subgroup_id));
+}
+
 
 function ScheduleReviewForm({
   suggestion,
@@ -296,6 +309,9 @@ function ScheduleReviewForm({
     .map((value, index) => ({ value, index }))
     .filter(({ value }) => value.row.weekday === selectedDay)
     .sort((a, b) => a.value.row.starts.localeCompare(b.value.row.starts));
+  const incompleteCount = rows.filter(incompleteLesson).length;
+  const publishableCount = rows.filter(publishableLesson).length;
+  const skippedCount = rows.length - publishableCount;
 
   const stale = version !== initial.schedule_version;
   const conflict = isApiRequestError(mutation.error) && mutation.error.code === 'revision_conflict';
