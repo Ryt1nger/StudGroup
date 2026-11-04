@@ -130,8 +130,8 @@ it('does not invent effective dates and requires the editor to map a recognized 
   await userEvent.type(screen.getByLabelText('Действует с'), '2026-10-05');
   await userEvent.type(screen.getByLabelText('Действует до'), '2026-12-31');
   await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
-  await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
-  expect(await screen.findByText(/Сопоставьте распознанную подгруппу/)).toBeInTheDocument();
+  expect(screen.getByText(/Будет опубликовано 0 из 1 пар/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Подтвердить расписание' })).toBeDisabled();
   expect(requests).toHaveLength(0);
   await userEvent.click(screen.getByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   await userEvent.selectOptions(screen.getByLabelText('Подгруппа'), '');
@@ -149,7 +149,7 @@ it('requires explicit re-review when the official schedule changed since recogni
   await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   expect(
-    await screen.findByText('Подтвердите повторную проверку действующего расписания'),
+    await screen.findByText('Проверьте изменившееся расписание'),
   ).toBeInTheDocument();
   expect(requests).toHaveLength(0);
   await userEvent.click(screen.getByRole('checkbox', { name: /Действующее расписание изменилось/ }));
@@ -168,6 +168,34 @@ it('reviews lessons as day cards and opens the separate edit view', async () => 
   expect(await screen.findByLabelText('Преподаватель')).toHaveValue('Иванов');
   await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   expect(await screen.findByRole('button', { name: 'Редактировать пару: Математический анализ' })).toBeInTheDocument();
+});
+
+it('marks partially extracted classes yellow but publishes available fields without seconds', async () => {
+  const { rows, requests } = prepareReview();
+  rows[0] = {
+    ...rows[0]!,
+    starts: '09:00:00',
+    ends: '10:20:00',
+    subject: 'Культура...',
+    teacher: null,
+    room: null,
+    subgroup: null,
+  };
+  renderApp({ route: '/schedule/review' });
+  const card = await screen.findByRole('button', { name: 'Редактировать пару: Культура...' });
+  expect(card).toHaveClass('is-incomplete');
+  expect(card).toHaveTextContent('09:00');
+  expect(card).not.toHaveTextContent('09:00:00');
+  expect(screen.queryByRole('combobox', { name: 'Предложение' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(requests[0]?.corrected_rows?.[0]).toMatchObject({
+    subject: 'Культура...',
+    teacher: null,
+    room: null,
+    starts: '09:00',
+    ends: '10:20',
+  });
 });
 
 it('does not query editor data without the group capability', async () => {
