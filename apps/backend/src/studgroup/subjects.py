@@ -3,7 +3,6 @@
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Annotated
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header
 from sqlalchemy import select
@@ -13,7 +12,7 @@ from studgroup import subgroups
 from studgroup.academic_deadlines import archived as deadline_archived
 from studgroup.api import active_group, database
 from studgroup.homework import archived_condition, user_id
-from studgroup.models import AcademicDeadline, Group, Homework, SchedulePattern
+from studgroup.models import AcademicDeadline, Group, Homework, ScheduleException, SchedulePattern
 from studgroup.subject_identity import match_key, subject_uuid
 
 router = APIRouter(prefix="/v1")
@@ -39,7 +38,6 @@ async def subjects(
 ):
     now = datetime.now(UTC)
     hidden = await subgroups.hidden(db, group.id, await user_id(db, authorization))
-    local_day = now.astimezone(ZoneInfo(group.timezone)).date()
     names = {}
     ids = defaultdict(list)
     homework_count = defaultdict(int)
@@ -49,13 +47,22 @@ async def subjects(
         await db.scalars(
             select(SchedulePattern).where(
                 SchedulePattern.group_id == group.id,
-                SchedulePattern.valid_until >= local_day,
             )
         )
     ).all()
+    # Confirmed timetable is the group's primary subject catalogue. Retain
+    # subjects after the pictured week ends; no separate subject creation step.
     for row in patterns:
-        key = subject_key(row.subject)
-        names.setdefault(key, row.subject)
+        if is_placeholder(row.subject):
+            continue
+        names.setdefault(subject_key(row.subject), row.subject)
+    # A confirmed one-off replacement can introduce a new subject as well.
+    exceptions = (
+        await db.scalars(select(ScheduleException).where(ScheduleException.group_id == group.id))
+    ).all()
+    for row in exceptions:
+        if row.subject and not is_placeholder(row.subject):
+            names.setdefault(subject_key(row.subject), row.subject)
 
     homeworks = (
         await db.scalars(
