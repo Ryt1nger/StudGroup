@@ -284,9 +284,7 @@ function ScheduleReviewForm({
   );
   const [acknowledged, setAcknowledged] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const reviewDays = weekKeys(
-    (cabinet && 'week_start' in suggestion ? suggestion.week_start : weekStart) || weekStart,
-  );
+  const reviewDays = weekKeys(weekStart);
   const [selectedDay, setSelectedDay] = useState(() => {
     const first = rows.find((value) => value.row.weekday >= 0 && value.row.weekday < 7);
     return first?.row.weekday ?? 0;
