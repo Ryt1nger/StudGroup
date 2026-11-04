@@ -84,7 +84,7 @@ it('submits a screenshot without waiting and shows server-confirmed progress acr
   phase = 'ready';
   await act(async () => { await app.queryClient.invalidateQueries({ queryKey: ['cabinet-schedule-review'] }); });
   await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument());
-  expect(await screen.findByLabelText('Предмет')).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: /Редактировать пару:/ })).toBeInTheDocument();
 });
 
 it('shows a failed persisted task and allows only an explicit retry', async () => {
