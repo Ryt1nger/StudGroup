@@ -237,6 +237,15 @@ async def process_next(engine, settings, provider=None, now=None):
             progress=100,
             rows=rows,
         )
+        if saved:
+            # Only after the durable draft exists; notification failure cannot
+            # turn a successful (already paid) scan into a failed scan.
+            try:
+                from studgroup.cabinet_review_push import notify_completed
+
+                await notify_completed(engine, settings, task["id"])
+            except Exception as error:  # noqa: BLE001 -- never retry AI for Telegram failures
+                print("CABINET_REVIEW_PUSH_FAILED " + type(error).__name__, flush=True)
         return "ready" if saved else "stale"
     except asyncio.CancelledError:
         # Never automatically retry a potentially billable interrupted invocation.

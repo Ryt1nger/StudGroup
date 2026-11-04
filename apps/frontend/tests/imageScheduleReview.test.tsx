@@ -90,6 +90,7 @@ it('corrects rows, maps a subgroup and an existing occurrence, then confirms onc
   const { requests, rows, lesson } = prepareReview();
   const original = JSON.stringify(rows);
   const app = renderApp({ route: '/schedule/review' });
+  await userEvent.click(await screen.findByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   const teacher = await screen.findByLabelText('Преподаватель');
   await userEvent.clear(teacher);
   await userEvent.type(teacher, 'Петров');
@@ -97,6 +98,7 @@ it('corrects rows, maps a subgroup and an existing occurrence, then confirms onc
   await waitFor(() => expect(screen.getByLabelText('Заменить существующую пару')).toContainHTML(lesson.id));
   await userEvent.selectOptions(screen.getByLabelText('Заменить существующую пару'), lesson.id);
   await userEvent.selectOptions(screen.getByLabelText('Область изменения'), 'recurring');
+  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   await waitFor(() => expect(app.router.state.location.pathname).toBe('/schedule/manage'));
   expect(requests).toHaveLength(1);
@@ -105,7 +107,7 @@ it('corrects rows, maps a subgroup and an existing occurrence, then confirms onc
     expected_schedule_version: 0,
     corrected_rows: [
       {
-        subject_id: SUBJECT,
+        subject_id: null,
         subgroup_id: SUBGROUP,
         teacher: 'Петров',
         valid_from: '2026-10-05',
@@ -122,14 +124,18 @@ it('corrects rows, maps a subgroup and an existing occurrence, then confirms onc
 it('does not invent effective dates and requires the editor to map a recognized subgroup', async () => {
   const { requests } = prepareReview({ missingDates: true });
   renderApp({ route: '/schedule/review' });
+  await userEvent.click(await screen.findByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   expect(await screen.findByLabelText('Действует с')).toHaveValue('');
   expect(screen.getByLabelText('Действует до')).toHaveValue('');
   await userEvent.type(screen.getByLabelText('Действует с'), '2026-10-05');
   await userEvent.type(screen.getByLabelText('Действует до'), '2026-12-31');
+  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   expect(await screen.findByText(/Сопоставьте распознанную подгруппу/)).toBeInTheDocument();
   expect(requests).toHaveLength(0);
+  await userEvent.click(screen.getByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   await userEvent.selectOptions(screen.getByLabelText('Подгруппа'), '');
+  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(requests[0]?.corrected_rows?.[0]?.subgroup_id).toBeNull();
@@ -138,7 +144,9 @@ it('does not invent effective dates and requires the editor to map a recognized 
 it('requires explicit re-review when the official schedule changed since recognition', async () => {
   const { requests } = prepareReview({ stale: true });
   renderApp({ route: '/schedule/review' });
+  await userEvent.click(await screen.findByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   await userEvent.selectOptions(await screen.findByLabelText('Подгруппа'), SUBGROUP);
+  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   expect(
     await screen.findByText('Подтвердите повторную проверку действующего расписания'),
@@ -148,6 +156,18 @@ it('requires explicit re-review when the official schedule changed since recogni
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(requests[0]).toMatchObject({ expected_schedule_version: 1, acknowledge_schedule_change: true });
+});
+
+it('reviews lessons as day cards and opens the separate edit view', async () => {
+  prepareReview();
+  renderApp({ route: '/schedule/review' });
+  const card = await screen.findByRole('button', { name: 'Редактировать пару: Математический анализ' });
+  expect(card).toHaveTextContent('10:00');
+  expect(screen.queryByLabelText('Преподаватель')).not.toBeInTheDocument();
+  await userEvent.click(card);
+  expect(await screen.findByLabelText('Преподаватель')).toHaveValue('Иванов');
+  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
+  expect(await screen.findByRole('button', { name: 'Редактировать пару: Математический анализ' })).toBeInTheDocument();
 });
 
 it('does not query editor data without the group capability', async () => {
@@ -237,10 +257,12 @@ it('shows private screenshot review without Telegram image-review capability', a
     }),
   );
   renderApp({ route: '/schedule/review' });
+  await userEvent.click(await screen.findByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   const mapping = await screen.findByRole('combobox', { name: 'Заменить существующую пару' });
   await waitFor(() => expect(mapping).toContainHTML(lesson.id));
   expect(officialReads).toBeGreaterThan(0);
   expect(telegramReads).toBe(0);
+  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Подтвердить расписание' }))
     .toBeEnabled());
 });

@@ -105,6 +105,8 @@ class Settings(BaseSettings):
     # The production Render web service has no Celery worker. Manual screenshot
     # drafts need their own durable embedded consumer, irrespective of text AI mode.
     cabinet_schedule_background_enabled: bool = True
+    cabinet_review_admin_push_enabled: bool = False
+    cabinet_review_admin_push_telegram_id: int | None = None
     processing_mode: Literal["external", "embedded"] = "external"
     ai_loop_pause_seconds: float = Field(default=4, ge=0, le=60)
     owner_telegram_user_id: int | None = None

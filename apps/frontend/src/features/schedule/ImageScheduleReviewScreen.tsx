@@ -13,7 +13,8 @@ import { BackTop } from '../../shell/TopBar';
 import { Banner, Empty, Skeleton, StateView } from '../../ui/Blocks';
 import { RequestError } from '../../ui/RequestError';
 import { EventSource } from '../events/EventCard';
-import { weekKeys } from '../shared/WeekStrip';
+import { WeekStrip, weekKeys } from '../shared/WeekStrip';
+import { subjectStyle } from '../../lib/subjectColor';
 import {
   useCabinetImage,
   useCabinetScheduleReview,
@@ -181,8 +182,7 @@ function CabinetProgress({ suggestion }: {
           {retry.isError ? <RequestError error={retry.error} /> : null}
         </>
       ) : (
-        <p>Можно закрыть приложение. Результат сохранится здесь и появится автоматически,
-          когда обработка закончится.</p>
+        <p>Анализируем скриншот…</p>
       )}
     </section>
   );
@@ -283,8 +283,23 @@ function ScheduleReviewForm({
   );
   const [acknowledged, setAcknowledged] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const reviewDays = weekKeys(weekStart);
+  const [selectedDay, setSelectedDay] = useState(() => {
+    const first = rows.find((value) => value.row.weekday >= 0 && value.row.weekday < 7);
+    return first?.row.weekday ?? 0;
+  });
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const markedDays = new Set(
+    reviewDays.filter((_day, index) => rows.some((value) => value.row.weekday === index)),
+  );
+  const visibleRows = rows
+    .map((value, index) => ({ value, index }))
+    .filter(({ value }) => value.row.weekday === selectedDay)
+    .sort((a, b) => a.value.row.starts.localeCompare(b.value.row.starts));
+
   const stale = version !== initial.schedule_version;
-  const conflict = isApiRequestError(mutation.error) && mutation.error.status === 409;
+  const conflict = isApiRequestError(mutation.error) && mutation.error.code === 'revision_conflict';
+  const confirmationError = mutation.error instanceof Error ? mutation.error.message : null;
   function update(index: number, patch: Partial<ConfirmedScheduleRow>) {
     setRows((values) =>
       values.map((value, i) =>
@@ -347,9 +362,9 @@ function ScheduleReviewForm({
         corrected_rows: rows.map(({ row }) => ({
           ...row,
           subject: row.subject.trim(),
-          subject_id:
-            subjects.data?.items.find((subject) => normalize(subject.name) === normalize(row.subject))?.id ??
-            null,
+          // The server derives the stable UUID from the exact confirmed name.
+          // Fuzzy matching the subjects list can attach a mismatched UUID.
+          subject_id: null,
         })),
         targets,
         ...(stale ? { acknowledge_schedule_change: true } : {}),
@@ -366,12 +381,7 @@ function ScheduleReviewForm({
   }
   return (
     <>
-      {partialReview ? (
-        <Banner tone="warning" icon="alert">
-          DeepSeek распознал только часть расписания или не уверен в его типе.
-          Проверьте все строки по скриншоту. Отсутствующие пары автоматически не удаляются.
-        </Banner>
-      ) : null}
+      {partialReview ? <p role="status">Распознано частично</p> : null}
       {cabinet ? (
         sourceBlob ? (
           <CabinetImagePreview blob={sourceBlob} />
@@ -408,13 +418,9 @@ function ScheduleReviewForm({
           Это предложение уже подтверждено. Повторных изменений не будет.
         </Banner>
       ) : null}
-      <p>
-        Проверьте источник, предметы, подгруппы, период и сопоставление с действующими парами. Время группы:{' '}
-        {timeZone}.
-      </p>
       <div className="field">
         <label>
-          Начало недели для сопоставления
+          Неделя
           <input type="date" value={weekStart} onChange={(event) => setWeekStart(event.target.value)} />
         </label>
       </div>
@@ -436,7 +442,41 @@ function ScheduleReviewForm({
         }}
       >
         <fieldset className="event-fields" disabled={initial.state === 'confirmed' || mutation.isPending}>
-          {rows.map((value, index) => {
+          {editingIndex === null ? (
+            <>
+              <WeekStrip
+                days={reviewDays}
+                selected={selectedDay}
+                marked={markedDays}
+                onSelect={(index) => setSelectedDay(index)}
+              />
+              {visibleRows.length === 0 ? <p>Пар нет</p> : null}
+              {visibleRows.map(({ value, index }) => (
+                <button
+                  type="button"
+                  className="task lrow"
+                  style={{ ...subjectStyle(value.row.subject), width: '100%', textAlign: 'left' }}
+                  key={index}
+                  aria-label={`Редактировать пару: ${value.row.subject}`}
+                  onClick={() => setEditingIndex(index)}
+                >
+                  <span className="bar" />
+                  <span className="tm">{value.row.starts}<small>{value.row.ends}</small></span>
+                  <span className="tb">
+                    <span className="t">{value.row.subject}</span>
+                    <span className="s">
+                      {[value.row.room, value.row.teacher, value.row.subgroup].filter(Boolean).join(' · ') || ' '}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </>
+          ) : (
+            <button type="button" className="btn" onClick={() => setEditingIndex(null)}>Назад к расписанию</button>
+          )}
+
+          {editingIndex !== null ? [rows[editingIndex]!].map((value) => {
+            const index = editingIndex;
             const row = value.row;
             const choices = subgroups.filter(
               (subgroup) => normalize(subgroup.subject) === normalize(row.subject),
@@ -444,7 +484,7 @@ function ScheduleReviewForm({
             const subgroupValue = row.subgroup_id ?? (value.unresolvedSubgroup ? 'unresolved' : '');
             return (
               <fieldset className="block" key={index}>
-                <legend>Пара {index + 1}</legend>
+                <legend>Редактирование пары</legend>
                 <div className="field">
                   <label>
                     Предмет
@@ -629,9 +669,10 @@ function ScheduleReviewForm({
                 >
                   Убрать строку
                 </button>
+                <button type="button" className="btn on" onClick={() => setEditingIndex(null)}>Готово</button>
               </fieldset>
             );
-          })}
+          }) : null}
           <datalist id="review-subjects">
             {subjects.data?.items.map((subject) => (
               <option key={subject.id} value={subject.name} />
@@ -661,8 +702,10 @@ function ScheduleReviewForm({
               Источник или расписание изменились. Нужна повторная проверка.
             </Banner>
           ) : null}
-          {mutation.isError && !conflict ? <RequestError error={mutation.error} /> : null}
-          {initial.state === 'pending' ? (
+          {mutation.isError && !conflict ? (
+            <p role="alert">{confirmationError ?? 'Не удалось подтвердить расписание.'}</p>
+          ) : null}
+          {initial.state === 'pending' && editingIndex === null ? (
             <button
               type="submit"
               className="btn on"

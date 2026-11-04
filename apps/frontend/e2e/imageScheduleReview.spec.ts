@@ -7,6 +7,7 @@ test('editor corrects the recognized schedule and maps it to one official occurr
   await expect(page.getByRole('heading', { name: 'Управление расписанием', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Загрузить расписание и открыть черновики' }).click();
   await expect(page.getByRole('heading', { name: 'Загрузка расписания', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /Редактировать пару: Математический анализ/ }).click();
   const date = await page.getByLabel('Действует с', { exact: true }).inputValue();
   await page.getByLabel('Преподаватель', { exact: true }).fill('Петров');
   await page.getByLabel('Аудитория', { exact: true }).fill('305');
@@ -19,6 +20,7 @@ test('editor corrects the recognized schedule and maps it to one official occurr
     );
   expect(target).toBeTruthy();
   await mapping.selectOption(target!);
+  await page.getByRole('button', { name: 'Готово', exact: true }).click();
   await page.getByRole('button', { name: 'Подтвердить расписание', exact: true }).click();
   await expect(page).toHaveURL(/\/schedule\/manage$/);
   await page.getByRole('link', { name: 'Назад' }).click();

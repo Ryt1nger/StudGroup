@@ -93,6 +93,57 @@ def get_draft(client, ident):
     return next(x for x in response.json()["suggestions"] if x["id"] == ident)
 
 
+def test_ready_draft_triggers_one_admin_report_without_extra_ai_call(client, monkeypatch):
+    from studgroup import cabinet_review_push
+
+    make(client, "headman")
+    authorize_analysis(client)
+    vision = Vision()
+    reports = []
+
+    async def report(engine, settings, ident):
+        reports.append(ident)
+        return True
+
+    monkeypatch.setattr(cabinet_review_push, "notify_completed", report)
+    submitted = upload(client, week(), picture()).json()
+    assert advance(client, monkeypatch, vision) == "pass_a_ready"
+    assert reports == []
+    assert advance(client, monkeypatch, vision) == "ready"
+    assert reports == [uuid.UUID(submitted["id"])]
+    assert len(vision.calls) == 2
+    assert get_draft(client, submitted["id"])["state"] == "pending"
+
+
+def test_group_subject_catalogue_keeps_new_timetable_subject_after_week_ends(client):
+    from datetime import date, time
+
+    from studgroup.models import SchedulePattern
+
+    make(client, "headman")
+
+    async def seed(db):
+        group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+        db.add(
+            SchedulePattern(
+                group_id=group.id,
+                subject="Новая дисциплина из расписания",
+                weekday=0,
+                starts=time(9, 0),
+                ends=time(10, 20),
+                valid_from=date(2025, 1, 6),
+                valid_until=date(2025, 1, 12),
+                week="all",
+            )
+        )
+
+    db_run(client, seed)
+    response = client.get("/v1/subjects", headers=AUTH)
+    assert response.status_code == 200
+    names = [item["name"] for item in response.json()["items"]]
+    assert names.count("Новая дисциплина из расписания") == 1
+
+
 def test_old_cabinet_uploads_are_deleted_without_touching_new_tasks(client):
     from datetime import UTC
 
