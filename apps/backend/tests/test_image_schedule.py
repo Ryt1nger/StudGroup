@@ -524,6 +524,7 @@ def test_clipped_timetable_fragments_can_be_confirmed_without_guessing(client, m
     )
     assert applied.status_code == 200, applied.text
     assert len(stored(client, ScheduleChange)) == 1
+
     async def patterns(db):
         return (await db.scalars(select(SchedulePattern))).all()
 
