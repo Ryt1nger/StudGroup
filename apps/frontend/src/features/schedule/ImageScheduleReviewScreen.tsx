@@ -182,8 +182,7 @@ function CabinetProgress({ suggestion }: {
           {retry.isError ? <RequestError error={retry.error} /> : null}
         </>
       ) : (
-        <p>Можно закрыть приложение. Результат сохранится здесь и появится автоматически,
-          когда обработка закончится.</p>
+        <p>Анализируем скриншот…</p>
       )}
     </section>
   );
