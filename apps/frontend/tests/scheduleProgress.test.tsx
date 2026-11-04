@@ -69,7 +69,7 @@ it('submits a screenshot without waiting and shows server-confirmed progress acr
   await waitFor(() => expect(posts).toBe(1));
   const progress = await screen.findByRole('progressbar', { name: 'Готовность распознавания' });
   expect(progress).toHaveAttribute('aria-valuenow', '5');
-  expect(screen.getByText(/Можно закрыть приложение/)).toBeInTheDocument();
+  expect(screen.getByText(/Анализируем скриншот/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Подтвердить расписание' })).not.toBeInTheDocument();
 
   stage = 'processing';
