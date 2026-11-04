@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.ai import ProviderFailure
 from studgroup.analysis.image_contracts import ScheduleInterpretation, VisualReading
-from studgroup.analysis.image_reading import read_pass
+from studgroup.analysis.image_reading import read_cabinet_timetable, read_pass
 from studgroup.analysis.release_budget import provider_for, utc
 from studgroup.analysis.schedule_scope import suggest_review_rows
 from studgroup.api import ApiError
@@ -182,22 +182,11 @@ async def process_next(engine, settings, provider=None, now=None):
             return "pass_a_ready" if ok else "stale"
 
         first = VisualReading.model_validate_json(task["first"])
-        hint = f"Староста явно выбрал расписание с {task['week_start'].isoformat()} " + (
-            "только на эту неделю."
-            if task["duration"] == "one_week"
-            else "на постоянной основе для этой чётности."
-        )
-        second, _ = await read_pass(
+        second, _ = await read_cabinet_timetable(
             port,
             task["image"],
             task["mime"],
-            2,
-            first=first,
-            context={
-                "messages": [{"telegram_message_id": 0, "text": hint}],
-                "image_source_message_id": 0,
-                "group_timezone": task["timezone"],
-            },
+            first,
         )
         # This is a manually uploaded timetable, not a publication decision.
         # If some cells are uncertain or semantic typing failed, retain legible
