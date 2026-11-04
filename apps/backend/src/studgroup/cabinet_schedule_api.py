@@ -303,7 +303,12 @@ async def confirm_upload(
         version = await confirm(
             db, context.group.id, context.user, context.member, ident, body, cabinet=True
         )
+    except ApiError as error:
+        # Only the finite code is logged; no private timetable or image content.
+        print(f"CABINET_SCHEDULE_CONFIRM_REJECTED code={error.code}", flush=True)
+        raise
     except StError as error:
+        print("CABINET_SCHEDULE_CONFIRM_REJECTED code=action_rejected", flush=True)
         raise ApiError("action_rejected", str(error), 409) from None
     await db.commit()
     return {"schedule_version": version}
