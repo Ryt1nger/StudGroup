@@ -285,6 +285,86 @@ def test_vision_draft_requires_explicit_confirmation_and_deduplicates(client, mo
     assert len(vision.calls) == 2
 
 
+def test_weekly_replacement_replaces_occurrences_and_preserves_other_weeks(client, monkeypatch):
+    from datetime import time
+
+    from studgroup.models import SchedulePattern
+
+    make(client, "headman")
+    authorize_analysis(client)
+    monday = week()
+
+    async def seed(db):
+        group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+        db.add(
+            SchedulePattern(
+                group_id=group.id,
+                subject="Курс, который продолжается",
+                weekday=0,
+                starts=time(9, 0),
+                ends=time(10, 20),
+                valid_from=monday,
+                valid_until=monday + timedelta(days=20),
+                week="all",
+                revision=1,
+            )
+        )
+
+    db_run(client, seed)
+    vision = Vision()
+    uploaded = upload(client, monday, picture()).json()
+    assert advance(client, monkeypatch, vision) == "pass_a_ready"
+    assert advance(client, monkeypatch, vision) == "ready"
+    draft = get_draft(client, uploaded["id"])
+    corrected = [
+        {
+            **draft["rows"][0],
+            "subject": "Новый предмет на одну неделю",
+            "starts": "11:00",
+            "ends": "12:20",
+        }
+    ]
+    body = {
+        "expected_revision": 1,
+        "expected_schedule_version": 0,
+        "corrected_rows": corrected,
+        "targets": [],
+        "replace_week": True,
+    }
+    response = client.post(
+        f"/v1/staff/schedule-upload/{uploaded['id']}/confirm", headers=AUTH, json=body
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["schedule_version"] == 1
+    this_monday = client.get(
+        f"/v1/staff/schedule?start={monday}&end={monday}", headers=AUTH
+    ).json()["schedule"]["lessons"]
+    assert any(
+        item["subject"] == "Новый предмет на одну неделю" and item["status"] == "scheduled"
+        for item in this_monday
+    )
+    assert not any(
+        item["subject"] == "Курс, который продолжается" and item["status"] == "scheduled"
+        for item in this_monday
+    )
+    next_monday = monday + timedelta(days=7)
+    following = client.get(
+        f"/v1/staff/schedule?start={next_monday}&end={next_monday}", headers=AUTH
+    ).json()["schedule"]["lessons"]
+    assert any(
+        item["subject"] == "Курс, который продолжается" and item["status"] == "scheduled"
+        for item in following
+    )
+    changes = db_run(client, lambda db: db.scalars(select(ScheduleChange)))
+    # A confirmed weekly snapshot is one schedule-version change, not one per lesson.
+    assert len(changes.all()) == 1
+    second = client.post(
+        f"/v1/staff/schedule-upload/{uploaded['id']}/confirm", headers=AUTH, json=body
+    )
+    assert second.status_code == 200
+    assert second.json()["schedule_version"] == 1
+
+
 def test_reject_bad_image_without_spending_or_draft(client, monkeypatch):
     from studgroup.analysis import release_budget
 
