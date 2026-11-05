@@ -14,7 +14,17 @@ def upgrade():
         "groups",
         sa.Column("academic_group_code", sa.String(80), nullable=True),
     )
+    op.add_column(
+        "groups",
+        sa.Column(
+            "academic_group_code_required",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("false"),
+        ),
+    )
 
 
 def downgrade():
+    op.drop_column("groups", "academic_group_code_required")
     op.drop_column("groups", "academic_group_code")
