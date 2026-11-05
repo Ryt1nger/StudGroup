@@ -1,7 +1,7 @@
 import type { ConfirmedScheduleRow, ReviewSubgroup, ScheduleSuggestion } from '@studgroup/shared-types';
 import type { CabinetSuggestion } from './cabinetScheduleApi';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { detailQueryOptions } from '../../api/cachePolicy';
 import { isApiRequestError } from '../../api/errors';
@@ -318,6 +318,11 @@ function ScheduleReviewForm({
   const editingIndex = editParam !== null && /^\d+$/.test(editParam) && Number(editParam) < rows.length
     ? Number(editParam) : null;
   const [draftEdit, setDraftEdit] = useState<{ index: number; value: EditableRow } | null>(null);
+  // Query-string navigation keeps the review draft mounted; reset the shared
+  // app viewport so the editor actually opens like a separate screen.
+  useLayoutEffect(() => {
+    document.querySelector<HTMLElement>('.scroll')?.scrollTo(0, 0);
+  }, [editingIndex]);
   function openEdit(index: number) {
     setDraftEdit({ index, value: { ...rows[index]!, row: { ...rows[index]!.row } } });
     const next = new URLSearchParams(searchParams);
