@@ -4,39 +4,52 @@ import json
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from studgroup.models import Group, GroupScheduleSnapshot, GroupScheduleSource
 from studgroup.ranepa_schedule import WeekSnapshot, group_code, normalized
 
 
 async def configure_source(db, group_id, code: str, upstream_uuid: UUID | None = None):
-    """An upstream UUID is verified elsewhere; configuration never activates sync."""
-    group = await db.get(Group, group_id)
+    """Store one canonical university code on Group; never enable sync implicitly."""
+    group = await db.scalar(select(Group).where(Group.id == group_id).with_for_update())
     if group is None:
         raise ValueError("unknown_group")
     official_code = group_code(code)
+    if len(official_code) > 80:
+        raise ValueError("invalid_group_code")
     source = await db.scalar(
         select(GroupScheduleSource)
         .where(GroupScheduleSource.group_id == group_id)
         .with_for_update()
     )
+    changed = (
+        group.academic_group_code is not None
+        and normalized(group.academic_group_code) != normalized(official_code)
+    )
     if source is None:
         source = GroupScheduleSource(
             group_id=group_id,
-            official_group_code=official_code,
             upstream_group_uuid=upstream_uuid,
             collection_mode="public",
             sync_enabled=False,
             updated_at=datetime.now(UTC),
         )
         db.add(source)
-    elif normalized(source.official_group_code) != normalized(official_code):
+    elif changed:
         source.upstream_group_uuid = upstream_uuid
         source.sync_enabled = False
+        source.last_success_at = None
+        source.last_checked_at = None
+        source.last_error = None
     elif upstream_uuid is not None:
         source.upstream_group_uuid = upstream_uuid
-    source.official_group_code = official_code
+    if changed:
+        # Old source metadata and snapshots must never migrate to a new cohort.
+        await db.execute(
+            delete(GroupScheduleSnapshot).where(GroupScheduleSnapshot.group_id == group_id)
+        )
+    group.academic_group_code = official_code
     source.updated_at = datetime.now(UTC)
     await db.flush()
     return source
@@ -84,7 +97,10 @@ async def remember_snapshot(db, group_id, snapshot: WeekSnapshot, *, checked_at=
     )
     if source is None or source.upstream_group_uuid is None:
         raise ValueError("unverified_group_mapping")
-    if normalized(group_code(snapshot.group_code)) != normalized(source.official_group_code):
+    group = await db.get(Group, group_id)
+    if group is None or not group.academic_group_code:
+        raise ValueError("missing_group_code")
+    if normalized(group_code(snapshot.group_code)) != normalized(group.academic_group_code):
         raise ValueError("mismatched_group_code")
     if snapshot.week_start.weekday() != 0 or (snapshot.week_end - snapshot.week_start).days != 6:
         raise ValueError("invalid_week_coverage")
