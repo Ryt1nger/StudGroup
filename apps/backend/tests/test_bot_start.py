@@ -54,7 +54,12 @@ def allow_telegram(monkeypatch, answer=True):
 def test_welcome_has_six_buttons_and_separate_role_selection(foreman):
     deliver(foreman, "/start", uid=33)
     assert labels(foreman) == [
-        "Подключить группу", "О нас", "Помощь", "Поддержка", "Партнёрка", "Тарифы"
+        "Подключить группу",
+        "О нас",
+        "Помощь",
+        "Поддержка",
+        "Партнёрка",
+        "Тарифы",
     ]
     assert "Привет!" in last(foreman)["text"]
     assert "Я студент" not in labels(foreman)
@@ -63,7 +68,6 @@ def test_welcome_has_six_buttons_and_separate_role_selection(foreman):
     assert "Как ты хочешь подключиться" in last(foreman)["text"]
     tap(foreman, "Назад")
     assert "Подключить группу" in labels(foreman)
-
 
 
 def test_student_joins_by_typing_a_code_and_the_code_is_removed_from_the_chat(foreman, monkeypatch):
