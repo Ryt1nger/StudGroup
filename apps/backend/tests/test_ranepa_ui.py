@@ -29,7 +29,6 @@ def test_rendered_page_has_only_safe_aggregate_diagnostics():
     }
 
 
-
 def test_private_profile_is_directory_with_private_permissions(tmp_path):
     folder = private_profile(tmp_path / "Mac browser session")
     assert folder.exists() and folder.is_dir()
