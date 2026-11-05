@@ -4,16 +4,12 @@ Only a unique, exact official code match can identify a cohort. Similar groups,
 departments or subgroups must not be silently accepted.
 """
 
-import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID
 
 from studgroup.ranepa_schedule import group_code, normalized
 
-UUID_RE = re.compile(
-    r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"
-)
 TEXT_KEYS = {"name", "label", "title", "text", "group_name", "full_name", "fullname"}
 ID_KEYS = {"id", "uuid", "value", "ref", "group_id", "guid", "code"}
 URL_KEYS = {"url", "href", "link"}
@@ -37,9 +33,11 @@ def exact_code_match(label: str, code: str) -> bool:
     # Full academic code is frequently displayed as 'Э-ОБ-... / ЭМИТ'.
     if label == code:
         return True
-    return label.startswith(code) and len(label) > len(code) and label[len(code)] in {
-        " ", "/", "(", "[", ",", ";", "—", "–"
-    }
+    return (
+        label.startswith(code)
+        and len(label) > len(code)
+        and label[len(code)] in {" ", "/", "(", "[", ",", ";", "—", "–"}
+    )
 
 
 def parse_uuid(value: object) -> UUID | None:

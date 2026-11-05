@@ -29,3 +29,5 @@ jobs:
         run: |
           uv run --with playwright python scripts/ranepa_live_probe.py \
             --group-code 'Э-ОБ-385-04-26-02'
+
+# Re-run the isolated pilot after fixing browser error handling.

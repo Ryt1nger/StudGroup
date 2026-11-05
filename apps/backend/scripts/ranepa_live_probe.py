@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
 
 from studgroup.ranepa_discovery import DiscoveryError, find_candidates
@@ -46,6 +47,7 @@ async def live_discovery(code: str) -> dict:
     """Use normal site UI; on a CAPTCHA return a diagnostic, never an invented UUID."""
     matched = set()
     pending = []
+    ui_errors = 0
 
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=True)
@@ -72,10 +74,11 @@ async def live_discovery(code: str) -> dict:
             try:
                 await page.goto(SCHEDULE_URL, wait_until="domcontentloaded", timeout=30000)
                 await page.wait_for_timeout(3000)
-            except Exception:
+            except PlaywrightError:
                 return {"status": "unreachable"}
 
-            if any(mark in normalized(await page.title()) for mark in CAPTCHA_MARKERS):
+            title = normalized(await page.title())
+            if any(mark in title for mark in CAPTCHA_MARKERS):
                 return {"status": "captcha"}
 
             # Trigger the site's native group selector and its normal autocomplete.
@@ -83,8 +86,8 @@ async def live_discovery(code: str) -> dict:
                 group_tab = page.get_by_text("Академ. группы", exact=False).first
                 if await group_tab.is_visible():
                     await group_tab.click(timeout=3000)
-            except Exception:
-                pass
+            except PlaywrightError:
+                ui_errors += 1
 
             searched = False
             for selector in QUERY_SELECTORS:
@@ -97,7 +100,8 @@ async def live_discovery(code: str) -> dict:
                             await page.wait_for_timeout(2500)
                             searched = True
                             break
-                    except Exception:
+                    except PlaywrightError:
+                        ui_errors += 1
                         continue
                 if searched:
                     break
@@ -129,7 +133,8 @@ async def live_discovery(code: str) -> dict:
                         if selected_uuid is not None:
                             matched.add(candidate)
                         break
-                except Exception:
+                except PlaywrightError:
+                    ui_errors += 1
                     continue
 
             ids = {candidate.upstream_uuid for candidate in matched}
@@ -137,7 +142,11 @@ async def live_discovery(code: str) -> dict:
                 body = normalized((await page.locator("body").inner_text())[:10000])
                 if any(mark in body for mark in CAPTCHA_MARKERS):
                     return {"status": "captcha"}
-                return {"status": "no_exact_group", "search_input_found": searched}
+                return {
+                    "status": "no_exact_group",
+                    "search_input_found": searched,
+                    "ui_errors": ui_errors,
+                }
             if len(ids) != 1:
                 return {"status": "ambiguous_group", "matching_uuid_count": len(ids)}
 
@@ -150,7 +159,7 @@ async def live_discovery(code: str) -> dict:
                 start = datetime.now(ZoneInfo("Europe/Moscow")).date()
                 start -= timedelta(days=start.weekday())
                 week = extract_public_schedule(html, code, start, start + timedelta(days=6))
-            except (SourceAccessError, Exception) as error:
+            except (SourceAccessError, PlaywrightError) as error:
                 # Never mark a UUID as verified before we can see its group.
                 kind = str(error) if isinstance(error, SourceAccessError) else "page_unavailable"
                 return {"status": "candidate_not_verified", "reason": kind}
