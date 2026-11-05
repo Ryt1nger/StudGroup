@@ -33,9 +33,10 @@ pytestmark = pytest.mark.skipif(
 
 
 async def smoke_test():
-    assert "@aws-0-eu-west-1.pooler.supabase.com:5432/postgres" in os.environ[
-        "SUPABASE_RESTORE_TEST_URL"
-    ]
+    assert (
+        "@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
+        in os.environ["SUPABASE_RESTORE_TEST_URL"]
+    )
     tls = ssl.create_default_context(cafile=os.environ["SUPABASE_CA_FILE"])
     engine = create_async_engine(
         os.environ["SUPABASE_RESTORE_TEST_URL"],
@@ -62,7 +63,9 @@ async def smoke_test():
                         eligible.where(Membership.role == "headman", Membership.status == "active")
                     )
                     suspended = await session.scalar(
-                        eligible.where(Membership.role == "student", Membership.status == "suspended")
+                        eligible.where(
+                            Membership.role == "student", Membership.status == "suspended"
+                        )
                     )
                     assert student and headman and suspended
                     tokens = {}

@@ -393,7 +393,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def cutover_write_gate(request, call_next):
         if settings.cutover_read_only and request.method not in {"GET", "HEAD", "OPTIONS"}:
             return JSONResponse(
-                {"error": {"code": "maintenance", "message": "Запись временно недоступна", "retryable": True}},
+                {
+                    "error": {
+                        "code": "maintenance",
+                        "message": "Запись временно недоступна",
+                        "retryable": True,
+                    }
+                },
                 status_code=503,
                 headers={"Retry-After": "60"},
             )
