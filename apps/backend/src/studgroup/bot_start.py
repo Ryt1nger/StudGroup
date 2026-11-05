@@ -61,7 +61,6 @@ def parse_academic_group_code(value):
     return token.upper()
 
 
-
 def invite_link(settings, code):
     """A tap-to-join link when the bot username is configured, otherwise the command text."""
     name = (settings.bot_username or "").lstrip("@")
