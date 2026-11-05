@@ -2,6 +2,7 @@
 
 The university remains the source of truth. No network or live DB writes here.
 """
+
 import json
 import re
 import unicodedata
@@ -51,16 +52,27 @@ class ExternalLesson:
         if self.upstream_id is not None:
             return ("upstream", self.upstream_id.strip())
         return (
-            "content", self.day.isoformat(), self.starts.isoformat(), self.ends.isoformat(),
-            normalized(self.subject), normalized(self.teacher), normalized(self.room),
+            "content",
+            self.day.isoformat(),
+            self.starts.isoformat(),
+            self.ends.isoformat(),
+            normalized(self.subject),
+            normalized(self.teacher),
+            normalized(self.room),
             normalized(self.subgroup_hint),
         )
 
     def attributes(self) -> tuple:
         return (
-            self.day.isoformat(), self.starts.isoformat(), self.ends.isoformat(),
-            normalized(self.subject), normalized(self.teacher), normalized(self.room),
-            normalized(self.lesson_type), normalized(self.subgroup_hint), self.cancelled,
+            self.day.isoformat(),
+            self.starts.isoformat(),
+            self.ends.isoformat(),
+            normalized(self.subject),
+            normalized(self.teacher),
+            normalized(self.room),
+            normalized(self.lesson_type),
+            normalized(self.subgroup_hint),
+            self.cancelled,
         )
 
 
@@ -89,13 +101,16 @@ class WeekSnapshot:
         return result
 
     def digest(self) -> str:
-        values = sorted(
-            [(*key, *row.attributes()) for key, row in self.indexed().items()], key=str
-        )
+        values = sorted([(*key, *row.attributes()) for key, row in self.indexed().items()], key=str)
         payload = json.dumps(
-            [normalized(group_code(self.group_code)), self.week_start.isoformat(),
-             self.week_end.isoformat(), values],
-            ensure_ascii=False, separators=(",", ":"),
+            [
+                normalized(group_code(self.group_code)),
+                self.week_start.isoformat(),
+                self.week_end.isoformat(),
+                values,
+            ],
+            ensure_ascii=False,
+            separators=(",", ":"),
         )
         return sha256(payload.encode("utf-8")).hexdigest()
 
@@ -112,17 +127,17 @@ class ScheduleDiff:
 
 
 def compare_snapshots(previous: WeekSnapshot, current: WeekSnapshot) -> ScheduleDiff:
-    if (
-        normalized(group_code(previous.group_code)) != normalized(group_code(current.group_code))
-        or (previous.week_start, previous.week_end) != (current.week_start, current.week_end)
-    ):
+    if normalized(group_code(previous.group_code)) != normalized(
+        group_code(current.group_code)
+    ) or (previous.week_start, previous.week_end) != (current.week_start, current.week_end):
         raise ValueError("mismatched_group_or_week")
     old, new = previous.indexed(), current.indexed()
     return ScheduleDiff(
         added=tuple(new[key] for key in sorted(new.keys() - old.keys())),
         removed=tuple(old[key] for key in sorted(old.keys() - new.keys())),
         changed=tuple(
-            (old[key], new[key]) for key in sorted(old.keys() & new.keys())
+            (old[key], new[key])
+            for key in sorted(old.keys() & new.keys())
             if old[key].attributes() != new[key].attributes()
         ),
     )
@@ -132,10 +147,13 @@ def detect_subgroup(lesson: ExternalLesson, subgroups: list):
     """Only unique teacher/explicit group matches; never infer from room alone."""
     by_teacher = recognise(subgroups, text=lesson.teacher or "") if lesson.teacher else None
     hint = normalized(lesson.subgroup_hint)
-    explicit = bool(re.search(
-        r"\b(?:подгрупп\w*|гр\.?|групп\w*)\s*№?\s*[1-6]\b|"
-        r"\b[1-6]\s*(?:-?я)?\s*(?:подгрупп\w*|гр\.?|групп\w*)", hint
-    ))
+    explicit = bool(
+        re.search(
+            r"\b(?:подгрупп\w*|гр\.?|групп\w*)\s*№?\s*[1-6]\b|"
+            r"\b[1-6]\s*(?:-?я)?\s*(?:подгрупп\w*|гр\.?|групп\w*)",
+            hint,
+        )
+    )
     by_hint = recognise(subgroups, text=hint) if explicit else None
     if by_teacher and by_hint and by_teacher.id != by_hint.id:
         return None
