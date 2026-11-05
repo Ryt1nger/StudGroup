@@ -32,16 +32,14 @@ class PreviewRequest(BaseModel):
 @router.get("")
 async def source_status(context: CurrentStaff, db: Db):
     source = await db.get(GroupScheduleSource, context.group.id)
-    if source is None:
-        return {"configured": False, "sync_enabled": False}
     return {
-        "configured": True,
-        "group_code": source.official_group_code,
-        "internal_group_uuid": source.upstream_group_uuid,
-        "sync_enabled": source.sync_enabled,
-        "last_checked_at": source.last_checked_at,
-        "last_success_at": source.last_success_at,
-        "last_error": source.last_error,
+        "configured": bool(context.group.academic_group_code),
+        "group_code": context.group.academic_group_code,
+        "internal_group_uuid": source.upstream_group_uuid if source else None,
+        "sync_enabled": source.sync_enabled if source else False,
+        "last_checked_at": source.last_checked_at if source else None,
+        "last_success_at": source.last_success_at if source else None,
+        "last_error": source.last_error if source else None,
     }
 
 
@@ -57,7 +55,7 @@ async def update_source(body: SourceConfig, context: CurrentStaff, db: Db):
     await db.commit()
     return {
         "configured": True,
-        "group_code": source.official_group_code,
+        "group_code": context.group.academic_group_code,
         "sync_enabled": source.sync_enabled,
     }
 
@@ -65,8 +63,8 @@ async def update_source(body: SourceConfig, context: CurrentStaff, db: Db):
 @router.post("/preview")
 async def preview_source(body: PreviewRequest, context: CurrentStaff, db: Db):
     """Always read-only. No live/snapshot DB writes and no AI calls."""
-    source = await db.get(GroupScheduleSource, context.group.id)
-    if source is None:
+    code = context.group.academic_group_code
+    if not code:
         raise ApiError("group_code_required", "Сначала укажите университетский код группы", 409)
     if body.week_start.weekday() != 0:
         raise ApiError("invalid_week", "Выберите понедельник недели", 422)
@@ -77,10 +75,10 @@ async def preview_source(body: PreviewRequest, context: CurrentStaff, db: Db):
     ):
         raise ApiError("invalid_week", "Неделя вне допустимого диапазона", 422)
     try:
-        proof, html = await fetch_public_page(body.internal_group_uuid, source.official_group_code)
+        proof, html = await fetch_public_page(body.internal_group_uuid, code)
         result = extract_public_schedule(
             html,
-            source.official_group_code,
+            code,
             body.week_start,
             body.week_start + timedelta(days=6),
         )
@@ -98,7 +96,7 @@ async def preview_source(body: PreviewRequest, context: CurrentStaff, db: Db):
         )
     return {
         "status": "preview_only",
-        "group_code": source.official_group_code,
+        "group_code": code,
         "internal_group_uuid": proof.internal_group_uuid,
         "source_sha256": proof.page_sha256,
         "week_start": result.week_start,
