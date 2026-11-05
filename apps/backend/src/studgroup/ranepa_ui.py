@@ -33,7 +33,6 @@ def source_diagnostics(body: str, *, table_count: int, row_count: int) -> dict:
     }
 
 
-
 def private_profile(path: Path) -> Path:
     """Keep the browser session outside the repository with private permissions."""
     expanded = path.expanduser()
