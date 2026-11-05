@@ -612,7 +612,10 @@ async def resume_or_home(db, session, settings, telegram_id):
     """Restore a safe step after /start, without trusting expired callback buttons."""
     found = await current_membership(db, telegram_id)
     if found:
-        if found[0].role == "headman" and session.step in {"academic_code", "academic_code_confirm"}:
+        if found[0].role == "headman" and session.step in {
+            "academic_code",
+            "academic_code_confirm",
+        }:
             try:
                 payload = json.loads(session.payload)
             except (ValueError, TypeError):
@@ -733,7 +736,11 @@ async def handle(db, update, settings, topic=None):
             await forget(db, chat, message)
             payload = json.loads(session.payload)
             found = await current_membership(db, sender.id)
-            if not found or found[0].role != "headman" or str(found[1].id) != payload.get("group_id"):
+            if (
+                not found
+                or found[0].role != "headman"
+                or str(found[1].id) != payload.get("group_id")
+            ):
                 await home(db, session, settings, sender.id)
                 return True
             code = parse_academic_group_code(text)
@@ -949,9 +956,7 @@ async def handle(db, update, settings, topic=None):
         ):
             await home(db, session, settings, sender.id)
         else:
-            group = await db.scalar(
-                select(Group).where(Group.id == found[1].id).with_for_update()
-            )
+            group = await db.scalar(select(Group).where(Group.id == found[1].id).with_for_update())
             if group is None or group.status != "active":
                 await home(db, session, settings, sender.id)
             else:
