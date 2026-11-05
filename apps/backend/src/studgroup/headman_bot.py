@@ -1302,7 +1302,8 @@ async def typed(db, session, group, user, member, data, text, message, settings)
                 "subgroup_signals",
             )
         else:
-            names = await subgroups.suggest_names(settings, data["subject"], signals)
+            # Subgroup setup must not spend AI tokens or invent labels during onboarding.
+            names = [subgroups.fallback_name(n + 1, items) for n, items in enumerate(signals)]
             await subgroup_draft_screen(db, session, {**data, "signals": signals, "names": names})
     elif field == "subgroup_draft_name":
         domain.headman_only(member)
