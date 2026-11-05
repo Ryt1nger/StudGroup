@@ -134,6 +134,83 @@ def test_an_invitation_link_joins_in_one_tap_and_removes_the_link_message(forema
     assert tapped in deletions(foreman)
 
 
+def test_shared_group_link_allows_multiple_verified_students(foreman, monkeypatch):
+    allow_telegram(monkeypatch)
+
+    async def make(db):
+        _, member, group = await actor(db)
+        return await domain.issue_group_link(db, group, member)
+
+    code = run(foreman, make)
+    for uid in (33, 34):
+        deliver(foreman, f"/start invite_{code}", uid=uid)
+        assert "Готово! Вы подключены" in last(foreman)["text"]
+
+    async def joined(db):
+        from studgroup.models import GroupInvitation
+        from studgroup.security import token_hash
+
+        members = (
+            await db.scalars(
+                select(Membership.role).where(Membership.role == "student")
+            )
+        ).all()
+        invitation = await db.get(GroupInvitation, token_hash(code))
+        return members, invitation.reusable, invitation.used_by
+
+    members, reusable, used_by = run(foreman, joined)
+    assert len(members) == 2
+    assert reusable and used_by is None
+
+
+def test_shared_link_rejects_a_member_of_another_group(foreman, monkeypatch):
+    import uuid
+
+    from studgroup.models import Group
+
+    allow_telegram(monkeypatch)
+
+    async def prepare(db):
+        _, member, group = await actor(db)
+        code = await domain.issue_group_link(db, group, member)
+        other = Group(
+            id=uuid.uuid4(),
+            telegram_chat_id=-1000033,
+            name="Другая группа",
+            timezone="Europe/Moscow",
+            status="active",
+            pilot_authorized=True,
+        )
+        student = User(id=uuid.uuid4(), telegram_user_id=33, display_name="Студент")
+        db.add_all([other, student])
+        await db.flush()
+        db.add(
+            Membership(
+                id=uuid.uuid4(),
+                group_id=other.id,
+                user_id=student.id,
+                role="student",
+                status="active",
+            )
+        )
+        return code
+
+    code = run(foreman, prepare)
+    deliver(foreman, f"/start invite_{code}", uid=33)
+    assert "уже подключены к другой группе" in last(foreman)["text"]
+
+
+def test_student_with_no_configured_subgroups_sees_no_subgroup_question(foreman, monkeypatch):
+    allow_telegram(monkeypatch)
+    code = issue(foreman)
+    deliver(foreman, f"/start invite_{code}", uid=33)
+    assert "Готово! Вы подключены" in last(foreman)["text"]
+    assert "подгруппе" not in last(foreman)["text"]
+    deliver(foreman, "/start", uid=33)
+    assert "Мои подгруппы" not in labels(foreman)
+    assert "Вы подключены" in last(foreman)["text"]
+
+
 def test_a_failed_telegram_check_is_explained_on_the_panel(foreman, monkeypatch):
     allow_telegram(monkeypatch, answer=False)
     deliver(foreman, f"/start invite_{issue(foreman)}", uid=33)
