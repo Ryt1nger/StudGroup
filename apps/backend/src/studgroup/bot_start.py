@@ -300,12 +300,24 @@ async def connected(db, session, settings, group, bot_is_admin=True):
     )
 
 
+async def subgroup_question(db, session, group):
+    await screen(
+        db, session,
+        f"Есть ли в группе «{group.name}» разделение на подгруппы по предметам? "
+        "Если нет, пропустите шаг: студенты не будут получать таких вопросов.",
+        [[("Да, настроить", "subgroup_setup_yes")], [("Нет, пропустить", "subgroup_setup_no")],
+         [("‹ Назад", "home")]],
+        "subgroup_question",
+    )
+
+
 async def invite(db, session, settings, telegram_id):
     found = await current_membership(db, telegram_id)
     if not found or found[0].role != "headman":
         await home(db, session, settings, telegram_id)
         return
     member, group = found
+    setup = session.step == "connected"
     try:
         code = (await domain.issue_invites(db, group, member, 1))[0]
     except domain.StError as error:
@@ -318,8 +330,10 @@ async def invite(db, session, settings, telegram_id):
         f"{invite_link(settings, code)}\n\n"
         "Перешлите это одному студенту: достаточно нажать на ссылку. Она действует 24 часа и "
         "срабатывает один раз.",
-        [[("Создать ещё", "invite")], [("‹ Назад", "home")]],
-        "invite",
+        [[("Создать ещё", "invite")]] +
+        ([[("Далее: подгруппы", "subgroup_setup")]] if setup else []) +
+        [[("‹ Назад", "home")]],
+        "invite", {"setup": setup},
     )
 
 
@@ -505,8 +519,23 @@ async def demo_student_summary(db, session, english, informatics):
 
 async def resume_or_home(db, session, settings, telegram_id):
     """Restore a safe step after /start, without trusting expired callback buttons."""
-    if await current_membership(db, telegram_id):
-        await home(db, session, settings, telegram_id)
+    found = await current_membership(db, telegram_id)
+    if found:
+        if found[0].role == "headman" and session.step == "connected":
+            await connected(db, session, settings, found[1])
+        elif found[0].role == "headman" and session.step == "invite":
+            try:
+                prev = json.loads(session.payload)
+            except (ValueError, TypeError):
+                prev = {}
+            if prev.get("setup"):
+                await subgroup_question(db, session, found[1])
+            else:
+                await home(db, session, settings, telegram_id)
+        elif found[0].role == "headman" and session.step == "subgroup_question":
+            await subgroup_question(db, session, found[1])
+        else:
+            await home(db, session, settings, telegram_id)
         return
     step = session.step
     try:
@@ -761,6 +790,30 @@ async def handle(db, update, settings, topic=None):
             await bot_connect.claim_headman(db, settings, session, group, sender.id)
     elif action == "invite":
         await invite(db, session, settings, sender.id)
+    elif action == "subgroup_setup" and session.step == "invite":
+        found = await current_membership(db, sender.id)
+        if found and found[0].role == "headman" and json.loads(session.payload).get("setup"):
+            await subgroup_question(db, session, found[1])
+        else:
+            await home(db, session, settings, sender.id)
+    elif action == "subgroup_setup_no" and session.step == "subgroup_question":
+        session.step = "finished"
+        if not await open_cabinet(db, sender.id):
+            await home(db, session, settings, sender.id)
+    elif action == "subgroup_setup_yes" and session.step == "subgroup_question":
+        session.step = "finished"
+        if await open_cabinet(db, sender.id):
+            from studgroup import headman_bot
+
+            headman_session = await db.get(HeadmanSession, sender.id)
+            user, member, group = await domain.access(db, sender.id, headman_session.group_id)
+            token = bot_panels.scope.set((sender.id, "st"))
+            try:
+                await headman_bot.subgroup_settings_screen(db, headman_session, group)
+            finally:
+                bot_panels.scope.reset(token)
+        else:
+            await home(db, session, settings, sender.id)
     elif action == "cabinet":
         if not await open_cabinet(db, sender.id):
             await home(db, session, settings, sender.id)
