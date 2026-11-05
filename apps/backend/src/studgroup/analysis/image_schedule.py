@@ -271,8 +271,8 @@ async def confirm(db, group_id, user, member, ident, body, now=None, *, cabinet=
                 "Все пары должны относиться к выбранной неделе",
                 409,
             )
-        from studgroup.api import schedule_data
         from studgroup import headman_schedule
+        from studgroup.api import schedule_data
         from studgroup.headman_domain import snapshot
 
         current_week = await schedule_data(monday, sunday, group, db)
