@@ -26,7 +26,7 @@ from studgroup import bot_info, bot_panels, subgroups
 from studgroup import headman_domain as domain
 from studgroup.bot_admin import enqueue, say
 from studgroup.homework import utc
-from studgroup.models import Group, HeadmanSession, Membership, StartSession, User
+from studgroup.models import Group, HeadmanSession, Membership, StartSession, User, UserProfile
 
 SESSION_MINUTES = 30
 CLAIM_HOURS = 24  # how long «Я староста» waits for the bot to be added to a group
@@ -181,7 +181,7 @@ async def home(db, session, settings, telegram_id):
         text = f"Вы подключены к «{group.name}»."
         if group.academic_group_code:
             text += f"\nОфициальный ID РАНХиГС: {group.academic_group_code}"
-        rows = [[app_button(settings)]]
+        rows = [[app_button(settings)], [("Уведомления", "notifications")]]
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
         if member.role == "headman":
@@ -218,6 +218,62 @@ async def home(db, session, settings, telegram_id):
         [[("Подключить группу", "connect")], *info_row()],
         "home",
     )
+
+
+NOTIFICATION_FIELDS = {
+    "enabled": "Все уведомления",
+    "new_cards": "Новые задания",
+    "changes": "Изменения в заданиях",
+    "deadlines": "Напоминания о сроках",
+    "lessons": "Начало занятий",
+    "quiet": "Тихие часы",
+}
+
+
+async def notification_menu(db, session, settings, telegram_id):
+    """Student/staff preferences, saved to the same profile as the Mini App."""
+    from studgroup.profile import NotificationSettings
+
+    if not await current_membership(db, telegram_id):
+        await home(db, session, settings, telegram_id)
+        return
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    profile = await db.get(UserProfile, user.id)
+    preferences = NotificationSettings.model_validate(profile.settings if profile else {})
+    rows = [
+        [(f"{'✅' if getattr(preferences, key) else '❌'} {label}", f"notify_{key}")]
+        for key, label in NOTIFICATION_FIELDS.items()
+    ]
+    rows.append([("‹ Главное меню", "home")])
+    await screen(
+        db,
+        session,
+        "Уведомления StudGroup\n\n"
+        "Нажмите на пункт, чтобы включить или выключить его. "
+        "Настройки сохраняются в вашем профиле и используются для личных сообщений бота "
+        "по мере запуска соответствующих рассылок.",
+        rows,
+        "notifications",
+    )
+
+
+async def toggle_notification(db, session, settings, telegram_id, key):
+    from studgroup.profile import NotificationSettings
+
+    if key not in NOTIFICATION_FIELDS or not await current_membership(db, telegram_id):
+        await home(db, session, settings, telegram_id)
+        return
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    profile = await db.get(UserProfile, user.id)
+    if profile is None:
+        profile = UserProfile(user_id=user.id, updated_at=datetime.now(UTC))
+        db.add(profile)
+    preferences = NotificationSettings.model_validate(profile.settings or {})
+    profile.settings = preferences.model_copy(
+        update={key: not getattr(preferences, key)}
+    ).model_dump()
+    profile.updated_at = datetime.now(UTC)
+    await notification_menu(db, session, settings, telegram_id)
 
 
 async def promo_screen(db, session, role):
@@ -959,6 +1015,12 @@ async def handle(db, update, settings, topic=None):
             )
         else:
             await home(db, session, settings, sender.id)
+    elif action == "notifications":
+        await notification_menu(db, session, settings, sender.id)
+    elif action.startswith("notify_") and session.step == "notifications":
+        await toggle_notification(
+            db, session, settings, sender.id, action.removeprefix("notify_")
+        )
     elif action == "academic_code_edit":
         found = await current_membership(db, sender.id)
         if found and found[0].role == "headman":
