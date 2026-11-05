@@ -42,7 +42,6 @@ class Group(Base):
     bot_added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-
 class GroupScheduleSource(Base):
     """Per-group university source configuration; writes are opt-in and disabled by default."""
 
