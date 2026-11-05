@@ -866,7 +866,10 @@ async def subgroup_notice_eligibility(db, row, now):
     if not member or await db.get(MemberSubgroup, (member.id, split.id)):
         return None
     profile = await db.get(UserProfile, user.id)
-    preferences = NotificationSettings.model_validate(profile.settings if profile else {})
+    try:
+        preferences = NotificationSettings.model_validate(profile.settings if profile else {})
+    except ValueError:
+        return None
     if not preferences.enabled:
         return None
     group = await db.get(Group, split.group_id)
