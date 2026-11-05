@@ -54,7 +54,10 @@ async function authorized(path: string, options: RequestInit = {}): Promise<Resp
         result?.error?.code === 'analysis_unavailable') {
       throw new Error('Распознавание сейчас недоступно. Попробуйте позже.');
     }
-    throw new Error(result?.error?.message ?? `Ошибка сервера: ${response.status}`);
+    // Never expose infrastructure/provider identity from an upstream error.
+    const message = result?.error?.message ?? `Ошибка сервера: ${response.status}`;
+    throw new Error(/deepseek|дипсик|дипсек/i.test(message)
+      ? 'Не удалось обработать запрос. Попробуйте ещё раз позже.' : message);
   }
   return response;
 }
