@@ -15,7 +15,6 @@ import { addDays, dayKey, formatTime, weekRangeForDayKey } from '../../lib/forma
 import { subjectStyle } from '../../lib/subjectColor';
 import { useIsEditor, useSessionServerNow } from '../../session/SessionProvider';
 import { useGroupTimeZone } from '../../session/useGroupTimeZone';
-import { BackTop } from '../../shell/TopBar';
 import { Banner, Empty, Skeleton, StateView } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
@@ -267,7 +266,11 @@ export function ScheduleManageScreen() {
 
   return (
     <>
-      <BackTop fallback="/schedule" />
+      <div className="top">
+        <Link to="/schedule" className="icon-btn" aria-label="Назад">
+          <Ic name="back" />
+        </Link>
+      </div>
       <h1 className="ptitle">Управление расписанием</h1>
       {!editor ? (
         <StateView icon="lock" title="Нет доступа" body="Изменять расписание могут староста и заместитель." />
