@@ -25,6 +25,14 @@ import {
 import { useEventCapabilities } from '../events/api';
 import { useConfirmImageSchedule, useImageScheduleReview, useReviewScheduleWeek } from './imageReviewApi';
 
+function pairCount(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  const noun = mod10 === 1 && mod100 !== 11 ? 'пара'
+    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'пары' : 'пар';
+  return `${count} ${noun}`;
+}
+
 const WEEKDAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 const normalize = (name: string) => name.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е');
 
@@ -526,7 +534,7 @@ function ScheduleReviewForm({
               />
               <div className="review-day-heading">
                 <strong>{WEEKDAYS[selectedDay]}</strong>
-                <span>{visibleRows.length} пар</span>
+                <span>{pairCount(visibleRows.length)}</span>
               </div>
               {visibleRows.length === 0 ? <p className="review-empty">В этот день пар нет</p> : null}
               <div className="review-lesson-list">
@@ -792,8 +800,8 @@ function ScheduleReviewForm({
                 <strong>Заменить расписание этой недели</strong>
               </label>
               <div className="review-replace-counts">
-                <span>Сейчас <strong>{officialActiveCount} пар</strong></span>
-                <span>После обновления <strong>{publishableCount} пар</strong></span>
+                <span>Сейчас <strong>{pairCount(officialActiveCount)}</strong></span>
+                <span>После обновления <strong>{pairCount(publishableCount)}</strong></span>
               </div>
               <p>
                 При полной замене прежние занятия этой недели будут отменены,
