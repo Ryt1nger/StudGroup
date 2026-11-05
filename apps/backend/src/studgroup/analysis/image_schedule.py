@@ -240,6 +240,29 @@ async def confirm(db, group_id, user, member, ident, body, now=None, *, cabinet=
     keys = [row.model_dump_json() for row in rows]
     if len(keys) != len(set(keys)):
         raise ApiError("duplicate_schedule_row", "Повторная строка расписания", 422)
+    if body.replace_week:
+        # Different labels or teachers must not let overlapping weekly lessons
+        # through. Only two explicitly different subgroups may meet in parallel.
+        for index, row in enumerate(rows):
+            if any(
+                row.weekday == other.weekday
+                and row.valid_from <= other.valid_until
+                and other.valid_from <= row.valid_until
+                and (row.week == "all" or other.week == "all" or row.week == other.week)
+                and row.starts < other.ends
+                and other.starts < row.ends
+                and not (
+                    row.subgroup_id is not None
+                    and other.subgroup_id is not None
+                    and row.subgroup_id != other.subgroup_id
+                )
+                for other in rows[:index]
+            ):
+                raise ApiError(
+                    "duplicate_schedule_slot",
+                    "В недельном расписании пары пересекаются в одном временном слоте",
+                    422,
+                )
     existing = (
         await db.scalars(
             select(SchedulePattern)

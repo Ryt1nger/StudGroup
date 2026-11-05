@@ -285,6 +285,31 @@ def test_vision_draft_requires_explicit_confirmation_and_deduplicates(client, mo
     assert len(vision.calls) == 2
 
 
+def test_weekly_replacement_rejects_duplicate_slot_with_different_subject(client, monkeypatch):
+    make(client, "headman")
+    authorize_analysis(client)
+    monday = week()
+    uploaded = upload(client, monday, picture()).json()
+    vision = Vision()
+    assert advance(client, monkeypatch, vision) == "pass_a_ready"
+    assert advance(client, monkeypatch, vision) == "ready"
+    draft = get_draft(client, uploaded["id"])
+    row = draft["rows"][0]
+    response = client.post(
+        f"/v1/staff/schedule-upload/{uploaded['id']}/confirm",
+        headers=AUTH,
+        json={
+            "expected_revision": 1,
+            "expected_schedule_version": 0,
+            "corrected_rows": [row, {**row, "subject": "Математика..."}],
+            "targets": [],
+            "replace_week": True,
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "duplicate_schedule_slot"
+
+
 def test_weekly_replacement_replaces_occurrences_and_preserves_other_weeks(client, monkeypatch):
     from datetime import time
 
