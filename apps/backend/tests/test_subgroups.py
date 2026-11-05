@@ -130,12 +130,27 @@ def test_subgroup_notice_respects_notification_opt_out_and_deduplication(foreman
         rows = (
             await db.scalars(select(BotOutbox).where(BotOutbox.dedup_key.like("subgroup-choice:%")))
         ).all()
-        return rows
+        from studgroup import bot_admin
 
-    rows = run(foreman_fixture, seed_and_notify)
+        eligible_before = await bot_admin.subgroup_notice_eligibility(db, rows[0], at)
+        selected = await db.scalar(select(User).where(User.telegram_user_id == 34))
+        db.add(
+            UserProfile(
+                user_id=selected.id,
+                settings={"enabled": False},
+                updated_at=at,
+            )
+        )
+        await db.flush()
+        eligible_after = await bot_admin.subgroup_notice_eligibility(db, rows[0], at)
+        return rows, eligible_before, eligible_after
+
+    rows, eligible_before, eligible_after = run(foreman_fixture, seed_and_notify)
     assert len(rows) == 1
     assert json.loads(rows[0].payload)["chat_id"] == 34
     assert rows[0].dedup_key.startswith("subgroup-choice:")
+    assert eligible_before == datetime(2026, 11, 5, 12, tzinfo=UTC)
+    assert eligible_after is None  # opted out before the scheduled delivery
 
 
 def test_quiet_subgroup_notice_waits_until_morning_and_not_through_daytime():
