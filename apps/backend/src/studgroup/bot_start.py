@@ -255,8 +255,7 @@ async def connection_status(db, session, settings, telegram_id):
         )
     else:
         member_text = (
-            "Не удалось подтвердить участие в Telegram. "
-            "Это не изменило ваш доступ к StudGroup."
+            "Не удалось подтвердить участие в Telegram. Это не изменило ваш доступ к StudGroup."
         )
     bot_id = bot_connect.own_bot_id(settings)
     bot_status = (
