@@ -735,9 +735,7 @@ async def handle(db, update, settings, topic=None):
         await code_prompt(db, session)
     elif action == "join_back":
         await join(db, session)
-    elif action == "check_group":
-        await headman_entry(db, session, settings, sender.id)
-    elif action == "headman_back":
+    elif action in {"check_group", "headman_back"}:
         await headman_entry(db, session, settings, sender.id)
     elif action.startswith("pick") and session.step == "headman":
         from studgroup import bot_connect
