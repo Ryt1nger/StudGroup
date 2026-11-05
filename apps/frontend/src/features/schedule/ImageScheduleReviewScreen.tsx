@@ -35,6 +35,8 @@ export function ImageScheduleReviewScreen() {
   const cabinet = useCabinetScheduleReview(editor);
   const [params, setParams] = useSearchParams();
   const [reload, setReload] = useState(0);
+  const editIndexParam = params.get('edit');
+  const editingPage = editIndexParam !== null && /^\d+$/.test(editIndexParam);
   const items = [
     ...(cabinet.data?.suggestions ?? []).map((item) => ({ ...item, cabinet: true })),
     ...(query.data?.suggestions ?? []).map((item) => ({ ...item, cabinet: false })),
@@ -50,8 +52,8 @@ export function ImageScheduleReviewScreen() {
 
   return (
     <>
-      <BackTop fallback="/schedule/manage" />
-      <h1 className="ptitle">Загрузка расписания</h1>
+      <BackTop fallback={editingPage ? `/schedule/review?suggestion=${encodeURIComponent(params.get('suggestion') ?? '')}` : '/schedule/manage'} />
+      <h1 className="ptitle">{editingPage ? 'Редактирование пары' : 'Загрузка расписания'}</h1>
       {!editor ? (
         <StateView
           icon="lock"
@@ -60,24 +62,24 @@ export function ImageScheduleReviewScreen() {
         />
       ) : (
         <>
-          <CabinetUploadForm
+          {!editingPage ? <CabinetUploadForm
             onUploaded={async (id) => {
               setParams({ suggestion: id });
               await cabinet.refetch();
               setReload((value) => value + 1);
             }}
-          />
+          /> : null}
           {cabinet.isPending ? <Skeleton label="Загрузка загруженных расписаний" /> : null}
           {cabinet.isError ? <RequestError error={cabinet.error} onRetry={() => void cabinet.refetch()} /> : null}
           {query.isPending && features.schedule_review ? <Skeleton label="Загрузка предложений из Telegram" /> : null}
           {query.isError && features.schedule_review ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
-          {!cabinet.isPending && (!features.schedule_review || !query.isPending) && !items.length ? (
+          {!editingPage && !cabinet.isPending && (!features.schedule_review || !query.isPending) && !items.length ? (
             <Empty
               title="Пока нет черновиков"
-              body="Загрузите скриншот выше, чтобы DeepSeek подготовил расписание для проверки."
+              body="Загрузите скриншот выше, чтобы распознать расписание и проверить черновик."
             />
           ) : null}
-          {selected?.cabinet && (
+          {!editingPage && selected?.cabinet && (
             selected.state === 'queued' || selected.state === 'processing' || selected.state === 'failed'
           ) ? (
             <CabinetProgress suggestion={selected} />
@@ -116,10 +118,10 @@ const PROGRESS_LABELS: Record<string, string> = {
   failed_budget: 'Лимит распознавания исчерпан.',
   failed_window: 'Период доступного распознавания завершился.',
   failed_hold: 'Распознавание временно заблокировано.',
-  failed_output: 'DeepSeek не завершил формирование ответа.',
-  failed_format: 'Ответ DeepSeek не удалось прочитать.',
+  failed_output: 'Не удалось завершить распознавание.',
+  failed_format: 'Не удалось прочитать результат распознавания.',
   failed_context: 'Слишком много информации для распознавания.',
-  failed_provider: 'Не удалось получить корректный ответ DeepSeek.',
+  failed_provider: 'Не удалось получить корректный результат распознавания.',
   failed_no_lessons: 'Не удалось найти читаемые пары на скриншоте.',
   failed_unreadable: 'Не удалось прочитать изображение.',
   failed_input: 'Не удалось обработать содержимое изображения.',
@@ -301,7 +303,26 @@ function ScheduleReviewForm({
     const first = rows.find((value) => value.row.weekday >= 0 && value.row.weekday < 7);
     return first?.row.weekday ?? 0;
   });
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editParam = searchParams.get('edit');
+  const editingIndex = editParam !== null && /^\d+$/.test(editParam) && Number(editParam) < rows.length
+    ? Number(editParam) : null;
+  const [draftEdit, setDraftEdit] = useState<{ index: number; value: EditableRow } | null>(null);
+  function openEdit(index: number) {
+    setDraftEdit({ index, value: { ...rows[index]!, row: { ...rows[index]!.row } } });
+    const next = new URLSearchParams(searchParams);
+    next.set('edit', String(index));
+    setSearchParams(next);
+  }
+  function closeEdit(save: boolean) {
+    if (save && editingIndex !== null && draftEdit?.index === editingIndex) {
+      setRows((items) => items.map((item, index) => index === editingIndex ? draftEdit.value : item));
+    }
+    setDraftEdit(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete('edit');
+    setSearchParams(next);
+  }
   const markedDays = new Set(
     reviewDays.filter((_day, index) => rows.some((value) => value.row.weekday === index)),
   );
@@ -317,25 +338,39 @@ function ScheduleReviewForm({
   const conflict = isApiRequestError(mutation.error) && mutation.error.code === 'revision_conflict';
   const confirmationError = mutation.error instanceof Error ? mutation.error.message : null;
   function update(index: number, patch: Partial<ConfirmedScheduleRow>) {
-    setRows((values) =>
-      values.map((value, i) =>
-        i === index
-          ? {
-              ...value,
-              unresolvedSubgroup:
-                patch.subject !== undefined && value.row.subgroup
-                  ? value.row.subgroup
-                  : value.unresolvedSubgroup,
-              row: { ...value.row, ...patch },
-            }
-          : value,
-      ),
-    );
+    setDraftEdit((previous) => {
+      const value = previous?.index === index ? previous.value : rows[index]!;
+      return {
+        index,
+        value: {
+          ...value,
+          unresolvedSubgroup:
+            patch.subject !== undefined && value.row.subgroup
+              ? value.row.subgroup : value.unresolvedSubgroup,
+          row: { ...value.row, ...patch },
+        },
+      };
+    });
   }
   function changeMapping(index: number, mapping: string, scope?: 'once' | 'recurring') {
-    setRows((values) =>
-      values.map((value, i) => (i === index ? { ...value, mapping, scope: scope ?? value.scope } : value)),
-    );
+    setDraftEdit((previous) => {
+      const value = previous?.index === index ? previous.value : rows[index]!;
+      return { index, value: { ...value, mapping, scope: scope ?? value.scope } };
+    });
+  }
+  function updateSubgroup(index: number, subgroupId: string, choices: ReviewSubgroup[]) {
+    const subgroup = choices.find((choice) => choice.id === subgroupId);
+    setDraftEdit((previous) => {
+      const value = previous?.index === index ? previous.value : rows[index]!;
+      return {
+        index,
+        value: {
+          ...value,
+          unresolvedSubgroup: null,
+          row: { ...value.row, subgroup_id: subgroup?.id ?? null, subgroup: subgroup?.name ?? null },
+        },
+      };
+    });
   }
   function confirm() {
     if (!rows.length) return setProblem('Добавьте хотя бы одну пару');
@@ -385,7 +420,7 @@ function ScheduleReviewForm({
   }
   return (
     <>
-      {(partialReview || incompleteCount > 0) && initial.state === 'pending' ? (
+      {editingIndex === null && (partialReview || incompleteCount > 0) && initial.state === 'pending' ? (
         <div className="review-note" role="status">
           <span className="review-note-dot" aria-hidden="true" />
           <span>{incompleteCount > 0
@@ -393,7 +428,7 @@ function ScheduleReviewForm({
             : 'Частичное распознавание — проверьте пары'}</span>
         </div>
       ) : null}
-      {cabinet ? (
+      {editingIndex === null && (cabinet ? (
         sourceBlob ? (
           <CabinetImagePreview blob={sourceBlob} />
         ) : (
@@ -410,8 +445,8 @@ function ScheduleReviewForm({
             </Banner>
           ) : null}
         </>
-      )}
-      {official.data && official.data.schedule_version !== version ? (
+      )) : null}
+      {editingIndex === null && official.data && official.data.schedule_version !== version ? (
         <Banner
           tone="warning"
           icon="alert"
@@ -424,29 +459,29 @@ function ScheduleReviewForm({
           Действующее расписание изменилось. Проверьте предложение заново.
         </Banner>
       ) : null}
-      {initial.state === 'confirmed' ? (
+      {editingIndex === null && initial.state === 'confirmed' ? (
         <Banner tone="info" icon="check">
           Это предложение уже подтверждено. Повторных изменений не будет.
         </Banner>
       ) : null}
-      <div className="field review-week-field">
+      {editingIndex === null ? <div className="field review-week-field">
         <label>
           Неделя
           <input type="date" value={weekStart} onChange={(event) => setWeekStart(event.target.value)} />
         </label>
-      </div>
-      {official.isPending && weekStart ? (
+      </div> : null}
+      {official.isPending && weekStart && editingIndex === null ? (
         <Skeleton count={1} label="Загрузка действующего расписания" />
       ) : null}
-      {official.isError ? (
+      {official.isError && editingIndex === null ? (
         <RequestError error={official.error} onRetry={() => void official.refetch()} />
       ) : null}
-      {subjects.isError ? (
+      {subjects.isError && editingIndex === null ? (
         <RequestError error={subjects.error} onRetry={() => void subjects.refetch()} />
       ) : null}
       <form
-        className="form"
-        aria-label="Подтверждение расписания"
+        className={editingIndex === null ? 'form' : 'form review-edit-screen'}
+        aria-label={editingIndex === null ? 'Подтверждение расписания' : 'Редактирование распознанной пары'}
         onSubmit={(event) => {
           event.preventDefault();
           confirm();
@@ -476,7 +511,7 @@ function ScheduleReviewForm({
                       style={subjectStyle(value.row.subject)}
                       key={index}
                       aria-label={`Редактировать пару: ${value.row.subject}`}
-                      onClick={() => setEditingIndex(index)}
+                      onClick={() => openEdit(index)}
                     >
                       <span className="bar" aria-hidden="true" />
                       <span className="review-lesson-time">
@@ -500,10 +535,10 @@ function ScheduleReviewForm({
               </div>
             </>
           ) : (
-            <button type="button" className="btn" onClick={() => setEditingIndex(null)}>Назад к расписанию</button>
+            <p className="review-edit-intro">Проверьте название, время и дополнительные сведения. Изменения сохранятся в черновике до публикации расписания.</p>
           )}
 
-          {editingIndex !== null ? [rows[editingIndex]!].map((value) => {
+          {editingIndex !== null ? [draftEdit?.index === editingIndex ? draftEdit.value : rows[editingIndex]!].map((value) => {
             const index = editingIndex;
             const row = value.row;
             const choices = subgroups.filter(
@@ -606,24 +641,7 @@ function ScheduleReviewForm({
                     Подгруппа
                     <select
                       value={subgroupValue}
-                      onChange={(event) => {
-                        const subgroup = choices.find((choice) => choice.id === event.target.value);
-                        setRows((values) =>
-                          values.map((item, i) =>
-                            i === index
-                              ? {
-                                  ...item,
-                                  unresolvedSubgroup: null,
-                                  row: {
-                                    ...item.row,
-                                    subgroup_id: subgroup?.id ?? null,
-                                    subgroup: subgroup?.name ?? null,
-                                  },
-                                }
-                              : item,
-                          ),
-                        );
-                      }}
+                      onChange={(event) => updateSubgroup(index, event.target.value, choices)}
                     >
                       <option value="">Общая пара</option>
                       {value.unresolvedSubgroup ? (
@@ -693,11 +711,14 @@ function ScheduleReviewForm({
                 <button
                   type="button"
                   className="pillb"
-                  onClick={() => { setRows((values) => values.filter((_item, i) => i !== index)); setEditingIndex(null); }}
+                  onClick={() => { setRows((values) => values.filter((_item, i) => i !== index)); closeEdit(false); }}
                 >
                   Убрать строку
                 </button>
-                <button type="button" className="btn on" onClick={() => { setSelectedDay(row.weekday); setEditingIndex(null); }}>Готово</button>
+                <div className="review-edit-actions">
+                  <button type="button" className="btn on" onClick={() => closeEdit(false)}>Отмена</button>
+                  <button type="button" className="btn on" onClick={() => { setSelectedDay(row.weekday); closeEdit(true); }}>Сохранить изменения</button>
+                </div>
               </fieldset>
             );
           }) : null}
@@ -706,7 +727,7 @@ function ScheduleReviewForm({
               <option key={subject.id} value={subject.name} />
             ))}
           </datalist>
-          {stale ? (
+          {stale && editingIndex === null ? (
             <label>
               <input
                 type="checkbox"
@@ -716,8 +737,8 @@ function ScheduleReviewForm({
               Действующее расписание изменилось после распознавания. Я заново проверил строки и сопоставления.
             </label>
           ) : null}
-          {problem ? <p className="review-error" role="alert">{problem}</p> : null}
-          {conflict ? (
+          {editingIndex === null && problem ? <p className="review-error" role="alert">{problem}</p> : null}
+          {conflict && editingIndex === null ? (
             <Banner
               tone="warning"
               icon="alert"
@@ -730,7 +751,7 @@ function ScheduleReviewForm({
               Источник или расписание изменились. Нужна повторная проверка.
             </Banner>
           ) : null}
-          {mutation.isError && !conflict ? (
+          {mutation.isError && !conflict && editingIndex === null ? (
             <p className="review-error" role="alert">{confirmationError ?? 'Не удалось подтвердить расписание.'}</p>
           ) : null}
           {initial.state === 'pending' && editingIndex === null ? (
