@@ -329,13 +329,22 @@ async def academic_code_prompt(db, session, group, *, onboarding=True, notice=No
     )
     if notice:
         message = f"{notice}\n\n{message}"
+    guess = parse_academic_group_code(group.name)
+    if guess and guess.count("-") >= 3 and any(char.isdigit() for char in guess):
+        message += f"\n\nПо названию чата найден возможный код: {guess}."
+    else:
+        guess = None
+    rows = []
+    if guess:
+        rows.append([(f"Подтвердить {guess}"[:60], "academic_code_suggest")])
+    rows.append([("‹ В главное меню", "home")])
     await screen(
         db,
         session,
         message,
-        [[("‹ В главное меню", "home")]],
+        rows,
         "academic_code",
-        {"group_id": str(group.id), "onboarding": onboarding},
+        {"group_id": str(group.id), "onboarding": onboarding, "suggested": guess},
         minutes=CLAIM_HOURS * 60,
     )
 
@@ -925,6 +934,21 @@ async def handle(db, update, settings, topic=None):
             await headman_entry(db, session, settings, sender.id)
         else:
             await bot_connect.claim_headman(db, settings, session, group, sender.id)
+    elif action == "academic_code_suggest" and session.step == "academic_code":
+        found = await current_membership(db, sender.id)
+        payload = json.loads(session.payload)
+        code = parse_academic_group_code(payload.get("suggested"))
+        if (
+            found
+            and found[0].role == "headman"
+            and payload.get("group_id") == str(found[1].id)
+            and code
+        ):
+            await academic_code_review(
+                db, session, found[1], code, payload.get("onboarding", False)
+            )
+        else:
+            await home(db, session, settings, sender.id)
     elif action == "academic_code_edit":
         found = await current_membership(db, sender.id)
         if found and found[0].role == "headman":
