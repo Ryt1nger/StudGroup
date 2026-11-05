@@ -291,6 +291,28 @@ def test_start_panel_edits_one_message_and_a_new_start_replaces_it(transport):
     assert current(client, "start")[0] != first
 
 
+def test_notification_preferences_can_be_changed_with_bot_buttons(foreman):
+    from studgroup.models import UserProfile
+
+    deliver(foreman, "/start", uid=1)
+    assert "Уведомления" in labels(foreman)
+    tap(foreman, "Уведомления", uid=1)
+    assert "✅ Все уведомления" in labels(foreman)
+    tap(foreman, "Все уведомления", uid=1)
+    assert "❌ Все уведомления" in labels(foreman)
+
+    async def saved(db):
+        user = await db.scalar(select(User).where(User.telegram_user_id == 1))
+        profile = await db.get(UserProfile, user.id)
+        return profile.settings
+
+    preferences = run(foreman, saved)
+    assert preferences["enabled"] is False
+    assert preferences["deadlines"] is True
+    tap(foreman, "Главное меню", uid=1)
+    assert "Уведомления" in labels(foreman)
+
+
 def test_the_cabinet_opens_by_a_button_straight_into_the_main_menu_and_back(foreman):
     deliver(foreman, "/start", uid=1)
     tap(foreman, "Кабинет старосты", uid=1)
