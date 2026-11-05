@@ -120,6 +120,11 @@ paths:
                   default: false
                   description: Explicit editor re-review after an official schedule change; requires corrected_rows and the
                     current expected_schedule_version. Does not run AI.
+                replace_week:
+                  type: boolean
+                  default: false
+                  description: Private cabinet one_week uploads only. Explicitly replace the selected week's visible
+                    occurrences with corrected_rows while leaving other weeks unchanged. No AI is run.
       responses:
         "200":
           description: Confirmed schedule_version; repeated confirmation has no repeated side effects
