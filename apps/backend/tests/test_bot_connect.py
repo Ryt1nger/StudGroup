@@ -238,6 +238,7 @@ def test_an_administrator_takes_a_headmanless_group_with_the_start_screen(forema
     added_to_chat(foreman)
     assert new_group(foreman)[1] == []
     deliver(foreman, "/start", uid=OTHER)
+    tap(foreman, "Подключить группу", uid=OTHER)
     tap(foreman, "Я староста", uid=OTHER)
     assert "Стать старостой: ИВТ-21" in labels(foreman)
     tap(foreman, "Стать старостой", uid=OTHER)
@@ -249,6 +250,7 @@ def test_only_groups_the_person_administers_are_offered(foreman, monkeypatch):
     setup_bot(foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "member"})
     added_to_chat(foreman)
     deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
     tap(foreman, "Я староста", uid=ADDER)
     assert not any("ИВТ-21" in label for label in labels(foreman))
     assert "ИВТ-21" not in last(foreman)["text"]
@@ -265,6 +267,7 @@ def test_the_role_cannot_be_taken_twice_even_with_a_stale_button(foreman, monkey
     added_to_chat(foreman)
     for uid in (OTHER, 79):
         deliver(foreman, "/start", uid=uid)
+        tap(foreman, "Подключить группу", uid=uid)
         tap(foreman, "Я староста", uid=uid)
         assert "Стать старостой: ИВТ-21" in labels(foreman)  # both were offered the group
     tap(foreman, "Стать старостой", uid=79)  # 79 picks first with the button they were shown
@@ -293,6 +296,7 @@ def test_a_group_without_a_headman_is_marked_in_the_owner_list(foreman, monkeypa
 def test_the_headman_screen_explains_that_adding_the_bot_is_enough(foreman, monkeypatch):
     setup_bot(foreman, monkeypatch, {})
     deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
     tap(foreman, "Я староста", uid=ADDER)
     frame = last(foreman)
     assert "тот, кто добавил бота, сразу становится" in frame["text"]
@@ -302,6 +306,7 @@ def test_the_headman_screen_explains_that_adding_the_bot_is_enough(foreman, monk
     )
     foreman.app.state.settings.bot_username = ""
     deliver(foreman, "/start", uid=OTHER)
+    tap(foreman, "Подключить группу", uid=OTHER)
     tap(foreman, "Я староста", uid=OTHER)
     assert labels(foreman) == ["‹ Назад"]
 
