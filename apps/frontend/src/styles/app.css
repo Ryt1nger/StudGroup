@@ -792,3 +792,11 @@ a.pcard:active { transform: scale(.98); }
   .review-edit-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-edit > .field:nth-of-type(1), .review-edit > .field:nth-of-type(2) { grid-column: 1 / -1; }
 }
+
+/* Explicit scope of a weekly timetable replacement. */
+.review-week-replace { margin: 24px 0 18px; padding: 17px 18px; border: 1px solid var(--card-edge); border-radius: 18px; background: var(--fill-2); }
+.review-replace-option { display: flex; align-items: center; gap: 12px; font-size: 14.5px; line-height: 1.4; }
+.review-replace-option input { width: 21px; height: 21px; flex: none; accent-color: var(--accent); }
+.review-week-replace p { margin: 12px 0 0; color: var(--label-2); font-size: 13px; line-height: 1.5; }
+.review-week-replace .review-partial-warning { color: #e5b956; }
+:root[data-theme='light'] .review-week-replace .review-partial-warning { color: #896010; }
