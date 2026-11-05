@@ -294,9 +294,7 @@ def test_start_panel_edits_one_message_and_a_new_start_replaces_it(transport):
     assert current(client, "start")[0] != first
 
 
-def test_connection_status_checks_live_telegram_without_changing_membership(
-    foreman, monkeypatch
-):
+def test_connection_status_checks_live_telegram_without_changing_membership(foreman, monkeypatch):
     from studgroup import bot_connect
 
     foreman.app.state.settings.telegram_bot_token = "999:test"
