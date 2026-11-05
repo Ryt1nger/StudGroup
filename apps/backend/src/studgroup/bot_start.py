@@ -211,9 +211,12 @@ async def promo_input(db, session, role, notice=None):
         "До запуска проверки промокод не будет применён."
     )
     await screen(
-        db, session, message,
+        db,
+        session,
+        message,
         [[("Пропустить", "promo_skip")], [("‹ Назад", "promo_back")]],
-        "promo_code", {"role": role},
+        "promo_code",
+        {"role": role},
     )
 
 
@@ -281,7 +284,8 @@ async def confirm_group_screen(db, session, group):
         "Проверим, что вы администратор этого чата. Подключить группу к StudGroup "
         "и назначить вас старостой?",
         [[("Да, подключить", "confirm_group")], [("Это не моя группа", "headman_back")]],
-        "confirm_group", {"group_id": str(group.id)},
+        "confirm_group",
+        {"group_id": str(group.id)},
     )
 
 
@@ -309,11 +313,15 @@ async def connected(db, session, settings, group, bot_is_admin=True):
 
 async def subgroup_question(db, session, group):
     await screen(
-        db, session,
+        db,
+        session,
         f"Есть ли в группе «{group.name}» разделение на подгруппы по предметам? "
         "Если нет, пропустите шаг: студенты не будут получать таких вопросов.",
-        [[("Да, настроить", "subgroup_setup_yes")], [("Нет, пропустить", "subgroup_setup_no")],
-         [("‹ Назад", "home")]],
+        [
+            [("Да, настроить", "subgroup_setup_yes")],
+            [("Нет, пропустить", "subgroup_setup_no")],
+            [("‹ Назад", "home")],
+        ],
         "subgroup_question",
     )
 
@@ -337,10 +345,11 @@ async def invite(db, session, settings, telegram_id):
         f"{invite_link(settings, code)}\n\n"
         "Перешлите это одному студенту: достаточно нажать на ссылку. Она действует 24 часа и "
         "срабатывает один раз.",
-        [[("Создать ещё", "invite")]] +
-        ([[("Далее: подгруппы", "subgroup_setup")]] if setup else []) +
-        [[("‹ Назад", "home")]],
-        "invite", {"setup": setup},
+        [[("Создать ещё", "invite")]]
+        + ([[("Далее: подгруппы", "subgroup_setup")]] if setup else [])
+        + [[("‹ Назад", "home")]],
+        "invite",
+        {"setup": setup},
     )
 
 
@@ -630,7 +639,9 @@ async def handle(db, update, settings, topic=None):
             return True
         if session.step == "promo_code" and utc(session.expires_at) > datetime.now(UTC):
             await forget(db, chat, message)
-            await promo_input(db, session, json.loads(session.payload)["role"], notice="unavailable")
+            await promo_input(
+                db, session, json.loads(session.payload)["role"], notice="unavailable"
+            )
             return True
         if session.step == "code" and utc(session.expires_at) > datetime.now(UTC):
             await forget(db, chat, message)
