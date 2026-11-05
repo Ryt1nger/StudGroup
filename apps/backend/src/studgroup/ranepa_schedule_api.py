@@ -1,7 +1,8 @@
 """Staff-only source setup and strictly read-only RANEPA schedule preview."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
@@ -72,7 +73,7 @@ async def preview_source(body: PreviewRequest, context: CurrentStaff, db: Db):
     if body.week_start.weekday() != 0:
         raise ApiError("invalid_week", "Выберите понедельник недели", 422)
 
-    today = date.today()
+    today = datetime.now(ZoneInfo(context.group.timezone)).date()
     if body.week_start < today - timedelta(days=90) or body.week_start > today + timedelta(days=120):
         raise ApiError("invalid_week", "Неделя вне допустимого диапазона", 422)
     try:
