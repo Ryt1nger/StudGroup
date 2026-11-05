@@ -839,6 +839,40 @@ async def deliver_shadow_export(db, row, settings):
     await db.commit()
 
 
+async def subgroup_notice_eligibility(db, row, now):
+    """Return the next send time, or None to discard a no-longer-relevant prompt."""
+    from studgroup import subgroups
+    from studgroup.models import MemberSubgroup, SubjectSplit, UserProfile
+    from studgroup.profile import NotificationSettings
+
+    try:
+        _, split_text, user_text = row.dedup_key.split(":")
+        split_id = uuid.UUID(split_text)
+        telegram_id = int(user_text)
+    except (TypeError, ValueError):
+        return None
+    split = await db.get(SubjectSplit, split_id)
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    if not split or not user:
+        return None
+    member = await db.scalar(
+        select(Membership).where(
+            Membership.group_id == split.group_id,
+            Membership.user_id == user.id,
+            Membership.role == "student",
+            Membership.status == "active",
+        )
+    )
+    if not member or await db.get(MemberSubgroup, (member.id, split.id)):
+        return None
+    profile = await db.get(UserProfile, user.id)
+    preferences = NotificationSettings.model_validate(profile.settings if profile else {})
+    if not preferences.enabled:
+        return None
+    group = await db.get(Group, split.group_id)
+    return subgroups.quiet_delivery_at(now, group.timezone, preferences)
+
+
 async def deliver(engine, settings):
     if not settings.telegram_bot_token:
         return
@@ -854,6 +888,16 @@ async def deliver(engine, settings):
         )
         if not row:
             return
+        if row.method == "sendMessage" and (row.dedup_key or "").startswith("subgroup-choice:"):
+            eligible = await subgroup_notice_eligibility(db, row, now)
+            if eligible is None:
+                row.state = "superseded"
+                await db.commit()
+                return
+            if eligible > now:
+                row.available_at = eligible
+                await db.commit()
+                return
         testing_update = (row.dedup_key or "").startswith("owner-test:")
         if (
             testing_update
