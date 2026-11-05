@@ -98,7 +98,7 @@ it('corrects rows, maps a subgroup and an existing occurrence, then confirms onc
   await waitFor(() => expect(screen.getByLabelText('Заменить существующую пару')).toContainHTML(lesson.id));
   await userEvent.selectOptions(screen.getByLabelText('Заменить существующую пару'), lesson.id);
   await userEvent.selectOptions(screen.getByLabelText('Область изменения'), 'recurring');
-  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   await waitFor(() => expect(app.router.state.location.pathname).toBe('/schedule/manage'));
   expect(requests).toHaveLength(1);
@@ -129,13 +129,13 @@ it('does not invent effective dates and requires the editor to map a recognized 
   expect(screen.getByLabelText('Действует до')).toHaveValue('');
   await userEvent.type(screen.getByLabelText('Действует с'), '2026-10-05');
   await userEvent.type(screen.getByLabelText('Действует до'), '2026-12-31');
-  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }));
   expect(screen.getByText(/Будет опубликовано 0 из 1 пар/)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Подтвердить расписание' })).toBeDisabled();
   expect(requests).toHaveLength(0);
   await userEvent.click(screen.getByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   await userEvent.selectOptions(screen.getByLabelText('Подгруппа'), '');
-  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   await waitFor(() => expect(requests).toHaveLength(1));
   expect(requests[0]?.corrected_rows?.[0]?.subgroup_id).toBeNull();
@@ -146,7 +146,7 @@ it('requires explicit re-review when the official schedule changed since recogni
   renderApp({ route: '/schedule/review' });
   await userEvent.click(await screen.findByRole('button', { name: /Редактировать пару: Математический анализ/ }));
   await userEvent.selectOptions(await screen.findByLabelText('Подгруппа'), SUBGROUP);
-  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }));
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить расписание' }));
   expect(
     await screen.findByText('Проверьте изменившееся расписание'),
@@ -165,9 +165,28 @@ it('reviews lessons as day cards and opens the separate edit view', async () => 
   expect(card).toHaveTextContent('10:00');
   expect(screen.queryByLabelText('Преподаватель')).not.toBeInTheDocument();
   await userEvent.click(card);
+  expect(await screen.findByRole('heading', { name: 'Редактирование пары' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Загрузка расписания' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Подтвердить расписание' })).not.toBeInTheDocument();
   expect(await screen.findByLabelText('Преподаватель')).toHaveValue('Иванов');
-  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }));
+  expect(await screen.findByRole('heading', { name: 'Загрузка расписания' })).toBeInTheDocument();
   expect(await screen.findByRole('button', { name: 'Редактировать пару: Математический анализ' })).toBeInTheDocument();
+});
+
+
+it('discards changes made on the isolated edit screen when cancelled', async () => {
+  prepareReview();
+  renderApp({ route: '/schedule/review' });
+  await userEvent.click(await screen.findByRole('button', {
+    name: 'Редактировать пару: Математический анализ',
+  }));
+  const subject = screen.getByLabelText('Предмет');
+  await userEvent.clear(subject);
+  await userEvent.type(subject, 'Черновое название');
+  await userEvent.click(screen.getByRole('button', { name: 'Отмена' }));
+  const card = await screen.findByRole('button', { name: 'Редактировать пару: Математический анализ' });
+  expect(card).not.toHaveTextContent('Черновое название');
 });
 
 it('marks partially extracted classes yellow but publishes available fields without seconds', async () => {
@@ -290,7 +309,7 @@ it('shows private screenshot review without Telegram image-review capability', a
   await waitFor(() => expect(mapping).toContainHTML(lesson.id));
   expect(officialReads).toBeGreaterThan(0);
   expect(telegramReads).toBe(0);
-  await userEvent.click(screen.getByRole('button', { name: 'Готово' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Подтвердить расписание' }))
     .toBeEnabled());
 });
