@@ -151,9 +151,7 @@ def test_shared_group_link_allows_multiple_verified_students(foreman, monkeypatc
         from studgroup.security import token_hash
 
         members = (
-            await db.scalars(
-                select(Membership.role).where(Membership.role == "student")
-            )
+            await db.scalars(select(Membership.role).where(Membership.role == "student"))
         ).all()
         invitation = await db.get(GroupInvitation, token_hash(code))
         return members, invitation.reusable, invitation.used_by
