@@ -13,7 +13,9 @@ def upgrade():
     op.create_table(
         "group_schedule_sources",
         sa.Column(
-            "group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"),
+            "group_id",
+            sa.Uuid(),
+            sa.ForeignKey("groups.id", ondelete="CASCADE"),
             primary_key=True,
         ),
         sa.Column("official_group_code", sa.String(120), nullable=False),
@@ -28,7 +30,9 @@ def upgrade():
     op.create_table(
         "group_schedule_snapshots",
         sa.Column(
-            "group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"),
+            "group_id",
+            sa.Uuid(),
+            sa.ForeignKey("groups.id", ondelete="CASCADE"),
             primary_key=True,
         ),
         sa.Column("week_start", sa.Date(), primary_key=True),
