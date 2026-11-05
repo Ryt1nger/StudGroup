@@ -8,7 +8,6 @@ This is deliberately read-only and never mutates the StudGroup calendar.
 import argparse
 import asyncio
 import json
-import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -34,9 +33,10 @@ DEFAULT_PROFILE = Path.home() / "Library" / "Application Support" / "StudGroup" 
 
 def private_profile(path: Path) -> Path:
     """Keep a dedicated, local-only session directory outside the repository."""
-    target = path.expanduser().resolve()
-    if target.is_symlink():
+    expanded = path.expanduser()
+    if expanded.is_symlink():
         raise ValueError("profile_symlink_not_allowed")
+    target = expanded.resolve()
     target.mkdir(parents=True, exist_ok=True, mode=0o700)
     target.chmod(0o700)
     return target
