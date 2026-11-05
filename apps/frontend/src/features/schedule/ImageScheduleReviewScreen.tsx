@@ -346,7 +346,14 @@ function ScheduleReviewForm({
 
   const stale = version !== initial.schedule_version;
   const conflict = isApiRequestError(mutation.error) && mutation.error.code === 'revision_conflict';
-  const confirmationError = mutation.error instanceof Error ? mutation.error.message : null;
+  const rawConfirmationError = mutation.error instanceof Error ? mutation.error.message : null;
+  const confirmationError = (
+    isApiRequestError(mutation.error) && mutation.error.code === 'schedule_mapping_required'
+  ) || rawConfirmationError?.includes('заменяемую пару')
+    ? oneWeekUpload
+      ? 'Некоторые пары пересекаются с действующим расписанием. Включите «Заменить расписание этой недели» или проверьте каждую замену.'
+      : 'Некоторые пары пересекаются с действующим расписанием. Откройте такую пару и укажите, какое занятие она заменяет.'
+    : rawConfirmationError;
   function update(index: number, patch: Partial<ConfirmedScheduleRow>) {
     setDraftEdit((previous) => {
       const value = previous?.index === index ? previous.value : rows[index]!;
