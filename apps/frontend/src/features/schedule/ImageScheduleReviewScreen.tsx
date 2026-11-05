@@ -1,7 +1,7 @@
 import type { ConfirmedScheduleRow, ReviewSubgroup, ScheduleSuggestion } from '@studgroup/shared-types';
 import type { CabinetSuggestion } from './cabinetScheduleApi';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { detailQueryOptions } from '../../api/cachePolicy';
 import { isApiRequestError } from '../../api/errors';
@@ -25,6 +25,14 @@ import {
 import { useEventCapabilities } from '../events/api';
 import { useConfirmImageSchedule, useImageScheduleReview, useReviewScheduleWeek } from './imageReviewApi';
 
+function pairCount(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  const noun = mod10 === 1 && mod100 !== 11 ? 'пара'
+    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'пары' : 'пар';
+  return `${count} ${noun}`;
+}
+
 const WEEKDAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 const normalize = (name: string) => name.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е');
 
@@ -35,6 +43,8 @@ export function ImageScheduleReviewScreen() {
   const cabinet = useCabinetScheduleReview(editor);
   const [params, setParams] = useSearchParams();
   const [reload, setReload] = useState(0);
+  const editIndexParam = params.get('edit');
+  const editingPage = editIndexParam !== null && /^\d+$/.test(editIndexParam);
   const items = [
     ...(cabinet.data?.suggestions ?? []).map((item) => ({ ...item, cabinet: true })),
     ...(query.data?.suggestions ?? []).map((item) => ({ ...item, cabinet: false })),
@@ -50,8 +60,8 @@ export function ImageScheduleReviewScreen() {
 
   return (
     <>
-      <BackTop fallback="/schedule/manage" />
-      <h1 className="ptitle">Загрузка расписания</h1>
+      <BackTop fallback={editingPage ? `/schedule/review?suggestion=${encodeURIComponent(params.get('suggestion') ?? '')}` : '/schedule/manage'} />
+      <h1 className="ptitle">{editingPage ? 'Редактирование пары' : 'Загрузка расписания'}</h1>
       {!editor ? (
         <StateView
           icon="lock"
@@ -60,24 +70,24 @@ export function ImageScheduleReviewScreen() {
         />
       ) : (
         <>
-          <CabinetUploadForm
+          {!editingPage ? <CabinetUploadForm
             onUploaded={async (id) => {
               setParams({ suggestion: id });
               await cabinet.refetch();
               setReload((value) => value + 1);
             }}
-          />
+          /> : null}
           {cabinet.isPending ? <Skeleton label="Загрузка загруженных расписаний" /> : null}
           {cabinet.isError ? <RequestError error={cabinet.error} onRetry={() => void cabinet.refetch()} /> : null}
           {query.isPending && features.schedule_review ? <Skeleton label="Загрузка предложений из Telegram" /> : null}
           {query.isError && features.schedule_review ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
-          {!cabinet.isPending && (!features.schedule_review || !query.isPending) && !items.length ? (
+          {!editingPage && !cabinet.isPending && (!features.schedule_review || !query.isPending) && !items.length ? (
             <Empty
               title="Пока нет черновиков"
-              body="Загрузите скриншот выше, чтобы DeepSeek подготовил расписание для проверки."
+              body="Загрузите скриншот выше, чтобы распознать расписание и проверить черновик."
             />
           ) : null}
-          {selected?.cabinet && (
+          {!editingPage && selected?.cabinet && (
             selected.state === 'queued' || selected.state === 'processing' || selected.state === 'failed'
           ) ? (
             <CabinetProgress suggestion={selected} />
@@ -91,6 +101,8 @@ export function ImageScheduleReviewScreen() {
                 selected.cabinet && 'progress_stage' in selected &&
                 selected.progress_stage === 'ready_partial'
               }
+              oneWeekUpload={selected.cabinet && 'duration' in selected && selected.duration === 'one_week'}
+              sourceWeekStart={selected.cabinet && 'week_start' in selected ? selected.week_start : null}
               sourceBlob={selected.cabinet ? (image.data ?? null) : null}
               currentVersion={cabinet.data?.current_schedule_version ?? query.data?.current_schedule_version ?? selected.schedule_version}
               subgroups={cabinet.data?.subgroups ?? query.data?.subgroups ?? []}
@@ -116,10 +128,10 @@ const PROGRESS_LABELS: Record<string, string> = {
   failed_budget: 'Лимит распознавания исчерпан.',
   failed_window: 'Период доступного распознавания завершился.',
   failed_hold: 'Распознавание временно заблокировано.',
-  failed_output: 'DeepSeek не завершил формирование ответа.',
-  failed_format: 'Ответ DeepSeek не удалось прочитать.',
+  failed_output: 'Не удалось завершить распознавание.',
+  failed_format: 'Не удалось прочитать результат распознавания.',
   failed_context: 'Слишком много информации для распознавания.',
-  failed_provider: 'Не удалось получить корректный ответ DeepSeek.',
+  failed_provider: 'Не удалось получить корректный результат распознавания.',
   failed_no_lessons: 'Не удалось найти читаемые пары на скриншоте.',
   failed_unreadable: 'Не удалось прочитать изображение.',
   failed_input: 'Не удалось обработать содержимое изображения.',
@@ -198,7 +210,7 @@ function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise
   const serverNow = useSessionServerNow();
   const zone = useGroupTimeZone();
   const [file, setFile] = useState<File | null>(null);
-  const [weekStart] = useState(() => weekKeys(dayKey(serverNow() ?? Date.now(), zone))[0] ?? '');
+  const [weekStart, setWeekStart] = useState(() => weekKeys(dayKey(serverNow() ?? Date.now(), zone))[0] ?? '');
   // Default to one-week review. Publishing or changing recurring patterns still requires staff confirmation.
   const upload = useCabinetUpload();
   return (
@@ -213,12 +225,21 @@ function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise
       });
     }}>
       <h2>Загрузить расписание</h2>
+      <div className="field review-upload-week">
+        <label>Неделя на скриншоте
+          <input type="date" required value={weekStart} onChange={(event) => {
+            const selected = event.target.value;
+            if (selected) setWeekStart(weekKeys(selected)[0] ?? selected);
+          }} />
+        </label>
+        <small>Выберите неделю, к которой относится расписание. По умолчанию выбрана текущая.</small>
+      </div>
       <div className="field"><label>Скриншот расписания
         <input type="file" accept="image/png,image/jpeg,image/webp" required
           onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
       </label></div>
       {upload.isError ? <p role="alert">{upload.error.message}</p> : null}
-      <button className="btn on" type="submit" disabled={!file || upload.isPending}>
+      <button className="btn on" type="submit" disabled={!file || !weekStart || upload.isPending}>
         {upload.isPending ? 'Отправляем скриншот…' : 'Анализировать'}
       </button>
     </form>
@@ -258,6 +279,8 @@ function ScheduleReviewForm({
   suggestion,
   cabinet,
   partialReview,
+  oneWeekUpload,
+  sourceWeekStart,
   sourceBlob,
   currentVersion,
   subgroups,
@@ -266,6 +289,8 @@ function ScheduleReviewForm({
   suggestion: ScheduleSuggestion;
   cabinet: boolean;
   partialReview: boolean;
+  oneWeekUpload: boolean;
+  sourceWeekStart: string | null;
   sourceBlob: Blob | null;
   currentVersion: number;
   subgroups: ReviewSubgroup[];
@@ -277,6 +302,7 @@ function ScheduleReviewForm({
   const serverNow = useSessionServerNow();
   const [weekStart, setWeekStart] = useState(
     () =>
+      sourceWeekStart ??
       suggestion.rows.find((row) => row.valid_from)?.valid_from ??
       dayKey(serverNow() ?? Date.now(), timeZone),
   );
@@ -295,13 +321,42 @@ function ScheduleReviewForm({
     })),
   );
   const [acknowledged, setAcknowledged] = useState(false);
+  // A full, non-partial weekly upload is explicitly applied as a weekly snapshot.
+  // A partial OCR result requires the editor to opt in before replacing existing lessons.
+  const [replaceWeek, setReplaceWeek] = useState(cabinet && oneWeekUpload && !partialReview);
+  const [acknowledgedMissingLessons, setAcknowledgedMissingLessons] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const reviewDays = weekKeys(weekStart);
   const [selectedDay, setSelectedDay] = useState(() => {
     const first = rows.find((value) => value.row.weekday >= 0 && value.row.weekday < 7);
     return first?.row.weekday ?? 0;
   });
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editParam = searchParams.get('edit');
+  const editingIndex = editParam !== null && /^\d+$/.test(editParam) && Number(editParam) < rows.length
+    ? Number(editParam) : null;
+  const [draftEdit, setDraftEdit] = useState<{ index: number; value: EditableRow } | null>(null);
+  // Query-string navigation keeps the review draft mounted; reset the shared
+  // app viewport so the editor actually opens like a separate screen.
+  useLayoutEffect(() => {
+    const viewport = document.querySelector<HTMLElement>('.scroll');
+    if (viewport) viewport.scrollTop = 0;
+  }, [editingIndex]);
+  function openEdit(index: number) {
+    setDraftEdit({ index, value: { ...rows[index]!, row: { ...rows[index]!.row } } });
+    const next = new URLSearchParams(searchParams);
+    next.set('edit', String(index));
+    setSearchParams(next);
+  }
+  function closeEdit(save: boolean) {
+    if (save && editingIndex !== null && draftEdit?.index === editingIndex) {
+      setRows((items) => items.map((item, index) => index === editingIndex ? draftEdit.value : item));
+    }
+    setDraftEdit(null);
+    const next = new URLSearchParams(searchParams);
+    next.delete('edit');
+    setSearchParams(next, { replace: true });
+  }
   const markedDays = new Set(
     reviewDays.filter((_day, index) => rows.some((value) => value.row.weekday === index)),
   );
@@ -312,30 +367,53 @@ function ScheduleReviewForm({
   const incompleteCount = rows.filter(incompleteLesson).length;
   const publishableCount = rows.filter(publishableLesson).length;
   const skippedCount = rows.length - publishableCount;
+  const officialActiveCount = official.data?.schedule.lessons.filter((lesson) => lesson.status === 'scheduled').length ?? 0;
+  const fewerLessons = replaceWeek && publishableCount < officialActiveCount;
 
   const stale = version !== initial.schedule_version;
   const conflict = isApiRequestError(mutation.error) && mutation.error.code === 'revision_conflict';
-  const confirmationError = mutation.error instanceof Error ? mutation.error.message : null;
+  const rawConfirmationError = mutation.error instanceof Error ? mutation.error.message : null;
+  const confirmationError = (
+    isApiRequestError(mutation.error) && String(mutation.error.code) === 'schedule_mapping_required'
+  ) || rawConfirmationError?.includes('заменяемую пару')
+    ? oneWeekUpload
+      ? 'Некоторые пары пересекаются с действующим расписанием. Включите «Заменить расписание этой недели» или проверьте каждую замену.'
+      : 'Некоторые пары пересекаются с действующим расписанием. Откройте такую пару и укажите, какое занятие она заменяет.'
+    : rawConfirmationError;
   function update(index: number, patch: Partial<ConfirmedScheduleRow>) {
-    setRows((values) =>
-      values.map((value, i) =>
-        i === index
-          ? {
-              ...value,
-              unresolvedSubgroup:
-                patch.subject !== undefined && value.row.subgroup
-                  ? value.row.subgroup
-                  : value.unresolvedSubgroup,
-              row: { ...value.row, ...patch },
-            }
-          : value,
-      ),
-    );
+    setDraftEdit((previous) => {
+      const value = previous?.index === index ? previous.value : rows[index]!;
+      return {
+        index,
+        value: {
+          ...value,
+          unresolvedSubgroup:
+            patch.subject !== undefined && value.row.subgroup
+              ? value.row.subgroup : value.unresolvedSubgroup,
+          row: { ...value.row, ...patch },
+        },
+      };
+    });
   }
   function changeMapping(index: number, mapping: string, scope?: 'once' | 'recurring') {
-    setRows((values) =>
-      values.map((value, i) => (i === index ? { ...value, mapping, scope: scope ?? value.scope } : value)),
-    );
+    setDraftEdit((previous) => {
+      const value = previous?.index === index ? previous.value : rows[index]!;
+      return { index, value: { ...value, mapping, scope: scope ?? value.scope } };
+    });
+  }
+  function updateSubgroup(index: number, subgroupId: string, choices: ReviewSubgroup[]) {
+    const subgroup = choices.find((choice) => choice.id === subgroupId);
+    setDraftEdit((previous) => {
+      const value = previous?.index === index ? previous.value : rows[index]!;
+      return {
+        index,
+        value: {
+          ...value,
+          unresolvedSubgroup: null,
+          row: { ...value.row, subgroup_id: subgroup?.id ?? null, subgroup: subgroup?.name ?? null },
+        },
+      };
+    });
   }
   function confirm() {
     if (!rows.length) return setProblem('Добавьте хотя бы одну пару');
@@ -343,11 +421,15 @@ function ScheduleReviewForm({
     if (!official.data || official.data.schedule_version !== version)
       return setProblem('Расписание изменилось. Обновите данные');
     const readyRows = rows.filter(publishableLesson);
+    if (replaceWeek && skippedCount > 0)
+      return setProblem('Проверьте неполные строки перед заменой расписания недели');
+    if (fewerLessons && !acknowledgedMissingLessons)
+      return setProblem('Подтвердите, что новые данные содержат меньше пар, чем действующее расписание');
     if (!readyRows.length)
       return setProblem('Нет пар с предметом, временем и датами. Исправьте хотя бы одну');
     const targets = [];
     for (const [index, value] of readyRows.entries()) {
-      if (!value.mapping) continue;
+      if (replaceWeek || !value.mapping) continue;
       const edit = official.data.lesson_edits.find((item) => item.lesson_id === value.mapping);
       if (!edit) return setProblem('Выбранная пара недоступна. Обновите расписание');
       targets.push({
@@ -372,20 +454,19 @@ function ScheduleReviewForm({
           subject_id: null,
         })),
         targets,
+        ...(replaceWeek ? { replace_week: true } : {}),
         ...(stale ? { acknowledge_schedule_change: true } : {}),
       },
       {
         onSuccess: () => {
-          const historyIndex = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-          if (historyIndex > 0) void navigate(-1);
-          else void navigate('/schedule/manage', { replace: true });
+          void navigate('/schedule/manage', { replace: true });
         },
       },
     );
   }
   return (
     <>
-      {(partialReview || incompleteCount > 0) && initial.state === 'pending' ? (
+      {editingIndex === null && (partialReview || incompleteCount > 0) && initial.state === 'pending' ? (
         <div className="review-note" role="status">
           <span className="review-note-dot" aria-hidden="true" />
           <span>{incompleteCount > 0
@@ -393,7 +474,7 @@ function ScheduleReviewForm({
             : 'Частичное распознавание — проверьте пары'}</span>
         </div>
       ) : null}
-      {cabinet ? (
+      {editingIndex === null ? (cabinet ? (
         sourceBlob ? (
           <CabinetImagePreview blob={sourceBlob} />
         ) : (
@@ -410,8 +491,8 @@ function ScheduleReviewForm({
             </Banner>
           ) : null}
         </>
-      )}
-      {official.data && official.data.schedule_version !== version ? (
+      )) : null}
+      {editingIndex === null && official.data && official.data.schedule_version !== version ? (
         <Banner
           tone="warning"
           icon="alert"
@@ -424,29 +505,29 @@ function ScheduleReviewForm({
           Действующее расписание изменилось. Проверьте предложение заново.
         </Banner>
       ) : null}
-      {initial.state === 'confirmed' ? (
+      {editingIndex === null && initial.state === 'confirmed' ? (
         <Banner tone="info" icon="check">
           Это предложение уже подтверждено. Повторных изменений не будет.
         </Banner>
       ) : null}
-      <div className="field review-week-field">
+      {editingIndex === null ? <div className="field review-week-field">
         <label>
           Неделя
-          <input type="date" value={weekStart} onChange={(event) => setWeekStart(event.target.value)} />
+          <input type="date" value={weekStart} disabled={oneWeekUpload} onChange={(event) => setWeekStart(event.target.value)} />
         </label>
-      </div>
-      {official.isPending && weekStart ? (
+      </div> : null}
+      {official.isPending && weekStart && editingIndex === null ? (
         <Skeleton count={1} label="Загрузка действующего расписания" />
       ) : null}
-      {official.isError ? (
+      {official.isError && editingIndex === null ? (
         <RequestError error={official.error} onRetry={() => void official.refetch()} />
       ) : null}
-      {subjects.isError ? (
+      {subjects.isError && editingIndex === null ? (
         <RequestError error={subjects.error} onRetry={() => void subjects.refetch()} />
       ) : null}
       <form
-        className="form"
-        aria-label="Подтверждение расписания"
+        className={editingIndex === null ? 'form' : 'form review-edit-screen'}
+        aria-label={editingIndex === null ? 'Подтверждение расписания' : 'Редактирование распознанной пары'}
         onSubmit={(event) => {
           event.preventDefault();
           confirm();
@@ -463,7 +544,7 @@ function ScheduleReviewForm({
               />
               <div className="review-day-heading">
                 <strong>{WEEKDAYS[selectedDay]}</strong>
-                <span>{visibleRows.length} пар</span>
+                <span>{pairCount(visibleRows.length)}</span>
               </div>
               {visibleRows.length === 0 ? <p className="review-empty">В этот день пар нет</p> : null}
               <div className="review-lesson-list">
@@ -476,7 +557,7 @@ function ScheduleReviewForm({
                       style={subjectStyle(value.row.subject)}
                       key={index}
                       aria-label={`Редактировать пару: ${value.row.subject}`}
-                      onClick={() => setEditingIndex(index)}
+                      onClick={() => openEdit(index)}
                     >
                       <span className="bar" aria-hidden="true" />
                       <span className="review-lesson-time">
@@ -500,10 +581,10 @@ function ScheduleReviewForm({
               </div>
             </>
           ) : (
-            <button type="button" className="btn" onClick={() => setEditingIndex(null)}>Назад к расписанию</button>
+            <p className="review-edit-intro">Проверьте название, время и дополнительные сведения. Изменения сохранятся в черновике до публикации расписания.</p>
           )}
 
-          {editingIndex !== null ? [rows[editingIndex]!].map((value) => {
+          {editingIndex !== null ? [draftEdit?.index === editingIndex ? draftEdit.value : rows[editingIndex]!].map((value) => {
             const index = editingIndex;
             const row = value.row;
             const choices = subgroups.filter(
@@ -606,24 +687,7 @@ function ScheduleReviewForm({
                     Подгруппа
                     <select
                       value={subgroupValue}
-                      onChange={(event) => {
-                        const subgroup = choices.find((choice) => choice.id === event.target.value);
-                        setRows((values) =>
-                          values.map((item, i) =>
-                            i === index
-                              ? {
-                                  ...item,
-                                  unresolvedSubgroup: null,
-                                  row: {
-                                    ...item.row,
-                                    subgroup_id: subgroup?.id ?? null,
-                                    subgroup: subgroup?.name ?? null,
-                                  },
-                                }
-                              : item,
-                          ),
-                        );
-                      }}
+                      onChange={(event) => updateSubgroup(index, event.target.value, choices)}
                     >
                       <option value="">Общая пара</option>
                       {value.unresolvedSubgroup ? (
@@ -693,11 +757,14 @@ function ScheduleReviewForm({
                 <button
                   type="button"
                   className="pillb"
-                  onClick={() => { setRows((values) => values.filter((_item, i) => i !== index)); setEditingIndex(null); }}
+                  onClick={() => { setRows((values) => values.filter((_item, i) => i !== index)); closeEdit(false); }}
                 >
                   Убрать строку
                 </button>
-                <button type="button" className="btn on" onClick={() => { setSelectedDay(row.weekday); setEditingIndex(null); }}>Готово</button>
+                <div className="review-edit-actions">
+                  <button type="button" className="btn on" onClick={() => closeEdit(false)}>Отмена</button>
+                  <button type="button" className="btn on" onClick={() => { setSelectedDay(row.weekday); closeEdit(true); }}>Сохранить изменения</button>
+                </div>
               </fieldset>
             );
           }) : null}
@@ -706,7 +773,7 @@ function ScheduleReviewForm({
               <option key={subject.id} value={subject.name} />
             ))}
           </datalist>
-          {stale ? (
+          {stale && editingIndex === null ? (
             <label>
               <input
                 type="checkbox"
@@ -716,8 +783,8 @@ function ScheduleReviewForm({
               Действующее расписание изменилось после распознавания. Я заново проверил строки и сопоставления.
             </label>
           ) : null}
-          {problem ? <p className="review-error" role="alert">{problem}</p> : null}
-          {conflict ? (
+          {editingIndex === null && problem ? <p className="review-error" role="alert">{problem}</p> : null}
+          {conflict && editingIndex === null ? (
             <Banner
               tone="warning"
               icon="alert"
@@ -730,8 +797,38 @@ function ScheduleReviewForm({
               Источник или расписание изменились. Нужна повторная проверка.
             </Banner>
           ) : null}
-          {mutation.isError && !conflict ? (
+          {mutation.isError && !conflict && editingIndex === null ? (
             <p className="review-error" role="alert">{confirmationError ?? 'Не удалось подтвердить расписание.'}</p>
+          ) : null}
+          {oneWeekUpload && initial.state === 'pending' && editingIndex === null ? (
+            <div className="review-week-replace">
+              <label className="review-replace-option">
+                <input type="checkbox" checked={replaceWeek} onChange={(event) => {
+                  setReplaceWeek(event.target.checked);
+                  setAcknowledgedMissingLessons(false);
+                }} />
+                <strong>Заменить расписание этой недели</strong>
+              </label>
+              <div className="review-replace-counts">
+                <span>Сейчас <strong>{pairCount(officialActiveCount)}</strong></span>
+                <span>После обновления <strong>{pairCount(publishableCount)}</strong></span>
+              </div>
+              <p>
+                При полной замене прежние занятия этой недели будут отменены,
+                а подтверждённые пары добавятся в расписание. Другие недели не изменятся.
+                Проверьте, что на скриншоте есть все занятия.
+              </p>
+              {fewerLessons ? (
+                <label className="review-replace-option review-replace-risk">
+                  <input type="checkbox" checked={acknowledgedMissingLessons}
+                    onChange={(event) => setAcknowledgedMissingLessons(event.target.checked)} />
+                  <span>Понимаю, что после замены количество занятий на этой неделе уменьшится.</span>
+                </label>
+              ) : null}
+              {partialReview ? <p className="review-partial-warning">
+                Распознавание частичное: обязательно проверьте все дни перед полной заменой.
+              </p> : null}
+            </div>
           ) : null}
           {initial.state === 'pending' && editingIndex === null ? (
             <div className="review-submit">

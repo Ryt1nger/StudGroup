@@ -11,13 +11,22 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { detailQueryOptions } from '../../api/cachePolicy';
 import { unwrap } from '../../api/errors';
-import { addDays, dayKey, formatDayKey, formatTime, weekRangeForDayKey } from '../../lib/format';
+import { addDays, dayKey, formatTime, weekRangeForDayKey } from '../../lib/format';
+import { subjectStyle } from '../../lib/subjectColor';
 import { useIsEditor, useSessionServerNow } from '../../session/SessionProvider';
 import { useGroupTimeZone } from '../../session/useGroupTimeZone';
-import { BackTop } from '../../shell/TopBar';
 import { Banner, Empty, Skeleton, StateView } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
+import { WeekStrip, weekKeys } from '../shared/WeekStrip';
+
+function pairCount(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  const noun = mod10 === 1 && mod100 !== 11 ? 'пара'
+    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'пары' : 'пар';
+  return `${count} ${noun}`;
+}
 
 const DAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 
@@ -237,6 +246,7 @@ export function ScheduleManageScreen() {
     weekRangeForDayKey(dayKey(now() ?? Date.now(), groupTimeZone)).start,
   );
   const [editing, setEditing] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState(0);
   const [adding, setAdding] = useState(false);
   const end = addDays(weekStart, 6);
   const query = useQuery({
@@ -256,7 +266,11 @@ export function ScheduleManageScreen() {
 
   return (
     <>
-      <BackTop fallback="/schedule" />
+      <div className="top">
+        <Link to="/schedule" className="icon-btn" aria-label="Назад">
+          <Ic name="back" />
+        </Link>
+      </div>
       <h1 className="ptitle">Управление расписанием</h1>
       {!editor ? (
         <StateView icon="lock" title="Нет доступа" body="Изменять расписание могут староста и заместитель." />
@@ -269,7 +283,7 @@ export function ScheduleManageScreen() {
           <div className="manage-quick">
             <Link to="/schedule/review" aria-label="Загрузить расписание и открыть черновики">
               <Ic name="cal" size={21} />
-              <span><strong>Загрузить скриншот</strong><small>DeepSeek · черновики</small></span>
+              <span><strong>Загрузить скриншот</strong><small>Распознавание · черновики</small></span>
               <Ic name="chev" size={17} />
             </Link>
           </div>
@@ -304,54 +318,86 @@ export function ScheduleManageScreen() {
             ) : null}
             {query.isPending ? <Skeleton label="Загрузка расписания" count={3} /> : null}
             {query.isError ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
-            {schedule ? DAYS.map((name, index) => {
-              const date = addDays(weekStart, index);
+            {schedule ? (() => {
+              const days = weekKeys(weekStart);
+              const selectedDate = days[selectedDay]!;
               const lessons = schedule.lessons
-                .filter((lesson) => dayKey(lesson.starts_at, timeZone) === date)
+                .filter((lesson) => dayKey(lesson.starts_at, timeZone) === selectedDate)
                 .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+              const marked = new Set(days.filter((date) =>
+                schedule.lessons.some((lesson) => dayKey(lesson.starts_at, timeZone) === date),
+              ));
               return (
-                <section className="manage-day" key={date}>
-                  <h3>{name} · {formatDayKey(date).split(', ').slice(1).join(', ')}</h3>
-                  {!lessons.length ? <span className="manage-empty-day">Нет пар</span> : null}
-                  {lessons.map((lesson) => {
-                    const revision = revisions.get(lesson.id);
-                    return (
-                      <div key={lesson.id}>
-                        <div className="manage-lesson">
-                          <div className="manage-lesson-body">
-                            <strong>{lesson.subject}</strong>
-                            <span>
-                              {formatTime(lesson.starts_at, timeZone)}–{formatTime(lesson.ends_at, timeZone)}
-                              {lesson.location ? ` · ${lesson.location}` : ''}
-                              {lesson.teacher ? ` · ${lesson.teacher}` : ''}
-                              {lesson.status === 'cancelled' ? ' · Отменена' : ''}
+                <>
+                  <WeekStrip
+                    days={days}
+                    selected={selectedDay}
+                    marked={marked}
+                    onSelect={(index) => { setEditing(null); setAdding(false); setSelectedDay(index); }}
+                    onWeekChange={moveWeek}
+                  />
+                  <div className="review-day-heading">
+                    <strong>{DAYS[selectedDay]}</strong>
+                    <span>{pairCount(lessons.length)}</span>
+                  </div>
+                  {lessons.length === 0 ? <p className="review-empty">В этот день пар нет</p> : null}
+                  <div className="review-lesson-list">
+                    {lessons.map((lesson) => {
+                      const revision = revisions.get(lesson.id);
+                      const content = (
+                        <>
+                          <span className="bar" aria-hidden="true" />
+                          <span className="review-lesson-time">
+                            <strong>{formatTime(lesson.starts_at, timeZone)}</strong>
+                            <small>{formatTime(lesson.ends_at, timeZone)}</small>
+                          </span>
+                          <span className="review-lesson-body">
+                            <strong className="review-lesson-title">{lesson.subject}</strong>
+                            <span className="review-lesson-meta">
+                              {[lesson.location, lesson.teacher, lesson.status === 'cancelled' ? 'Отменена' : null]
+                                .filter(Boolean).join(' · ') || 'Без дополнительных сведений'}
                             </span>
-                          </div>
+                          </span>
+                          {revision ? <span className="review-lesson-chevron" aria-hidden="true">›</span> : null}
+                        </>
+                      );
+                      return (
+                        <div key={lesson.id}>
                           {revision ? (
-                            <button type="button" aria-label={`Изменить пару: ${lesson.subject}`}
-                              aria-expanded={editing === lesson.id} onClick={() => {
+                            <button
+                              type="button"
+                              className="task review-lesson"
+                              style={subjectStyle(lesson.subject)}
+                              aria-label={`Изменить пару: ${lesson.subject}`}
+                              aria-expanded={editing === lesson.id}
+                              onClick={() => {
                                 setAdding(false);
                                 setEditing((value) => value === lesson.id ? null : lesson.id);
-                              }}>
-                              <Ic name="edit" size={17} />
+                              }}
+                            >
+                              {content}
                             </button>
+                          ) : (
+                            <div className="task review-lesson" style={subjectStyle(lesson.subject)}>
+                              {content}
+                            </div>
+                          )}
+                          {revision && editing === lesson.id ? (
+                            <LessonEditor
+                              key={`${lesson.id}:${revision.pattern_revision}:${revision.override_revision}`}
+                              lesson={lesson}
+                              revision={revision}
+                              timeZone={timeZone}
+                              onDone={() => setEditing(null)}
+                            />
                           ) : null}
                         </div>
-                        {revision && editing === lesson.id ? (
-                          <LessonEditor
-                            key={`${lesson.id}:${revision.pattern_revision}:${revision.override_revision}`}
-                            lesson={lesson}
-                            revision={revision}
-                            timeZone={timeZone}
-                            onDone={() => setEditing(null)}
-                          />
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </section>
+                      );
+                    })}
+                  </div>
+                </>
               );
-            }) : null}
+            })() : null}
           </div>
           {!query.isPending && query.data && !query.data.schedule.lessons.length ? (
             <Empty title="В эту неделю пар нет" body="Добавьте разовую пару или загрузите расписание по скриншоту." />
