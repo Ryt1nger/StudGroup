@@ -101,6 +101,7 @@ async def probe_public(
         if owned:
             await client.aclose()
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Read-only RANEPA public timetable probe")
     parser.add_argument("--group-code", required=True)
