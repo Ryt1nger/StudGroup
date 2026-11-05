@@ -348,7 +348,7 @@ function ScheduleReviewForm({
   const conflict = isApiRequestError(mutation.error) && mutation.error.code === 'revision_conflict';
   const rawConfirmationError = mutation.error instanceof Error ? mutation.error.message : null;
   const confirmationError = (
-    isApiRequestError(mutation.error) && mutation.error.code === 'schedule_mapping_required'
+    isApiRequestError(mutation.error) && String(mutation.error.code) === 'schedule_mapping_required'
   ) || rawConfirmationError?.includes('заменяемую пару')
     ? oneWeekUpload
       ? 'Некоторые пары пересекаются с действующим расписанием. Включите «Заменить расписание этой недели» или проверьте каждую замену.'
