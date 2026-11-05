@@ -2,12 +2,12 @@
 
 The university remains the source of truth. No network or live DB writes here.
 """
-from dataclasses import dataclass
-from datetime import date, time
-from hashlib import sha256
 import json
 import re
 import unicodedata
+from dataclasses import dataclass
+from datetime import date, time
+from hashlib import sha256
 
 from studgroup.subgroups import recognise
 
