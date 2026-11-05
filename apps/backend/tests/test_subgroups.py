@@ -128,9 +128,7 @@ def test_subgroup_notice_respects_notification_opt_out_and_deduplication(foreman
                 db, foreman_fixture.app.state.settings, group, split, now=at
             )
         rows = (
-            await db.scalars(
-                select(BotOutbox).where(BotOutbox.dedup_key.like("subgroup-choice:%"))
-            )
+            await db.scalars(select(BotOutbox).where(BotOutbox.dedup_key.like("subgroup-choice:%")))
         ).all()
         return rows
 
@@ -145,19 +143,20 @@ def test_quiet_subgroup_notice_waits_until_morning_and_not_through_daytime():
 
     prefs = NotificationSettings(quiet=True, quiet_range="23-08")
     early = datetime(2026, 11, 5, 0, 30, tzinfo=UTC)
-    assert subgroups.quiet_delivery_at(
-        early, "Europe/Moscow", prefs
-    ) == datetime(2026, 11, 5, 5, 0, tzinfo=UTC)
+    assert subgroups.quiet_delivery_at(early, "Europe/Moscow", prefs) == datetime(
+        2026, 11, 5, 5, 0, tzinfo=UTC
+    )
 
     daytime = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
     midnight_range = NotificationSettings(quiet=True, quiet_range="00-07")
     assert subgroups.quiet_delivery_at(daytime, "Europe/Moscow", midnight_range) == daytime
-    assert subgroups.quiet_delivery_at(
-        early, "Europe/Moscow", midnight_range
-    ) == datetime(2026, 11, 5, 4, 0, tzinfo=UTC)
-    assert subgroups.quiet_delivery_at(
-        early, "Europe/Moscow", NotificationSettings(quiet=False)
-    ) == early
+    assert subgroups.quiet_delivery_at(early, "Europe/Moscow", midnight_range) == datetime(
+        2026, 11, 5, 4, 0, tzinfo=UTC
+    )
+    assert (
+        subgroups.quiet_delivery_at(early, "Europe/Moscow", NotificationSettings(quiet=False))
+        == early
+    )
 
 
 def test_student_picks_and_changes_subgroup_from_start_panel(foreman_fixture):  # noqa: F811
