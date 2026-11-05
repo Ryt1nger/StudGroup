@@ -21,6 +21,14 @@ import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
 import { WeekStrip, weekKeys } from '../shared/WeekStrip';
 
+function pairCount(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  const noun = mod10 === 1 && mod100 !== 11 ? 'пара'
+    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'пары' : 'пар';
+  return `${count} ${noun}`;
+}
+
 const DAYS = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 
 /** Only issue local wall-clock times with an explicit offset, never reinterpret them in the device TZ. */
@@ -327,7 +335,7 @@ export function ScheduleManageScreen() {
                   />
                   <div className="review-day-heading">
                     <strong>{DAYS[selectedDay]}</strong>
-                    <span>{lessons.length} пар</span>
+                    <span>{pairCount(lessons.length)}</span>
                   </div>
                   {lessons.length === 0 ? <p className="review-empty">В этот день пар нет</p> : null}
                   <div className="review-lesson-list">
