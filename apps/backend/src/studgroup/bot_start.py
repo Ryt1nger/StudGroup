@@ -185,7 +185,8 @@ async def home(db, session, settings, telegram_id):
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
         if member.role == "headman":
-            rows.insert(1, [("Создать приглашение", "invite")])
+            if group.academic_group_code or not group.academic_group_code_required:
+                rows.insert(1, [("Создать приглашение", "invite")])
             rows.insert(
                 1,
                 [
@@ -198,7 +199,11 @@ async def home(db, session, settings, telegram_id):
                 ],
             )
             if not group.academic_group_code:
-                text += "\nОфициальный ID РАНХиГС ещё не указан."
+                text += (
+                    "\nУкажите официальный ID РАНХиГС, чтобы завершить подключение."
+                    if group.academic_group_code_required
+                    else "\nОфициальный ID РАНХиГС ещё не указан."
+                )
         if member.role == "student" and await subgroups.splits(db, group.id):
             rows.insert(0, [("Мои подгруппы", "subgroups")])
         await screen(db, session, text, [*rows, *info_row()], "home")
@@ -410,6 +415,9 @@ async def invite(db, session, settings, telegram_id):
         await home(db, session, settings, telegram_id)
         return
     member, group = found
+    if group.academic_group_code_required and not group.academic_group_code:
+        await academic_code_prompt(db, session, group)
+        return
     setup = session.step == "connected" or (
         session.step == "invite" and json.loads(session.payload).get("setup", False)
     )
