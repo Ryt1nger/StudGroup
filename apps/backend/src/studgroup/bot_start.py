@@ -179,6 +179,8 @@ async def home(db, session, settings, telegram_id):
             await subgroup_choice(db, session, settings, member, group)
             return
         text = f"Вы подключены к «{group.name}»."
+        if group.academic_group_code:
+            text += f"\nОфициальный ID РАНХиГС: {group.academic_group_code}"
         rows = [[app_button(settings)]]
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
@@ -195,11 +197,8 @@ async def home(db, session, settings, telegram_id):
                     )
                 ],
             )
-            text += (
-                f"\nОфициальный ID РАНХиГС: {group.academic_group_code}"
-                if group.academic_group_code
-                else "\nОфициальный ID РАНХиГС ещё не указан."
-            )
+            if not group.academic_group_code:
+                text += "\nОфициальный ID РАНХиГС ещё не указан."
         if member.role == "student" and await subgroups.splits(db, group.id):
             rows.insert(0, [("Мои подгруппы", "subgroups")])
         await screen(db, session, text, [*rows, *info_row()], "home")
@@ -531,7 +530,8 @@ async def redeem(db, session, settings, telegram_id, code, *, typed):
         await screen(
             db,
             session,
-            f"Готово! Вы подключены к «{group.name}».",
+            f"Готово! Вы подключены к «{group.name}»."
+            + (f"\nОфициальный ID РАНХиГС: {group.academic_group_code}" if group.academic_group_code else ""),
             [[app_button(settings)]],
             "done",
         )
