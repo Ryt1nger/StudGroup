@@ -68,9 +68,7 @@ def test_group_scoped_idempotent_read_only_storage(tmp_path):
                     )
                     is None
                 )
-                saved = await db.get(
-                    GroupScheduleSnapshot, (group.id, date(2026, 11, 2))
-                )
+                saved = await db.get(GroupScheduleSnapshot, (group.id, date(2026, 11, 2)))
                 assert json.loads(saved.rows_json)[0]["room"] == "407"
                 assert source.last_success_at is not None
                 assert (await db.scalars(select(SchedulePattern))).all() == []
