@@ -941,6 +941,7 @@ class GroupInvitation(Base):
     issuer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("memberships.id", ondelete="CASCADE"))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    reusable: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     used_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
 
