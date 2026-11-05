@@ -35,6 +35,10 @@ class Group(Base):
     name: Mapped[str] = mapped_column(String(255))
     # Official university group code, e.g. «Э-ОБ-385-04-26-02», independent of Telegram title.
     academic_group_code: Mapped[str | None] = mapped_column(String(80))
+    # True for groups connected under the new RANEPA onboarding; legacy groups stay unblocked.
+    academic_group_code_required: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     timezone: Mapped[str] = mapped_column(String(64))
     first_week_anchor: Mapped[date | None] = mapped_column(Date)
     # Bumped by every group timetable change; schedule_changes rows record the value they produced.
