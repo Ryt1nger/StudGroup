@@ -310,9 +310,7 @@ async def confirm(db, group_id, user, member, ident, body, now=None, *, cabinet=
     for index, row in enumerate(rows):
         if body.replace_week:
             if row.week != "all" and group.first_week_anchor is None:
-                raise ApiError(
-                    "week_anchor_required", "Нужно начало первой недели", 409
-                )
+                raise ApiError("week_anchor_required", "Нужно начало первой недели", 409)
             pattern = SchedulePattern(
                 group_id=group_id,
                 subject=row.subject,
