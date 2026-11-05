@@ -59,14 +59,14 @@ def enqueue(db, method, payload, dedup_key=None):
     )
 
 
-async def enqueue_once(db, method, payload, dedup_key):
+async def enqueue_once(db, method, payload, dedup_key, *, available_at=None):
     values = {
         "id": uuid.uuid4(),
         "method": method,
         "payload": json.dumps(payload, ensure_ascii=False),
         "state": "pending",
         "attempts": 0,
-        "available_at": datetime.now(UTC),
+        "available_at": available_at or datetime.now(UTC),
         "dedup_key": dedup_key,
     }
     dialect = db.bind.dialect.name
