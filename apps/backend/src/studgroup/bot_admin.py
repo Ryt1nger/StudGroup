@@ -165,7 +165,7 @@ async def handle(db, update, settings):
         groups = (
             await db.scalars(
                 select(Group)
-                .where(Group.pilot_authorized.is_(True), Group.status == "active")
+                .where(Group.status == "active")
                 .order_by(Group.name)
                 .limit(40)
             )
@@ -182,7 +182,9 @@ async def handle(db, update, settings):
                 [
                     [
                         (
-                            g.name[:36] + (f" · {NO_HEADMAN}" if g.id in without else ""),
+                            g.name[:30]
+                            + (" · ожидает активации" if not g.pilot_authorized else "")
+                            + (f" · {NO_HEADMAN}" if g.id in without else ""),
                             "g" + g.id.hex,
                         )
                     ]
