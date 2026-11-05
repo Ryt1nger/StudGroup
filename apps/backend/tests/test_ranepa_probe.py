@@ -17,9 +17,7 @@ async def request_with_body(text, *, status=200, content_type="text/html"):
         assert request.url.host == "my.ranepa.ru"
         assert request.url.params.get("f") == str(UUID_GROUP)
         assert request.url.params.get("by") == "group"
-        return httpx.Response(
-            status, text=text, headers={"content-type": content_type}
-        )
+        return httpx.Response(status, text=text, headers={"content-type": content_type})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
         return await probe_public(UUID_GROUP, CODE, client=client)
