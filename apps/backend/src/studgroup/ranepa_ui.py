@@ -1,6 +1,7 @@
 """Classify university timetable pages observed by a normal browser."""
 
 import re
+from pathlib import Path
 from urllib.parse import urlparse
 
 from studgroup.ranepa_schedule import normalized
@@ -30,3 +31,15 @@ def source_diagnostics(body: str, *, table_count: int, row_count: int) -> dict:
         "lesson_time_candidates": len(TIME_RE.findall(text)),
         "has_schedule_label": "расписание" in text or "schedule" in text,
     }
+
+
+
+def private_profile(path: Path) -> Path:
+    """Keep the browser session outside the repository with private permissions."""
+    expanded = path.expanduser()
+    if expanded.is_symlink():
+        raise ValueError("profile_symlink_not_allowed")
+    target = expanded.resolve()
+    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+    target.chmod(0o700)
+    return target
