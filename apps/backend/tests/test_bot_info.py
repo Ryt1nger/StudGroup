@@ -145,6 +145,11 @@ def test_bare_start_opens_the_welcome_panel_with_buttons(client):
     frame = panel_frames(client)[-1]
     labels = [b["text"] for row in frame["reply_markup"]["inline_keyboard"] for b in row]
     assert labels == [
-        "Подключить группу", "О нас", "Помощь", "Поддержка", "Партнёрка", "Тарифы"
+        "Подключить группу",
+        "О нас",
+        "Помощь",
+        "Поддержка",
+        "Партнёрка",
+        "Тарифы",
     ]
     assert "Команды:" not in frame["text"]
