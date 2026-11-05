@@ -51,24 +51,26 @@ def allow_telegram(monkeypatch, answer=True):
     monkeypatch.setattr(domain, "telegram_member", check)
 
 
-def test_welcome_offers_roles_and_info_buttons_not_commands(foreman):
+def test_welcome_has_six_buttons_and_separate_role_selection(foreman):
     deliver(foreman, "/start", uid=33)
-    shown = labels(foreman)
-    assert shown[:2] == ["Я студент", "Я староста"]
-    assert {"Как это работает", "Частые вопросы", "Поддержка"} <= set(shown)
-    assert "/" not in last(foreman)["text"]
-    tap(foreman, "Как это работает")
-    assert "Как пользоваться StudGroup" in last(foreman)["text"]
-    assert "Команды:" not in last(foreman)["text"]
-    assert "‹ Назад" in labels(foreman) and "Открыть StudGroup" in labels(foreman)
+    assert labels(foreman) == [
+        "Подключить группу", "О нас", "Помощь", "Поддержка", "Партнёрка", "Тарифы"
+    ]
+    assert "Привет!" in last(foreman)["text"]
+    assert "Я студент" not in labels(foreman)
+    tap(foreman, "Подключить группу")
+    assert labels(foreman) == ["Я студент", "Я староста", "‹ Назад"]
+    assert "Как ты хочешь подключиться" in last(foreman)["text"]
     tap(foreman, "Назад")
-    assert "Кто вы?" in last(foreman)["text"]
+    assert "Подключить группу" in labels(foreman)
+
 
 
 def test_student_joins_by_typing_a_code_and_the_code_is_removed_from_the_chat(foreman, monkeypatch):
     allow_telegram(monkeypatch)
     code = issue(foreman)
     deliver(foreman, "/start", uid=33)
+    tap(foreman, "Подключить группу")
     tap(foreman, "Я студент")
     assert "Подключение к группе" in last(foreman)["text"]
     tap(foreman, "Ввести код")
@@ -92,6 +94,7 @@ def test_student_joins_by_typing_a_code_and_the_code_is_removed_from_the_chat(fo
 def test_a_wrong_code_keeps_the_person_on_the_panel_with_a_way_forward(foreman, monkeypatch):
     allow_telegram(monkeypatch)
     deliver(foreman, "/start", uid=33)
+    tap(foreman, "Подключить группу")
     tap(foreman, "Я студент")
     tap(foreman, "Ввести код")
     deliver(foreman, "abc", uid=33)
@@ -172,7 +175,7 @@ def test_start_panel_edits_one_message_and_a_new_start_replaces_it(transport):
     input_message(client, 300, "/start")
     drain(client)
     first, _ = current(client, "start")
-    press(client, "start", "Как это работает", 301)
+    press(client, "start", "Помощь", 301)
     press(client, "start", "Назад", 302)
     assert [d["message_id"] for m, d in calls if m == "editMessageText"] == [first, first]
     input_message(client, 303, "/start")
@@ -221,18 +224,31 @@ def test_no_screen_of_the_cabinet_menu_tells_people_to_type_a_command(foreman):
 
 def test_the_welcome_screen_reaches_every_info_topic_by_buttons(foreman):
     deliver(foreman, "/start", uid=33)
-    assert {"Как это работает", "Тарифы", "Частые вопросы", "Поддержка"} <= set(labels(foreman))
+    assert {"О нас", "Помощь", "Партнёрка", "Тарифы", "Поддержка"} <= set(labels(foreman))
+
+    tap(foreman, "О нас")
+    assert "О нас" in last(foreman)["text"]
+    tap(foreman, "Назад")
+
+    tap(foreman, "Помощь")
+    assert "Как пользоваться StudGroup" in last(foreman)["text"]
+    assert "Открыть StudGroup" in labels(foreman)
+    tap(foreman, "Назад")
+
+    tap(foreman, "Партнёрка")
+    assert "Партнёрская программа" in last(foreman)["text"]
+    assert "вознаграждения пока не опубликованы" in last(foreman)["text"]
+    tap(foreman, "Назад")
+
     tap(foreman, "Тарифы")
     assert "Тарифы StudGroup скоро появятся" in last(foreman)["text"]
-    assert "/" not in last(foreman)["text"]
-    tap(foreman, "Как подключиться")
-    assert "Подключение группы" in last(foreman)["text"]
-    tap(foreman, "Частые вопросы")
-    assert {"Сколько стоит", "Как подключиться", "Поддержка"} <= set(labels(foreman))
-    tap(foreman, "Сколько стоит")
-    assert "Тарифы" in last(foreman)["text"]
+    assert "₽" not in last(foreman)["text"]
     tap(foreman, "Назад")
-    assert "Кто вы?" in last(foreman)["text"]
+
+    tap(foreman, "Поддержка")
+    assert "Поддержка" in last(foreman)["text"]
+    tap(foreman, "Назад")
+    assert "Подключить группу" in labels(foreman)
 
 
 def test_an_info_command_replaces_the_screen_instead_of_adding_a_message(transport):
