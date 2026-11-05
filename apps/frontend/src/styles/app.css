@@ -800,3 +800,8 @@ a.pcard:active { transform: scale(.98); }
 .review-week-replace p { margin: 12px 0 0; color: var(--label-2); font-size: 13px; line-height: 1.5; }
 .review-week-replace .review-partial-warning { color: #e5b956; }
 :root[data-theme='light'] .review-week-replace .review-partial-warning { color: #896010; }
+
+.review-replace-counts { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; margin-top: 14px; padding: 12px 0; border-top: 1px solid var(--card-edge); border-bottom: 1px solid var(--card-edge); font-size: 13px; line-height: 1.5; color: var(--label-2); }
+.review-replace-counts strong { color: var(--label); font-weight: 700; }
+.review-replace-risk { margin-top: 16px; padding: 12px; border: 1px solid var(--card-edge); border-radius: 14px; background: var(--card); }
+.review-replace-risk span { min-width: 0; }
