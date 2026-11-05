@@ -367,6 +367,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from studgroup.cabinet_schedule_api import router as cabinet_schedule_router
 
     app.include_router(cabinet_schedule_router)
+    from studgroup.ranepa_schedule_api import router as ranepa_schedule_router
+
+    app.include_router(ranepa_schedule_router)
     from studgroup.group_event_api import router as group_event_router
 
     app.include_router(group_event_router)
