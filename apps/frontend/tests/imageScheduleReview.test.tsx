@@ -350,6 +350,7 @@ it('shows an empty explanation for staff with no drafts when Telegram review is 
 it('keeps upload messaging simple when AI funding is unavailable', async () => {
   loadScenario();
   let attempts = 0;
+  let uploadedWeek: string | null = null;
   server.use(
     http.post(`${API}/session/bootstrap`, () =>
       HttpResponse.json(sessionAt(exampleSession, Date.now(), (session) => ({
@@ -361,8 +362,9 @@ it('keeps upload messaging simple when AI funding is unavailable', async () => {
     ),
     http.get(`${API}/staff/schedule-upload`, () =>
       HttpResponse.json({ current_schedule_version: 0, subgroups: [], suggestions: [] })),
-    http.post(`${API}/staff/schedule-upload`, () => {
+    http.post(`${API}/staff/schedule-upload`, async ({ request }) => {
       attempts += 1;
+      uploadedWeek = (await request.formData()).get('week_start') as string | null;
       return HttpResponse.json({
         error: {
           code: 'analysis_budget_closed',
@@ -375,6 +377,10 @@ it('keeps upload messaging simple when AI funding is unavailable', async () => {
   const form = await screen.findByRole('form', { name: 'Загрузка скриншота расписания' });
   expect(form).toHaveTextContent('Загрузить расписание');
   expect(form).not.toHaveTextContent('два платных запроса');
+  fireEvent.change(screen.getByLabelText('Неделя на скриншоте'), {
+    target: { value: '2026-11-12' },
+  });
+  expect(screen.getByLabelText('Неделя на скриншоте')).toHaveValue('2026-11-09');
   await userEvent.upload(
     screen.getByLabelText(/Скриншот расписания/),
     new File(['test'], 'schedule.png', { type: 'image/png' }),
@@ -383,6 +389,7 @@ it('keeps upload messaging simple when AI funding is unavailable', async () => {
   // Submit the form to test the actual mutation and its error presentation.
   fireEvent.submit(form);
   await waitFor(() => expect(attempts).toBe(1));
+  expect(uploadedWeek).toBe('2026-11-09');
   expect(await screen.findByRole('alert')).toHaveTextContent('Распознавание сейчас недоступно');
   expect(form).not.toHaveTextContent('Платный анализ не настроен');
   expect(screen.getByRole('button', { name: 'Анализировать' })).toBeEnabled();
