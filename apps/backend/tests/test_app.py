@@ -1,8 +1,10 @@
+import ssl
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 from fastapi.testclient import TestClient
 
-from studgroup.main import Settings, create_app
+from studgroup.main import Settings, create_app, database_engine_options
 
 
 def test_health_and_readiness_failure():
@@ -60,6 +62,34 @@ def test_render_postgres_urls_are_normalized_without_requiring_manual_driver_edi
         Settings(database_url="postgres://user:placeholder@host/db").database_url
         == "postgresql+asyncpg://user:placeholder@host/db"
     )
+
+
+def test_database_tls_and_pool_are_opt_in():
+    assert database_engine_options(Settings()) == {}
+    ca = Path(__file__).parents[1] / "probes" / "prod-ca-2021.crt"
+    settings = Settings(
+        database_ca_file=str(ca),
+        database_pool_size=3,
+        database_max_overflow=0,
+        database_pool_timeout=10,
+    )
+    options = database_engine_options(settings)
+    assert options["pool_size"] == 3
+    assert options["max_overflow"] == 0
+    assert options["pool_timeout"] == 10
+    assert options["connect_args"]["ssl"].verify_mode == ssl.CERT_REQUIRED
+    assert options["connect_args"]["ssl"].check_hostname
+
+
+def test_database_tls_requires_postgres_and_existing_ca(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="requires PostgreSQL"):
+        database_engine_options(
+            Settings(database_url="sqlite+aiosqlite:///test.db", database_ca_file="missing")
+        )
+    with pytest.raises(FileNotFoundError):
+        database_engine_options(Settings(database_ca_file=str(tmp_path / "missing.crt")))
 
 
 def test_ai_cutoff_rejects_unspecified_timezone():

@@ -3,7 +3,7 @@ import asyncio
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from studgroup.main import Settings
+from studgroup.main import Settings, database_engine_options
 from studgroup.models import Base
 
 
@@ -14,7 +14,8 @@ def run(connection):
 
 
 async def online():
-    engine = create_async_engine(Settings().database_url)
+    settings = Settings()
+    engine = create_async_engine(settings.database_url, **database_engine_options(settings))
     try:
         async with engine.connect() as connection:
             await connection.run_sync(run)

@@ -1,6 +1,7 @@
 """Application factory; dependency readiness never exposes credentials."""
 
 import asyncio
+import ssl
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 from typing import Literal
@@ -35,6 +36,11 @@ from studgroup.telegram_files import router as files_router
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     database_url: str = "postgresql+asyncpg://studgroup:studgroup@localhost:5432/studgroup"
+    # Optional for the Supabase Session Pooler; unset keeps Render PostgreSQL behavior.
+    database_ca_file: str | None = None
+    database_pool_size: int | None = Field(default=None, ge=1, le=10)
+    database_max_overflow: int | None = Field(default=None, ge=0, le=10)
+    database_pool_timeout: int | None = Field(default=None, ge=1, le=60)
     redis_url: str = "redis://localhost:6379/0"
     webapp_origin: str = "http://localhost:5173"
     telegram_bot_token: str = ""
@@ -210,12 +216,33 @@ class Settings(BaseSettings):
         return value
 
 
+def database_engine_options(settings: Settings) -> dict:
+    options = {}
+    if settings.database_ca_file:
+        if not settings.database_url.startswith("postgresql+asyncpg://"):
+            raise ValueError("database CA requires PostgreSQL with asyncpg")
+        tls = ssl.create_default_context(cafile=settings.database_ca_file)
+        tls.check_hostname = True
+        tls.verify_mode = ssl.CERT_REQUIRED
+        options["connect_args"] = {"ssl": tls, "timeout": 10}
+    for setting, option in (
+        ("database_pool_size", "pool_size"),
+        ("database_max_overflow", "max_overflow"),
+        ("database_pool_timeout", "pool_timeout"),
+    ):
+        if (value := getattr(settings, setting)) is not None:
+            options[option] = value
+    return options
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+        app.state.engine = create_async_engine(
+            settings.database_url, pool_pre_ping=True, **database_engine_options(settings)
+        )
         from studgroup.reviewed_publication import startup as apply_reviewed_payload
 
         try:
