@@ -119,6 +119,9 @@ def test_student_joins_by_typing_a_code_and_the_code_is_removed_from_the_chat(fo
         return await db.scalar(select(Membership.role).where(Membership.user_id == user.id))
 
     assert run(foreman, joined) == "student"
+    assert "Главное меню" in labels(foreman)
+    tap(foreman, "Главное меню")
+    assert "Вы подключены" in last(foreman)["text"]
 
 
 def test_a_wrong_code_keeps_the_person_on_the_panel_with_a_way_forward(foreman, monkeypatch):
