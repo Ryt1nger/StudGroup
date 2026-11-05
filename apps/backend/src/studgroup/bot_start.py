@@ -26,7 +26,7 @@ from studgroup import bot_info, bot_panels, subgroups
 from studgroup import headman_domain as domain
 from studgroup.bot_admin import enqueue, say
 from studgroup.homework import utc
-from studgroup.models import Group, HeadmanSession, Membership, StartSession, User, UserProfile
+from studgroup.models import Group, GroupInvitation, HeadmanSession, Membership, StartSession, User, UserProfile
 
 SESSION_MINUTES = 30
 CLAIM_HOURS = 24  # how long «Я староста» waits for the bot to be added to a group
@@ -543,6 +543,51 @@ async def subgroup_question(db, session, group):
     )
 
 
+async def invitation_entry(db, session, settings, telegram_id):
+    """Opening invites must never revoke an existing group link without consent."""
+    found = await current_membership(db, telegram_id)
+    if not found or found[0].role != "headman":
+        await home(db, session, settings, telegram_id)
+        return
+    _, group = found
+    if group.academic_group_code_required and not group.academic_group_code:
+        await academic_code_prompt(db, session, group)
+        return
+    setup = session.step == "connected" or (
+        session.step == "invite" and json.loads(session.payload).get("setup", False)
+    )
+    active = await db.scalar(
+        select(GroupInvitation.token_hash)
+        .where(
+            GroupInvitation.group_id == group.id,
+            GroupInvitation.reusable.is_(True),
+            GroupInvitation.revoked.is_(False),
+            GroupInvitation.expires_at > datetime.now(UTC),
+        )
+        .limit(1)
+    )
+    if not active:
+        await invite(db, session, settings, telegram_id)
+        return
+    rows = [[("Заменить ссылку (отозвать старую)", "invite_replace")]]
+    if setup:
+        rows.append([("Далее: подгруппы", "subgroup_setup")])
+    rows.append([("‹ Главное меню", "home")])
+    await screen(
+        db,
+        session,
+        f"Приглашения · {group.name}\\n\\n"
+        "Для группы уже создана действующая общая ссылка. Она продолжает работать.\\n\\n"
+        "Ради безопасности исходный код ссылки не хранится, поэтому повторно "
+        "показать её нельзя. Если нужно отправить приглашение ещё раз, используйте "
+        "ссылку, которой уже поделились со студентами.\\n\\n"
+        "Кнопка «Заменить ссылку» создаст новую и сразу отзовёт прежнюю.",
+        rows,
+        "invite",
+        {"setup": setup},
+    )
+
+
 async def invite(db, session, settings, telegram_id):
     found = await current_membership(db, telegram_id)
     if not found or found[0].role != "headman":
@@ -568,7 +613,7 @@ async def invite(db, session, settings, telegram_id):
         "Отправьте ссылку студентам вашей Telegram-группы. "
         "Она действует до 365 дней, допускает несколько участников и может быть отозвана. "
         "Бот проверит участие каждого в Telegram-чате. Создание новой ссылки отзовёт прежнюю.",
-        [[("Заменить ссылку", "invite")]]
+        [[("Управление ссылкой", "invite_manage")]]
         + ([[("Далее: подгруппы", "subgroup_setup")]] if setup else [])
         + [[("‹ Назад", "home")]],
         "invite",
@@ -1146,7 +1191,9 @@ async def handle(db, update, settings, topic=None):
                     await connected(db, session, settings, group)
                 else:
                     await home(db, session, settings, sender.id)
-    elif action == "invite":
+    elif action in {"invite", "invite_manage"}:
+        await invitation_entry(db, session, settings, sender.id)
+    elif action == "invite_replace" and session.step == "invite":
         await invite(db, session, settings, sender.id)
     elif action == "subgroup_setup" and session.step == "invite":
         found = await current_membership(db, sender.id)
