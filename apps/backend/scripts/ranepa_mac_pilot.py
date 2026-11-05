@@ -20,7 +20,7 @@ from studgroup.ranepa_discovery import exact_code_match
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_public import extract_public_schedule
 from studgroup.ranepa_schedule import group_code, normalized
-from studgroup.ranepa_ui import page_status, source_diagnostics
+from studgroup.ranepa_ui import page_status, private_profile, source_diagnostics
 
 URLS = {
     "cabinet": "https://my.ranepa.ru/lk/student/schedule",
@@ -29,17 +29,6 @@ URLS = {
 }
 HOSTS = {"my.ranepa.ru", "lms.ranepa.ru"}
 DEFAULT_PROFILE = Path.home() / "Library" / "Application Support" / "StudGroup" / "RANEPA Browser"
-
-
-def private_profile(path: Path) -> Path:
-    """Keep a dedicated, local-only session directory outside the repository."""
-    expanded = path.expanduser()
-    if expanded.is_symlink():
-        raise ValueError("profile_symlink_not_allowed")
-    target = expanded.resolve()
-    target.mkdir(parents=True, exist_ok=True, mode=0o700)
-    target.chmod(0o700)
-    return target
 
 
 async def select_group(page, code: str) -> str:
