@@ -67,19 +67,17 @@ async def preview_source(body: PreviewRequest, context: CurrentStaff, db: Db):
     """Always read-only. No live/snapshot DB writes and no AI calls."""
     source = await db.get(GroupScheduleSource, context.group.id)
     if source is None:
-        raise ApiError(
-            "group_code_required", "Сначала укажите университетский код группы", 409
-        )
+        raise ApiError("group_code_required", "Сначала укажите университетский код группы", 409)
     if body.week_start.weekday() != 0:
         raise ApiError("invalid_week", "Выберите понедельник недели", 422)
 
     today = datetime.now(ZoneInfo(context.group.timezone)).date()
-    if body.week_start < today - timedelta(days=90) or body.week_start > today + timedelta(days=120):
+    if body.week_start < today - timedelta(days=90) or body.week_start > today + timedelta(
+        days=120
+    ):
         raise ApiError("invalid_week", "Неделя вне допустимого диапазона", 422)
     try:
-        proof, html = await fetch_public_page(
-            body.internal_group_uuid, source.official_group_code
-        )
+        proof, html = await fetch_public_page(body.internal_group_uuid, source.official_group_code)
         result = extract_public_schedule(
             html,
             source.official_group_code,
