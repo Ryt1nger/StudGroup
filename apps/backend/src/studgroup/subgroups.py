@@ -410,7 +410,12 @@ def quiet_delivery_at(now, timezone, preferences):
     except (KeyError, ValueError):
         zone = ZoneInfo("Europe/Moscow")
     local = now.astimezone(zone)
-    if local.hour >= start:
+    if start < finish:
+        # The range starts after midnight, e.g. 00:00–07:00.
+        if not start <= local.hour < finish:
+            return now
+        day = local.date()
+    elif local.hour >= start:
         day = local.date() + timedelta(days=1)
     elif local.hour < finish:
         day = local.date()
