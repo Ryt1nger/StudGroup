@@ -42,6 +42,38 @@ class Group(Base):
     bot_added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+
+class GroupScheduleSource(Base):
+    """Per-group university source configuration; writes are opt-in and disabled by default."""
+
+    __tablename__ = "group_schedule_sources"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    official_group_code: Mapped[str] = mapped_column(String(120))
+    upstream_group_uuid: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    collection_mode: Mapped[str] = mapped_column(String(24), default="public")
+    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(80))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GroupScheduleSnapshot(Base):
+    """An isolated university schedule snapshot; never directly projected into live lessons."""
+
+    __tablename__ = "group_schedule_snapshots"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    week_end: Mapped[date] = mapped_column(Date)
+    data_digest: Mapped[str] = mapped_column(String(64))
+    rows_json: Mapped[str] = mapped_column(Text)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class SchedulePattern(Base):
     __tablename__ = "schedule_patterns"
     __table_args__ = (
