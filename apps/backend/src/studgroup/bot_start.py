@@ -77,7 +77,11 @@ async def get_session(db, chat):
 async def awaiting_input(db, chat):
     """True while the person is expected to type an invitation code."""
     session = await db.get(StartSession, chat)
-    return bool(session and session.step in {"code", "promo_code"} and utc(session.expires_at) > datetime.now(UTC))
+    return bool(
+        session
+        and session.step in {"code", "promo_code"}
+        and utc(session.expires_at) > datetime.now(UTC)
+    )
 
 
 async def screen(db, session, text, rows, step, data=None, minutes=SESSION_MINUTES):
@@ -806,7 +810,7 @@ async def handle(db, update, settings, topic=None):
             from studgroup import headman_bot
 
             headman_session = await db.get(HeadmanSession, sender.id)
-            user, member, group = await domain.access(db, sender.id, headman_session.group_id)
+            _, _, group = await domain.access(db, sender.id, headman_session.group_id)
             token = bot_panels.scope.set((sender.id, "st"))
             try:
                 await headman_bot.subgroup_settings_screen(db, headman_session, group)
