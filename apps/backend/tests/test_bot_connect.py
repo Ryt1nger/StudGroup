@@ -11,7 +11,7 @@ from test_ingestion import send
 
 from studgroup import bot_admin
 from studgroup import headman_domain as domain
-from studgroup.models import BotOutbox, Group, GroupAIProfile, Membership, User
+from studgroup.models import BotOutbox, Group, GroupAIProfile, Membership, RawMessage, User
 
 pytest_plugins = ["test_schedule_api"]
 ADDER = 77
@@ -149,11 +149,19 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
     added_to_chat(foreman)
     group, members = new_group(foreman)
     assert group_count(foreman) == before + 1
-    assert group.name == "ИВТ-21" and group.pilot_authorized and group.status == "active"
+    assert group.name == "ИВТ-21" and not group.pilot_authorized and group.status == "active"
     assert group.bot_added_at is not None
     assert members == []  # adding the bot never automatically grants role
     assert panel(foreman, ADDER) is None
     assert messages_to(foreman, NEW_CHAT) == []
+    typed_in_chat(foreman, "домашнее задание на завтра", by=OTHER)
+
+    async def recorded(db):
+        return await db.scalar(
+            select(func.count()).select_from(RawMessage).where(RawMessage.group_id == group.id)
+        )
+
+    assert run(foreman, recorded) == 0  # no collection or AI before confirmation
     deliver(foreman, "/start", uid=ADDER)
     tap(foreman, "Подключить группу", uid=ADDER)
     tap(foreman, "Я староста", uid=ADDER)
@@ -163,6 +171,7 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
     assert new_group(foreman)[1] == []
     tap(foreman, "Да, подключить", uid=ADDER)
     assert new_group(foreman)[1] == [("headman", ADDER)]
+    assert new_group(foreman)[0].pilot_authorized
     assert new_group(foreman)[0].academic_group_code_required
     assert "Создать приглашение" not in labels(foreman)
     finish_group_identifier(foreman)
