@@ -1018,9 +1018,7 @@ async def handle(db, update, settings, topic=None):
     elif action == "notifications":
         await notification_menu(db, session, settings, sender.id)
     elif action.startswith("notify_") and session.step == "notifications":
-        await toggle_notification(
-            db, session, settings, sender.id, action.removeprefix("notify_")
-        )
+        await toggle_notification(db, session, settings, sender.id, action.removeprefix("notify_"))
     elif action == "academic_code_edit":
         found = await current_membership(db, sender.id)
         if found and found[0].role == "headman":
