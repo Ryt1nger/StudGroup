@@ -1,21 +1,8 @@
-"""Self-service group connection (owner decisions, 21-22 Oct 2026).
+"""Group discovery and explicitly confirmed ownership through private Telegram buttons.
 
-Adding the bot to a Telegram group is all it takes: the bot creates the group and its working
-environment itself and starts at once, with no approval, and **the person who added the bot becomes
-the group's single headman automatically**. The bot never writes in the group.
-
-Who counts as the person who added the bot depends on the trigger:
-
-* the bot's own membership update and the service message "X invited StudGroup" name the adder
-  directly; they become the headman unless Telegram positively says they are only an ordinary
-  member (when Telegram cannot say, the adder is trusted);
-* a ``/start`` typed in the group is only a fallback for when those updates are not delivered; the
-  person who typed it must be positively confirmed as an administrator of the chat.
-
-If nobody could be made the headman (the adder is an ordinary member, or already belongs to another
-group) the group simply waits without a headman; an administrator of that chat can take the role
-later with «Я староста» in the private /start screen. A group that already has a headman is never
-changed, and the role is assigned under a lock on the group row, so two people cannot both win.
+Adding the bot discovers a group but never grants the headman role. An administrator must
+choose the discovered group in the private /start flow and confirm the claim.
+The bot stays silent in source group chats.
 """
 
 import uuid
@@ -167,19 +154,8 @@ async def ensure_group(db, chat_id, title):
 
 
 async def connect(db, settings, chat_id, title, sender_id, *, typed=False):
-    """The bot is in this chat: make sure the group exists and the adder is its headman."""
-    group, _ = await ensure_group(db, chat_id, title)
-    if await has_headman(db, group.id):
-        return
-    admin = await is_chat_admin(settings, chat_id, sender_id)
-    if admin is False or (typed and admin is not True):
-        return  # not provably the one who may run this group: wait for «Я староста»
-    own = await bot_start.current_membership(db, sender_id)
-    if own and own[1].id != group.id:
-        return  # one person, one group
-    headed = await make_headman(db, settings, group, sender_id)
-    if headed is not None:
-        await tell_new_headman(db, settings, headed, sender_id)
+    """Record the Telegram chat; assigning its headman requires a private confirmation."""
+    await ensure_group(db, chat_id, title)
 
 
 async def make_headman(db, settings, group, telegram_id):
@@ -268,6 +244,10 @@ async def claim_headman(db, settings, session, group, telegram_id):
         return False
     if await is_chat_admin(settings, locked.telegram_chat_id, telegram_id) is not True:
         await refuse("Стать старостой может только администратор этой группы в Telegram.")
+        return False
+    bot_id = own_bot_id(settings)
+    if bot_id is None or await chat_status(settings, locked.telegram_chat_id, bot_id) != "administrator":
+        await refuse("Для подключения назначьте StudGroup администратором Telegram-группы.")
         return False
     if await make_headman(db, settings, locked, telegram_id) is None:
         await refuse("Не удалось назначить старосту: у группы уже есть староста.")
