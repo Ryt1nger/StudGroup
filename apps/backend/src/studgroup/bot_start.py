@@ -309,6 +309,7 @@ async def toggle_notification(db, session, settings, telegram_id, key):
         update={key: not getattr(preferences, key)}
     ).model_dump()
     profile.updated_at = datetime.now(UTC)
+    await db.flush()
     await notification_menu(db, session, settings, telegram_id)
 
 
@@ -349,6 +350,7 @@ async def set_notification_choice(db, session, settings, telegram_id, index):
     updated = preferences.model_copy(update={key: options[index][1]})
     profile.settings = updated.model_dump()
     profile.updated_at = datetime.now(UTC)
+    await db.flush()
     await notification_menu(db, session, settings, telegram_id)
 
 
