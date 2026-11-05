@@ -39,6 +39,9 @@ def private_profile(path: Path) -> Path:
     if expanded.is_symlink():
         raise ValueError("profile_symlink_not_allowed")
     target = expanded.resolve()
+    repository_root = Path(__file__).resolve().parents[4]
+    if target.is_relative_to(repository_root):
+        raise ValueError("profile_inside_repository_not_allowed")
     target.mkdir(parents=True, exist_ok=True, mode=0o700)
     target.chmod(0o700)
     return target
