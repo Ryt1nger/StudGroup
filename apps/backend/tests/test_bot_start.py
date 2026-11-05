@@ -309,6 +309,11 @@ def test_notification_preferences_can_be_changed_with_bot_buttons(foreman):
     preferences = run(foreman, saved)
     assert preferences["enabled"] is False
     assert preferences["deadlines"] is True
+    tap(foreman, "Напоминание о сроке", uid=1)
+    assert "За 3 часа" in labels(foreman)
+    tap(foreman, "За 3 часа", uid=1)
+    assert "Напоминание о сроке: За 3 часа" in labels(foreman)
+    assert run(foreman, saved)["deadline_lead"] == "3h"
     tap(foreman, "Главное меню", uid=1)
     assert "Уведомления" in labels(foreman)
 
