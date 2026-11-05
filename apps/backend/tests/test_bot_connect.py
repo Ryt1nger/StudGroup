@@ -387,7 +387,12 @@ def test_a_group_without_a_headman_is_marked_in_the_owner_list(foreman, monkeypa
     private(foreman, "/admin", uid=9001, update=900)
     markup = last(foreman)["reply_markup"]["inline_keyboard"]
     names = [button["text"] for row in markup for button in row]
-    assert any(name.startswith("ИВТ-21") and "староста не выбран" in name for name in names)
+    assert any(
+        name.startswith("ИВТ-21")
+        and "ожидает активации" in name
+        and "староста не выбран" in name
+        for name in names
+    )
     assert any(name == "Группа" for name in names)  # the pilot group has its headman
 
 
