@@ -247,6 +247,7 @@ it('shows private screenshot review without Telegram image-review capability', a
   const lesson = schedule.lessons[0]!;
   let officialReads = 0;
   let telegramReads = 0;
+  const confirmations: unknown[] = [];
   server.use(
     http.post(`${API}/session/bootstrap`, () =>
       HttpResponse.json(sessionAt(exampleSession, Date.now(), (session) => ({
@@ -302,6 +303,10 @@ it('shows private screenshot review without Telegram image-review capability', a
       telegramReads += 1;
       return HttpResponse.json({ suggestions: [] });
     }),
+    http.post(`${API}/staff/schedule-upload/${ID}/confirm`, async ({ request }) => {
+      confirmations.push(await request.json());
+      return HttpResponse.json({ schedule_version: 1 });
+    }),
   );
   renderApp({ route: '/schedule/review' });
   await userEvent.click(await screen.findByRole('button', { name: /Редактировать пару: Математический анализ/ }));
@@ -310,8 +315,18 @@ it('shows private screenshot review without Telegram image-review capability', a
   expect(officialReads).toBeGreaterThan(0);
   expect(telegramReads).toBe(0);
   await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Подтвердить расписание' }))
-    .toBeEnabled());
+  const publish = screen.getByRole('button', { name: 'Подтвердить расписание' });
+  await waitFor(() => expect(publish).toBeEnabled());
+  expect(screen.getByText(/После обновления/)).toHaveTextContent('1 пара');
+  await userEvent.click(publish);
+  expect(await screen.findByText(/Подтвердите, что новые данные содержат меньше пар/)).toBeInTheDocument();
+  expect(confirmations).toHaveLength(0);
+  await userEvent.click(screen.getByRole('checkbox', {
+    name: /Понимаю, что после замены количество занятий/,
+  }));
+  await userEvent.click(publish);
+  await waitFor(() => expect(confirmations).toHaveLength(1));
+  expect(confirmations[0]).toMatchObject({ replace_week: true, targets: [] });
 });
 
 it('shows an empty explanation for staff with no drafts when Telegram review is off', async () => {
