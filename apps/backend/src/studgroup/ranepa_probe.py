@@ -60,6 +60,19 @@ async def probe_public(
     client: httpx.AsyncClient | None = None,
 ) -> PublicProbe:
     """Test a verified group UUID without guessing IDs or defeating login/CAPTCHA."""
+    result, _html = await fetch_public_page(
+        internal_group_uuid, expected_group_code, client=client
+    )
+    return result
+
+
+async def fetch_public_page(
+    internal_group_uuid: UUID,
+    expected_group_code: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> tuple[PublicProbe, str]:
+    """Read and check source once; raw HTML must never be logged or published."""
     code = group_code(expected_group_code)
     params = {"by": "group", "f": str(internal_group_uuid), "type": "schedule"}
     owned = client is None
@@ -91,11 +104,14 @@ async def probe_public(
             raise SourceAccessError("captcha_required")
         if normalized(code) not in clean:
             raise SourceAccessError("group_identity_not_confirmed")
-        return PublicProbe(
-            group_code=code,
-            internal_group_uuid=str(internal_group_uuid),
-            pair_time_ranges=len(TIME_RANGE.findall(clean)),
-            page_sha256=hashlib.sha256(response.content).hexdigest(),
+        return (
+            PublicProbe(
+                group_code=code,
+                internal_group_uuid=str(internal_group_uuid),
+                pair_time_ranges=len(TIME_RANGE.findall(clean)),
+                page_sha256=hashlib.sha256(response.content).hexdigest(),
+            ),
+            response.text,
         )
     finally:
         if owned:
