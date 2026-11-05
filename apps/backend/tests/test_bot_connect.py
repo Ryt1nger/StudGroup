@@ -177,6 +177,29 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
     assert messages_to(foreman, NEW_CHAT) == []
 
 
+def test_ranepa_code_can_be_suggested_from_telegram_title(foreman, monkeypatch):
+    setup_bot(
+        foreman,
+        monkeypatch,
+        {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"},
+    )
+    added_to_chat(
+        foreman,
+        title="Э-ОБ-385-04-26-02 (ЭМИТ) 38.03.05 Бизнес-информатика",
+    )
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    tap(foreman, "Проверить:", uid=ADDER)
+    tap(foreman, "Да, подключить", uid=ADDER)
+    assert "Подтвердить Э-ОБ-385-04-26-02" in labels(foreman)
+    tap(foreman, "Подтвердить Э-ОБ-385-04-26-02", uid=ADDER)
+    assert "Официальный код: Э-ОБ-385-04-26-02" in last(foreman)["text"]
+    tap(foreman, "Да, сохранить", uid=ADDER)
+    assert new_group(foreman)[0].academic_group_code == "Э-ОБ-385-04-26-02"
+
+
 def test_legacy_headman_can_add_official_group_code_without_new_registration(foreman):
     deliver(foreman, "/start", uid=1)
     assert "Указать ID группы РАНХиГС" in labels(foreman)
