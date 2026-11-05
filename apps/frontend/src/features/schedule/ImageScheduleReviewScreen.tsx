@@ -330,7 +330,8 @@ function ScheduleReviewForm({
   // Query-string navigation keeps the review draft mounted; reset the shared
   // app viewport so the editor actually opens like a separate screen.
   useLayoutEffect(() => {
-    document.querySelector<HTMLElement>('.scroll')?.scrollTo(0, 0);
+    const viewport = document.querySelector<HTMLElement>('.scroll');
+    if (viewport) viewport.scrollTop = 0;
   }, [editingIndex]);
   function openEdit(index: number) {
     setDraftEdit({ index, value: { ...rows[index]!, row: { ...rows[index]!.row } } });
