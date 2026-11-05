@@ -142,7 +142,8 @@ async def ensure_group(db, chat_id, title):
             academic_group_code_required=True,
             timezone=DEFAULT_TIMEZONE,
             status="active",
-            pilot_authorized=True,
+            # Discovery is not approval: no raw-message ingestion or AI charges yet.
+            pilot_authorized=False,
             bot_added_at=now,
         )
         .on_conflict_do_nothing(index_elements=[Group.telegram_chat_id])
@@ -256,6 +257,8 @@ async def claim_headman(db, settings, session, group, telegram_id):
     if await make_headman(db, settings, locked, telegram_id) is None:
         await refuse("Не удалось назначить старосту: у группы уже есть староста.")
         return False
+    # Activation is part of the same transaction as verified, explicit headman claiming.
+    locked.pilot_authorized = True
     bot_id = own_bot_id(settings)
     bot_is_admin = (
         bot_id is not None
