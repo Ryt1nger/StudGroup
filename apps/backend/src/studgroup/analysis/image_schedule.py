@@ -23,6 +23,7 @@ from studgroup.models import (
     MessageAttachment,
     RawMessage,
     SchedulePattern,
+    ScheduleException,
 )
 from studgroup.schedule_audit import schedule_changed
 
@@ -49,6 +50,7 @@ class ScheduleConfirmation(BaseModel):
     expected_revision: int = Field(ge=1)
     expected_schedule_version: int = Field(ge=0)
     acknowledge_schedule_change: bool = False
+    replace_week: bool = False
     targets: list[ScheduleTarget] = Field(default_factory=list, max_length=100)
     corrected_rows: list[ConfirmedScheduleRow] | None = Field(
         default=None, min_length=1, max_length=100
@@ -252,7 +254,86 @@ async def confirm(db, group_id, user, member, ident, body, now=None, *, cabinet=
     if len(targets) != len(body.targets) or any(index >= len(rows) for index in targets):
         raise ApiError("invalid_request", "Неверное сопоставление строк", 422)
     before, changed = {}, []
+    if body.replace_week:
+        # A private, explicitly confirmed weekly snapshot replaces only that week's
+        # occurrences. Recurring source rules outside that week remain untouched.
+        if not cabinet or suggestion.duration != "one_week" or body.targets:
+            raise ApiError(
+                "invalid_request",
+                "Замена недели доступна только для загруженного недельного расписания",
+                422,
+            )
+        monday = suggestion.week_start
+        sunday = monday + timedelta(days=6)
+        if any(row.valid_from < monday or row.valid_until > sunday for row in rows):
+            raise ApiError(
+                "effective_dates_required",
+                "Все пары должны относиться к выбранной неделе",
+                409,
+            )
+        from studgroup.api import schedule_data
+        from studgroup import headman_schedule
+        from studgroup.headman_domain import snapshot
+
+        current_week = await schedule_data(monday, sunday, group, db)
+        for old_lesson in current_week["lessons"]:
+            if old_lesson["status"] == "cancelled":
+                continue
+            pattern, override, occurrence, day = await headman_schedule.occurrence(
+                db, group, old_lesson["id"]
+            )
+            await guard(db, group, locked, f"p:{pattern.id}", pattern, pattern.revision)
+            if override:
+                key = f"x:{override.id}"
+                await guard(db, group, locked, key, override, override.revision)
+                before[key] = await snapshot(db, key, "x", override)
+                override.cancelled = True
+                override.revision += 1
+            else:
+                override = ScheduleException(
+                    group_id=group.id,
+                    pattern_id=pattern.id,
+                    occurrence_date=day,
+                    starts_at=datetime.fromisoformat(occurrence["starts_at"]),
+                    ends_at=datetime.fromisoformat(occurrence["ends_at"]),
+                    location=occurrence["location"],
+                    online_url=occurrence.get("online_url"),
+                    cancelled=True,
+                    revision=1,
+                )
+                db.add(override)
+                await db.flush()
+                key = f"x:{override.id}"
+                before[key] = None
+            await lock_decision(db, group, user, locked, key, override)
+            changed.append((key, "x", override))
     for index, row in enumerate(rows):
+        if body.replace_week:
+            if row.week != "all" and group.first_week_anchor is None:
+                raise ApiError(
+                    "week_anchor_required", "Нужно начало первой недели", 409
+                )
+            pattern = SchedulePattern(
+                group_id=group_id,
+                subject=row.subject,
+                weekday=row.weekday,
+                starts=row.starts,
+                ends=row.ends,
+                valid_from=row.valid_from,
+                valid_until=row.valid_until,
+                week=row.week,
+                location=row.room,
+                teacher=row.teacher,
+                subgroup_id=row.subgroup_id,
+                revision=1,
+            )
+            db.add(pattern)
+            await db.flush()
+            key = f"p:{pattern.id}"
+            before[key] = None
+            await lock_decision(db, group, user, locked, key, pattern)
+            changed.append((key, "p", pattern))
+            continue
         target = targets.get(index)
         if target:
             from studgroup import headman_schedule
@@ -390,6 +471,7 @@ async def confirm(db, group_id, user, member, ident, body, now=None, *, cabinet=
             "schedule_version_before": body.expected_schedule_version,
             "source_schedule_version": suggestion.schedule_version,
             "acknowledged_schedule_change": body.acknowledge_schedule_change,
+            "replaced_week": body.replace_week,
         },
         ensure_ascii=False,
     )
