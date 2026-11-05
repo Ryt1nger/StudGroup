@@ -63,6 +63,8 @@ async def inspect(mode: str, code: str, week_start: date) -> dict:
                     "status": "moodle_calendar_is_not_group_timetable",
                     **stats,
                 }
+            if not stats["has_schedule_label"] and not stats["lesson_time_candidates"]:
+                return {"mode": mode, "status": "no_timetable_in_rendered_shell", **stats}
             if normalized(code) not in normalized(text):
                 return {"mode": mode, "status": "group_identity_unverified", **stats}
             try:
