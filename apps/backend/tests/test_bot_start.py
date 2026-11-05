@@ -294,6 +294,47 @@ def test_start_panel_edits_one_message_and_a_new_start_replaces_it(transport):
     assert current(client, "start")[0] != first
 
 
+def test_connection_status_checks_live_telegram_without_changing_membership(
+    foreman, monkeypatch
+):
+    from studgroup import bot_connect
+
+    foreman.app.state.settings.telegram_bot_token = "999:test"
+    calls = []
+
+    async def status(_settings, chat, telegram_id):
+        calls.append((chat, telegram_id))
+        return "administrator" if telegram_id == 999 else "creator"
+
+    monkeypatch.setattr(bot_connect, "chat_status", status)
+    deliver(foreman, "/start", uid=1)
+    tap(foreman, "Проверить подключение", uid=1)
+    assert "Участие в Telegram подтверждено" in last(foreman)["text"]
+    assert "Бот — администратор группы" in last(foreman)["text"]
+    assert len(calls) == 2
+    tap(foreman, "Проверить ещё раз", uid=1)
+    assert len(calls) == 4
+    tap(foreman, "Главное меню", uid=1)
+    assert "Создать приглашение" in labels(foreman)
+
+
+def test_connection_status_does_not_revoke_access_on_telegram_failure(foreman, monkeypatch):
+    from studgroup import bot_connect
+
+    foreman.app.state.settings.telegram_bot_token = "999:test"
+
+    async def unavailable(*_args):
+        return None
+
+    monkeypatch.setattr(bot_connect, "chat_status", unavailable)
+    deliver(foreman, "/start", uid=1)
+    tap(foreman, "Проверить подключение", uid=1)
+    assert "Это не изменило ваш доступ" in last(foreman)["text"]
+    assert "Доступ в StudGroup: активен" in last(foreman)["text"]
+    tap(foreman, "Поддержка", uid=1)
+    assert "Поддержка" in last(foreman)["text"]
+
+
 def test_notification_preferences_can_be_changed_with_bot_buttons(foreman):
     from studgroup.models import UserProfile
 
