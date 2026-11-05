@@ -51,6 +51,18 @@ def allow_telegram(monkeypatch, answer=True):
     monkeypatch.setattr(domain, "telegram_member", check)
 
 
+def test_ranepa_academic_code_extracts_code_without_institute_or_program():
+    from studgroup.bot_start import parse_academic_group_code
+
+    assert (
+        parse_academic_group_code("Э-ОБ-385-04-26-02 (ЭМИТ) 38.03.05 Бизнес-информатика")
+        == "Э-ОБ-385-04-26-02"
+    )
+    assert parse_academic_group_code("  э-об-385-04-26-02  ") == "Э-ОБ-385-04-26-02"
+    assert parse_academic_group_code("только название программы") is None
+    assert parse_academic_group_code("") is None
+
+
 def test_welcome_has_six_buttons_and_separate_role_selection(foreman):
     deliver(foreman, "/start", uid=33)
     assert labels(foreman) == [
