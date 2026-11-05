@@ -159,6 +159,9 @@ async def home(db, session, settings, telegram_id):
     found = await current_membership(db, telegram_id)
     if found:
         member, group = found
+        if member.role == "student" and await subgroups.unanswered(db, member):
+            await subgroup_choice(db, session, settings, member, group)
+            return
         text = f"Вы подключены к «{group.name}»."
         rows = [[app_button(settings)]]
         if member.role in {"headman", "deputy"}:
@@ -391,7 +394,7 @@ async def code_prompt(db, session, notice=None):
     text = "Отправьте код приглашения одним сообщением. Я сразу удалю его из чата."
     if notice:
         text = f"{notice}\n\n{text.replace('Отправьте', 'Отправьте ещё раз')}"
-    await screen(db, session, text, [[("‹ Назад", "student")]], "code")
+    await screen(db, session, text, [[("‹ Назад", "join_back")]], "code")
 
 
 async def redeem(db, session, settings, telegram_id, code, *, typed):
@@ -500,6 +503,31 @@ async def demo_student_summary(db, session, english, informatics):
     )
 
 
+async def resume_or_home(db, session, settings, telegram_id):
+    """Restore a safe step after /start, without trusting expired callback buttons."""
+    if await current_membership(db, telegram_id):
+        await home(db, session, settings, telegram_id)
+        return
+    step = session.step
+    try:
+        data = json.loads(session.payload)
+    except (TypeError, ValueError):
+        data = {}
+    if step in {"promo", "promo_code"} and data.get("role") in {"student", "headman"}:
+        if step == "promo":
+            await promo_screen(db, session, data["role"])
+        else:
+            await promo_input(db, session, data["role"])
+    elif step in {"headman", "confirm_group"}:
+        await headman_entry(db, session, settings, telegram_id)
+    elif step == "join":
+        await join(db, session)
+    elif step == "code":
+        await code_prompt(db, session)
+    else:
+        await home(db, session, settings, telegram_id)
+
+
 async def forget(db, chat, message):
     """Remove the person's own message so an invitation code does not stay in the chat."""
     owner = await bot_panels.panel(db, chat, "start")
@@ -559,7 +587,7 @@ async def handle(db, update, settings, topic=None):
                 else:
                     await home(db, session, settings, sender.id)
             else:
-                await home(db, session, settings, sender.id)
+                await resume_or_home(db, session, settings, sender.id)
             return True
         if text in {"/cancel", "Отмена"}:
             await home(db, session, settings, sender.id)
@@ -705,6 +733,8 @@ async def handle(db, update, settings, topic=None):
         )
     elif action == "enter_code":
         await code_prompt(db, session)
+    elif action == "join_back":
+        await join(db, session)
     elif action == "check_group":
         await headman_entry(db, session, settings, sender.id)
     elif action == "headman_back":
