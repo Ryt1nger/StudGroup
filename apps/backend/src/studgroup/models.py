@@ -33,6 +33,12 @@ class Group(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     telegram_chat_id: Mapped[int] = mapped_column(BigInteger, unique=True)
     name: Mapped[str] = mapped_column(String(255))
+    # Official university group code, e.g. «Э-ОБ-385-04-26-02», independent of Telegram title.
+    academic_group_code: Mapped[str | None] = mapped_column(String(80))
+    # True for groups connected under the new RANEPA onboarding; legacy groups stay unblocked.
+    academic_group_code_required: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     timezone: Mapped[str] = mapped_column(String(64))
     first_week_anchor: Mapped[date | None] = mapped_column(Date)
     # Bumped by every group timetable change; schedule_changes rows record the value they produced.
@@ -49,7 +55,6 @@ class GroupScheduleSource(Base):
     group_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
     )
-    official_group_code: Mapped[str] = mapped_column(String(120))
     upstream_group_uuid: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     collection_mode: Mapped[str] = mapped_column(String(24), default="public")
     sync_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
@@ -972,6 +977,7 @@ class GroupInvitation(Base):
     issuer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("memberships.id", ondelete="CASCADE"))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    reusable: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     used_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
 
