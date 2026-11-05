@@ -445,7 +445,11 @@ async def notify_students(db, settings, group, split, now=None):
     ).all()
     username = (settings.bot_username or "").lstrip("@")
     for telegram_id, saved in recipients:
-        preferences = NotificationSettings.model_validate(saved or {})
+        try:
+            preferences = NotificationSettings.model_validate(saved or {})
+        except ValueError:
+            log.warning("Invalid recipient notification preferences; skipping subgroup notice")
+            continue
         if not preferences.enabled:
             continue
         payload = {
