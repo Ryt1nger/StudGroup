@@ -108,7 +108,13 @@ def test_subgroup_notice_respects_notification_opt_out_and_deduplication(foreman
     async def seed_and_notify(db):
         _, _, group = await actor(db)
         opted_out = await db.scalar(select(User).where(User.telegram_user_id == 33))
-        db.add(UserProfile(user_id=opted_out.id, settings={"enabled": False}))
+        db.add(
+            UserProfile(
+                user_id=opted_out.id,
+                settings={"enabled": False},
+                updated_at=datetime(2026, 11, 5, tzinfo=UTC),
+            )
+        )
         await db.flush()
         split = await subgroups.create_split(
             db,
