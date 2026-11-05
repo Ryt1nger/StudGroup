@@ -332,20 +332,23 @@ async def invite(db, session, settings, telegram_id):
         await home(db, session, settings, telegram_id)
         return
     member, group = found
-    setup = session.step == "connected"
+    setup = session.step == "connected" or (
+        session.step == "invite" and json.loads(session.payload).get("setup", False)
+    )
     try:
-        code = (await domain.issue_invites(db, group, member, 1))[0]
+        code = await domain.issue_group_link(db, group, member)
     except domain.StError as error:
         await screen(db, session, str(error), [[("‹ Назад", "home")]], "invite")
         return
     await screen(
         db,
         session,
-        "Приглашение для студента\n\n"
+        "Ссылка приглашения для всей группы\n\n"
         f"{invite_link(settings, code)}\n\n"
-        "Перешлите это одному студенту: достаточно нажать на ссылку. Она действует 24 часа и "
-        "срабатывает один раз.",
-        [[("Создать ещё", "invite")]]
+        "Отправьте ссылку студентам вашей Telegram-группы. "
+        "Она действует до 365 дней, допускает несколько участников и может быть отозвана. "
+        "Бот проверит участие каждого в Telegram-чате. Создание новой ссылки отзовёт прежнюю.",
+        [[("Заменить ссылку", "invite")]]
         + ([[("Далее: подгруппы", "subgroup_setup")]] if setup else [])
         + [[("‹ Назад", "home")]],
         "invite",
@@ -412,8 +415,9 @@ async def open_start(db, settings, telegram_id):
 async def join(db, session, notice=None):
     text = (
         "Подключение к группе\n\n"
-        "Нужен одноразовый код приглашения от вашего старосты, он действует 24 часа. "
-        "Если староста прислал ссылку, достаточно нажать на неё: вводить код не нужно."
+        "Нужна ссылка или код приглашения от старосты. "
+        "Если староста прислал ссылку, достаточно нажать на неё: вводить код не нужно. "
+        "Бот проверит, что вы состоите в учебном Telegram-чате."
     )
     if notice:
         text = f"{notice}\n\n{text}"
