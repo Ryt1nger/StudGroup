@@ -101,7 +101,9 @@ def test_topics_open_on_the_start_panel_for_any_private_user(client, text, needl
     assert "‹ Назад" in [b["text"] for b in buttons(frame)]
 
 
-@pytest.mark.parametrize("topic", ["about", "partners", "tariffs", "howto", "connect", "faq", "support"])
+@pytest.mark.parametrize(
+    "topic", ["about", "partners", "tariffs", "howto", "connect", "faq", "support"]
+)
 def test_no_topic_asks_people_to_type_a_command(topic):
     import re
 
