@@ -22,8 +22,8 @@ from studgroup.models import (
     Membership,
     MessageAttachment,
     RawMessage,
-    SchedulePattern,
     ScheduleException,
+    SchedulePattern,
 )
 from studgroup.schedule_audit import schedule_changed
 
