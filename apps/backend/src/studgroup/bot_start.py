@@ -256,7 +256,6 @@ NOTIFICATION_CHOICE_LABELS = {
 }
 
 
-
 async def notification_menu(db, session, settings, telegram_id):
     """Student/staff preferences, saved to the same profile as the Mini App."""
     from studgroup.profile import NotificationSettings
@@ -273,7 +272,11 @@ async def notification_menu(db, session, settings, telegram_id):
     ]
     for key, title in NOTIFICATION_CHOICE_LABELS.items():
         selected = next(
-            (label for label, value in NOTIFICATION_CHOICES[key] if value == getattr(preferences, key)),
+            (
+                label
+                for label, value in NOTIFICATION_CHOICES[key]
+                if value == getattr(preferences, key)
+            ),
             "—",
         )
         rows.append([(f"{title}: {selected}", f"notifchoice_{key}")])
@@ -313,10 +316,7 @@ async def notification_choice_screen(db, session, settings, telegram_id, key):
     if key not in NOTIFICATION_CHOICES or not await current_membership(db, telegram_id):
         await home(db, session, settings, telegram_id)
         return
-    rows = [
-        [(label, f"notifpick_{i}")]
-        for i, (label, _) in enumerate(NOTIFICATION_CHOICES[key])
-    ]
+    rows = [[(label, f"notifpick_{i}")] for i, (label, _) in enumerate(NOTIFICATION_CHOICES[key])]
     rows.append([("‹ Уведомления", "notifications")])
     await screen(
         db,
