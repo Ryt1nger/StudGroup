@@ -355,6 +355,7 @@ def test_weekly_replacement_replaces_occurrences_and_preserves_other_weeks(clien
         item["subject"] == "Курс, который продолжается" and item["status"] == "scheduled"
         for item in following
     )
+
     async def count_changes(db):
         return len((await db.scalars(select(ScheduleChange))).all())
 
