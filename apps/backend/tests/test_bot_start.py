@@ -70,12 +70,26 @@ def test_welcome_has_six_buttons_and_separate_role_selection(foreman):
     assert "Подключить группу" in labels(foreman)
 
 
+def test_promo_is_optional_and_does_not_claim_to_apply_unavailable_codes(foreman):
+    deliver(foreman, "/start", uid=33)
+    tap(foreman, "Подключить группу")
+    tap(foreman, "Я староста")
+    assert "Промокоды пока не активированы" in last(foreman)["text"]
+    tap(foreman, "Ввести промокод")
+    deliver(foreman, "FAKECODE", uid=33)
+    assert "Промокоды пока не активированы" in last(foreman)["text"]
+    tap(foreman, "Пропустить")
+    assert "Подключение группы" in last(foreman)["text"]
+
+
 def test_student_joins_by_typing_a_code_and_the_code_is_removed_from_the_chat(foreman, monkeypatch):
     allow_telegram(monkeypatch)
     code = issue(foreman)
     deliver(foreman, "/start", uid=33)
     tap(foreman, "Подключить группу")
     tap(foreman, "Я студент")
+    assert "Нет промокода" in labels(foreman)
+    tap(foreman, "Нет промокода")
     assert "Подключение к группе" in last(foreman)["text"]
     tap(foreman, "Ввести код")
     assert "одним сообщением" in last(foreman)["text"]
@@ -100,6 +114,7 @@ def test_a_wrong_code_keeps_the_person_on_the_panel_with_a_way_forward(foreman, 
     deliver(foreman, "/start", uid=33)
     tap(foreman, "Подключить группу")
     tap(foreman, "Я студент")
+    tap(foreman, "Нет промокода")
     tap(foreman, "Ввести код")
     deliver(foreman, "abc", uid=33)
     assert "не похоже на код" in last(foreman)["text"]
