@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -122,3 +123,22 @@ async def smoke_test():
 
 def test_restored_supabase_reads_and_roles_without_startup():
     asyncio.run(smoke_test())
+
+
+def test_cutover_read_only_lifespan_against_restored_supabase():
+    app = create_app(
+        Settings(
+            database_url=os.environ["SUPABASE_RESTORE_TEST_URL"],
+            database_ca_file=os.environ["SUPABASE_CA_FILE"],
+            database_pool_size=3,
+            database_max_overflow=0,
+            database_pool_timeout=10,
+            cutover_read_only=True,
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/ready")
+        assert response.status_code == 200
+        assert response.json()["status"] == "read_only"
+        assert response.json()["checks"]["postgres"] is True
+        assert client.post("/v1/telegram/webhook", json={}).status_code == 503

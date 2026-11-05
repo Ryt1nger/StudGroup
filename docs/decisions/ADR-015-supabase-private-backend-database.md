@@ -31,6 +31,10 @@ enable certificate and hostname verification with the project CA and set a small
 SQLAlchemy pool through opt-in environment settings. The current Render PostgreSQL
 connection keeps its existing behavior until those settings are applied.
 
+For the cutover verification window, the opt-in `CUTOVER_READ_ONLY` setting skips
+all lifespan startup writes and background loops, blocks mutating HTTP methods
+with 503, and allows database-backed GET requests. The setting is off by default.
+
 ## Consequences
 
 - No Mini App database key is needed; all authorization remains in FastAPI.
@@ -44,3 +48,6 @@ connection keeps its existing behavior until those settings are applied.
   validate and advance sequences before accepting new writes.
 - Production deployment, webhook change, and `DATABASE_URL` switch require separate
   owner approval in stage 5.
+- Starting the backend against restored data before final verification requires
+  `CUTOVER_READ_ONLY=true`; disable it only after checking the final snapshot and
+  ambiguous `bot_outbox` deliveries.

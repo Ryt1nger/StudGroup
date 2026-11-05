@@ -92,6 +92,29 @@ def test_database_tls_requires_postgres_and_existing_ca(tmp_path):
         database_engine_options(Settings(database_ca_file=str(tmp_path / "missing.crt")))
 
 
+def test_cutover_read_only_skips_startup_tasks_and_rejects_writes(tmp_path):
+    app = create_app(
+        Settings(
+            database_url=f"sqlite+aiosqlite:///{tmp_path}/cutover.db",
+            cutover_read_only=True,
+            telegram_webhook_secret="test-secret",
+        )
+    )
+    with TestClient(app) as client:
+        assert app.state.redis is None
+        assert app.state.processor is None
+        assert app.state.cabinet_processor is None
+        assert client.get("/ready").json() == {
+            "status": "read_only",
+            "checks": {"postgres": True, "redis": None},
+        }
+        for path in ("/v1/telegram/webhook", "/v1/session/bootstrap"):
+            response = client.post(path, json={})
+            assert response.status_code == 503
+            assert response.json()["error"]["code"] == "maintenance"
+        assert client.get("/health").status_code == 200
+
+
 def test_ai_cutoff_rejects_unspecified_timezone():
     import pytest
 

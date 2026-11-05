@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     database_pool_size: int | None = Field(default=None, ge=1, le=10)
     database_max_overflow: int | None = Field(default=None, ge=0, le=10)
     database_pool_timeout: int | None = Field(default=None, ge=1, le=60)
+    # Stage-5 verification gate. When enabled, no startup writes or background loops run.
+    cutover_read_only: bool = False
     redis_url: str = "redis://localhost:6379/0"
     webapp_origin: str = "http://localhost:5173"
     telegram_bot_token: str = ""
@@ -243,6 +245,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = create_async_engine(
             settings.database_url, pool_pre_ping=True, **database_engine_options(settings)
         )
+        if settings.cutover_read_only:
+            app.state.redis = None
+            app.state.processor = None
+            app.state.cabinet_processor = None
+            try:
+                yield
+            finally:
+                await app.state.engine.dispose()
+            return
         from studgroup.reviewed_publication import startup as apply_reviewed_payload
 
         try:
@@ -377,6 +388,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="StudGroup", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     configure_file_links(settings.telegram_webhook_secret)
+
+    @app.middleware("http")
+    async def cutover_write_gate(request, call_next):
+        if settings.cutover_read_only and request.method not in {"GET", "HEAD", "OPTIONS"}:
+            return JSONResponse(
+                {"error": {"code": "maintenance", "message": "Запись временно недоступна", "retryable": True}},
+                status_code=503,
+                headers={"Retry-After": "60"},
+            )
+        return await call_next(request)
+
     app.include_router(router)
     app.include_router(ingestion_router)
     app.include_router(homework_router)
@@ -457,17 +479,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except (OSError, TimeoutError, RedisError, SQLAlchemyError):
                 return False
 
-        if settings.processing_mode == "embedded":
+        if settings.cutover_read_only:
+            database = await check(postgres)
+            redis = None
+            ok = database
+            status = "read_only" if ok else "not_ready"
+        elif settings.processing_mode == "embedded":
             database = await check(postgres)
             redis = None  # SQL inbox is authoritative; no Redis is used in this pilot mode.
             processor_ok = app.state.processor is not None and not app.state.processor.done()
             ok = database and processor_ok
+            status = "ready" if ok else "not_ready"
         else:
             database, redis = await asyncio.gather(check(postgres), check(app.state.redis.ping))
             ok = database and redis
+            status = "ready" if ok else "not_ready"
         return JSONResponse(
             {
-                "status": "ready" if ok else "not_ready",
+                "status": status,
                 "checks": {"postgres": database, "redis": redis},
             },
             status_code=200 if ok else 503,
