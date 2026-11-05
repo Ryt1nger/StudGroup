@@ -31,10 +31,11 @@ async def configure_source(db, group_id, code: str, upstream_uuid: UUID | None =
         )
         db.add(source)
     elif normalized(source.official_group_code) != normalized(official_code):
-        source.upstream_group_uuid = None
+        source.upstream_group_uuid = upstream_uuid
         source.sync_enabled = False
+    elif upstream_uuid is not None:
+        source.upstream_group_uuid = upstream_uuid
     source.official_group_code = official_code
-    source.upstream_group_uuid = upstream_uuid
     source.updated_at = datetime.now(UTC)
     await db.flush()
     return source
