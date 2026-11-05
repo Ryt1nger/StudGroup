@@ -26,7 +26,15 @@ from studgroup import bot_info, bot_panels, subgroups
 from studgroup import headman_domain as domain
 from studgroup.bot_admin import enqueue, say
 from studgroup.homework import utc
-from studgroup.models import Group, GroupInvitation, HeadmanSession, Membership, StartSession, User, UserProfile
+from studgroup.models import (
+    Group,
+    GroupInvitation,
+    HeadmanSession,
+    Membership,
+    StartSession,
+    User,
+    UserProfile,
+)
 
 SESSION_MINUTES = 30
 CLAIM_HOURS = 24  # how long «Я староста» waits for the bot to be added to a group
