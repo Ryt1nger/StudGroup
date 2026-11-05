@@ -873,6 +873,8 @@ async def subgroup_notice_eligibility(db, row, now):
     if not preferences.enabled:
         return None
     group = await db.get(Group, split.group_id)
+    if group is None or group.status != "active" or not group.pilot_authorized:
+        return None
     return subgroups.quiet_delivery_at(now, group.timezone, preferences)
 
 
