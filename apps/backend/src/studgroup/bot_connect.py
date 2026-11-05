@@ -246,7 +246,10 @@ async def claim_headman(db, settings, session, group, telegram_id):
         await refuse("Стать старостой может только администратор этой группы в Telegram.")
         return False
     bot_id = own_bot_id(settings)
-    if bot_id is None or await chat_status(settings, locked.telegram_chat_id, bot_id) != "administrator":
+    if (
+        bot_id is None
+        or await chat_status(settings, locked.telegram_chat_id, bot_id) != "administrator"
+    ):
         await refuse("Для подключения назначьте StudGroup администратором Telegram-группы.")
         return False
     if await make_headman(db, settings, locked, telegram_id) is None:
