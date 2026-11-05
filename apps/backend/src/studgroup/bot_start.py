@@ -676,7 +676,7 @@ async def redeem(db, session, settings, telegram_id, code, *, typed):
             db,
             session,
             message,
-            [[app_button(settings)]],
+            [[app_button(settings)], [("Главное меню", "home")]],
             "done",
         )
 
