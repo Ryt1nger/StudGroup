@@ -10,8 +10,8 @@ from studgroup.ranepa_schedule import (
     WeekSnapshot,
     compare_snapshots,
     detect_subgroup,
-    screenshot_action,
     group_code,
+    screenshot_action,
 )
 
 MON = date(2026, 11, 2)
@@ -20,10 +20,14 @@ CODE = "Э-ОБ-385-04-26-02"
 
 
 def lesson(**overrides):
-    values = dict(
-        day=MON, starts=time(9), ends=time(10, 20),
-        subject="Иностранный язык", teacher="Иванова", room="305",
-    )
+    values = {
+        "day": MON,
+        "starts": time(9),
+        "ends": time(10, 20),
+        "subject": "Иностранный язык",
+        "teacher": "Иванова",
+        "room": "305",
+    }
     values.update(overrides)
     return ExternalLesson(**values)
 
