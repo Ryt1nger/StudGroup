@@ -31,7 +31,9 @@ from studgroup.models import Group, HeadmanSession, Membership, StartSession, Us
 SESSION_MINUTES = 30
 CLAIM_HOURS = 24  # how long «Я староста» waits for the bot to be added to a group
 INFO_TOPICS = {
+    "info_about": "about",
     "info_howto": "howto",
+    "info_partners": "partners",
     "info_tariffs": "tariffs",
     "info_connect": "connect",
     "info_faq": "faq",
@@ -98,10 +100,26 @@ async def screen(db, session, text, rows, step, data=None, minutes=SESSION_MINUT
 
 
 def info_row():
-    return [("Как это работает", "info_howto"), ("Тарифы", "info_tariffs")], [
-        ("Частые вопросы", "info_faq"),
-        ("Поддержка", "info_support"),
+    """Public information reachable with buttons, without requiring a command."""
+    return [
+        [("О нас", "info_about"), ("Помощь", "info_howto")],
+        [("Поддержка", "info_support"), ("Партнёрка", "info_partners")],
+        [("Тарифы", "info_tariffs")],
     ]
+
+
+async def role_screen(db, session):
+    """New users choose a role only after pressing «Подключить группу»."""
+    await screen(
+        db,
+        session,
+        "Как ты хочешь подключиться к StudGroup?",
+        [
+            [("Я студент", "student"), ("Я староста", "headman")],
+            [("‹ Назад", "home")],
+        ],
+        "roles",
+    )
 
 
 async def topic_screen(db, session, settings, topic):
@@ -154,9 +172,11 @@ async def home(db, session, settings, telegram_id):
     await screen(
         db,
         session,
-        "Привет! StudGroup собирает задания, дедлайны и расписание из сообщений вашей учебной "
-        "группы и показывает их в приложении прямо в Telegram.\n\nКто вы?",
-        [[("Я студент", "student"), ("Я староста", "headman")], *info_row()],
+        "Привет! 👋 Это StudGroup.\n\n"
+        "Мы помогаем учебной группе не терять важное в Telegram: собираем задания, "
+        "дедлайны, расписание и события в удобном приложении.\n\n"
+        "Здесь можно узнать о проекте или подключиться к своей группе.",
+        [[("Подключить группу", "connect")], *info_row()],
         "home",
     )
 
@@ -620,6 +640,8 @@ async def handle(db, update, settings, topic=None):
         await demo_student_summary(db, session, english, data["informatics"])
     elif action == "home":
         await home(db, session, settings, sender.id)
+    elif action == "connect":
+        await role_screen(db, session)
     elif action == "student":
         await join(db, session)
     elif action == "enter_code":
