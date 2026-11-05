@@ -24,15 +24,23 @@ URLS = {
     "external_client_api_notes": "https://raw.githubusercontent.com/Ekanam-Friends/Ikanam-schedule/main/docs/api-notes.md",
 }
 
+
 def flags(body: str) -> dict:
     text = body.lower()
     return {
-        "captcha": any(s in text for s in ("captcha", "капча", "recaptcha", "cf-chl", "challenge-platform")),
+        "captcha": any(
+            s in text for s in ("captcha", "капча", "recaptcha", "cf-chl", "challenge-platform")
+        ),
         "login": any(s in text for s in ("login", "войти", "авторизация", "password", "пароль")),
         "calendar": any(s in text for s in ("расписание", "schedule", "calendar", "календарь")),
-        "moodle_token_error": any(s in text for s in ("invalidtoken", "invalid token", "accessexception")),
-        "likely_lesson": any(s in text for s in ("лекционные занятия", "практические занятия", "семинарские занятия")),
+        "moodle_token_error": any(
+            s in text for s in ("invalidtoken", "invalid token", "accessexception")
+        ),
+        "likely_lesson": any(
+            s in text for s in ("лекционные занятия", "практические занятия", "семинарские занятия")
+        ),
     }
+
 
 async def probe(client, name, url):
     try:
