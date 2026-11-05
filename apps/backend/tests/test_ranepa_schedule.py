@@ -1,4 +1,5 @@
 """RANEPA sync core: source precedence, identity, subgroup safety."""
+
 from datetime import date, time
 from uuid import uuid4
 
@@ -97,6 +98,15 @@ def test_teacher_recognition_but_room_alone_does_not_select_subgroup():
 
 
 def test_screenshot_never_overrides_available_official_source():
-    assert screenshot_action(official_configured=True, official_request_succeeded=True) == "compare_with_official"
-    assert screenshot_action(official_configured=True, official_request_succeeded=False) == "fallback_review"
-    assert screenshot_action(official_configured=False, official_request_succeeded=False) == "fallback_review"
+    assert (
+        screenshot_action(official_configured=True, official_request_succeeded=True)
+        == "compare_with_official"
+    )
+    assert (
+        screenshot_action(official_configured=True, official_request_succeeded=False)
+        == "fallback_review"
+    )
+    assert (
+        screenshot_action(official_configured=False, official_request_succeeded=False)
+        == "fallback_review"
+    )
