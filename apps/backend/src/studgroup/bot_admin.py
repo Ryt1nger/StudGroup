@@ -867,7 +867,9 @@ async def subgroup_notice_eligibility(db, row, now):
         return None
     profile = await db.get(UserProfile, user.id)
     try:
-        preferences = NotificationSettings.model_validate((profile.settings or {}) if profile else {})
+        preferences = NotificationSettings.model_validate(
+            (profile.settings or {}) if profile else {}
+        )
     except ValueError:
         return None
     if not preferences.enabled:
