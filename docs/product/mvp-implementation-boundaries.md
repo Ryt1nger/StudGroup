@@ -16,15 +16,16 @@ Details not listed here are deliberately deferred until the corresponding slice 
 
 ### D1. Group connection
 
-- The headman adds the bot to the Telegram group and grants the required minimal administrator access.
-- The headman runs `/connect`.
-- The backend verifies that the caller is a group administrator before creating the StudGroup group and assigning the headman role.
+- The headman enters through private `/start` → «Подключить группу» → «Я староста». All subsequent actions use inline buttons.
+- The headman adds the bot to the existing Telegram chat and grants the minimal administrator access. This creates a discovered group without automatically granting the headman role.
+- The backend confirms both Telegram administrator statuses, then the user explicitly confirms the intended group before becoming headman.
+- Before inviting students, the headman supplies or confirms the RANEPA official group code (for example `Э-ОБ-385-04-26-02`), stored separately from the Telegram chat name. Existing groups may leave the new field empty until their headman updates it.
 
 ### D2. Student activation
 
-- The headman generates a batch of unique one-time invitation codes or links.
-- Every invitation belongs to one StudGroup group, expires after 24 hours, can be revoked, and is consumed after one successful activation.
-- Activation also requires backend verification that the Telegram user is currently a member of the source group.
+- The headman creates a shared, revocable invitation link for the connected group. Rotating the link revokes its predecessor. Legacy single-use 24-hour codes remain valid until their individual expiry or redemption.
+- The shared link can activate multiple students during its validity (currently up to 365 days); each activation still requires backend verification that the Telegram user is currently a member of the source group.
+- Only one active StudGroup group is allowed per student. Other-group membership requires a separately confirmed transfer, not an implicit switch.
 
 ### D3. Existing group history
 
