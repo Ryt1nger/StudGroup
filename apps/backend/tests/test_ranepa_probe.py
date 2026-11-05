@@ -8,7 +8,7 @@ import pytest
 
 from studgroup.ranepa_probe import SourceAccessError, probe_public
 
-UUID_GROUP = UUID("92637eb0-817b-11f1-9fac-00620bc81861")
+UUID_GROUP = UUID("00000000-0000-4000-8000-000000000001")
 CODE = "Э-ОБ-385-04-26-02"
 
 
