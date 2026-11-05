@@ -230,6 +230,33 @@ NOTIFICATION_FIELDS = {
 }
 
 
+NOTIFICATION_CHOICES = {
+    "deadline_lead": [
+        ("За 3 часа", "3h"),
+        ("За 1 день", "1d"),
+        ("За 2 дня", "2d"),
+    ],
+    "lesson_lead_minutes": [
+        ("За 10 минут", 10),
+        ("За 15 минут", 15),
+        ("За 30 минут", 30),
+    ],
+    "quiet_range": [
+        ("23:00–08:00", "23-08"),
+        ("22:00–09:00", "22-09"),
+        ("00:00–07:00", "00-07"),
+    ],
+}
+
+
+NOTIFICATION_CHOICE_LABELS = {
+    "deadline_lead": "Напоминание о сроке",
+    "lesson_lead_minutes": "Напоминание о паре",
+    "quiet_range": "Тихие часы",
+}
+
+
+
 async def notification_menu(db, session, settings, telegram_id):
     """Student/staff preferences, saved to the same profile as the Mini App."""
     from studgroup.profile import NotificationSettings
@@ -244,6 +271,12 @@ async def notification_menu(db, session, settings, telegram_id):
         [(f"{'✅' if getattr(preferences, key) else '❌'} {label}", f"notify_{key}")]
         for key, label in NOTIFICATION_FIELDS.items()
     ]
+    for key, title in NOTIFICATION_CHOICE_LABELS.items():
+        selected = next(
+            (label for label, value in NOTIFICATION_CHOICES[key] if value == getattr(preferences, key)),
+            "—",
+        )
+        rows.append([(f"{title}: {selected}", f"notifchoice_{key}")])
     rows.append([("‹ Главное меню", "home")])
     await screen(
         db,
@@ -272,6 +305,49 @@ async def toggle_notification(db, session, settings, telegram_id, key):
     profile.settings = preferences.model_copy(
         update={key: not getattr(preferences, key)}
     ).model_dump()
+    profile.updated_at = datetime.now(UTC)
+    await notification_menu(db, session, settings, telegram_id)
+
+
+async def notification_choice_screen(db, session, settings, telegram_id, key):
+    if key not in NOTIFICATION_CHOICES or not await current_membership(db, telegram_id):
+        await home(db, session, settings, telegram_id)
+        return
+    rows = [
+        [(label, f"notifpick_{i}")]
+        for i, (label, _) in enumerate(NOTIFICATION_CHOICES[key])
+    ]
+    rows.append([("‹ Уведомления", "notifications")])
+    await screen(
+        db,
+        session,
+        f"{NOTIFICATION_CHOICE_LABELS[key]}\n\nВыберите вариант:",
+        rows,
+        "notification_choice",
+        {"key": key},
+    )
+
+
+async def set_notification_choice(db, session, settings, telegram_id, index):
+    from studgroup.profile import NotificationSettings
+
+    if not await current_membership(db, telegram_id):
+        await home(db, session, settings, telegram_id)
+        return
+    data = json.loads(session.payload)
+    key = data.get("key")
+    options = NOTIFICATION_CHOICES.get(key, [])
+    if not 0 <= index < len(options):
+        await home(db, session, settings, telegram_id)
+        return
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    profile = await db.get(UserProfile, user.id)
+    if profile is None:
+        profile = UserProfile(user_id=user.id, updated_at=datetime.now(UTC))
+        db.add(profile)
+    preferences = NotificationSettings.model_validate(profile.settings or {})
+    updated = preferences.model_copy(update={key: options[index][1]})
+    profile.settings = updated.model_dump()
     profile.updated_at = datetime.now(UTC)
     await notification_menu(db, session, settings, telegram_id)
 
@@ -1019,6 +1095,16 @@ async def handle(db, update, settings, topic=None):
         await notification_menu(db, session, settings, sender.id)
     elif action.startswith("notify_") and session.step == "notifications":
         await toggle_notification(db, session, settings, sender.id, action.removeprefix("notify_"))
+    elif action.startswith("notifchoice_") and session.step == "notifications":
+        await notification_choice_screen(
+            db, session, settings, sender.id, action.removeprefix("notifchoice_")
+        )
+    elif action.startswith("notifpick_") and session.step == "notification_choice":
+        try:
+            choice_index = int(action.removeprefix("notifpick_"))
+        except ValueError:
+            choice_index = -1
+        await set_notification_choice(db, session, settings, sender.id, choice_index)
     elif action == "academic_code_edit":
         found = await current_membership(db, sender.id)
         if found and found[0].role == "headman":
