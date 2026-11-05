@@ -5,7 +5,7 @@ A page that does not identify the expected group is never accepted.
 """
 
 import re
-from datetime import date, datetime, time
+from datetime import date, time
 
 from studgroup.ranepa_probe import SourceAccessError, _VisibleText
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot, group_code, normalized
@@ -48,7 +48,8 @@ def extract_public_schedule(
         heading = DAY_RE.match(normalized(chunk))
         if heading:
             try:
-                today = datetime.strptime(heading.group(1), "%m/%d/%Y").date()
+                month, day, year = (int(part) for part in heading.group(1).split("/"))
+                today = date(year, month, day)
             except ValueError:
                 raise SourceAccessError("invalid_source_day") from None
             continue
