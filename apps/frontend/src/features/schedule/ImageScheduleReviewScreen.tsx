@@ -93,6 +93,8 @@ export function ImageScheduleReviewScreen() {
                 selected.cabinet && 'progress_stage' in selected &&
                 selected.progress_stage === 'ready_partial'
               }
+              oneWeekUpload={selected.cabinet && 'duration' in selected && selected.duration === 'one_week'}
+              sourceWeekStart={selected.cabinet && 'week_start' in selected ? selected.week_start : null}
               sourceBlob={selected.cabinet ? (image.data ?? null) : null}
               currentVersion={cabinet.data?.current_schedule_version ?? query.data?.current_schedule_version ?? selected.schedule_version}
               subgroups={cabinet.data?.subgroups ?? query.data?.subgroups ?? []}
@@ -260,6 +262,8 @@ function ScheduleReviewForm({
   suggestion,
   cabinet,
   partialReview,
+  oneWeekUpload,
+  sourceWeekStart,
   sourceBlob,
   currentVersion,
   subgroups,
@@ -268,6 +272,8 @@ function ScheduleReviewForm({
   suggestion: ScheduleSuggestion;
   cabinet: boolean;
   partialReview: boolean;
+  oneWeekUpload: boolean;
+  sourceWeekStart: string | null;
   sourceBlob: Blob | null;
   currentVersion: number;
   subgroups: ReviewSubgroup[];
@@ -279,6 +285,7 @@ function ScheduleReviewForm({
   const serverNow = useSessionServerNow();
   const [weekStart, setWeekStart] = useState(
     () =>
+      sourceWeekStart ??
       suggestion.rows.find((row) => row.valid_from)?.valid_from ??
       dayKey(serverNow() ?? Date.now(), timeZone),
   );
@@ -297,6 +304,9 @@ function ScheduleReviewForm({
     })),
   );
   const [acknowledged, setAcknowledged] = useState(false);
+  // A full, non-partial weekly upload is explicitly applied as a weekly snapshot.
+  // A partial OCR result requires the editor to opt in before replacing existing lessons.
+  const [replaceWeek, setReplaceWeek] = useState(cabinet && oneWeekUpload && !partialReview);
   const [problem, setProblem] = useState<string | null>(null);
   const reviewDays = weekKeys(weekStart);
   const [selectedDay, setSelectedDay] = useState(() => {
@@ -378,11 +388,13 @@ function ScheduleReviewForm({
     if (!official.data || official.data.schedule_version !== version)
       return setProblem('Расписание изменилось. Обновите данные');
     const readyRows = rows.filter(publishableLesson);
+    if (replaceWeek && skippedCount > 0)
+      return setProblem('Проверьте неполные строки перед заменой расписания недели');
     if (!readyRows.length)
       return setProblem('Нет пар с предметом, временем и датами. Исправьте хотя бы одну');
     const targets = [];
     for (const [index, value] of readyRows.entries()) {
-      if (!value.mapping) continue;
+      if (replaceWeek || !value.mapping) continue;
       const edit = official.data.lesson_edits.find((item) => item.lesson_id === value.mapping);
       if (!edit) return setProblem('Выбранная пара недоступна. Обновите расписание');
       targets.push({
@@ -407,6 +419,7 @@ function ScheduleReviewForm({
           subject_id: null,
         })),
         targets,
+        ...(replaceWeek ? { replace_week: true } : {}),
         ...(stale ? { acknowledge_schedule_change: true } : {}),
       },
       {
@@ -467,7 +480,7 @@ function ScheduleReviewForm({
       {editingIndex === null ? <div className="field review-week-field">
         <label>
           Неделя
-          <input type="date" value={weekStart} onChange={(event) => setWeekStart(event.target.value)} />
+          <input type="date" value={weekStart} disabled={oneWeekUpload} onChange={(event) => setWeekStart(event.target.value)} />
         </label>
       </div> : null}
       {official.isPending && weekStart && editingIndex === null ? (
@@ -753,6 +766,22 @@ function ScheduleReviewForm({
           ) : null}
           {mutation.isError && !conflict && editingIndex === null ? (
             <p className="review-error" role="alert">{confirmationError ?? 'Не удалось подтвердить расписание.'}</p>
+          ) : null}
+          {oneWeekUpload && initial.state === 'pending' && editingIndex === null ? (
+            <div className="review-week-replace">
+              <label className="review-replace-option">
+                <input type="checkbox" checked={replaceWeek} onChange={(event) => setReplaceWeek(event.target.checked)} />
+                <strong>Заменить расписание этой недели</strong>
+              </label>
+              <p>
+                После подтверждения прежние пары этой недели перестанут отображаться,
+                а распознанные пары займут их место. Другие недели не изменятся.
+                Перед публикацией проверьте, что на скриншоте есть все занятия.
+              </p>
+              {partialReview ? <p className="review-partial-warning">
+                Распознавание частичное: обязательно проверьте все дни перед полной заменой.
+              </p> : null}
+            </div>
           ) : null}
           {initial.state === 'pending' && editingIndex === null ? (
             <div className="review-submit">
