@@ -33,6 +33,8 @@ class Group(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     telegram_chat_id: Mapped[int] = mapped_column(BigInteger, unique=True)
     name: Mapped[str] = mapped_column(String(255))
+    # Official university group code, e.g. «Э-ОБ-385-04-26-02», independent of Telegram title.
+    academic_group_code: Mapped[str | None] = mapped_column(String(80))
     timezone: Mapped[str] = mapped_column(String(64))
     first_week_anchor: Mapped[date | None] = mapped_column(Date)
     # Bumped by every group timetable change; schedule_changes rows record the value they produced.
