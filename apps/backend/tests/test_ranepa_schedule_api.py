@@ -48,12 +48,16 @@ def test_preview_only_when_site_identifies_correct_group(client, monkeypatch):
         assert internal_uuid == UUID_GROUP and code == CODE
         day = f"{monday.month}/{monday.day}/{monday.year}"
         html = (
-            "<html><h1>" + CODE + "</h1><h2>"
-            + day + " Понедельник</h2>"
+            "<html><h1>"
+            + CODE
+            + "</h1><h2>"
+            + day
+            + " Понедельник</h2>"
             + "<div>09:00 - 10:20</div><div>305</div>"
             + "<div>Иностранный язык</div>"
             + "<div>Практические занятия</div><div>Иванова</div><div>"
-            + CODE + "</div></html>"
+            + CODE
+            + "</div></html>"
         )
         return PublicProbe(CODE, str(internal_uuid), 1, "f" * 64), html
 
