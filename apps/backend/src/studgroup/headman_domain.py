@@ -781,6 +781,8 @@ async def telegram_member(settings, group, uid):
 
 async def issue_invites(db, group, member, count):
     headman_only(member)
+    if group.academic_group_code_required and not group.academic_group_code:
+        raise StError("Сначала укажите официальный идентификатор группы РАНХиГС.")
     if not 1 <= count <= 10:
         raise StError("За один раз — от 1 до 10 приглашений.")
     if (
@@ -820,6 +822,8 @@ async def issue_group_link(db, group, member):
     locked = await db.scalar(select(Group).where(Group.id == group.id).with_for_update())
     if locked is None or locked.status != "active":
         raise StError("Группа недоступна.")
+    if locked.academic_group_code_required and not locked.academic_group_code:
+        raise StError("Сначала укажите официальный идентификатор группы РАНХиГС.")
     now = datetime.now(UTC)
     active = (
         await db.scalars(
