@@ -165,7 +165,9 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
 def test_a_bot_without_admin_rights_is_discovered_but_cannot_confirm_headman(
     foreman, monkeypatch
 ):
-    setup_bot(foreman, monkeypatch, {(NEW_CHAT, BOT): "member", (NEW_CHAT, ADDER): "creator"})
+    setup_bot(
+        foreman, monkeypatch, {(NEW_CHAT, BOT): "member", (NEW_CHAT, ADDER): "creator"}
+    )
     added_to_chat(foreman, status="member")
     assert new_group(foreman)[1] == []
     assert panel(foreman, ADDER) is None
