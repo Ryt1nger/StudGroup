@@ -18,6 +18,7 @@ from playwright.async_api import async_playwright
 
 from studgroup.ranepa_discovery import DiscoveryError, find_candidates
 from studgroup.ranepa_probe import SCHEDULE_URL, SourceAccessError
+from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_public import extract_public_schedule
 from studgroup.ranepa_schedule import group_code, normalized
 
@@ -50,7 +51,9 @@ async def live_discovery(code: str) -> dict:
     ui_errors = 0
 
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=True)
+        proxy_url = current_proxy_url()
+        options = {"proxy": playwright_proxy_settings(proxy_url)} if proxy_url else {}
+        browser = await playwright.chromium.launch(headless=True, **options)
         try:
             page = await browser.new_page(locale="ru-RU")
 

@@ -11,6 +11,7 @@ from uuid import UUID
 
 import httpx
 
+from studgroup.ranepa_proxy import current_proxy_url
 from studgroup.ranepa_schedule import group_code, normalized
 
 SCHEDULE_URL = "https://my.ranepa.ru/schedule/"
@@ -77,6 +78,7 @@ async def fetch_public_page(
     if owned:
         client = httpx.AsyncClient(
             timeout=15,
+            proxy=current_proxy_url(),
             trust_env=False,
             follow_redirects=False,
             headers={"Accept": "text/html"},
