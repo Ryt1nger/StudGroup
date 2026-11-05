@@ -20,10 +20,15 @@ NEW_CHAT = -100777
 BOT = 999
 
 
-def finish_group_identifier(client, uid=ADDER, value="Э-ОБ-385-04-26-02"):
+def finish_group_identifier(
+    client,
+    uid=ADDER,
+    value="Э-ОБ-385-04-26-02 (ЭМИТ) 38.03.05 Бизнес-информатика",
+):
     """Complete the new RANEPA identifier step before invitations."""
     assert "идентификатор группы РАНХиГС" in last(client)["text"]
     deliver(client, value, uid=uid)
+    assert "Официальный код: Э-ОБ-385-04-26-02" in last(client)["text"]
     assert "Да, сохранить" in labels(client)
     tap(client, "Да, сохранить", uid=uid)
 
@@ -170,6 +175,21 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
     added_to_chat(foreman)  # a repeated event changes nothing and says nothing
     assert new_group(foreman)[1] == [("headman", ADDER)]
     assert messages_to(foreman, NEW_CHAT) == []
+
+
+def test_legacy_headman_can_add_official_group_code_without_new_registration(foreman):
+    deliver(foreman, "/start", uid=1)
+    assert "Указать ID группы РАНХиГС" in labels(foreman)
+    tap(foreman, "Указать ID группы РАНХиГС", uid=1)
+    deliver(foreman, "неверный код", uid=1)
+    assert "Не удалось распознать код" in last(foreman)["text"]
+    deliver(foreman, "Э-ОБ-385-04-26-02", uid=1)
+    assert "Да, сохранить" in labels(foreman)
+    deliver(foreman, "/start", uid=1)
+    assert "Да, сохранить" in labels(foreman)  # confirm survives a restart
+    tap(foreman, "Да, сохранить", uid=1)
+    assert "Официальный ID РАНХиГС: Э-ОБ-385-04-26-02" in last(foreman)["text"]
+    assert "Создать приглашение" in labels(foreman)
 
 
 def test_a_bot_without_admin_rights_is_discovered_but_cannot_confirm_headman(foreman, monkeypatch):
