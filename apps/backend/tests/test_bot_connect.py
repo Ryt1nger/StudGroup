@@ -384,6 +384,27 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
     assert run(foreman, roles) == ["headman", "student"]
 
 
+def test_headman_can_skip_subgroups_after_issuing_an_invite(foreman, monkeypatch):
+    setup_bot(
+        foreman,
+        monkeypatch,
+        {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"},
+    )
+    added_to_chat(foreman)
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    tap(foreman, "Проверить: ИВТ-21", uid=ADDER)
+    tap(foreman, "Да, подключить", uid=ADDER)
+    tap(foreman, "Создать приглашение", uid=ADDER)
+    assert "Далее: подгруппы" in labels(foreman)
+    tap(foreman, "Далее: подгруппы", uid=ADDER)
+    assert "Да, настроить" in labels(foreman)
+    tap(foreman, "Нет, пропустить", uid=ADDER)
+    assert "Староста · ИВТ-21" in last(foreman)["text"]
+
+
 def test_a_deputy_gets_no_invite_button(foreman):
     async def make_deputy(db):
         (await db.scalar(select(Membership))).role = "deputy"
