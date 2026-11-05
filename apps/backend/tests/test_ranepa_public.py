@@ -18,8 +18,7 @@ def page(body):
 
 def card(room, name, kind, teacher):
     return "".join(
-        f"<div>{value}</div>"
-        for value in ["09 : 00 - 10 : 20", room, name, kind, teacher, CODE]
+        f"<div>{value}</div>" for value in ["09 : 00 - 10 : 20", room, name, kind, teacher, CODE]
     )
 
 
