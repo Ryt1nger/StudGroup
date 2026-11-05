@@ -527,11 +527,13 @@ async def redeem(db, session, settings, telegram_id, code, *, typed):
     if member and await subgroups.unanswered(db, member):
         await subgroup_choice(db, session, settings, member, group, joined=True)
     else:
+        message = f"Готово! Вы подключены к «{group.name}»."
+        if group.academic_group_code:
+            message += f"\nОфициальный ID РАНХиГС: {group.academic_group_code}"
         await screen(
             db,
             session,
-            f"Готово! Вы подключены к «{group.name}»."
-            + (f"\nОфициальный ID РАНХиГС: {group.academic_group_code}" if group.academic_group_code else ""),
+            message,
             [[app_button(settings)]],
             "done",
         )
