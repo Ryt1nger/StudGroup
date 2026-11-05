@@ -28,6 +28,40 @@ SOURCES = {
 ALLOWED_HOSTS = {"my.ranepa.ru", "lms.ranepa.ru"}
 
 
+async def select_group_in_interface(page, code: str) -> str:
+    """Follow only visible group controls; do not guess a university UUID."""
+    try:
+        tab = page.get_by_text("Академ. группы", exact=False).first
+        if await tab.is_visible():
+            await tab.click(timeout=2000)
+    except PlaywrightError:
+        return "group_tab_not_available"
+    for selector in (
+        'input[placeholder*="групп" i]',
+        'input[role="combobox"]',
+        'input[type="search"]',
+    ):
+        controls = page.locator(selector)
+        for index in range(min(await controls.count(), 4)):
+            control = controls.nth(index)
+            try:
+                if not await control.is_visible():
+                    continue
+                await control.fill(code, timeout=2500)
+                await page.wait_for_timeout(900)
+                options = page.get_by_role("option")
+                for option_index in range(min(await options.count(), 25)):
+                    option = options.nth(option_index)
+                    if code in await option.inner_text():
+                        await option.click(timeout=2500)
+                        await page.wait_for_timeout(1200)
+                        return "exact_group_selected"
+                return "group_search_entered"
+            except PlaywrightError:
+                continue
+    return "group_controls_not_found"
+
+
 async def inspect(mode: str, code: str, week_start: date) -> dict:
     """Follow the browser UI but fail closed on identity, login and challenge pages."""
     url = SOURCES[mode]
@@ -44,6 +78,8 @@ async def inspect(mode: str, code: str, week_start: date) -> dict:
                 return {"mode": mode, "status": "network_unavailable"}
             if urlparse(page.url).hostname not in ALLOWED_HOSTS:
                 return {"mode": mode, "status": "unexpected_redirect"}
+            if mode == "public":
+                await select_group_in_interface(page, code)
             try:
                 text = await page.locator("body").inner_text(timeout=5000)
                 password_input = await page.locator('input[type="password"]').count() > 0
