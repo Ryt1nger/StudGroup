@@ -812,7 +812,7 @@ function ScheduleReviewForm({
                 <label className="review-replace-option review-replace-risk">
                   <input type="checkbox" checked={acknowledgedMissingLessons}
                     onChange={(event) => setAcknowledgedMissingLessons(event.target.checked)} />
-                  <span>Понимаю, что после замены на этой неделе будет на {officialActiveCount - publishableCount} пар меньше.</span>
+                  <span>Понимаю, что после замены количество занятий на этой неделе уменьшится.</span>
                 </label>
               ) : null}
               {partialReview ? <p className="review-partial-warning">
