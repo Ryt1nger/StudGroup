@@ -416,7 +416,9 @@ async def confirm(db, group_id, user, member, ident, body, now=None, *, cabinet=
         if overlaps:
             if len(overlaps) != 1 or len(exact) != 1:
                 raise ApiError(
-                    "schedule_mapping_required", "Нужно явно выбрать заменяемое занятие", 409
+                    "schedule_mapping_required",
+                    "Пара пересекается с действующим расписанием. Выберите заменяемую пару или замените расписание недели.",
+                    409,
                 )
             pattern = exact[0]
             key = f"p:{pattern.id}"
