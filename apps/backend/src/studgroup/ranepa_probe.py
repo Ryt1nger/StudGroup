@@ -60,9 +60,7 @@ async def probe_public(
     client: httpx.AsyncClient | None = None,
 ) -> PublicProbe:
     """Test a verified group UUID without guessing IDs or defeating login/CAPTCHA."""
-    result, _html = await fetch_public_page(
-        internal_group_uuid, expected_group_code, client=client
-    )
+    result, _html = await fetch_public_page(internal_group_uuid, expected_group_code, client=client)
     return result
 
 
