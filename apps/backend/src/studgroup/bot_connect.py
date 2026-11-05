@@ -139,6 +139,7 @@ async def ensure_group(db, chat_id, title):
             id=uuid.uuid4(),
             telegram_chat_id=chat_id,
             name=(title or "").strip()[:255] or "Группа",
+            academic_group_code_required=True,
             timezone=DEFAULT_TIMEZONE,
             status="active",
             pilot_authorized=True,
