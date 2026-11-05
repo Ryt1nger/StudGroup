@@ -162,9 +162,7 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
     assert messages_to(foreman, NEW_CHAT) == []
 
 
-def test_a_bot_without_admin_rights_is_discovered_but_cannot_confirm_headman(
-    foreman, monkeypatch
-):
+def test_a_bot_without_admin_rights_is_discovered_but_cannot_confirm_headman(foreman, monkeypatch):
     setup_bot(
         foreman,
         monkeypatch,
