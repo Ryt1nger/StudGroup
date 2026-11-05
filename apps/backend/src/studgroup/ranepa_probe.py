@@ -1,6 +1,9 @@
 """Read-only probe of the public RANEPA schedule page; never writes calendar data."""
 
+import argparse
+import asyncio
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -97,3 +100,30 @@ async def probe_public(
     finally:
         if owned:
             await client.aclose()
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Read-only RANEPA public timetable probe")
+    parser.add_argument("--group-code", required=True)
+    parser.add_argument("--group-uuid", type=UUID, required=True)
+    args = parser.parse_args()
+    try:
+        result = asyncio.run(probe_public(args.group_uuid, args.group_code))
+    except SourceAccessError as error:
+        print(json.dumps({"status": "blocked", "reason": str(error)}))
+        raise SystemExit(2) from None
+    print(
+        json.dumps(
+            {
+                "status": "verified" if result.has_lesson_candidates else "no_lesson_candidates",
+                "group_code": result.group_code,
+                "group_uuid": result.internal_group_uuid,
+                "candidate_time_ranges": result.pair_time_ranges,
+                "source_sha256": result.page_sha256,
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()
