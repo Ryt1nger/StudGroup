@@ -163,6 +163,8 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
     assert new_group(foreman)[1] == []
     tap(foreman, "Да, подключить", uid=ADDER)
     assert new_group(foreman)[1] == [("headman", ADDER)]
+    assert new_group(foreman)[0].academic_group_code_required
+    assert "Создать приглашение" not in labels(foreman)
     finish_group_identifier(foreman)
     assert panel(foreman, ADDER)["text"].startswith("Готово! Группа «ИВТ-21» подключена")
     assert new_group(foreman)[0].academic_group_code == "Э-ОБ-385-04-26-02"
@@ -202,6 +204,7 @@ def test_ranepa_code_can_be_suggested_from_telegram_title(foreman, monkeypatch):
 
 def test_legacy_headman_can_add_official_group_code_without_new_registration(foreman):
     deliver(foreman, "/start", uid=1)
+    assert "Создать приглашение" in labels(foreman)
     assert "Указать ID группы РАНХиГС" in labels(foreman)
     tap(foreman, "Указать ID группы РАНХиГС", uid=1)
     deliver(foreman, "неверный код", uid=1)
