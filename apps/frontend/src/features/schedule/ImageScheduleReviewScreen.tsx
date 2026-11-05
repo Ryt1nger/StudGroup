@@ -331,7 +331,7 @@ function ScheduleReviewForm({
     setDraftEdit(null);
     const next = new URLSearchParams(searchParams);
     next.delete('edit');
-    setSearchParams(next);
+    setSearchParams(next, { replace: true });
   }
   const markedDays = new Set(
     reviewDays.filter((_day, index) => rows.some((value) => value.row.weekday === index)),
@@ -431,9 +431,7 @@ function ScheduleReviewForm({
       },
       {
         onSuccess: () => {
-          const historyIndex = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-          if (historyIndex > 0) void navigate(-1);
-          else void navigate('/schedule/manage', { replace: true });
+          void navigate('/schedule/manage', { replace: true });
         },
       },
     );
