@@ -31,6 +31,8 @@ def sent(client):
     ("text", "topic"),
     [
         ("/start tariffs", "tariffs"),
+        ("/start about", "about"),
+        ("/start partners", "partners"),
         ("/start howto", "howto"),
         ("/start help", "howto"),
         ("/start connect", "connect"),
@@ -80,6 +82,8 @@ def buttons(frame):
     ("text", "needle"),
     [
         ("/start tariffs", "Тарифы"),
+        ("/start about", "О нас"),
+        ("/start partners", "Партнёрка"),
         ("/start howto", "Как пользоваться"),
         ("/start connect", "Подключение группы"),
         ("/start faq", "Частые вопросы"),
@@ -97,7 +101,7 @@ def test_topics_open_on_the_start_panel_for_any_private_user(client, text, needl
     assert "‹ Назад" in [b["text"] for b in buttons(frame)]
 
 
-@pytest.mark.parametrize("topic", ["tariffs", "howto", "connect", "faq", "support"])
+@pytest.mark.parametrize("topic", ["about", "partners", "tariffs", "howto", "connect", "faq", "support"])
 def test_no_topic_asks_people_to_type_a_command(topic):
     import re
 
@@ -140,5 +144,7 @@ def test_bare_start_opens_the_welcome_panel_with_buttons(client):
     private(client, "/start", uid=2)
     frame = panel_frames(client)[-1]
     labels = [b["text"] for row in frame["reply_markup"]["inline_keyboard"] for b in row]
-    assert "Я студент" in labels and "Я староста" in labels
+    assert labels == [
+        "Подключить группу", "О нас", "Помощь", "Поддержка", "Партнёрка", "Тарифы"
+    ]
     assert "Команды:" not in frame["text"]
