@@ -805,3 +805,7 @@ a.pcard:active { transform: scale(.98); }
 .review-replace-counts strong { color: var(--label); font-weight: 700; }
 .review-replace-risk { margin-top: 16px; padding: 12px; border: 1px solid var(--card-edge); border-radius: 14px; background: var(--card); }
 .review-replace-risk span { min-width: 0; }
+
+.review-upload-week { margin: 18px 0 20px; }
+.review-upload-week input { margin-top: 8px; }
+.review-upload-week small { display: block; margin: 7px 4px 0; font-size: 12px; line-height: 1.5; color: var(--label-2); }
