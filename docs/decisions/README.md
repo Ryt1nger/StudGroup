@@ -32,3 +32,7 @@ Accepted decisions:
 
 - [ADR-013: Versioned visual evidence inside C+](ADR-013-versioned-image-analysis.md): offline implementation, independent image passes and safe publication gates.
 - [ADR-014: Target-grounded card mutations](ADR-014-target-grounded-card-mutations.md)
+
+Proposed decisions:
+
+- [ADR-015: Private Supabase database for the existing backend](ADR-015-supabase-private-backend-database.md)
