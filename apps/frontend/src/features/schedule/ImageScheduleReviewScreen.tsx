@@ -307,6 +307,7 @@ function ScheduleReviewForm({
   // A full, non-partial weekly upload is explicitly applied as a weekly snapshot.
   // A partial OCR result requires the editor to opt in before replacing existing lessons.
   const [replaceWeek, setReplaceWeek] = useState(cabinet && oneWeekUpload && !partialReview);
+  const [acknowledgedMissingLessons, setAcknowledgedMissingLessons] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const reviewDays = weekKeys(weekStart);
   const [selectedDay, setSelectedDay] = useState(() => {
@@ -348,6 +349,8 @@ function ScheduleReviewForm({
   const incompleteCount = rows.filter(incompleteLesson).length;
   const publishableCount = rows.filter(publishableLesson).length;
   const skippedCount = rows.length - publishableCount;
+  const officialActiveCount = official.data?.schedule.lessons.filter((lesson) => lesson.status === 'scheduled').length ?? 0;
+  const fewerLessons = replaceWeek && publishableCount < officialActiveCount;
 
   const stale = version !== initial.schedule_version;
   const conflict = isApiRequestError(mutation.error) && mutation.error.code === 'revision_conflict';
@@ -402,6 +405,8 @@ function ScheduleReviewForm({
     const readyRows = rows.filter(publishableLesson);
     if (replaceWeek && skippedCount > 0)
       return setProblem('Проверьте неполные строки перед заменой расписания недели');
+    if (fewerLessons && !acknowledgedMissingLessons)
+      return setProblem('Подтвердите, что новые данные содержат меньше пар, чем действующее расписание');
     if (!readyRows.length)
       return setProblem('Нет пар с предметом, временем и датами. Исправьте хотя бы одну');
     const targets = [];
@@ -780,14 +785,28 @@ function ScheduleReviewForm({
           {oneWeekUpload && initial.state === 'pending' && editingIndex === null ? (
             <div className="review-week-replace">
               <label className="review-replace-option">
-                <input type="checkbox" checked={replaceWeek} onChange={(event) => setReplaceWeek(event.target.checked)} />
+                <input type="checkbox" checked={replaceWeek} onChange={(event) => {
+                  setReplaceWeek(event.target.checked);
+                  setAcknowledgedMissingLessons(false);
+                }} />
                 <strong>Заменить расписание этой недели</strong>
               </label>
+              <div className="review-replace-counts">
+                <span>Сейчас <strong>{officialActiveCount} пар</strong></span>
+                <span>После обновления <strong>{publishableCount} пар</strong></span>
+              </div>
               <p>
-                После подтверждения прежние пары этой недели перестанут отображаться,
-                а распознанные пары займут их место. Другие недели не изменятся.
-                Перед публикацией проверьте, что на скриншоте есть все занятия.
+                При полной замене прежние занятия этой недели будут отменены,
+                а подтверждённые пары добавятся в расписание. Другие недели не изменятся.
+                Проверьте, что на скриншоте есть все занятия.
               </p>
+              {fewerLessons ? (
+                <label className="review-replace-option review-replace-risk">
+                  <input type="checkbox" checked={acknowledgedMissingLessons}
+                    onChange={(event) => setAcknowledgedMissingLessons(event.target.checked)} />
+                  <span>Понимаю, что после замены на этой неделе будет на {officialActiveCount - publishableCount} пар меньше.</span>
+                </label>
+              ) : null}
               {partialReview ? <p className="review-partial-warning">
                 Распознавание частичное: обязательно проверьте все дни перед полной заменой.
               </p> : null}
