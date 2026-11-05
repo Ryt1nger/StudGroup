@@ -1216,6 +1216,10 @@ export type ConfirmImageScheduleSuggestionData = {
          * Explicit editor re-review after an official schedule change; requires corrected_rows and the current expected_schedule_version. Does not run AI.
          */
         acknowledge_schedule_change?: boolean;
+        /**
+         * Private cabinet one_week uploads only. Explicitly replace the selected week's visible occurrences with corrected_rows while leaving other weeks unchanged. No AI is run.
+         */
+        replace_week?: boolean;
     };
     path: {
         id: string;
