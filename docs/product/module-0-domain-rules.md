@@ -55,14 +55,19 @@ Module 0 defines behavior and domain meaning. Technology choices belong to Modul
 
 ### Connecting a group
 
-- The headman adds the bot as an administrator with only the required minimum permissions and runs `/connect`.
-- The backend verifies that the caller is a Telegram group administrator before creating the StudGroup group and assigning the headman role.
+- A new user opens `/start` in the private bot chat. «Подключить группу» → «Я староста» starts the headman path; all navigation is through Telegram buttons. The only user-facing commands are `/start` and the separately scoped `/admin`.
+- The headman adds the bot as an administrator with only the required minimum permissions to an existing Telegram group. Adding the bot discovers its chat; **the person who added it does not automatically become headman**.
+- Before assigning headman, the backend positively verifies that the person and bot are administrators, shows the group title, and requires a private button confirmation. Unknown administrator status must not grant access.
+- For RANEPA groups, the headman also supplies or confirms the official academic group identifier, for example `Э-ОБ-385-04-26-02`, independently of the mutable Telegram chat title. If the title contains the code, it may be suggested but still needs explicit approval. The institute, programme number and programme title are not part of the identifier.
+- This identifier is stored in `groups.academic_group_code` for later academic systems matching. It is not represented as verified against RANEPA without an external check.
+- Existing connected groups without that identifier must remain accessible and may add the identifier later without reconnecting.
 - During the closed pilot, group creation additionally requires owner authorization through an allowlist or pilot code.
 
 ### Joining and switching groups
 
-- A student joins through `/start` using a unique one-time invitation code or link generated in a batch by the headman.
-- An invitation is bound to one group, expires after 24 hours, may be revoked, and is consumed by the first successful activation.
+- A student joins through `/start` using the headman's shared, revocable group link. The backend also accepts previously issued unique one-time invitations.
+- A shared link is bound to exactly one group, can be used by multiple verified Telegram members, and can be rotated/revoked by the headman. The current implementation sets a 365-day maximum validity. Legacy one-time codes continue to expire after 24 hours and are consumed on successful activation.
+- An existing active membership in another group blocks silent switching. Switching requires an explicit, separate confirmation flow.
 - The backend verifies actual membership in the Telegram chat before activating access.
 - Manual approval by the headman is not required.
 - Switching groups requires a warning and explicit confirmation.

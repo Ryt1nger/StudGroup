@@ -11,13 +11,26 @@ from test_ingestion import send
 
 from studgroup import bot_admin
 from studgroup import headman_domain as domain
-from studgroup.models import BotOutbox, Group, GroupAIProfile, Membership, User
+from studgroup.models import BotOutbox, Group, GroupAIProfile, Membership, RawMessage, User
 
 pytest_plugins = ["test_schedule_api"]
 ADDER = 77
 OTHER = 78
 NEW_CHAT = -100777
 BOT = 999
+
+
+def finish_group_identifier(
+    client,
+    uid=ADDER,
+    value="Э-ОБ-385-04-26-02 (ЭМИТ) 38.03.05 Бизнес-информатика",
+):
+    """Complete the new RANEPA identifier step before invitations."""
+    assert "идентификатор группы РАНХиГС" in last(client)["text"]
+    deliver(client, value, uid=uid)
+    assert "Официальный код: Э-ОБ-385-04-26-02" in last(client)["text"]
+    assert "Да, сохранить" in labels(client)
+    tap(client, "Да, сохранить", uid=uid)
 
 
 def setup_bot(client, monkeypatch, statuses, *, list_works=True, username="studgroup_rf_bot"):
@@ -128,19 +141,42 @@ def new_group(client):
     return run(client, read)
 
 
-def test_whoever_adds_the_bot_becomes_the_headman_and_the_bot_stays_silent(foreman, monkeypatch):
+def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(foreman, monkeypatch):
     setup_bot(
         foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"}
     )
     before = group_count(foreman)
-    added_to_chat(foreman)  # nobody pressed «Я староста» first: the adder is enough
+    added_to_chat(foreman)
     group, members = new_group(foreman)
     assert group_count(foreman) == before + 1
-    assert group.name == "ИВТ-21" and group.pilot_authorized and group.status == "active"
+    assert group.name == "ИВТ-21" and not group.pilot_authorized and group.status == "active"
     assert group.bot_added_at is not None
-    assert members == [("headman", ADDER)]
-    assert messages_to(foreman, NEW_CHAT) == []  # not a word in the group
+    assert members == []  # adding the bot never automatically grants role
+    assert panel(foreman, ADDER) is None
+    assert messages_to(foreman, NEW_CHAT) == []
+    typed_in_chat(foreman, "домашнее задание на завтра", by=OTHER)
+
+    async def recorded(db):
+        return await db.scalar(
+            select(func.count()).select_from(RawMessage).where(RawMessage.group_id == group.id)
+        )
+
+    assert run(foreman, recorded) == 0  # no collection or AI before confirmation
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    tap(foreman, "Проверить: ИВТ-21", uid=ADDER)
+    assert "Да, подключить" in labels(foreman)
+    assert new_group(foreman)[1] == []
+    tap(foreman, "Да, подключить", uid=ADDER)
+    assert new_group(foreman)[1] == [("headman", ADDER)]
+    assert new_group(foreman)[0].pilot_authorized
+    assert new_group(foreman)[0].academic_group_code_required
+    assert "Создать приглашение" not in labels(foreman)
+    finish_group_identifier(foreman)
     assert panel(foreman, ADDER)["text"].startswith("Готово! Группа «ИВТ-21» подключена")
+    assert new_group(foreman)[0].academic_group_code == "Э-ОБ-385-04-26-02"
     assert "Создать приглашение" in json.dumps(panel(foreman, ADDER), ensure_ascii=False)
 
     async def profile(db):
@@ -152,20 +188,69 @@ def test_whoever_adds_the_bot_becomes_the_headman_and_the_bot_stays_silent(forem
     assert messages_to(foreman, NEW_CHAT) == []
 
 
-def test_a_bot_that_is_not_an_administrator_still_connects_and_the_headman_is_told(
-    foreman, monkeypatch
-):
-    setup_bot(foreman, monkeypatch, {(NEW_CHAT, BOT): "member", (NEW_CHAT, ADDER): "creator"})
+def test_ranepa_code_can_be_suggested_from_telegram_title(foreman, monkeypatch):
+    setup_bot(
+        foreman,
+        monkeypatch,
+        {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"},
+    )
+    added_to_chat(
+        foreman,
+        title="Э-ОБ-385-04-26-02 (ЭМИТ) 38.03.05 Бизнес-информатика",
+    )
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    tap(foreman, "Проверить:", uid=ADDER)
+    tap(foreman, "Да, подключить", uid=ADDER)
+    assert "Подтвердить Э-ОБ-385-04-26-02" in labels(foreman)
+    tap(foreman, "Подтвердить Э-ОБ-385-04-26-02", uid=ADDER)
+    assert "Официальный код: Э-ОБ-385-04-26-02" in last(foreman)["text"]
+    tap(foreman, "Да, сохранить", uid=ADDER)
+    assert new_group(foreman)[0].academic_group_code == "Э-ОБ-385-04-26-02"
+
+
+def test_legacy_headman_can_add_official_group_code_without_new_registration(foreman):
+    deliver(foreman, "/start", uid=1)
+    assert "Создать приглашение" in labels(foreman)
+    assert "Указать ID группы РАНХиГС" in labels(foreman)
+    tap(foreman, "Указать ID группы РАНХиГС", uid=1)
+    deliver(foreman, "неверный код", uid=1)
+    assert "Не удалось распознать код" in last(foreman)["text"]
+    deliver(foreman, "Э-ОБ-385-04-26-02", uid=1)
+    assert "Да, сохранить" in labels(foreman)
+    deliver(foreman, "/start", uid=1)
+    assert "Да, сохранить" in labels(foreman)  # confirm survives a restart
+    tap(foreman, "Да, сохранить", uid=1)
+    assert "Официальный ID РАНХиГС: Э-ОБ-385-04-26-02" in last(foreman)["text"]
+    assert "Создать приглашение" in labels(foreman)
+
+
+def test_a_bot_without_admin_rights_is_discovered_but_cannot_confirm_headman(foreman, monkeypatch):
+    setup_bot(
+        foreman,
+        monkeypatch,
+        {(NEW_CHAT, BOT): "member", (NEW_CHAT, ADDER): "creator"},
+    )
     added_to_chat(foreman, status="member")
-    assert new_group(foreman)[1] == [("headman", ADDER)]
-    assert "Сделайте бота администратором" in panel(foreman, ADDER)["text"]
+    assert new_group(foreman)[1] == []
+    assert panel(foreman, ADDER) is None
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    tap(foreman, "Проверить: ИВТ-21", uid=ADDER)
+    tap(foreman, "Да, подключить", uid=ADDER)
+    assert "назначьте StudGroup администратором" in last(foreman)["text"]
+    assert new_group(foreman)[1] == []
     assert messages_to(foreman, NEW_CHAT) == []
 
 
 def test_the_service_message_about_the_new_member_names_the_adder(foreman, monkeypatch):
     setup_bot(foreman, monkeypatch, {(NEW_CHAT, ADDER): "administrator"})
     typed_in_chat(foreman, None, by=ADDER, new_chat_members=[{"id": BOT, "is_bot": True}])
-    assert new_group(foreman)[1] == [("headman", ADDER)]
+    assert new_group(foreman)[1] == []
 
 
 def test_an_ordinary_member_who_adds_the_bot_is_not_made_headman(foreman, monkeypatch):
@@ -177,10 +262,10 @@ def test_an_ordinary_member_who_adds_the_bot_is_not_made_headman(foreman, monkey
     assert panel(foreman, ADDER) is None
 
 
-def test_when_telegram_cannot_say_the_adder_is_trusted(foreman, monkeypatch):
+def test_when_telegram_cannot_confirm_rights_the_adder_is_not_trusted(foreman, monkeypatch):
     setup_bot(foreman, monkeypatch, {}, list_works=False)
     added_to_chat(foreman)
-    assert new_group(foreman)[1] == [("headman", ADDER)]
+    assert new_group(foreman)[1] == []
 
 
 def test_a_group_that_already_has_a_headman_is_never_touched(foreman, monkeypatch):
@@ -217,6 +302,13 @@ def test_start_typed_in_a_headmanless_group_needs_a_confirmed_administrator(fore
     typed_in_chat(foreman, "/start@studgroup_rf_bot", by=ADDER)
     assert new_group(foreman)[1] == []  # a member typing a command proves nothing
     typed_in_chat(foreman, "/start@studgroup_rf_bot", by=OTHER)
+    assert new_group(foreman)[1] == []
+    deliver(foreman, "/start", uid=OTHER)
+    tap(foreman, "Подключить группу", uid=OTHER)
+    tap(foreman, "Я староста", uid=OTHER)
+    tap(foreman, "Нет промокода", uid=OTHER)
+    tap(foreman, "Проверить: ИВТ-21", uid=OTHER)
+    tap(foreman, "Да, подключить", uid=OTHER)
     assert new_group(foreman)[1] == [("headman", OTHER)]
     assert messages_to(foreman, NEW_CHAT) == []
 
@@ -238,10 +330,14 @@ def test_an_administrator_takes_a_headmanless_group_with_the_start_screen(forema
     added_to_chat(foreman)
     assert new_group(foreman)[1] == []
     deliver(foreman, "/start", uid=OTHER)
+    tap(foreman, "Подключить группу", uid=OTHER)
     tap(foreman, "Я староста", uid=OTHER)
-    assert "Стать старостой: ИВТ-21" in labels(foreman)
-    tap(foreman, "Стать старостой", uid=OTHER)
+    tap(foreman, "Нет промокода", uid=OTHER)
+    assert "Проверить: ИВТ-21" in labels(foreman)
+    tap(foreman, "Проверить: ИВТ-21", uid=OTHER)
+    tap(foreman, "Да, подключить", uid=OTHER)
     assert new_group(foreman)[1] == [("headman", OTHER)]
+    finish_group_identifier(foreman, uid=OTHER)
     assert "Группа «ИВТ-21» подключена" in last(foreman)["text"]
 
 
@@ -249,7 +345,9 @@ def test_only_groups_the_person_administers_are_offered(foreman, monkeypatch):
     setup_bot(foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "member"})
     added_to_chat(foreman)
     deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
     tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
     assert not any("ИВТ-21" in label for label in labels(foreman))
     assert "ИВТ-21" not in last(foreman)["text"]
 
@@ -265,13 +363,16 @@ def test_the_role_cannot_be_taken_twice_even_with_a_stale_button(foreman, monkey
     added_to_chat(foreman)
     for uid in (OTHER, 79):
         deliver(foreman, "/start", uid=uid)
+        tap(foreman, "Подключить группу", uid=uid)
         tap(foreman, "Я староста", uid=uid)
-        assert "Стать старостой: ИВТ-21" in labels(foreman)  # both were offered the group
-    tap(foreman, "Стать старостой", uid=79)  # 79 picks first with the button they were shown
+        tap(foreman, "Нет промокода", uid=uid)
+        assert "Проверить: ИВТ-21" in labels(foreman)
+        tap(foreman, "Проверить: ИВТ-21", uid=uid)
+    tap(foreman, "Да, подключить", uid=79)
     assert new_group(foreman)[1] == [("headman", 79)]
     # OTHER presses the button that was valid a moment ago
     markup = panel(foreman, OTHER)["reply_markup"]["inline_keyboard"]
-    stale = next(b for row in markup for b in row if "Стать старостой" in b["text"])
+    stale = next(b for row in markup for b in row if "Да, подключить" in b["text"])
     deliver(foreman, callback=stale["callback_data"], uid=OTHER)
     assert new_group(foreman)[1] == [("headman", 79)]
     assert "уже есть староста" in panel(foreman, OTHER)["text"]
@@ -286,24 +387,31 @@ def test_a_group_without_a_headman_is_marked_in_the_owner_list(foreman, monkeypa
     private(foreman, "/admin", uid=9001, update=900)
     markup = last(foreman)["reply_markup"]["inline_keyboard"]
     names = [button["text"] for row in markup for button in row]
-    assert any(name.startswith("ИВТ-21") and "староста не выбран" in name for name in names)
+    assert any(
+        name.startswith("ИВТ-21") and "ожидает активации" in name and "староста не выбран" in name
+        for name in names
+    )
     assert any(name == "Группа" for name in names)  # the pilot group has its headman
 
 
 def test_the_headman_screen_explains_that_adding_the_bot_is_enough(foreman, monkeypatch):
     setup_bot(foreman, monkeypatch, {})
     deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
     tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
     frame = last(foreman)
-    assert "тот, кто добавил бота, сразу становится" in frame["text"]
+    assert "Роль старосты выдаётся только после проверки" in frame["text"]
     assert "Бот в группе ничего не пишет" in frame["text"]
     assert frame["reply_markup"]["inline_keyboard"][0][0]["url"] == (
         "https://t.me/studgroup_rf_bot?startgroup=connect"
     )
     foreman.app.state.settings.bot_username = ""
     deliver(foreman, "/start", uid=OTHER)
+    tap(foreman, "Подключить группу", uid=OTHER)
     tap(foreman, "Я староста", uid=OTHER)
-    assert labels(foreman) == ["‹ Назад"]
+    tap(foreman, "Нет промокода", uid=OTHER)
+    assert labels(foreman) == ["Проверить подключение", "‹ Назад"]
 
 
 def test_the_deep_link_opens_the_headman_screen(foreman, monkeypatch):
@@ -317,6 +425,13 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
         foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"}
     )
     added_to_chat(foreman)
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    tap(foreman, "Проверить: ИВТ-21", uid=ADDER)
+    tap(foreman, "Да, подключить", uid=ADDER)
+    finish_group_identifier(foreman)
     tap(foreman, "Создать приглашение", uid=ADDER)
     text = last(foreman)["text"]
     link = next(line for line in text.splitlines() if line.startswith("https://t.me/"))
@@ -335,6 +450,28 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
         return sorted(rows.scalars())
 
     assert run(foreman, roles) == ["headman", "student"]
+
+
+def test_headman_can_skip_subgroups_after_issuing_an_invite(foreman, monkeypatch):
+    setup_bot(
+        foreman,
+        monkeypatch,
+        {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"},
+    )
+    added_to_chat(foreman)
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    tap(foreman, "Проверить: ИВТ-21", uid=ADDER)
+    tap(foreman, "Да, подключить", uid=ADDER)
+    finish_group_identifier(foreman)
+    tap(foreman, "Создать приглашение", uid=ADDER)
+    assert "Далее: подгруппы" in labels(foreman)
+    tap(foreman, "Далее: подгруппы", uid=ADDER)
+    assert "Да, настроить" in labels(foreman)
+    tap(foreman, "Нет, пропустить", uid=ADDER)
+    assert "Староста · ИВТ-21" in last(foreman)["text"]
 
 
 def test_a_deputy_gets_no_invite_button(foreman):

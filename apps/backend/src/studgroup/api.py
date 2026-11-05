@@ -119,6 +119,7 @@ async def bootstrap(
             "group": {
                 "id": group.id,
                 "name": group.name,
+                "academic_group_code": group.academic_group_code,
                 "timezone": group.timezone,
                 "status": group.status,
                 "pilot_authorized": group.pilot_authorized,

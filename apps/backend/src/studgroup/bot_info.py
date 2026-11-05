@@ -1,4 +1,4 @@
-"""Public info topics: tariffs, how-to, connect, FAQ, support.
+"""Public informational topics for the Telegram bot: about, help, support, partners and tariffs.
 
 Reachable from buttons of the /start panel, by the old commands (/tariffs, /help, /connect, /faq,
 /support) and by Telegram deep links ``https://t.me/<bot>?start=<topic>`` used by the landing page;
@@ -20,6 +20,8 @@ COMMANDS = {
 # to the headman invitation flow and must keep falling through to it.
 PAYLOADS = {
     "tariffs": "tariffs",
+    "about": "about",
+    "partners": "partners",
     "howto": "howto",
     "help": "howto",
     "connect": "connect",
@@ -41,7 +43,23 @@ def topic_for(text):
 
 def render(topic, support_contact=""):
     contact = (support_contact or "").strip()
-    if topic == "tariffs":
+    if topic == "about":
+        body = (
+            "О нас\n\n"
+            "StudGroup помогает учебным группам не терять важное в Telegram. "
+            "Сервис собирает задания, сроки, расписание и события в приложении, "
+            "которое открывается прямо из Telegram.\n\n"
+            "Староста подключает чат, а студенты получают доступ по приглашению "
+            "после проверки участия в группе."
+        )
+    elif topic == "partners":
+        body = (
+            "Партнёрка\n\n"
+            "Партнёрская программа StudGroup готовится. "
+            "Условия участия и вознаграждения пока не опубликованы. "
+            "Когда программу запустят, информация появится здесь."
+        )
+    elif topic == "tariffs":
         body = (
             "Тарифы\n\n"
             "Тарифы StudGroup скоро появятся. Сейчас приложение работает в закрытом пилоте, "
@@ -64,10 +82,13 @@ def render(topic, support_contact=""):
     elif topic == "connect":
         body = (
             "Подключение группы\n\n"
-            "Студент: возьмите у старосты ссылку-приглашение (она действует 24 часа и "
-            "срабатывает один раз) и нажмите на неё. Подключиться можно только к одной группе.\n\n"
-            "Староста: на стартовом экране бота нажмите «Я староста» и добавьте бота "
-            "администратором в чат группы. Группа подключится сразу."
+            "Студент: возьмите у старосты групповую ссылку-приглашение и нажмите на неё. "
+            "Бот проверит, что вы состоите в учебном Telegram-чате. Подключиться можно "
+            "только к одной группе. Ранее выданные одноразовые приглашения тоже работают "
+            "до истечения своего срока.\n\n"
+            "Староста: нажмите «Подключить группу» → «Я староста», добавьте бота "
+            "администратором существующего чата, проверьте права, подтвердите группу "
+            "и укажите официальный идентификатор РАНХиГС перед отправкой приглашений."
         )
         if contact:
             body += f"\n\nВопросы: {contact}"

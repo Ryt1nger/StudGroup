@@ -66,7 +66,9 @@ async def menu(db, session, group):
     await screen(
         db,
         session,
-        f"Староста · {group.name}\nВыбери раздел. Изменения сохраняются только после подтверждения.",
+        f"Староста · {group.name}\n"
+        f"ID РАНХиГС: {group.academic_group_code or 'не указан'}\n"
+        "Выбери раздел. Изменения сохраняются только после подтверждения.",
         [
             [(f"Требует проверки · {len(questions)}", "review")],
             [("Домашние задания", "tasks")],
@@ -100,8 +102,9 @@ async def groups(db, session, forward=None):
         await screen(
             db,
             session,
-            "Нет роли старосты/помощника. Староста становится им, подключив группу кнопкой "
-            "«Я староста» на стартовом экране; помощника назначает владелец проекта.",
+            "Нет роли старосты/помощника. Чтобы подключить учебную группу, откройте "
+            "стартовое меню и нажмите «Подключить группу» → «Я староста». "
+            "Помощника назначает действующий староста.",
             [],
             "closed",
         )
@@ -408,7 +411,11 @@ async def settings_screen(db, session, group, member):
     await screen(
         db,
         session,
-        f"Часовой пояс: {group.timezone}\nЛичные вопросы: {'включены' if enabled else 'выключены'}\nВремя вопросов: {config.digest_times if config else '09:00'}\nНе более двух непустых подборок в день; ручная работа доступна при выключенном ИИ.",
+        f"Официальный ID РАНХиГС: {group.academic_group_code or 'не указан'}\n"
+        f"Часовой пояс: {group.timezone}\n"
+        f"Личные вопросы: {'включены' if enabled else 'выключены'}\n"
+        f"Время вопросов: {config.digest_times if config else '09:00'}\n"
+        "Не более двух непустых подборок в день; ручная работа доступна при выключенном ИИ.",
         [
             [("Выключить вопросы" if enabled else "Включить вопросы", "toggle_questions")],
             [("Время вопросов", "digest_times")],
@@ -1302,7 +1309,8 @@ async def typed(db, session, group, user, member, data, text, message, settings)
                 "subgroup_signals",
             )
         else:
-            names = await subgroups.suggest_names(settings, data["subject"], signals)
+            # Subgroup setup must not spend AI tokens or invent labels during onboarding.
+            names = [subgroups.fallback_name(n + 1, items) for n, items in enumerate(signals)]
             await subgroup_draft_screen(db, session, {**data, "signals": signals, "names": names})
     elif field == "subgroup_draft_name":
         domain.headman_only(member)

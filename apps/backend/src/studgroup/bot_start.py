@@ -26,12 +26,22 @@ from studgroup import bot_info, bot_panels, subgroups
 from studgroup import headman_domain as domain
 from studgroup.bot_admin import enqueue, say
 from studgroup.homework import utc
-from studgroup.models import Group, HeadmanSession, Membership, StartSession, User
+from studgroup.models import (
+    Group,
+    GroupInvitation,
+    HeadmanSession,
+    Membership,
+    StartSession,
+    User,
+    UserProfile,
+)
 
 SESSION_MINUTES = 30
 CLAIM_HOURS = 24  # how long «Я староста» waits for the bot to be added to a group
 INFO_TOPICS = {
+    "info_about": "about",
     "info_howto": "howto",
+    "info_partners": "partners",
     "info_tariffs": "tariffs",
     "info_connect": "connect",
     "info_faq": "faq",
@@ -45,6 +55,18 @@ TOPIC_LINKS = {
 }
 _LINK_CODE = re.compile(r"invite_([A-Za-z0-9_-]{20,64})")
 _BARE_CODE = re.compile(r"[A-Za-z0-9_-]{20,64}")
+
+# RANEPA codes can vary by intake. We validate a code, not its meaning or degree programme.
+_ACADEMIC_CODE = re.compile(r"[A-ZА-ЯЁ0-9]+(?:-[A-ZА-ЯЁ0-9]+)+", re.IGNORECASE)
+
+
+def parse_academic_group_code(value):
+    """Read the official code, including if the whole RANEPA header was pasted."""
+    raw = (value or "").strip().replace("–", "-").replace("—", "-").replace("‑", "-")
+    token = raw.split(maxsplit=1)[0] if raw else ""
+    if not 5 <= len(token) <= 80 or not _ACADEMIC_CODE.fullmatch(token):
+        return None
+    return token.upper()
 
 
 def invite_link(settings, code):
@@ -75,7 +97,11 @@ async def get_session(db, chat):
 async def awaiting_input(db, chat):
     """True while the person is expected to type an invitation code."""
     session = await db.get(StartSession, chat)
-    return bool(session and session.step == "code" and utc(session.expires_at) > datetime.now(UTC))
+    return bool(
+        session
+        and session.step in {"code", "promo_code", "academic_code"}
+        and utc(session.expires_at) > datetime.now(UTC)
+    )
 
 
 async def screen(db, session, text, rows, step, data=None, minutes=SESSION_MINUTES):
@@ -98,10 +124,26 @@ async def screen(db, session, text, rows, step, data=None, minutes=SESSION_MINUT
 
 
 def info_row():
-    return [("Как это работает", "info_howto"), ("Тарифы", "info_tariffs")], [
-        ("Частые вопросы", "info_faq"),
-        ("Поддержка", "info_support"),
+    """Public information reachable with buttons, without requiring a command."""
+    return [
+        [("О нас", "info_about"), ("Помощь", "info_howto")],
+        [("Поддержка", "info_support"), ("Партнёрка", "info_partners")],
+        [("Тарифы", "info_tariffs")],
     ]
+
+
+async def role_screen(db, session):
+    """New users choose a role only after pressing «Подключить группу»."""
+    await screen(
+        db,
+        session,
+        "Как ты хочешь подключиться к StudGroup?",
+        [
+            [("Я студент", "student"), ("Я староста", "headman")],
+            [("‹ Назад", "home")],
+        ],
+        "roles",
+    )
 
 
 async def topic_screen(db, session, settings, topic):
@@ -141,12 +183,39 @@ async def home(db, session, settings, telegram_id):
     found = await current_membership(db, telegram_id)
     if found:
         member, group = found
+        if member.role == "student" and await subgroups.unanswered(db, member):
+            await subgroup_choice(db, session, settings, member, group)
+            return
         text = f"Вы подключены к «{group.name}»."
-        rows = [[app_button(settings)]]
+        if group.academic_group_code:
+            text += f"\nОфициальный ID РАНХиГС: {group.academic_group_code}"
+        rows = [
+            [app_button(settings)],
+            [("Проверить подключение", "connection_status")],
+            [("Уведомления", "notifications")],
+        ]
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
         if member.role == "headman":
-            rows.insert(1, [("Создать приглашение", "invite")])
+            if group.academic_group_code or not group.academic_group_code_required:
+                rows.insert(1, [("Создать приглашение", "invite")])
+            rows.insert(
+                1,
+                [
+                    (
+                        "Изменить ID РАНХиГС"
+                        if group.academic_group_code
+                        else "Указать ID группы РАНХиГС",
+                        "academic_code_edit",
+                    )
+                ],
+            )
+            if not group.academic_group_code:
+                text += (
+                    "\nУкажите официальный ID РАНХиГС, чтобы завершить подключение."
+                    if group.academic_group_code_required
+                    else "\nОфициальный ID РАНХиГС ещё не указан."
+                )
         if member.role == "student" and await subgroups.splits(db, group.id):
             rows.insert(0, [("Мои подгруппы", "subgroups")])
         await screen(db, session, text, [*rows, *info_row()], "home")
@@ -154,11 +223,244 @@ async def home(db, session, settings, telegram_id):
     await screen(
         db,
         session,
-        "Привет! StudGroup собирает задания, дедлайны и расписание из сообщений вашей учебной "
-        "группы и показывает их в приложении прямо в Telegram.\n\nКто вы?",
-        [[("Я студент", "student"), ("Я староста", "headman")], *info_row()],
+        "Привет! 👋 Это StudGroup.\n\n"
+        "Мы помогаем учебной группе не терять важное в Telegram: собираем задания, "
+        "дедлайны, расписание и события в удобном приложении.\n\n"
+        "Здесь можно узнать о проекте или подключиться к своей группе.",
+        [[("Подключить группу", "connect")], *info_row()],
         "home",
     )
+
+
+async def connection_status(db, session, settings, telegram_id):
+    """On-demand diagnostic: never change membership when Telegram cannot answer."""
+    from studgroup import bot_connect
+
+    found = await current_membership(db, telegram_id)
+    if not found:
+        await home(db, session, settings, telegram_id)
+        return
+    member, group = found
+    own_status = (
+        await bot_connect.chat_status(settings, group.telegram_chat_id, telegram_id)
+        if settings.telegram_bot_token
+        else None
+    )
+    if own_status in {"creator", "administrator", "member"}:
+        member_text = "✅ Участие в Telegram подтверждено"
+    elif own_status in {"left", "kicked"}:
+        member_text = (
+            "⚠️ Telegram сообщает, что вы не состоите в чате. "
+            "Доступ к StudGroup может быть приостановлен при следующей проверке."
+        )
+    else:
+        member_text = (
+            "Не удалось подтвердить участие в Telegram. Это не изменило ваш доступ к StudGroup."
+        )
+    bot_id = bot_connect.own_bot_id(settings)
+    bot_status = (
+        await bot_connect.chat_status(settings, group.telegram_chat_id, bot_id)
+        if bot_id is not None
+        else None
+    )
+    if bot_status == "administrator":
+        bot_text = "✅ Бот — администратор группы"
+    elif bot_status is None:
+        bot_text = "Не удалось проверить права бота"
+    else:
+        bot_text = "⚠️ Боту нужны права администратора для чтения сообщений группы"
+    official = group.academic_group_code or "не указан"
+    await screen(
+        db,
+        session,
+        f"Подключение StudGroup\n\n"
+        f"Группа: {group.name}\n"
+        f"ID РАНХиГС: {official}\n"
+        f"Роль: {'староста' if member.role == 'headman' else 'заместитель' if member.role == 'deputy' else 'студент'}\n"
+        f"Доступ в StudGroup: активен\n\n"
+        f"{member_text}\n{bot_text}\n\n"
+        "Проверка выполнена по запросу. Она не отправляет сообщения в общий чат "
+        "и не расходует бюджет ИИ.",
+        [
+            [("Проверить ещё раз", "connection_status")],
+            [("Поддержка", "info_support")],
+            [("‹ Главное меню", "home")],
+        ],
+        "connection_status",
+    )
+
+
+NOTIFICATION_FIELDS = {
+    "enabled": "Все уведомления",
+    "new_cards": "Новые задания",
+    "changes": "Изменения в заданиях",
+    "deadlines": "Напоминания о сроках",
+    "lessons": "Начало занятий",
+    "quiet": "Тихие часы",
+}
+
+
+NOTIFICATION_CHOICES = {
+    "deadline_lead": [
+        ("За 3 часа", "3h"),
+        ("За 1 день", "1d"),
+        ("За 2 дня", "2d"),
+    ],
+    "lesson_lead_minutes": [
+        ("За 10 минут", 10),
+        ("За 15 минут", 15),
+        ("За 30 минут", 30),
+    ],
+    "quiet_range": [
+        ("23:00–08:00", "23-08"),
+        ("22:00–09:00", "22-09"),
+        ("00:00–07:00", "00-07"),
+    ],
+}
+
+
+NOTIFICATION_CHOICE_LABELS = {
+    "deadline_lead": "Напоминание о сроке",
+    "lesson_lead_minutes": "Напоминание о паре",
+    "quiet_range": "Тихие часы",
+}
+
+
+async def notification_menu(db, session, settings, telegram_id):
+    """Student/staff preferences, saved to the same profile as the Mini App."""
+    from studgroup.profile import NotificationSettings
+
+    if not await current_membership(db, telegram_id):
+        await home(db, session, settings, telegram_id)
+        return
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    profile = await db.get(UserProfile, user.id)
+    preferences = NotificationSettings.model_validate(profile.settings if profile else {})
+    rows = [
+        [(f"{'✅' if getattr(preferences, key) else '❌'} {label}", f"notify_{key}")]
+        for key, label in NOTIFICATION_FIELDS.items()
+    ]
+    for key, title in NOTIFICATION_CHOICE_LABELS.items():
+        selected = next(
+            (
+                label
+                for label, value in NOTIFICATION_CHOICES[key]
+                if value == getattr(preferences, key)
+            ),
+            "—",
+        )
+        rows.append([(f"{title}: {selected}", f"notifchoice_{key}")])
+    rows.append([("‹ Главное меню", "home")])
+    await screen(
+        db,
+        session,
+        "Уведомления StudGroup\n\n"
+        "Нажмите на пункт, чтобы включить или выключить его. "
+        "Настройки сохраняются в вашем профиле и используются для личных сообщений бота "
+        "по мере запуска соответствующих рассылок.",
+        rows,
+        "notifications",
+    )
+
+
+async def toggle_notification(db, session, settings, telegram_id, key):
+    from studgroup.profile import NotificationSettings
+
+    if key not in NOTIFICATION_FIELDS or not await current_membership(db, telegram_id):
+        await home(db, session, settings, telegram_id)
+        return
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    profile = await db.get(UserProfile, user.id)
+    if profile is None:
+        profile = UserProfile(user_id=user.id, updated_at=datetime.now(UTC))
+        db.add(profile)
+    preferences = NotificationSettings.model_validate(profile.settings or {})
+    profile.settings = preferences.model_copy(
+        update={key: not getattr(preferences, key)}
+    ).model_dump()
+    profile.updated_at = datetime.now(UTC)
+    await db.flush()
+    await notification_menu(db, session, settings, telegram_id)
+
+
+async def notification_choice_screen(db, session, settings, telegram_id, key):
+    if key not in NOTIFICATION_CHOICES or not await current_membership(db, telegram_id):
+        await home(db, session, settings, telegram_id)
+        return
+    rows = [[(label, f"notifpick_{i}")] for i, (label, _) in enumerate(NOTIFICATION_CHOICES[key])]
+    rows.append([("‹ Уведомления", "notifications")])
+    await screen(
+        db,
+        session,
+        f"{NOTIFICATION_CHOICE_LABELS[key]}\n\nВыберите вариант:",
+        rows,
+        "notification_choice",
+        {"key": key},
+    )
+
+
+async def set_notification_choice(db, session, settings, telegram_id, index):
+    from studgroup.profile import NotificationSettings
+
+    if not await current_membership(db, telegram_id):
+        await home(db, session, settings, telegram_id)
+        return
+    data = json.loads(session.payload)
+    key = data.get("key")
+    options = NOTIFICATION_CHOICES.get(key, [])
+    if not 0 <= index < len(options):
+        await home(db, session, settings, telegram_id)
+        return
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    profile = await db.get(UserProfile, user.id)
+    if profile is None:
+        profile = UserProfile(user_id=user.id, updated_at=datetime.now(UTC))
+        db.add(profile)
+    preferences = NotificationSettings.model_validate(profile.settings or {})
+    updated = preferences.model_copy(update={key: options[index][1]})
+    profile.settings = updated.model_dump()
+    profile.updated_at = datetime.now(UTC)
+    await db.flush()
+    await notification_menu(db, session, settings, telegram_id)
+
+
+async def promo_screen(db, session, role):
+    """Optional promo-code step; never pretend to validate unsupported offers."""
+    await screen(
+        db,
+        session,
+        "Есть промокод StudGroup? Если нет, просто продолжайте подключение. "
+        "Промокоды пока не активированы в пилотной версии.",
+        [
+            [("Ввести промокод", "promo_input")],
+            [("Нет промокода", "promo_skip")],
+            [("‹ Назад", "connect")],
+        ],
+        "promo",
+        {"role": role},
+    )
+
+
+async def promo_input(db, session, role, notice=None):
+    message = ("Промокоды пока не активированы. " if notice else "") + (
+        "Пришлите промокод сообщением или нажмите «Пропустить». "
+        "До запуска проверки промокод не будет применён."
+    )
+    await screen(
+        db,
+        session,
+        message,
+        [[("Пропустить", "promo_skip")], [("‹ Назад", "promo_back")]],
+        "promo_code",
+        {"role": role},
+    )
+
+
+async def next_after_promo(db, session, settings, telegram_id, role):
+    if role == "headman":
+        await headman_entry(db, session, settings, telegram_id)
+    else:
+        await join(db, session)
 
 
 async def headman_prompt(db, session, settings, notice=None, groups=()):
@@ -166,18 +468,19 @@ async def headman_prompt(db, session, settings, notice=None, groups=()):
     name = (settings.bot_username or "").lstrip("@")
     text = (
         "Подключение группы\n\n"
-        "Добавьте бота в чат вашей группы: тот, кто добавил бота, сразу становится её "
-        "старостой. Для этого нужно быть администратором чата. Бот в группе ничего не пишет.\n\n"
-        "Сделайте бота администратором группы, иначе он не увидит сообщения чата.\n\n"
-        "Старостой можно стать только в группе, где староста ещё не выбран."
+        "Добавьте StudGroup в Telegram-чат вашей учебной группы и назначьте бота "
+        "администратором. Вы тоже должны быть администратором этого чата. "
+        "Бот в группе ничего не пишет.\n\n"
+        "После добавления вернитесь сюда и нажмите «Проверить подключение». "
+        "Роль старосты выдаётся только после проверки и вашего подтверждения."
     )
     if groups:
         text = (
             "Бот уже подключён к группам, где староста не выбран и где вы администратор. "
             "Выберите свою или добавьте бота в новую.\n\n" + text
         )
-    if name:
-        text += f"\nЕсли ничего не происходит, отправьте в группе /start@{name}."
+    if not groups:
+        text += "\n\nЕсли вы уже добавили бота, проверьте права и нажмите кнопку ниже."
     if notice:
         text = f"{notice}\n\n{text}"
     rows = []
@@ -185,8 +488,9 @@ async def headman_prompt(db, session, settings, notice=None, groups=()):
         rows.append(
             [{"text": "Добавить бота в группу", "url": f"https://t.me/{name}?startgroup=connect"}]
         )
-    rows[:0] = [[(f"Стать старостой: {g.name[:40]}", f"pick{n}")] for n, g in enumerate(groups)]
-    rows.append([("‹ Назад", "home")])
+    rows[:0] = [[(f"Проверить: {g.name[:40]}", f"pick{n}")] for n, g in enumerate(groups)]
+    rows.append([("Проверить подключение", "check_group")])
+    rows.append([("‹ Назад", "connect")])
     await screen(
         db,
         session,
@@ -208,7 +512,70 @@ async def headman_entry(db, session, settings, telegram_id):
     await headman_prompt(db, session, settings, groups=groups)
 
 
+async def confirm_group_screen(db, session, group):
+    await screen(
+        db,
+        session,
+        f"Найдена группа «{group.name}».\n\n"
+        "Проверим, что вы администратор этого чата. Подключить группу к StudGroup "
+        "и назначить вас старостой?",
+        [[("Да, подключить", "confirm_group")], [("Это не моя группа", "headman_back")]],
+        "confirm_group",
+        {"group_id": str(group.id)},
+    )
+
+
+async def academic_code_prompt(db, session, group, *, onboarding=True, notice=None):
+    """Only the headman may provide the university identifier; group title is unchanged."""
+    message = (
+        f"Официальный идентификатор группы РАНХиГС\n\n"
+        f"Telegram-чат: «{group.name}»\n\n"
+        "Отправьте код вашей учебной группы одним сообщением. "
+        "Например: Э-ОБ-385-04-26-02.\n\n"
+        "На скрине это часть перед «(ЭМИТ) 38.03.05 Бизнес-информатика». "
+        "Можно вставить и всю строку: я возьму из неё код."
+    )
+    if notice:
+        message = f"{notice}\n\n{message}"
+    guess = parse_academic_group_code(group.name)
+    if guess and guess.count("-") >= 3 and any(char.isdigit() for char in guess):
+        message += f"\n\nПо названию чата найден возможный код: {guess}."
+    else:
+        guess = None
+    rows = []
+    if guess:
+        rows.append([(f"Подтвердить {guess}"[:60], "academic_code_suggest")])
+    rows.append([("‹ В главное меню", "home")])
+    await screen(
+        db,
+        session,
+        message,
+        rows,
+        "academic_code",
+        {"group_id": str(group.id), "onboarding": onboarding, "suggested": guess},
+        minutes=CLAIM_HOURS * 60,
+    )
+
+
+async def academic_code_review(db, session, group, code, onboarding):
+    await screen(
+        db,
+        session,
+        f"Проверьте идентификатор группы РАНХиГС:\n\n"
+        f"Telegram-чат: «{group.name}»\n"
+        f"Официальный код: {code}\n\n"
+        "Сохранить этот идентификатор для группы?",
+        [[("Да, сохранить", "save_academic_code")], [("Исправить", "edit_academic_code")]],
+        "academic_code_confirm",
+        {"group_id": str(group.id), "code": code, "onboarding": onboarding},
+        minutes=CLAIM_HOURS * 60,
+    )
+
+
 async def connected(db, session, settings, group, bot_is_admin=True):
+    if not group.academic_group_code:
+        await academic_code_prompt(db, session, group)
+        return
     note = (
         ""
         if bot_is_admin
@@ -219,6 +586,7 @@ async def connected(db, session, settings, group, bot_is_admin=True):
         session,
         f"Готово! Группа «{group.name}» подключена, вы её староста.\n\n"
         f"{note}"
+        f"Официальный ID РАНХиГС: {group.academic_group_code}\n"
         "Часовой пояс группы по умолчанию: Москва. Изменить его можно в кабинете.\n\n"
         "Теперь пригласите студентов.",
         [
@@ -230,26 +598,96 @@ async def connected(db, session, settings, group, bot_is_admin=True):
     )
 
 
+async def subgroup_question(db, session, group):
+    await screen(
+        db,
+        session,
+        f"Есть ли в группе «{group.name}» разделение на подгруппы по предметам? "
+        "Если нет, пропустите шаг: студенты не будут получать таких вопросов.",
+        [
+            [("Да, настроить", "subgroup_setup_yes")],
+            [("Нет, пропустить", "subgroup_setup_no")],
+            [("‹ Назад", "home")],
+        ],
+        "subgroup_question",
+    )
+
+
+async def invitation_entry(db, session, settings, telegram_id):
+    """Opening invites must never revoke an existing group link without consent."""
+    found = await current_membership(db, telegram_id)
+    if not found or found[0].role != "headman":
+        await home(db, session, settings, telegram_id)
+        return
+    _, group = found
+    if group.academic_group_code_required and not group.academic_group_code:
+        await academic_code_prompt(db, session, group)
+        return
+    setup = session.step == "connected" or (
+        session.step == "invite" and json.loads(session.payload).get("setup", False)
+    )
+    active = await db.scalar(
+        select(GroupInvitation.token_hash)
+        .where(
+            GroupInvitation.group_id == group.id,
+            GroupInvitation.reusable.is_(True),
+            GroupInvitation.revoked.is_(False),
+            GroupInvitation.expires_at > datetime.now(UTC),
+        )
+        .limit(1)
+    )
+    if not active:
+        await invite(db, session, settings, telegram_id)
+        return
+    rows = [[("Заменить ссылку (отозвать старую)", "invite_replace")]]
+    if setup:
+        rows.append([("Далее: подгруппы", "subgroup_setup")])
+    rows.append([("‹ Главное меню", "home")])
+    await screen(
+        db,
+        session,
+        f"Приглашения · {group.name}\\n\\n"
+        "Для группы уже создана действующая общая ссылка. Она продолжает работать.\\n\\n"
+        "Ради безопасности исходный код ссылки не хранится, поэтому повторно "
+        "показать её нельзя. Если нужно отправить приглашение ещё раз, используйте "
+        "ссылку, которой уже поделились со студентами.\\n\\n"
+        "Кнопка «Заменить ссылку» создаст новую и сразу отзовёт прежнюю.",
+        rows,
+        "invite",
+        {"setup": setup},
+    )
+
+
 async def invite(db, session, settings, telegram_id):
     found = await current_membership(db, telegram_id)
     if not found or found[0].role != "headman":
         await home(db, session, settings, telegram_id)
         return
     member, group = found
+    if group.academic_group_code_required and not group.academic_group_code:
+        await academic_code_prompt(db, session, group)
+        return
+    setup = session.step == "connected" or (
+        session.step == "invite" and json.loads(session.payload).get("setup", False)
+    )
     try:
-        code = (await domain.issue_invites(db, group, member, 1))[0]
+        code = await domain.issue_group_link(db, group, member)
     except domain.StError as error:
         await screen(db, session, str(error), [[("‹ Назад", "home")]], "invite")
         return
     await screen(
         db,
         session,
-        "Приглашение для студента\n\n"
+        "Ссылка приглашения для всей группы\n\n"
         f"{invite_link(settings, code)}\n\n"
-        "Перешлите это одному студенту: достаточно нажать на ссылку. Она действует 24 часа и "
-        "срабатывает один раз.",
-        [[("Создать ещё", "invite")], [("‹ Назад", "home")]],
+        "Отправьте ссылку студентам вашей Telegram-группы. "
+        "Она действует до 365 дней, допускает несколько участников и может быть отозвана. "
+        "Бот проверит участие каждого в Telegram-чате. Создание новой ссылки отзовёт прежнюю.",
+        [[("Управление ссылкой", "invite_manage")]]
+        + ([[("Далее: подгруппы", "subgroup_setup")]] if setup else [])
+        + [[("‹ Назад", "home")]],
         "invite",
+        {"setup": setup},
     )
 
 
@@ -312,8 +750,9 @@ async def open_start(db, settings, telegram_id):
 async def join(db, session, notice=None):
     text = (
         "Подключение к группе\n\n"
-        "Нужен одноразовый код приглашения от вашего старосты, он действует 24 часа. "
-        "Если староста прислал ссылку, достаточно нажать на неё: вводить код не нужно."
+        "Нужна ссылка или код приглашения от старосты. "
+        "Если староста прислал ссылку, достаточно нажать на неё: вводить код не нужно. "
+        "Бот проверит, что вы состоите в учебном Telegram-чате."
     )
     if notice:
         text = f"{notice}\n\n{text}"
@@ -324,7 +763,7 @@ async def code_prompt(db, session, notice=None):
     text = "Отправьте код приглашения одним сообщением. Я сразу удалю его из чата."
     if notice:
         text = f"{notice}\n\n{text.replace('Отправьте', 'Отправьте ещё раз')}"
-    await screen(db, session, text, [[("‹ Назад", "student")]], "code")
+    await screen(db, session, text, [[("‹ Назад", "join_back")]], "code")
 
 
 async def redeem(db, session, settings, telegram_id, code, *, typed):
@@ -345,11 +784,14 @@ async def redeem(db, session, settings, telegram_id, code, *, typed):
     if member and await subgroups.unanswered(db, member):
         await subgroup_choice(db, session, settings, member, group, joined=True)
     else:
+        message = f"Готово! Вы подключены к «{group.name}»."
+        if group.academic_group_code:
+            message += f"\nОфициальный ID РАНХиГС: {group.academic_group_code}"
         await screen(
             db,
             session,
-            f"Готово! Вы подключены к «{group.name}».",
-            [[app_button(settings)]],
+            message,
+            [[app_button(settings)], [("Главное меню", "home")]],
             "done",
         )
 
@@ -433,6 +875,66 @@ async def demo_student_summary(db, session, english, informatics):
     )
 
 
+async def resume_or_home(db, session, settings, telegram_id):
+    """Restore a safe step after /start, without trusting expired callback buttons."""
+    found = await current_membership(db, telegram_id)
+    if found:
+        if found[0].role == "headman" and session.step in {
+            "academic_code",
+            "academic_code_confirm",
+        }:
+            try:
+                payload = json.loads(session.payload)
+            except (ValueError, TypeError):
+                payload = {}
+            if (
+                session.step == "academic_code_confirm"
+                and parse_academic_group_code(payload.get("code")) == payload.get("code")
+                and payload.get("group_id") == str(found[1].id)
+            ):
+                await academic_code_review(
+                    db, session, found[1], payload["code"], payload.get("onboarding", False)
+                )
+            else:
+                await academic_code_prompt(
+                    db, session, found[1], onboarding=payload.get("onboarding", False)
+                )
+        elif found[0].role == "headman" and session.step == "connected":
+            await connected(db, session, settings, found[1])
+        elif found[0].role == "headman" and session.step == "invite":
+            try:
+                prev = json.loads(session.payload)
+            except (ValueError, TypeError):
+                prev = {}
+            if prev.get("setup"):
+                await subgroup_question(db, session, found[1])
+            else:
+                await home(db, session, settings, telegram_id)
+        elif found[0].role == "headman" and session.step == "subgroup_question":
+            await subgroup_question(db, session, found[1])
+        else:
+            await home(db, session, settings, telegram_id)
+        return
+    step = session.step
+    try:
+        data = json.loads(session.payload)
+    except (TypeError, ValueError):
+        data = {}
+    if step in {"promo", "promo_code"} and data.get("role") in {"student", "headman"}:
+        if step == "promo":
+            await promo_screen(db, session, data["role"])
+        else:
+            await promo_input(db, session, data["role"])
+    elif step in {"headman", "confirm_group"}:
+        await headman_entry(db, session, settings, telegram_id)
+    elif step == "join":
+        await join(db, session)
+    elif step == "code":
+        await code_prompt(db, session)
+    else:
+        await home(db, session, settings, telegram_id)
+
+
 async def forget(db, chat, message):
     """Remove the person's own message so an invitation code does not stay in the chat."""
     owner = await bot_panels.panel(db, chat, "start")
@@ -492,10 +994,41 @@ async def handle(db, update, settings, topic=None):
                 else:
                     await home(db, session, settings, sender.id)
             else:
-                await home(db, session, settings, sender.id)
+                await resume_or_home(db, session, settings, sender.id)
             return True
         if text in {"/cancel", "Отмена"}:
             await home(db, session, settings, sender.id)
+            return True
+        if session.step == "academic_code" and utc(session.expires_at) > datetime.now(UTC):
+            await forget(db, chat, message)
+            payload = json.loads(session.payload)
+            found = await current_membership(db, sender.id)
+            if (
+                not found
+                or found[0].role != "headman"
+                or str(found[1].id) != payload.get("group_id")
+            ):
+                await home(db, session, settings, sender.id)
+                return True
+            code = parse_academic_group_code(text)
+            if code is None:
+                await academic_code_prompt(
+                    db,
+                    session,
+                    found[1],
+                    onboarding=payload.get("onboarding", False),
+                    notice="Не удалось распознать код. Проверьте пример и отправьте его ещё раз.",
+                )
+            else:
+                await academic_code_review(
+                    db, session, found[1], code, payload.get("onboarding", False)
+                )
+            return True
+        if session.step == "promo_code" and utc(session.expires_at) > datetime.now(UTC):
+            await forget(db, chat, message)
+            await promo_input(
+                db, session, json.loads(session.payload)["role"], notice="unavailable"
+            )
             return True
         if session.step == "code" and utc(session.expires_at) > datetime.now(UTC):
             await forget(db, chat, message)
@@ -620,11 +1153,23 @@ async def handle(db, update, settings, topic=None):
         await demo_student_summary(db, session, english, data["informatics"])
     elif action == "home":
         await home(db, session, settings, sender.id)
-    elif action == "student":
-        await join(db, session)
+    elif action == "connect":
+        await role_screen(db, session)
+    elif action in {"student", "headman"}:
+        await promo_screen(db, session, action)
+    elif action == "promo_input" and session.step == "promo":
+        await promo_input(db, session, json.loads(session.payload)["role"])
+    elif action == "promo_back" and session.step == "promo_code":
+        await promo_screen(db, session, json.loads(session.payload)["role"])
+    elif action == "promo_skip" and session.step in {"promo", "promo_code"}:
+        await next_after_promo(
+            db, session, settings, sender.id, json.loads(session.payload)["role"]
+        )
     elif action == "enter_code":
         await code_prompt(db, session)
-    elif action == "headman":
+    elif action == "join_back":
+        await join(db, session)
+    elif action in {"check_group", "headman_back"}:
         await headman_entry(db, session, settings, sender.id)
     elif action.startswith("pick") and session.step == "headman":
         from studgroup import bot_connect
@@ -638,9 +1183,114 @@ async def handle(db, update, settings, topic=None):
         if group is None:
             await headman_entry(db, session, settings, sender.id)
         else:
+            await confirm_group_screen(db, session, group)
+    elif action == "confirm_group" and session.step == "confirm_group":
+        from studgroup import bot_connect
+
+        data = json.loads(session.payload)
+        group = await db.get(Group, uuid.UUID(data["group_id"]))
+        if group is None:
+            await headman_entry(db, session, settings, sender.id)
+        else:
             await bot_connect.claim_headman(db, settings, session, group, sender.id)
-    elif action == "invite":
+    elif action == "academic_code_suggest" and session.step == "academic_code":
+        found = await current_membership(db, sender.id)
+        payload = json.loads(session.payload)
+        code = parse_academic_group_code(payload.get("suggested"))
+        if (
+            found
+            and found[0].role == "headman"
+            and payload.get("group_id") == str(found[1].id)
+            and code
+        ):
+            await academic_code_review(
+                db, session, found[1], code, payload.get("onboarding", False)
+            )
+        else:
+            await home(db, session, settings, sender.id)
+    elif action == "connection_status":
+        await connection_status(db, session, settings, sender.id)
+    elif action == "notifications":
+        await notification_menu(db, session, settings, sender.id)
+    elif action.startswith("notify_") and session.step == "notifications":
+        await toggle_notification(db, session, settings, sender.id, action.removeprefix("notify_"))
+    elif action.startswith("notifchoice_") and session.step == "notifications":
+        await notification_choice_screen(
+            db, session, settings, sender.id, action.removeprefix("notifchoice_")
+        )
+    elif action.startswith("notifpick_") and session.step == "notification_choice":
+        try:
+            choice_index = int(action.removeprefix("notifpick_"))
+        except ValueError:
+            choice_index = -1
+        await set_notification_choice(db, session, settings, sender.id, choice_index)
+    elif action == "academic_code_edit":
+        found = await current_membership(db, sender.id)
+        if found and found[0].role == "headman":
+            await academic_code_prompt(db, session, found[1], onboarding=False)
+        else:
+            await home(db, session, settings, sender.id)
+    elif action == "edit_academic_code" and session.step == "academic_code_confirm":
+        found = await current_membership(db, sender.id)
+        if found and found[0].role == "headman":
+            payload = json.loads(session.payload)
+            if payload.get("group_id") == str(found[1].id):
+                await academic_code_prompt(
+                    db, session, found[1], onboarding=payload.get("onboarding", False)
+                )
+            else:
+                await home(db, session, settings, sender.id)
+        else:
+            await home(db, session, settings, sender.id)
+    elif action == "save_academic_code" and session.step == "academic_code_confirm":
+        found = await current_membership(db, sender.id)
+        payload = json.loads(session.payload)
+        code = parse_academic_group_code(payload.get("code"))
+        if (
+            not found
+            or found[0].role != "headman"
+            or payload.get("group_id") != str(found[1].id)
+            or code is None
+        ):
+            await home(db, session, settings, sender.id)
+        else:
+            group = await db.scalar(select(Group).where(Group.id == found[1].id).with_for_update())
+            if group is None or group.status != "active":
+                await home(db, session, settings, sender.id)
+            else:
+                group.academic_group_code = code
+                if payload.get("onboarding"):
+                    await connected(db, session, settings, group)
+                else:
+                    await home(db, session, settings, sender.id)
+    elif action in {"invite", "invite_manage"}:
+        await invitation_entry(db, session, settings, sender.id)
+    elif action == "invite_replace" and session.step == "invite":
         await invite(db, session, settings, sender.id)
+    elif action == "subgroup_setup" and session.step == "invite":
+        found = await current_membership(db, sender.id)
+        if found and found[0].role == "headman" and json.loads(session.payload).get("setup"):
+            await subgroup_question(db, session, found[1])
+        else:
+            await home(db, session, settings, sender.id)
+    elif action == "subgroup_setup_no" and session.step == "subgroup_question":
+        session.step = "finished"
+        if not await open_cabinet(db, sender.id):
+            await home(db, session, settings, sender.id)
+    elif action == "subgroup_setup_yes" and session.step == "subgroup_question":
+        session.step = "finished"
+        if await open_cabinet(db, sender.id):
+            from studgroup import headman_bot
+
+            headman_session = await db.get(HeadmanSession, sender.id)
+            _, _, group = await domain.access(db, sender.id, headman_session.group_id)
+            token = bot_panels.scope.set((sender.id, "st"))
+            try:
+                await headman_bot.subgroup_settings_screen(db, headman_session, group)
+            finally:
+                bot_panels.scope.reset(token)
+        else:
+            await home(db, session, settings, sender.id)
     elif action == "cabinet":
         if not await open_cabinet(db, sender.id):
             await home(db, session, settings, sender.id)

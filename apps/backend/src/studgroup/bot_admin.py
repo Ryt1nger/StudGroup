@@ -59,14 +59,14 @@ def enqueue(db, method, payload, dedup_key=None):
     )
 
 
-async def enqueue_once(db, method, payload, dedup_key):
+async def enqueue_once(db, method, payload, dedup_key, *, available_at=None):
     values = {
         "id": uuid.uuid4(),
         "method": method,
         "payload": json.dumps(payload, ensure_ascii=False),
         "state": "pending",
         "attempts": 0,
-        "available_at": datetime.now(UTC),
+        "available_at": available_at or datetime.now(UTC),
         "dedup_key": dedup_key,
     }
     dialect = db.bind.dialect.name
@@ -164,10 +164,7 @@ async def handle(db, update, settings):
         session.expires_at = now + timedelta(minutes=15)
         groups = (
             await db.scalars(
-                select(Group)
-                .where(Group.pilot_authorized.is_(True), Group.status == "active")
-                .order_by(Group.name)
-                .limit(40)
+                select(Group).where(Group.status == "active").order_by(Group.name).limit(40)
             )
         ).all()
         from studgroup.bot_connect import NO_HEADMAN, headmanless_group_ids
@@ -182,7 +179,9 @@ async def handle(db, update, settings):
                 [
                     [
                         (
-                            g.name[:36] + (f" · {NO_HEADMAN}" if g.id in without else ""),
+                            g.name[:30]
+                            + (" · ожидает активации" if not g.pilot_authorized else "")
+                            + (f" · {NO_HEADMAN}" if g.id in without else ""),
                             "g" + g.id.hex,
                         )
                     ]
@@ -839,6 +838,47 @@ async def deliver_shadow_export(db, row, settings):
     await db.commit()
 
 
+async def subgroup_notice_eligibility(db, row, now):
+    """Return the next send time, or None to discard a no-longer-relevant prompt."""
+    from studgroup import subgroups
+    from studgroup.models import MemberSubgroup, SubjectSplit, UserProfile
+    from studgroup.profile import NotificationSettings
+
+    try:
+        _, split_text, user_text = row.dedup_key.split(":")
+        split_id = uuid.UUID(split_text)
+        telegram_id = int(user_text)
+    except (TypeError, ValueError):
+        return None
+    split = await db.get(SubjectSplit, split_id)
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    if not split or not user:
+        return None
+    member = await db.scalar(
+        select(Membership).where(
+            Membership.group_id == split.group_id,
+            Membership.user_id == user.id,
+            Membership.role == "student",
+            Membership.status == "active",
+        )
+    )
+    if not member or await db.get(MemberSubgroup, (member.id, split.id)):
+        return None
+    profile = await db.get(UserProfile, user.id)
+    try:
+        preferences = NotificationSettings.model_validate(
+            (profile.settings or {}) if profile else {}
+        )
+    except ValueError:
+        return None
+    if not preferences.enabled:
+        return None
+    group = await db.get(Group, split.group_id)
+    if group is None or group.status != "active" or not group.pilot_authorized:
+        return None
+    return subgroups.quiet_delivery_at(now, group.timezone, preferences)
+
+
 async def deliver(engine, settings):
     if not settings.telegram_bot_token:
         return
@@ -854,6 +894,16 @@ async def deliver(engine, settings):
         )
         if not row:
             return
+        if row.method == "sendMessage" and (row.dedup_key or "").startswith("subgroup-choice:"):
+            eligible = await subgroup_notice_eligibility(db, row, now)
+            if eligible is None:
+                row.state = "superseded"
+                await db.commit()
+                return
+            if eligible > now:
+                row.available_at = eligible
+                await db.commit()
+                return
         testing_update = (row.dedup_key or "").startswith("owner-test:")
         if (
             testing_update

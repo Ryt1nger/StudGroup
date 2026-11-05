@@ -19,6 +19,7 @@ from studgroup.models import (
     Subgroup,
     SubjectSplit,
     User,
+    UserProfile,
 )
 
 pytest_plugins = ["test_schedule_api"]
@@ -98,6 +99,79 @@ def test_headman_configures_split_and_existing_student_gets_prompt(foreman_fixtu
     assert split.subject_name == "Английский язык"
     assert [row.name for row in rows] == ["Подгруппа 1 · Иванова", "Подгруппа 2 · Петров"]
     assert any(p.get("chat_id") == 33 and "Выберите свою" in p.get("text", "") for p in payloads)
+
+
+def test_subgroup_notice_respects_notification_opt_out_and_deduplication(foreman_fixture):  # noqa: F811
+    add_student(foreman_fixture, telegram_id=33)
+    add_student(foreman_fixture, telegram_id=34)
+
+    async def seed_and_notify(db):
+        _, _, group = await actor(db)
+        opted_out = await db.scalar(select(User).where(User.telegram_user_id == 33))
+        db.add(
+            UserProfile(
+                user_id=opted_out.id,
+                settings={"enabled": False},
+                updated_at=datetime(2026, 11, 5, tzinfo=UTC),
+            )
+        )
+        await db.flush()
+        split = await subgroups.create_split(
+            db,
+            group,
+            "Английский",
+            [("Гр. 1", ["Иванова"]), ("Гр. 2", ["Петрова"])],
+        )
+        at = datetime(2026, 11, 5, 12, tzinfo=UTC)
+        for _ in range(2):
+            await subgroups.notify_students(
+                db, foreman_fixture.app.state.settings, group, split, now=at
+            )
+        rows = (
+            await db.scalars(select(BotOutbox).where(BotOutbox.dedup_key.like("subgroup-choice:%")))
+        ).all()
+        from studgroup import bot_admin
+
+        eligible_before = await bot_admin.subgroup_notice_eligibility(db, rows[0], at)
+        selected = await db.scalar(select(User).where(User.telegram_user_id == 34))
+        db.add(
+            UserProfile(
+                user_id=selected.id,
+                settings={"enabled": False},
+                updated_at=at,
+            )
+        )
+        await db.flush()
+        eligible_after = await bot_admin.subgroup_notice_eligibility(db, rows[0], at)
+        return rows, eligible_before, eligible_after
+
+    rows, eligible_before, eligible_after = run(foreman_fixture, seed_and_notify)
+    assert len(rows) == 1
+    assert json.loads(rows[0].payload)["chat_id"] == 34
+    assert rows[0].dedup_key.startswith("subgroup-choice:")
+    assert eligible_before == datetime(2026, 11, 5, 12, tzinfo=UTC)
+    assert eligible_after is None  # opted out before the scheduled delivery
+
+
+def test_quiet_subgroup_notice_waits_until_morning_and_not_through_daytime():
+    from studgroup.profile import NotificationSettings
+
+    prefs = NotificationSettings(quiet=True, quiet_range="23-08")
+    early = datetime(2026, 11, 5, 0, 30, tzinfo=UTC)
+    assert subgroups.quiet_delivery_at(early, "Europe/Moscow", prefs) == datetime(
+        2026, 11, 5, 5, 0, tzinfo=UTC
+    )
+
+    daytime = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
+    midnight_range = NotificationSettings(quiet=True, quiet_range="00-07")
+    assert subgroups.quiet_delivery_at(daytime, "Europe/Moscow", midnight_range) == daytime
+    assert subgroups.quiet_delivery_at(early, "Europe/Moscow", midnight_range) == datetime(
+        2026, 11, 5, 4, 0, tzinfo=UTC
+    )
+    assert (
+        subgroups.quiet_delivery_at(early, "Europe/Moscow", NotificationSettings(quiet=False))
+        == early
+    )
 
 
 def test_student_picks_and_changes_subgroup_from_start_panel(foreman_fixture):  # noqa: F811

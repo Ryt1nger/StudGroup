@@ -182,7 +182,8 @@ async def tick(engine, now=None):
                         "chat_id": user.telegram_user_id,
                         "text": f"{group.name} · вопросы для проверки\n\n"
                         + "\n".join(lines)
-                        + "\n\nОткрой /st → Требует проверки.",
+                        + "\n\nОткрой бота StudGroup, нажми «Кабинет старосты», "
+                        "затем «Требует проверки».",
                     },
                     dedup_key=batch_key,
                 )
