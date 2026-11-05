@@ -101,7 +101,7 @@ def test_headman_configures_split_and_existing_student_gets_prompt(foreman_fixtu
     assert any(p.get("chat_id") == 33 and "Выберите свою" in p.get("text", "") for p in payloads)
 
 
-def test_subgroup_notice_respects_notification_opt_out_and_deduplication(foreman_fixture):
+def test_subgroup_notice_respects_notification_opt_out_and_deduplication(foreman_fixture):  # noqa: F811
     add_student(foreman_fixture, telegram_id=33)
     add_student(foreman_fixture, telegram_id=34)
 
