@@ -814,6 +814,40 @@ async def issue_invites(db, group, member, count):
     return result
 
 
+async def issue_group_link(db, group, member):
+    """Create one revocable link usable by many verified members; rotate the old one."""
+    headman_only(member)
+    locked = await db.scalar(select(Group).where(Group.id == group.id).with_for_update())
+    if locked is None or locked.status != "active":
+        raise StError("Группа недоступна.")
+    now = datetime.now(UTC)
+    active = (
+        await db.scalars(
+            select(GroupInvitation)
+            .where(
+                GroupInvitation.group_id == group.id,
+                GroupInvitation.reusable.is_(True),
+                GroupInvitation.revoked.is_(False),
+            )
+            .with_for_update()
+        )
+    ).all()
+    for invitation in active:
+        invitation.revoked = True
+    code = secrets.token_urlsafe(24)
+    db.add(
+        GroupInvitation(
+            token_hash=token_hash(code),
+            group_id=group.id,
+            issuer_id=member.id,
+            expires_at=now + timedelta(days=365),
+            reusable=True,
+        )
+    )
+    await db.flush()
+    return code
+
+
 async def redeem_invite(db, settings, telegram_id, code):
     invitation = await db.scalar(
         select(GroupInvitation)
@@ -824,7 +858,7 @@ async def redeem_invite(db, settings, telegram_id, code):
     if (
         not invitation
         or invitation.revoked
-        or invitation.used_by
+        or (invitation.used_by and not invitation.reusable)
         or utc(invitation.expires_at) <= now
     ):
         raise StError("Приглашение использовано, отозвано или истекло.")
@@ -847,7 +881,18 @@ async def redeem_invite(db, settings, telegram_id, code):
         .values(id=uuid.uuid4(), telegram_user_id=telegram_id, display_name="Участник")
         .on_conflict_do_nothing(index_elements=[User.telegram_user_id])
     )
-    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    user = await db.scalar(
+        select(User).where(User.telegram_user_id == telegram_id).with_for_update()
+    )
+    other = await db.scalar(
+        select(Membership.id).where(
+            Membership.user_id == user.id,
+            Membership.group_id != group.id,
+            Membership.status == "active",
+        )
+    )
+    if other is not None:
+        raise StError("Вы уже подключены к другой группе. Сначала смените группу через поддержку.")
     await db.execute(
         insert(Membership)
         .values(
@@ -862,5 +907,6 @@ async def redeem_invite(db, settings, telegram_id, code):
     )
     if existing.status != "active":
         raise StError("Доступ был отозван. Обратись к старосте; приглашение не обходит отзыв.")
-    invitation.used_by = user.id
+    if not invitation.reusable:
+        invitation.used_by = user.id
     return group
