@@ -20,6 +20,14 @@ NEW_CHAT = -100777
 BOT = 999
 
 
+def finish_group_identifier(client, uid=ADDER, value="Э-ОБ-385-04-26-02"):
+    """Complete the new RANEPA identifier step before invitations."""
+    assert "идентификатор группы РАНХиГС" in last(client)["text"]
+    deliver(client, value, uid=uid)
+    assert "Да, сохранить" in labels(client)
+    tap(client, "Да, сохранить", uid=uid)
+
+
 def setup_bot(client, monkeypatch, statuses, *, list_works=True, username="studgroup_rf_bot"):
     """``statuses`` maps (chat, user) to the Telegram status of that person in that chat.
 
@@ -150,7 +158,9 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
     assert new_group(foreman)[1] == []
     tap(foreman, "Да, подключить", uid=ADDER)
     assert new_group(foreman)[1] == [("headman", ADDER)]
+    finish_group_identifier(foreman)
     assert panel(foreman, ADDER)["text"].startswith("Готово! Группа «ИВТ-21» подключена")
+    assert new_group(foreman)[0].academic_group_code == "Э-ОБ-385-04-26-02"
     assert "Создать приглашение" in json.dumps(panel(foreman, ADDER), ensure_ascii=False)
 
     async def profile(db):
@@ -272,6 +282,7 @@ def test_an_administrator_takes_a_headmanless_group_with_the_start_screen(forema
     tap(foreman, "Проверить: ИВТ-21", uid=OTHER)
     tap(foreman, "Да, подключить", uid=OTHER)
     assert new_group(foreman)[1] == [("headman", OTHER)]
+    finish_group_identifier(foreman, uid=OTHER)
     assert "Группа «ИВТ-21» подключена" in last(foreman)["text"]
 
 
@@ -362,6 +373,7 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
     tap(foreman, "Нет промокода", uid=ADDER)
     tap(foreman, "Проверить: ИВТ-21", uid=ADDER)
     tap(foreman, "Да, подключить", uid=ADDER)
+    finish_group_identifier(foreman)
     tap(foreman, "Создать приглашение", uid=ADDER)
     text = last(foreman)["text"]
     link = next(line for line in text.splitlines() if line.startswith("https://t.me/"))
@@ -395,6 +407,7 @@ def test_headman_can_skip_subgroups_after_issuing_an_invite(foreman, monkeypatch
     tap(foreman, "Нет промокода", uid=ADDER)
     tap(foreman, "Проверить: ИВТ-21", uid=ADDER)
     tap(foreman, "Да, подключить", uid=ADDER)
+    finish_group_identifier(foreman)
     tap(foreman, "Создать приглашение", uid=ADDER)
     assert "Далее: подгруппы" in labels(foreman)
     tap(foreman, "Далее: подгруппы", uid=ADDER)
