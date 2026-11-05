@@ -17,7 +17,8 @@ import json
 import logging
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select, true, update
 
@@ -399,15 +400,37 @@ async def delete_split(db, group_id, split_id):
     await db.flush()
 
 
-async def notify_students(db, settings, group, split):
-    """Tell existing students that one new choice is waiting for them."""
-    from studgroup.bot_admin import enqueue
-    from studgroup.models import User
+def quiet_delivery_at(now, timezone, preferences):
+    """Respect a recipient's quiet hours; never delay without an explicit preference."""
+    if not preferences.quiet:
+        return now
+    start, finish = (int(value) for value in preferences.quiet_range.split("-"))
+    try:
+        zone = ZoneInfo(timezone)
+    except (KeyError, ValueError):
+        zone = ZoneInfo("Europe/Moscow")
+    local = now.astimezone(zone)
+    if local.hour >= start:
+        day = local.date() + timedelta(days=1)
+    elif local.hour < finish:
+        day = local.date()
+    else:
+        return now
+    return datetime.combine(day, time(finish), tzinfo=zone).astimezone(UTC)
 
-    telegram_ids = (
-        await db.scalars(
-            select(User.telegram_user_id)
+
+async def notify_students(db, settings, group, split, now=None):
+    """Notify existing students once per new split, respecting opt-out and quiet hours."""
+    from studgroup.bot_admin import enqueue_once
+    from studgroup.models import User, UserProfile
+    from studgroup.profile import NotificationSettings
+
+    now = now or datetime.now(UTC)
+    recipients = (
+        await db.execute(
+            select(User.telegram_user_id, UserProfile.settings)
             .join(Membership, Membership.user_id == User.id)
+            .outerjoin(UserProfile, UserProfile.user_id == User.id)
             .where(
                 Membership.group_id == group.id,
                 Membership.role == "student",
@@ -416,7 +439,10 @@ async def notify_students(db, settings, group, split):
         )
     ).all()
     username = (settings.bot_username or "").lstrip("@")
-    for telegram_id in telegram_ids:
+    for telegram_id, saved in recipients:
+        preferences = NotificationSettings.model_validate(saved or {})
+        if not preferences.enabled:
+            continue
         payload = {
             "chat_id": telegram_id,
             "text": (
@@ -437,4 +463,10 @@ async def notify_students(db, settings, group, split):
                     ]
                 ]
             }
-        enqueue(db, "sendMessage", payload)
+        await enqueue_once(
+            db,
+            "sendMessage",
+            payload,
+            f"subgroup-choice:{split.id}:{telegram_id}",
+            available_at=quiet_delivery_at(now, group.timezone, preferences),
+        )
