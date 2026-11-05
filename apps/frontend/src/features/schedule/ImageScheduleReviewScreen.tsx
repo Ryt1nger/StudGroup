@@ -448,7 +448,7 @@ function ScheduleReviewForm({
             : 'Частичное распознавание — проверьте пары'}</span>
         </div>
       ) : null}
-      {editingIndex === null && (cabinet ? (
+      {editingIndex === null ? (cabinet ? (
         sourceBlob ? (
           <CabinetImagePreview blob={sourceBlob} />
         ) : (
