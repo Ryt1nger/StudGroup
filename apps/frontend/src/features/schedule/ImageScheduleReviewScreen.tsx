@@ -210,7 +210,7 @@ function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise
   const serverNow = useSessionServerNow();
   const zone = useGroupTimeZone();
   const [file, setFile] = useState<File | null>(null);
-  const [weekStart] = useState(() => weekKeys(dayKey(serverNow() ?? Date.now(), zone))[0] ?? '');
+  const [weekStart, setWeekStart] = useState(() => weekKeys(dayKey(serverNow() ?? Date.now(), zone))[0] ?? '');
   // Default to one-week review. Publishing or changing recurring patterns still requires staff confirmation.
   const upload = useCabinetUpload();
   return (
@@ -225,12 +225,21 @@ function CabinetUploadForm({ onUploaded }: { onUploaded: (id: string) => Promise
       });
     }}>
       <h2>Загрузить расписание</h2>
+      <div className="field review-upload-week">
+        <label>Неделя на скриншоте
+          <input type="date" required value={weekStart} onChange={(event) => {
+            const selected = event.target.value;
+            if (selected) setWeekStart(weekKeys(selected)[0] ?? selected);
+          }} />
+        </label>
+        <small>Выберите неделю, к которой относится расписание. По умолчанию выбрана текущая.</small>
+      </div>
       <div className="field"><label>Скриншот расписания
         <input type="file" accept="image/png,image/jpeg,image/webp" required
           onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
       </label></div>
       {upload.isError ? <p role="alert">{upload.error.message}</p> : null}
-      <button className="btn on" type="submit" disabled={!file || upload.isPending}>
+      <button className="btn on" type="submit" disabled={!file || !weekStart || upload.isPending}>
         {upload.isPending ? 'Отправляем скриншот…' : 'Анализировать'}
       </button>
     </form>
