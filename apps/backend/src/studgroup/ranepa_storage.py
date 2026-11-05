@@ -25,6 +25,7 @@ async def configure_source(db, group_id, code: str, upstream_uuid: UUID | None =
         source = GroupScheduleSource(
             group_id=group_id,
             official_group_code=official_code,
+            upstream_group_uuid=upstream_uuid,
             collection_mode="public",
             sync_enabled=False,
             updated_at=datetime.now(UTC),
