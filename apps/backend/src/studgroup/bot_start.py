@@ -189,7 +189,11 @@ async def home(db, session, settings, telegram_id):
         text = f"Вы подключены к «{group.name}»."
         if group.academic_group_code:
             text += f"\nОфициальный ID РАНХиГС: {group.academic_group_code}"
-        rows = [[app_button(settings)], [("Уведомления", "notifications")]]
+        rows = [
+            [app_button(settings)],
+            [("Проверить подключение", "connection_status")],
+            [("Уведомления", "notifications")],
+        ]
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
         if member.role == "headman":
@@ -225,6 +229,65 @@ async def home(db, session, settings, telegram_id):
         "Здесь можно узнать о проекте или подключиться к своей группе.",
         [[("Подключить группу", "connect")], *info_row()],
         "home",
+    )
+
+
+async def connection_status(db, session, settings, telegram_id):
+    """On-demand diagnostic: never change membership when Telegram cannot answer."""
+    from studgroup import bot_connect
+
+    found = await current_membership(db, telegram_id)
+    if not found:
+        await home(db, session, settings, telegram_id)
+        return
+    member, group = found
+    own_status = (
+        await bot_connect.chat_status(settings, group.telegram_chat_id, telegram_id)
+        if settings.telegram_bot_token
+        else None
+    )
+    if own_status in {"creator", "administrator", "member"}:
+        member_text = "✅ Участие в Telegram подтверждено"
+    elif own_status in {"left", "kicked"}:
+        member_text = (
+            "⚠️ Telegram сообщает, что вы не состоите в чате. "
+            "Доступ к StudGroup может быть приостановлен при следующей проверке."
+        )
+    else:
+        member_text = (
+            "Не удалось подтвердить участие в Telegram. "
+            "Это не изменило ваш доступ к StudGroup."
+        )
+    bot_id = bot_connect.own_bot_id(settings)
+    bot_status = (
+        await bot_connect.chat_status(settings, group.telegram_chat_id, bot_id)
+        if bot_id is not None
+        else None
+    )
+    if bot_status == "administrator":
+        bot_text = "✅ Бот — администратор группы"
+    elif bot_status is None:
+        bot_text = "Не удалось проверить права бота"
+    else:
+        bot_text = "⚠️ Боту нужны права администратора для чтения сообщений группы"
+    official = group.academic_group_code or "не указан"
+    await screen(
+        db,
+        session,
+        f"Подключение StudGroup\n\n"
+        f"Группа: {group.name}\n"
+        f"ID РАНХиГС: {official}\n"
+        f"Роль: {'староста' if member.role == 'headman' else 'заместитель' if member.role == 'deputy' else 'студент'}\n"
+        f"Доступ в StudGroup: активен\n\n"
+        f"{member_text}\n{bot_text}\n\n"
+        "Проверка выполнена по запросу. Она не отправляет сообщения в общий чат "
+        "и не расходует бюджет ИИ.",
+        [
+            [("Проверить ещё раз", "connection_status")],
+            [("Поддержка", "info_support")],
+            [("‹ Главное меню", "home")],
+        ],
+        "connection_status",
     )
 
 
@@ -1146,6 +1209,8 @@ async def handle(db, update, settings, topic=None):
             )
         else:
             await home(db, session, settings, sender.id)
+    elif action == "connection_status":
+        await connection_status(db, session, settings, sender.id)
     elif action == "notifications":
         await notification_menu(db, session, settings, sender.id)
     elif action.startswith("notify_") and session.step == "notifications":
