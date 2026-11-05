@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
 
+from studgroup.ranepa_discovery import exact_code_match
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_public import extract_public_schedule
@@ -35,7 +36,7 @@ async def select_group_in_interface(page, code: str) -> str:
         if await tab.is_visible():
             await tab.click(timeout=2000)
     except PlaywrightError:
-        return "group_tab_not_available"
+        tab = None
     for selector in (
         'input[placeholder*="групп" i]',
         'input[role="combobox"]',
@@ -52,7 +53,7 @@ async def select_group_in_interface(page, code: str) -> str:
                 options = page.get_by_role("option")
                 for option_index in range(min(await options.count(), 25)):
                     option = options.nth(option_index)
-                    if code in await option.inner_text():
+                    if exact_code_match(await option.inner_text(), code):
                         await option.click(timeout=2500)
                         await page.wait_for_timeout(1200)
                         return "exact_group_selected"
