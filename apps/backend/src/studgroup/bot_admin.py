@@ -164,10 +164,7 @@ async def handle(db, update, settings):
         session.expires_at = now + timedelta(minutes=15)
         groups = (
             await db.scalars(
-                select(Group)
-                .where(Group.status == "active")
-                .order_by(Group.name)
-                .limit(40)
+                select(Group).where(Group.status == "active").order_by(Group.name).limit(40)
             )
         ).all()
         from studgroup.bot_connect import NO_HEADMAN, headmanless_group_ids
