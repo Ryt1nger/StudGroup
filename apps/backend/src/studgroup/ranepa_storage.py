@@ -23,10 +23,9 @@ async def configure_source(db, group_id, code: str, upstream_uuid: UUID | None =
         .where(GroupScheduleSource.group_id == group_id)
         .with_for_update()
     )
-    changed = (
-        group.academic_group_code is not None
-        and normalized(group.academic_group_code) != normalized(official_code)
-    )
+    changed = group.academic_group_code is not None and normalized(
+        group.academic_group_code
+    ) != normalized(official_code)
     if source is None:
         source = GroupScheduleSource(
             group_id=group_id,
