@@ -355,9 +355,11 @@ def test_weekly_replacement_replaces_occurrences_and_preserves_other_weeks(clien
         item["subject"] == "Курс, который продолжается" and item["status"] == "scheduled"
         for item in following
     )
-    changes = db_run(client, lambda db: db.scalars(select(ScheduleChange)))
+    async def count_changes(db):
+        return len((await db.scalars(select(ScheduleChange))).all())
+
     # A confirmed weekly snapshot is one schedule-version change, not one per lesson.
-    assert len(changes.all()) == 1
+    assert db_run(client, count_changes) == 1
     second = client.post(
         f"/v1/staff/schedule-upload/{uploaded['id']}/confirm", headers=AUTH, json=body
     )
