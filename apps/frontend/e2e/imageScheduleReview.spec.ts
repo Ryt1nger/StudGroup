@@ -20,7 +20,8 @@ test('editor corrects the recognized schedule and maps it to one official occurr
     );
   expect(target).toBeTruthy();
   await mapping.selectOption(target!);
-  await page.getByRole('button', { name: 'Готово', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Редактирование пары', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Сохранить изменения', exact: true }).click();
   await page.getByRole('button', { name: 'Подтвердить расписание', exact: true }).click();
   await expect(page).toHaveURL(/\/schedule\/manage$/);
   await page.getByRole('link', { name: 'Назад' }).click();
