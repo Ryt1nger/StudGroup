@@ -57,6 +57,31 @@ def test_embedded_mode_needs_no_redis_and_stops_on_shutdown(tmp_path):
     assert processor.cancelled()
 
 
+def test_slow_optional_owner_diagnostics_does_not_block_startup(tmp_path, monkeypatch):
+    import asyncio
+
+    from studgroup import processing_diagnostics
+
+    async def slow_diagnostics(_engine, _settings):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(processing_diagnostics, "startup", slow_diagnostics)
+    app = create_app(
+        Settings(
+            database_url=f"sqlite+aiosqlite:///{tmp_path}/nonblocking.db",
+            owner_update_notifications_enabled=True,
+            cabinet_schedule_background_enabled=False,
+        )
+    )
+    with TestClient(app) as client:
+        # Startup must finish even though the diagnostic query never finishes.
+        assert client.get("/health").status_code == 200
+        task = app.state.diagnostics_task
+        assert task is not None
+        assert not task.done()
+    assert task.cancelled()
+
+
 def test_render_postgres_urls_are_normalized_without_requiring_manual_driver_edits():
     assert (
         Settings(database_url="postgres://user:placeholder@host/db").database_url
