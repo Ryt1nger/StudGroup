@@ -537,9 +537,10 @@ def test_production_group_processes_across_expired_grant_and_daily_caps(client):
             route.release_budget_until = stamp - timedelta(hours=1)
             route.shadow_daily_budget_usd = Decimal(0)
             await db.commit()
-            assert release_window_blocker(
-                route, stamp, required=True, settings=config, group_id=ident
-            ) is None
+            assert (
+                release_window_blocker(route, stamp, required=True, settings=config, group_id=ident)
+                is None
+            )
 
         async def paid():
             calls.append(True)
@@ -581,16 +582,24 @@ def test_production_still_rejects_missing_group_and_financial_hold(client):
             route.paid_outcome_hold = "ambiguous_paid_attempt"
             await db.commit()
         accounted = RequestAccounting(
-            client.app.state.engine, config, ident,
-            kind="cplus", attempt_key="held", clock=lambda: stamp,
+            client.app.state.engine,
+            config,
+            ident,
+            kind="cplus",
+            attempt_key="held",
+            clock=lambda: stamp,
         )
         with pytest.raises(ProviderFailure, match="release_paid_outcome_held"):
             await accounted.execute(payload(), no_call)
         unknown = uuid4()
         unknown_config = Settings(_env_file=None, ai_production_groups=[str(unknown)])
         missing = RequestAccounting(
-            client.app.state.engine, unknown_config, unknown,
-            kind="cplus", attempt_key="unknown-group", clock=lambda: stamp,
+            client.app.state.engine,
+            unknown_config,
+            unknown,
+            kind="cplus",
+            attempt_key="unknown-group",
+            clock=lambda: stamp,
         )
         with pytest.raises(ProviderFailure, match="production_group_not_configured"):
             await missing.execute(payload(), no_call)
