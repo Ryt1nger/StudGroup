@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.main import Settings
-from studgroup.models import Group, GroupAnalysisSettings, RawMessage
+from studgroup.models import Group, GroupAnalysisSettings, MessageAttachment, RawMessage
 from studgroup.processing_health import inspect
 
 pytest_plugins = ["test_schedule_api"]
@@ -98,5 +98,49 @@ def test_paused_backlog_detected_without_changing_sources_or_spending(client):
             await db.commit()
             expired = await inspect(client.app.state.engine, config, now)
             assert expired.paused is False
+
+            raw.delete_at = now + timedelta(days=30)
+            attachment = MessageAttachment(
+                raw_message_id=raw.id,
+                group_id=group.id,
+                source_revision=1,
+                kind="photo",
+                stable_file_id="unread-807",
+                telegram_file_id="telegram-807",
+                mime_type="image/jpeg",
+                processing_state="metadata_only",
+                active=True,
+                created_at=now,
+                delete_at=now + timedelta(days=30),
+            )
+            db.add(attachment)
+            await db.commit()
+            paused_photo = await inspect(
+                client.app.state.engine,
+                Settings(
+                    _env_file=None,
+                    new_engine_enabled=True,
+                    photo_reading_enabled=True,
+                    ai_release_budget_required_groups=[str(group.id)],
+                ),
+                now,
+            )
+            assert paused_photo.reasons == ("photo_reader_unavailable",)
+            assert paused_photo.pending_messages == 1
+            await db.refresh(raw)
+            assert raw.processing_state == "pending"
+            attachment.processing_state = "ready"
+            await db.commit()
+            ready_photo = await inspect(
+                client.app.state.engine,
+                Settings(
+                    _env_file=None,
+                    new_engine_enabled=True,
+                    photo_reading_enabled=True,
+                    ai_release_budget_required_groups=[str(group.id)],
+                ),
+                now,
+            )
+            assert ready_photo.paused is False
 
     asyncio.run(run())
