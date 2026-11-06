@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = ""
     # Fernet key (urlsafe base64, 32 bytes) that protects study-platform passwords; empty disables them.
     profile_encryption_key: SecretStr = SecretStr("")
+    ranepa_crawl_enabled: bool = False
+    ranepa_schedule_view_enabled: bool = False
+    ranepa_crawl_pause_seconds: int = Field(default=20, ge=5, le=300)
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
@@ -362,6 +365,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from studgroup.ranepa_account_api import router as ranepa_account_router
 
     app.include_router(ranepa_account_router)
+    from studgroup.ranepa_personal_api import router as ranepa_personal_router
+
+    app.include_router(ranepa_personal_router)
     app.include_router(subgroup_router)
     app.include_router(staff_router)
     from studgroup.image_review_api import router as image_review_router

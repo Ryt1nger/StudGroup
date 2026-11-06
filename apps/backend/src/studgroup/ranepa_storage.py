@@ -6,7 +6,14 @@ from uuid import UUID
 
 from sqlalchemy import delete, select
 
-from studgroup.models import Group, GroupOfficialSubject, GroupScheduleSnapshot, GroupScheduleSource
+from studgroup.models import (
+    Group,
+    GroupOfficialSubject,
+    GroupScheduleSnapshot,
+    GroupScheduleSource,
+    RanepaCrawlJob,
+    RanepaPersonalSnapshot,
+)
 from studgroup.ranepa_schedule import WeekSnapshot, group_code, normalized
 from studgroup.subject_identity import subject_uuid
 
@@ -52,6 +59,10 @@ async def configure_source(db, group_id, code: str, upstream_uuid: UUID | None =
         await db.execute(
             delete(GroupOfficialSubject).where(GroupOfficialSubject.group_id == group_id)
         )
+        await db.execute(
+            delete(RanepaPersonalSnapshot).where(RanepaPersonalSnapshot.group_id == group_id)
+        )
+        await db.execute(delete(RanepaCrawlJob).where(RanepaCrawlJob.group_id == group_id))
     group.academic_group_code = official_code
     source.updated_at = datetime.now(UTC)
     await db.flush()

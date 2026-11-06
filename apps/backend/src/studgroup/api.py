@@ -195,7 +195,19 @@ async def schedule(
     end: date,
     group: Annotated[Group, Depends(active_group)],
     db: Annotated[AsyncSession, Depends(database)],
+    request: Request,
+    authorization: str | None = Header(None),
 ):
+    if request.app.state.settings.ranepa_schedule_view_enabled and group.academic_group_code:
+        from studgroup.profile import current
+        from studgroup.ranepa_personal import personal_with_group_fallback, schedule_projection
+
+        user, _ = await current(db, authorization)
+        try:
+            personal = await personal_with_group_fallback(db, group.id, user.id, start, end)
+        except ValueError:
+            raise ApiError("invalid_request", "Выберите период до 32 дней", 422) from None
+        return schedule_projection(personal, group)
     return await schedule_data(start, end, group, db)
 
 

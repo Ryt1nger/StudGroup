@@ -1,0 +1,171 @@
+"""One-shot external read-only pilot; no HTML, cookies or credentials are printed or saved.
+
+Run with: uv run --with playwright python scripts/ranepa_auth_readonly.py --group-code CODE
+Credentials are entered interactively and stay only in process memory.
+The optional DB check uses a disposable local SQLite file, never production.
+"""
+
+import argparse
+import asyncio
+import getpass
+import json
+import tempfile
+from collections import Counter
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from uuid import uuid4
+from zoneinfo import ZoneInfo
+
+from playwright.async_api import async_playwright
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+from studgroup.models import Base, Group, Membership, User
+from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
+from studgroup.ranepa_personal import personal_period, remember_personal
+from studgroup.ranepa_schedule import group_code
+
+
+async def local_db_check(snapshot):
+    with tempfile.TemporaryDirectory(prefix="studgroup-ranepa-pilot-") as folder:
+        engine = create_async_engine(f"sqlite+aiosqlite:///{Path(folder) / 'pilot.db'}")
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                group = Group(
+                    id=uuid4(),
+                    telegram_chat_id=-990001,
+                    name="Pilot",
+                    academic_group_code=snapshot.group_code,
+                    timezone="Europe/Moscow",
+                )
+                user = User(id=uuid4(), telegram_user_id=990001, display_name="Pilot")
+                db.add_all([group, user])
+                await db.flush()
+                db.add(
+                    Membership(group_id=group.id, user_id=user.id, role="student", status="active")
+                )
+                await db.flush()
+                await remember_personal(
+                    db, group.id, user.id, snapshot, group_identity_verified=True
+                )
+                await db.commit()
+                cached = await personal_period(
+                    db, group.id, user.id, snapshot.week_start, snapshot.week_end
+                )
+                return cached["complete"] and len(cached["lessons"]) == len(snapshot.indexed())
+        finally:
+            await engine.dispose()
+
+
+async def inspect(
+    login: str,
+    password: str,
+    code: str,
+    monday: date,
+    headed: bool,
+    month: bool,
+    sdo: bool,
+    local_db: bool,
+) -> dict:
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(headless=not headed)
+        try:
+            context = await browser.new_context(locale="ru-RU", timezone_id="Europe/Moscow")
+            page = await context.new_page()
+            if month:
+                selected = await read_month(page, login, password, code, monday.year, monday.month)
+                if selected.status != "preview_only":
+                    return {"status": selected.status, "stage": "month"}
+                starts = date(monday.year, monday.month, 1)
+                first_monday = starts - timedelta(days=starts.weekday())
+                weekly = []
+                weeks_complete = 0
+                for offset in range(6):
+                    week = first_monday + timedelta(weeks=offset)
+                    if not any(
+                        week <= card.day <= week + timedelta(days=6) for card in selected.cards
+                    ):
+                        continue
+                    result = await read_week(page, login, password, code, week)
+                    if result.snapshot is None:
+                        return {
+                            "status": result.status,
+                            "stage": "week",
+                            "weeks_complete": weeks_complete,
+                        }
+                    weeks_complete += 1
+                    weekly.extend(
+                        row
+                        for row in result.snapshot.indexed().values()
+                        if row.day.month == monday.month
+                    )
+                from_month = Counter((row.day, row.starts, row.subject) for row in selected.cards)
+                from_weeks = Counter((row.day, row.starts, row.subject) for row in weekly)
+                return {
+                    "status": "preview_only" if from_month == from_weeks else "month_week_mismatch",
+                    "month_card_count": len(selected.cards),
+                    "weekly_card_count": len(weekly),
+                    "month_week_match": from_month == from_weeks,
+                    "group_identity_verified": True,
+                    "complete": False,
+                }
+            result = await read_week(page, login, password, code, monday)
+            if result.snapshot is None:
+                return {"status": result.status}
+            rows = result.snapshot.indexed().values()
+            linked, link_states = await resolve_sdo_exits(context, result) if sdo else ({}, {})
+            local_ok = await local_db_check(result.snapshot) if local_db else None
+            return {
+                "status": result.status,
+                "week_start": monday.isoformat(),
+                "lesson_count": len(rows),
+                "days_with_lessons": len({row.day for row in rows}),
+                "sdo_marked_count": sum(row.room == "СДО" for row in rows),
+                "subject_count": len({row.subject.casefold() for row in rows}),
+                "sdo_matched_count": len(linked) if sdo else None,
+                "sdo_states": sorted(link_states.values()) if sdo else None,
+                "isolated_db_round_trip": local_ok,
+                "group_identity_verified": True,
+                "complete": False,
+            }
+        finally:
+            await browser.close()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--group-code", required=True)
+    parser.add_argument("--week-start", type=date.fromisoformat)
+    parser.add_argument("--headed", action="store_true")
+    parser.add_argument(
+        "--month", action="store_true", help="cross-check month grid against every week"
+    )
+    parser.add_argument(
+        "--sdo", action="store_true", help="follow SDO course pages without saving links"
+    )
+    parser.add_argument(
+        "--local-db-check", action="store_true", help="test real rows in a disposable local DB"
+    )
+    args = parser.parse_args()
+    today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    monday = args.week_start or today - timedelta(days=today.weekday())
+    login = getpass.getpass("Логин РАНХиГС: ")
+    password = getpass.getpass("Пароль РАНХиГС: ")
+    result = asyncio.run(
+        inspect(
+            login,
+            password,
+            group_code(args.group_code),
+            monday,
+            args.headed,
+            args.month,
+            args.sdo,
+            args.local_db_check,
+        )
+    )
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

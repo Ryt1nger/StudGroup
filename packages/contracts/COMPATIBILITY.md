@@ -2,6 +2,14 @@
 
 ## RANEPA account and official subjects (0.21.0, 2026-11-06)
 
+`GET /ranepa-schedule` is additive. It returns only the caller's group and
+personal cache, plus conservative group fallback when subgroups are confirmed.
+The existing `GET /schedule` shape is unchanged. With the optional server-side
+view switch enabled for a configured group, its rows come from the personal
+cache; incomplete coverage reports `week_state=needs_clarification` and never
+falls back to an unfiltered group timetable. Lesson detail accepts the new
+`ranepa:` occurrence IDs. Older clients can keep using the existing routes.
+
 The new account route is optional for existing clients. Credentials are write-only
 and encrypted server-side; GET returns no login or password. A client can collect
 them during onboarding, but must treat a 503 as a failed connection. The subject

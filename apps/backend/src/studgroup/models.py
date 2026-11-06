@@ -123,6 +123,24 @@ class RanepaAccount(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class RanepaPersonalSnapshot(Base):
+    """Last complete personal week, owned by one active group member."""
+
+    __tablename__ = "ranepa_personal_snapshots"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    week_end: Mapped[date] = mapped_column(Date)
+    data_digest: Mapped[str] = mapped_column(String(64))
+    rows_json: Mapped[str] = mapped_column(Text)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    identity_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+
 class SchedulePattern(Base):
     __tablename__ = "schedule_patterns"
     __table_args__ = (

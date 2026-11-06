@@ -15,6 +15,7 @@ dependencies = [
     "cryptography>=50.0.2",
     "pillow>=12,<13",
     "python-multipart>=0.0.20,<1",
+    "playwright>=1.55,<2",
 ]
 
 [dependency-groups]

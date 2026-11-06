@@ -2,7 +2,7 @@ import clsx from 'clsx';
 import { useId, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import type { NotificationSettings, UpdateProfileRequest, UserProfile } from '@studgroup/shared-types';
-import { useProfileQuery, useUpdateProfile } from '../../api/queries';
+import { useDeleteRanepaAccount, useProfileQuery, useRanepaAccountQuery, useSaveRanepaAccount, useUpdateProfile } from '../../api/queries';
 import { isApiRequestError } from '../../api/errors';
 import { useSession } from '../../session/SessionProvider';
 import { Float } from '../../shell/AppRoot';
@@ -173,6 +173,11 @@ function Me({ profile }: { profile: UserProfile }) {
   const telegramName = state.status === 'ready' ? state.session.user.display_name.trim().split(/\s+/) : [];
   const { toast } = useFeedback();
   const save = useUpdateProfile();
+  const ranepa = useRanepaAccountQuery();
+  const saveRanepa = useSaveRanepaAccount();
+  const deleteRanepa = useDeleteRanepaAccount();
+  const [ranepaLogin, setRanepaLogin] = useState('');
+  const [ranepaPassword, setRanepaPassword] = useState('');
   const ids = { first: useId(), last: useId(), email: useId(), platform: useId(), url: useId(), login: useId(), pass: useId(), cal: useId(), list: useId() };
   const [form, setForm] = useState({
     first: profile.first_name ?? telegramName[0] ?? '',
@@ -253,6 +258,16 @@ function Me({ profile }: { profile: UserProfile }) {
         <Field id={ids.cal} label={<>Ссылка на календарь СДО <span style={{ fontWeight: 500, color: 'var(--label-3)' }}>(по желанию)</span></>} error={errors.cal}><input id={ids.cal} type="url" maxLength={300} inputMode="url" placeholder="https://" value={form.cal} onChange={set('cal')} /></Field>
       </div>
       <p className="foot">Данные доступа к СДО нужны, чтобы подключаться к парам и загружать материалы. Пароль хранится зашифрованным, его видите только вы и назад он не показывается.</p>
+      <div className="grph">Расписание РАНХиГС</div>
+      <div className="block" style={{ marginTop: 0, paddingTop: 4 }}>
+        <p>Подключите учётную запись ЛК, чтобы получать своё расписание и ссылки на пары с пометкой СДО. Пароль не показывается после сохранения.</p>
+        <p>{ranepa.isPending ? 'Проверяем подключение…' : ranepa.data?.connected ? 'Учётная запись подключена' : 'Учётная запись не подключена'}</p>
+        <Field id="ranepa-login" label="Логин РАНХиГС"><input id="ranepa-login" type="text" maxLength={120} autoComplete="username" value={ranepaLogin} onChange={(event) => setRanepaLogin(event.target.value)} /></Field>
+        <Field id="ranepa-password" label="Пароль РАНХиГС"><input id="ranepa-password" type="password" maxLength={200} autoComplete="new-password" value={ranepaPassword} onChange={(event) => setRanepaPassword(event.target.value)} /></Field>
+        {saveRanepa.isError ? <Banner tone="danger" icon="alert">Не удалось сохранить доступ. Проверьте данные или попробуйте позже.</Banner> : null}
+        <button type="button" className="btn" disabled={saveRanepa.isPending || !ranepaLogin.trim() || !ranepaPassword} onClick={() => saveRanepa.mutate({ login: ranepaLogin.trim(), password: ranepaPassword }, { onSuccess: () => { setRanepaPassword(''); setRanepaLogin(''); toast('Доступ сохранён'); } })}>Сохранить доступ</button>
+        {ranepa.data?.connected ? <button type="button" className="linkbtn" disabled={deleteRanepa.isPending} onClick={() => deleteRanepa.mutate(undefined, { onSuccess: () => toast('Доступ удалён') })}>Удалить доступ РАНХиГС</button> : null}
+      </div>
       {failed ? <Banner tone="danger" icon="alert">{failed}</Banner> : null}
       <div className="cta-space" />
       <Float>
