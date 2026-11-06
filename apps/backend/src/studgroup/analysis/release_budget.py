@@ -111,6 +111,25 @@ async def configure(db, group_id, *, amount, since, until, receipt):
     return route
 
 
+def release_window_blocker(route, now, *, required=False):
+    """No paid attempt may start outside a separately authorized funding window."""
+    if route is None:
+        return "release_budget_not_configured" if required else None
+    if route.paid_outcome_hold:
+        return "release_paid_outcome_held"
+    if route.release_budget_usd is None:
+        return "release_budget_not_configured" if required else None
+    if (
+        route.release_budget_since is None
+        or route.release_budget_until is None
+        or not route.release_budget_receipt
+        or not utc(route.release_budget_since) <= utc(now) < utc(route.release_budget_until)
+        or utc(route.release_budget_until) - utc(route.release_budget_since) > MAX_WINDOW
+    ):
+        return "release_budget_window_closed"
+    return None
+
+
 async def spent(db, group_id, *, since=None):
     query = select(
         func.coalesce(func.sum(AnalysisBudgetCall.charged_usd + AnalysisBudgetCall.reserved_usd), 0)
