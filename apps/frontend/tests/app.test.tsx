@@ -23,7 +23,7 @@ describe('session and access', () => {
 
   it('shows Today without waiting for the optional profile response', async () => {
     useScenario();
-    let releaseProfile: () => void = () => {};
+    let releaseProfile: () => void = () => undefined;
     const delayedProfile = new Promise<void>((resolve) => { releaseProfile = resolve; });
     let profileRequests = 0;
     server.use(
