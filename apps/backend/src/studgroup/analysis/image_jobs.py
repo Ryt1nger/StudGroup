@@ -944,9 +944,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
 
                 job.state = "budget_deferred"
                 job.available_at = next_budget_reset(now, monthly="monthly" in failure.code)
-            elif paid and usage is None and not getattr(
-                failure, "reservation_releasable", False
-            ):
+            elif paid and usage is None and not getattr(failure, "reservation_releasable", False):
                 job.state, job.error = "failed", "ambiguous_paid_attempt"
             elif failure.retryable and job.attempts < MAX_ATTEMPTS:
                 job.state = "retry"
