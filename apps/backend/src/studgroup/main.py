@@ -359,6 +359,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(deadlines_router)
     app.include_router(notifications_router)
     app.include_router(profile_router)
+    from studgroup.ranepa_account_api import router as ranepa_account_router
+
+    app.include_router(ranepa_account_router)
     app.include_router(subgroup_router)
     app.include_router(staff_router)
     from studgroup.image_review_api import router as image_review_router

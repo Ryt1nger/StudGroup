@@ -91,6 +91,38 @@ class GroupOfficialSubject(Base):
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class RanepaCrawlJob(Base):
+    """One account attempt in a weekly fair crawl; contains identifiers only."""
+
+    __tablename__ = "ranepa_crawl_jobs"
+    __table_args__ = (UniqueConstraint("group_id", "user_id", "week_start"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    week_start: Mapped[date] = mapped_column(Date)
+    priority: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(16), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_code: Mapped[str | None] = mapped_column(String(48))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RanepaAccount(Base):
+    """Write-only university credentials owned by one user, separate from group data."""
+
+    __tablename__ = "ranepa_accounts"
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    login_encrypted: Mapped[str] = mapped_column(Text)
+    password_encrypted: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class SchedulePattern(Base):
     __tablename__ = "schedule_patterns"
     __table_args__ = (
