@@ -1,4 +1,5 @@
-import type { SessionContext } from '@studgroup/shared-types';
+import type { SessionContext, TodayResponse } from '@studgroup/shared-types';
+import { dayKey } from '../lib/format';
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
 /**
@@ -160,7 +161,7 @@ async function store(client: QueryClient, owner: string): Promise<void> {
 }
 
 /** Returns a count; an unavailable or invalid cache never blocks login. */
-export async function restoreAcademicCache(client: QueryClient, owner: string, isCurrent: () => boolean = () => true): Promise<number> {
+export async function restoreAcademicCache(client: QueryClient, owner: string, serverTime: string, isCurrent: () => boolean = () => true): Promise<number> {
   const db = await openDatabase();
   if (!db) return 0;
   try {
@@ -186,6 +187,16 @@ export async function restoreAcademicCache(client: QueryClient, owner: string, i
         || item.updatedAt > Date.now() || Date.now() - item.updatedAt > MAX_AGE_MS
         || item.data === undefined) continue;
       if (!isCurrent()) return restored;
+      // A "today" snapshot from yesterday is never a safe representation of
+      // today's lesson/deadline state. Compare using trusted bootstrap server
+      // time and the group's timezone, not the device's potentially wrong clock.
+      if (item.key[0] === 'today') {
+        const feed = item.data as Partial<TodayResponse> | null;
+        if (!feed || typeof feed.server_time !== 'string' || typeof feed.group_timezone !== 'string') continue;
+        try {
+          if (dayKey(feed.server_time, feed.group_timezone) !== dayKey(serverTime, feed.group_timezone)) continue;
+        } catch { continue; }
+      }
       // Never overwrite a fresher response that arrived while IndexedDB was opening.
       const current = client.getQueryState(item.key);
       if (current && current.dataUpdatedAt >= item.updatedAt) continue;
