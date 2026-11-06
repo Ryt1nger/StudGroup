@@ -80,7 +80,7 @@ def _gate(settings, now):
     if not settings.new_engine_enabled:
         return False
     until = settings.new_engine_enabled_until
-    return until is None or _utc(until) > now
+    return until is None or _utc(until) > now or bool(settings.ai_production_groups)
 
 
 def _source_message(row, *, roles, topics, attachments):
@@ -597,6 +597,14 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
             )
         ).all()
         for group, _route in groups:
+            from studgroup.analysis.release_budget import production_enabled
+
+            if (
+                settings.new_engine_enabled_until is not None
+                and _utc(settings.new_engine_enabled_until) <= now
+                and not production_enabled(settings, group.id)
+            ):
+                continue
             # The settings-row lock serializes enqueue/reserve decisions for this group.
             route = await db.scalar(
                 select(GroupAnalysisSettings)
