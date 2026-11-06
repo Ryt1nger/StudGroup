@@ -397,6 +397,7 @@ async def _claim(
     mode="shadow",
     hourly_cap=None,
     funding_required_groups=(),
+    funding_settings=None,
 ):
     # Per-message shadow runs name their raw message; package runs of the live ``new`` writer
     # cover several targets and have none, so the two queues never pick each other's rows.
@@ -466,6 +467,8 @@ async def _claim(
                 route_row,
                 now,
                 required=str(row.group_id) in funding_required_groups,
+                settings=funding_settings,
+                group_id=row.group_id,
             )
             if blocker:
                 await db.commit()

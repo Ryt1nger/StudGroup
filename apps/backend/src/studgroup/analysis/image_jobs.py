@@ -638,6 +638,21 @@ async def claim(db, group, route, settings, now):
         if cached is not None:
             reuse_reading(job, cached)
             return job.id, None  # no reservation and no paid attempt, even at exhausted budget
+    from studgroup.analysis.release_budget import release_window_blocker
+
+    blocker = release_window_blocker(
+        route,
+        now,
+        required=str(group.id) in settings.ai_release_budget_required_groups,
+        settings=settings,
+        group_id=group.id,
+    )
+    if blocker:
+        job.state, job.error = "budget_deferred", blocker
+        # Recheck soon after an operator approves funding; no paid retry occurs
+        # while the policy remains closed.
+        job.available_at = now + timedelta(minutes=5)
+        return None
     reserve = Decimal(str(settings.image_pass_reservation_usd))
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     group_filter = ImageAnalysisCall.group_id == group.id
@@ -917,7 +932,18 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             job.visual_coverage_json = json.dumps(coverage) if coverage else None
         else:
             job.error = failure.code
-            if paid and usage is None and not getattr(failure, "reservation_releasable", False):
+            if (
+                failure.code.startswith("recurring_")
+                or failure.code.startswith("release_budget_")
+                or failure.code.startswith("release_daily_budget_")
+                or failure.code.startswith("release_hourly_budget_")
+                or failure.code == "release_paid_outcome_held"
+            ):
+                from studgroup.analysis.release_budget import next_budget_reset
+
+                job.state = "budget_deferred"
+                job.available_at = next_budget_reset(now, monthly="monthly" in failure.code)
+            elif paid and usage is None and not getattr(failure, "reservation_releasable", False):
                 job.state, job.error = "failed", "ambiguous_paid_attempt"
             elif failure.retryable and job.attempts < MAX_ATTEMPTS:
                 job.state = "retry"

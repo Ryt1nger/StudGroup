@@ -53,6 +53,18 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     ai_release_budget_required_groups: list[str] = Field(default_factory=list)
+    # Explicitly authorized recurring policy, independent of the one-off release grants.
+    # An empty allowlist/receipt or expired approval is NEVER a spending permission.
+    ai_recurring_budget_groups: list[str] = Field(default_factory=list)
+    ai_recurring_approved_until: AwareDatetime | None = None
+    ai_recurring_approval_receipt: str = ""
+    # All amounts in USD per authorized group, with UTC-day/month accounting.
+    ai_recurring_daily_budget_usd: float = Field(default=0.20, gt=0, allow_inf_nan=False)
+    ai_recurring_monthly_budget_usd: float = Field(default=6.0, gt=0, allow_inf_nan=False)
+    ai_recurring_text_daily_budget_usd: float = Field(default=0.10, gt=0, allow_inf_nan=False)
+    ai_recurring_text_monthly_budget_usd: float = Field(default=3.0, gt=0, allow_inf_nan=False)
+    ai_recurring_image_daily_budget_usd: float = Field(default=0.10, gt=0, allow_inf_nan=False)
+    ai_recurring_image_monthly_budget_usd: float = Field(default=3.0, gt=0, allow_inf_nan=False)
     ai_daily_group_budget_usd: float = 0.05
     ai_hourly_group_budget_usd: float = 0.25
     ai_total_budget_usd: float = 1.70

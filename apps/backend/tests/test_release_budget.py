@@ -395,3 +395,122 @@ def test_production_transport_hook_accounts_each_physical_request(client):
             assert await spent(db, ident) == reported_cost(body(100, 10)["usage"])
 
     asyncio.run(run())
+
+
+def test_recurring_budget_requires_explicit_group_receipt_and_future_approval(client):
+    from studgroup.analysis.release_budget import release_window_blocker
+    from studgroup.main import Settings
+
+    stamp = datetime.fromisoformat("2026-11-28T10:00:00+00:00")
+    ident, _, _ = setup_budget(client, stamp=stamp)
+    invalid = Settings(
+        _env_file=None,
+        ai_recurring_budget_groups=[str(ident)],
+        ai_recurring_approved_until=stamp + timedelta(days=60),
+    )
+    good = Settings(
+        _env_file=None,
+        ai_recurring_budget_groups=[str(ident)],
+        ai_recurring_approved_until=stamp + timedelta(days=60),
+        ai_recurring_approval_receipt="b" * 64,
+    )
+
+    async def run():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            route = await db.get(GroupAnalysisSettings, ident)
+            route.release_budget_until = stamp - timedelta(minutes=1)
+            await db.commit()
+            assert release_window_blocker(route, stamp, settings=invalid, group_id=ident) == (
+                "recurring_approval_expired"
+            )
+            assert release_window_blocker(route, stamp, settings=good, group_id=ident) is None
+        called = []
+
+        async def paid():
+            called.append(True)
+            return body()
+
+        forbidden = RequestAccounting(
+            client.app.state.engine,
+            invalid,
+            ident,
+            kind="cplus",
+            attempt_key="invalid-approval",
+            clock=lambda: stamp,
+        )
+        with pytest.raises(ProviderFailure, match="recurring_approval_expired"):
+            await forbidden.execute(payload(), paid)
+        assert not called
+        authorized = RequestAccounting(
+            client.app.state.engine,
+            good,
+            ident,
+            kind="cplus",
+            attempt_key="approved",
+            clock=lambda: stamp,
+        )
+        await authorized.execute(payload(), paid)
+        assert called == [True]
+        async with AsyncSession(client.app.state.engine) as db:
+            assert await spent(db, ident) == reported_cost(body()["usage"])
+
+    asyncio.run(run())
+
+
+def test_recurring_text_image_daily_and_monthly_caps_reset_without_rebuying_history(client):
+    from studgroup.main import Settings
+
+    initial = datetime.fromisoformat("2026-11-28T10:00:00+00:00")
+    ident, _, _ = setup_budget(client, stamp=initial)
+    config = Settings(
+        _env_file=None,
+        ai_recurring_budget_groups=[str(ident)],
+        ai_recurring_approved_until=initial + timedelta(days=60),
+        ai_recurring_approval_receipt="b" * 64,
+        ai_recurring_daily_budget_usd=0.006,
+        ai_recurring_monthly_budget_usd=0.008,
+        ai_recurring_text_daily_budget_usd=0.003,
+        ai_recurring_text_monthly_budget_usd=0.004,
+        ai_recurring_image_daily_budget_usd=0.003,
+        ai_recurring_image_monthly_budget_usd=0.004,
+    )
+    clock = [initial]
+    invocations = []
+
+    async def run():
+        async def paid():
+            invocations.append("paid")
+            return body()
+
+        async def request(kind, key):
+            accounting = RequestAccounting(
+                client.app.state.engine,
+                config,
+                ident,
+                kind=kind,
+                attempt_key=key,
+                clock=lambda: clock[0],
+            )
+            await accounting.execute(payload(image=kind == "image"), paid)
+
+        await request("cplus", "text-first")
+        with pytest.raises(ProviderFailure, match="recurring_kind_daily_budget_exhausted"):
+            await request("cplus", "text-same-day")
+        await request("image", "photo-first")
+        assert len(invocations) == 2
+        clock[0] += timedelta(days=1)
+        await request("cplus", "text-second-day")
+        clock[0] += timedelta(days=1)
+        with pytest.raises(ProviderFailure, match="recurring_kind_monthly_budget_exhausted"):
+            await request("cplus", "text-month-cap")
+        assert len(invocations) == 3
+        clock[0] += timedelta(days=1)
+        await request("cplus", "text-next-month")
+        assert len(invocations) == 4
+        async with AsyncSession(client.app.state.engine) as db:
+            calls = (await db.scalars(select(AnalysisBudgetCall))).all()
+            assert len(calls) == 4
+            assert all(call.state == "settled" for call in calls)
+            assert all(call.reserved_usd == 0 for call in calls)
+
+    asyncio.run(run())

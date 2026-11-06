@@ -6,10 +6,12 @@ No source text, group identifiers, secrets, or model calls leave this module.
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from studgroup.analysis.release_budget import recurring_policy_status, spent
 from studgroup.models import Group, GroupAnalysisSettings, MessageAttachment, RawMessage
 
 
@@ -58,6 +60,7 @@ async def inspect(engine, settings, now=None):
             count = int(await db.scalar(select(func.count(RawMessage.id)).where(*eligible)) or 0)
             if count == 0:
                 continue
+            recurring = recurring_policy_status(settings, group.id, now)
             if not settings.new_engine_enabled:
                 reason = "engine_disabled"
             elif (
@@ -66,12 +69,39 @@ async def inspect(engine, settings, now=None):
                 reason = "engine_window_closed"
             elif route.paid_outcome_hold:
                 reason = "paid_outcome_held"
-            elif route.release_budget_until and utc(route.release_budget_until) <= now:
+            elif recurring is not None and recurring != "active":
+                reason = recurring
+            elif recurring == "active" and (
+                await spent(
+                    db,
+                    group.id,
+                    since=now.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
+                )
+                >= Decimal(str(settings.ai_recurring_monthly_budget_usd))
+            ):
+                reason = "recurring_monthly_budget_exhausted"
+            elif recurring == "active" and (
+                await spent(
+                    db, group.id, since=now.replace(hour=0, minute=0, second=0, microsecond=0)
+                )
+                >= Decimal(str(settings.ai_recurring_daily_budget_usd))
+            ):
+                reason = "recurring_daily_budget_exhausted"
+            elif (
+                recurring is None
+                and route.release_budget_until
+                and utc(route.release_budget_until) <= now
+            ):
                 reason = "release_budget_window_closed"
-            elif route.release_budget_since and utc(route.release_budget_since) > now:
+            elif (
+                recurring is None
+                and route.release_budget_since
+                and utc(route.release_budget_since) > now
+            ):
                 reason = "release_budget_window_not_started"
             elif (
-                str(group.id) in settings.ai_release_budget_required_groups
+                recurring is None
+                and str(group.id) in settings.ai_release_budget_required_groups
                 and route.release_budget_usd is None
             ):
                 reason = "release_budget_not_configured"
@@ -81,6 +111,7 @@ async def inspect(engine, settings, now=None):
                 protected = (
                     route.release_budget_usd is not None
                     or str(group.id) in settings.ai_release_budget_required_groups
+                    or recurring == "active"
                 )
                 if (
                     not settings.photo_reading_enabled

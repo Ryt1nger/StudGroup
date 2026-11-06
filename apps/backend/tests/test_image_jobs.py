@@ -13,6 +13,7 @@ from test_photo_reading import JPEG, VisionProvider, photo_message
 from studgroup.analysis import image_jobs
 from studgroup.models import (
     Group,
+    GroupAnalysisSettings,
     ImageAnalysisCall,
     ImageAnalysisJob,
     MessageAttachment,
@@ -294,3 +295,75 @@ def test_visual_context_identifies_source_album_and_explicit_reply(client):
             assert by_id[32]["media_group_ids"] == ["same-album"]
 
     asyncio.run(run())
+
+
+def test_image_funding_pause_retains_job_and_recovers_with_approved_recurring_cap(
+    client, monkeypatch
+):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+    now = datetime.now(UTC)
+
+    async def expire_release():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(days=2)
+            route.release_budget_until = now - timedelta(minutes=1)
+            route.release_budget_receipt = "a" * 64
+            group_id = group.id
+            await db.commit()
+            return group_id
+
+    group_id = asyncio.run(expire_release())
+    denied = cfg(
+        client,
+        image_analysis_mode="live",
+        ai_release_budget_required_groups=[str(group_id)],
+    )
+    provider = VisionProvider(reading(), propose=False)
+    assert tick(client, provider, denied, now) == "idle"
+    assert provider.vision == []
+    assert stored(client, ImageAnalysisJob)[0].state == "budget_deferred"
+
+    approved = cfg(
+        client,
+        image_analysis_mode="live",
+        ai_release_budget_required_groups=[str(group_id)],
+        ai_recurring_budget_groups=[str(group_id)],
+        ai_recurring_approved_until=now + timedelta(days=40),
+        ai_recurring_approval_receipt="b" * 64,
+    )
+    assert tick(client, provider, approved, now + timedelta(minutes=6)) == "ready"
+    assert tick(client, provider, approved, now + timedelta(minutes=7)) == "ready"
+    assert len(provider.vision) == 2
+    assert all(job.state == "ready" for job in stored(client, ImageAnalysisJob))
+
+
+def test_recurring_image_cap_blocks_pixels_without_clearing_image_job(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+    now = datetime.now(UTC)
+
+    async def id():
+        async with AsyncSession(client.app.state.engine) as db:
+            return str(await db.scalar(select(Group.id).where(Group.telegram_chat_id == -1001)))
+
+    group_id = asyncio.run(id())
+    config = cfg(
+        client,
+        image_analysis_mode="live",
+        ai_recurring_budget_groups=[group_id],
+        ai_recurring_approved_until=now + timedelta(days=40),
+        ai_recurring_approval_receipt="b" * 64,
+        ai_recurring_image_daily_budget_usd=0.0001,
+        ai_recurring_image_monthly_budget_usd=0.0001,
+    )
+    provider = VisionProvider(reading(), propose=False)
+    assert tick(client, provider, config, now) == "budget_deferred"
+    assert provider.vision == []
+    assert stored(client, ImageAnalysisJob)[0].state == "budget_deferred"
+    assert stored(client, ImageAnalysisJob)[0].error.startswith("recurring_")
