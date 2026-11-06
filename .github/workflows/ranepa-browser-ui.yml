@@ -1,0 +1,38 @@
+name: RANEPA browser UI inspection
+on:
+  push:
+    branches:
+      - feat/ranepa-schedule-subgroup-pilot
+    paths:
+      - .github/workflows/ranepa-browser-ui.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Install Playwright browser
+        working-directory: apps/backend
+        run: |
+          uv sync --frozen
+          uv run --with playwright python -m playwright install chromium --with-deps
+      - name: Visit university personal cabinet through browser UI
+        working-directory: apps/backend
+        run: |
+          uv run --with playwright python scripts/ranepa_browser_ui_probe.py --mode cabinet --group-code 'Э-ОБ-385-04-26-02'
+      - name: Visit LMS through browser UI
+        working-directory: apps/backend
+        run: |
+          uv run --with playwright python scripts/ranepa_browser_ui_probe.py --mode moodle --group-code 'Э-ОБ-385-04-26-02'
+      - name: Visit published schedule through browser UI
+        working-directory: apps/backend
+        run: |
+          uv run --with playwright python scripts/ranepa_browser_ui_probe.py --mode public --group-code 'Э-ОБ-385-04-26-02'

@@ -1,0 +1,13 @@
+FROM python:3.13-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN pip install --no-cache-dir uv==0.11.12
+COPY pyproject.toml uv.lock /app/
+COPY src /app/src
+RUN uv sync --frozen --no-dev --no-editable \
+    && /app/.venv/bin/python -m playwright install --with-deps chromium \
+    && useradd --uid 10001 --create-home studgroup \
+    && chmod -R a+rX /ms-playwright
+ENV PATH="/app/.venv/bin:$PATH"
+USER studgroup
+CMD ["python", "-m", "studgroup.ranepa_worker"]

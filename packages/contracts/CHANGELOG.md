@@ -1,5 +1,18 @@
 # Contract changelog
 
+## 0.21.0 — 2026-11-06
+
+- Added `GET /ranepa-schedule` for the caller's cached university lessons, with
+  `complete`, `fallback_used`, and `last_success_at`. The optional server-side
+  RANEPA view switch makes `GET /schedule` and lesson details use the personal
+  cache for configured groups. It remains off by default.
+- Added optional `GET`/`PUT`/`DELETE /ranepa-account` for a student's own encrypted
+  university connection. The login and password are write-only; responses contain
+  only connection state. Older clients can ignore the new route. No weekly crawl or
+  production schedule update is enabled by default.
+- `GET /subjects` can also include names observed in verified university snapshots
+  for the active group. Its response shape and subject ID formula are unchanged.
+
 ## 0.20.0 — 2026-10-31
 
 - Added card material operations for headmen and deputies: add HTTPS links, rename/change links, remove materials, and upload or replace files directly from the Mini App. Each operation requires the current card revision and returns the new revision and material list. Uploaded files are kept in Telegram and limited to 20 MB.

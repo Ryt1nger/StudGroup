@@ -1,4 +1,4 @@
-"""Subject overview derived from active-group published data; no separate subject store."""
+"""Subject overview from active-group data and verified university snapshots."""
 
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -12,7 +12,14 @@ from studgroup import subgroups
 from studgroup.academic_deadlines import archived as deadline_archived
 from studgroup.api import active_group, database
 from studgroup.homework import archived_condition, user_id
-from studgroup.models import AcademicDeadline, Group, Homework, ScheduleException, SchedulePattern
+from studgroup.models import (
+    AcademicDeadline,
+    Group,
+    GroupOfficialSubject,
+    Homework,
+    ScheduleException,
+    SchedulePattern,
+)
 from studgroup.subject_identity import match_key, subject_uuid
 
 router = APIRouter(prefix="/v1")
@@ -26,7 +33,7 @@ def is_placeholder(value):
 
 
 def subject_key(value):
-    # Exactly the identity formula: names that differ by ё/е or by spacing stay separate.
+    # Preserve the existing subject identity contract for published data.
     return value.casefold()
 
 
@@ -56,6 +63,14 @@ async def subjects(
         if is_placeholder(row.subject):
             continue
         names.setdefault(subject_key(row.subject), row.subject)
+    official = (
+        await db.scalars(
+            select(GroupOfficialSubject).where(GroupOfficialSubject.group_id == group.id)
+        )
+    ).all()
+    for row in official:
+        if not is_placeholder(row.name):
+            names.setdefault(subject_key(row.name), row.name)
     # A confirmed one-off replacement can introduce a new subject as well.
     exceptions = (
         await db.scalars(select(ScheduleException).where(ScheduleException.group_id == group.id))
