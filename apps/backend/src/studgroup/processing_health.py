@@ -6,6 +6,7 @@ No source text, group identifiers, secrets, or model calls leave this module.
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,12 +73,12 @@ async def inspect(engine, settings, now=None):
                 reason = recurring
             elif recurring == "active" and (
                 await spent(db, group.id, since=now.replace(day=1, hour=0, minute=0, second=0, microsecond=0))
-                >= settings.ai_recurring_monthly_budget_usd
+                >= Decimal(str(settings.ai_recurring_monthly_budget_usd))
             ):
                 reason = "recurring_monthly_budget_exhausted"
             elif recurring == "active" and (
                 await spent(db, group.id, since=now.replace(hour=0, minute=0, second=0, microsecond=0))
-                >= settings.ai_recurring_daily_budget_usd
+                >= Decimal(str(settings.ai_recurring_daily_budget_usd))
             ):
                 reason = "recurring_daily_budget_exhausted"
             elif recurring is None and route.release_budget_until and utc(route.release_budget_until) <= now:
