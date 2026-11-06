@@ -1107,8 +1107,9 @@ def test_expired_release_preserves_pending_and_queued_packages_until_authorized(
             route.release_budget_since = now - timedelta(hours=1)
             route.release_budget_until = now + timedelta(hours=1)
             route.release_budget_receipt = "a" * 64
+            group_id = group.id
             await db.commit()
-            return group.id
+            return group_id
 
     group_id = asyncio.run(run())
     cfg = settings(ai_release_budget_required_groups=[str(group_id)])
