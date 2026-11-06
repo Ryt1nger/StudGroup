@@ -23,7 +23,6 @@ async def processing_loop(engine, settings, pause=None):
         logger.addHandler(logging.StreamHandler())
     previous = None
     last_health_check = None
-    last_paused = False
     while True:
         try:
             status = await dispatch_next(engine, settings)
@@ -47,11 +46,10 @@ async def processing_loop(engine, settings, pause=None):
                             db, "ai_processing_paused", datetime.now(UTC), detail=details
                         )
                         await db.commit()
-                elif last_paused:
+                else:
                     async with AsyncSession(engine) as db:
                         await incident(db, "ai_processing_paused", datetime.now(UTC), recover=True)
                         await db.commit()
-                last_paused = health.paused
             await flush_incidents(engine, settings)
         except Exception as error:  # noqa: BLE001 -- keep the SQL-backed poller alive; never catch cancellation
             # Source data and reservations are in SQL. Never log exception text:
