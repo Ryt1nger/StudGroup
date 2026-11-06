@@ -173,7 +173,7 @@ export async function restoreAcademicCache(client: QueryClient, owner: string, s
     const key = await keyFor(db, false);
     if (!key) return 0;
     const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: record.iv },
+      { name: 'AES-GCM', iv: new Uint8Array(record.iv) },
       key,
       record.ciphertext,
     );
