@@ -367,3 +367,50 @@ def test_recurring_image_cap_blocks_pixels_without_clearing_image_job(client, mo
     assert provider.vision == []
     assert stored(client, ImageAnalysisJob)[0].state == "budget_deferred"
     assert stored(client, ImageAnalysisJob)[0].error.startswith("recurring_")
+
+
+def test_production_vision_reads_both_passes_with_zero_pilot_budgets(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client, budget="0")
+
+    async def group_id():
+        async with AsyncSession(client.app.state.engine) as db:
+            return str(await db.scalar(select(Group.id).where(Group.telegram_chat_id == -1001)))
+
+    config = cfg(
+        client,
+        image_analysis_mode="live",
+        ai_production_groups=[asyncio.run(group_id())],
+        image_hourly_budget_usd=0,
+        image_total_budget_usd=0,
+        image_package_budget_usd=0,
+    )
+    provider = VisionProvider(reading(), propose=False)
+    assert tick(client, provider, config) == "ready"
+    assert tick(client, provider, config) == "ready"
+    assert tick(client, provider, config) == "idle"
+    assert len(provider.vision) == 2
+    assert all(job.state == "ready" for job in stored(client, ImageAnalysisJob))
+
+
+def test_production_picture_is_not_failed_by_old_reservation_size(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+
+    async def group_id():
+        async with AsyncSession(client.app.state.engine) as db:
+            return str(await db.scalar(select(Group.id).where(Group.telegram_chat_id == -1001)))
+
+    config = cfg(
+        client,
+        ai_production_groups=[asyncio.run(group_id())],
+        image_analysis_mode="live",
+        image_pass_reservation_usd=0.000001,
+    )
+    provider = VisionProvider(reading(), propose=False)
+    assert tick(client, provider, config) == "ready"
+    assert tick(client, provider, config) == "ready"
+    assert all(job.state == "ready" for job in stored(client, ImageAnalysisJob))
+    assert all(call.reserved_usd == 0 for call in stored(client, ImageAnalysisCall))

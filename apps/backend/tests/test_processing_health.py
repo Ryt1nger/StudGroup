@@ -144,3 +144,56 @@ def test_paused_backlog_detected_without_changing_sources_or_spending(client):
             assert ready_photo.paused is False
 
     asyncio.run(run())
+
+
+def test_production_health_ignores_expired_pilot_windows(client):
+    async def run():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            group.pilot_authorized = True
+            group.status = "active"
+            db.add(
+                GroupAnalysisSettings(
+                    group_id=group.id,
+                    analysis_mode="new",
+                    engine_version="cplus-shadow-1",
+                    shadow_daily_budget_usd=Decimal(0),
+                    shadow_sample_percent=100,
+                    release_budget_usd=Decimal(".01"),
+                    release_budget_since=now - timedelta(days=2),
+                    release_budget_until=now - timedelta(minutes=1),
+                    updated_at=now,
+                )
+            )
+            db.add(
+                RawMessage(
+                    id=uuid.uuid4(),
+                    group_id=group.id,
+                    telegram_message_id=900,
+                    text="Домашнее задание",
+                    message_date=now,
+                    version_date=now,
+                    live_received_at=now,
+                    imported=False,
+                    processing_state="pending",
+                    delete_at=now + timedelta(days=30),
+                )
+            )
+            ident = group.id
+            await db.commit()
+        health = await inspect(
+            client.app.state.engine,
+            Settings(
+                _env_file=None,
+                new_engine_enabled=True,
+                new_engine_enabled_until=now - timedelta(minutes=1),
+                ai_production_groups=[str(ident)],
+                ai_release_budget_required_groups=[str(ident)],
+            ),
+            now,
+        )
+        assert health.paused is False
+        assert health.pending_messages == 0
+
+    asyncio.run(run())

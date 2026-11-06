@@ -514,3 +514,94 @@ def test_recurring_text_image_daily_and_monthly_caps_reset_without_rebuying_hist
             assert all(call.reserved_usd == 0 for call in calls)
 
     asyncio.run(run())
+
+
+def test_production_group_processes_across_expired_grant_and_daily_caps(client):
+    from studgroup.analysis.release_budget import release_window_blocker
+    from studgroup.main import Settings
+
+    stamp = datetime.now(UTC)
+    ident, _, _ = setup_budget(client, amount=".001", stamp=stamp)
+    config = Settings(
+        _env_file=None,
+        ai_production_groups=[str(ident)],
+        ai_release_budget_required_groups=[str(ident)],
+        new_engine_hourly_budget_usd=0,
+        image_hourly_budget_usd=0,
+    )
+    calls = []
+
+    async def run():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            route = await db.get(GroupAnalysisSettings, ident)
+            route.release_budget_until = stamp - timedelta(hours=1)
+            route.shadow_daily_budget_usd = Decimal(0)
+            await db.commit()
+            assert (
+                release_window_blocker(route, stamp, required=True, settings=config, group_id=ident)
+                is None
+            )
+
+        async def paid():
+            calls.append(True)
+            return body(100, 10)
+
+        for index in range(3):
+            accounted = RequestAccounting(
+                client.app.state.engine,
+                config,
+                ident,
+                kind="cplus" if index < 2 else "image",
+                attempt_key=f"production-{index}",
+                clock=lambda index=index: stamp + timedelta(days=index),
+            )
+            await accounted.execute(payload(image=index == 2), paid)
+        assert calls == [True, True, True]
+        async with AsyncSession(client.app.state.engine) as db:
+            records = (await db.scalars(select(AnalysisBudgetCall))).all()
+            assert len(records) == 3
+            assert all(record.state == "settled" and record.reserved_usd == 0 for record in records)
+
+    asyncio.run(run())
+
+
+def test_production_still_rejects_missing_group_and_financial_hold(client):
+    from uuid import uuid4
+
+    from studgroup.main import Settings
+
+    ident, _, stamp = setup_budget(client)
+    config = Settings(_env_file=None, ai_production_groups=[str(ident)])
+
+    async def run():
+        async def no_call():
+            pytest.fail("No paid request may bypass an explicit hold")
+
+        async with AsyncSession(client.app.state.engine) as db:
+            route = await db.get(GroupAnalysisSettings, ident)
+            route.paid_outcome_hold = "ambiguous_paid_attempt"
+            await db.commit()
+        accounted = RequestAccounting(
+            client.app.state.engine,
+            config,
+            ident,
+            kind="cplus",
+            attempt_key="held",
+            clock=lambda: stamp,
+        )
+        with pytest.raises(ProviderFailure, match="release_paid_outcome_held"):
+            await accounted.execute(payload(), no_call)
+        unknown = uuid4()
+        unknown_config = Settings(_env_file=None, ai_production_groups=[str(unknown)])
+        missing = RequestAccounting(
+            client.app.state.engine,
+            unknown_config,
+            unknown,
+            kind="cplus",
+            attempt_key="unknown-group",
+            clock=lambda: stamp,
+        )
+        with pytest.raises(ProviderFailure, match="production_group_not_configured"):
+            await missing.execute(payload(), no_call)
+
+    asyncio.run(run())

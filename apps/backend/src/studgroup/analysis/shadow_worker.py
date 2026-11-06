@@ -473,6 +473,18 @@ async def _claim(
             if blocker:
                 await db.commit()
                 return blocker
+        from studgroup.analysis.release_budget import production_enabled
+
+        production = production_enabled(funding_settings, row.group_id)
+        if (
+            mode == "new"
+            and funding_settings is not None
+            and funding_settings.new_engine_enabled_until is not None
+            and _utc(funding_settings.new_engine_enabled_until) <= now
+            and not production
+        ):
+            await db.commit()
+            return "engine_window_closed"
         # The settings-row lock serializes reserve decisions for this group's cap.
         day = _utc(now)
         day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
@@ -502,7 +514,9 @@ async def _claim(
         committed = (
             Decimal(charged or 0) + Decimal(reserved_elsewhere or 0) + Decimal(image_day or 0)
         )
-        if committed + SHADOW_RESERVATION_USD > Decimal(route_row.shadow_daily_budget_usd):
+        if not production and committed + SHADOW_RESERVATION_USD > Decimal(
+            route_row.shadow_daily_budget_usd
+        ):
             row.state = "budget_deferred"
             row.last_error = "shadow_budget_exhausted"
             row.available_at = day_start + timedelta(days=1)
@@ -510,7 +524,7 @@ async def _claim(
             row.reserved_usd = Decimal(0)
             await db.commit()
             return "budget_deferred"
-        if hourly_cap is not None:
+        if hourly_cap is not None and not production:
             # Rolling one-hour safety cap (live ``new`` writer only): what the group's runs created in
             # the last hour already charged, plus every reservation, plus this one.
             hour_start = _utc(now) - timedelta(hours=1)

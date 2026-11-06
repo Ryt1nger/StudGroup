@@ -111,6 +111,15 @@ async def configure(db, group_id, *, amount, since, until, receipt):
     return route
 
 
+def production_enabled(settings, group_id):
+    """Continuous paid processing for explicitly enrolled live groups only."""
+    return bool(
+        settings is not None
+        and group_id is not None
+        and str(group_id) in getattr(settings, "ai_production_groups", ())
+    )
+
+
 def recurring_policy_status(settings, group_id, now):
     """Return None when not opted in, 'active' only with explicit finite authorization."""
     if (
@@ -150,7 +159,9 @@ def next_budget_reset(now, *, monthly=False):
     return (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-async def _reserve_recurring(db, route, settings, group_id, kind, attempt_key, payload, now):
+async def _reserve_recurring(
+    db, route, settings, group_id, kind, attempt_key, payload, now, *, production=False
+):
     """Atomic per-group month/day/category reservation under GroupAnalysisSettings lock."""
     group = await db.get(Group, group_id)
     if group is None or group.status != "active" or not group.pilot_authorized:
@@ -179,40 +190,41 @@ async def _reserve_recurring(db, route, settings, group_id, kind, attempt_key, p
 
     if kind not in {"cplus", "legacy", "image", "cabinet_image"}:
         return "recurring_unknown_kind", None
-    is_image = kind in {"image", "cabinet_image"}
-    kinds = ("image", "cabinet_image") if is_image else ("cplus", "legacy")
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    month_start = day_start.replace(day=1)
-    all_daily = Decimal(str(settings.ai_recurring_daily_budget_usd))
-    all_monthly = Decimal(str(settings.ai_recurring_monthly_budget_usd))
-    kind_daily = Decimal(
-        str(
-            settings.ai_recurring_image_daily_budget_usd
-            if is_image
-            else settings.ai_recurring_text_daily_budget_usd
+    if not production:
+        is_image = kind in {"image", "cabinet_image"}
+        kinds = ("image", "cabinet_image") if is_image else ("cplus", "legacy")
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        month_start = day_start.replace(day=1)
+        all_daily = Decimal(str(settings.ai_recurring_daily_budget_usd))
+        all_monthly = Decimal(str(settings.ai_recurring_monthly_budget_usd))
+        kind_daily = Decimal(
+            str(
+                settings.ai_recurring_image_daily_budget_usd
+                if is_image
+                else settings.ai_recurring_text_daily_budget_usd
+            )
         )
-    )
-    kind_monthly = Decimal(
-        str(
-            settings.ai_recurring_image_monthly_budget_usd
-            if is_image
-            else settings.ai_recurring_text_monthly_budget_usd
+        kind_monthly = Decimal(
+            str(
+                settings.ai_recurring_image_monthly_budget_usd
+                if is_image
+                else settings.ai_recurring_text_monthly_budget_usd
+            )
         )
-    )
-    if await spent(db, group_id, since=month_start) + ceiling > all_monthly:
-        return "recurring_monthly_budget_exhausted", None
-    if await spent(db, group_id, since=month_start, kinds=kinds) + ceiling > kind_monthly:
-        return "recurring_kind_monthly_budget_exhausted", None
-    if await spent(db, group_id, since=day_start) + ceiling > all_daily:
-        return "recurring_daily_budget_exhausted", None
-    if await spent(db, group_id, since=day_start, kinds=kinds) + ceiling > kind_daily:
-        return "recurring_kind_daily_budget_exhausted", None
-    hourly = min(
-        Decimal(str(settings.new_engine_hourly_budget_usd)),
-        Decimal(str(settings.image_hourly_budget_usd)),
-    )
-    if await spent(db, group_id, since=now - timedelta(hours=1)) + ceiling > hourly:
-        return "recurring_hourly_budget_exhausted", None
+        if await spent(db, group_id, since=month_start) + ceiling > all_monthly:
+            return "recurring_monthly_budget_exhausted", None
+        if await spent(db, group_id, since=month_start, kinds=kinds) + ceiling > kind_monthly:
+            return "recurring_kind_monthly_budget_exhausted", None
+        if await spent(db, group_id, since=day_start) + ceiling > all_daily:
+            return "recurring_daily_budget_exhausted", None
+        if await spent(db, group_id, since=day_start, kinds=kinds) + ceiling > kind_daily:
+            return "recurring_kind_daily_budget_exhausted", None
+        hourly = min(
+            Decimal(str(settings.new_engine_hourly_budget_usd)),
+            Decimal(str(settings.image_hourly_budget_usd)),
+        )
+        if await spent(db, group_id, since=now - timedelta(hours=1)) + ceiling > hourly:
+            return "recurring_hourly_budget_exhausted", None
 
     ident = uuid.uuid4()
     db.add(
@@ -226,7 +238,11 @@ async def _reserve_recurring(db, route, settings, group_id, kind, attempt_key, p
             charged_usd=Decimal(0),
             created_at=now,
             # Keep every billable attempt longer than an entire calendar month.
-            delete_at=next_budget_reset(now, monthly=True) + timedelta(days=45),
+            delete_at=(
+                now + timedelta(days=3650)
+                if production
+                else next_budget_reset(now, monthly=True) + timedelta(days=45)
+            ),
         )
     )
     return None, ident
@@ -236,6 +252,8 @@ def release_window_blocker(route, now, *, required=False, settings=None, group_i
     """No paid attempt may start outside an authorized funding policy."""
     if route is not None and route.paid_outcome_hold:
         return "release_paid_outcome_held"
+    if production_enabled(settings, group_id):
+        return None if route is not None else "production_group_not_configured"
     status = recurring_policy_status(settings, group_id, now)
     if status is not None:
         return None if status == "active" else status
@@ -285,19 +303,39 @@ class RequestAccounting:
             )
             required = str(self.group_id) in self.settings.ai_release_budget_required_groups
             recurring = recurring_policy_status(self.settings, self.group_id, now)
+            production = production_enabled(self.settings, self.group_id)
             if route is None:
-                if recurring is not None:
+                if production:
+                    reason = "production_group_not_configured"
+                elif recurring is not None:
                     reason = "recurring_group_not_authorized"
                 elif required:
                     reason = "release_budget_not_configured"
             elif route.paid_outcome_hold:
                 reason = "release_paid_outcome_held"
-            elif required and route.release_budget_usd is None and recurring is None:
+            elif (
+                required
+                and route.release_budget_usd is None
+                and recurring is None
+                and not production
+            ):
                 reason = "release_budget_not_configured"
             elif (self.mode and route.analysis_mode != self.mode) or (
                 self.kind == "image" and route.analysis_mode not in {"new", "shadow"}
             ):
                 reason = "release_mode_changed"
+            elif production:
+                reason, ident = await _reserve_recurring(
+                    db,
+                    route,
+                    self.settings,
+                    self.group_id,
+                    self.kind,
+                    self.attempt_key,
+                    payload,
+                    now,
+                    production=True,
+                )
             elif recurring is not None:
                 if recurring != "active":
                     reason = recurring
