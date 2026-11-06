@@ -79,9 +79,17 @@ def _window(stream, index, chunk, overlap):
     high = min(len(stream) - 1, chunk[-1] + overlap)
     selected = {stream[i].telegram_message_id: stream[i] for i in range(low, high + 1)}
     for position in chunk:
+        # Explicit Telegram reply lineage is trusted context, even when it falls
+        # outside the ordinary chronological overlap. Bound depth and bytes.
         parent = stream[position].reply_to_message_id
-        if parent in index and parent not in selected:
-            selected[parent] = stream[index[parent]]
+        seen = set()
+        for _ in range(8):
+            if parent not in index or parent in seen:
+                break
+            seen.add(parent)
+            source = stream[index[parent]]
+            selected[parent] = source
+            parent = source.reply_to_message_id
     return sorted(selected.values(), key=lambda row: (row.message_date, row.telegram_message_id))
 
 
