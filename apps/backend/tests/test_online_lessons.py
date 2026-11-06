@@ -255,7 +255,7 @@ def test_manual_schedule_lock_does_not_hide_remote_joining_link(client, lock_occ
             db.add_all([remote_message, in_person_message])
             await db.flush()
             assert await discover(db, remote_message) == 1
-            assert await discover(db, in_person_message) == 1
+            assert await discover(db, in_person_message) == 0
 
             calendar = await schedule_data(day, day, group, db)
             remote_lesson = next(
@@ -283,5 +283,144 @@ def test_manual_schedule_lock_does_not_hide_remote_joining_link(client, lock_occ
                 )["online_url"]
                 == URL + "manual"
             )
+
+    asyncio.run(run())
+
+
+def test_retained_unmatched_url_is_found_when_a_remote_timetable_appears(client):
+    async def run():
+        now = datetime.now(UTC)
+        day = date(2026, 11, 6)
+        stamp = datetime.fromisoformat("2026-11-06T08:55:00+03:00")
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            raw = RawMessage(
+                group_id=group.id,
+                telegram_message_id=34567,
+                text=URL,
+                message_date=stamp,
+                version_date=stamp,
+                revision=1,
+                delete_at=now + timedelta(days=30),
+            )
+            db.add(raw)
+            await db.flush()
+            # The message precedes the schedule: do not guess a lesson.
+            assert await discover(db, raw) == 0
+            remote = SchedulePattern(
+                group_id=group.id,
+                subject="Средства цифровой трансформации",
+                weekday=4,
+                starts=time(9),
+                ends=time(10, 20),
+                location="СДО",
+                week="all",
+                valid_from=day,
+                valid_until=day,
+            )
+            db.add(remote)
+            await db.flush()
+
+            first = await schedule_data(day, day, group, db)
+            matched = next(
+                lesson for lesson in first["lessons"] if lesson["id"].startswith(str(remote.id))
+            )
+            assert matched["online_url"] == URL
+
+            # Removing the original evidence immediately revokes the inferred link.
+            raw.revision += 1
+            raw.text = "Ссылка удалена"
+            second = await schedule_data(day, day, group, db)
+            matched = next(
+                lesson for lesson in second["lessons"] if lesson["id"].startswith(str(remote.id))
+            )
+            assert matched["online_url"] is None
+
+    asyncio.run(run())
+
+
+def test_unmatched_url_never_guesses_between_two_simultaneous_remote_lessons(client):
+    async def run():
+        now = datetime.now(UTC)
+        day = date(2026, 11, 6)
+        stamp = datetime.fromisoformat("2026-11-06T08:55:00+03:00")
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            raw = RawMessage(
+                group_id=group.id,
+                telegram_message_id=34568,
+                text=URL,
+                message_date=stamp,
+                version_date=stamp,
+                revision=1,
+                delete_at=now + timedelta(days=30),
+            )
+            db.add(raw)
+            await db.flush()
+            assert await discover(db, raw) == 0
+            for name in ["Первый онлайн-предмет", "Второй онлайн-предмет"]:
+                db.add(
+                    SchedulePattern(
+                        group_id=group.id,
+                        subject=name,
+                        weekday=4,
+                        starts=time(9),
+                        ends=time(10, 20),
+                        location="СДО",
+                        week="all",
+                        valid_from=day,
+                        valid_until=day,
+                    )
+                )
+            await db.flush()
+            calendar = await schedule_data(day, day, group, db)
+            assert len(calendar["lessons"]) == 2
+            assert all(lesson["online_url"] is None for lesson in calendar["lessons"])
+
+    asyncio.run(run())
+
+
+def test_chat_url_with_subject_does_not_override_in_person_lesson(client):
+    async def run():
+        now = datetime.now(UTC)
+        day = date(2026, 11, 6)
+        stamp = datetime.fromisoformat("2026-11-06T08:55:00+03:00")
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            lessons = []
+            for place in ["Ауд. 404", "СДО"]:
+                lesson = SchedulePattern(
+                    group_id=group.id,
+                    subject="Средства цифровой трансформации",
+                    weekday=4,
+                    starts=time(9),
+                    ends=time(10, 20),
+                    location=place,
+                    week="all",
+                    valid_from=day,
+                    valid_until=day,
+                )
+                db.add(lesson)
+                lessons.append(lesson)
+            await db.flush()
+            raw = RawMessage(
+                group_id=group.id,
+                telegram_message_id=34569,
+                text="Средства цифровой трансформации\\n" + URL,
+                message_date=stamp,
+                version_date=stamp,
+                revision=1,
+                delete_at=now + timedelta(days=30),
+            )
+            db.add(raw)
+            await db.flush()
+            assert await discover(db, raw) == 1
+            calendar = await schedule_data(day, day, group, db)
+            assert next(
+                lesson for lesson in calendar["lessons"] if lesson["id"].startswith(str(lessons[0].id))
+            )["online_url"] is None
+            assert next(
+                lesson for lesson in calendar["lessons"] if lesson["id"].startswith(str(lessons[1].id))
+            )["online_url"] == URL
 
     asyncio.run(run())
