@@ -297,7 +297,9 @@ def test_visual_context_identifies_source_album_and_explicit_reply(client):
     asyncio.run(run())
 
 
-def test_image_funding_pause_retains_job_and_recovers_with_approved_recurring_cap(client, monkeypatch):
+def test_image_funding_pause_retains_job_and_recovers_with_approved_recurring_cap(
+    client, monkeypatch
+):
     download_ok(monkeypatch)
     photo_message(client)
     make_new(client)
