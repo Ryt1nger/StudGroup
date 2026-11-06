@@ -24,6 +24,7 @@ import {
 } from './cabinetScheduleApi';
 import { useEventCapabilities } from '../events/api';
 import { useConfirmImageSchedule, useImageScheduleReview, useReviewScheduleWeek } from './imageReviewApi';
+import { subjectCandidates } from './subjectCandidates';
 
 function pairCount(count: number): string {
   const mod10 = count % 10;
@@ -573,6 +574,9 @@ function ScheduleReviewForm({
                         {incomplete ? (
                           <span className="review-lesson-flag">Неполные данные · Изменить</span>
                         ) : null}
+                        {/\.{3}|…/.test(value.row.subject) ? (
+                          <span className="review-lesson-flag">Название сокращено · проверьте предмет</span>
+                        ) : null}
                       </span>
                       <span className="review-lesson-chevron" aria-hidden="true">›</span>
                     </button>
@@ -587,6 +591,7 @@ function ScheduleReviewForm({
           {editingIndex !== null ? [draftEdit?.index === editingIndex ? draftEdit.value : rows[editingIndex]!].map((value) => {
             const index = editingIndex;
             const row = value.row;
+            const candidates = subjectCandidates(row.subject, subjects.data?.items.map((item) => item.name) ?? []);
             const choices = subgroups.filter(
               (subgroup) => normalize(subgroup.subject) === normalize(row.subject),
             );
@@ -607,6 +612,21 @@ function ScheduleReviewForm({
                       }
                     />
                   </label>
+                  {/\.{3}|…/.test(row.subject) ? (
+                    <div className="review-note" role="status">
+                      Название содержит многоточие. Проверьте полный предмет по исходному расписанию.
+                      {candidates.length ? (
+                        <div>
+                          Похожие существующие предметы: {candidates.map((name) => (
+                            <button key={name} type="button" className="pillb"
+                              onClick={() => update(index, { subject: name, subgroup_id: null, subgroup: null })}>
+                              {name}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="field">
                   <label>
