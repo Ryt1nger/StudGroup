@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.models import Group, GroupAnalysisSettings, RawMessage
+from studgroup.models import Group, GroupAnalysisSettings, MessageAttachment, RawMessage
 
 
 def utc(value):
@@ -76,7 +76,37 @@ async def inspect(engine, settings, now=None):
             ):
                 reason = "release_budget_not_configured"
             else:
-                continue
+                from studgroup.analysis.image_jobs import enabled
+
+                protected = (
+                    route.release_budget_usd is not None
+                    or str(group.id) in settings.ai_release_budget_required_groups
+                )
+                if not settings.photo_reading_enabled or not protected or enabled(
+                    settings, group.id
+                ):
+                    continue
+                unread_photo_sources = (
+                    select(MessageAttachment.raw_message_id)
+                    .where(
+                        MessageAttachment.group_id == group.id,
+                        MessageAttachment.kind == "photo",
+                        MessageAttachment.active.is_(True),
+                        MessageAttachment.processing_state == "metadata_only",
+                        MessageAttachment.delete_at > now,
+                    )
+                )
+                count = int(
+                    await db.scalar(
+                        select(func.count(RawMessage.id)).where(
+                            *eligible, RawMessage.id.in_(unread_photo_sources)
+                        )
+                    )
+                    or 0
+                )
+                if count == 0:
+                    continue
+                reason = "photo_reader_unavailable"
             reasons[reason] += 1
             pending_messages += count
             paused_groups += 1
