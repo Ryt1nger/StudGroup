@@ -1266,9 +1266,7 @@ def test_text_reply_to_old_picture_keeps_its_full_source_chain(client):
         async with AsyncSession(client.app.state.engine) as db:
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
             rows = (
-                await db.scalars(
-                    select(RawMessage).order_by(RawMessage.telegram_message_id)
-                )
+                await db.scalars(select(RawMessage).order_by(RawMessage.telegram_message_id))
             ).all()
             photo, reply, latest = rows
             photo.processing_state = "completed"
