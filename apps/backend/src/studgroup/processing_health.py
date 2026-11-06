@@ -55,17 +55,15 @@ async def inspect(engine, settings, now=None):
             ]
             if group.bot_added_at is not None:
                 eligible.append(RawMessage.message_date >= group.bot_added_at)
-            count = int(
-                await db.scalar(select(func.count(RawMessage.id)).where(*eligible)) or 0
-            )
+            count = int(await db.scalar(select(func.count(RawMessage.id)).where(*eligible)) or 0)
             if count == 0:
                 continue
             pending_messages += count
             if not settings.new_engine_enabled:
                 reason = "engine_disabled"
-            elif settings.new_engine_enabled_until and utc(
-                settings.new_engine_enabled_until
-            ) <= now:
+            elif (
+                settings.new_engine_enabled_until and utc(settings.new_engine_enabled_until) <= now
+            ):
                 reason = "engine_window_closed"
             elif route.paid_outcome_hold:
                 reason = "paid_outcome_held"
