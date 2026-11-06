@@ -211,42 +211,47 @@ async def read_month(
     page, login: str, password: str, code: str, year: int, month: int
 ) -> BrowserMonthResult:
     """Read month index through the same authenticated interface, without DB writes."""
-    try:
-        state = await _open(page, login, password)
-        if state != "rendered":
-            return BrowserMonthResult(state)
-        if not await _verify_group(page, code):
-            return BrowserMonthResult("identity_unverified")
-        await page.get_by_role("button", name="Мое расписание", exact=True).click()
-        await page.get_by_role("button", name="Месяц", exact=True).click()
-        await page.get_by_role("button", name="Сегодня", exact=True).click()
-        today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-        distance = (year - today.year) * 12 + month - today.month
-        if abs(distance) > 2:
-            return BrowserMonthResult("outside_navigation_window")
-        arrow = page.locator("button.schedule__navigation-button--icon").nth(
-            1 if distance > 0 else 0
-        )
-        for _ in range(abs(distance)):
-            await arrow.click()
-        for _ in range(60):
-            if await _state(page) == "login_required":
-                return BrowserMonthResult("login_required")
-            try:
-                return BrowserMonthResult(
-                    "preview_only", extract_cabinet_month(await page.content(), year, month)
-                )
-            except SourceAccessError as error:
-                if str(error) not in {
-                    "cabinet_month_incomplete",
-                    "cabinet_month_mismatch",
-                    "cabinet_month_card_incomplete",
-                }:
-                    return BrowserMonthResult(str(error))
-            await page.wait_for_timeout(250)
-        return BrowserMonthResult("cabinet_month_incomplete")
-    except Exception:  # noqa: BLE001
-        return BrowserMonthResult("source_unavailable")
+    for attempt in range(2):
+        try:
+            state = await _open(page, login, password)
+            if state != "rendered":
+                return BrowserMonthResult(state)
+            if not await _verify_group(page, code):
+                return BrowserMonthResult("identity_unverified")
+            await page.get_by_role("button", name="Мое расписание", exact=True).click()
+            await page.get_by_role("button", name="Месяц", exact=True).click()
+            await page.get_by_role("button", name="Сегодня", exact=True).click()
+            today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+            distance = (year - today.year) * 12 + month - today.month
+            if abs(distance) > 2:
+                return BrowserMonthResult("outside_navigation_window")
+            arrow = page.locator("button.schedule__navigation-button--icon").nth(
+                1 if distance > 0 else 0
+            )
+            for _ in range(abs(distance)):
+                await arrow.click()
+            for _ in range(60):
+                if await _state(page) == "login_required":
+                    break
+                try:
+                    return BrowserMonthResult(
+                        "preview_only", extract_cabinet_month(await page.content(), year, month)
+                    )
+                except SourceAccessError as error:
+                    if str(error) not in {
+                        "cabinet_month_incomplete",
+                        "cabinet_month_mismatch",
+                        "cabinet_month_card_incomplete",
+                    }:
+                        return BrowserMonthResult(str(error))
+                await page.wait_for_timeout(250)
+            if await _state(page) != "login_required":
+                return BrowserMonthResult("cabinet_month_incomplete")
+        except Exception:  # noqa: BLE001
+            return BrowserMonthResult("source_unavailable")
+        if attempt == 1:
+            break
+    return BrowserMonthResult("login_failed")
 
 
 async def resolve_sdo_exits(context, result: BrowserResult) -> tuple[dict, dict]:

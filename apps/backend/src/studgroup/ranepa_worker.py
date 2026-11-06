@@ -91,7 +91,11 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
                 page = await context.new_page()
                 month = await read_month(page, login, password, code, today.year, today.month)
                 if month.status != "preview_only":
-                    return "captcha" if month.status == "captcha_required" else "source_unavailable"
+                    if month.status == "captcha_required":
+                        return "captcha"
+                    if month.status == "identity_unverified":
+                        return "identity_unverified"
+                    return "source_unavailable"
                 first = date(today.year, today.month, 1)
                 monday = first - timedelta(days=first.weekday())
                 for offset in range(6):
@@ -105,7 +109,11 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
                         page, login, password, code, week_start, allow_empty=not expected
                     )
                     if result.snapshot is None:
-                        return "captcha" if result.status == "captcha_required" else "parse_failed"
+                        if result.status == "captcha_required":
+                            return "captcha"
+                        if result.status == "identity_unverified":
+                            return "identity_unverified"
+                        return "parse_failed"
                     actual = [
                         row
                         for row in result.snapshot.indexed().values()
