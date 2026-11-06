@@ -1,7 +1,8 @@
 import type { SessionContext } from '@studgroup/shared-types';
 import { useQueryClient } from '@tanstack/react-query';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api/queries';
+import { academicCacheOwner, restoreAcademicCache, watchAcademicCache } from '../api/academicCache';
 import { setAccessToken } from '../api/client';
 import { isApiRequestError } from '../api/errors';
 import { useTelegram } from '../telegram/TelegramProvider';
@@ -41,9 +42,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [state, setState] = useState<SessionState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const stopWatching = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     let cancelled = false;
+    stopWatching.current();
+    stopWatching.current = () => undefined;
+    queryClient.clear();
+    setAccessToken(null);
     async function boot() {
       if (!adapter || !adapter.initData) {
         setState({ status: 'no-telegram' });
@@ -54,6 +60,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const res = await api.bootstrap(adapter.initData);
         if (cancelled) return;
         setAccessToken(res.access_token);
+        const owner = academicCacheOwner(res.session);
+        if (owner) {
+          // Restore only after the backend has verified Telegram membership. A slow or
+          // blocked IndexedDB must never turn into another startup spinner.
+          let acceptRestore = true;
+          let deadline: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([
+            restoreAcademicCache(queryClient, owner, () => !cancelled && acceptRestore),
+            new Promise<number>((resolve) => { deadline = setTimeout(() => resolve(0), 200); }),
+          ]);
+          acceptRestore = false;
+          if (deadline !== undefined) clearTimeout(deadline);
+        }
+        if (cancelled) return;
+        if (owner) stopWatching.current = watchAcademicCache(queryClient, owner);
         // Profile is optional. Showing the app must not wait for a second network round trip.
         // TopBar fetches the profile once the session is ready and deliberately keeps the
         // displayed name blank until the profile resolves, so the Telegram name never flashes.
@@ -75,12 +96,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     void boot();
     return () => {
       cancelled = true;
+      stopWatching.current();
+      stopWatching.current = () => undefined;
     };
   }, [adapter, attempt, queryClient]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
   const markExpired = useCallback(() => {
+    stopWatching.current();
+    stopWatching.current = () => undefined;
     setAccessToken(null);
     queryClient.clear(); // learning data never outlives the session
     setState({ status: 'expired' });
@@ -88,9 +113,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const recheck = useCallback(async () => {
     const session = await api.recheck();
+    const newOwner = academicCacheOwner(session);
+    const oldOwner = state.status === 'ready' ? academicCacheOwner(state.session) : null;
+    if (newOwner !== oldOwner) {
+      stopWatching.current();
+      stopWatching.current = () => undefined;
+      queryClient.clear();
+      if (newOwner) stopWatching.current = watchAcademicCache(queryClient, newOwner);
+    }
     setState((prev) => (prev.status === 'ready' ? { ...prev, session, clock: makeClock(session) } : prev));
     void queryClient.invalidateQueries();
-  }, [queryClient]);
+  }, [queryClient, state]);
 
   const value = useMemo(() => ({ state, retry, recheck, markExpired }), [state, retry, recheck, markExpired]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
