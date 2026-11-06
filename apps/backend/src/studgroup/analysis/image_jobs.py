@@ -638,10 +638,7 @@ async def claim(db, group, route, settings, now):
         if cached is not None:
             reuse_reading(job, cached)
             return job.id, None  # no reservation and no paid attempt, even at exhausted budget
-    from studgroup.analysis.release_budget import (
-        next_budget_reset,
-        release_window_blocker,
-    )
+    from studgroup.analysis.release_budget import release_window_blocker
 
     blocker = release_window_blocker(
         route,
@@ -652,7 +649,9 @@ async def claim(db, group, route, settings, now):
     )
     if blocker:
         job.state, job.error = "budget_deferred", blocker
-        job.available_at = next_budget_reset(now)
+        # Recheck soon after an operator approves funding; no paid retry occurs
+        # while the policy remains closed.
+        job.available_at = now + timedelta(minutes=5)
         return None
     reserve = Decimal(str(settings.image_pass_reservation_usd))
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
