@@ -76,6 +76,48 @@ def normalize(value):
     return " ".join(value.casefold().replace("ё", "е").split())
 
 
+def is_remote_lesson(lesson):
+    """Only a lesson explicitly marked remote can receive a discovered joining URL."""
+    return bool(re.search(r"сдо|дистан|онлайн", normalize(lesson.get("location") or "")))
+
+
+def match_remote_lesson(lessons, *, day, stamp, timezone, subject=None, lesson_time=None):
+    """Require a unique scheduled remote occurrence; never guess between two links/lessons."""
+    candidates = [
+        lesson
+        for lesson in lessons
+        if lesson["status"] == "scheduled"
+        and is_remote_lesson(lesson)
+        and datetime.fromisoformat(lesson["starts_at"]).astimezone(ZoneInfo(timezone)).date()
+        == day
+        and (not subject or normalize(lesson["subject"]) == normalize(subject))
+    ]
+    if lesson_time:
+        candidates = [
+            lesson
+            for lesson in candidates
+            if datetime.fromisoformat(lesson["starts_at"])
+            .astimezone(ZoneInfo(timezone))
+            .strftime("%H:%M")
+            == lesson_time
+        ]
+    if day == stamp.date():
+        current = [
+            lesson
+            for lesson in candidates
+            if datetime.fromisoformat(lesson["starts_at"]) <= stamp
+            < datetime.fromisoformat(lesson["ends_at"])
+        ]
+        candidates = current or [
+            lesson
+            for lesson in candidates
+            if stamp
+            <= datetime.fromisoformat(lesson["starts_at"])
+            <= stamp + (timedelta(hours=4) if subject else timedelta(minutes=30))
+        ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def subject_from(text, patterns):
     names = {p.subject for p in patterns}
     clean = normalize(re.sub(r"https?://\S+", "", text, flags=re.IGNORECASE))
@@ -187,48 +229,20 @@ async def discover(
             for p in patterns
             if p.subject == subject
             and p.valid_until >= stamp.date()
-            and re.search(r"сдо|дистан|онлайн", normalize(p.location or ""))
+            and is_remote_lesson({"location": p.location})
         ]
     else:
         calendar = await schedule_data(day, day, group, db)
-        candidates = [
-            l
-            for l in calendar["lessons"]
-            if l["status"] == "scheduled"
-            and (not subject or normalize(l["subject"]) == normalize(subject))
-        ]
-        if lesson_time:
-            candidates = [
-                l
-                for l in candidates
-                if datetime.fromisoformat(l["starts_at"])
-                .astimezone(ZoneInfo(group.timezone))
-                .strftime("%H:%M")
-                == lesson_time
-            ]
-        if not subject:
-            candidates = [
-                l
-                for l in candidates
-                if re.search(r"сдо|дистан|онлайн", normalize(l["location"] or ""))
-            ]
-        if day == stamp.date():
-            current = [
-                l
-                for l in candidates
-                if datetime.fromisoformat(l["starts_at"])
-                <= stamp
-                < datetime.fromisoformat(l["ends_at"])
-            ]
-            candidates = current or [
-                l
-                for l in candidates
-                if stamp
-                <= datetime.fromisoformat(l["starts_at"])
-                <= stamp + (timedelta(hours=4) if subject else timedelta(minutes=30))
-            ]
-        if len(candidates) == 1:
-            targets = [(uuid.UUID(candidates[0]["id"].split(":")[0]), day)]
+        matched = match_remote_lesson(
+            calendar["lessons"],
+            day=day,
+            stamp=stamp,
+            timezone=group.timezone,
+            subject=subject,
+            lesson_time=lesson_time,
+        )
+        if matched is not None:
+            targets = [(uuid.UUID(matched["id"].split(":")[0]), day)]
     bound = 0
     for url in direct:
         for pattern_id, occurrence in targets or [(None, None)]:
