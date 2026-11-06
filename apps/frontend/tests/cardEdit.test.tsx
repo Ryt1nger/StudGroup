@@ -78,7 +78,7 @@ describe('headman card editing', () => {
     await userEvent.click(await screen.findByRole('link', { name: 'Редактировать' }));
     expect(router.state.location.pathname).toBe(`/homework/${HW}/edit`);
     expect(await screen.findByRole('heading', { name: /Редактирование/, level: 1 })).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText('Название'), '!');
+    await userEvent.type(await screen.findByLabelText('Название'), '!');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     await waitFor(() => expect(router.state.location.pathname).toBe(`/homework/${HW}`));
   });
@@ -204,7 +204,7 @@ describe('headman card editing', () => {
     );
     renderApp({ route: `/homework/${HW}` });
     await userEvent.click(await screen.findByRole('link', { name: 'Редактировать' }));
-    await userEvent.type(screen.getByLabelText('Название'), '!');
+    await userEvent.type(await screen.findByLabelText('Название'), '!');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     const alert = await screen.findByRole('alert');
     expect(alert).not.toHaveTextContent('revision_conflict');
