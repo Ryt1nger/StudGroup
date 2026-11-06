@@ -72,8 +72,11 @@ function relativeLabel(key: string, today: string): string {
 export function TodayScreen() {
   const [params, setParams] = useSearchParams();
   const query = useTodayQuery('today');
-  const deadlines = useAcademicDeadlinesQuery();
-  const all = useAllHomework();
+  // The initial feed is the critical path. Delay secondary/long-running reads
+  // until it is ready so they cannot exhaust the small Supabase connection pool.
+  const feedReady = query.data !== undefined;
+  const deadlines = useAcademicDeadlinesQuery(false, false, feedReady);
+  const all = useAllHomework(feedReady);
   const allItems = all.data ?? [];
   const { toggle, busy } = useToggleDone();
   const data = query.data;
@@ -88,10 +91,10 @@ export function TodayScreen() {
   const selected = selectedKey ? days.indexOf(selectedKey) : -1;
   const schedule = useScheduleQuery(days[0] ?? '', days[6] ?? '', today !== null);
   const features = useEventCapabilities();
-  const groupEvents = useGroupEvents({ start: days[0] ?? '', end: days[6] ?? '' });
+  const groupEvents = useGroupEvents({ start: days[0] ?? '', end: days[6] ?? '', enabled: feedReady });
   const eventItems = groupEvents.data?.events ?? [];
   const future = useScheduleQuery(today ?? '', today ? addDays(today, 31) : '', today !== null && !manualSelected);
-  const futureEvents = useGroupEvents({ start: today ?? '', end: today ? addDays(today, 31) : '' });
+  const futureEvents = useGroupEvents({ start: today ?? '', end: today ? addDays(today, 31) : '', enabled: feedReady });
   const lessons = schedule.data?.lessons ?? [];
   const marked = new Set(timeZone ? days.filter((key) => lessonsOfDay(lessons, key, timeZone).length > 0 || eventItems.some((item) => groupEventOnDay(item, key, timeZone))) : []);
   const soonDeadlines = deadlines.data ? upcomingDeadlines(deadlines.data.items, deadlines.data.generated_at, deadlines.data.group_timezone) : [];
