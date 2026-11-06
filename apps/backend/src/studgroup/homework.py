@@ -588,6 +588,7 @@ async def lesson_subject(
 async def today(
     group: CurrentGroup,
     db: Database,
+    request: Request,
     authorization: str = Header(),
     day: Literal["today", "tomorrow"] = "today",
 ):
@@ -646,21 +647,43 @@ async def today(
         .where(RawMessage.group_id == group.id, RawMessage.processing_state == "pending")
         .limit(1)
     )
-    calendar = await schedule_data(
-        selected_date,
-        selected_date if day == "tomorrow" else current_date + timedelta(days=31),
-        group,
-        db,
+    personal_enabled = bool(
+        request.app.state.settings.ranepa_schedule_view_enabled and group.academic_group_code
     )
-    coverage = await db.scalar(
-        select(SchedulePattern.id)
-        .where(
-            SchedulePattern.group_id == group.id,
-            SchedulePattern.valid_from <= selected_date,
-            SchedulePattern.valid_until >= selected_date,
+    if personal_enabled:
+        from studgroup.ranepa_personal import personal_with_group_fallback, schedule_projection
+
+        personal = await personal_with_group_fallback(
+            db,
+            group.id,
+            user,
+            selected_date,
+            selected_date if day == "tomorrow" else current_date + timedelta(days=31),
         )
-        .limit(1)
-    )
+        selected_personal = await personal_with_group_fallback(
+            db, group.id, user, selected_date, selected_date
+        )
+        calendar = schedule_projection(personal, group)
+        covered = selected_personal["complete"]
+        last_success = personal["last_success_at"]
+    else:
+        calendar = await schedule_data(
+            selected_date,
+            selected_date if day == "tomorrow" else current_date + timedelta(days=31),
+            group,
+            db,
+        )
+        coverage = await db.scalar(
+            select(SchedulePattern.id)
+            .where(
+                SchedulePattern.group_id == group.id,
+                SchedulePattern.valid_from <= selected_date,
+                SchedulePattern.valid_until >= selected_date,
+            )
+            .limit(1)
+        )
+        covered = coverage is not None
+        last_success = now
     selected_lessons = [
         lesson
         for lesson in calendar["lessons"]
@@ -668,7 +691,7 @@ async def today(
         == selected_date
         and lesson["status"] == "scheduled"
     ]
-    if coverage is None or calendar["week_state"] != "ready":
+    if not covered or (not personal_enabled and calendar["week_state"] != "ready"):
         day_lessons_state = "unknown"
     elif not selected_lessons:
         day_lessons_state = "empty"
@@ -682,7 +705,11 @@ async def today(
         "generated_at": now,
         "server_time": now,
         "group_timezone": group.timezone,
-        "freshness": {"last_successful_sync_at": now, "stale": False},
+        "freshness": {
+            "last_successful_sync_at": utc(last_success) if last_success else now,
+            "stale": personal_enabled
+            and (last_success is None or now - utc(last_success) > timedelta(days=7)),
+        },
         "processing": {
             "state": "updating" if pending else "idle",
             "retry_after_seconds": 10 if pending else None,

@@ -95,10 +95,17 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
     live = client.get("/v1/schedule?start=2026-11-02&end=2026-11-08", headers=AUTH)
     assert live.status_code == 200
     assert [row["subject"] for row in live.json()["lessons"]] == ["Новая история"]
+    missing = client.get("/v1/schedule?start=2026-11-16&end=2026-11-22", headers=AUTH)
+    assert missing.status_code == 200
+    assert missing.json()["week_state"] == "needs_clarification"
+    assert missing.json()["lessons"] == []
     lesson_id = live.json()["lessons"][0]["id"]
     detail = client.get(f"/v1/lessons/{lesson_id}/subject", headers=AUTH)
     assert detail.status_code == 200
     assert detail.json()["lesson"]["subject"] == "Новая история"
+    today = client.get("/v1/today", headers=AUTH)
+    assert today.status_code == 200
+    assert today.json()["next_lesson"] is None
     client.app.state.settings.ranepa_schedule_view_enabled = False
     assert (
         client.get("/v1/ranepa-schedule?start=2026-11-02&end=2026-11-09", headers=AUTH).json()[

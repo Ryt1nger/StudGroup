@@ -178,11 +178,12 @@ export function TodayScreen() {
       {data && selectedKey === today ? (
         <>
           {all.data ? <Stats items={allItems} /> : null}
+          {data.day_lessons_state === 'unknown' ? <Banner tone="warning" icon="clock">Расписание на сегодня ещё не подтверждено.</Banner> : null}
           {data.next_lesson ? <Hero next={data.next_lesson} nowMs={nowMs} timeZone={data.group_timezone} /> : null}
           <Plan data={data} nowMs={nowMs} busy={busy} onToggle={(item) => void toggle(item)} />
           {deadlinesSection}
           {today && eventItems.some((item) => groupEventOnDay(item, today, data.group_timezone)) ? <Sec id="today-group-events" title="События"><EventCards items={eventItems.filter((item) => groupEventOnDay(item, today, data.group_timezone))} timeZone={data.group_timezone} /></Sec> : null}
-          {today && !data.next_lesson && !data.sections.some((section) => section.kind === 'due_today' && section.items.some((item) => item.my_state.completion !== 'completed' && !isHomeworkArchived(item, nowMs, data.group_timezone))) && !eventItems.some((item) => groupEventOnDay(item, today, data.group_timezone)) && !soonDeadlines.some((item) => item.deadline_at && dayKey(item.deadline_at, data.group_timezone) === today) ? <div className="empty"><b>Сегодня больше ничего нет</b></div> : null}
+          {today && data.day_lessons_state !== 'unknown' && !data.next_lesson && !data.sections.some((section) => section.kind === 'due_today' && section.items.some((item) => item.my_state.completion !== 'completed' && !isHomeworkArchived(item, nowMs, data.group_timezone))) && !eventItems.some((item) => groupEventOnDay(item, today, data.group_timezone)) && !soonDeadlines.some((item) => item.deadline_at && dayKey(item.deadline_at, data.group_timezone) === today) ? <div className="empty"><b>Сегодня больше ничего нет</b></div> : null}
         </>
       ) : null}
       {data && selectedKey !== today && selectedKey ? (
