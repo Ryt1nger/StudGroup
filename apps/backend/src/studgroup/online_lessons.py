@@ -13,10 +13,8 @@ from sqlalchemy.orm import aliased
 
 from studgroup.models import (
     Group,
-    HeadmanDecision,
     LessonOnlineLink,
     RawMessage,
-    ScheduleException,
     SchedulePattern,
 )
 
@@ -299,7 +297,7 @@ async def overlay(db, group, lessons):
             .outerjoin(clarification, clarification.id == LessonOnlineLink.context_id)
             .where(
                 LessonOnlineLink.group_id == group.id,
-                LessonOnlineLink.state == "active",
+                LessonOnlineLink.state.in_(["active", "unmatched"]),
                 LessonOnlineLink.delete_at > now,
             )
             .order_by(
@@ -314,40 +312,22 @@ async def overlay(db, group, lessons):
             )
         )
     ).all()
-    locked = set(
-        (
-            await db.scalars(
-                select(HeadmanDecision.entity_key).where(
-                    HeadmanDecision.group_id == group.id, HeadmanDecision.locked.is_(True)
-                )
-            )
-        ).all()
-    )
+    # An unmatched Telegram message can become unambiguous after the schedule is
+    # corrected. Resolve it on read, without writing to production or sending alerts.
+    unmatched_targets = {}
+    subjects = [SimpleNamespace(subject=lesson["subject"]) for lesson in lessons]
     for lesson in lessons:
-        if lesson.get("online_url") or lesson["status"] == "cancelled":
-            continue
-        pattern, day = lesson["id"].split(":", 1)
-        exception = await db.scalar(
-            select(ScheduleException).where(
-                ScheduleException.group_id == group.id,
-                ScheduleException.pattern_id == uuid.UUID(pattern),
-                ScheduleException.occurrence_date == date.fromisoformat(day),
-            )
-        )
-        # A headman's lock protects manual timetable fields. It must not hide a
-        # verified joining URL for a remote lesson when no manual URL is set.
-        # Keep locked in-person lessons untouched.
-        manually_locked = f"p:{pattern}" in locked or (
-            exception is not None and f"x:{exception.id}" in locked
-        )
-        if manually_locked and not re.search(
-            r"сдо|дистан|онлайн", normalize(lesson.get("location") or "")
+        if (
+            lesson.get("online_url")
+            or lesson["status"] == "cancelled"
+            or not is_remote_lesson(lesson)
         ):
             continue
+        pattern, day = lesson["id"].split(":", 1)
         for row in rows:
-            if str(row.pattern_id) != pattern or row.occurrence_date not in (
-                None,
-                date.fromisoformat(day),
+            if row.state == "active" and (
+                str(row.pattern_id) != pattern
+                or row.occurrence_date not in (None, date.fromisoformat(day))
             ):
                 continue
             source = await db.get(RawMessage, row.source_id)
@@ -366,13 +346,49 @@ async def overlay(db, group, lessons):
                 or utc(context.delete_at) <= now
             ):
                 continue
-            if joining_url(row.url):
-                if row.occurrence_date is None and datetime.fromisoformat(lesson["ends_at"]) <= utc(
-                    source.version_date
-                ):
+            if not joining_url(row.url):
+                continue
+            if row.state == "unmatched":
+                if row.id not in unmatched_targets:
+                    target = None
+                    # A message containing multiple room URLs cannot choose for us.
+                    if urls(source.text or "") == [row.url]:
+                        from studgroup.deadlines import contextual_deadline
+
+                        evidence = (source.text or "") + (
+                            "\n" + context.text if context and context.text else ""
+                        )
+                        stamp = utc(source.message_date).astimezone(ZoneInfo(group.timezone))
+                        reference = utc(context.message_date if context else source.message_date)
+                        resolution = contextual_deadline(
+                            re.sub(r"https?://\\S+", "", evidence, flags=re.IGNORECASE),
+                            reference,
+                            group.timezone,
+                        )
+                        target_day = (
+                            resolution.at.astimezone(ZoneInfo(group.timezone)).date()
+                            if resolution and resolution.at
+                            else stamp.date()
+                        )
+                        if abs((target_day - stamp.date()).days) <= 31:
+                            subject = subject_from(evidence, subjects)
+                            matched = match_remote_lesson(
+                                lessons,
+                                day=target_day,
+                                stamp=stamp,
+                                timezone=group.timezone,
+                                subject=subject,
+                            )
+                            target = matched["id"] if matched is not None else None
+                    unmatched_targets[row.id] = target
+                if unmatched_targets[row.id] != lesson["id"]:
                     continue
-                lesson["online_url"] = row.url
-                break
+            elif row.occurrence_date is None and datetime.fromisoformat(
+                lesson["ends_at"]
+            ) <= utc(source.version_date):
+                continue
+            lesson["online_url"] = row.url
+            break
 
 
 async def backfill(engine):
