@@ -213,6 +213,106 @@ def _eligible(group, settings, now):
     return filters
 
 
+async def _waiting_image_context(db, group, route, settings, now):
+    """Source and reply-chain messages that must wait for their image evidence.
+
+    An unresolved picture must not create incomplete homework from its caption,
+    album or replies. Unrelated chat messages are still eligible for packages.
+    The source/reply links stay in RawMessage, ready to be used by pass B and C+.
+    """
+    from studgroup.analysis.image_jobs import enabled, supported
+    from studgroup.models import ImageAnalysisJob
+
+    independent = enabled(settings, group.id)
+    protected_legacy = settings.photo_reading_enabled and (
+        route.release_budget_usd is not None
+        or bool(route.paid_outcome_hold)
+        or str(group.id) in settings.ai_release_budget_required_groups
+    )
+    if not independent and not protected_legacy:
+        return set()
+
+    attachments = (
+        await db.scalars(
+            select(MessageAttachment).where(
+                MessageAttachment.group_id == group.id,
+                MessageAttachment.active.is_(True),
+                MessageAttachment.delete_at > now,
+            )
+        )
+    ).all()
+    images = [attachment for attachment in attachments if supported(attachment)]
+    if not images:
+        return set()
+
+    sources = (
+        await db.scalars(
+            select(RawMessage).where(
+                RawMessage.group_id == group.id,
+                RawMessage.delete_at > now,
+                RawMessage.id.in_([attachment.raw_message_id for attachment in images]),
+            )
+        )
+    ).all()
+    by_id = {row.id: row for row in sources}
+    ready = set()
+    if independent and settings.image_analysis_mode == "live":
+        finished = (
+            await db.execute(
+                select(ImageAnalysisJob.attachment_id, ImageAnalysisJob.source_revision).where(
+                    ImageAnalysisJob.group_id == group.id,
+                    ImageAnalysisJob.pass_number == 2,
+                    ImageAnalysisJob.state == "ready",
+                    ImageAnalysisJob.delete_at > now,
+                )
+            )
+        ).all()
+        ready = set(finished)
+
+    waiting = set()
+    waiting_albums = set()
+    for attachment in images:
+        source = by_id.get(attachment.raw_message_id)
+        if source is None or attachment.source_revision != source.revision:
+            continue
+        if independent:
+            unresolved = (
+                settings.image_analysis_mode != "live"
+                or (attachment.id, source.revision) not in ready
+            )
+        else:
+            unresolved = attachment.processing_state == "metadata_only"
+        if unresolved:
+            waiting.add(source.telegram_message_id)
+            if attachment.media_group_id:
+                waiting_albums.add(attachment.media_group_id)
+    if not waiting:
+        return set()
+
+    # One pending album photo makes all other parts of its album dependent.
+    for attachment in images:
+        source = by_id.get(attachment.raw_message_id)
+        if source and attachment.media_group_id in waiting_albums:
+            waiting.add(source.telegram_message_id)
+
+    retained = (
+        await db.scalars(
+            select(RawMessage).where(RawMessage.group_id == group.id, RawMessage.delete_at > now)
+        )
+    ).all()
+    # Transitive explicit Telegram replies (reply to a reply) share the source.
+    blocked = set(waiting)
+    while True:
+        children = {
+            row.telegram_message_id for row in retained if row.reply_to_message_id in blocked
+        }
+        expanded = blocked | children
+        if expanded == blocked:
+            break
+        blocked = expanded
+    return {row.id for row in retained if row.telegram_message_id in blocked}
+
+
 async def _read_pending_photos(db, group, rows, target_ids, settings, provider, transport, now):
     """Read the unread photos of these messages; returns (cost in USD, retry_later).
 
@@ -295,26 +395,9 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
     filters = _eligible(group, settings, now)
     if filters is None:
         return None
-    from studgroup.analysis.image_jobs import enabled
-
-    # A funded group using the legacy photo reader cannot read metadata-only
-    # photos: the financial gate requires the independent image queue instead.
-    # Keep those image sources pending, but do not let the first one starve all
-    # later text-only messages. Their future vision pass will reopen the source.
-    protected = (
-        route.release_budget_usd is not None
-        or bool(route.paid_outcome_hold)
-        or str(group.id) in settings.ai_release_budget_required_groups
-    )
-    if settings.photo_reading_enabled and protected and not enabled(settings, group.id):
-        unread_photos = select(MessageAttachment.raw_message_id).where(
-            MessageAttachment.group_id == group.id,
-            MessageAttachment.kind == "photo",
-            MessageAttachment.active.is_(True),
-            MessageAttachment.processing_state == "metadata_only",
-            MessageAttachment.delete_at > now,
-        )
-        filters.append(RawMessage.id.not_in(unread_photos))
+    blocked = await _waiting_image_context(db, group, route, settings, now)
+    if blocked:
+        filters.append(RawMessage.id.not_in(blocked))
     pending = (
         await db.scalars(
             select(RawMessage)
