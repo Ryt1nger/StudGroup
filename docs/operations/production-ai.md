@@ -14,7 +14,9 @@ not a switch to turn on from a code deploy alone.
 For a group to process text, its `group_analysis_settings.analysis_mode`
 must be `new`, the group must be active and explicitly authorized, and
 `NEW_ENGINE_ENABLED=true`. The production route ingests and processes
-messages around the clock rather than waiting for hourly pilot windows.
+messages in hourly context batches around the clock, including overnight. Set
+`AI_SCHEDULE_ENABLED=true` to keep related messages together without the old
+00:00–07:00 Moscow blackout.
 
 For photos, configure `IMAGE_ANALYSIS_ENABLED=true`,
 `IMAGE_ANALYSIS_GROUPS` to the same authorized group UUID list,
