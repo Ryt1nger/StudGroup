@@ -64,3 +64,49 @@ def test_out_of_range_day_is_ignored():
         + card("СДО", "Философия", "Лекционные занятия", "Иванов Иван")
     )
     assert not extract_public_schedule(html, CODE, MON, SUN).lessons
+
+
+def test_calendar_dates_and_weekday_must_agree():
+    html = page(
+        "<h2>03.11.2026 Вторник</h2>" + card("305", "Алгебра", "Лекционные занятия", "Иванов")
+    )
+    assert extract_public_schedule(html, CODE, MON, SUN).lessons[0].day == date(2026, 11, 3)
+    with pytest.raises(SourceAccessError, match="invalid_source_day"):
+        extract_public_schedule(html.replace("Вторник", "Среда"), CODE, MON, SUN)
+    with pytest.raises(SourceAccessError, match="invalid_source_day"):
+        extract_public_schedule(html.replace("03.11.2026", "31.11.2026"), CODE, MON, SUN)
+
+
+def test_repeated_card_is_one_lesson_and_parallel_subgroups_survive():
+    first = card("305", "Язык", "Практические занятия", "Иванова") + "<div>Подгруппа 1</div>"
+    second = card("306", "Язык", "Практические занятия", "Петров") + "<div>Подгруппа 2</div>"
+    result = extract_public_schedule(
+        page("<h2>11/2/2026 Понедельник</h2>" + first + second + first), CODE, MON, SUN
+    )
+    assert len(result.lessons) == 2
+    assert {row.subgroup_hint for row in result.lessons} == {"Подгруппа 1", "Подгруппа 2"}
+
+
+def test_partial_card_cannot_borrow_fields_from_next_card():
+    partial = "<div>09:00-10:20</div><div>305</div><div>Язык</div><div>Практические занятия</div>"
+    complete = card("306", "История", "Лекционные занятия", "Петров")
+    with pytest.raises(SourceAccessError, match="incomplete_source_lesson"):
+        extract_public_schedule(
+            page("<h2>11/2/2026 Понедельник</h2>" + partial + complete), CODE, MON, SUN
+        )
+
+
+def test_card_with_other_group_is_rejected():
+    html = page(
+        "<h2>11/2/2026 Понедельник</h2>"
+        + card("305", "Язык", "Практические занятия", "Иванова").replace(CODE, "Э-ОБ-385-04-26-03")
+    )
+    with pytest.raises(SourceAccessError, match="group_identity_not_confirmed"):
+        extract_public_schedule(html, CODE, MON, SUN)
+
+
+def test_captcha_and_hidden_script_group_do_not_pass():
+    with pytest.raises(SourceAccessError, match="captcha_required"):
+        extract_public_schedule(page("<div>reCAPTCHA</div>"), CODE, MON, SUN)
+    with pytest.raises(SourceAccessError, match="group_identity_not_confirmed"):
+        extract_public_schedule(f"<script>{CODE}</script><body>Вход</body>", CODE, MON, SUN)

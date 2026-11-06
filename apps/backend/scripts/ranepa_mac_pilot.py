@@ -8,6 +8,7 @@ This is deliberately read-only and never mutates the StudGroup calendar.
 import argparse
 import asyncio
 import json
+import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
@@ -17,7 +18,7 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
 
 from studgroup.ranepa_discovery import exact_code_match
-from studgroup.ranepa_probe import SourceAccessError
+from studgroup.ranepa_probe import MAX_PAGE_BYTES, SourceAccessError
 from studgroup.ranepa_public import extract_public_schedule
 from studgroup.ranepa_schedule import group_code, normalized
 from studgroup.ranepa_ui import page_status, private_profile, source_diagnostics
@@ -29,6 +30,23 @@ URLS = {
 }
 HOSTS = {"my.ranepa.ru", "lms.ranepa.ru"}
 DEFAULT_PROFILE = Path.home() / "Library" / "Application Support" / "StudGroup" / "RANEPA Browser"
+
+
+def save_private_html(path: Path, html: str) -> None:
+    """Save one private capture outside Git; refuse overwrite and symlink targets."""
+    repository_root = Path(__file__).resolve().parents[3]
+    if path.is_symlink():
+        raise ValueError("html_symlink_not_allowed")
+    target = path.expanduser().resolve()
+    if target.is_relative_to(repository_root):
+        raise ValueError("html_inside_repository_not_allowed")
+    data = html.encode("utf-8")
+    if len(data) > MAX_PAGE_BYTES:
+        raise ValueError("html_too_large")
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as output:
+        output.write(data)
 
 
 async def select_group(page, code: str) -> str:
@@ -69,6 +87,7 @@ async def pilot(
     profile: Path,
     setup: bool,
     headed: bool,
+    capture_html: Path | None = None,
 ) -> dict:
     if monday.weekday() != 0:
         raise ValueError("week_start_must_be_monday")
@@ -119,9 +138,12 @@ async def pilot(
                 return {"status": "moodle_available_not_group_timetable", **stats}
             if normalized(code) not in normalized(body):
                 return {"status": "group_identity_unverified", "mode": mode, **stats}
+            html = await page.content()
+            if capture_html is not None:
+                save_private_html(capture_html, html)
             try:
                 snapshot = extract_public_schedule(
-                    await page.content(),
+                    html,
                     code,
                     monday,
                     monday + timedelta(days=6),
@@ -137,16 +159,7 @@ async def pilot(
                 "week_start": monday.isoformat(),
                 "group_code": code,
                 "lesson_count": len(lessons),
-                "lessons": [
-                    {
-                        "day": row.day.isoformat(),
-                        "time": row.starts.isoformat(timespec="minutes"),
-                        "subject": row.subject,
-                        "teacher": row.teacher,
-                        "room": row.room,
-                    }
-                    for row in lessons
-                ],
+                "days_with_lessons": len({row.day for row in lessons}),
             }
         finally:
             await context.close()
@@ -160,6 +173,9 @@ def main() -> None:
     parser.add_argument("--group-code", default="Э-ОБ-385-04-26-02")
     parser.add_argument("--week-start", type=date.fromisoformat)
     parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE)
+    parser.add_argument(
+        "--capture-html", type=Path, help="save private HTML outside repository (0600)"
+    )
     args = parser.parse_args()
     code = group_code(args.group_code)
     day = datetime.now(ZoneInfo("Europe/Moscow")).date()
@@ -172,6 +188,7 @@ def main() -> None:
             profile=args.profile,
             setup=args.setup,
             headed=args.headed,
+            capture_html=args.capture_html,
         )
     )
     print(json.dumps(result, ensure_ascii=False))
