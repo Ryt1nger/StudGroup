@@ -1208,12 +1208,8 @@ def test_photo_caption_and_reply_chain_wait_together_but_unrelated_homework_prog
             route.release_budget_since = now - timedelta(hours=1)
             route.release_budget_until = now + timedelta(hours=1)
             route.release_budget_receipt = "a" * 64
-            photo = await db.scalar(
-                select(RawMessage).where(RawMessage.telegram_message_id == 31)
-            )
-            reply = await db.scalar(
-                select(RawMessage).where(RawMessage.telegram_message_id == 32)
-            )
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            reply = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
             reply.reply_to_message_id = 31
             db.add(
                 MessageAttachment(
@@ -1247,9 +1243,7 @@ def test_photo_caption_and_reply_chain_wait_together_but_unrelated_homework_prog
 
     async def finish_photo():
         async with AsyncSession(client.app.state.engine) as db:
-            photo = await db.scalar(
-                select(RawMessage).where(RawMessage.telegram_message_id == 31)
-            )
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
             attachment = await db.scalar(
                 select(MessageAttachment).where(MessageAttachment.raw_message_id == photo.id)
             )
