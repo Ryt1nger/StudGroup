@@ -1015,6 +1015,24 @@ async def process_package_next(engine, settings, provider=None, now=None):
             await db.commit()
             print(line, flush=True)
             return "completed"
+        # Financial gates can close between context pass and extraction pass.
+        # This is not a failed academic package: retain every source and wait
+        # for the next funded period, with no phantom reservation charge.
+        if (
+            "recurring_" in failure.code
+            or "release_budget_" in failure.code
+            or "release_daily_budget_" in failure.code
+            or "release_hourly_budget_" in failure.code
+            or "release_paid_outcome_held" in failure.code
+        ):
+            from studgroup.analysis.release_budget import next_budget_reset
+
+            row.charged_usd += actual
+            row.last_error = failure.code
+            row.state = "budget_deferred"
+            row.available_at = next_budget_reset(now, monthly="monthly" in failure.code)
+            await db.commit()
+            return "budget_deferred"
         # If the provider did not report usage, keep the full reservation as a
         # conservative charge unless it explicitly proved that no request ran.
         row.charged_usd += actual if failure.usage_complete else max(actual, SHADOW_RESERVATION_USD)
