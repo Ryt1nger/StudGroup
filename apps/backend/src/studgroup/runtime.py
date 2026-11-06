@@ -49,9 +49,7 @@ async def processing_loop(engine, settings, pause=None):
                         await db.commit()
                 elif last_paused:
                     async with AsyncSession(engine) as db:
-                        await incident(
-                            db, "ai_processing_paused", datetime.now(UTC), recover=True
-                        )
+                        await incident(db, "ai_processing_paused", datetime.now(UTC), recover=True)
                         await db.commit()
                 last_paused = health.paused
             await flush_incidents(engine, settings)
