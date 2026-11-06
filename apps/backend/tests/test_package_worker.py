@@ -25,6 +25,7 @@ from studgroup.models import (
     Group,
     GroupAnalysisSettings,
     Homework,
+    MessageAttachment,
     Notification,
     RawMessage,
     SchedulePattern,
@@ -1145,3 +1146,50 @@ def test_expired_release_preserves_pending_and_queued_packages_until_authorized(
     assert step(client, provider, cfg) == "completed"
     assert len(provider.requests) == 2
     assert set(states(client).values()) == {"completed"}
+
+
+def test_unread_photo_in_funded_group_does_not_starve_later_text(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "a" * 64
+            raw = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            db.add(
+                MessageAttachment(
+                    raw_message_id=raw.id,
+                    group_id=group.id,
+                    source_revision=1,
+                    kind="photo",
+                    stable_file_id="unread-photo-31",
+                    telegram_file_id="file31",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            group_id = group.id
+            await db.commit()
+            return group_id
+
+    group_id = asyncio.run(prepare())
+    config = settings(
+        photo_reading_enabled=True,
+        ai_release_budget_required_groups=[str(group_id)],
+    )
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, config) == "completed"
+    assert len(provider.requests) == 2
+    assert states(client) == {31: "pending", 32: "completed", 33: "completed"}
+    # The unread image source was not passed off as analysed.
+    assert step(client, provider, config) == "idle"
+    assert len(provider.requests) == 2
