@@ -2,7 +2,7 @@ import type { SessionContext } from '@studgroup/shared-types';
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api/queries';
-import { academicCacheOwner, restoreAcademicCache, watchAcademicCache } from '../api/academicCache';
+import { academicCacheOwner, canCacheAcademicQuery, restoreAcademicCache, watchAcademicCache } from '../api/academicCache';
 import { setAccessToken } from '../api/client';
 import { isApiRequestError } from '../api/errors';
 import { useTelegram } from '../telegram/TelegramProvider';
@@ -74,7 +74,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           if (deadline !== undefined) clearTimeout(deadline);
         }
         if (cancelled) return;
-        if (owner) stopWatching.current = watchAcademicCache(queryClient, owner);
+        if (owner) {
+          // Always revalidate hydrated data with the live backend; it stays visible
+          // while the request is in flight, even when the snapshot is recent.
+          void queryClient.invalidateQueries({
+            predicate: (query) => canCacheAcademicQuery(query.queryKey),
+            refetchType: 'none',
+          });
+          stopWatching.current = watchAcademicCache(queryClient, owner);
+        }
         // Profile is optional. Showing the app must not wait for a second network round trip.
         // TopBar fetches the profile once the session is ready and deliberately keeps the
         // displayed name blank until the profile resolves, so the Telegram name never flashes.
