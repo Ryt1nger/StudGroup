@@ -1316,3 +1316,34 @@ def test_text_reply_to_old_picture_keeps_its_full_source_chain(client):
     assert by_id[32]["reply_to_message_id"] == 31
     assert "условие задач" in by_id[31]["text"]
     assert states(client)[33] == "completed"
+
+
+def test_production_package_runs_after_engine_and_release_windows_close(client):
+    seed(client)
+    make_new(client, budget="0")
+    now = datetime.now(UTC)
+
+    async def prepare():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal(".001")
+            route.release_budget_since = now - timedelta(days=2)
+            route.release_budget_until = now - timedelta(hours=1)
+            route.release_budget_receipt = "a" * 64
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    config = settings(
+        new_engine_enabled=True,
+        new_engine_enabled_until=now - timedelta(minutes=5),
+        new_engine_hourly_budget_usd=0,
+        ai_release_budget_required_groups=[str(group_id)],
+        ai_production_groups=[str(group_id)],
+    )
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, config) == "completed"
+    assert len(provider.requests) == 2
+    assert set(states(client).values()) == {"completed"}
