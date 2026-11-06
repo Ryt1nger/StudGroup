@@ -72,18 +72,32 @@ async def inspect(engine, settings, now=None):
             elif recurring is not None and recurring != "active":
                 reason = recurring
             elif recurring == "active" and (
-                await spent(db, group.id, since=now.replace(day=1, hour=0, minute=0, second=0, microsecond=0))
+                await spent(
+                    db,
+                    group.id,
+                    since=now.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
+                )
                 >= Decimal(str(settings.ai_recurring_monthly_budget_usd))
             ):
                 reason = "recurring_monthly_budget_exhausted"
             elif recurring == "active" and (
-                await spent(db, group.id, since=now.replace(hour=0, minute=0, second=0, microsecond=0))
+                await spent(
+                    db, group.id, since=now.replace(hour=0, minute=0, second=0, microsecond=0)
+                )
                 >= Decimal(str(settings.ai_recurring_daily_budget_usd))
             ):
                 reason = "recurring_daily_budget_exhausted"
-            elif recurring is None and route.release_budget_until and utc(route.release_budget_until) <= now:
+            elif (
+                recurring is None
+                and route.release_budget_until
+                and utc(route.release_budget_until) <= now
+            ):
                 reason = "release_budget_window_closed"
-            elif recurring is None and route.release_budget_since and utc(route.release_budget_since) > now:
+            elif (
+                recurring is None
+                and route.release_budget_since
+                and utc(route.release_budget_since) > now
+            ):
                 reason = "release_budget_window_not_started"
             elif (
                 recurring is None
