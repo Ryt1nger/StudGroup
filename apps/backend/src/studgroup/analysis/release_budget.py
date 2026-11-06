@@ -282,7 +282,9 @@ class RequestAccounting:
             required = str(self.group_id) in self.settings.ai_release_budget_required_groups
             recurring = recurring_policy_status(self.settings, self.group_id, now)
             if route is None:
-                if required:
+                if recurring is not None:
+                    reason = "recurring_group_not_authorized"
+                elif required:
                     reason = "release_budget_not_configured"
             elif route.paid_outcome_hold:
                 reason = "release_paid_outcome_held"
