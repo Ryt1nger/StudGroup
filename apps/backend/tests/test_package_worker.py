@@ -1337,13 +1337,17 @@ def test_production_package_runs_after_engine_and_release_windows_close(client):
 
     group_id = asyncio.run(prepare())
     config = settings(
-        new_engine_enabled=True,
         new_engine_enabled_until=now - timedelta(minutes=5),
         new_engine_hourly_budget_usd=0,
+        ai_schedule_enabled=True,
         ai_release_budget_required_groups=[str(group_id)],
         ai_production_groups=[str(group_id)],
     )
     provider = PackageProvider(propose=False)
-    assert step(client, provider, config) == "completed"
+    # 04:00 Moscow time: the old hourly pilot window is closed at this hour.
+    overnight = (now + timedelta(days=1)).replace(
+        hour=1, minute=0, second=0, microsecond=0
+    )
+    assert step(client, provider, config, now=overnight) == "completed"
     assert len(provider.requests) == 2
     assert set(states(client).values()) == {"completed"}
