@@ -80,6 +80,67 @@ def test_subject_page_never_exposes_other_group_or_unknown_lesson(client):
     assert client.get(f"/v1/lessons/{lesson_id(client)}/subject").status_code == 401
 
 
+def test_today_only_enriches_three_nearest_upcoming_cards(client, monkeypatch):
+    """Remote DB fan-out must be bounded by displayed cards, not stored backlog."""
+    import studgroup.homework as homework_api
+
+    async def seed():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            now = datetime.now(UTC)
+            for n in range(6):
+                raw = RawMessage(
+                    group_id=group.id,
+                    telegram_message_id=9100 + n,
+                    text="ДЗ",
+                    revision=1,
+                    message_date=now,
+                    version_date=now,
+                    processing_state="completed",
+                    delete_at=now + timedelta(days=30),
+                )
+                db.add(raw)
+                await db.flush()
+                db.add(
+                    Homework(
+                        group_id=group.id,
+                        raw_message_id=raw.id,
+                        subject_id=uuid.uuid4(),
+                        subject_name="Математика",
+                        title=f"Будущее задание {n}",
+                        description="Задание",
+                        created_at=now,
+                        updated_at=now,
+                        deadline_at=now + timedelta(days=n + 1),
+                        delete_at=now + timedelta(days=90),
+                        revision=1,
+                    )
+                )
+            await db.commit()
+
+    asyncio.run(seed())
+    original = homework_api.representation
+    enriched_ids = []
+
+    async def recorded(db, row, user, now):
+        enriched_ids.append(row.id)
+        return await original(db, row, user, now)
+
+    monkeypatch.setattr(homework_api, "representation", recorded)
+    response = client.get("/v1/today", headers={"Authorization": "Bearer valid"})
+    assert response.status_code == 200
+    upcoming = next(
+        section for section in response.json()["sections"] if section["kind"] == "upcoming"
+    )
+    assert len(upcoming["items"]) == 3
+    assert len(enriched_ids) == 3
+    assert [item["title"] for item in upcoming["items"]] == [
+        "Будущее задание 0",
+        "Будущее задание 1",
+        "Будущее задание 2",
+    ]
+
+
 def test_tomorrow_uses_group_calendar_and_preserves_completion(client, monkeypatch):
     import studgroup.homework as homework_api
 
