@@ -681,15 +681,12 @@ async def claim(db, group, route, settings, now):
         ImageAnalysisCall.job_id.in_(image_jobs),
     )
     if reserve <= 0 or (
-        not production
-        and committed + text_spent + reserve > Decimal(route.shadow_daily_budget_usd)
+        not production and committed + text_spent + reserve > Decimal(route.shadow_daily_budget_usd)
     ):
         job.state, job.error = "budget_deferred", "image_group_budget"
         job.available_at = day_start + timedelta(days=1)
         return None
-    if not production and image_spent + reserve > Decimal(
-        str(settings.image_total_budget_usd)
-    ):
+    if not production and image_spent + reserve > Decimal(str(settings.image_total_budget_usd)):
         job.state, job.error = "budget_deferred", "image_budget_exhausted"
         job.available_at = day_start + timedelta(days=1)
         return None
@@ -725,9 +722,7 @@ async def claim(db, group, route, settings, now):
         job.state, job.error = "budget_deferred", "image_hourly_budget"
         job.available_at = now + timedelta(minutes=10)
         return None
-    if not production and batch_spent + reserve > Decimal(
-        str(settings.image_package_budget_usd)
-    ):
+    if not production and batch_spent + reserve > Decimal(str(settings.image_package_budget_usd)):
         job.state, job.error = "budget_deferred", "image_package_budget_exhausted"
         job.available_at = day_start + timedelta(days=1)
         return None
