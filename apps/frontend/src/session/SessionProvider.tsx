@@ -67,7 +67,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           let acceptRestore = true;
           let deadline: ReturnType<typeof setTimeout> | undefined;
           await Promise.race([
-            restoreAcademicCache(queryClient, owner, () => !cancelled && acceptRestore),
+            restoreAcademicCache(queryClient, owner, res.session.server_time, () => !cancelled && acceptRestore),
             new Promise<number>((resolve) => { deadline = setTimeout(() => resolve(0), 200); }),
           ]);
           acceptRestore = false;
