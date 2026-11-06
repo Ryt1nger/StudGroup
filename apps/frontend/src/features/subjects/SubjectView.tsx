@@ -12,6 +12,10 @@ import { useToggleDone } from '../shared/useToggleDone';
 
 const uniq = (values: ReadonlyArray<string | null | undefined>) => [...new Set(values.filter((v): v is string => Boolean(v)))];
 
+/** Weekly replacements retain cancelled occurrences for audit; they are not future classes. */
+export const activeSubjectLessons = (lessons: readonly LessonOccurrence[]) =>
+  lessons.filter((lesson) => lesson.status !== 'cancelled');
+
 /** Everything about one subject: next lesson, facts, schedule, open homework, events and materials. */
 export function SubjectView({
   name,
@@ -32,8 +36,8 @@ export function SubjectView({
   materials?: MaterialLink[];
 }) {
   const { toggle, busy } = useToggleDone();
-  const sorted = [...lessons].sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
-  const next = sorted.find((l) => Date.parse(l.ends_at) > nowMs && l.status !== 'cancelled');
+  const sorted = activeSubjectLessons(lessons).sort((a, b) => Date.parse(a.starts_at) - Date.parse(b.starts_at));
+  const next = sorted.find((l) => Date.parse(l.ends_at) > nowMs);
   const teachers = uniq(sorted.map((l) => l.teacher));
   const places = uniq(sorted.map((l) => (safeLessonUrl(l.online_url) ? 'Онлайн' : l.location)));
   return (

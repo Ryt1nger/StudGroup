@@ -285,6 +285,53 @@ def test_vision_draft_requires_explicit_confirmation_and_deduplicates(client, mo
     assert len(vision.calls) == 2
 
 
+def test_weekly_replacement_rejects_duplicate_slot_with_different_subject(client, monkeypatch):
+    make(client, "headman")
+    authorize_analysis(client)
+    monday = week()
+    uploaded = upload(client, monday, picture()).json()
+    vision = Vision()
+    assert advance(client, monkeypatch, vision) == "pass_a_ready"
+    assert advance(client, monkeypatch, vision) == "ready"
+    draft = get_draft(client, uploaded["id"])
+    row = draft["rows"][0]
+    response = client.post(
+        f"/v1/staff/schedule-upload/{uploaded['id']}/confirm",
+        headers=AUTH,
+        json={
+            "expected_revision": 1,
+            "expected_schedule_version": 0,
+            "corrected_rows": [row, {**row, "subject": "Математика..."}],
+            "targets": [],
+            "replace_week": True,
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "duplicate_schedule_slot"
+
+
+def test_weekly_slot_keeps_distinct_subgroups_parallel():
+    from datetime import date, time
+
+    from studgroup.analysis.image_schedule import ConfirmedScheduleRow, weekly_rows_overlap
+
+    base = {
+        "weekday": 0,
+        "starts": time(9),
+        "ends": time(10, 20),
+        "subject": "Иностранный язык",
+        "valid_from": date(2026, 11, 2),
+        "valid_until": date(2026, 11, 8),
+    }
+    first = ConfirmedScheduleRow(**base, subgroup_id=uuid.uuid4())
+    second = ConfirmedScheduleRow(**base, subgroup_id=uuid.uuid4())
+    common = ConfirmedScheduleRow(**base)
+
+    assert not weekly_rows_overlap(first, second)
+    assert weekly_rows_overlap(first, common)
+    assert weekly_rows_overlap(first, first)
+
+
 def test_weekly_replacement_replaces_occurrences_and_preserves_other_weeks(client, monkeypatch):
     from datetime import time
 
