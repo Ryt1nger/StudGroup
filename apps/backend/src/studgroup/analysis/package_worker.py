@@ -31,6 +31,7 @@ from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
 from studgroup.analysis.manual_dedupe import prompt_memory, recent_manual_cards
 from studgroup.analysis.package_run import DEFAULT_MAX_TARGETS, plan_packages
+from studgroup.analysis.release_budget import release_window_blocker
 from studgroup.analysis.shadow import (
     ShadowPassFailure,
     failure_stage,
@@ -472,6 +473,14 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
             )
             if route is None:
                 continue
+            # Retain the original live messages until a *new* funded window is
+            # explicitly authorized. Never create doomed paid attempts.
+            if release_window_blocker(
+                route,
+                now,
+                required=str(group.id) in settings.ai_release_budget_required_groups,
+            ):
+                continue
             open_run = await db.scalar(
                 select(ShadowEvaluationRun.id).where(
                     ShadowEvaluationRun.group_id == group.id,
@@ -853,6 +862,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
         now,
         mode="new",
         hourly_cap=Decimal(str(settings.new_engine_hourly_budget_usd)),
+        funding_required_groups=settings.ai_release_budget_required_groups,
     )
     if claimed is None:
         return "idle" if queued in {"idle", "settled"} else queued
