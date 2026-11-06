@@ -15,7 +15,7 @@ const forbidden = [
   ['Реферат по социологии', 'mock data'],
   ['tasks-cursor-expired', 'mock scenario names'],
   ['localStorage', 'localStorage usage'],
-  ['indexedDB', 'IndexedDB usage'],
+
 ];
 function walk(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -30,6 +30,14 @@ if (files.some((f) => f.endsWith('mockServiceWorker.js'))) problems.push('mockSe
 for (const file of files.filter((f) => /\.(js|html|css|json)$/.test(f))) {
   const text = readFileSync(file, 'utf8');
   for (const [needle, label] of forbidden) if (text.includes(needle)) problems.push(`${label} found in ${file.replace(dist, 'dist')}`);
+  // IndexedDB is allowed only for the reviewed AES-GCM academic cache. No general
+  // browser persistence, unencrypted data or other IndexedDB integrations.
+  if (file.endsWith('.js')) {
+    const uses = text.split('indexedDB').length - 1;
+    if (uses > 0 && (uses > 2 || !text.includes('studgroup-academic-cache-v1') || !text.includes('AES-GCM'))) {
+      problems.push(`unapproved IndexedDB usage found in ${file.replace(dist, 'dist')}`);
+    }
+  }
 }
 // React Router keeps a list of *applied view-transition route keys* in sessionStorage (library internal,
 // no learning data). Any other sessionStorage use fails the build; app code is also blocked by ESLint.
