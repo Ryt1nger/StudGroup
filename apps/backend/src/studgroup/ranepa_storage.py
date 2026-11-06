@@ -6,8 +6,9 @@ from uuid import UUID
 
 from sqlalchemy import delete, select
 
-from studgroup.models import Group, GroupScheduleSnapshot, GroupScheduleSource
+from studgroup.models import Group, GroupOfficialSubject, GroupScheduleSnapshot, GroupScheduleSource
 from studgroup.ranepa_schedule import WeekSnapshot, group_code, normalized
+from studgroup.subject_identity import subject_uuid
 
 
 async def configure_source(db, group_id, code: str, upstream_uuid: UUID | None = None):
@@ -47,6 +48,9 @@ async def configure_source(db, group_id, code: str, upstream_uuid: UUID | None =
         # Old source metadata and snapshots must never migrate to a new cohort.
         await db.execute(
             delete(GroupScheduleSnapshot).where(GroupScheduleSnapshot.group_id == group_id)
+        )
+        await db.execute(
+            delete(GroupOfficialSubject).where(GroupOfficialSubject.group_id == group_id)
         )
     group.academic_group_code = official_code
     source.updated_at = datetime.now(UTC)
@@ -106,6 +110,12 @@ async def remember_snapshot(db, group_id, snapshot: WeekSnapshot, *, checked_at=
     # Zero rows can mean a broken source, not an empty university week.
     if not snapshot.indexed():
         raise ValueError("empty_source_requires_review")
+    names = {}
+    for row in snapshot.indexed().values():
+        name = " ".join(row.subject.split())
+        if not name or len(name) > 255:
+            raise ValueError("invalid_official_subject")
+        names.setdefault(name.casefold(), name)
     existing = await db.get(GroupScheduleSnapshot, (group_id, snapshot.week_start))
     fingerprint = snapshot.digest()
     if existing is None:
@@ -128,5 +138,21 @@ async def remember_snapshot(db, group_id, snapshot: WeekSnapshot, *, checked_at=
     source.last_checked_at = checked_at
     source.last_success_at = checked_at
     source.last_error = None
+    # Only a nonempty identity-verified snapshot reaches this point. A later
+    # partial week does not erase subjects observed in another verified week.
+    for key, name in names.items():
+        subject = await db.get(GroupOfficialSubject, (group_id, key))
+        if subject is None:
+            db.add(
+                GroupOfficialSubject(
+                    group_id=group_id,
+                    name_key=key,
+                    subject_id=subject_uuid(group_id, name),
+                    name=name,
+                    checked_at=checked_at,
+                )
+            )
+        else:
+            subject.checked_at = checked_at
     await db.flush()
     return status

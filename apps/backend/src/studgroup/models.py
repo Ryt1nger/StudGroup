@@ -78,6 +78,19 @@ class GroupScheduleSnapshot(Base):
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class GroupOfficialSubject(Base):
+    """Observed university subject for one group; never creates a live lesson."""
+
+    __tablename__ = "group_official_subjects"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    name_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    subject_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    name: Mapped[str] = mapped_column(String(255))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class SchedulePattern(Base):
     __tablename__ = "schedule_patterns"
     __table_args__ = (

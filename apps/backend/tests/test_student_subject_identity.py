@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.models import AcademicDeadline, Group
+from studgroup.models import AcademicDeadline, Group, GroupOfficialSubject
 from studgroup.subject_identity import subject_uuid
 
 pytest_plugins = ["test_schedule_api"]
@@ -90,3 +90,34 @@ def test_placeholder_subjects_are_hidden_but_not_given_an_id(client):
     names = [i["name"] for i in client.get("/v1/subjects", headers=HEADERS).json()["items"]]
     assert "Предмет не указан" not in names
     assert "Неизвестно" not in names
+
+
+def test_verified_official_subject_is_listed_once_and_scoped_to_group(client):
+    async def seed():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            own = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            foreign = await db.scalar(select(Group).where(Group.telegram_chat_id == -1002))
+            now = datetime.now(UTC)
+            for group, name in [(own, "  Линейная   алгебра "), (foreign, "Чужой курс")]:
+                canonical = " ".join(name.split())
+                db.add(
+                    GroupOfficialSubject(
+                        group_id=group.id,
+                        name_key=canonical.casefold(),
+                        subject_id=subject_uuid(group.id, canonical),
+                        name=canonical,
+                        checked_at=now,
+                    )
+                )
+            await db.commit()
+            return own.id
+
+    group_id = asyncio.run(seed())
+    response = client.get("/v1/subjects", headers=HEADERS)
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [item["name"] for item in items].count("Линейная алгебра") == 1
+    assert next(item for item in items if item["name"] == "Линейная алгебра")["id"] == str(
+        subject_uuid(group_id, "Линейная алгебра")
+    )
+    assert "Чужой курс" not in [item["name"] for item in items]
