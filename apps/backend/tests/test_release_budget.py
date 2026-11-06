@@ -535,7 +535,7 @@ def test_production_group_processes_across_expired_grant_and_daily_caps(client):
         async with AsyncSession(client.app.state.engine) as db:
             route = await db.get(GroupAnalysisSettings, ident)
             route.release_budget_until = stamp - timedelta(hours=1)
-            route.shadow_daily_budget_usd = Decimal("0")
+            route.shadow_daily_budget_usd = Decimal(0)
             await db.commit()
             assert release_window_blocker(
                 route, stamp, required=True, settings=config, group_id=ident
@@ -552,7 +552,7 @@ def test_production_group_processes_across_expired_grant_and_daily_caps(client):
                 ident,
                 kind="cplus" if index < 2 else "image",
                 attempt_key=f"production-{index}",
-                clock=lambda: stamp + timedelta(days=index),
+                clock=lambda index=index: stamp + timedelta(days=index),
             )
             await accounted.execute(payload(image=index == 2), paid)
         assert calls == [True, True, True]
