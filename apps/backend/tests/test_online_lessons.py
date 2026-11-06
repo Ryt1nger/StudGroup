@@ -6,7 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import schedule_data
-from studgroup.models import Group, HeadmanDecision, RawMessage, ScheduleException, SchedulePattern, User
+from studgroup.models import (
+    Group,
+    HeadmanDecision,
+    RawMessage,
+    ScheduleException,
+    SchedulePattern,
+    User,
+)
 from studgroup.online_lessons import discover, joining_url
 
 pytest_plugins = ["test_schedule_api"]
