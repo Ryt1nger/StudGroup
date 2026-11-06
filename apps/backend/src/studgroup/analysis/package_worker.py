@@ -438,6 +438,35 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
         )
     ).all()
     rows = {row.id: row for row in [*before, *middle, *after]}
+    # Read explicit reply ancestors from this group even if the original image
+    # arrived long before the fixed chronological context window.
+    by_mid = {row.telegram_message_id: row for row in rows.values()}
+    frontier = {row.reply_to_message_id for row in targets if row.reply_to_message_id}
+    seen = set()
+    for _ in range(8):
+        frontier.difference_update(seen)
+        if not frontier:
+            break
+        missing = frontier - set(by_mid)
+        if missing:
+            parents = (
+                await db.scalars(
+                    select(RawMessage).where(
+                        RawMessage.group_id == group.id,
+                        RawMessage.telegram_message_id.in_(missing),
+                        RawMessage.delete_at > now,
+                    )
+                )
+            ).all()
+            for parent in parents:
+                rows[parent.id] = parent
+                by_mid[parent.telegram_message_id] = parent
+        seen.update(frontier)
+        frontier = {
+            by_mid[mid].reply_to_message_id
+            for mid in frontier
+            if mid in by_mid and by_mid[mid].reply_to_message_id
+        }
     target_row_ids = {row.id for row in targets}
     photo_cost, retry_later = await _read_pending_photos(
         db, group, list(rows.values()), target_row_ids, settings, provider, transport, now
