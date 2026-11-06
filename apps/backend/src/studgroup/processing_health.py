@@ -58,7 +58,6 @@ async def inspect(engine, settings, now=None):
             count = int(await db.scalar(select(func.count(RawMessage.id)).where(*eligible)) or 0)
             if count == 0:
                 continue
-            pending_messages += count
             if not settings.new_engine_enabled:
                 reason = "engine_disabled"
             elif (
@@ -79,6 +78,7 @@ async def inspect(engine, settings, now=None):
             else:
                 continue
             reasons[reason] += 1
+            pending_messages += count
             paused_groups += 1
     return BacklogHealth(
         pending_messages=pending_messages,
