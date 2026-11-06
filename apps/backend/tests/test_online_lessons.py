@@ -262,7 +262,9 @@ def test_manual_schedule_lock_does_not_hide_remote_joining_link(client, lock_occ
                 lesson for lesson in calendar["lessons"] if lesson["id"].startswith(str(remote.id))
             )
             in_person_lesson = next(
-                lesson for lesson in calendar["lessons"] if lesson["id"].startswith(str(in_person.id))
+                lesson
+                for lesson in calendar["lessons"]
+                if lesson["id"].startswith(str(in_person.id))
             )
             assert remote_lesson["online_url"] == URL
             assert in_person_lesson["online_url"] is None
@@ -273,8 +275,13 @@ def test_manual_schedule_lock_does_not_hide_remote_joining_link(client, lock_occ
             else:
                 remote.online_url = URL + "manual"
             updated = await schedule_data(day, day, group, db)
-            assert next(
-                lesson for lesson in updated["lessons"] if lesson["id"].startswith(str(remote.id))
-            )["online_url"] == URL + "manual"
+            assert (
+                next(
+                    lesson
+                    for lesson in updated["lessons"]
+                    if lesson["id"].startswith(str(remote.id))
+                )["online_url"]
+                == URL + "manual"
+            )
 
     asyncio.run(run())
