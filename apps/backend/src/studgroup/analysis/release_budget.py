@@ -313,7 +313,12 @@ class RequestAccounting:
                     reason = "release_budget_not_configured"
             elif route.paid_outcome_hold:
                 reason = "release_paid_outcome_held"
-            elif required and route.release_budget_usd is None and recurring is None and not production:
+            elif (
+                required
+                and route.release_budget_usd is None
+                and recurring is None
+                and not production
+            ):
                 reason = "release_budget_not_configured"
             elif (self.mode and route.analysis_mode != self.mode) or (
                 self.kind == "image" and route.analysis_mode not in {"new", "shadow"}
