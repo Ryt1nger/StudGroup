@@ -129,11 +129,15 @@ def test_today_only_enriches_three_nearest_upcoming_cards(client, monkeypatch):
     monkeypatch.setattr(homework_api, "representation", recorded)
     response = client.get("/v1/today", headers={"Authorization": "Bearer valid"})
     assert response.status_code == 200
-    upcoming = next(section for section in response.json()["sections"] if section["kind"] == "upcoming")
+    upcoming = next(
+        section for section in response.json()["sections"] if section["kind"] == "upcoming"
+    )
     assert len(upcoming["items"]) == 3
     assert len(enriched_ids) == 3
     assert [item["title"] for item in upcoming["items"]] == [
-        "Будущее задание 0", "Будущее задание 1", "Будущее задание 2"
+        "Будущее задание 0",
+        "Будущее задание 1",
+        "Будущее задание 2",
     ]
 
 
