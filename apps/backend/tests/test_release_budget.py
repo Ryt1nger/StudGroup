@@ -532,7 +532,7 @@ def test_production_group_processes_across_expired_grant_and_daily_caps(client):
     calls = []
 
     async def run():
-        async with AsyncSession(client.app.state.engine) as db:
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
             route = await db.get(GroupAnalysisSettings, ident)
             route.release_budget_until = stamp - timedelta(hours=1)
             route.shadow_daily_budget_usd = Decimal(0)
