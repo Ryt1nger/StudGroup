@@ -416,11 +416,21 @@ def test_chat_url_with_subject_does_not_override_in_person_lesson(client):
             await db.flush()
             assert await discover(db, raw) == 1
             calendar = await schedule_data(day, day, group, db)
-            assert next(
-                lesson for lesson in calendar["lessons"] if lesson["id"].startswith(str(lessons[0].id))
-            )["online_url"] is None
-            assert next(
-                lesson for lesson in calendar["lessons"] if lesson["id"].startswith(str(lessons[1].id))
-            )["online_url"] == URL
+            assert (
+                next(
+                    lesson
+                    for lesson in calendar["lessons"]
+                    if lesson["id"].startswith(str(lessons[0].id))
+                )["online_url"]
+                is None
+            )
+            assert (
+                next(
+                    lesson
+                    for lesson in calendar["lessons"]
+                    if lesson["id"].startswith(str(lessons[1].id))
+                )["online_url"]
+                == URL
+            )
 
     asyncio.run(run())
