@@ -234,8 +234,7 @@ async def _waiting_image_context(db, group, route, settings, now):
 
     attachments = (
         await db.scalars(
-            select(MessageAttachment)
-            .where(
+            select(MessageAttachment).where(
                 MessageAttachment.group_id == group.id,
                 MessageAttachment.active.is_(True),
                 MessageAttachment.delete_at > now,
@@ -248,8 +247,7 @@ async def _waiting_image_context(db, group, route, settings, now):
 
     sources = (
         await db.scalars(
-            select(RawMessage)
-            .where(
+            select(RawMessage).where(
                 RawMessage.group_id == group.id,
                 RawMessage.delete_at > now,
                 RawMessage.id.in_([attachment.raw_message_id for attachment in images]),
@@ -261,8 +259,7 @@ async def _waiting_image_context(db, group, route, settings, now):
     if independent and settings.image_analysis_mode == "live":
         finished = (
             await db.execute(
-                select(ImageAnalysisJob.attachment_id, ImageAnalysisJob.source_revision)
-                .where(
+                select(ImageAnalysisJob.attachment_id, ImageAnalysisJob.source_revision).where(
                     ImageAnalysisJob.group_id == group.id,
                     ImageAnalysisJob.pass_number == 2,
                     ImageAnalysisJob.state == "ready",
@@ -300,18 +297,14 @@ async def _waiting_image_context(db, group, route, settings, now):
 
     retained = (
         await db.scalars(
-            select(RawMessage).where(
-                RawMessage.group_id == group.id, RawMessage.delete_at > now
-            )
+            select(RawMessage).where(RawMessage.group_id == group.id, RawMessage.delete_at > now)
         )
     ).all()
     # Transitive explicit Telegram replies (reply to a reply) share the source.
     blocked = set(waiting)
     while True:
         children = {
-            row.telegram_message_id
-            for row in retained
-            if row.reply_to_message_id in blocked
+            row.telegram_message_id for row in retained if row.reply_to_message_id in blocked
         }
         expanded = blocked | children
         if expanded == blocked:
