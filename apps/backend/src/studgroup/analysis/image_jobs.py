@@ -653,6 +653,9 @@ async def claim(db, group, route, settings, now):
         # while the policy remains closed.
         job.available_at = now + timedelta(minutes=5)
         return None
+    from studgroup.analysis.release_budget import production_enabled
+
+    production = production_enabled(settings, group.id)
     reserve = Decimal(str(settings.image_pass_reservation_usd))
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     group_filter = ImageAnalysisCall.group_id == group.id
@@ -677,11 +680,16 @@ async def claim(db, group, route, settings, now):
         ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd,
         ImageAnalysisCall.job_id.in_(image_jobs),
     )
-    if reserve <= 0 or committed + text_spent + reserve > Decimal(route.shadow_daily_budget_usd):
+    if reserve <= 0 or (
+        not production
+        and committed + text_spent + reserve > Decimal(route.shadow_daily_budget_usd)
+    ):
         job.state, job.error = "budget_deferred", "image_group_budget"
         job.available_at = day_start + timedelta(days=1)
         return None
-    if image_spent + reserve > Decimal(str(settings.image_total_budget_usd)):
+    if not production and image_spent + reserve > Decimal(
+        str(settings.image_total_budget_usd)
+    ):
         job.state, job.error = "budget_deferred", "image_budget_exhausted"
         job.available_at = day_start + timedelta(days=1)
         return None
@@ -713,11 +721,13 @@ async def claim(db, group, route, settings, now):
         ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd,
         ImageAnalysisCall.job_id.in_(batch_jobs),
     )
-    if hourly + reserve > Decimal(str(settings.image_hourly_budget_usd)):
+    if not production and hourly + reserve > Decimal(str(settings.image_hourly_budget_usd)):
         job.state, job.error = "budget_deferred", "image_hourly_budget"
         job.available_at = now + timedelta(minutes=10)
         return None
-    if batch_spent + reserve > Decimal(str(settings.image_package_budget_usd)):
+    if not production and batch_spent + reserve > Decimal(
+        str(settings.image_package_budget_usd)
+    ):
         job.state, job.error = "budget_deferred", "image_package_budget_exhausted"
         job.available_at = day_start + timedelta(days=1)
         return None
