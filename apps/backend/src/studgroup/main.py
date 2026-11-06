@@ -416,8 +416,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def academic_request_timing(request, call_next):
         path = request.url.path
         measured_routes = {
-            "/v1/session/bootstrap", "/v1/today", "/v1/schedule",
-            "/v1/homework", "/v1/deadlines", "/v1/profile",
+            "/v1/session/bootstrap",
+            "/v1/today",
+            "/v1/schedule",
+            "/v1/homework",
+            "/v1/deadlines",
+            "/v1/profile",
         }
         if path not in measured_routes:
             return await call_next(request)
