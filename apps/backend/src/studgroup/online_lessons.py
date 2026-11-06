@@ -320,7 +320,15 @@ async def overlay(db, group, lessons):
                 ScheduleException.occurrence_date == date.fromisoformat(day),
             )
         )
-        if f"p:{pattern}" in locked or (exception and f"x:{exception.id}" in locked):
+        # A headman's lock protects manual timetable fields. It must not hide a
+        # verified joining URL for a remote lesson when no manual URL is set.
+        # Keep locked in-person lessons untouched.
+        manually_locked = f"p:{pattern}" in locked or (
+            exception is not None and f"x:{exception.id}" in locked
+        )
+        if manually_locked and not re.search(
+            r"сдо|дистан|онлайн", normalize(lesson.get("location") or "")
+        ):
             continue
         for row in rows:
             if str(row.pattern_id) != pattern or row.occurrence_date not in (
