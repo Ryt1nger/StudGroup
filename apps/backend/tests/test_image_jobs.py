@@ -392,3 +392,25 @@ def test_production_vision_reads_both_passes_with_zero_pilot_budgets(client, mon
     assert tick(client, provider, config) == "idle"
     assert len(provider.vision) == 2
     assert all(job.state == "ready" for job in stored(client, ImageAnalysisJob))
+
+
+def test_production_picture_is_not_failed_by_old_reservation_size(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+
+    async def group_id():
+        async with AsyncSession(client.app.state.engine) as db:
+            return str(await db.scalar(select(Group.id).where(Group.telegram_chat_id == -1001)))
+
+    config = cfg(
+        client,
+        ai_production_groups=[asyncio.run(group_id())],
+        image_analysis_mode="live",
+        image_pass_reservation_usd=0.000001,
+    )
+    provider = VisionProvider(reading(), propose=False)
+    assert tick(client, provider, config) == "ready"
+    assert tick(client, provider, config) == "ready"
+    assert all(job.state == "ready" for job in stored(client, ImageAnalysisJob))
+    assert all(call.reserved_usd == 0 for call in stored(client, ImageAnalysisCall))
