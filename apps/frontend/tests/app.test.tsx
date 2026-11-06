@@ -21,6 +21,27 @@ describe('session and access', () => {
     expect(window.sessionStorage.length).toBe(0);
   });
 
+  it('shows Today without waiting for the optional profile response', async () => {
+    useScenario();
+    let releaseProfile: () => void = () => {};
+    const delayedProfile = new Promise<void>((resolve) => { releaseProfile = resolve; });
+    let profileRequests = 0;
+    server.use(
+      http.get(`${API}/profile`, async () => {
+        profileRequests += 1;
+        await delayedProfile;
+        return HttpResponse.json({}); // The profile response is not needed for this assertion.
+      }),
+    );
+    try {
+      renderApp();
+      expect(await screen.findByRole('heading', { name: 'Сегодня', level: 1 })).toBeInTheDocument();
+      await waitFor(() => expect(profileRequests).toBeGreaterThan(0));
+    } finally {
+      releaseProfile();
+    }
+  });
+
   it('asks to open the app from Telegram when initData is missing', async () => {
     useScenario();
     renderApp({ adapter: null });
