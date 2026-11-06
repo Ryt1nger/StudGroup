@@ -763,6 +763,8 @@ async def perform(provider, image, mime, job, raw, first=None):
 
 
 async def process_images_next(engine, settings, provider=None, now=None, transport=None):
+    from studgroup.analysis.release_budget import production_enabled
+
     if (
         not settings.image_analysis_enabled
         or not settings.image_analysis_groups
@@ -914,7 +916,9 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             or context_changed
         ):
             job.state, job.error = "stale", "context_or_source_revision_changed"
-        elif actual > Decimal(str(settings.image_pass_reservation_usd)):
+        elif actual > Decimal(str(settings.image_pass_reservation_usd)) and not production_enabled(
+            settings, job.group_id
+        ):
             job.state, job.error = "failed", "image_charge_over_reservation"
         elif result is not None and cached is not None:
             reuse_reading(job, cached)
