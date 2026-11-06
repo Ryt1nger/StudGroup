@@ -177,6 +177,8 @@ async def _reserve_recurring(db, route, settings, group_id, kind, attempt_key, p
     except (ValueError, KeyError, TypeError):
         return "recurring_request_unpriced", None
 
+    if kind not in {"cplus", "legacy", "image", "cabinet_image"}:
+        return "recurring_unknown_kind", None
     is_image = kind in {"image", "cabinet_image"}
     kinds = ("image", "cabinet_image") if is_image else ("cplus", "legacy")
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -231,11 +233,13 @@ async def _reserve_recurring(db, route, settings, group_id, kind, attempt_key, p
 
 
 def release_window_blocker(route, now, *, required=False, settings=None, group_id=None):
+    """No paid attempt may start outside an authorized funding policy."""
+    if route is not None and route.paid_outcome_hold:
+        return "release_paid_outcome_held"
     status = recurring_policy_status(settings, group_id, now)
     if status is not None:
         return None if status == "active" else status
 
-    """No paid attempt may start outside a separately authorized funding window."""
     if route is None:
         return "release_budget_not_configured" if required else None
     if route.paid_outcome_hold:
