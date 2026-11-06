@@ -86,8 +86,7 @@ def match_remote_lesson(lessons, *, day, stamp, timezone, subject=None, lesson_t
         for lesson in lessons
         if lesson["status"] == "scheduled"
         and is_remote_lesson(lesson)
-        and datetime.fromisoformat(lesson["starts_at"]).astimezone(ZoneInfo(timezone)).date()
-        == day
+        and datetime.fromisoformat(lesson["starts_at"]).astimezone(ZoneInfo(timezone)).date() == day
         and (not subject or normalize(lesson["subject"]) == normalize(subject))
     ]
     if lesson_time:
@@ -103,7 +102,8 @@ def match_remote_lesson(lessons, *, day, stamp, timezone, subject=None, lesson_t
         current = [
             lesson
             for lesson in candidates
-            if datetime.fromisoformat(lesson["starts_at"]) <= stamp
+            if datetime.fromisoformat(lesson["starts_at"])
+            <= stamp
             < datetime.fromisoformat(lesson["ends_at"])
         ]
         candidates = current or [
@@ -383,9 +383,9 @@ async def overlay(db, group, lessons):
                     unmatched_targets[row.id] = target
                 if unmatched_targets[row.id] != lesson["id"]:
                     continue
-            elif row.occurrence_date is None and datetime.fromisoformat(
-                lesson["ends_at"]
-            ) <= utc(source.version_date):
+            elif row.occurrence_date is None and datetime.fromisoformat(lesson["ends_at"]) <= utc(
+                source.version_date
+            ):
                 continue
             lesson["online_url"] = row.url
             break
