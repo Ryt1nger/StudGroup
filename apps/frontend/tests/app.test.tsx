@@ -93,8 +93,8 @@ describe('Today', () => {
     expect(
       await screen.findByRole('heading', { name: 'Математический анализ', level: 1 }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Домашние задания' })).toBeInTheDocument();
-    expect(screen.getByText('События и КТ пока не подключены.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Домашние задания' })).toBeInTheDocument();
+    expect(await screen.findByText('События и КТ пока не подключены.')).toBeInTheDocument();
     expect(screen.getByText('Материалы пока не подключены.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('link', { name: /ДЗ №12–140/ }));
     expect(await screen.findByText('Что нужно сделать')).toBeInTheDocument();
