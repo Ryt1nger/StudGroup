@@ -82,19 +82,18 @@ async def inspect(engine, settings, now=None):
                     route.release_budget_usd is not None
                     or str(group.id) in settings.ai_release_budget_required_groups
                 )
-                if not settings.photo_reading_enabled or not protected or enabled(
-                    settings, group.id
+                if (
+                    not settings.photo_reading_enabled
+                    or not protected
+                    or enabled(settings, group.id)
                 ):
                     continue
-                unread_photo_sources = (
-                    select(MessageAttachment.raw_message_id)
-                    .where(
-                        MessageAttachment.group_id == group.id,
-                        MessageAttachment.kind == "photo",
-                        MessageAttachment.active.is_(True),
-                        MessageAttachment.processing_state == "metadata_only",
-                        MessageAttachment.delete_at > now,
-                    )
+                unread_photo_sources = select(MessageAttachment.raw_message_id).where(
+                    MessageAttachment.group_id == group.id,
+                    MessageAttachment.kind == "photo",
+                    MessageAttachment.active.is_(True),
+                    MessageAttachment.processing_state == "metadata_only",
+                    MessageAttachment.delete_at > now,
                 )
                 count = int(
                     await db.scalar(
