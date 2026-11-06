@@ -160,7 +160,7 @@ async function store(client: QueryClient, owner: string): Promise<void> {
 }
 
 /** Returns a count; an unavailable or invalid cache never blocks login. */
-export async function restoreAcademicCache(client: QueryClient, owner: string): Promise<number> {
+export async function restoreAcademicCache(client: QueryClient, owner: string, isCurrent: () => boolean = () => true): Promise<number> {
   const db = await openDatabase();
   if (!db) return 0;
   try {
@@ -185,6 +185,7 @@ export async function restoreAcademicCache(client: QueryClient, owner: string): 
         || typeof item.updatedAt !== 'number' || !Number.isFinite(item.updatedAt)
         || item.updatedAt > Date.now() || Date.now() - item.updatedAt > MAX_AGE_MS
         || item.data === undefined) continue;
+      if (!isCurrent()) return restored;
       // Never overwrite a fresher response that arrived while IndexedDB was opening.
       const current = client.getQueryState(item.key);
       if (current && current.dataUpdatedAt >= item.updatedAt) continue;
