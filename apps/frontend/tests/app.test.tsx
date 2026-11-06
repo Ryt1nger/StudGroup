@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { contractExamples } from '@studgroup/shared-types/examples';
 import { API, makeAdapter, renderApp, server, useScenario } from './helpers';
-import { buildNextLesson } from '../src/mocks/data';
+import { buildNextLesson, buildToday, buildWorld } from '../src/mocks/data';
 
 const HW = '44444444-4444-4444-8444-444444444444';
 const HW_UNAVAILABLE = '66666666-6666-4666-8666-666666666666';
@@ -85,6 +85,41 @@ describe('session and access', () => {
 });
 
 describe('Today', () => {
+  it('does not compete with the primary feed for the initial database connections', async () => {
+    useScenario();
+    let unblockToday: () => void = () => undefined;
+    const todayGate = new Promise<void>((resolve) => { unblockToday = resolve; });
+    let todayStarted = false;
+    let homeworkRequested = 0;
+    let deadlinesRequested = 0;
+    server.use(
+      http.get(`${API}/today`, async () => {
+        todayStarted = true;
+        await todayGate;
+        return HttpResponse.json({ ...buildToday(buildWorld(), Date.now()), next_lesson: buildNextLesson(Date.now(), 'upcoming') });
+      }),
+      http.get(`${API}/homework`, () => {
+        homeworkRequested += 1;
+        return HttpResponse.json({ items: [], next_cursor: null, generated_at: new Date().toISOString() });
+      }),
+      http.get(`${API}/deadlines`, () => {
+        deadlinesRequested += 1;
+        return HttpResponse.json({ items: [], group_timezone: 'Europe/Moscow', generated_at: new Date().toISOString() });
+      }),
+    );
+    try {
+      renderApp();
+      await waitFor(() => expect(todayStarted).toBe(true));
+      expect(homeworkRequested).toBe(0);
+      expect(deadlinesRequested).toBe(0);
+      unblockToday();
+      await waitFor(() => expect(homeworkRequested).toBeGreaterThan(0));
+      await waitFor(() => expect(deadlinesRequested).toBeGreaterThan(0));
+    } finally {
+      unblockToday();
+    }
+  });
+
   it('opens the subject page from the lesson and opens related homework', async () => {
     useScenario();
     renderApp();

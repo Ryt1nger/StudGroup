@@ -223,7 +223,7 @@ describe('headman card editing', () => {
     );
     renderApp({ route: `/deadlines/${EV}` });
     await userEvent.click(await screen.findByRole('link', { name: 'Редактировать' }));
-    await userEvent.selectOptions(screen.getByLabelText('Вид'), 'exam');
+    await userEvent.selectOptions(await screen.findByLabelText('Вид'), 'exam');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     await waitFor(() => expect(sent).toEqual({ expected_revision: 3, kind: 'exam' }));
   });
