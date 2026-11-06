@@ -6,7 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import schedule_data
-from studgroup.models import Group, RawMessage, SchedulePattern
+from studgroup.models import (
+    Group,
+    HeadmanDecision,
+    RawMessage,
+    ScheduleException,
+    SchedulePattern,
+    User,
+)
 from studgroup.online_lessons import discover, joining_url
 
 pytest_plugins = ["test_schedule_api"]
@@ -162,6 +169,119 @@ def test_one_off_link_does_not_repeat_next_week_and_source_processing_order_does
                     if l["subject"].startswith("Культура")
                 )["online_url"]
                 is None
+            )
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("lock_occurrence", [False, True])
+def test_manual_schedule_lock_does_not_hide_remote_joining_link(client, lock_occurrence):
+    async def run():
+        now = datetime.now(UTC)
+        day = date(2026, 11, 6)
+        stamp = datetime.fromisoformat("2026-11-06T08:55:00+03:00")
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            user = await db.scalar(select(User).where(User.telegram_user_id == 1))
+            remote = SchedulePattern(
+                group_id=group.id,
+                subject="Средства цифровой трансформации",
+                weekday=4,
+                starts=time(9),
+                ends=time(10, 20),
+                location="СДО",
+                week="all",
+                valid_from=day,
+                valid_until=day,
+            )
+            in_person = SchedulePattern(
+                group_id=group.id,
+                subject="Аудиторный практикум",
+                weekday=4,
+                starts=time(11),
+                ends=time(12),
+                location="Ауд. 511",
+                week="all",
+                valid_from=day,
+                valid_until=day,
+            )
+            db.add_all([remote, in_person])
+            await db.flush()
+            locked_key = f"p:{remote.id}"
+            if lock_occurrence:
+                override = ScheduleException(
+                    group_id=group.id,
+                    pattern_id=remote.id,
+                    occurrence_date=day,
+                    starts_at=datetime.fromisoformat("2026-11-06T09:00:00+03:00"),
+                    ends_at=datetime.fromisoformat("2026-11-06T10:20:00+03:00"),
+                    location="СДО",
+                    revision=1,
+                )
+                db.add(override)
+                await db.flush()
+                locked_key = f"x:{override.id}"
+            db.add_all(
+                [
+                    HeadmanDecision(
+                        entity_key=key,
+                        group_id=group.id,
+                        actor_id=user.id,
+                        actor_role="headman",
+                        locked=True,
+                        revision=1,
+                    )
+                    for key in [locked_key, f"p:{in_person.id}"]
+                ]
+            )
+            remote_message = RawMessage(
+                group_id=group.id,
+                telegram_message_id=11101,
+                text="Средства цифровой трансформации\\n" + URL,
+                message_date=stamp,
+                version_date=stamp,
+                revision=1,
+                delete_at=now + timedelta(days=30),
+            )
+            in_person_message = RawMessage(
+                group_id=group.id,
+                telegram_message_id=11102,
+                text="Аудиторный практикум\\n" + URL + "2",
+                message_date=stamp,
+                version_date=stamp,
+                revision=1,
+                delete_at=now + timedelta(days=30),
+            )
+            db.add_all([remote_message, in_person_message])
+            await db.flush()
+            assert await discover(db, remote_message) == 1
+            assert await discover(db, in_person_message) == 1
+
+            calendar = await schedule_data(day, day, group, db)
+            remote_lesson = next(
+                lesson for lesson in calendar["lessons"] if lesson["id"].startswith(str(remote.id))
+            )
+            in_person_lesson = next(
+                lesson
+                for lesson in calendar["lessons"]
+                if lesson["id"].startswith(str(in_person.id))
+            )
+            assert remote_lesson["online_url"] == URL
+            assert in_person_lesson["online_url"] is None
+
+            # A manually entered URL still wins over newly discovered evidence.
+            if lock_occurrence:
+                override.online_url = URL + "manual"
+            else:
+                remote.online_url = URL + "manual"
+            updated = await schedule_data(day, day, group, db)
+            assert (
+                next(
+                    lesson
+                    for lesson in updated["lessons"]
+                    if lesson["id"].startswith(str(remote.id))
+                )["online_url"]
+                == URL + "manual"
             )
 
     asyncio.run(run())
