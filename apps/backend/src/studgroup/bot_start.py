@@ -66,6 +66,13 @@ def app_button(settings, label="Открыть StudGroup"):
     return {"text": label, "web_app": {"url": settings.webapp_origin}}
 
 
+def ranepa_button(settings):
+    return {
+        "text": "Подключить расписание РАНХиГС",
+        "web_app": {"url": settings.webapp_origin.rstrip("/") + "/profile/me"},
+    }
+
+
 async def get_session(db, chat):
     return await db.scalar(
         select(StartSession).where(StartSession.telegram_user_id == chat).with_for_update()
@@ -348,8 +355,15 @@ async def redeem(db, session, settings, telegram_id, code, *, typed):
         await screen(
             db,
             session,
-            f"Готово! Вы подключены к «{group.name}».",
-            [[app_button(settings)]],
+            f"Готово! Вы подключены к «{group.name}»."
+            + (
+                "\n\nДля личного расписания откройте защищённую форму в приложении."
+                " Не отправляйте пароль в чат."
+                if group.academic_group_code
+                else ""
+            ),
+            ([[ranepa_button(settings)]] if group.academic_group_code else [])
+            + [[app_button(settings)]],
             "done",
         )
 
@@ -382,6 +396,8 @@ async def subgroup_choice(db, session, settings, member, group, *, joined=False)
         chosen = next((row for row in choices if row.id == picked.get(split.id)), None)
         lines.append(f"• {split.subject_name}: {chosen.name if chosen else 'не выбрана'}")
         rows.append([(f"Изменить · {split.subject_name}"[:55], f"subgroup_change_{n}")])
+    if group.academic_group_code:
+        rows += [[ranepa_button(settings)]]
     rows += [[app_button(settings)], [("‹ В начало", "home")]]
     await screen(
         db,
