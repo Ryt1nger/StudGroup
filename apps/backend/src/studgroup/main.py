@@ -346,10 +346,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             except Exception as error:  # noqa: BLE001 -- read-only diagnostic, never blocks startup
                 print("SHADOW_WAVE_PREFLIGHT_FAILED " + type(error).__name__, flush=True)
+        # Read-only owner diagnostics are optional: a slow Supabase query must not
+        # delay serving the first Mini App request after a Render cold start.
+        diagnostics_task = None
         if settings.owner_update_notifications_enabled:
             from studgroup.processing_diagnostics import startup
 
-            await startup(app.state.engine, settings)
+            diagnostics_task = asyncio.create_task(startup(app.state.engine, settings))
+        app.state.diagnostics_task = diagnostics_task
         processor = None
         if settings.processing_mode == "embedded":
             from studgroup.runtime import processing_loop
@@ -370,6 +374,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if diagnostics_task is not None:
+                diagnostics_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await diagnostics_task
             if delivery is not None:
                 delivery.cancel()
                 with suppress(asyncio.CancelledError):
