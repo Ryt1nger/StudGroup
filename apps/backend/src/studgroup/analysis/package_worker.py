@@ -200,7 +200,9 @@ def _eligible(group, settings, now):
         RawMessage.imported.is_(False),
         RawMessage.delete_at > now,
     ]
-    if settings.ai_schedule_enabled:
+    from studgroup.analysis.release_budget import production_enabled
+
+    if settings.ai_schedule_enabled and not production_enabled(settings, group.id):
         timing = window(now, settings.ai_schedule_timezone)
         if timing is None:
             return None
