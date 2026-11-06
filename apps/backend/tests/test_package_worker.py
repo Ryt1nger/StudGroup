@@ -1193,3 +1193,72 @@ def test_unread_photo_in_funded_group_does_not_starve_later_text(client):
     # The unread image source was not passed off as analysed.
     assert step(client, provider, config) == "idle"
     assert len(provider.requests) == 2
+
+
+def test_photo_caption_and_reply_chain_wait_together_but_unrelated_homework_progresses(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "a" * 64
+            photo = await db.scalar(
+                select(RawMessage).where(RawMessage.telegram_message_id == 31)
+            )
+            reply = await db.scalar(
+                select(RawMessage).where(RawMessage.telegram_message_id == 32)
+            )
+            reply.reply_to_message_id = 31
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="caption-image-31",
+                    telegram_file_id="photo31",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    config = settings(
+        photo_reading_enabled=True,
+        ai_release_budget_required_groups=[str(group_id)],
+    )
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, config) == "completed"
+    assert set(provider.targets) == {33}
+    assert states(client) == {31: "pending", 32: "pending", 33: "completed"}
+    assert step(client, provider, config) == "idle"
+
+    async def finish_photo():
+        async with AsyncSession(client.app.state.engine) as db:
+            photo = await db.scalar(
+                select(RawMessage).where(RawMessage.telegram_message_id == 31)
+            )
+            attachment = await db.scalar(
+                select(MessageAttachment).where(MessageAttachment.raw_message_id == photo.id)
+            )
+            attachment.processing_state = "ready"
+            attachment.photo_text = "Решить задачи 1–3"
+            attachment.photo_summary = "Условие домашнего задания"
+            await db.commit()
+
+    asyncio.run(finish_photo())
+    assert step(client, provider, config) == "completed"
+    assert set(provider.targets) == {31, 32}
+    assert set(states(client).values()) == {"completed"}
