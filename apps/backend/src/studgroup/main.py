@@ -2,9 +2,9 @@
 
 import asyncio
 import ssl
-from time import perf_counter
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
+from time import perf_counter
 from typing import Literal
 from zoneinfo import ZoneInfo
 
