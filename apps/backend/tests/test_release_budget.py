@@ -431,15 +431,23 @@ def test_recurring_budget_requires_explicit_group_receipt_and_future_approval(cl
             return body()
 
         forbidden = RequestAccounting(
-            client.app.state.engine, invalid, ident, kind="cplus",
-            attempt_key="invalid-approval", clock=lambda: stamp,
+            client.app.state.engine,
+            invalid,
+            ident,
+            kind="cplus",
+            attempt_key="invalid-approval",
+            clock=lambda: stamp,
         )
         with pytest.raises(ProviderFailure, match="recurring_approval_expired"):
             await forbidden.execute(payload(), paid)
         assert not called
         authorized = RequestAccounting(
-            client.app.state.engine, good, ident, kind="cplus",
-            attempt_key="approved", clock=lambda: stamp,
+            client.app.state.engine,
+            good,
+            ident,
+            kind="cplus",
+            attempt_key="approved",
+            clock=lambda: stamp,
         )
         await authorized.execute(payload(), paid)
         assert called == [True]
@@ -459,12 +467,12 @@ def test_recurring_text_image_daily_and_monthly_caps_reset_without_rebuying_hist
         ai_recurring_budget_groups=[str(ident)],
         ai_recurring_approved_until=initial + timedelta(days=60),
         ai_recurring_approval_receipt="b" * 64,
-        ai_recurring_daily_budget_usd=.006,
-        ai_recurring_monthly_budget_usd=.008,
-        ai_recurring_text_daily_budget_usd=.003,
-        ai_recurring_text_monthly_budget_usd=.004,
-        ai_recurring_image_daily_budget_usd=.003,
-        ai_recurring_image_monthly_budget_usd=.004,
+        ai_recurring_daily_budget_usd=0.006,
+        ai_recurring_monthly_budget_usd=0.008,
+        ai_recurring_text_daily_budget_usd=0.003,
+        ai_recurring_text_monthly_budget_usd=0.004,
+        ai_recurring_image_daily_budget_usd=0.003,
+        ai_recurring_image_monthly_budget_usd=0.004,
     )
     clock = [initial]
     invocations = []
@@ -476,8 +484,12 @@ def test_recurring_text_image_daily_and_monthly_caps_reset_without_rebuying_hist
 
         async def request(kind, key):
             accounting = RequestAccounting(
-                client.app.state.engine, config, ident, kind=kind,
-                attempt_key=key, clock=lambda: clock[0],
+                client.app.state.engine,
+                config,
+                ident,
+                kind=kind,
+                attempt_key=key,
+                clock=lambda: clock[0],
             )
             await accounting.execute(payload(image=kind == "image"), paid)
 
