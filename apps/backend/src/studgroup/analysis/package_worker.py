@@ -499,6 +499,8 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                 route,
                 now,
                 required=str(group.id) in settings.ai_release_budget_required_groups,
+                settings=settings,
+                group_id=group.id,
             ):
                 continue
             open_run = await db.scalar(
@@ -883,6 +885,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
         mode="new",
         hourly_cap=Decimal(str(settings.new_engine_hourly_budget_usd)),
         funding_required_groups=settings.ai_release_budget_required_groups,
+        funding_settings=settings,
     )
     if claimed is None:
         return "idle" if queued in {"idle", "settled"} else queued
