@@ -31,6 +31,7 @@ from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
 from studgroup.analysis.manual_dedupe import prompt_memory, recent_manual_cards
 from studgroup.analysis.package_run import DEFAULT_MAX_TARGETS, plan_packages
+from studgroup.analysis.release_budget import release_window_blocker
 from studgroup.analysis.shadow import (
     ShadowPassFailure,
     failure_stage,
@@ -249,9 +250,9 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
     if (route and (route.release_budget_usd is not None or route.paid_outcome_hold)) or (
         str(group.id) in settings.ai_release_budget_required_groups
     ):
-        # Only actual unread photos require the independent queue. Text-only packages still
-        # run when legacy photo reading is enabled but the new image feature is switched off.
-        return Decimal(0), True
+        # An unread *context-only* photo is not grounds to block an unrelated
+        # text package. Unread target photos remain pending for separate vision.
+        return Decimal(0), any(a.raw_message_id in target_ids for a in pending)
     if provider is None:
         from studgroup.ai import DeepSeekProvider
 
@@ -294,6 +295,26 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
     filters = _eligible(group, settings, now)
     if filters is None:
         return None
+    from studgroup.analysis.image_jobs import enabled
+
+    # A funded group using the legacy photo reader cannot read metadata-only
+    # photos: the financial gate requires the independent image queue instead.
+    # Keep those image sources pending, but do not let the first one starve all
+    # later text-only messages. Their future vision pass will reopen the source.
+    protected = (
+        route.release_budget_usd is not None
+        or bool(route.paid_outcome_hold)
+        or str(group.id) in settings.ai_release_budget_required_groups
+    )
+    if settings.photo_reading_enabled and protected and not enabled(settings, group.id):
+        unread_photos = select(MessageAttachment.raw_message_id).where(
+            MessageAttachment.group_id == group.id,
+            MessageAttachment.kind == "photo",
+            MessageAttachment.active.is_(True),
+            MessageAttachment.processing_state == "metadata_only",
+            MessageAttachment.delete_at > now,
+        )
+        filters.append(RawMessage.id.not_in(unread_photos))
     pending = (
         await db.scalars(
             select(RawMessage)
@@ -471,6 +492,14 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                 .with_for_update(skip_locked=True)
             )
             if route is None:
+                continue
+            # Retain the original live messages until a *new* funded window is
+            # explicitly authorized. Never create doomed paid attempts.
+            if release_window_blocker(
+                route,
+                now,
+                required=str(group.id) in settings.ai_release_budget_required_groups,
+            ):
                 continue
             open_run = await db.scalar(
                 select(ShadowEvaluationRun.id).where(
@@ -853,6 +882,7 @@ async def process_package_next(engine, settings, provider=None, now=None):
         now,
         mode="new",
         hourly_cap=Decimal(str(settings.new_engine_hourly_budget_usd)),
+        funding_required_groups=settings.ai_release_budget_required_groups,
     )
     if claimed is None:
         return "idle" if queued in {"idle", "settled"} else queued

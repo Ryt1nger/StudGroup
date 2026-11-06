@@ -389,7 +389,15 @@ async def prepare_backfill_wave(engine, settings, now=None):
         return f"wave_prepared_{result['enqueued']}"
 
 
-async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=None):
+async def _claim(
+    engine,
+    now,
+    *,
+    canary_only=False,
+    mode="shadow",
+    hourly_cap=None,
+    funding_required_groups=(),
+):
     # Per-message shadow runs name their raw message; package runs of the live ``new`` writer
     # cover several targets and have none, so the two queues never pick each other's rows.
     only_packages = [ShadowEvaluationRun.raw_message_id.is_(None)] if mode == "new" else []
@@ -449,6 +457,19 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
         if route_row.paid_outcome_hold:
             await db.commit()
             return "paid_outcome_held"
+        if mode == "new":
+            # Block at the locked claim boundary too: a package may have been
+            # queued while its funded window was valid, then waited past expiry.
+            from studgroup.analysis.release_budget import release_window_blocker
+
+            blocker = release_window_blocker(
+                route_row,
+                now,
+                required=str(row.group_id) in funding_required_groups,
+            )
+            if blocker:
+                await db.commit()
+                return blocker
         # The settings-row lock serializes reserve decisions for this group's cap.
         day = _utc(now)
         day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
