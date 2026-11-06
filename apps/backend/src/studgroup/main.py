@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     ai_release_budget_required_groups: list[str] = Field(default_factory=list)
+    # Live paid operation after pilots: no expiring release grant or amount cap.
+    # Only explicitly enrolled groups; all requests still use accounting and safety holds.
+    ai_production_groups: list[str] = Field(default_factory=list)
     # Explicitly authorized recurring policy, independent of the one-off release grants.
     # An empty allowlist/receipt or expired approval is NEVER a spending permission.
     ai_recurring_budget_groups: list[str] = Field(default_factory=list)
