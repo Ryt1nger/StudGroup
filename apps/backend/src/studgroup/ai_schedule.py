@@ -8,9 +8,9 @@ from sqlalchemy.dialects.postgresql import insert
 from studgroup.models import GroupAIActivity
 
 
-def window(now, timezone):
+def window(now, timezone, *, allow_overnight=False):
     local = now.astimezone(ZoneInfo(timezone))
-    if local.hour < 7:
+    if local.hour < 7 and not allow_overnight:
         return None
     slot = local.replace(minute=0, second=0, microsecond=0)
     cutoff = local.replace(hour=23, minute=0, second=0, microsecond=0)
