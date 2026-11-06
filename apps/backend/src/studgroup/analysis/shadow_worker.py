@@ -390,7 +390,12 @@ async def prepare_backfill_wave(engine, settings, now=None):
 
 
 async def _claim(
-    engine, now, *, canary_only=False, mode="shadow", hourly_cap=None,
+    engine,
+    now,
+    *,
+    canary_only=False,
+    mode="shadow",
+    hourly_cap=None,
     funding_required_groups=(),
 ):
     # Per-message shadow runs name their raw message; package runs of the live ``new`` writer
