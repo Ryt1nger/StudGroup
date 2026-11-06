@@ -34,6 +34,23 @@ def test_processing_loop_sleeps_for_the_configured_pause(monkeypatch, configured
     async def inspect_health(engine, settings):
         return BacklogHealth(0, 0, ())
 
+    recoveries = []
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def commit(self):
+            return None
+
+    async def record_recovery(db, code, now, recover=False, detail=None):
+        recoveries.append((code, recover))
+
+    monkeypatch.setattr(runtime, "AsyncSession", lambda engine: FakeSession())
+    monkeypatch.setattr(runtime, "incident", record_recovery)
     monkeypatch.setattr(runtime, "inspect", inspect_health)
     monkeypatch.setattr(runtime, "dispatch_next", dispatch)
     monkeypatch.setattr("studgroup.worker.flush_incidents", flush)
@@ -44,3 +61,5 @@ def test_processing_loop_sleeps_for_the_configured_pause(monkeypatch, configured
         asyncio.run(runtime.processing_loop(None, settings))
 
     assert pauses == [configured, configured]
+    # The persisted owner alert must recover even if this process just restarted.
+    assert recoveries == [("ai_processing_paused", True)]
