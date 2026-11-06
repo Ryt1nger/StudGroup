@@ -76,3 +76,36 @@ def test_fair_durable_crawl_and_group_guard(tmp_path):
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_new_week_precedes_unfinished_old_backlog(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/fresh.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                group = Group(
+                    id=uuid4(),
+                    telegram_chat_id=-9100,
+                    name="G",
+                    academic_group_code="G",
+                    timezone="Europe/Moscow",
+                )
+                user = User(id=uuid4(), telegram_user_id=9100, display_name="U")
+                db.add_all([group, user])
+                await db.flush()
+                db.add(
+                    Membership(user_id=user.id, group_id=group.id, role="student", status="active")
+                )
+                await db.flush()
+                candidate = CrawlCandidate(group.id, user.id)
+                await enqueue_week(db, date(2026, 11, 2), [candidate])
+                await enqueue_week(db, date(2026, 11, 9), [candidate])
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                assert (await claim_next(db)).week_start == date(2026, 11, 9)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

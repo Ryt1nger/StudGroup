@@ -89,7 +89,7 @@ async def claim_next(db, now=None):
         .where(
             RanepaCrawlJob.state == "queued",
         )
-        .order_by(RanepaCrawlJob.week_start, RanepaCrawlJob.priority, RanepaCrawlJob.id)
+        .order_by(RanepaCrawlJob.week_start.desc(), RanepaCrawlJob.priority, RanepaCrawlJob.id)
         .with_for_update(skip_locked=True)
         .limit(1)
     )
