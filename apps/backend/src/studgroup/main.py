@@ -2,6 +2,7 @@
 
 import asyncio
 import ssl
+from time import perf_counter
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 from typing import Literal
@@ -408,6 +409,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="StudGroup", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     configure_file_links(settings.telegram_webhook_secret)
+
+    # Bounded diagnostic for the real Mini App cold path. Never log auth data,
+    # request bodies, tokens, identifiers or query strings: only static routes.
+    @app.middleware("http")
+    async def academic_request_timing(request, call_next):
+        path = request.url.path
+        measured_routes = {
+            "/v1/session/bootstrap", "/v1/today", "/v1/schedule",
+            "/v1/homework", "/v1/deadlines", "/v1/profile",
+        }
+        if path not in measured_routes:
+            return await call_next(request)
+        start = perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        finally:
+            duration_ms = round((perf_counter() - start) * 1000)
+            print(f"ACADEMIC_API_TIMING route={path} status={status} ms={duration_ms}", flush=True)
 
     @app.middleware("http")
     async def cutover_write_gate(request, call_next):
