@@ -80,7 +80,7 @@ def _gate(settings, now):
     if not settings.new_engine_enabled:
         return False
     until = settings.new_engine_enabled_until
-    return until is None or _utc(until) > now or bool(settings.ai_production_groups)
+    return until is None or _utc(until) > now or bool(getattr(settings, "ai_production_groups", ()))
 
 
 def _source_message(row, *, roles, topics, attachments):
