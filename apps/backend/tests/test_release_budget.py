@@ -416,7 +416,7 @@ def test_recurring_budget_requires_explicit_group_receipt_and_future_approval(cl
     )
 
     async def run():
-        async with AsyncSession(client.app.state.engine) as db:
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
             route = await db.get(GroupAnalysisSettings, ident)
             route.release_budget_until = stamp - timedelta(minutes=1)
             await db.commit()
