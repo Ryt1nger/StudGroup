@@ -310,6 +310,28 @@ def test_weekly_replacement_rejects_duplicate_slot_with_different_subject(client
     assert response.json()["error"]["code"] == "duplicate_schedule_slot"
 
 
+def test_weekly_slot_keeps_distinct_subgroups_parallel():
+    from datetime import date, time
+
+    from studgroup.analysis.image_schedule import ConfirmedScheduleRow, weekly_rows_overlap
+
+    base = {
+        "weekday": 0,
+        "starts": time(9),
+        "ends": time(10, 20),
+        "subject": "Иностранный язык",
+        "valid_from": date(2026, 11, 2),
+        "valid_until": date(2026, 11, 8),
+    }
+    first = ConfirmedScheduleRow(**base, subgroup_id=uuid.uuid4())
+    second = ConfirmedScheduleRow(**base, subgroup_id=uuid.uuid4())
+    common = ConfirmedScheduleRow(**base)
+
+    assert not weekly_rows_overlap(first, second)
+    assert weekly_rows_overlap(first, common)
+    assert weekly_rows_overlap(first, first)
+
+
 def test_weekly_replacement_replaces_occurrences_and_preserves_other_weeks(client, monkeypatch):
     from datetime import time
 

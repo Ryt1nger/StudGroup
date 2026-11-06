@@ -18,4 +18,13 @@ describe('subject schedule', () => {
       'replacement:2026-11-07',
     ]);
   });
+
+  it('keeps simultaneous scheduled lessons for different subgroups', () => {
+    const lessons = [
+      { id: 'first', status: 'scheduled', subgroup_id: 'subgroup-1' },
+      { id: 'second', status: 'scheduled', subgroup_id: 'subgroup-2' },
+    ] as LessonOccurrence[];
+
+    expect(activeSubjectLessons(lessons).map((lesson) => lesson.id)).toEqual(['first', 'second']);
+  });
 });

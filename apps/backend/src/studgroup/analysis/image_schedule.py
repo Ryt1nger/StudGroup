@@ -62,6 +62,23 @@ def clipped_field(value: str | None) -> bool:
     return value is not None and ("..." in value or "…" in value)
 
 
+def weekly_rows_overlap(row: ConfirmedScheduleRow, other: ConfirmedScheduleRow) -> bool:
+    """Only explicitly different subgroups may occupy the same weekly slot."""
+    return (
+        row.weekday == other.weekday
+        and row.valid_from <= other.valid_until
+        and other.valid_from <= row.valid_until
+        and (row.week == "all" or other.week == "all" or row.week == other.week)
+        and row.starts < other.ends
+        and other.starts < row.ends
+        and not (
+            row.subgroup_id is not None
+            and other.subgroup_id is not None
+            and row.subgroup_id != other.subgroup_id
+        )
+    )
+
+
 async def capture(db, job, reading, now):
     if not reading.schedule or not {"schedule", "schedule_change"}.intersection(
         reading.semantic_types
@@ -244,20 +261,7 @@ async def confirm(db, group_id, user, member, ident, body, now=None, *, cabinet=
         # Different labels or teachers must not let overlapping weekly lessons
         # through. Only two explicitly different subgroups may meet in parallel.
         for index, row in enumerate(rows):
-            if any(
-                row.weekday == other.weekday
-                and row.valid_from <= other.valid_until
-                and other.valid_from <= row.valid_until
-                and (row.week == "all" or other.week == "all" or row.week == other.week)
-                and row.starts < other.ends
-                and other.starts < row.ends
-                and not (
-                    row.subgroup_id is not None
-                    and other.subgroup_id is not None
-                    and row.subgroup_id != other.subgroup_id
-                )
-                for other in rows[:index]
-            ):
+            if any(weekly_rows_overlap(row, other) for other in rows[:index]):
                 raise ApiError(
                     "duplicate_schedule_slot",
                     "В недельном расписании пары пересекаются в одном временном слоте",
