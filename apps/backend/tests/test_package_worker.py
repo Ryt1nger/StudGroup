@@ -1256,3 +1256,65 @@ def test_photo_caption_and_reply_chain_wait_together_but_unrelated_homework_prog
     assert step(client, provider, config) == "completed"
     assert set(provider.targets) == {31, 32}
     assert set(states(client).values()) == {"completed"}
+
+
+def test_text_reply_to_old_picture_keeps_its_full_source_chain(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            rows = (
+                await db.scalars(
+                    select(RawMessage).order_by(RawMessage.telegram_message_id)
+                )
+            ).all()
+            photo, reply, latest = rows
+            photo.processing_state = "completed"
+            reply.processing_state = "completed"
+            reply.reply_to_message_id = photo.telegram_message_id
+            latest.reply_to_message_id = reply.telegram_message_id
+            latest.message_date = BASE + timedelta(minutes=50)
+            latest.version_date = latest.message_date
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="old-picture-31",
+                    telegram_file_id="picture31",
+                    mime_type="image/jpeg",
+                    processing_state="ready",
+                    photo_text="На доске записано условие задач",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            for mid in range(100, 130):
+                db.add(
+                    RawMessage(
+                        group_id=group.id,
+                        telegram_message_id=mid,
+                        text=f"Промежуточное сообщение {mid}",
+                        message_date=BASE + timedelta(minutes=5 + mid - 100),
+                        version_date=BASE + timedelta(minutes=5 + mid - 100),
+                        processing_state="completed",
+                        imported=False,
+                        delete_at=BASE + timedelta(days=30),
+                    )
+                )
+            await db.commit()
+
+    asyncio.run(prepare())
+    provider = PackageProvider(propose=False)
+    assert step(client, provider) == "completed"
+    context = provider.requests[0].user_payload["messages"]
+    by_id = {entry["telegram_message_id"]: entry for entry in context}
+    assert {31, 32, 33} <= set(by_id)
+    assert by_id[33]["reply_to_message_id"] == 32
+    assert by_id[32]["reply_to_message_id"] == 31
+    assert "условие задач" in by_id[31]["text"]
+    assert states(client)[33] == "completed"
