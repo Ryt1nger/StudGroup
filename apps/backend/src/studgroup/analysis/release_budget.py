@@ -111,7 +111,130 @@ async def configure(db, group_id, *, amount, since, until, receipt):
     return route
 
 
-def release_window_blocker(route, now, *, required=False):
+def recurring_policy_status(settings, group_id, now):
+    """Return None when not opted in, 'active' only with explicit finite authorization."""
+    if (
+        settings is None
+        or group_id is None
+        or str(group_id) not in settings.ai_recurring_budget_groups
+    ):
+        return None
+    until = settings.ai_recurring_approved_until
+    receipt = settings.ai_recurring_approval_receipt
+    if until is None or utc(until) <= utc(now) or not re.fullmatch(r"[0-9a-f]{64}", receipt):
+        return "recurring_approval_expired"
+    caps = (
+        settings.ai_recurring_daily_budget_usd,
+        settings.ai_recurring_monthly_budget_usd,
+        settings.ai_recurring_text_daily_budget_usd,
+        settings.ai_recurring_text_monthly_budget_usd,
+        settings.ai_recurring_image_daily_budget_usd,
+        settings.ai_recurring_image_monthly_budget_usd,
+    )
+    if (
+        any(Decimal(str(cap)) <= 0 for cap in caps)
+        or Decimal(str(caps[2])) > Decimal(str(caps[0]))
+        or Decimal(str(caps[4])) > Decimal(str(caps[0]))
+        or Decimal(str(caps[3])) > Decimal(str(caps[1]))
+        or Decimal(str(caps[5])) > Decimal(str(caps[1]))
+    ):
+        return "recurring_budget_invalid"
+    return "active"
+
+
+def next_budget_reset(now, *, monthly=False):
+    now = utc(now)
+    if monthly:
+        year, month = (now.year + 1, 1) if now.month == 12 else (now.year, now.month + 1)
+        return datetime(year, month, 1, tzinfo=UTC)
+    return (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+async def _reserve_recurring(db, route, settings, group_id, kind, attempt_key, payload, now):
+    """Atomic per-group month/day/category reservation under GroupAnalysisSettings lock."""
+    group = await db.get(Group, group_id)
+    if group is None or group.status != "active" or not group.pilot_authorized:
+        return "recurring_group_not_authorized", None
+    lost = (
+        await db.scalars(
+            select(AnalysisBudgetCall)
+            .where(
+                AnalysisBudgetCall.group_id == group_id,
+                AnalysisBudgetCall.state == "reserved",
+                AnalysisBudgetCall.created_at <= now - UNRESOLVED_AFTER,
+            )
+            .with_for_update()
+        )
+    ).all()
+    for call in lost:
+        call.charged_usd, call.reserved_usd = call.reserved_usd, Decimal(0)
+        call.state, call.settled_at = "unknown", now
+    if lost:
+        route.paid_outcome_hold = "ambiguous_paid_attempt"
+        return "recurring_paid_outcome_held", None
+    try:
+        ceiling = request_ceiling(payload)
+    except (ValueError, KeyError, TypeError):
+        return "recurring_request_unpriced", None
+
+    is_image = kind in {"image", "cabinet_image"}
+    kinds = ("image", "cabinet_image") if is_image else ("cplus", "legacy")
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = day_start.replace(day=1)
+    all_daily = Decimal(str(settings.ai_recurring_daily_budget_usd))
+    all_monthly = Decimal(str(settings.ai_recurring_monthly_budget_usd))
+    kind_daily = Decimal(
+        str(
+            settings.ai_recurring_image_daily_budget_usd
+            if is_image
+            else settings.ai_recurring_text_daily_budget_usd
+        )
+    )
+    kind_monthly = Decimal(
+        str(
+            settings.ai_recurring_image_monthly_budget_usd
+            if is_image
+            else settings.ai_recurring_text_monthly_budget_usd
+        )
+    )
+    if await spent(db, group_id, since=month_start) + ceiling > all_monthly:
+        return "recurring_monthly_budget_exhausted", None
+    if await spent(db, group_id, since=month_start, kinds=kinds) + ceiling > kind_monthly:
+        return "recurring_kind_monthly_budget_exhausted", None
+    if await spent(db, group_id, since=day_start) + ceiling > all_daily:
+        return "recurring_daily_budget_exhausted", None
+    if await spent(db, group_id, since=day_start, kinds=kinds) + ceiling > kind_daily:
+        return "recurring_kind_daily_budget_exhausted", None
+    hourly = min(
+        Decimal(str(settings.new_engine_hourly_budget_usd)),
+        Decimal(str(settings.image_hourly_budget_usd)),
+    )
+    if await spent(db, group_id, since=now - timedelta(hours=1)) + ceiling > hourly:
+        return "recurring_hourly_budget_exhausted", None
+
+    ident = uuid.uuid4()
+    db.add(
+        AnalysisBudgetCall(
+            id=ident,
+            group_id=group_id,
+            kind=kind,
+            attempt_key=attempt_key,
+            state="reserved",
+            reserved_usd=ceiling,
+            charged_usd=Decimal(0),
+            created_at=now,
+            # Keep every billable attempt longer than an entire calendar month.
+            delete_at=next_budget_reset(now, monthly=True) + timedelta(days=45),
+        )
+    )
+    return None, ident
+
+
+def release_window_blocker(route, now, *, required=False, settings=None, group_id=None):
+    status = recurring_policy_status(settings, group_id, now)
+    if status is not None:
+        return None if status == "active" else status
+
     """No paid attempt may start outside a separately authorized funding window."""
     if route is None:
         return "release_budget_not_configured" if required else None
@@ -130,12 +253,14 @@ def release_window_blocker(route, now, *, required=False):
     return None
 
 
-async def spent(db, group_id, *, since=None):
+async def spent(db, group_id, *, since=None, kinds=None):
     query = select(
         func.coalesce(func.sum(AnalysisBudgetCall.charged_usd + AnalysisBudgetCall.reserved_usd), 0)
     ).where(AnalysisBudgetCall.group_id == group_id)
     if since is not None:
         query = query.where(AnalysisBudgetCall.created_at >= since)
+    if kinds is not None:
+        query = query.where(AnalysisBudgetCall.kind.in_(kinds))
     return Decimal(await db.scalar(query) or 0)
 
 
@@ -155,17 +280,32 @@ class RequestAccounting:
                 .with_for_update()
             )
             required = str(self.group_id) in self.settings.ai_release_budget_required_groups
+            recurring = recurring_policy_status(self.settings, self.group_id, now)
             if route is None:
                 if required:
                     reason = "release_budget_not_configured"
             elif route.paid_outcome_hold:
                 reason = "release_paid_outcome_held"
-            elif required and route.release_budget_usd is None:
+            elif required and route.release_budget_usd is None and recurring is None:
                 reason = "release_budget_not_configured"
             elif (self.mode and route.analysis_mode != self.mode) or (
                 self.kind == "image" and route.analysis_mode not in {"new", "shadow"}
             ):
                 reason = "release_mode_changed"
+            elif recurring is not None:
+                if recurring != "active":
+                    reason = recurring
+                else:
+                    reason, ident = await _reserve_recurring(
+                        db,
+                        route,
+                        self.settings,
+                        self.group_id,
+                        self.kind,
+                        self.attempt_key,
+                        payload,
+                        now,
+                    )
             elif route.release_budget_usd is not None:
                 group = await db.get(Group, self.group_id)
                 if group is None or not group.pilot_authorized or group.status != "active":
