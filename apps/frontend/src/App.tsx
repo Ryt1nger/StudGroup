@@ -8,7 +8,8 @@ import { TelegramProvider } from './telegram/TelegramProvider';
 import { createAppRouter } from './router';
 
 export function App({ adapter, router: injectedRouter }: { adapter: TelegramAdapter | null; router?: ReturnType<typeof createAppRouter> }) {
-  // Learning data stays in this in-memory cache only (no persistence plugin).
+  // The active QueryClient is memory-only. A small encrypted academic snapshot is
+  // restored by SessionProvider *after* the backend verifies the current student.
   const [queryClient] = useState(() => new QueryClient());
   const [router] = useState(() => injectedRouter ?? createAppRouter(adapter?.startParam ?? null));
   return (
