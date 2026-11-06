@@ -167,6 +167,18 @@ def test_plan_adds_the_reply_parent_outside_the_window():
     assert 2 in ids and 40 in ids and ids == sorted(ids)
 
 
+def test_plan_preserves_distant_transitive_reply_lineage():
+    packages = plan(
+        stream(70, reply={65: 40, 40: 2, 2: 1}),
+        target_ids={65},
+        max_targets=1,
+        overlap=1,
+    )
+    ids = {row.telegram_message_id for row in packages[0].analysis_input.messages}
+    assert {1, 2, 40, 65} <= ids
+    assert len(ids) <= 80
+
+
 def test_run_pays_two_calls_per_package_not_per_target():
     packages = plan(max_targets=25, overlap=3)
     provider = Provider()
