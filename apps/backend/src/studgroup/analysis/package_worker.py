@@ -202,8 +202,12 @@ def _eligible(group, settings, now):
     ]
     from studgroup.analysis.release_budget import production_enabled
 
-    if settings.ai_schedule_enabled and not production_enabled(settings, group.id):
-        timing = window(now, settings.ai_schedule_timezone)
+    if settings.ai_schedule_enabled:
+        timing = window(
+            now,
+            settings.ai_schedule_timezone,
+            allow_overnight=production_enabled(settings, group.id),
+        )
         if timing is None:
             return None
         filters += [
