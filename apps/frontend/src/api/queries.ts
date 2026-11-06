@@ -132,10 +132,11 @@ export function useSubjectsQuery() {
   return useQuery({ queryKey: queryKeys.subjects, queryFn: api.subjects, ...todayQueryOptions });
 }
 
-export function useAcademicDeadlinesQuery(archive = false, review = false) {
+export function useAcademicDeadlinesQuery(archive = false, review = false, enabled = true) {
   return useQuery({
     queryKey: ['academic-deadlines', archive, review],
     queryFn: () => api.deadlines(archive, review),
+    enabled,
     ...todayQueryOptions,
   });
 }
