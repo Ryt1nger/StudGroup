@@ -16,11 +16,12 @@ export function useEventCapabilities() {
 }
 
 const eventKeys = ['group-events'] as const;
-export function useGroupEvents(options: { start?: string; end?: string; history?: boolean } = {}) {
+export function useGroupEvents(options: { start?: string; end?: string; history?: boolean; enabled?: boolean } = {}) {
   const features = useEventCapabilities();
+  const { enabled = true, ...queryOptions } = options;
   return useQuery({
     ...detailQueryOptions,
-    queryKey: [...eventKeys, 'list', options],
+    queryKey: [...eventKeys, 'list', queryOptions],
     queryFn: () =>
       unwrap(
         listPublishedGroupEvents({
@@ -31,7 +32,7 @@ export function useGroupEvents(options: { start?: string; end?: string; history?
           },
         }),
       ),
-    enabled: features.events === true && (!options.start || !!options.end),
+    enabled: enabled && features.events === true && (!options.start || !!options.end),
   });
 }
 
