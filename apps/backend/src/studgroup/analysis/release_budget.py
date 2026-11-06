@@ -116,7 +116,7 @@ def production_enabled(settings, group_id):
     return bool(
         settings is not None
         and group_id is not None
-        and str(group_id) in settings.ai_production_groups
+        and str(group_id) in getattr(settings, "ai_production_groups", ())
     )
 
 
