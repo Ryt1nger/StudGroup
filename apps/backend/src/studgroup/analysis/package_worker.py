@@ -307,15 +307,12 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
         or str(group.id) in settings.ai_release_budget_required_groups
     )
     if settings.photo_reading_enabled and protected and not enabled(settings, group.id):
-        unread_photos = (
-            select(MessageAttachment.raw_message_id)
-            .where(
-                MessageAttachment.group_id == group.id,
-                MessageAttachment.kind == "photo",
-                MessageAttachment.active.is_(True),
-                MessageAttachment.processing_state == "metadata_only",
-                MessageAttachment.delete_at > now,
-            )
+        unread_photos = select(MessageAttachment.raw_message_id).where(
+            MessageAttachment.group_id == group.id,
+            MessageAttachment.kind == "photo",
+            MessageAttachment.active.is_(True),
+            MessageAttachment.processing_state == "metadata_only",
+            MessageAttachment.delete_at > now,
         )
         filters.append(RawMessage.id.not_in(unread_photos))
     pending = (
