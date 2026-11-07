@@ -142,7 +142,9 @@ def test_terminal_vision_hold_recovers_without_erasing_or_replaying_payment(clie
             assert ledger[0].state == "unknown"
             assert ledger[0].charged_usd == Decimal("0.02357130")
             assert ledger[0].reserved_usd == 0
-            source = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 600))
+            source = await db.scalar(
+                select(RawMessage).where(RawMessage.telegram_message_id == 600)
+            )
             assert source.processing_state == "pending"
 
     asyncio.run(run())
