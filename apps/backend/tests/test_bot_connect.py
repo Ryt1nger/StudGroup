@@ -216,6 +216,28 @@ def test_bot_promotion_advances_waiting_headman_without_claiming_role(foreman, m
     assert "идентификатор группы РАНХиГС" in panel(foreman, ADDER)["text"]
 
 
+def test_academic_code_back_returns_to_setup_not_main_menu(foreman, monkeypatch):
+    setup_bot(
+        foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"}
+    )
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    added_to_chat(foreman)
+    tap(foreman, "Да, подключить", uid=ADDER)
+    assert "идентификатор группы РАНХиГС" in last(foreman)["text"]
+    assert "‹ Назад" in labels(foreman)
+    assert "В главное меню" not in labels(foreman)
+
+    tap(foreman, "‹ Назад", uid=ADDER)
+    assert "Группа «ИВТ-21» подтверждена" in last(foreman)["text"]
+    assert labels(foreman) == ["Продолжить: указать ID"]
+    tap(foreman, "Продолжить: указать ID", uid=ADDER)
+    assert "идентификатор группы РАНХиГС" in last(foreman)["text"]
+    assert new_group(foreman)[1] == [("headman", ADDER)]
+
+
 def test_auto_advance_requires_eligible_waiting_administrator(foreman, monkeypatch):
     statuses = {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "member"}
     setup_bot(foreman, monkeypatch, statuses)
