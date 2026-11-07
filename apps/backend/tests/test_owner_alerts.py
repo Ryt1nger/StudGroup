@@ -290,7 +290,7 @@ def test_ai_pause_alert_explains_actual_reason_without_dumping_internal_fields()
     message = incident_text(paused, sent_at=now)
     assert "Что случилось:" in message
     assert "платного AI-запроса" in message
-    assert "В очереди: 4 сообщений." in message
+    assert "В очереди: 4 сообщения." in message
     assert "Технический тип: groups=" not in message
 
     isolated = OwnerIncidentEpisode(
