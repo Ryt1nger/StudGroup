@@ -116,7 +116,7 @@ def test_panels_edit_only_their_own_message_and_start_is_separate(transport):
     drain(client)
     deleted = {d["message_id"] for m, d in calls if m == "deleteMessage"}
     assert st_mid in deleted and 101 in deleted
-    assert admin_mid not in deleted and 100 not in deleted
+    assert admin_mid not in deleted and 100 in deleted
     assert start_mid not in deleted and 104 not in deleted
     assert current(client, "st")[0] != st_mid
 
