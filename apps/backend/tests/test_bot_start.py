@@ -312,7 +312,7 @@ def test_connection_status_checks_live_telegram_without_changing_membership(fore
     assert len(calls) == 2
     tap(foreman, "Проверить ещё раз", uid=1)
     assert len(calls) == 4
-    tap(foreman, "‹ Назад", uid=1)
+    tap(foreman, "Главное меню", uid=1)
     assert "Создать приглашение" in labels(foreman)
 
 
@@ -356,7 +356,7 @@ def test_notification_preferences_can_be_changed_with_bot_buttons(foreman):
     tap(foreman, "За 3 часа", uid=1)
     assert "Напоминание о сроке: За 3 часа" in labels(foreman)
     assert run(foreman, saved)["deadline_lead"] == "3h"
-    tap(foreman, "Главное меню", uid=1)
+    tap(foreman, "‹ Назад", uid=1)
     assert "Уведомления" in labels(foreman)
 
 
