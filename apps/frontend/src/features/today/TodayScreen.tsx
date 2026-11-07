@@ -74,7 +74,7 @@ export function TodayScreen() {
   const query = useTodayQuery('today');
   // The initial feed is the critical path. Delay secondary/long-running reads
   // until it is ready so they cannot exhaust the small Supabase connection pool.
-  const feedReady = query.data !== undefined;
+  const feedReady = query.isSuccess && query.isFetchedAfterMount;
   const deadlines = useAcademicDeadlinesQuery(false, false, feedReady);
   const all = useAllHomework(feedReady);
   const allItems = all.data ?? [];
@@ -89,11 +89,11 @@ export function TodayScreen() {
   const selectedKey = rawSelected && /^\d{4}-\d{2}-\d{2}$/.test(rawSelected) ? rawSelected : today && manualSelected ? addDays(today, legacyDay) : today;
   const days = selectedKey ? weekKeys(selectedKey) : [];
   const selected = selectedKey ? days.indexOf(selectedKey) : -1;
-  const schedule = useScheduleQuery(days[0] ?? '', days[6] ?? '', today !== null);
+  const schedule = useScheduleQuery(days[0] ?? '', days[6] ?? '', today !== null && feedReady);
   const features = useEventCapabilities();
   const groupEvents = useGroupEvents({ start: days[0] ?? '', end: days[6] ?? '', enabled: feedReady });
   const eventItems = groupEvents.data?.events ?? [];
-  const future = useScheduleQuery(today ?? '', today ? addDays(today, 31) : '', today !== null && !manualSelected);
+  const future = useScheduleQuery(today ?? '', today ? addDays(today, 31) : '', today !== null && !manualSelected && feedReady);
   const futureEvents = useGroupEvents({ start: today ?? '', end: today ? addDays(today, 31) : '', enabled: feedReady });
   const lessons = schedule.data?.lessons ?? [];
   const marked = new Set(timeZone ? days.filter((key) => lessonsOfDay(lessons, key, timeZone).length > 0 || eventItems.some((item) => groupEventOnDay(item, key, timeZone))) : []);
@@ -132,7 +132,9 @@ export function TodayScreen() {
   const processingActive = data !== undefined && data.processing.state !== 'idle';
   const { gaveUp, restart } = useProcessingPoll(processingActive, query.refetch);
   const staleByClock = data ? nowMs - Date.parse(data.freshness.last_successful_sync_at) > STALE_AFTER_MS : false;
-  const stale = data ? data.freshness.stale || staleByClock || (query.isError && query.data !== undefined) : false;
+  // A restored encrypted snapshot is displayed immediately, but the automatic
+  // network refresh is already in flight. Offer manual retry only if it fails.
+  const stale = data ? !query.isFetching && (data.freshness.stale || staleByClock || query.isError) : false;
   const select = (index: number) =>
     setParams((previous) => {
       const next = new URLSearchParams(previous);
@@ -159,6 +161,7 @@ export function TodayScreen() {
       }} /> : <Skeleton count={1} label={ru.states.loading} />}
       {data && selectedKey && today ? <div className="datel">{relativeLabel(selectedKey, today)} · {formatLongDay(`${selectedKey}T12:00:00Z`, 'UTC')}</div> : null}
 
+      {data && staleByClock && query.isFetching ? <Banner tone="info" icon="refresh">Обновляем данные…</Banner> : null}
       {data && stale ? (
         <Banner
           tone="warning"
