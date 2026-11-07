@@ -616,8 +616,7 @@ async def onboarding_complete(db, session, group):
     await screen(
         db,
         session,
-        f"Подключение успешно завершено!\n\n"
-        f"Группа «{group.name}» готова к работе в StudGroup.",
+        f"Подключение успешно завершено!\n\nГруппа «{group.name}» готова к работе в StudGroup.",
         [[("Перейти в кабинет старосты", "cabinet")]],
         "onboarding_complete",
     )
@@ -670,7 +669,7 @@ async def invitation_entry(db, session, settings, telegram_id):
     if group.academic_group_code_required and not group.academic_group_code:
         await academic_code_prompt(db, session, group)
         return
-    setup = session.step == "connected" or (
+    setup = session.step in {"connected", "subgroup_question"} or (
         session.step == "invite" and json.loads(session.payload).get("setup", False)
     )
     active = await db.scalar(
