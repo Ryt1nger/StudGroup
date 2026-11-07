@@ -188,6 +188,63 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
     assert messages_to(foreman, NEW_CHAT) == []
 
 
+def test_bot_promotion_advances_waiting_headman_without_claiming_role(foreman, monkeypatch):
+    statuses = {(NEW_CHAT, BOT): "member", (NEW_CHAT, ADDER): "creator"}
+    setup_bot(foreman, monkeypatch, statuses)
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    assert "Проверить подключение" in labels(foreman)
+
+    added_to_chat(foreman, status="member")
+    assert "Проверить подключение" in labels(foreman)
+    assert new_group(foreman)[1] == []
+    assert not new_group(foreman)[0].pilot_authorized
+
+    statuses[(NEW_CHAT, BOT)] = "administrator"
+    added_to_chat(foreman, status="administrator")
+    assert "Найдена группа «ИВТ-21»" in panel(foreman, ADDER)["text"]
+    assert "Да, подключить" in labels(foreman)
+    assert new_group(foreman)[1] == []
+    assert not new_group(foreman)[0].pilot_authorized
+    assert messages_to(foreman, NEW_CHAT) == []
+
+    tap(foreman, "Да, подключить", uid=ADDER)
+    assert new_group(foreman)[1] == [("headman", ADDER)]
+    assert new_group(foreman)[0].pilot_authorized
+    assert "идентификатор группы РАНХиГС" in panel(foreman, ADDER)["text"]
+
+
+def test_auto_advance_requires_eligible_waiting_administrator(foreman, monkeypatch):
+    statuses = {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "member"}
+    setup_bot(foreman, monkeypatch, statuses)
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    added_to_chat(foreman)
+    assert "Проверить подключение" in labels(foreman)
+    assert new_group(foreman)[1] == []
+
+    # Telegram verifies the person is now an administrator; a new status update
+    # advances the same waiting screen without exposing other groups.
+    statuses[(NEW_CHAT, ADDER)] = "administrator"
+    added_to_chat(foreman)
+    assert "Да, подключить" in labels(foreman)
+    assert new_group(foreman)[1] == []
+
+
+def test_bot_added_by_non_onboarding_admin_never_sends_unsolicited_message(foreman, monkeypatch):
+    setup_bot(
+        foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"}
+    )
+    added_to_chat(foreman)
+    assert panel(foreman, ADDER) is None
+    assert new_group(foreman)[1] == []
+    assert messages_to(foreman, NEW_CHAT) == []
+
+
 def test_ranepa_code_can_be_suggested_from_telegram_title(foreman, monkeypatch):
     setup_bot(
         foreman,
