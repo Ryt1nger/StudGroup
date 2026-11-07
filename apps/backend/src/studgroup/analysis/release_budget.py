@@ -196,7 +196,7 @@ async def _reserve_recurring(
                 db,
                 "ai_request_uncertain",
                 now,
-                detail="kind=durable",
+                detail="kind=durable reason=orphaned_reservation",
             )
         else:
             route.paid_outcome_hold = "ambiguous_paid_attempt"
@@ -470,7 +470,7 @@ class RequestAccounting:
             raise ProviderFailure(reason, False, reservation_releasable=True)
         return ident
 
-    async def _finish(self, ident, *, usage=None, releasable=False):
+    async def _finish(self, ident, *, usage=None, releasable=False, failure_code=None):
         now = utc(self.clock())
         unknown = usage is None and not releasable
         try:
@@ -497,7 +497,7 @@ class RequestAccounting:
                         db,
                         "ai_request_uncertain",
                         now,
-                        detail=f"kind={self.kind}",
+                        detail=f"kind={self.kind} reason={failure_code or 'no_usage'}",
                     )
                 else:
                     route.paid_outcome_hold = "ambiguous_paid_attempt"
@@ -522,15 +522,20 @@ class RequestAccounting:
             response = await invoke()
         except asyncio.CancelledError:
             try:
-                await asyncio.shield(self._finish(ident))
+                await asyncio.shield(self._finish(ident, failure_code="worker_cancelled"))
             except ProviderFailure:
                 pass
             raise
         except ProviderFailure as error:
-            await self._finish(ident, usage=error.usage, releasable=error.reservation_releasable)
+            await self._finish(
+                ident,
+                usage=error.usage,
+                releasable=error.reservation_releasable,
+                failure_code=error.code,
+            )
             raise
         except Exception:
-            await self._finish(ident)
+            await self._finish(ident, failure_code="unexpected_exception")
             raise
         usage = response.get("usage") if isinstance(response, dict) else response.usage
         await self._finish(ident, usage=usage)
@@ -600,7 +605,11 @@ async def hold_lost_attempt(db, route, attempt_key, now, *, isolate=False):
             db,
             "ai_request_uncertain",
             now,
-            detail="kind=image" if attempt_key.startswith("image:") else "kind=cplus",
+            detail=(
+                "kind=image reason=lease_expired"
+                if attempt_key.startswith("image:")
+                else "kind=cplus reason=lease_expired"
+            ),
         )
     else:
         route.paid_outcome_hold = "ambiguous_paid_attempt"
