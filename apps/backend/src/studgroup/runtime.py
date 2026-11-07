@@ -8,6 +8,7 @@ from time import monotonic
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.analysis.dispatch import dispatch_next
+from studgroup.analysis.hold_reconciliation import reconcile_terminal_holds
 from studgroup.processing import incident, incident_once
 from studgroup.processing_health import inspect
 
@@ -35,6 +36,11 @@ async def processing_loop(engine, settings, pause=None):
             if last_health_check is None or tick - last_health_check >= 300:
                 health = await inspect(engine, settings)
                 last_health_check = tick
+                if health.paused and "paid_outcome_held" in health.reasons:
+                    released = await reconcile_terminal_holds(engine, settings)
+                    if released:
+                        logger.warning("AI_TERMINAL_HOLD_RECONCILED groups=%s", released)
+                        health = await inspect(engine, settings)
                 if health.paused:
                     details = (
                         f"groups={health.paused_groups} pending={health.pending_messages} "
