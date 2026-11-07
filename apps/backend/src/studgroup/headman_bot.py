@@ -510,8 +510,11 @@ async def subgroup_settings_screen(db, session, group, *, onboarding=False):
             for n, (split, rows) in enumerate(configured)
         ]
         + [[("Добавить предмет", "subgroup_add")]]
-        + ([[("Далее", "subgroup_finish")], [("‹ Назад", "subgroup_onboarding_back")]]
-           if onboarding else [back()]),
+        + (
+            [[("Далее", "subgroup_finish")], [("‹ Назад", "subgroup_onboarding_back")]]
+            if onboarding
+            else [back()]
+        ),
         "subgroup_list",
         {"splits": [str(split.id) for split, _ in configured], "onboarding": onboarding},
     )
@@ -755,11 +758,13 @@ async def handle(db, update, settings):
                 db,
                 session,
                 "Предмет сохранён. Можно добавить ещё один или завершить настройку.",
-                [[("Добавить ещё", "subgroup_add")],
-                 [("К предметам", "subgroup_settings")],
-                 [("Далее", "subgroup_finish")]]
-                if data.get("onboarding") else
-                [[("Добавить ещё", "subgroup_add")], [("К предметам", "subgroup_settings")]],
+                [
+                    [("Добавить ещё", "subgroup_add")],
+                    [("К предметам", "subgroup_settings")],
+                    [("Далее", "subgroup_finish")],
+                ]
+                if data.get("onboarding")
+                else [[("Добавить ещё", "subgroup_add")], [("К предметам", "subgroup_settings")]],
                 "subgroup_saved",
                 {"onboarding": data.get("onboarding", False)},
             )
