@@ -995,6 +995,7 @@ async def delivery_loop(engine, settings):
 
     # One keep-alive HTTP pool per worker: avoid a fresh TLS handshake per button.
     async with httpx.AsyncClient(timeout=10, trust_env=False, follow_redirects=False) as client:
+
         async def request(config, method, payload):
             return await telegram_request(config, method, payload, client=client)
 
