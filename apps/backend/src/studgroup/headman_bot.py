@@ -479,7 +479,8 @@ async def members_screen(db, session, group, member, page=0):
     if len(rows) > (page + 1) * 8:
         buttons += [[("›", "members_next")]]
     buttons += [
-        [("Создать приглашения", "invite")],
+        [("Создать общую ссылку · 3 часа", "group_link")],
+        [("Одноразовые приглашения · 24 часа", "invite")],
         [("Отозвать действующие приглашения", "revoke_invites")],
         back(),
     ]
@@ -1076,6 +1077,14 @@ async def handle(db, update, settings):
                 else "Восстановить доступ? Потребуется проверка участия в Telegram.",
                 {"action": "member_change", "member_id": str(target.id), "expected": target.status},
             )
+        elif action == "group_link":
+            domain.headman_only(member)
+            await preview(
+                db,
+                session,
+                "Создать общую ссылку на 3 часа? Прежняя общая ссылка сразу перестанет действовать.",
+                {"action": "group_link"},
+            )
         elif action == "invite":
             domain.headman_only(member)
             await ask(
@@ -1592,6 +1601,17 @@ async def apply(db, session, group, user, member, data, settings):
             data["ends_at"],
             data["location"],
         )
+    elif action == "group_link":
+        code = await domain.issue_group_link(db, group, member)
+        await screen(
+            db,
+            session,
+            "Общая ссылка на 3 часа. Перешлите её студентам: "
+            "доступ получат только подтверждённые участники Telegram-чата. "
+            "ID и @username вводить не нужно.\n\n" + bot_start.invite_link(settings, code),
+            [back()],
+        )
+        return
     elif action == "invite":
         codes = await domain.issue_invites(db, group, member, data["count"])
         await screen(

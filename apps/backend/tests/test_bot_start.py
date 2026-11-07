@@ -439,3 +439,47 @@ def test_an_info_command_replaces_the_screen_instead_of_adding_a_message(transpo
     assert second != first and "Частые вопросы" in frame["text"]
     sent = [d for m, d in calls if m == "sendMessage"]
     assert len(sent) == 2  # one panel message per command, never a pile
+
+
+def test_shared_group_link_expires_after_three_hours(foreman, monkeypatch):
+    """Shared invitations expire server-side; a forwarded old URL cannot grant access."""
+    from studgroup.models import GroupInvitation
+    from studgroup.security import token_hash
+
+    allow_telegram(monkeypatch)
+
+    async def prepare(db):
+        _, member, group = await actor(db)
+        code = await domain.issue_group_link(db, group, member)
+        invitation = await db.scalar(
+            select(GroupInvitation).where(GroupInvitation.token_hash == token_hash(code))
+        )
+        remaining = domain.utc(invitation.expires_at) - datetime.now(UTC)
+        assert timedelta(hours=2, minutes=59) < remaining <= timedelta(hours=3)
+        invitation.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        return code
+
+    code = run(foreman, prepare)
+    deliver(foreman, f"/start invite_{code}", uid=33)
+    assert "истекло" in last(foreman)["text"]
+
+    async def check(db):
+        return await db.scalar(select(User.id).where(User.telegram_user_id == 33))
+
+    assert run(foreman, check) is None
+
+
+def test_rotating_shared_link_revokes_previous_link(foreman, monkeypatch):
+    allow_telegram(monkeypatch)
+
+    async def prepare(db):
+        _, member, group = await actor(db)
+        old_code = await domain.issue_group_link(db, group, member)
+        new_code = await domain.issue_group_link(db, group, member)
+        return old_code, new_code
+
+    old_code, new_code = run(foreman, prepare)
+    deliver(foreman, f"/start invite_{old_code}", uid=33)
+    assert "отозвано" in last(foreman)["text"]
+    deliver(foreman, f"/start invite_{new_code}", uid=33)
+    assert "Готово! Вы подключены" in last(foreman)["text"]
