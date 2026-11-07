@@ -309,6 +309,21 @@ class RequestAccounting:
             required = str(self.group_id) in self.settings.ai_release_budget_required_groups
             recurring = recurring_policy_status(self.settings, self.group_id, now)
             production = production_enabled(self.settings, self.group_id)
+            # A settled request may be followed by another C+ pass with the
+            # same package key. An *unsettled* request may never be replayed.
+            same_unknown = (
+                await db.scalar(
+                    select(AnalysisBudgetCall.id)
+                    .where(
+                        AnalysisBudgetCall.group_id == self.group_id,
+                        AnalysisBudgetCall.attempt_key == self.attempt_key,
+                        AnalysisBudgetCall.state.in_(["reserved", "unknown"]),
+                    )
+                    .limit(1)
+                )
+                if production
+                else None
+            )
             if route is None:
                 if production:
                     reason = "production_group_not_configured"
@@ -318,6 +333,8 @@ class RequestAccounting:
                     reason = "release_budget_not_configured"
             elif route.paid_outcome_hold:
                 reason = "release_paid_outcome_held"
+            elif same_unknown is not None:
+                reason = "ambiguous_paid_attempt"
             elif (
                 required
                 and route.release_budget_usd is None
