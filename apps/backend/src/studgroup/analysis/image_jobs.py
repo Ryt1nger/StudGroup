@@ -351,7 +351,7 @@ def pass_b_available_at(context, now):
     return min(max(now, max(timestamps) + timedelta(seconds=60)), now + timedelta(seconds=60))
 
 
-async def schedule_group(db, group, now, since, model_key="", provider_identity=None):
+async def schedule_group(db, group, now, since, model_key="", provider_identity=None, *, quiet_window=False):
     """Caller holds group settings lock. Enumerate every retained image, not just six."""
     attachments = (
         await db.scalars(
@@ -445,7 +445,7 @@ async def schedule_group(db, group, now, since, model_key="", provider_identity=
                         pass_number=2,
                         state="pending",
                         attempts=0,
-                        available_at=pass_b_available_at(context, now),
+                        available_at=pass_b_available_at(context, now) if quiet_window else now,
                         created_at=now,
                         delete_at=min(raw.delete_at, attachment.delete_at),
                     )
@@ -827,6 +827,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                 settings.image_analysis_since,
                 model_identity(settings),
                 provider_identity(settings),
+                quiet_window=production_enabled(settings, group.id),
             )
             await db.flush()
             picked = await claim(db, group, route, settings, now)
