@@ -351,7 +351,9 @@ def pass_b_available_at(context, now):
     return min(max(now, max(timestamps) + timedelta(seconds=60)), now + timedelta(seconds=60))
 
 
-async def schedule_group(db, group, now, since, model_key="", provider_identity=None, *, quiet_window=False):
+async def schedule_group(
+    db, group, now, since, model_key="", provider_identity=None, *, quiet_window=False
+):
     """Caller holds group settings lock. Enumerate every retained image, not just six."""
     attachments = (
         await db.scalars(
