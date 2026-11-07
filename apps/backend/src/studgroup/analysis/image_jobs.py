@@ -619,7 +619,15 @@ async def claim(db, group, route, settings, now):
         job.state, job.error, job.lease_until = "failed", "ambiguous_paid_attempt", None
         from studgroup.analysis.release_budget import hold_lost_attempt
 
-        await hold_lost_attempt(db, route, f"image:{job.claim_token}", now)
+        from studgroup.analysis.release_budget import production_enabled
+
+        await hold_lost_attempt(
+            db,
+            route,
+            f"image:{job.claim_token}",
+            now,
+            isolate=production_enabled(settings, group.id),
+        )
         return None
     raw = await db.get(RawMessage, job.raw_message_id)
     attachment = await db.get(MessageAttachment, job.attachment_id)
