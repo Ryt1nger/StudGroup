@@ -75,7 +75,15 @@ def paused_explanation(detail):
     pending = re.search(r"(?:^|\s)pending=(\d+)", detail)
     code = reason.group(1).split(",")[0] if reason else "unknown"
     cause = PAUSE_REASONS.get(code, "Система не может безопасно продолжить AI-обработку.")
-    count = f"В очереди: {pending.group(1)} сообщений.\n" if pending else ""
+    number = int(pending.group(1)) if pending else 0
+    suffix = (
+        "сообщение"
+        if number % 10 == 1 and number % 100 != 11
+        else "сообщения"
+        if 2 <= number % 10 <= 4 and not 12 <= number % 100 <= 14
+        else "сообщений"
+    )
+    count = f"В очереди: {number} {suffix}.\\n" if pending else ""
     return (
         f"Что случилось: {cause}\n"
         f"{count}"
@@ -131,7 +139,7 @@ def incident_text(row, event="opened", sent_at=None):
             if row.code == "ai_processing_paused"
             else "\n" + INCIDENT_LABELS.get(row.code, "Ошибка разбора/обработчика ИИ.")
         )
-        if row.first_detail and row.code != "ai_processing_paused":
+        if row.first_detail and row.code not in {"ai_processing_paused", "ai_request_uncertain"}:
             label = (
                 "Параметры лимита"
                 if row.code in budget_codes
