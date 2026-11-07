@@ -210,18 +210,20 @@ def test_callback_ack_is_delivered_before_older_background_message(transport):
 
     async def seed(db):
         now = datetime.now(UTC)
-        db.add_all([
-            BotOutbox(
-                method="sendMessage",
-                payload=json.dumps({"chat_id": 1, "text": "Фоновое уведомление"}),
-                available_at=now - timedelta(minutes=1),
-            ),
-            BotOutbox(
-                method="answerCallbackQuery",
-                payload=json.dumps({"callback_query_id": "pressed-button"}),
-                available_at=now,
-            ),
-        ])
+        db.add_all(
+            [
+                BotOutbox(
+                    method="sendMessage",
+                    payload=json.dumps({"chat_id": 1, "text": "Фоновое уведомление"}),
+                    available_at=now - timedelta(minutes=1),
+                ),
+                BotOutbox(
+                    method="answerCallbackQuery",
+                    payload=json.dumps({"callback_query_id": "pressed-button"}),
+                    available_at=now,
+                ),
+            ]
+        )
 
     run(client, seed)
     asyncio.run(bot_admin.deliver(client.app.state.engine, client.app.state.settings))
