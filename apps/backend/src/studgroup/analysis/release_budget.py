@@ -186,8 +186,21 @@ async def _reserve_recurring(
         call.charged_usd, call.reserved_usd = call.reserved_usd, Decimal(0)
         call.state, call.settled_at = "unknown", now
     if lost:
-        route.paid_outcome_hold = "ambiguous_paid_attempt"
-        return "recurring_paid_outcome_held", None
+        if production and all(call.kind in {"image", "cplus"} for call in lost):
+            # A stale reservation is charged conservatively. Its exact attempt
+            # key remains blocked by _begin; the durable job/lease cannot repeat
+            # the same purchase. Keep independent packages moving.
+            from studgroup.processing import incident_once
+
+            await incident_once(
+                db,
+                "ai_request_uncertain",
+                now,
+                detail="kind=durable",
+            )
+        else:
+            route.paid_outcome_hold = "ambiguous_paid_attempt"
+            return "recurring_paid_outcome_held", None
     try:
         ceiling = request_ceiling(payload)
     except (ValueError, KeyError, TypeError):
