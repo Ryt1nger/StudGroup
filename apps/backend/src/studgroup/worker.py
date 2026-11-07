@@ -165,8 +165,6 @@ def incident_text(row, event="opened", sent_at=None):
         header = f"StudGroup: {title} №{row.id:06d}\n{opened_label}: {stamp(row.opened_at)}"
     else:
         header = f"StudGroup: {title} №{row.id:06d}\nКод: {row.code}\n{opened_label}: {stamp(row.opened_at)}"
-    if row.code in {"ai_processing_paused", "ai_request_uncertain"}:
-        header += f"\nКод для диагностики: {row.code}"
     if event == "recovered":
         header += f"\nВосстановление: {stamp(row.recovered_at)}"
     else:
@@ -186,6 +184,8 @@ def incident_text(row, event="opened", sent_at=None):
                 else "Технический тип"
             )
             header += f"\n{label}: {row.first_detail}"
+    if row.code in {"ai_processing_paused", "ai_request_uncertain"}:
+        header += f"\nКод для диагностики: {row.code}"
     last_seen = (
         "до обновления не сохранялось"
         if row.legacy and row.occurrences == 1
