@@ -1299,7 +1299,7 @@ async def typed(db, session, group, user, member, data, text, message, settings)
         await ask(
             db,
             session,
-            "Сигналы для подгруппы 1 через запятую: фамилия преподавателя, номер группы, аудитория или другие слова из сообщений.",
+            "Укажите фамилию преподавателя или номер группы для подгруппы 1.",
             {**data, "count": count, "signals": []},
             "subgroup_signals",
         )
@@ -1307,13 +1307,13 @@ async def typed(db, session, group, user, member, data, text, message, settings)
         domain.headman_only(member)
         parsed = subgroups.parse_signals(text)
         if not parsed:
-            raise domain.StError("Укажите хотя бы один сигнал.")
+            raise domain.StError("Укажите фамилию преподавателя или номер группы.")
         signals = [*data["signals"], parsed]
         if len(signals) < data["count"]:
             await ask(
                 db,
                 session,
-                f"Сигналы для подгруппы {len(signals) + 1} через запятую:",
+                f"Укажите фамилию преподавателя или номер группы для подгруппы {len(signals) + 1}:",
                 {**data, "signals": signals},
                 "subgroup_signals",
             )
