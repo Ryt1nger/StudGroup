@@ -617,9 +617,7 @@ async def claim(db, group, route, settings, now):
             call.state, call.charged_usd = "unknown", call.reserved_usd
             call.reserved_usd = Decimal(0)
         job.state, job.error, job.lease_until = "failed", "ambiguous_paid_attempt", None
-        from studgroup.analysis.release_budget import hold_lost_attempt
-
-        from studgroup.analysis.release_budget import production_enabled
+        from studgroup.analysis.release_budget import hold_lost_attempt, production_enabled
 
         await hold_lost_attempt(
             db,
