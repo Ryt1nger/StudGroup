@@ -447,9 +447,15 @@ async def _claim(
             .with_for_update()
         )
         if row.state == "running":
-            from studgroup.analysis.release_budget import hold_lost_attempt
+            from studgroup.analysis.release_budget import hold_lost_attempt, production_enabled
 
-            await hold_lost_attempt(db, route_row, f"cplus:{row.id}:{row.attempts}", now)
+            await hold_lost_attempt(
+                db,
+                route_row,
+                f"cplus:{row.id}:{row.attempts}",
+                now,
+                isolate=mode == "new" and production_enabled(funding_settings, row.group_id),
+            )
             row.charged_usd += row.reserved_usd
             row.reserved_usd, row.lease_until = Decimal(0), None
             row.state, row.last_error, row.completed_at = "failed", "ambiguous_paid_attempt", now

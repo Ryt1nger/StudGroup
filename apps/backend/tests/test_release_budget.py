@@ -605,3 +605,107 @@ def test_production_still_rejects_missing_group_and_financial_hold(client):
             await missing.execute(payload(), no_call)
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("kind", ["image", "cplus"])
+def test_production_unknown_attempt_is_quarantined_without_freezing_other_work(client, kind):
+    from studgroup.main import Settings
+
+    ident, _, stamp = setup_budget(client)
+    config = Settings(_env_file=None, ai_production_groups=[str(ident)])
+    invoked = []
+
+    async def run():
+        async def ambiguous():
+            invoked.append("ambiguous")
+            raise ProviderFailure("provider_unreachable", True)
+
+        uncertain = RequestAccounting(
+            client.app.state.engine,
+            config,
+            ident,
+            kind=kind,
+            attempt_key=f"uncertain-{kind}",
+            clock=lambda: stamp,
+        )
+        with pytest.raises(ProviderFailure, match="ambiguous_paid_attempt"):
+            await uncertain.execute(payload(image=kind == "image"), ambiguous)
+
+        # Exact same attempt cannot be purchased twice.
+        with pytest.raises(ProviderFailure, match="ambiguous_paid_attempt"):
+            await uncertain.execute(payload(image=kind == "image"), ambiguous)
+        assert invoked == ["ambiguous"]
+
+        async def success():
+            invoked.append("success")
+            return body(100, 10)
+
+        independent = RequestAccounting(
+            client.app.state.engine,
+            config,
+            ident,
+            kind="cplus" if kind == "image" else "image",
+            attempt_key="unrelated-new-job",
+            clock=lambda: stamp + timedelta(seconds=1),
+        )
+        await independent.execute(payload(), success)
+        async with AsyncSession(client.app.state.engine) as db:
+            route = await db.get(GroupAnalysisSettings, ident)
+            assert route.paid_outcome_hold is None
+            calls = (await db.scalars(select(AnalysisBudgetCall))).all()
+            assert len(calls) == 2
+            unknown = next(call for call in calls if call.state == "unknown")
+            assert unknown.charged_usd == request_ceiling(payload(image=kind == "image"))
+            assert unknown.reserved_usd == 0
+            assert any(call.state == "settled" for call in calls)
+
+    asyncio.run(run())
+
+
+def test_orphaned_production_reservation_is_accounted_without_global_pause(client):
+    from studgroup.main import Settings
+
+    ident, _, stamp = setup_budget(client)
+    config = Settings(_env_file=None, ai_production_groups=[str(ident)])
+    clock = [stamp]
+    old = RequestAccounting(
+        client.app.state.engine,
+        config,
+        ident,
+        kind="image",
+        attempt_key="orphaned-photo",
+        clock=lambda: clock[0],
+    )
+
+    async def run():
+        await old._begin(payload(image=True))  # no HTTP result was persisted
+        clock[0] += timedelta(minutes=4)
+        sends = []
+
+        async def pay():
+            sends.append(True)
+            return body(100, 10)
+
+        independent = RequestAccounting(
+            client.app.state.engine,
+            config,
+            ident,
+            kind="cplus",
+            attempt_key="other-homework",
+            clock=lambda: clock[0],
+        )
+        await independent.execute(payload(), pay)
+        assert sends == [True]
+        with pytest.raises(ProviderFailure, match="ambiguous_paid_attempt"):
+            await old.execute(payload(image=True), pay)
+        assert sends == [True]
+        async with AsyncSession(client.app.state.engine) as db:
+            assert (await db.get(GroupAnalysisSettings, ident)).paid_outcome_hold is None
+            calls = (await db.scalars(select(AnalysisBudgetCall))).all()
+            assert len(calls) == 2
+            image_call = next(call for call in calls if call.kind == "image")
+            assert image_call.state == "unknown"
+            assert image_call.reserved_usd == 0
+            assert image_call.charged_usd == request_ceiling(payload(image=True))
+
+    asyncio.run(run())

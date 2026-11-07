@@ -268,3 +268,53 @@ def test_error_alerts_stop_after_the_circuit_failure_threshold_then_recovery_is_
         assert "восстановлена" in sent[3]
 
     asyncio.run(scenario())
+
+
+def test_ai_pause_alert_explains_actual_reason_without_dumping_internal_fields():
+    from datetime import UTC, datetime
+
+    from studgroup.worker import incident_text
+
+    now = datetime(2026, 11, 7, 7, 24, 48, tzinfo=UTC)
+    paused = OwnerIncidentEpisode(
+        id=60,
+        code="ai_processing_paused",
+        opened_at=now,
+        last_seen_at=now,
+        occurrences=1,
+        first_detail="groups=1 pending=4 reasons=paid_outcome_held",
+        opening_pending=True,
+        recovery_pending=False,
+        legacy=False,
+    )
+    message = incident_text(paused, sent_at=now)
+    assert "Что случилось:" in message
+    assert "платного AI-запроса" in message
+    assert "В очереди: 4 сообщения." in message
+    assert "Технический тип: groups=" not in message
+
+    isolated = OwnerIncidentEpisode(
+        id=61,
+        code="ai_request_uncertain",
+        opened_at=now,
+        last_seen_at=now,
+        occurrences=1,
+        first_detail="kind=image",
+        opening_pending=True,
+        recovery_pending=False,
+        legacy=False,
+    )
+    explanation = incident_text(isolated, sent_at=now)
+    assert "один запрос AI требует проверки" in explanation
+    assert "Остальные задания продолжат" in explanation
+    assert "возможный расход учтён" in explanation
+
+
+def test_uncertain_photo_alert_names_network_failure_instead_of_internal_code():
+    from studgroup.worker import uncertain_explanation
+
+    message = uncertain_explanation("kind=image reason=provider_unreachable")
+    assert "при анализе фотографии" in message
+    assert "не удалось получить подтверждённый ответ" in message
+    assert "не будет автоматически повторён" in message
+    assert "kind=image" not in message

@@ -120,6 +120,11 @@ def production_enabled(settings, group_id):
     )
 
 
+def is_isolated_production_attempt(settings, group_id, kind):
+    """These durable jobs cannot replay the same failed paid attempt automatically."""
+    return production_enabled(settings, group_id) and kind in {"image", "cplus"}
+
+
 def recurring_policy_status(settings, group_id, now):
     """Return None when not opted in, 'active' only with explicit finite authorization."""
     if (
@@ -181,8 +186,21 @@ async def _reserve_recurring(
         call.charged_usd, call.reserved_usd = call.reserved_usd, Decimal(0)
         call.state, call.settled_at = "unknown", now
     if lost:
-        route.paid_outcome_hold = "ambiguous_paid_attempt"
-        return "recurring_paid_outcome_held", None
+        if production and all(call.kind in {"image", "cplus"} for call in lost):
+            # A stale reservation is charged conservatively. Its exact attempt
+            # key remains blocked by _begin; the durable job/lease cannot repeat
+            # the same purchase. Keep independent packages moving.
+            from studgroup.processing import incident_once
+
+            await incident_once(
+                db,
+                "ai_request_uncertain",
+                now,
+                detail="kind=durable reason=orphaned_reservation",
+            )
+        else:
+            route.paid_outcome_hold = "ambiguous_paid_attempt"
+            return "recurring_paid_outcome_held", None
     try:
         ceiling = request_ceiling(payload)
     except (ValueError, KeyError, TypeError):
@@ -304,6 +322,21 @@ class RequestAccounting:
             required = str(self.group_id) in self.settings.ai_release_budget_required_groups
             recurring = recurring_policy_status(self.settings, self.group_id, now)
             production = production_enabled(self.settings, self.group_id)
+            # A settled request may be followed by another C+ pass with the
+            # same package key. An *unsettled* request may never be replayed.
+            same_unknown = (
+                await db.scalar(
+                    select(AnalysisBudgetCall.id)
+                    .where(
+                        AnalysisBudgetCall.group_id == self.group_id,
+                        AnalysisBudgetCall.attempt_key == self.attempt_key,
+                        AnalysisBudgetCall.state.in_(["reserved", "unknown"]),
+                    )
+                    .limit(1)
+                )
+                if production
+                else None
+            )
             if route is None:
                 if production:
                     reason = "production_group_not_configured"
@@ -313,6 +346,8 @@ class RequestAccounting:
                     reason = "release_budget_not_configured"
             elif route.paid_outcome_hold:
                 reason = "release_paid_outcome_held"
+            elif same_unknown is not None:
+                reason = "ambiguous_paid_attempt"
             elif (
                 required
                 and route.release_budget_usd is None
@@ -435,7 +470,7 @@ class RequestAccounting:
             raise ProviderFailure(reason, False, reservation_releasable=True)
         return ident
 
-    async def _finish(self, ident, *, usage=None, releasable=False):
+    async def _finish(self, ident, *, usage=None, releasable=False, failure_code=None):
         now = utc(self.clock())
         unknown = usage is None and not releasable
         try:
@@ -451,7 +486,21 @@ class RequestAccounting:
             if route is None:
                 return
             if unknown:
-                route.paid_outcome_hold = "ambiguous_paid_attempt"
+                if is_isolated_production_attempt(self.settings, self.group_id, self.kind):
+                    # Keep the maximum possible charge and mark the exact HTTP attempt
+                    # unknown, but let *unrelated* durable jobs continue. Image jobs
+                    # and C+ runs quarantine their own failed targets without retrying
+                    # this claim token / package generation.
+                    from studgroup.processing import incident_once
+
+                    await incident_once(
+                        db,
+                        "ai_request_uncertain",
+                        now,
+                        detail=f"kind={self.kind} reason={failure_code or 'no_usage'}",
+                    )
+                else:
+                    route.paid_outcome_hold = "ambiguous_paid_attempt"
             if ident is not None:
                 call = await db.get(AnalysisBudgetCall, ident, with_for_update=True)
                 if call is None:
@@ -473,15 +522,20 @@ class RequestAccounting:
             response = await invoke()
         except asyncio.CancelledError:
             try:
-                await asyncio.shield(self._finish(ident))
+                await asyncio.shield(self._finish(ident, failure_code="worker_cancelled"))
             except ProviderFailure:
                 pass
             raise
         except ProviderFailure as error:
-            await self._finish(ident, usage=error.usage, releasable=error.reservation_releasable)
+            await self._finish(
+                ident,
+                usage=error.usage,
+                releasable=error.reservation_releasable,
+                failure_code=error.code,
+            )
             raise
         except Exception:
-            await self._finish(ident)
+            await self._finish(ident, failure_code="unexpected_exception")
             raise
         usage = response.get("usage") if isinstance(response, dict) else response.usage
         await self._finish(ident, usage=usage)
@@ -542,9 +596,23 @@ def provider_for(engine, settings, group_id, provider=None, *, kind, attempt_key
     )
 
 
-async def hold_lost_attempt(db, route, attempt_key, now):
-    """Caller owns the route lock. A lost lease is not permission to purchase another attempt."""
-    route.paid_outcome_hold = "ambiguous_paid_attempt"
+async def hold_lost_attempt(db, route, attempt_key, now, *, isolate=False):
+    """Quarantine a lost paid attempt; never replay that durable generation."""
+    if isolate:
+        from studgroup.processing import incident_once
+
+        await incident_once(
+            db,
+            "ai_request_uncertain",
+            now,
+            detail=(
+                "kind=image reason=lease_expired"
+                if attempt_key.startswith("image:")
+                else "kind=cplus reason=lease_expired"
+            ),
+        )
+    else:
+        route.paid_outcome_hold = "ambiguous_paid_attempt"
     calls = (
         await db.scalars(
             select(AnalysisBudgetCall)

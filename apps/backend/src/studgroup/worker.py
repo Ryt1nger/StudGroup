@@ -1,6 +1,7 @@
 """One conservative Celery worker + SQL inbox sweeper; no private text in broker tasks."""
 
 import asyncio
+import re
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -39,10 +40,89 @@ INCIDENT_LABELS = {
     "processing_exhausted": "Один этап исчерпал безопасное число повторов и изолирован от остальной очереди.",
     "possible_duplicate_cards": "Две активные карточки похожи на одно и то же задание (общие источники или похожий текст). Карточки не менялись: проверьте и объедините вручную.",
     "pipeline_error": "В обработчике ИИ произошла внутренняя ошибка.",
-    "ai_processing_paused": "Новые сообщения сохранены, но AI-обработка приостановлена. Проверьте разрешённое окно обработки, настройки движка и бюджет.",
+    "ai_processing_paused": "Обработка сообщений группы приостановлена. Исходные сообщения сохранены.",
+    "ai_request_uncertain": (
+        "Один запрос к AI-сервису завершился без подтверждённого расхода. "
+        "Возможное списание учтено. Запрос изолирован, а остальные задания продолжат "
+        "обрабатываться. Изображение или текст сохранены для проверки."
+    ),
     "invalid_source_reference": "Ответ ИИ отклонён: он ссылается на сообщение вне переданного контекста. Это не падение API.",
     "invalid_date_only": "Ответ ИИ отклонён: дата без времени содержит ненулевое время. Это не падение API.",
 }
+
+
+PAUSE_REASONS = {
+    "paid_outcome_held": (
+        "Не удалось подтвердить завершение платного AI-запроса. "
+        "Система временно остановила группу, чтобы не повторить списание."
+    ),
+    "engine_disabled": "AI выключен в настройках сервера.",
+    "engine_window_closed": "Закончилось разрешённое время AI-обработки.",
+    "release_budget_window_closed": (
+        "Завершилось старое тестовое разрешение. Это не означает, что закончились деньги."
+    ),
+    "recurring_approval_expired": "Закончилось разрешение на регулярные платные запросы.",
+    "recurring_daily_budget_exhausted": "Достигнут установленный дневной бюджет AI.",
+    "recurring_monthly_budget_exhausted": "Достигнут установленный месячный бюджет AI.",
+    "release_budget_not_configured": "Для группы не настроено разрешение на AI.",
+}
+
+
+def paused_explanation(detail):
+    """Owner-friendly explanation, independent of raw diagnostic fields."""
+    detail = detail or ""
+    reason = re.search(r"(?:^|\s)reasons=([a-z_,]+)", detail)
+    pending = re.search(r"(?:^|\s)pending=(\d+)", detail)
+    code = reason.group(1).split(",")[0] if reason else "unknown"
+    cause = PAUSE_REASONS.get(code, "Система не может безопасно продолжить AI-обработку.")
+    number = int(pending.group(1)) if pending else 0
+    suffix = (
+        "сообщение"
+        if number % 10 == 1 and number % 100 != 11
+        else "сообщения"
+        if 2 <= number % 10 <= 4 and not 12 <= number % 100 <= 14
+        else "сообщений"
+    )
+    count = f"В очереди: {number} {suffix}.\n" if pending else ""
+    return (
+        f"Что случилось: {cause}\n"
+        f"{count}"
+        "Сообщения сохранены, домашние задания не удалены.\n"
+        "Требуется проверка причины, после чего обработка продолжится."
+    )
+
+
+UNCERTAIN_CAUSES = {
+    "provider_unreachable": "не удалось получить подтверждённый ответ AI-сервиса",
+    "provider_error": "AI-сервис вернул ошибку",
+    "worker_cancelled": "выполнение запроса было прервано",
+    "lease_expired": "процесс не завершил запрос за отведённое время",
+    "orphaned_reservation": "процесс завершился, не сохранив результат запроса",
+    "unexpected_exception": "во время запроса произошла внутренняя ошибка",
+    "invalid_provider_output": "AI-сервис вернул некорректный ответ",
+}
+
+
+def uncertain_explanation(detail):
+    detail = detail or ""
+    kind_match = re.search(r"(?:^|\s)kind=([a-z_]+)", detail)
+    reason_match = re.search(r"(?:^|\s)reason=([a-z_]+)", detail)
+    kind = kind_match.group(1) if kind_match else "unknown"
+    reason = reason_match.group(1) if reason_match else "no_usage"
+    source = (
+        "при анализе фотографии"
+        if kind == "image"
+        else "при обработке сообщений"
+        if kind == "cplus"
+        else "при выполнении AI-запроса"
+    )
+    failure = UNCERTAIN_CAUSES.get(reason, "не удалось подтвердить результат и списание")
+    return (
+        f"Что случилось: {source} {failure}.\n"
+        "Что сделала система: возможный расход учтён, именно этот запрос "
+        "не будет автоматически повторён. Остальные задания продолжат обрабатываться.\n"
+        "Что проверить: исходное изображение или сообщение и записи AI-сервиса."
+    )
 
 
 def incident_text(row, event="opened", sent_at=None):
@@ -78,15 +158,24 @@ def incident_text(row, event="opened", sent_at=None):
         }
         else "ошибка"
     )
+    if row.code == "ai_request_uncertain" and event != "recovered":
+        title = "один запрос AI требует проверки"
     opened_label = "Время старой записи" if row.legacy else "Возникла"
-    header = (
-        f"StudGroup: {title} №{row.id:06d}\nКод: {row.code}\n{opened_label}: {stamp(row.opened_at)}"
-    )
+    if row.code in {"ai_processing_paused", "ai_request_uncertain"}:
+        header = f"StudGroup: {title} №{row.id:06d}\n{opened_label}: {stamp(row.opened_at)}"
+    else:
+        header = f"StudGroup: {title} №{row.id:06d}\nКод: {row.code}\n{opened_label}: {stamp(row.opened_at)}"
     if event == "recovered":
         header += f"\nВосстановление: {stamp(row.recovered_at)}"
     else:
-        header += "\n" + INCIDENT_LABELS.get(row.code, "Ошибка разбора/обработчика ИИ.")
-        if row.first_detail:
+        header += (
+            "\n" + paused_explanation(row.first_detail)
+            if row.code == "ai_processing_paused"
+            else "\n" + uncertain_explanation(row.first_detail)
+            if row.code == "ai_request_uncertain"
+            else "\n" + INCIDENT_LABELS.get(row.code, "Ошибка разбора/обработчика ИИ.")
+        )
+        if row.first_detail and row.code not in {"ai_processing_paused", "ai_request_uncertain"}:
             label = (
                 "Параметры лимита"
                 if row.code in budget_codes
@@ -95,6 +184,8 @@ def incident_text(row, event="opened", sent_at=None):
                 else "Технический тип"
             )
             header += f"\n{label}: {row.first_detail}"
+    if row.code in {"ai_processing_paused", "ai_request_uncertain"}:
+        header += f"\nКод для диагностики: {row.code}"
     last_seen = (
         "до обновления не сохранялось"
         if row.legacy and row.occurrences == 1

@@ -336,7 +336,24 @@ async def context_snapshot(db, raw):
     return context
 
 
-async def schedule_group(db, group, now, since, model_key="", provider_identity=None):
+def pass_b_available_at(context, now):
+    """Debounce fresh chat context without delaying historic backfill."""
+    timestamps = [
+        utc(datetime.fromisoformat(message["sent_at"]))
+        for message in context.get("messages", [])
+        if message.get("sent_at")
+    ]
+    if not timestamps:
+        return now
+    # A discussion often continues immediately after the picture. Waiting one
+    # short quiet window prevents paying for results that become stale mid-call.
+    # Cap clock skew so a malformed future Telegram time cannot strand the job.
+    return min(max(now, max(timestamps) + timedelta(seconds=60)), now + timedelta(seconds=60))
+
+
+async def schedule_group(
+    db, group, now, since, model_key="", provider_identity=None, *, quiet_window=False
+):
     """Caller holds group settings lock. Enumerate every retained image, not just six."""
     attachments = (
         await db.scalars(
@@ -430,7 +447,7 @@ async def schedule_group(db, group, now, since, model_key="", provider_identity=
                         pass_number=2,
                         state="pending",
                         attempts=0,
-                        available_at=now,
+                        available_at=pass_b_available_at(context, now) if quiet_window else now,
                         created_at=now,
                         delete_at=min(raw.delete_at, attachment.delete_at),
                     )
@@ -617,9 +634,15 @@ async def claim(db, group, route, settings, now):
             call.state, call.charged_usd = "unknown", call.reserved_usd
             call.reserved_usd = Decimal(0)
         job.state, job.error, job.lease_until = "failed", "ambiguous_paid_attempt", None
-        from studgroup.analysis.release_budget import hold_lost_attempt
+        from studgroup.analysis.release_budget import hold_lost_attempt, production_enabled
 
-        await hold_lost_attempt(db, route, f"image:{job.claim_token}", now)
+        await hold_lost_attempt(
+            db,
+            route,
+            f"image:{job.claim_token}",
+            now,
+            isolate=production_enabled(settings, group.id),
+        )
         return None
     raw = await db.get(RawMessage, job.raw_message_id)
     attachment = await db.get(MessageAttachment, job.attachment_id)
@@ -806,6 +829,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                 settings.image_analysis_since,
                 model_identity(settings),
                 provider_identity(settings),
+                quiet_window=production_enabled(settings, group.id),
             )
             await db.flush()
             picked = await claim(db, group, route, settings, now)
