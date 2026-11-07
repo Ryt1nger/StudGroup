@@ -83,7 +83,7 @@ def paused_explanation(detail):
         if 2 <= number % 10 <= 4 and not 12 <= number % 100 <= 14
         else "сообщений"
     )
-    count = f"В очереди: {number} {suffix}.\\n" if pending else ""
+    count = f"В очереди: {number} {suffix}.\n" if pending else ""
     return (
         f"Что случилось: {cause}\n"
         f"{count}"
