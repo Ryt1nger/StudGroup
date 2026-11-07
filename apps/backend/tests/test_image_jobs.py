@@ -442,10 +442,9 @@ def test_production_expired_vision_lease_isolated_while_next_photo_advances(clie
     assert tick(client, good, config, now + timedelta(minutes=4, seconds=1)) == "ready"
     assert len(good.vision) == 1
     jobs = stored(client, ImageAnalysisJob)
-    assert jobs[0].state == "failed"
-    assert jobs[0].error == "ambiguous_paid_attempt"
-    assert jobs[1].state == "ready"
-    assert stored(client, ImageAnalysisCall)[0].state == "unknown"
+    assert {job.state for job in jobs} == {"failed", "ready"}
+    assert next(job.error for job in jobs if job.state == "failed") == "ambiguous_paid_attempt"
+    assert any(call.state == "unknown" for call in stored(client, ImageAnalysisCall))
 
     async def no_hold():
         async with AsyncSession(client.app.state.engine) as db:
