@@ -616,7 +616,7 @@ async def onboarding_complete(db, session, group):
     await screen(
         db,
         session,
-        f"Подключение успешно завершено!\\n\\n"
+        f"Подключение успешно завершено!\n\n"
         f"Группа «{group.name}» готова к работе в StudGroup.",
         [[("Перейти в кабинет старосты", "cabinet")]],
         "onboarding_complete",
