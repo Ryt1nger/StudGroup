@@ -10,6 +10,31 @@ describe('fixed calendar week', () => {
     expect(weekKeys('2027-01-01')).toEqual(['2026-12-28', '2026-12-29', '2026-12-30', '2026-12-31', '2027-01-01', '2027-01-02', '2027-01-03']);
   });
 
+  it('animates both directions when the visible week changes, but not on day selection', () => {
+    const props = {
+      marked: new Set<string>(),
+      onSelect: vi.fn(),
+      onWeekChange: vi.fn(),
+    };
+    const first = weekKeys('2027-01-01');
+    const next = weekKeys('2027-01-08');
+    const previous = weekKeys('2026-12-25');
+    const { container, rerender } = render(<WeekStrip {...props} days={first} selected={4} />);
+    const track = () => container.querySelector('.week-track');
+    expect(track()).toHaveAttribute('data-direction', '0');
+
+    rerender(<WeekStrip {...props} days={first} selected={5} />);
+    expect(track()).toHaveAttribute('data-direction', '0');
+
+    rerender(<WeekStrip {...props} days={next} selected={0} />);
+    expect(track()).toHaveAttribute('data-direction', '1');
+    expect(screen.getByRole('button', { name: 'Пн, 4' })).toHaveAttribute('aria-pressed', 'true');
+
+    rerender(<WeekStrip {...props} days={previous} selected={0} />);
+    expect(track()).toHaveAttribute('data-direction', '-1');
+    expect(screen.getByRole('button', { name: 'Пн, 21' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('swipes complete weeks and keeps vertical scrolling separate', () => {
     const onWeekChange = vi.fn();
     render(<WeekStrip days={weekKeys('2027-01-01')} selected={4} marked={new Set()} onSelect={vi.fn()} onWeekChange={onWeekChange} />);
