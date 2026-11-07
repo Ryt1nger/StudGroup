@@ -669,8 +669,12 @@ def test_orphaned_production_reservation_is_accounted_without_global_pause(clien
     config = Settings(_env_file=None, ai_production_groups=[str(ident)])
     clock = [stamp]
     old = RequestAccounting(
-        client.app.state.engine, config, ident, kind="image",
-        attempt_key="orphaned-photo", clock=lambda: clock[0],
+        client.app.state.engine,
+        config,
+        ident,
+        kind="image",
+        attempt_key="orphaned-photo",
+        clock=lambda: clock[0],
     )
 
     async def run():
@@ -683,8 +687,12 @@ def test_orphaned_production_reservation_is_accounted_without_global_pause(clien
             return body(100, 10)
 
         independent = RequestAccounting(
-            client.app.state.engine, config, ident, kind="cplus",
-            attempt_key="other-homework", clock=lambda: clock[0],
+            client.app.state.engine,
+            config,
+            ident,
+            kind="cplus",
+            attempt_key="other-homework",
+            clock=lambda: clock[0],
         )
         await independent.execute(payload(), pay)
         assert sends == [True]
