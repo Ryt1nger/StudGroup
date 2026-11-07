@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useRef, useState } from 'react';
 import { addDays, weekRangeForDayKey } from '../../lib/format';
 
 const SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -31,11 +31,15 @@ export function WeekStrip({
   const start = useRef<{ x: number; y: number } | null>(null);
   const suppressClick = useRef(false);
   const first = days[0];
-  const previousWeek = useRef(first);
-  const direction = first && previousWeek.current && first !== previousWeek.current
-    ? (first > previousWeek.current ? 1 : -1)
-    : 0;
-  useLayoutEffect(() => { previousWeek.current = first; }, [first]);
+  const [transition, setTransition] = useState<{ week: string | undefined; direction: -1 | 0 | 1 }>({
+    week: first,
+    direction: 0,
+  });
+  // React preserves the last displayed week so swipe and keyboard navigation
+  // animate in the correct direction without reading mutable refs during render.
+  if (transition.week !== first) {
+    setTransition({ week: first, direction: first && transition.week ? (first > transition.week ? 1 : -1) : 0 });
+  }
   return (
     <div className="week" role="group" aria-label="День" data-week={first} tabIndex={0}
       onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); onWeekChange?.(event.key === 'ArrowRight' ? 1 : -1); } }}
@@ -52,7 +56,7 @@ export function WeekStrip({
         onWeekChange(next);
       }}
     >
-      <div className="week-track" key={first} data-direction={direction}>
+      <div className="week-track" key={first} data-direction={transition.direction}>
         {days.map((key, index) => {
           const { weekday, day } = parts(key);
           return (
