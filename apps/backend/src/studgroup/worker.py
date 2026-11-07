@@ -92,6 +92,39 @@ def paused_explanation(detail):
     )
 
 
+UNCERTAIN_CAUSES = {
+    "provider_unreachable": "не удалось получить подтверждённый ответ AI-сервиса",
+    "provider_error": "AI-сервис вернул ошибку",
+    "worker_cancelled": "выполнение запроса было прервано",
+    "lease_expired": "процесс не завершил запрос за отведённое время",
+    "orphaned_reservation": "процесс завершился, не сохранив результат запроса",
+    "unexpected_exception": "во время запроса произошла внутренняя ошибка",
+    "invalid_provider_output": "AI-сервис вернул некорректный ответ",
+}
+
+
+def uncertain_explanation(detail):
+    detail = detail or ""
+    kind_match = re.search(r"(?:^|\s)kind=([a-z_]+)", detail)
+    reason_match = re.search(r"(?:^|\s)reason=([a-z_]+)", detail)
+    kind = kind_match.group(1) if kind_match else "unknown"
+    reason = reason_match.group(1) if reason_match else "no_usage"
+    source = (
+        "при анализе фотографии"
+        if kind == "image"
+        else "при обработке сообщений"
+        if kind == "cplus"
+        else "при выполнении AI-запроса"
+    )
+    failure = UNCERTAIN_CAUSES.get(reason, "не удалось подтвердить результат и списание")
+    return (
+        f"Что случилось: {source} {failure}.\n"
+        "Что сделала система: возможный расход учтён, именно этот запрос "
+        "не будет автоматически повторён. Остальные задания продолжат обрабатываться.\n"
+        "Что проверить: исходное изображение или сообщение и записи AI-сервиса."
+    )
+
+
 def incident_text(row, event="opened", sent_at=None):
     def stamp(value):
         if value is None:
@@ -137,6 +170,8 @@ def incident_text(row, event="opened", sent_at=None):
         header += (
             "\n" + paused_explanation(row.first_detail)
             if row.code == "ai_processing_paused"
+            else "\n" + uncertain_explanation(row.first_detail)
+            if row.code == "ai_request_uncertain"
             else "\n" + INCIDENT_LABELS.get(row.code, "Ошибка разбора/обработчика ИИ.")
         )
         if row.first_detail and row.code not in {"ai_processing_paused", "ai_request_uncertain"}:
