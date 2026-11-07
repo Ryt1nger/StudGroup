@@ -591,11 +591,7 @@ async def connected(db, session, settings, group, bot_is_admin=True):
         f"Официальный ID РАНХиГС: {group.academic_group_code}\n"
         "Часовой пояс группы по умолчанию: Москва. Изменить его можно в кабинете.\n\n"
         "Теперь пригласите студентов.",
-        [
-            [("Создать приглашение", "invite")],
-            [("Кабинет старосты", "cabinet")],
-            [app_button(settings)],
-        ],
+        [[("Создать приглашение", "invite")]],
         "connected",
     )
 
