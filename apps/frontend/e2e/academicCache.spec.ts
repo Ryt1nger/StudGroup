@@ -28,9 +28,17 @@ test('cached Today is visible after verified login before a slow refresh finishe
   // This scenario delays bootstrap and each fresh Today response by 2.5s.
   // The academic view should appear from the encrypted snapshot after auth,
   // without waiting an additional 2.5 seconds for the fresh /today response.
+  // Return to the same group 25 minutes later. The encrypted snapshot is
+  // now genuinely old, but it must not ask the student to refresh while an
+  // automatic request for a fresh Today feed is still in flight.
+  await page.clock.setFixedTime(new Date('2026-10-05T06:25:00Z'));
   await page.goto('/?scenario=slow');
   await expect(page.getByRole('heading', { name: 'Сегодня', level: 1 })).toBeVisible({ timeout: 7_000 });
   await expect(page.getByText('ДЗ №12–140').first()).toBeVisible({ timeout: 1_000 });
+  await expect(page.getByText('Обновляем данные…')).toBeVisible();
+  await expect(page.getByText(/Данные могли устареть/)).toHaveCount(0);
+  await expect(page.getByText('Обновляем данные…')).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByText(/Данные могли устареть/)).toHaveCount(0);
 
   // A different authorization result must not reveal that student's cached data.
   await page.goto('/?scenario=no-group');
