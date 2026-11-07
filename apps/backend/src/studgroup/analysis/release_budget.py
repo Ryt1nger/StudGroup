@@ -561,9 +561,19 @@ def provider_for(engine, settings, group_id, provider=None, *, kind, attempt_key
     )
 
 
-async def hold_lost_attempt(db, route, attempt_key, now):
-    """Caller owns the route lock. A lost lease is not permission to purchase another attempt."""
-    route.paid_outcome_hold = "ambiguous_paid_attempt"
+async def hold_lost_attempt(db, route, attempt_key, now, *, isolate=False):
+    """Quarantine a lost paid attempt; never replay that durable generation."""
+    if isolate:
+        from studgroup.processing import incident_once
+
+        await incident_once(
+            db,
+            "ai_request_uncertain",
+            now,
+            detail="kind=image" if attempt_key.startswith("image:") else "kind=cplus",
+        )
+    else:
+        route.paid_outcome_hold = "ambiguous_paid_attempt"
     calls = (
         await db.scalars(
             select(AnalysisBudgetCall)
