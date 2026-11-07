@@ -177,7 +177,7 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
     finish_group_identifier(foreman)
     assert panel(foreman, ADDER)["text"].startswith("Готово! Группа «ИВТ-21» подключена")
     assert new_group(foreman)[0].academic_group_code == "Э-ОБ-385-04-26-02"
-    assert "Создать приглашение" in json.dumps(panel(foreman, ADDER), ensure_ascii=False)
+    assert labels(foreman) == ["Создать приглашение"]
 
     async def profile(db):
         return await db.get(GroupAIProfile, group.id)
