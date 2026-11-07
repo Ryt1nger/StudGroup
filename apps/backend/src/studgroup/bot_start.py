@@ -350,7 +350,7 @@ async def notification_menu(db, session, settings, telegram_id):
             "—",
         )
         rows.append([(f"{title}: {selected}", f"notifchoice_{key}")])
-    rows.append([("‹ Главное меню", "home")])
+    rows.append([("‹ Назад", "invite_back" if setup else "home")])
     await screen(
         db,
         session,
@@ -611,6 +611,40 @@ async def connected(db, session, settings, group, bot_is_admin=True):
     )
 
 
+async def onboarding_complete(db, session, group):
+    """Final onboarding checkpoint; opening the staff cabinet is an explicit choice."""
+    await screen(
+        db,
+        session,
+        f"Подключение успешно завершено!\\n\\n"
+        f"Группа «{group.name}» готова к работе в StudGroup.",
+        [[("Перейти в кабинет старосты", "cabinet")]],
+        "onboarding_complete",
+    )
+
+
+async def finish_onboarding_from_cabinet(db, settings, telegram_id, group):
+    """Switch from subgroup settings to a clean final private start panel."""
+    await switch_panel(db, telegram_id, "st", "start")
+    session = await get_session(db, telegram_id)
+    token = bot_panels.scope.set((telegram_id, "start"))
+    try:
+        await onboarding_complete(db, session, group)
+    finally:
+        bot_panels.scope.reset(token)
+
+
+async def return_to_subgroup_question(db, settings, telegram_id, group):
+    """Previous unfinished setup step, not the cabinet home."""
+    await switch_panel(db, telegram_id, "st", "start")
+    session = await get_session(db, telegram_id)
+    token = bot_panels.scope.set((telegram_id, "start"))
+    try:
+        await subgroup_question(db, session, group)
+    finally:
+        bot_panels.scope.reset(token)
+
+
 async def subgroup_question(db, session, group):
     await screen(
         db,
@@ -620,7 +654,7 @@ async def subgroup_question(db, session, group):
         [
             [("Да, настроить", "subgroup_setup_yes")],
             [("Нет, пропустить", "subgroup_setup_no")],
-            [("‹ Назад", "home")],
+            [("‹ Назад", "subgroup_question_back")],
         ],
         "subgroup_question",
     )
@@ -698,7 +732,7 @@ async def invite(db, session, settings, telegram_id):
         "Бот проверит участие каждого в Telegram-чате. Создание новой ссылки отзовёт прежнюю.",
         [[("Управление ссылкой", "invite_manage")]]
         + ([[("Далее: подгруппы", "subgroup_setup")]] if setup else [])
-        + [[("‹ Назад", "home")]],
+        + [[("‹ Назад", "invite_back" if setup else "home")]],
         "invite",
         {"setup": setup},
     )
@@ -1300,12 +1334,21 @@ async def handle(db, update, settings, topic=None):
             await subgroup_question(db, session, found[1])
         else:
             await home(db, session, settings, sender.id)
+    elif action == "subgroup_question_back" and session.step == "subgroup_question":
+        await invitation_entry(db, session, settings, sender.id)
+    elif action == "invite_back" and session.step == "invite":
+        found = await current_membership(db, sender.id)
+        if found and found[0].role == "headman":
+            await connected(db, session, settings, found[1])
+        else:
+            await home(db, session, settings, sender.id)
     elif action == "subgroup_setup_no" and session.step == "subgroup_question":
-        session.step = "finished"
-        if not await open_cabinet(db, sender.id):
+        found = await current_membership(db, sender.id)
+        if found and found[0].role == "headman":
+            await onboarding_complete(db, session, found[1])
+        else:
             await home(db, session, settings, sender.id)
     elif action == "subgroup_setup_yes" and session.step == "subgroup_question":
-        session.step = "finished"
         if await open_cabinet(db, sender.id):
             from studgroup import headman_bot
 
@@ -1313,7 +1356,9 @@ async def handle(db, update, settings, topic=None):
             _, _, group = await domain.access(db, sender.id, headman_session.group_id)
             token = bot_panels.scope.set((sender.id, "st"))
             try:
-                await headman_bot.subgroup_settings_screen(db, headman_session, group)
+                await headman_bot.subgroup_settings_screen(
+                    db, headman_session, group, onboarding=True
+                )
             finally:
                 bot_panels.scope.reset(token)
         else:
