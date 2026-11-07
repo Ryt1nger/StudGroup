@@ -547,7 +547,7 @@ async def academic_code_prompt(db, session, group, *, onboarding=True, notice=No
     rows = []
     if guess:
         rows.append([(f"Подтвердить {guess}"[:60], "academic_code_suggest")])
-    rows.append([("‹ В главное меню", "home")])
+    rows.append([("‹ Назад", "academic_code_back" if onboarding else "home")])
     await screen(
         db,
         session,
@@ -555,6 +555,21 @@ async def academic_code_prompt(db, session, group, *, onboarding=True, notice=No
         rows,
         "academic_code",
         {"group_id": str(group.id), "onboarding": onboarding, "suggested": guess},
+        minutes=CLAIM_HOURS * 60,
+    )
+
+
+async def academic_code_checkpoint(db, session, group):
+    """Previous onboarding checkpoint: the group is claimed but its RANEPA code is pending."""
+    await screen(
+        db,
+        session,
+        f"Группа «{group.name}» подтверждена.\\n\\n"
+        "Следующий шаг — указать официальный идентификатор РАНХиГС. "
+        "Без него подключение не завершено.",
+        [[("Продолжить: указать ID", "academic_code_continue")]],
+        "academic_code_checkpoint",
+        {"group_id": str(group.id)},
         minutes=CLAIM_HOURS * 60,
     )
 
@@ -1191,6 +1206,20 @@ async def handle(db, update, settings, topic=None):
             await headman_entry(db, session, settings, sender.id)
         else:
             await bot_connect.claim_headman(db, settings, session, group, sender.id)
+    elif action == "academic_code_back" and session.step == "academic_code":
+        found = await current_membership(db, sender.id)
+        group_id = json.loads(session.payload).get("group_id")
+        if found and found[0].role == "headman" and str(found[1].id) == group_id:
+            await academic_code_checkpoint(db, session, found[1])
+        else:
+            await home(db, session, settings, sender.id)
+    elif action == "academic_code_continue" and session.step == "academic_code_checkpoint":
+        found = await current_membership(db, sender.id)
+        group_id = json.loads(session.payload).get("group_id")
+        if found and found[0].role == "headman" and str(found[1].id) == group_id:
+            await academic_code_prompt(db, session, found[1])
+        else:
+            await home(db, session, settings, sender.id)
     elif action == "academic_code_suggest" and session.step == "academic_code":
         found = await current_membership(db, sender.id)
         payload = json.loads(session.payload)
