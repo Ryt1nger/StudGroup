@@ -564,7 +564,7 @@ async def academic_code_checkpoint(db, session, group):
     await screen(
         db,
         session,
-        f"Группа «{group.name}» подтверждена.\\n\\n"
+        f"Группа «{group.name}» подтверждена.\n\n"
         "Следующий шаг — указать официальный идентификатор РАНХиГС. "
         "Без него подключение не завершено.",
         [[("Продолжить: указать ID", "academic_code_continue")]],
