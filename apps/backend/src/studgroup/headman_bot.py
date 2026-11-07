@@ -1608,8 +1608,7 @@ async def apply(db, session, group, user, member, data, settings):
             session,
             "Общая ссылка на 3 часа. Перешлите её студентам: "
             "доступ получат только подтверждённые участники Telegram-чата. "
-            "ID и @username вводить не нужно.\n\n"
-            + bot_start.invite_link(settings, code),
+            "ID и @username вводить не нужно.\n\n" + bot_start.invite_link(settings, code),
             [back()],
         )
         return
