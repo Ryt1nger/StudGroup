@@ -120,6 +120,11 @@ def production_enabled(settings, group_id):
     )
 
 
+def is_isolated_production_attempt(settings, group_id, kind):
+    """These durable jobs cannot replay the same failed paid attempt automatically."""
+    return production_enabled(settings, group_id) and kind in {"image", "cplus"}
+
+
 def recurring_policy_status(settings, group_id, now):
     """Return None when not opted in, 'active' only with explicit finite authorization."""
     if (
@@ -451,7 +456,21 @@ class RequestAccounting:
             if route is None:
                 return
             if unknown:
-                route.paid_outcome_hold = "ambiguous_paid_attempt"
+                if is_isolated_production_attempt(self.settings, self.group_id, self.kind):
+                    # Keep the maximum possible charge and mark the exact HTTP attempt
+                    # unknown, but let *unrelated* durable jobs continue. Image jobs
+                    # and C+ runs quarantine their own failed targets without retrying
+                    # this claim token / package generation.
+                    from studgroup.processing import incident_once
+
+                    await incident_once(
+                        db,
+                        "ai_request_uncertain",
+                        now,
+                        detail=f"kind={self.kind}",
+                    )
+                else:
+                    route.paid_outcome_hold = "ambiguous_paid_attempt"
             if ident is not None:
                 call = await db.get(AnalysisBudgetCall, ident, with_for_update=True)
                 if call is None:
