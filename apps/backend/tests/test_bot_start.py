@@ -454,7 +454,7 @@ def test_shared_group_link_expires_after_three_hours(foreman, monkeypatch):
         invitation = await db.scalar(
             select(GroupInvitation).where(GroupInvitation.token_hash == token_hash(code))
         )
-        remaining = invitation.expires_at - datetime.now(UTC)
+        remaining = domain.utc(invitation.expires_at) - datetime.now(UTC)
         assert timedelta(hours=2, minutes=59) < remaining <= timedelta(hours=3)
         invitation.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         return code
