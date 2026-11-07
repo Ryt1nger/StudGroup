@@ -1318,7 +1318,7 @@ async def typed(db, session, group, user, member, data, text, message, settings)
             db,
             session,
             "На сколько подгрупп делится предмет? От 2 до 6.",
-            {"subject": text},
+            {**data, "subject": text},
             "subgroup_count",
         )
     elif field == "subgroup_count":
