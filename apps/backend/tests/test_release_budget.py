@@ -660,3 +660,44 @@ def test_production_unknown_attempt_is_quarantined_without_freezing_other_work(c
             assert any(call.state == "settled" for call in calls)
 
     asyncio.run(run())
+
+
+def test_orphaned_production_reservation_is_accounted_without_global_pause(client):
+    from studgroup.main import Settings
+
+    ident, _, stamp = setup_budget(client)
+    config = Settings(_env_file=None, ai_production_groups=[str(ident)])
+    clock = [stamp]
+    old = RequestAccounting(
+        client.app.state.engine, config, ident, kind="image",
+        attempt_key="orphaned-photo", clock=lambda: clock[0],
+    )
+
+    async def run():
+        await old._begin(payload(image=True))  # no HTTP result was persisted
+        clock[0] += timedelta(minutes=4)
+        sends = []
+
+        async def pay():
+            sends.append(True)
+            return body(100, 10)
+
+        independent = RequestAccounting(
+            client.app.state.engine, config, ident, kind="cplus",
+            attempt_key="other-homework", clock=lambda: clock[0],
+        )
+        await independent.execute(payload(), pay)
+        assert sends == [True]
+        with pytest.raises(ProviderFailure, match="ambiguous_paid_attempt"):
+            await old.execute(payload(image=True), pay)
+        assert sends == [True]
+        async with AsyncSession(client.app.state.engine) as db:
+            assert (await db.get(GroupAnalysisSettings, ident)).paid_outcome_hold is None
+            calls = (await db.scalars(select(AnalysisBudgetCall))).all()
+            assert len(calls) == 2
+            image_call = next(call for call in calls if call.kind == "image")
+            assert image_call.state == "unknown"
+            assert image_call.reserved_usd == 0
+            assert image_call.charged_usd == request_ceiling(payload(image=True))
+
+    asyncio.run(run())
