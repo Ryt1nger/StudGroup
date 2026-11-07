@@ -306,5 +306,15 @@ def test_ai_pause_alert_explains_actual_reason_without_dumping_internal_fields()
     )
     explanation = incident_text(isolated, sent_at=now)
     assert "один запрос AI требует проверки" in explanation
-    assert "остальные задания продолжат" in explanation
-    assert "Возможное списание учтено" in explanation
+    assert "Остальные задания продолжат" in explanation
+    assert "возможный расход учтён" in explanation
+
+
+def test_uncertain_photo_alert_names_network_failure_instead_of_internal_code():
+    from studgroup.worker import uncertain_explanation
+
+    message = uncertain_explanation("kind=image reason=provider_unreachable")
+    assert "при анализе фотографии" in message
+    assert "не удалось получить подтверждённый ответ" in message
+    assert "не будет автоматически повторён" in message
+    assert "kind=image" not in message
