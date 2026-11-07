@@ -350,7 +350,7 @@ async def notification_menu(db, session, settings, telegram_id):
             "—",
         )
         rows.append([(f"{title}: {selected}", f"notifchoice_{key}")])
-    rows.append([("‹ Главное меню", "home")])
+    rows.append([("‹ Назад", "home")])
     await screen(
         db,
         session,
@@ -471,7 +471,9 @@ async def headman_prompt(db, session, settings, notice=None, groups=()):
         "Добавьте StudGroup в Telegram-чат вашей учебной группы и назначьте бота "
         "администратором. Вы тоже должны быть администратором этого чата. "
         "Бот в группе ничего не пишет.\n\n"
-        "После добавления вернитесь сюда и нажмите «Проверить подключение». "
+        "Как только Telegram подтвердит права бота и ваши права администратора, "
+        "здесь автоматически появится следующий шаг. Если экран не обновился, "
+        "нажмите «Проверить подключение». "
         "Роль старосты выдаётся только после проверки и вашего подтверждения."
     )
     if groups:
@@ -545,7 +547,7 @@ async def academic_code_prompt(db, session, group, *, onboarding=True, notice=No
     rows = []
     if guess:
         rows.append([(f"Подтвердить {guess}"[:60], "academic_code_suggest")])
-    rows.append([("‹ В главное меню", "home")])
+    rows.append([("‹ Назад", "academic_code_back" if onboarding else "home")])
     await screen(
         db,
         session,
@@ -553,6 +555,21 @@ async def academic_code_prompt(db, session, group, *, onboarding=True, notice=No
         rows,
         "academic_code",
         {"group_id": str(group.id), "onboarding": onboarding, "suggested": guess},
+        minutes=CLAIM_HOURS * 60,
+    )
+
+
+async def academic_code_checkpoint(db, session, group):
+    """Previous onboarding checkpoint: the group is claimed but its RANEPA code is pending."""
+    await screen(
+        db,
+        session,
+        f"Группа «{group.name}» подтверждена.\n\n"
+        "Следующий шаг — указать официальный идентификатор РАНХиГС. "
+        "Без него подключение не завершено.",
+        [[("Продолжить: указать ID", "academic_code_continue")]],
+        "academic_code_checkpoint",
+        {"group_id": str(group.id)},
         minutes=CLAIM_HOURS * 60,
     )
 
@@ -589,13 +606,42 @@ async def connected(db, session, settings, group, bot_is_admin=True):
         f"Официальный ID РАНХиГС: {group.academic_group_code}\n"
         "Часовой пояс группы по умолчанию: Москва. Изменить его можно в кабинете.\n\n"
         "Теперь пригласите студентов.",
-        [
-            [("Создать приглашение", "invite")],
-            [("Кабинет старосты", "cabinet")],
-            [app_button(settings)],
-        ],
+        [[("Создать приглашение", "invite")]],
         "connected",
     )
+
+
+async def onboarding_complete(db, session, group):
+    """Final onboarding checkpoint; opening the staff cabinet is an explicit choice."""
+    await screen(
+        db,
+        session,
+        f"Подключение успешно завершено!\n\nГруппа «{group.name}» готова к работе в StudGroup.",
+        [[("Перейти в кабинет старосты", "cabinet")]],
+        "onboarding_complete",
+    )
+
+
+async def finish_onboarding_from_cabinet(db, settings, telegram_id, group):
+    """Switch from subgroup settings to a clean final private start panel."""
+    await switch_panel(db, telegram_id, "st", "start")
+    session = await get_session(db, telegram_id)
+    token = bot_panels.scope.set((telegram_id, "start"))
+    try:
+        await onboarding_complete(db, session, group)
+    finally:
+        bot_panels.scope.reset(token)
+
+
+async def return_to_subgroup_question(db, settings, telegram_id, group):
+    """Previous unfinished setup step, not the cabinet home."""
+    await switch_panel(db, telegram_id, "st", "start")
+    session = await get_session(db, telegram_id)
+    token = bot_panels.scope.set((telegram_id, "start"))
+    try:
+        await subgroup_question(db, session, group)
+    finally:
+        bot_panels.scope.reset(token)
 
 
 async def subgroup_question(db, session, group):
@@ -607,7 +653,7 @@ async def subgroup_question(db, session, group):
         [
             [("Да, настроить", "subgroup_setup_yes")],
             [("Нет, пропустить", "subgroup_setup_no")],
-            [("‹ Назад", "home")],
+            [("‹ Назад", "subgroup_question_back")],
         ],
         "subgroup_question",
     )
@@ -623,7 +669,7 @@ async def invitation_entry(db, session, settings, telegram_id):
     if group.academic_group_code_required and not group.academic_group_code:
         await academic_code_prompt(db, session, group)
         return
-    setup = session.step == "connected" or (
+    setup = session.step in {"connected", "subgroup_question"} or (
         session.step == "invite" and json.loads(session.payload).get("setup", False)
     )
     active = await db.scalar(
@@ -642,7 +688,7 @@ async def invitation_entry(db, session, settings, telegram_id):
     rows = [[("Заменить ссылку (отозвать старую)", "invite_replace")]]
     if setup:
         rows.append([("Далее: подгруппы", "subgroup_setup")])
-    rows.append([("‹ Главное меню", "home")])
+    rows.append([("‹ Назад", "invite_back" if setup else "home")])
     await screen(
         db,
         session,
@@ -685,7 +731,7 @@ async def invite(db, session, settings, telegram_id):
         "Бот проверит участие каждого в Telegram-чате. Создание новой ссылки отзовёт прежнюю.",
         [[("Управление ссылкой", "invite_manage")]]
         + ([[("Далее: подгруппы", "subgroup_setup")]] if setup else [])
-        + [[("‹ Назад", "home")]],
+        + [[("‹ Назад", "invite_back" if setup else "home")]],
         "invite",
         {"setup": setup},
     )
@@ -1068,9 +1114,9 @@ async def handle(db, update, settings, topic=None):
         await screen(
             db,
             session,
-            "Путь старосты · шаг 4 из 6\n\nСигналы первой подгруппы. Можно указать фамилию, номер, аудиторию и любые характерные слова.",
+            "Путь старосты · шаг 4 из 6\n\nУкажите фамилию преподавателя или номер группы первой подгруппы.",
             [
-                [("Иванова, 1 группа, ауд. 305", "demo_h_signal1")],
+                [("Иванова", "demo_h_signal1")],
                 [("‹ К выбору пути", "demo_home")],
             ],
             "demo_headman",
@@ -1079,8 +1125,8 @@ async def handle(db, update, settings, topic=None):
         await screen(
             db,
             session,
-            "Путь старосты · шаг 5 из 6\n\nТеперь сигналы второй подгруппы.",
-            [[("Петров, 2 группа", "demo_h_signal2")], [("‹ К выбору пути", "demo_home")]],
+            "Путь старосты · шаг 5 из 6\n\nУкажите фамилию преподавателя или номер группы второй подгруппы.",
+            [[("2 группа", "demo_h_signal2")], [("‹ К выбору пути", "demo_home")]],
             "demo_headman",
         )
     elif action == "demo_h_signal2":
@@ -1193,6 +1239,20 @@ async def handle(db, update, settings, topic=None):
             await headman_entry(db, session, settings, sender.id)
         else:
             await bot_connect.claim_headman(db, settings, session, group, sender.id)
+    elif action == "academic_code_back" and session.step == "academic_code":
+        found = await current_membership(db, sender.id)
+        group_id = json.loads(session.payload).get("group_id")
+        if found and found[0].role == "headman" and str(found[1].id) == group_id:
+            await academic_code_checkpoint(db, session, found[1])
+        else:
+            await home(db, session, settings, sender.id)
+    elif action == "academic_code_continue" and session.step == "academic_code_checkpoint":
+        found = await current_membership(db, sender.id)
+        group_id = json.loads(session.payload).get("group_id")
+        if found and found[0].role == "headman" and str(found[1].id) == group_id:
+            await academic_code_prompt(db, session, found[1])
+        else:
+            await home(db, session, settings, sender.id)
     elif action == "academic_code_suggest" and session.step == "academic_code":
         found = await current_membership(db, sender.id)
         payload = json.loads(session.payload)
@@ -1273,12 +1333,21 @@ async def handle(db, update, settings, topic=None):
             await subgroup_question(db, session, found[1])
         else:
             await home(db, session, settings, sender.id)
+    elif action == "subgroup_question_back" and session.step == "subgroup_question":
+        await invitation_entry(db, session, settings, sender.id)
+    elif action == "invite_back" and session.step == "invite":
+        found = await current_membership(db, sender.id)
+        if found and found[0].role == "headman":
+            await connected(db, session, settings, found[1])
+        else:
+            await home(db, session, settings, sender.id)
     elif action == "subgroup_setup_no" and session.step == "subgroup_question":
-        session.step = "finished"
-        if not await open_cabinet(db, sender.id):
+        found = await current_membership(db, sender.id)
+        if found and found[0].role == "headman":
+            await onboarding_complete(db, session, found[1])
+        else:
             await home(db, session, settings, sender.id)
     elif action == "subgroup_setup_yes" and session.step == "subgroup_question":
-        session.step = "finished"
         if await open_cabinet(db, sender.id):
             from studgroup import headman_bot
 
@@ -1286,7 +1355,9 @@ async def handle(db, update, settings, topic=None):
             _, _, group = await domain.access(db, sender.id, headman_session.group_id)
             token = bot_panels.scope.set((sender.id, "st"))
             try:
-                await headman_bot.subgroup_settings_screen(db, headman_session, group)
+                await headman_bot.subgroup_settings_screen(
+                    db, headman_session, group, onboarding=True
+                )
             finally:
                 bot_panels.scope.reset(token)
         else:

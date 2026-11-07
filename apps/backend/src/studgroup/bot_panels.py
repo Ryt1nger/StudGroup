@@ -382,9 +382,19 @@ async def dispatch(db, update_value, settings):
             handled = await headman_bot.handle(db, update_value, settings)
             if not handled:
                 handled = await bot_admin.handle(db, update_value, settings)
-        if handled and mode and not callback and not start:
+        if handled and mode and not callback:
             owner = await panel(db, chat, mode)
-            await track(db, owner, message.message_id, "input")
+            if not start:
+                await track(db, owner, message.message_id, "input")
+            # A live panel edits the bot's existing screen; user commands and
+            # typed answers are transient and should disappear after processing.
+            # The durable outbox handles temporary Telegram errors and restarts.
+            job(
+                db,
+                "deleteMessage",
+                {"chat_id": chat, "message_id": message.message_id, "_outgoing": False},
+                owner,
+            )
         return True
     finally:
         scope.reset(token)

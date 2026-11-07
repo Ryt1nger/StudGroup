@@ -1,7 +1,7 @@
 """Group discovery and explicitly confirmed ownership through private Telegram buttons.
 
-Adding the bot discovers a group but never grants the headman role. An administrator must
-choose the discovered group in the private /start flow and confirm the claim.
+Adding the bot can automatically advance a waiting administrator to the private confirmation
+screen; it never grants the headman role before an explicit button confirmation.
 The bot stays silent in source group chats.
 """
 
@@ -156,8 +156,37 @@ async def ensure_group(db, chat_id, title):
 
 
 async def connect(db, settings, chat_id, title, sender_id, *, typed=False):
-    """Record the Telegram chat; assigning its headman requires a private confirmation."""
-    await ensure_group(db, chat_id, title)
+    """Discover the chat and advance a waiting administrator without claiming the role."""
+    group, _created = await ensure_group(db, chat_id, title)
+    if group.status != "active" or await has_headman(db, group.id):
+        return
+
+    # The user must have explicitly started onboarding in the private bot chat.
+    # Never send unsolicited messages to the person who added/promoted the bot.
+    session = await bot_start.get_session(db, sender_id)
+    if (
+        session is None
+        or session.step != "headman"
+        or bot_start.utc(session.expires_at) <= datetime.now(UTC)
+        or await bot_start.current_membership(db, sender_id)
+    ):
+        return
+
+    bot_id = own_bot_id(settings)
+    if (
+        bot_id is None
+        or await chat_status(settings, chat_id, bot_id) != "administrator"
+        or await is_chat_admin(settings, chat_id, sender_id) is not True
+    ):
+        return
+
+    # The group was discovered by a Telegram update, but the next step is still
+    # an explicit confirmation. Group activation and membership happen later.
+    token = bot_panels.scope.set((sender_id, "start"))
+    try:
+        await bot_start.confirm_group_screen(db, session, group)
+    finally:
+        bot_panels.scope.reset(token)
 
 
 async def make_headman(db, settings, group, telegram_id):
