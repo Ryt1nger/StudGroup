@@ -350,7 +350,7 @@ async def notification_menu(db, session, settings, telegram_id):
             "—",
         )
         rows.append([(f"{title}: {selected}", f"notifchoice_{key}")])
-    rows.append([("‹ Назад", "invite_back" if setup else "home")])
+    rows.append([("‹ Назад", "home")])
     await screen(
         db,
         session,
@@ -689,7 +689,7 @@ async def invitation_entry(db, session, settings, telegram_id):
     rows = [[("Заменить ссылку (отозвать старую)", "invite_replace")]]
     if setup:
         rows.append([("Далее: подгруппы", "subgroup_setup")])
-    rows.append([("‹ Главное меню", "home")])
+    rows.append([("‹ Назад", "invite_back" if setup else "home")])
     await screen(
         db,
         session,
