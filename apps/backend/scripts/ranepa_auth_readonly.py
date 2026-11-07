@@ -16,6 +16,7 @@ from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+import httpx
 from playwright.async_api import async_playwright
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -23,6 +24,26 @@ from studgroup.models import Base, Group, Membership, User
 from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
 from studgroup.ranepa_personal import personal_period, remember_personal
 from studgroup.ranepa_schedule import group_code
+
+
+async def direct_http_check(context):
+    """GET the same LK page with in-memory session cookies and no browser renderer."""
+    jar = httpx.Cookies()
+    for cookie in await context.cookies("https://my.ranepa.ru/"):
+        domain = cookie["domain"].lstrip(".")
+        if domain in {"ranepa.ru", "my.ranepa.ru"}:
+            jar.set(cookie["name"], cookie["value"], domain=domain, path=cookie["path"])
+    try:
+        async with httpx.AsyncClient(cookies=jar, timeout=20, follow_redirects=False) as client:
+            response = await client.get("https://my.ranepa.ru/lk/student/schedule")
+        html = response.text if len(response.content) <= 12_000_000 else ""
+        return {
+            "http_status": response.status_code,
+            "rendered_week_grid": "schedule-week__row" in html,
+            "rendered_month_grid": "schedule-month__cell--item" in html,
+        }
+    except httpx.HTTPError:
+        return {"http_status": None, "rendered_week_grid": False, "rendered_month_grid": False}
 
 
 async def local_db_check(snapshot):
@@ -67,6 +88,7 @@ async def inspect(
     month: bool,
     sdo: bool,
     local_db: bool,
+    http_check: bool = False,
 ) -> dict:
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=not headed)
@@ -109,6 +131,7 @@ async def inspect(
                     "month_week_match": from_month == from_weeks,
                     "group_identity_verified": True,
                     "complete": False,
+                    **({"direct_http": await direct_http_check(context)} if http_check else {}),
                 }
             result = await read_week(page, login, password, code, monday)
             if result.snapshot is None:
@@ -128,6 +151,7 @@ async def inspect(
                 "isolated_db_round_trip": local_ok,
                 "group_identity_verified": True,
                 "complete": False,
+                **({"direct_http": await direct_http_check(context)} if http_check else {}),
             }
         finally:
             await browser.close()
@@ -147,6 +171,9 @@ def main():
     parser.add_argument(
         "--local-db-check", action="store_true", help="test real rows in a disposable local DB"
     )
+    parser.add_argument(
+        "--http-check", action="store_true", help="try authenticated direct HTTP without a renderer"
+    )
     args = parser.parse_args()
     today = datetime.now(ZoneInfo("Europe/Moscow")).date()
     monday = args.week_start or today - timedelta(days=today.weekday())
@@ -162,6 +189,7 @@ def main():
             args.month,
             args.sdo,
             args.local_db_check,
+            args.http_check,
         )
     )
     print(json.dumps(result, ensure_ascii=False))
