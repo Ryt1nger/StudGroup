@@ -582,7 +582,7 @@ def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeyp
     assert labels(foreman) == ["Добавить ещё", "К предметам", "Далее"]
 
     tap(foreman, "К предметам", uid=ADDER)
-    assert "Английский" in last(foreman)["text"]
+    assert any("Английский" in label for label in labels(foreman))
     assert "Далее" in labels(foreman)
     tap(foreman, "Далее", uid=ADDER)
     assert "Подключение успешно завершено!" in last(foreman)["text"]
