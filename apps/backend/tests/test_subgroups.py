@@ -314,7 +314,7 @@ def test_owner_can_preview_headman_path_without_writing_data(foreman_fixture):  
         "Английский язык",
         "2 подгруппы",
         "Иванова",
-        "Петров",
+        "2 группа",
         "Сохранить демо-настройку",
     ]:
         tap(foreman_fixture, label, uid=1)
