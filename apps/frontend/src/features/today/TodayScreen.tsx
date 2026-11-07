@@ -74,7 +74,10 @@ export function TodayScreen() {
   const query = useTodayQuery('today');
   // The initial feed is the critical path. Delay secondary/long-running reads
   // until it is ready so they cannot exhaust the small Supabase connection pool.
-  const feedReady = query.isSuccess && query.isFetchedAfterMount;
+  // A recently verified in-memory response remains usable across normal
+  // navigation; only an old/invalidated restored snapshot must wait for
+  // this mount's refresh before secondary requests can run.
+  const feedReady = query.data !== undefined && (!query.isStale || query.isFetchedAfterMount);
   const deadlines = useAcademicDeadlinesQuery(false, false, feedReady);
   const all = useAllHomework(feedReady);
   const allItems = all.data ?? [];
