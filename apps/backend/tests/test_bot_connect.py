@@ -550,6 +550,9 @@ def test_headman_can_skip_subgroups_after_issuing_an_invite(foreman, monkeypatch
     tap(foreman, "Далее: подгруппы", uid=ADDER)
     assert "Да, настроить" in labels(foreman)
     tap(foreman, "Нет, пропустить", uid=ADDER)
+    assert "Подключение успешно завершено!" in last(foreman)["text"]
+    assert labels(foreman) == ["Перейти в кабинет старосты"]
+    tap(foreman, "Перейти в кабинет старосты", uid=ADDER)
     assert "Староста · ИВТ-21" in last(foreman)["text"]
 
 
