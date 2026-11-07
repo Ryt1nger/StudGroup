@@ -336,6 +336,21 @@ async def context_snapshot(db, raw):
     return context
 
 
+def pass_b_available_at(context, now):
+    """Debounce fresh chat context without delaying historic backfill."""
+    timestamps = [
+        utc(datetime.fromisoformat(message["sent_at"]))
+        for message in context.get("messages", [])
+        if message.get("sent_at")
+    ]
+    if not timestamps:
+        return now
+    # A discussion often continues immediately after the picture. Waiting one
+    # short quiet window prevents paying for results that become stale mid-call.
+    # Cap clock skew so a malformed future Telegram time cannot strand the job.
+    return min(max(now, max(timestamps) + timedelta(seconds=60)), now + timedelta(seconds=60))
+
+
 async def schedule_group(db, group, now, since, model_key="", provider_identity=None):
     """Caller holds group settings lock. Enumerate every retained image, not just six."""
     attachments = (
@@ -430,7 +445,7 @@ async def schedule_group(db, group, now, since, model_key="", provider_identity=
                         pass_number=2,
                         state="pending",
                         attempts=0,
-                        available_at=now,
+                        available_at=pass_b_available_at(context, now),
                         created_at=now,
                         delete_at=min(raw.delete_at, attachment.delete_at),
                     )
