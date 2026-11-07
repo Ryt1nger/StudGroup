@@ -556,6 +556,41 @@ def test_headman_can_skip_subgroups_after_issuing_an_invite(foreman, monkeypatch
     assert "Староста · ИВТ-21" in last(foreman)["text"]
 
 
+def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeypatch):
+    setup_bot(
+        foreman, monkeypatch, {(NEW_CHAT, BOT): "administrator", (NEW_CHAT, ADDER): "creator"}
+    )
+    deliver(foreman, "/start", uid=ADDER)
+    tap(foreman, "Подключить группу", uid=ADDER)
+    tap(foreman, "Я староста", uid=ADDER)
+    tap(foreman, "Нет промокода", uid=ADDER)
+    added_to_chat(foreman)
+    tap(foreman, "Да, подключить", uid=ADDER)
+    finish_group_identifier(foreman)
+    tap(foreman, "Создать приглашение", uid=ADDER)
+    tap(foreman, "Далее: подгруппы", uid=ADDER)
+    tap(foreman, "Да, настроить", uid=ADDER)
+    assert "Добавить предмет" in labels(foreman)
+    assert "Далее" in labels(foreman)
+
+    tap(foreman, "Добавить предмет", uid=ADDER)
+    deliver(foreman, "Английский", uid=ADDER)
+    deliver(foreman, "2", uid=ADDER)
+    deliver(foreman, "Иванова", uid=ADDER)
+    deliver(foreman, "2 группа", uid=ADDER)
+    tap(foreman, "Сохранить", uid=ADDER)
+    assert labels(foreman) == ["Добавить ещё", "К предметам", "Далее"]
+
+    tap(foreman, "К предметам", uid=ADDER)
+    assert "Английский" in last(foreman)["text"]
+    assert "Далее" in labels(foreman)
+    tap(foreman, "Далее", uid=ADDER)
+    assert "Подключение успешно завершено!" in last(foreman)["text"]
+    assert labels(foreman) == ["Перейти в кабинет старосты"]
+    tap(foreman, "Перейти в кабинет старосты", uid=ADDER)
+    assert "Староста · ИВТ-21" in last(foreman)["text"]
+
+
 def test_a_deputy_gets_no_invite_button(foreman):
     async def make_deputy(db):
         (await db.scalar(select(Membership))).role = "deputy"
