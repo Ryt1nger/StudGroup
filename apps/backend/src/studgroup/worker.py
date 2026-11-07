@@ -161,9 +161,14 @@ def incident_text(row, event="opened", sent_at=None):
     if row.code == "ai_request_uncertain" and event != "recovered":
         title = "один запрос AI требует проверки"
     opened_label = "Время старой записи" if row.legacy else "Возникла"
-    header = (
-        f"StudGroup: {title} №{row.id:06d}\nКод: {row.code}\n{opened_label}: {stamp(row.opened_at)}"
-    )
+    if row.code in {"ai_processing_paused", "ai_request_uncertain"}:
+        header = f"StudGroup: {title} №{row.id:06d}\n{opened_label}: {stamp(row.opened_at)}"
+    else:
+        header = (
+            f"StudGroup: {title} №{row.id:06d}\nКод: {row.code}\n{opened_label}: {stamp(row.opened_at)}"
+        )
+    if row.code in {"ai_processing_paused", "ai_request_uncertain"}:
+        header += f"\nКод для диагностики: {row.code}"
     if event == "recovered":
         header += f"\nВосстановление: {stamp(row.recovered_at)}"
     else:
