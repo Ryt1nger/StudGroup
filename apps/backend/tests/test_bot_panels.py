@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -203,3 +203,61 @@ def test_old_undeletable_panel_has_its_inline_buttons_disabled(transport, monkey
         and data["reply_markup"] == {"inline_keyboard": []}
         for method, data in calls
     )
+
+
+def test_callback_ack_is_delivered_before_older_background_message(transport):
+    client, calls = transport
+
+    async def seed(db):
+        now = datetime.now(UTC)
+        db.add_all(
+            [
+                BotOutbox(
+                    method="sendMessage",
+                    payload=json.dumps({"chat_id": 1, "text": "Фоновое уведомление"}),
+                    available_at=now - timedelta(minutes=1),
+                ),
+                BotOutbox(
+                    method="answerCallbackQuery",
+                    payload=json.dumps({"callback_query_id": "pressed-button"}),
+                    available_at=now,
+                ),
+            ]
+        )
+
+    run(client, seed)
+    asyncio.run(bot_admin.deliver(client.app.state.engine, client.app.state.settings))
+    assert calls[0][0] == "answerCallbackQuery"
+    drain(client)
+    assert calls[1][0] == "sendMessage"
+
+
+def test_telegram_request_reuses_supplied_connection():
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"ok": True}
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        async def post(self, url, json):
+            self.calls.append((url, json))
+            return FakeResponse()
+
+    async def check():
+        client = FakeClient()
+        settings = type("Settings", (), {"telegram_bot_token": "fake-no-network"})()
+        await bot_admin.telegram_request(
+            settings, "answerCallbackQuery", {"callback_query_id": "one"}, client=client
+        )
+        await bot_admin.telegram_request(
+            settings, "answerCallbackQuery", {"callback_query_id": "two"}, client=client
+        )
+        return client.calls
+
+    calls = asyncio.run(check())
+    assert len(calls) == 2
+    assert all(url.endswith("/answerCallbackQuery") for url, _ in calls)
