@@ -494,7 +494,7 @@ async def members_screen(db, session, group, member, page=0):
     )
 
 
-async def subgroup_settings_screen(db, session, group):
+async def subgroup_settings_screen(db, session, group, *, onboarding=False):
     configured = await subgroups.splits(db, group.id)
     lines = ["Подгруппы по предметам"]
     if configured:
@@ -509,9 +509,11 @@ async def subgroup_settings_screen(db, session, group):
             [(f"{split.subject_name} · {len(rows)}"[:55], f"subgroup_open_{n}")]
             for n, (split, rows) in enumerate(configured)
         ]
-        + [[("Добавить предмет", "subgroup_add")], back()],
+        + [[("Добавить предмет", "subgroup_add")]]
+        + ([[("Далее", "subgroup_finish")], [("‹ Назад", "subgroup_onboarding_back")]]
+           if onboarding else [back()]),
         "subgroup_list",
-        {"splits": [str(split.id) for split, _ in configured]},
+        {"splits": [str(split.id) for split, _ in configured], "onboarding": onboarding},
     )
 
 
@@ -666,6 +668,7 @@ async def handle(db, update, settings):
             return True
         if action == "subgroup_settings" or session.step in {
             "subgroup_list",
+            "subgroup_saved",
             "subgroup_detail",
             "subgroup_delete",
             "subgroup_draft",
@@ -673,17 +676,33 @@ async def handle(db, update, settings):
             user, member, group = await domain.access(db, sender.id, session.group_id)
         if action == "subgroup_settings":
             domain.headman_only(member)
-            await subgroup_settings_screen(db, session, group)
+            await subgroup_settings_screen(
+                db, session, group, onboarding=data.get("onboarding", False)
+            )
             return True
-        if session.step == "subgroup_list" and action == "subgroup_add":
+        if session.step in {"subgroup_list", "subgroup_saved"} and action == "subgroup_add":
             domain.headman_only(member)
             await ask(
                 db,
                 session,
                 "Как называется предмет с разделением на подгруппы?",
-                {},
+                {"onboarding": data.get("onboarding", False)},
                 "subgroup_subject",
             )
+            return True
+        if session.step in {"subgroup_list", "subgroup_saved"} and action == "subgroup_finish":
+            domain.headman_only(member)
+            if data.get("onboarding"):
+                await bot_start.finish_onboarding_from_cabinet(db, settings, sender.id, group)
+            else:
+                await menu(db, session, group)
+            return True
+        if session.step == "subgroup_list" and action == "subgroup_onboarding_back":
+            domain.headman_only(member)
+            if data.get("onboarding"):
+                await bot_start.return_to_subgroup_question(db, settings, sender.id, group)
+            else:
+                await menu(db, session, group)
             return True
         if session.step == "subgroup_list" and action.startswith("subgroup_open_"):
             domain.headman_only(member)
@@ -735,8 +754,14 @@ async def handle(db, update, settings):
             await screen(
                 db,
                 session,
-                "Подгруппы сохранены. Студенты получили просьбу выбрать свою.",
-                [[("К предметам", "subgroup_settings")], back()],
+                "Предмет сохранён. Можно добавить ещё один или завершить настройку.",
+                [[("Добавить ещё", "subgroup_add")],
+                 [("К предметам", "subgroup_settings")],
+                 [("Далее", "subgroup_finish")]]
+                if data.get("onboarding") else
+                [[("Добавить ещё", "subgroup_add")], [("К предметам", "subgroup_settings")]],
+                "subgroup_saved",
+                {"onboarding": data.get("onboarding", False)},
             )
             return True
         if session.step == "groups" and action.startswith("group"):
