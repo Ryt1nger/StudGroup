@@ -453,3 +453,18 @@ def test_production_expired_vision_lease_isolated_while_next_photo_advances(clie
             return (await db.get(GroupAnalysisSettings, group.id)).paid_outcome_hold
 
     assert asyncio.run(no_hold()) is None
+
+
+def test_pass_b_debounces_fresh_reply_context_without_delaying_old_images():
+    now = datetime(2026, 11, 7, 7, 22, tzinfo=UTC)
+    recent = {
+        "messages": [
+            {"sent_at": (now - timedelta(seconds=10)).isoformat()},
+            {"sent_at": (now - timedelta(minutes=3)).isoformat()},
+        ]
+    }
+    assert image_jobs.pass_b_available_at(recent, now) == now + timedelta(seconds=50)
+    old = {"messages": [{"sent_at": (now - timedelta(hours=2)).isoformat()}]}
+    assert image_jobs.pass_b_available_at(old, now) == now
+    future = {"messages": [{"sent_at": (now + timedelta(days=1)).isoformat()}]}
+    assert image_jobs.pass_b_available_at(future, now) == now + timedelta(seconds=60)
