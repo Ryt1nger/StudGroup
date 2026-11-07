@@ -447,9 +447,7 @@ async def _claim(
             .with_for_update()
         )
         if row.state == "running":
-            from studgroup.analysis.release_budget import hold_lost_attempt
-
-            from studgroup.analysis.release_budget import production_enabled
+            from studgroup.analysis.release_budget import hold_lost_attempt, production_enabled
 
             await hold_lost_attempt(
                 db,
