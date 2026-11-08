@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const fmt=n=>n==null?'Не измеряется':new Intl.NumberFormat('ru-RU').format(n);
 const usd=n=>n==null?'Нет данных':'$'+Number(n).toFixed(4);
 const date=s=>s?new Date(s).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'Нет даты';
-const names={members:'Участники',messages:'Сообщения в чатах',text:'Анализ текста',images:'Анализ фото',legacy:'Старый AI',errors:'Ошибки',incidents:'Инциденты',expenses:'Расходы на AI',homework:'Домашние задания',events:'События',telegram:'Исходящие Telegram'};
+const names={groups:'Подключённые группы',month_expenses:'Расходы за текущий месяц',reserves:'Незакрытые резервы AI',members:'Участники',messages:'Сообщения в чатах',text:'Анализ текста',images:'Анализ фото',legacy:'Старый AI',errors:'Ошибки',incidents:'Инциденты',expenses:'Расходы на AI',homework:'Домашние задания',events:'События',telegram:'Исходящие Telegram'};
 const states={completed:'Готово',ready:'Готово',sent:'Отправлено',failed:'Ошибка',error:'Ошибка',queued:'В очереди',pending:'Ожидает',stale:'Устарело',superseded:'Заменено'};
 let session=null,groupsReady=false,modalKind=null,offset=0,seq=0,modalSeq=0,previousFocus=null;
 function node(tag,cls,value){const n=document.createElement(tag);if(cls)n.className=cls;if(value!==undefined)n.textContent=String(value);return n;}
@@ -44,7 +44,7 @@ function render(data,roundTrip){
  graph('chart-messages',[data.series.messages],['#4da8ff'],'messages');
  clear('audience-metrics');
  small($('audience-metrics'),'Авторов сообщений',fmt(s.chat_authors),'Уникальные отправители в чатах','messages');
- small($('audience-metrics'),'Подключённые группы',fmt(s.groups),'Активные пилотные группы','members');
+ small($('audience-metrics'),'Подключённые группы',fmt(s.groups),'Активные пилотные группы','groups');
  small($('audience-metrics'),'Заходы в приложение','Нет учёта','История открытий WebApp раньше не собиралась',null);
  small($('audience-metrics'),'События',fmt(s.events),'Созданные события за период','events');
  graph('chart-ai',[data.series.text,data.series.images],['#a47aff','#39d9bc'],'text');
@@ -52,8 +52,8 @@ function render(data,roundTrip){
  graph('chart-spend',[data.series.spend],['#5caaff'],'expenses',true);
  clear('finance-breakdown');for(const kind of f.ledger_by_kind)row($('finance-breakdown'),'AI · '+kind.kind,usd(kind.usd),'expenses');
  clear('finance-status');const fs=$('finance-status');const mini=node('div','mini-grid');fs.append(mini);
- small(mini,'AI за текущий месяц',usd(f.month_charged_usd),'Списано в календарном месяце','expenses');
- small(mini,'Резервы AI',usd(f.unsettled_reserved_usd),'Незакрытые суммы','expenses');
+ small(mini,'AI за текущий месяц',usd(f.month_charged_usd),'Списано в календарном месяце','month_expenses');
+ small(mini,'Резервы AI',usd(f.unsettled_reserved_usd),'Незакрытые суммы','reserves');
  small(mini,'Деньги компании','Нет подключения','Бухгалтерия и банки пока не подключены',null);
  small(mini,'Балансы провайдеров','Нет подключения','Провайдеры не передают балансы в эту админку',null);
  notice(fs,f.coverage);add(fs,'div','footnote',f.accounting_note);
@@ -75,7 +75,7 @@ async function load(){
  try{const start=performance.now();const d=await get('/v1/admin/analytics?'+filter());if(id!==seq)return;render(d,Math.round(performance.now()-start));$('status').textContent='Обновлено: '+date(d.as_of)+' МСК';showRecent();}catch(e){if(id!==seq)return;$('status').classList.add('error');$('status').textContent='Ошибка обновления: '+e.message;}
 }
 function explain(message){previousFocus=document.activeElement;modalKind=null;modalSeq++;$('modal-title').textContent='Показатель пока недоступен';$('modal-subtitle').textContent='Причина отсутствия данных';$('modal-items').replaceChildren();notice($('modal-items'),message+'. Вместо вымышленных цифр показываем отсутствие измерений.');$('modal-status').textContent='';$('modal-more').hidden=true;$('modal').hidden=false;$('modal-close').focus();}
-async function openDetail(kind){if(!names[kind])return;previousFocus=document.activeElement;modalKind=kind;offset=0;modalSeq++;$('modal-title').textContent=names[kind];$('modal-subtitle').textContent=$('days').selectedOptions[0].textContent+' · '+$('group').selectedOptions[0].textContent;$('modal-items').replaceChildren();$('modal').hidden=false;$('modal-close').focus();await more(false);}
+async function openDetail(kind){if(!names[kind])return;previousFocus=document.activeElement;modalKind=kind;offset=0;modalSeq++;$('modal-title').textContent=names[kind];$('modal-subtitle').textContent=(kind==='month_expenses'?'Текущий календарный месяц':kind==='reserves'?'За всё время':$('days').selectedOptions[0].textContent)+' · '+$('group').selectedOptions[0].textContent;$('modal-items').replaceChildren();$('modal').hidden=false;$('modal-close').focus();await more(false);}
 async function more(append){
  if(!modalKind)return;const id=++modalSeq,kind=modalKind;const p=filter();p.set('offset',offset);p.set('limit',40);$('modal-more').hidden=true;$('modal-status').textContent='Загрузка записей…';
  try{const d=await get('/v1/admin/details/'+kind+'?'+p);if(id!==modalSeq)return;if(!append)$('modal-items').replaceChildren();
