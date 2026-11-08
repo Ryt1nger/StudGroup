@@ -94,7 +94,7 @@ async def daily(db, model, date_column, criteria, days, value=None):
             "date": (today - timedelta(days=i)).isoformat(),
             "value": values.get((today - timedelta(days=i)).isoformat(), 0),
         }
-        for i in range(days, -1, -1)
+        for i in range(days - 1, -1, -1)
     ]
 
 
@@ -108,7 +108,8 @@ async def analytics(
     await ensure_group(db, group_id)
     start = perf_counter()
     now = datetime.now(UTC)
-    since = now - timedelta(days=days)
+    first_day = now.date() - timedelta(days=days - 1)
+    since = datetime(first_day.year, first_day.month, first_day.day, tzinfo=UTC)
     month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
     source = (*scope(RawMessage, group_id), RawMessage.message_date >= since)
     text = (*scope(ShadowEvaluationRun, group_id), ShadowEvaluationRun.created_at >= since)
@@ -279,7 +280,8 @@ async def details(
     limit: int = Query(40, ge=1, le=100),
 ):
     await ensure_group(db, group_id)
-    since = datetime.now(UTC) - timedelta(days=days)
+    first_day = datetime.now(UTC).date() - timedelta(days=days - 1)
+    since = datetime(first_day.year, first_day.month, first_day.day, tzinfo=UTC)
     # Each detail row is selected from the same live source as its summary.
     # Never return raw Telegram text, model outputs, payloads or credentials.
     rows = []
