@@ -20,6 +20,7 @@ from studgroup.models import (
     AIJob,
     AnalysisBudgetCall,
     BotOutbox,
+    BotPanel,
     Group,
     GroupEvent,
     Homework,
@@ -29,8 +30,10 @@ from studgroup.models import (
     Notification,
     OwnerIncidentEpisode,
     RawMessage,
+    ReceivedUpdate,
     ShadowEvaluationRun,
     User,
+    WebSession,
 )
 
 router = APIRouter()
@@ -505,6 +508,38 @@ async def details(
             )
             for x in found
         ]
+    elif kind == "bot_updates":
+        query = (
+            select(ReceivedUpdate)
+            .where(ReceivedUpdate.received_at >= since)
+            .order_by(ReceivedUpdate.received_at.desc(), ReceivedUpdate.update_id.desc())
+        )
+        found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
+        rows = [
+            item(x.update_id, "Обновление от Telegram", "получено", x.received_at)
+            for x in found
+        ]
+    elif kind == "bot_panels":
+        query = select(BotPanel).order_by(BotPanel.mode, BotPanel.id)
+        found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
+        rows = [
+            item(x.id, "Панель бота", x.mode, None,
+                 mode=x.mode, generation=x.generation, revision=x.revision)
+            for x in found
+        ]
+    elif kind == "bot_sessions":
+        now = datetime.now(UTC)
+        query = (
+            select(WebSession)
+            .where(WebSession.expires_at > now)
+            .order_by(WebSession.expires_at.desc(), WebSession.token_hash)
+        )
+        found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
+        rows = [
+            item(i + offset + 1, "Действующая сессия WebApp", "активна", None,
+                 expires_at=x.expires_at)
+            for i, x in enumerate(found)
+        ]
     elif kind == "telegram":
         query = select(BotOutbox).order_by(BotOutbox.available_at.desc(), BotOutbox.id.desc())
         found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
@@ -564,6 +599,6 @@ async def details(
         "has_more": has_more,
         "period_days": days,
         "note": "Инциденты и исходящий Telegram не ограничены выбранной группой."
-        if kind in ("incidents", "telegram")
+        if kind in ("incidents", "telegram", "bot_updates", "bot_panels", "bot_sessions")
         else None,
     }
