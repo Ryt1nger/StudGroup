@@ -30,20 +30,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: uv sync --dev --frozen
-      - name: Format new dashboard sources (temporary validation)
-        run: |
-          uv run ruff format src/studgroup/admin_visuals.py src/studgroup/admin_telemetry.py tests/test_admin_visuals.py
-          python - <<'PY'
-          import base64
-          from pathlib import Path
-          for file in ("src/studgroup/admin_visuals.py", "src/studgroup/admin_telemetry.py", "tests/test_admin_visuals.py"):
-              encoded = base64.b64encode(Path(file).read_bytes()).decode("ascii")
-              print(f"FORMAT_BEGIN {file}")
-              for i in range(0,len(encoded),384):
-                  print("FORMAT_PART " + encoded[i:i+384])
-              print(f"FORMAT_END {file}")
-          PY
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run alembic upgrade head
-      - run: uv run pytest tests/test_admin_visuals.py tests/test_admin_insights.py
+      - run: uv run pytest
