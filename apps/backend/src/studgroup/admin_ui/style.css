@@ -23,3 +23,9 @@
 .kpi-change.negative{color:#b95f5f}
 .kpi-change:not(.negative){color:#387c72}
 @media(max-width:720px){.snapshot-summary{gap:6px}.snapshot-pill{font-size:10px;padding:5px 8px}.tech-fields{grid-template-columns:1fr}}
+
+.chart-host[data-visual]{cursor:pointer}
+.chart-host[data-visual]:focus-visible{outline:3px solid #78c0bf;outline-offset:2px;border-radius:5px}
+.kpi-card .kpi-footer{min-width:0}
+.kpi-card .kpi-change{white-space:normal;text-align:right;max-width:110px}
+@media(max-width:460px){.kpi-card .kpi-change{font-size:10px;max-width:86px}}
