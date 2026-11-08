@@ -208,7 +208,14 @@ async def accept(
             raise ApiError("terms_required", "Подтвердите условия использования", 403)
         if not await has_consent(db, user.id, "service", settings):
             raise ApiError("consent_required", "Отдельно подтвердите обработку данных", 403)
-    receipt(db, user.id, body.purpose, "accept" if body.purpose == "terms" else "grant", "webapp", settings)
+    receipt(
+        db,
+        user.id,
+        body.purpose,
+        "accept" if body.purpose == "terms" else "grant",
+        "webapp",
+        settings,
+    )
     await db.commit()
     return {"purpose": body.purpose, "granted": True, "version": VERSION}
 
