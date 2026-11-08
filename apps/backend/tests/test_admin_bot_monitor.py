@@ -56,8 +56,11 @@ def test_bot_monitor_splits_global_and_group_counts(client):
             )
             db.add(
                 BotPanel(
-                    id=uuid4(), chat_id=99784444, mode="student",
-                    generation=1, revision=0,
+                    id=uuid4(),
+                    chat_id=99784444,
+                    mode="student",
+                    generation=1,
+                    revision=0,
                 )
             )
             gid = selected.id
