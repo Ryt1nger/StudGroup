@@ -63,6 +63,23 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
                 await remember_personal(db, own.id, member.user_id, week("Новая история"))
                 == "changed"
             )
+            key = ("2026-11-02", "09:00:00", "10:20:00", "Новая история", "Иванов", "СДО")
+            with pytest.raises(ValueError, match="unsafe_lms_link"):
+                await remember_personal(
+                    db,
+                    own.id,
+                    member.user_id,
+                    week("Новая история"),
+                    links={key: "https://lms.ranepa.ru/mod/url/view.php?id=1&sesskey=private"},
+                )
+            with pytest.raises(ValueError, match="contradictory_lms_state"):
+                await remember_personal(
+                    db,
+                    own.id,
+                    member.user_id,
+                    week("Новая история"),
+                    link_states={key: "matched"},
+                )
             outsider = User(id=uuid4(), telegram_user_id=9991, display_name="Other")
             db.add(outsider)
             await db.flush()
@@ -79,6 +96,7 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
     assert len(body["lessons"]) == 1
     assert body["lessons"][0]["subject"] == "Новая история"
     assert body["lessons"][0]["stream_label"] == "Э-ОБ26-СГЯ-лек(43,44,45)"
+    assert body["lessons"][0]["link_state"] == "not_checked"
     projected = schedule_projection(
         {
             "start": date(2026, 11, 2),
@@ -121,6 +139,19 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
 
     rows = asyncio.run(stored())
     assert len(rows) == 1 and rows[0].group_id == group_id and rows[0].user_id == user_id
+
+    async def clear_verified_week():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            empty = WeekSnapshot(CODE, date(2026, 11, 2), date(2026, 11, 8), ())
+            assert (
+                await remember_personal(db, group_id, user_id, empty, group_identity_verified=True)
+                == "changed"
+            )
+            await db.commit()
+
+    asyncio.run(clear_verified_week())
+    cleared = client.get("/v1/ranepa-schedule?start=2026-11-02&end=2026-11-08", headers=AUTH)
+    assert cleared.json()["complete"] is True and cleared.json()["lessons"] == []
 
 
 def test_group_fallback_never_gives_another_subgroups_lesson(tmp_path):

@@ -65,6 +65,10 @@ export type RanepaPersonalSchedule = {
         lesson_type?: string | null;
         stream_label?: string | null;
         online_url?: string | null;
+        /**
+         * SDO link decision from the last successful scan; null for non-SDO or guarded peer fallback.
+         */
+        link_state?: string | null;
     }>;
 };
 

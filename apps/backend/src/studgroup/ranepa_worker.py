@@ -123,7 +123,7 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
                         (r.day, r.starts, r.subject) for r in expected
                     ):
                         return "parse_failed"
-                    links, _ = await resolve_sdo_exits(context, result)
+                    links, link_states = await resolve_sdo_exits(context, result, login, password)
                     async with AsyncSession(engine) as db:
                         await remember_personal(
                             db,
@@ -131,6 +131,7 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
                             user_id,
                             result.snapshot,
                             links=links,
+                            link_states=link_states,
                             group_identity_verified=True,
                         )
                         await db.commit()  # Each validated week is visible immediately.

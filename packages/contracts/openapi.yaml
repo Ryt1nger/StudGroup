@@ -1826,6 +1826,9 @@ components:
               lesson_type: { type: [string, "null"] }
               stream_label: { type: [string, "null"] }
               online_url: { type: [string, "null"], format: uri }
+              link_state:
+                type: [string, "null"]
+                description: SDO link decision from the last successful scan; null for non-SDO or guarded peer fallback.
     UpdateProfileRequest:
       type: object
       additionalProperties: false

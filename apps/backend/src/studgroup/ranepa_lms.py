@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, time
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 from studgroup.ranepa_cabinet import Document
@@ -10,7 +10,8 @@ from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import normalized
 
 URL_BASE = "https://lms.ranepa.ru"
-DATE = re.compile(r"(?<!\d)(\d{1,2})\.(\d{1,2})\.(20\d{2})(?!\d)")
+DATE = re.compile(r"(?<!\d)(\d{1,2})\.(\d{1,2})\.(20\d{2}|\d{2})(?!\d)")
+TIME_RANGE = re.compile(r"(?<!\d)(\d{1,2})[.:](\d{2})\s*[-–]\s*\d{1,2}[.:]\d{2}(?!\d)")
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ def course_links(html: str) -> tuple[LinkCandidate, ...]:
         ids = parse_qs(parsed.query).get("id", [])
         if len(ids) != 1 or not ids[0].isdigit():
             continue
+        url = f"{URL_BASE}/mod/url/view.php?id={ids[0]}"
         label = anchor.text()
         if label:
             result[url] = LinkCandidate(url, label)
@@ -66,7 +68,12 @@ def _group_token(label: str) -> str:
 
 
 def select_lesson_link(
-    links: tuple[LinkCandidate, ...], *, teacher: str, group_label: str, day: date
+    links: tuple[LinkCandidate, ...],
+    *,
+    teacher: str,
+    group_label: str,
+    day: date,
+    starts: time | None = None,
 ) -> LinkChoice:
     """Accept one exact group and teacher link, dated for the lesson or permanent."""
     if not teacher.strip() or not group_label.strip():
@@ -80,12 +87,22 @@ def select_lesson_link(
     for link in links:
         label = normalized(link.label)
         compact = label.replace(" ", "").replace("_", "")
-        if surname not in label or token not in compact:
+        if not re.search(rf"(?<!\w){re.escape(surname)}(?!\w)", label) or token not in compact:
+            continue
+        times = {
+            time(int(match[1]), int(match[2]))
+            for match in TIME_RANGE.finditer(link.label)
+            if int(match[1]) < 24 and int(match[2]) < 60
+        }
+        if starts is not None and times and starts not in times:
             continue
         found_dates = set()
         for match in DATE.finditer(link.label):
             try:
-                found_dates.add(date(int(match[3]), int(match[2]), int(match[1])))
+                year = int(match[3])
+                found_dates.add(
+                    date(2000 + year if year < 100 else year, int(match[2]), int(match[1]))
+                )
             except ValueError:
                 continue
         if found_dates and day in found_dates:

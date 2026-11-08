@@ -3,7 +3,7 @@
 import json
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qsl, urlsplit
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -23,17 +23,32 @@ from studgroup.subject_identity import subject_uuid
 
 def _safe_link(url: str) -> bool:
     parsed = urlsplit(url)
-    ids = parse_qs(parsed.query).get("id", [])
+    parameters = parse_qsl(parsed.query, keep_blank_values=True)
     return (
         parsed.scheme == "https"
         and parsed.hostname == "lms.ranepa.ru"
         and parsed.path == "/mod/url/view.php"
-        and len(ids) == 1
-        and ids[0].isdigit()
+        and len(parameters) == 1
+        and parameters[0][0] == "id"
+        and parameters[0][1].isdigit()
         and not parsed.username
         and not parsed.password
         and not parsed.fragment
     )
+
+
+LINK_STATES = {
+    "matched",
+    "not_found",
+    "no_course_links",
+    "missing_course_transition",
+    "lms_login_required",
+    "course_content_unavailable",
+    "lms_other_page",
+    "cabinet_transition_unavailable",
+    "unexpected_redirect",
+    "navigation_error",
+}
 
 
 async def remember_personal(
@@ -43,6 +58,7 @@ async def remember_personal(
     snapshot: WeekSnapshot,
     *,
     links=None,
+    link_states=None,
     group_identity_verified=False,
     checked_at=None,
 ):
@@ -66,12 +82,23 @@ async def remember_personal(
         raise ValueError("empty_source_requires_review")
     rows = json.loads(encode_rows(snapshot))
     links = links or {}
+    link_states = link_states or {}
     for row in rows:
         key = (row["day"], row["starts"], row["ends"], row["subject"], row["teacher"], row["room"])
         url = links.get(key)
         if url is not None and not _safe_link(url):
             raise ValueError("unsafe_lms_link")
+        state = link_states.get(key)
+        if state is not None and state not in LINK_STATES:
+            raise ValueError("unsafe_lms_state")
+        if url is not None and state not in {None, "matched"}:
+            raise ValueError("contradictory_lms_state")
+        if state == "matched" and url is None:
+            raise ValueError("contradictory_lms_state")
         row["online_url"] = url
+        row["link_state"] = state or (
+            "matched" if url else "not_checked" if row["room"] == "СДО" else None
+        )
     encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
     existing = await db.get(
         RanepaPersonalSnapshot, (group_id, user_id, snapshot.week_start), with_for_update=True
@@ -150,6 +177,7 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
                         "lesson_type": lesson["lesson_type"],
                         "stream_label": lesson["subgroup_hint"],
                         "online_url": lesson.get("online_url"),
+                        "link_state": lesson.get("link_state"),
                     }
                 )
     lessons.sort(key=lambda row: (row["day"], row["starts"], row["subject"]))
@@ -265,6 +293,7 @@ async def personal_with_group_fallback(db, group_id, user_id, start: date, end: 
                 "lesson_type": kind,
                 "stream_label": stream,
                 "online_url": None,
+                "link_state": None,
             }
         )
         checked = max(item[3] for item in contributors)

@@ -6,6 +6,8 @@
   `complete`, `fallback_used`, and `last_success_at`. The optional server-side
   RANEPA view switch makes `GET /schedule` and lesson details use the personal
   cache for configured groups. It remains off by default.
+  Each lesson can also report the optional SDO `link_state` explaining whether
+  a stable join link was matched or why none was stored.
 - Added optional `GET`/`PUT`/`DELETE /ranepa-account` for a student's own encrypted
   university connection. The login and password are write-only; responses contain
   only connection state. Older clients can ignore the new route. No weekly crawl or

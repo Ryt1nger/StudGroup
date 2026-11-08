@@ -1,6 +1,6 @@
 """Links observed in the live LMS layout are matched by exact stream and teacher."""
 
-from datetime import date
+from datetime import date, time
 
 import pytest
 
@@ -94,3 +94,37 @@ def test_no_group_evidence_or_malformed_page_fails_closed():
     )
     with pytest.raises(SourceAccessError, match="lms_course_unverified"):
         course_links("<main>Авторизация</main>")
+
+
+def test_two_digit_date_and_start_time_disambiguate_same_day():
+    links = course_links(
+        fixture(
+            "Иванова И.И. 12.11.26 09.00-10.20 Э-ОБ26-СГЯ-лек(43,44,45)",
+            "Иванова И.И. 12.11.26 10.40-12.00 Э-ОБ26-СГЯ-лек(43,44,45)",
+        )
+    )
+    choice = select_lesson_link(
+        links,
+        teacher="Иванова Ирина Ивановна",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45)",
+        day=date(2026, 11, 12),
+        starts=time(10, 40),
+    )
+    assert choice.state == "matched" and choice.url.endswith("id=101")
+
+
+def test_course_url_is_canonical_without_session_parameters():
+    html = fixture("Иванова И.И. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка")
+    html = html.replace("id=100", "id=100&sesskey=private")
+    assert course_links(html)[0].url == "https://lms.ranepa.ru/mod/url/view.php?id=100"
+
+
+def test_teacher_surname_must_match_whole_word():
+    links = course_links(fixture("Иванова И.И. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка"))
+    choice = select_lesson_link(
+        links,
+        teacher="Иванов Иван Иванович",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45)",
+        day=date(2026, 11, 12),
+    )
+    assert choice.state == "not_found"

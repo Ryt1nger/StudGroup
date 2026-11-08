@@ -13,6 +13,7 @@ import tempfile
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from time import perf_counter
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -89,6 +90,7 @@ async def inspect(
     sdo: bool,
     local_db: bool,
     http_check: bool = False,
+    show_matches: bool = False,
 ) -> dict:
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=not headed)
@@ -103,6 +105,10 @@ async def inspect(
                 first_monday = starts - timedelta(days=starts.weekday())
                 weekly = []
                 weeks_complete = 0
+                sdo_marked = 0
+                sdo_matched = 0
+                sdo_states = Counter()
+                matched_rows = []
                 for offset in range(6):
                     week = first_monday + timedelta(weeks=offset)
                     if not any(
@@ -117,6 +123,16 @@ async def inspect(
                             "weeks_complete": weeks_complete,
                         }
                     weeks_complete += 1
+                    if sdo:
+                        linked, states = await resolve_sdo_exits(context, result, login, password)
+                        sdo_marked += sum(row.room == "СДО" for row in result.snapshot.lessons)
+                        sdo_matched += len(linked)
+                        sdo_states.update(states.values())
+                        if show_matches:
+                            matched_rows.extend(
+                                {"day": key[0], "subject": key[3], "url": url}
+                                for key, url in linked.items()
+                            )
                     weekly.extend(
                         row
                         for row in result.snapshot.indexed().values()
@@ -129,6 +145,10 @@ async def inspect(
                     "month_card_count": len(selected.cards),
                     "weekly_card_count": len(weekly),
                     "month_week_match": from_month == from_weeks,
+                    "sdo_marked_count": sdo_marked if sdo else None,
+                    "sdo_matched_count": sdo_matched if sdo else None,
+                    "sdo_states": dict(sorted(sdo_states.items())) if sdo else None,
+                    **({"matched_links": matched_rows} if show_matches else {}),
                     "group_identity_verified": True,
                     "complete": False,
                     **({"direct_http": await direct_http_check(context)} if http_check else {}),
@@ -137,7 +157,9 @@ async def inspect(
             if result.snapshot is None:
                 return {"status": result.status}
             rows = result.snapshot.indexed().values()
-            linked, link_states = await resolve_sdo_exits(context, result) if sdo else ({}, {})
+            linked, link_states = (
+                await resolve_sdo_exits(context, result, login, password) if sdo else ({}, {})
+            )
             local_ok = await local_db_check(result.snapshot) if local_db else None
             return {
                 "status": result.status,
@@ -148,6 +170,16 @@ async def inspect(
                 "subject_count": len({row.subject.casefold() for row in rows}),
                 "sdo_matched_count": len(linked) if sdo else None,
                 "sdo_states": sorted(link_states.values()) if sdo else None,
+                **(
+                    {
+                        "matched_links": [
+                            {"day": key[0], "subject": key[3], "url": url}
+                            for key, url in linked.items()
+                        ]
+                    }
+                    if show_matches
+                    else {}
+                ),
                 "isolated_db_round_trip": local_ok,
                 "group_identity_verified": True,
                 "complete": False,
@@ -169,16 +201,22 @@ def main():
         "--sdo", action="store_true", help="follow SDO course pages without saving links"
     )
     parser.add_argument(
+        "--show-matches", action="store_true", help="print matched course URL and lesson subject"
+    )
+    parser.add_argument(
         "--local-db-check", action="store_true", help="test real rows in a disposable local DB"
     )
     parser.add_argument(
         "--http-check", action="store_true", help="try authenticated direct HTTP without a renderer"
     )
     args = parser.parse_args()
+    if args.show_matches and not args.sdo:
+        parser.error("--show-matches requires --sdo")
     today = datetime.now(ZoneInfo("Europe/Moscow")).date()
     monday = args.week_start or today - timedelta(days=today.weekday())
     login = getpass.getpass("Логин РАНХиГС: ")
     password = getpass.getpass("Пароль РАНХиГС: ")
+    started = perf_counter()
     result = asyncio.run(
         inspect(
             login,
@@ -190,8 +228,10 @@ def main():
             args.sdo,
             args.local_db_check,
             args.http_check,
+            args.show_matches,
         )
     )
+    result["elapsed_seconds"] = round(perf_counter() - started, 1)
     print(json.dumps(result, ensure_ascii=False))
 
 

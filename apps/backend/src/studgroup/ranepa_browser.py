@@ -254,7 +254,9 @@ async def read_month(
     return BrowserMonthResult("login_failed")
 
 
-async def resolve_sdo_exits(context, result: BrowserResult) -> tuple[dict, dict]:
+async def resolve_sdo_exits(
+    context, result: BrowserResult, login: str = "", password: str = ""
+) -> tuple[dict, dict]:
     """Follow only transient LK SDO exits; retain stable Moodle activity URLs."""
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
         return {}, {"not_checked": 1}
@@ -278,12 +280,49 @@ async def resolve_sdo_exits(context, result: BrowserResult) -> tuple[dict, dict]
         try:
             await page.goto(exit_url, wait_until="domcontentloaded", timeout=30000)
             choice = None
-            for _ in range(40):
+            lms_login_attempted = False
+            retried_exit_after_login = False
+            empty_course_reads = 0
+            for _ in range(80):
                 parsed = urlsplit(page.url)
+                if (
+                    parsed.hostname == "lms.ranepa.ru"
+                    and parsed.path in {"/my/", "/"}
+                    and lms_login_attempted
+                    and not retried_exit_after_login
+                ):
+                    retried_exit_after_login = True
+                    await page.goto(exit_url, wait_until="domcontentloaded", timeout=30000)
+                    continue
+                if (
+                    parsed.hostname == "lms.ranepa.ru"
+                    and parsed.path == "/login/index.php"
+                    and not lms_login_attempted
+                ):
+                    lms_login_attempted = True
+                    if not login or not password:
+                        break
+                    username_field = page.locator('input[name="username"]')
+                    password_field = page.locator('input[name="password"]')
+                    if await username_field.count() != 1 or await password_field.count() != 1:
+                        break
+                    await username_field.fill(login)
+                    await password_field.fill(password)
+                    await page.locator("#loginbtn").click(timeout=8000)
+                    continue
+                if (
+                    parsed.hostname == "lms.ranepa.ru"
+                    and parsed.path == "/login/index.php"
+                    and lms_login_attempted
+                ):
+                    break
                 if parsed.hostname == "lms.ranepa.ru" and parsed.path == "/course/view.php":
                     try:
                         candidates = course_links(await page.content())
                         if not candidates:
+                            empty_course_reads += 1
+                            if empty_course_reads >= 8:
+                                break
                             await page.wait_for_timeout(250)
                             continue
                         choice = select_lesson_link(
@@ -291,19 +330,32 @@ async def resolve_sdo_exits(context, result: BrowserResult) -> tuple[dict, dict]
                             teacher=lesson.teacher or "",
                             group_label=lesson.subgroup_hint or "",
                             day=lesson.day,
+                            starts=lesson.starts,
                         )
                         break
                     except SourceAccessError:
                         pass
                 await page.wait_for_timeout(250)
             if choice is None:
-                states[key] = "course_unavailable"
+                final = urlsplit(page.url)
+                if final.hostname == "lms.ranepa.ru" and final.path == "/login/index.php":
+                    states[key] = "lms_login_required"
+                elif final.hostname == "lms.ranepa.ru" and final.path == "/course/view.php":
+                    states[key] = (
+                        "no_course_links" if empty_course_reads else "course_content_unavailable"
+                    )
+                elif final.hostname == "lms.ranepa.ru":
+                    states[key] = "lms_other_page"
+                elif final.hostname == HOST:
+                    states[key] = "cabinet_transition_unavailable"
+                else:
+                    states[key] = "unexpected_redirect"
             else:
                 states[key] = choice.state
                 if choice.url is not None:
                     linked[key] = choice.url
         except Exception:  # noqa: BLE001
-            states[key] = "course_unavailable"
+            states[key] = "navigation_error"
         finally:
             await page.close()
     return linked, states
