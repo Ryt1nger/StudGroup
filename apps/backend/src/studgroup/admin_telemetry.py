@@ -3,6 +3,7 @@
 Only method-independent outcomes and duration are retained in process memory.
 No paths, headers, IPs, bodies or identities. History resets at each deployment.
 """
+
 from collections import deque
 from datetime import UTC, datetime, timedelta
 
@@ -28,8 +29,9 @@ class RequestTelemetry:
                 return None
             return round(elapsed[min(len(elapsed) - 1, int((len(elapsed) - 1) * fraction))])
 
-        labels = [(now.replace(second=0, microsecond=0) - timedelta(minutes=i))
-                  for i in range(14, -1, -1)]
+        labels = [
+            (now.replace(second=0, microsecond=0) - timedelta(minutes=i)) for i in range(14, -1, -1)
+        ]
         counts = {minute.isoformat(): [0, 0] for minute in labels}
         for at, status, _ in rows:
             key = at.replace(second=0, microsecond=0).isoformat()
@@ -46,10 +48,13 @@ class RequestTelemetry:
             "errors_5xx": sum(status >= 500 for _, status, _ in rows),
             "errors_4xx": sum(400 <= status < 500 for _, status, _ in rows),
             "requests": [
-                {"minute": label.isoformat(), "count": counts[label.isoformat()][0],
-                 "errors_5xx": counts[label.isoformat()][1]}
+                {
+                    "minute": label.isoformat(),
+                    "count": counts[label.isoformat()][0],
+                    "errors_5xx": counts[label.isoformat()][1],
+                }
                 for label in labels
             ],
             "note": "Только запросы API за 15 минут в памяти текущего сервера. "
-                    "При перезапуске история начинается заново; это не uptime.",
+            "При перезапуске история начинается заново; это не uptime.",
         }
