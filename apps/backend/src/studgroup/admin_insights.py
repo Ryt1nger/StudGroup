@@ -16,9 +16,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from studgroup.admin_dashboard import admin_session
 from studgroup.api import ApiError, database
 from studgroup.models import (
-    AIJob, AnalysisBudgetCall, BotOutbox, Group, GroupEvent,
-    Homework, ImageAnalysisCall, ImageAnalysisJob, Membership,
-    OwnerIncidentEpisode, RawMessage, ShadowEvaluationRun, User,
+    AIJob,
+    AnalysisBudgetCall,
+    BotOutbox,
+    Group,
+    GroupEvent,
+    Homework,
+    ImageAnalysisCall,
+    ImageAnalysisJob,
+    Membership,
+    OwnerIncidentEpisode,
+    RawMessage,
+    ShadowEvaluationRun,
+    User,
 )
 
 router = APIRouter()
@@ -296,7 +306,7 @@ async def details(
             found = (await db.scalars(
                 select(model).where(*criteria).order_by(timestamp.desc()).limit(offset + limit + 1)
             )).all()
-            merged.extend(item(x.id, name, x.state, getattr(x, "created_at"),
+            merged.extend(item(x.id, name, x.state, x.created_at,
                                group_id=x.group_id, error_code=getattr(x, extra.key))
                           for x in found)
         found = (await db.scalars(
