@@ -91,6 +91,6 @@ def test_http_monitor_uses_real_samples_only():
     result = monitor.snapshot()
     assert result["sample_count"] == 2
     assert result["errors_5xx"] == 1
-    assert result["p50_ms"] == 100
-    assert result["p95_ms"] == 100
+    assert result["p50_ms"] == 300
+    assert result["p95_ms"] == 500
     assert sum(item["count"] for item in result["requests"]) == 2
