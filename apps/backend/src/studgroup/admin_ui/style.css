@@ -328,3 +328,11 @@ button:focus-visible,a:focus-visible,select:focus-visible,[tabindex]:focus-visib
  .header .breadcrumb{font-size:9px}
 }
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+
+/* Illustrated navigation uses vectors, not decorative number badges. */
+.nav-icon{width:19px;height:19px;flex:none;fill:none;stroke:#8ba5c3;stroke-linecap:round;stroke-linejoin:round;stroke-width:1.8}
+.nav-link:hover .nav-icon{stroke:#e7f3ff}
+.nav-link.selected .nav-icon{stroke:#76f1ec;filter:drop-shadow(0 0 4px #43d9df36)}
+.donut-visual{width:min(100%,228px);max-height:none;height:auto;aspect-ratio:1}
+.donut-visual svg{width:100%;height:100%;aspect-ratio:1}
+@media(max-width:430px){.donut-visual{width:180px;height:180px}}
