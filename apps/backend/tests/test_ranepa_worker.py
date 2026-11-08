@@ -94,6 +94,21 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
             monkeypatch.setattr("studgroup.ranepa_worker._collect", fake_collect)
             assert await process_one(engine, settings, date(2026, 11, 6)) == "succeeded"
             assert seen == [(group.id, user.id, "A-001", "login", "password")]
+            # Revoking consent excludes this account from the next weekly round.
+            async with AsyncSession(engine) as db:
+                db.add(
+                    LegalConsentEvent(
+                        user_id=user.id,
+                        purpose="sdo",
+                        action="revoke",
+                        document_version=VERSION,
+                        document_sha256=document_hash("sdo", settings),
+                        source="web",
+                        created_at=datetime.now(UTC),
+                    )
+                )
+                await db.commit()
+            assert await prepare_week(engine, date(2026, 11, 9), settings) == 0
         finally:
             await engine.dispose()
 
