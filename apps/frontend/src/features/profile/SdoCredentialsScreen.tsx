@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { useProfileQuery, useUpdateProfile } from '../api/queries';
-import { acceptLegal, legalDocument, legalStatus, revokeSdoConsent, type LegalStatus } from '../api/legal';
+import { useProfileQuery, useUpdateProfile } from '../../api/queries';
+import { acceptLegal, legalDocument, legalStatus, revokeSdoConsent, type LegalStatus } from '../../api/legal';
 
 const LEGAL_LINKS = [
   ['privacy', 'Политика обработки персональных данных'],
