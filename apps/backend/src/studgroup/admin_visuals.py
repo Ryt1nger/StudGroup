@@ -114,16 +114,6 @@ async def visual_analytics(
         "legacy_errors": await day_values(
             db, AIJob, AIJob.created_at, (*legacy_filter, AIJob.state.in_(BAD_STATES)),
         ),
-        "text_latency_ms": await day_values(
-            db, ShadowEvaluationRun, ShadowEvaluationRun.created_at,
-            (*text_filter, ShadowEvaluationRun.latency_ms.is_not(None)),
-            total_column=ShadowEvaluationRun.latency_ms,
-        ),
-        "photo_latency_ms": await day_values(
-            db, ImageAnalysisCall, ImageAnalysisCall.created_at,
-            (*image_calls_filter, ImageAnalysisCall.latency_ms.is_not(None)),
-            total_column=ImageAnalysisCall.latency_ms,
-        ),
     }
 
     # Means are calculated from SUM/COUNT, not from the sum of durations.
