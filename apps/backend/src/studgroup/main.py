@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     legal_operator_contact: str = ""
     legal_data_region: str = ""
     legal_documents_approved: bool = False
+    # Enable only after legal review, operator verification and consent E2E testing.
+    legal_onboarding_required: bool = False
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
