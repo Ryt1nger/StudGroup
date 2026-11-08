@@ -3,7 +3,6 @@ import { useId, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import type { NotificationSettings, UpdateProfileRequest, UserProfile } from '@studgroup/shared-types';
 import { useProfileQuery, useUpdateProfile } from '../../api/queries';
-import { isApiRequestError } from '../../api/errors';
 import { useSession } from '../../session/SessionProvider';
 import { Float } from '../../shell/AppRoot';
 import { useDisplay } from '../../shell/display';
@@ -146,15 +145,6 @@ function Notify({ profile }: { profile: UserProfile }) {
     </>
   );
 }
-
-const httpsOrEmpty = (value: string) => {
-  if (!value) return true;
-  try {
-    return new URL(value).protocol === 'https:';
-  } catch {
-    return false;
-  }
-};
 
 function Field({ id, label, error, children }: { id: string; label: ReactNode; error?: string | null; children: ReactNode }) {
   return (
