@@ -3,7 +3,6 @@
 All numbers come from existing operational records and are scoped before
 aggregation. Missing instrumentation is represented as unavailable, never 0.
 """
-from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
@@ -86,17 +85,16 @@ async def visual_analytics(
     first_day = now.date() - timedelta(days=days - 1)
     since = datetime(first_day.year, first_day.month, first_day.day, tzinfo=UTC)
     month_since = datetime(now.year, now.month, 1, tzinfo=UTC)
-    scoped = lambda model: scope(model, group_id)
 
-    message_filter = (*scoped(RawMessage), RawMessage.message_date >= since)
-    text_filter = (*scoped(ShadowEvaluationRun), ShadowEvaluationRun.created_at >= since)
-    image_filter = (*scoped(ImageAnalysisJob), ImageAnalysisJob.created_at >= since)
-    legacy_filter = (*scoped(AIJob), AIJob.created_at >= since)
-    homework_filter = (*scoped(Homework), Homework.created_at >= since)
-    events_filter = (*scoped(GroupEvent), GroupEvent.created_at >= since)
-    notices_filter = (*scoped(Notification), Notification.created_at >= since)
-    image_calls_filter = (*scoped(ImageAnalysisCall), ImageAnalysisCall.created_at >= since)
-    month_filter = (*scoped(AnalysisBudgetCall), AnalysisBudgetCall.created_at >= month_since)
+    message_filter = (*scope(RawMessage, group_id), RawMessage.message_date >= since)
+    text_filter = (*scope(ShadowEvaluationRun, group_id), ShadowEvaluationRun.created_at >= since)
+    image_filter = (*scope(ImageAnalysisJob, group_id), ImageAnalysisJob.created_at >= since)
+    legacy_filter = (*scope(AIJob, group_id), AIJob.created_at >= since)
+    homework_filter = (*scope(Homework, group_id), Homework.created_at >= since)
+    events_filter = (*scope(GroupEvent, group_id), GroupEvent.created_at >= since)
+    notices_filter = (*scope(Notification, group_id), Notification.created_at >= since)
+    image_calls_filter = (*scope(ImageAnalysisCall, group_id), ImageAnalysisCall.created_at >= since)
+    month_filter = (*scope(AnalysisBudgetCall, group_id), AnalysisBudgetCall.created_at >= month_since)
 
     daily_sources = {
         "messages": await day_values(db, RawMessage, RawMessage.message_date, message_filter),
