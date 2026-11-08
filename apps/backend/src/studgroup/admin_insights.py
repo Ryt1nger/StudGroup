@@ -94,7 +94,7 @@ async def daily(db, model, date_column, criteria, days, value=None):
             "date": (today - timedelta(days=i)).isoformat(),
             "value": values.get((today - timedelta(days=i)).isoformat(), 0),
         }
-        for i in range(days - 1, -1, -1)
+        for i in range(days, -1, -1)
     ]
 
 
@@ -504,25 +504,6 @@ async def details(
                 )
                 for x in found
             )
-        found = (
-            await db.scalars(
-                select(OwnerIncidentEpisode)
-                .where(OwnerIncidentEpisode.opened_at >= since)
-                .order_by(OwnerIncidentEpisode.opened_at.desc())
-                .limit(offset + limit + 1)
-            )
-        ).all()
-        merged.extend(
-            item(
-                x.id,
-                "Инцидент · " + x.code,
-                "восстановлено" if x.recovered_at else "открыто",
-                x.opened_at,
-                occurrences=x.occurrences,
-                detail_code=x.last_detail,
-            )
-            for x in found
-        )
         merged.sort(key=lambda record: record["at"] or "", reverse=True)
         rows = merged[offset : offset + limit + 1]
     else:
@@ -535,6 +516,6 @@ async def details(
         "has_more": has_more,
         "period_days": days,
         "note": "Инциденты и исходящий Telegram не ограничены выбранной группой."
-        if kind in ("errors", "incidents", "telegram")
+        if kind in ("incidents", "telegram")
         else None,
     }
