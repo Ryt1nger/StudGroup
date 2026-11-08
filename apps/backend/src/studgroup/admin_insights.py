@@ -284,7 +284,18 @@ async def details(
     # Never return raw Telegram text, model outputs, payloads or credentials.
     rows = []
     has_more = False
-    if kind == "members":
+    if kind == "groups":
+        query = select(Group).where(Group.status == "active", Group.pilot_authorized.is_(True))
+        if group_id:
+            query = query.where(Group.id == group_id)
+        query = query.order_by(Group.name)
+        found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
+        rows = [
+            item(x.id, x.name, x.status, x.bot_added_at,
+                 pilot_authorized=x.pilot_authorized, schedule_version=x.schedule_version)
+            for x in found
+        ]
+    elif kind == "members":
         query = (
             select(Membership)
             .where(Membership.status == "active", *scope(Membership, group_id))
@@ -379,7 +390,9 @@ async def details(
             )
             for x in found
         ]
-    elif kind == "expenses":
+    elif kind in ("expenses", "month_expenses", "reserves"):
+        financial_since = (datetime.now(UTC).replace(day=1, hour=0, minute=0,
+                            second=0, microsecond=0) if kind == "month_expenses" else since)
         query = (
             select(AnalysisBudgetCall)
             .where(*scope(AnalysisBudgetCall, group_id), AnalysisBudgetCall.created_at >= since)
@@ -440,7 +453,7 @@ async def details(
     elif kind == "incidents":
         query = (
             select(OwnerIncidentEpisode)
-            .where(OwnerIncidentEpisode.opened_at >= since)
+            .where(OwnerIncidentEpisode.recovered_at.is_(None))
             .order_by(OwnerIncidentEpisode.opened_at.desc(), OwnerIncidentEpisode.id.desc())
         )
         found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
