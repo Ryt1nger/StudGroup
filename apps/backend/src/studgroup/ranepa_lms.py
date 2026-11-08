@@ -84,6 +84,7 @@ def select_lesson_link(
         return LinkChoice("identity_missing", None, ())
     dated = []
     permanent = []
+    identity_matches = []
     for link in links:
         label = normalized(link.label)
         compact = label.replace(" ", "").replace("_", "")
@@ -96,6 +97,7 @@ def select_lesson_link(
         }
         if starts is not None and times and starts not in times:
             continue
+        identity_matches.append(link)
         found_dates = set()
         for match in DATE.finditer(link.label):
             try:
@@ -112,4 +114,8 @@ def select_lesson_link(
     matches = dated or permanent
     if len(matches) == 1:
         return LinkChoice("matched", matches[0].url, tuple(matches))
-    return LinkChoice("ambiguous" if matches else "not_found", None, tuple(matches))
+    if matches:
+        return LinkChoice("ambiguous", None, tuple(matches))
+    if identity_matches:
+        return LinkChoice("timing_unverified", None, tuple(identity_matches))
+    return LinkChoice("not_found", None, ())

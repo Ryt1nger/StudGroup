@@ -96,6 +96,23 @@ def test_no_group_evidence_or_malformed_page_fails_closed():
         course_links("<main>Авторизация</main>")
 
 
+def test_identity_matches_without_date_or_permanent_evidence_remain_unverified():
+    links = course_links(
+        fixture(
+            "Федотова Е.А. Э-ОБ26-СГЯ-лек(43,44,45)",
+            "Федотова Е.А. Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+        )
+    )
+    choice = select_lesson_link(
+        links,
+        teacher="Федотова Елена Алексеевна",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+        day=date(2026, 11, 9),
+    )
+    assert choice.state == "timing_unverified" and choice.url is None
+    assert len(choice.candidates) == 2
+
+
 def test_two_digit_date_and_start_time_disambiguate_same_day():
     links = course_links(
         fixture(

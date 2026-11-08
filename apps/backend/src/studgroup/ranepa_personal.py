@@ -56,6 +56,7 @@ def _safe_course(url: str) -> bool:
 LINK_STATES = {
     "matched",
     "not_found",
+    "timing_unverified",
     "no_course_links",
     "missing_course_transition",
     "lms_login_required",
