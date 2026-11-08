@@ -61,7 +61,7 @@
     el("text",{x:cx,y:119,"text-anchor":"middle",class:"donut-number"},svg,nf.format(total));el("text",{x:cx,y:141,"text-anchor":"middle",class:"donut-label"},svg,opts.centerLabel||"всего");
     const shown=active.slice(0,7);shown.forEach((d,i)=>{const y=46+i*28;el("circle",{cx:370,cy:y-4,r:5,fill:d.color||COLORS[i%COLORS.length]},svg);el("text",{x:384,y,class:"donut-legend"},svg,d.label.length>21?d.label.slice(0,20)+"…":d.label);el("text",{x:681,y,class:"donut-value","text-anchor":"end"},svg,short(d.value));});
   }
-  function hourBars(id,items){
+  function hourBars(id,items,timeZone='UTC'){
     if(!items.length){empty(id);return;}const svg=init(id,"Активность по московскому времени"),values=items.map(x=>Number(x.value)||0),max=Math.max(1,...values);axes(svg,max,[],{});const width=635;
     values.forEach((v,i)=>{const slot=width/24,bw=slot*.65,x=52+i*slot+(slot-bw)/2,h=v/max*185;const r=el("rect",{x,y:210-h,width:bw,height:h,rx:3,fill:i>=7&&i<=18?"#087e83":"#9bb7c0"},svg);tooltip(r,i+":00–"+(i+1)+":00 МСК · "+nf.format(v)+" сообщений");if(i%4===0)el("text",{x:x+bw/2,y:239,"text-anchor":"middle",class:"tick"},svg,String(i).padStart(2,"0")+":00");});
   }
