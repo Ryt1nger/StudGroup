@@ -40,19 +40,19 @@
       for(const pts of segments){
         if(pts.length>1)el("polyline",{points:pts.map(p=>p.slice(0,2).join(",")).join(" "),fill:"none",stroke:color,"stroke-width":3.2,"stroke-linejoin":"round","stroke-linecap":"round"},svg);
         for(const p of pts){
-          const dot=el("circle",{cx:p[0],cy:p[1],r:3.4,fill:"#fff",stroke:color,"stroke-width":2.2,class:"chart-point"},svg);
+          const dot=el("circle",{cx:p[0],cy:p[1],r:3.4,fill:"#fff",stroke:color,"stroke-width":2.2,class:"chart-point",...(item.kind?{"data-detail":item.kind}:{})},svg);
           tooltip(dot,(labels[p[2]]||"")+" · "+item.label+": "+(opts.currency?"$":"")+short(item.values[p[2]]));
         }
       }
     });
-    legend(id,series.map(s=>s.label),series.map((s,k)=>s.color||COLORS[k%COLORS.length]));
+    legend(id,series.map(s=>s.label),series.map((s,k)=>s.color||COLORS[k%COLORS.length]),series.map(s=>s.kind));
   }
   function bars(id,series,opts={}){
     const rows=series[0]?.values||[];if(!rows.length){empty(id);return;}
     const svg=init(id,opts.title||"Столбчатая диаграмма"),labels=opts.labels||rows.map((_,i)=>String(i+1));const width=635,x0=52,y1=210;
     const maxima=rows.map((_,i)=>series.reduce((a,s)=>a+(Number(s.values[i])||0),0));const max=Math.max(1,...maxima)*1.16;axes(svg,max,labels,{currency:opts.currency});const gap=width/rows.length,barW=Math.max(2,Math.min(35,gap*.64));
-    rows.forEach((_,i)=>{let acc=0;series.forEach((s,k)=>{const v=Number(s.values[i])||0;const h=v/max*185;const r=el("rect",{x:x0+i*gap+(gap-barW)/2,y:y1-(acc+h),width:barW,height:Math.max(0,h),rx:Math.min(3,h/2),fill:s.color||COLORS[k%COLORS.length]},svg);tooltip(r,(labels[i]||"")+" · "+s.label+": "+(opts.currency?"$":"")+short(v));acc+=h;});});
-    legend(id,series.map(s=>s.label),series.map((s,k)=>s.color||COLORS[k%COLORS.length]));
+    rows.forEach((_,i)=>{let acc=0;series.forEach((s,k)=>{const v=Number(s.values[i])||0;const h=v/max*185;const r=el("rect",{x:x0+i*gap+(gap-barW)/2,y:y1-(acc+h),width:barW,height:Math.max(0,h),rx:Math.min(3,h/2),fill:s.color||COLORS[k%COLORS.length],...(s.kind?{"data-detail":s.kind}:{})},svg);tooltip(r,(labels[i]||"")+" · "+s.label+": "+(opts.currency?"$":"")+short(v));acc+=h;});});
+    legend(id,series.map(s=>s.label),series.map((s,k)=>s.color||COLORS[k%COLORS.length]),series.map(s=>s.kind));
   }
   function donut(id,items,opts={}){
     const active=items.filter(d=>Number(d.value)>0);const total=active.reduce((a,d)=>a+Number(d.value),0);if(!total){empty(id,"Нет обработок за выбранный период");return;}
@@ -77,6 +77,6 @@
     context_evidence_outside_envelope:"Данные не прошли проверку источника"
   };
   function humanError(code){return knownErrors[code]||"Другая техническая ошибка";}
-  function legend(id,labels,colors){if(labels.length<=1)return;const host=document.getElementById(id);const div=document.createElement("div");div.className="plot-legend";for(let i=0;i<labels.length;i++){const a=document.createElement("span");const dot=document.createElement("i");dot.style.background=colors[i];a.append(dot,document.createTextNode(labels[i]));div.append(a);}host.append(div);}
+  function legend(id,labels,colors,kinds=[]){if(labels.length<=1)return;const host=document.getElementById(id);const div=document.createElement("div");div.className="plot-legend";for(let i=0;i<labels.length;i++){const a=document.createElement(kinds[i]?"button":"span");if(kinds[i]){a.type="button";a.dataset.detail=kinds[i];a.title="Открыть записи: "+labels[i];}const dot=document.createElement("i");dot.style.background=colors[i];a.append(dot,document.createTextNode(labels[i]));div.append(a);}host.append(div);}
   window.StudCharts={plot,bars,donut,hourBars,reasons,empty,humanError,colors:COLORS};
 })();
