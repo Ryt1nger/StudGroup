@@ -118,11 +118,12 @@ def test_sdo_transition_logs_in_to_moodle_and_keeps_stable_url():
         ("https://my.ranepa.ru/moodle_out.php?id=1",),
     )
     context = Context()
-    links, states = asyncio.run(
+    links, states, courses = asyncio.run(
         ranepa_browser.resolve_sdo_exits(context, result, "login", "password")
     )
     assert list(states.values()) == ["matched"]
     assert list(links.values()) == ["https://lms.ranepa.ru/mod/url/view.php?id=1425553"]
+    assert list(courses.values()) == ["https://lms.ranepa.ru/course/view.php?id=85813"]
     assert context.page.filled == {
         'input[name="username"]': "login",
         'input[name="password"]': "password",
@@ -136,5 +137,6 @@ def test_sdo_transition_logs_in_to_moodle_and_keeps_stable_url():
 
     context.page.goto = direct_course
     context.page.content = empty_course
-    links, states = asyncio.run(ranepa_browser.resolve_sdo_exits(context, result))
+    links, states, courses = asyncio.run(ranepa_browser.resolve_sdo_exits(context, result))
     assert links == {} and list(states.values()) == ["no_course_links"]
+    assert list(courses.values()) == ["https://lms.ranepa.ru/course/view.php?id=85813"]

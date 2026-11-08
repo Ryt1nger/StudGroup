@@ -107,6 +107,7 @@ async def inspect(
                 weeks_complete = 0
                 sdo_marked = 0
                 sdo_matched = 0
+                sdo_courses = 0
                 sdo_states = Counter()
                 matched_rows = []
                 for offset in range(6):
@@ -124,9 +125,12 @@ async def inspect(
                         }
                     weeks_complete += 1
                     if sdo:
-                        linked, states = await resolve_sdo_exits(context, result, login, password)
+                        linked, states, courses = await resolve_sdo_exits(
+                            context, result, login, password
+                        )
                         sdo_marked += sum(row.room == "СДО" for row in result.snapshot.lessons)
                         sdo_matched += len(linked)
+                        sdo_courses += len(courses)
                         sdo_states.update(states.values())
                         if show_matches:
                             matched_rows.extend(
@@ -147,6 +151,7 @@ async def inspect(
                     "month_week_match": from_month == from_weeks,
                     "sdo_marked_count": sdo_marked if sdo else None,
                     "sdo_matched_count": sdo_matched if sdo else None,
+                    "sdo_course_count": sdo_courses if sdo else None,
                     "sdo_states": dict(sorted(sdo_states.items())) if sdo else None,
                     **({"matched_links": matched_rows} if show_matches else {}),
                     "group_identity_verified": True,
@@ -157,8 +162,8 @@ async def inspect(
             if result.snapshot is None:
                 return {"status": result.status}
             rows = result.snapshot.indexed().values()
-            linked, link_states = (
-                await resolve_sdo_exits(context, result, login, password) if sdo else ({}, {})
+            linked, link_states, courses = (
+                await resolve_sdo_exits(context, result, login, password) if sdo else ({}, {}, {})
             )
             local_ok = await local_db_check(result.snapshot) if local_db else None
             return {
@@ -169,6 +174,7 @@ async def inspect(
                 "sdo_marked_count": sum(row.room == "СДО" for row in rows),
                 "subject_count": len({row.subject.casefold() for row in rows}),
                 "sdo_matched_count": len(linked) if sdo else None,
+                "sdo_course_count": len(courses) if sdo else None,
                 "sdo_states": sorted(link_states.values()) if sdo else None,
                 **(
                     {

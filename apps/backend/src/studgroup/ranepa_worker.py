@@ -3,6 +3,7 @@
 import asyncio
 from collections import Counter
 from datetime import date, datetime, timedelta
+from time import monotonic
 from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -123,7 +124,9 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
                         (r.day, r.starts, r.subject) for r in expected
                     ):
                         return "parse_failed"
-                    links, link_states = await resolve_sdo_exits(context, result, login, password)
+                    links, link_states, courses = await resolve_sdo_exits(
+                        context, result, login, password
+                    )
                     async with AsyncSession(engine) as db:
                         await remember_personal(
                             db,
@@ -131,6 +134,7 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
                             user_id,
                             result.snapshot,
                             links=links,
+                            courses=courses,
                             link_states=link_states,
                             group_identity_verified=True,
                         )
@@ -148,9 +152,14 @@ async def run_forever(settings: Settings):
         return
     engine = create_async_engine(settings.database_url)
     try:
+        next_prepare_at = 0.0
         while True:
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-            await prepare_week(engine, today)
+            if monotonic() >= next_prepare_at:
+                await prepare_week(engine, today)
+                # Pick up new accounts during the week without rescanning every
+                # member before each browser job.
+                next_prepare_at = monotonic() + 3600
             status = await process_one(engine, settings, today)
             await asyncio.sleep(settings.ranepa_crawl_pause_seconds if status != "idle" else 300)
     finally:

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 from zoneinfo import ZoneInfo
 
 from studgroup.ranepa_cabinet import MonthCard, extract_cabinet_month, extract_cabinet_week
@@ -256,12 +256,13 @@ async def read_month(
 
 async def resolve_sdo_exits(
     context, result: BrowserResult, login: str = "", password: str = ""
-) -> tuple[dict, dict]:
-    """Follow only transient LK SDO exits; retain stable Moodle activity URLs."""
+) -> tuple[dict, dict, dict]:
+    """Follow LK SDO exits; retain verified course and unique meeting URLs."""
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
-        return {}, {"not_checked": 1}
+        return {}, {"not_checked": 1}, {}
     linked = {}
     states = {}
+    courses = {}
     for lesson, exit_url in zip(result.snapshot.lessons, result.sdo_exits, strict=True):
         if lesson.room != "СДО":
             continue
@@ -319,6 +320,9 @@ async def resolve_sdo_exits(
                 if parsed.hostname == "lms.ranepa.ru" and parsed.path == "/course/view.php":
                     try:
                         candidates = course_links(await page.content())
+                        ids = parse_qs(parsed.query).get("id", [])
+                        if len(ids) == 1 and ids[0].isdigit():
+                            courses[key] = f"https://lms.ranepa.ru/course/view.php?id={ids[0]}"
                         if not candidates:
                             empty_course_reads += 1
                             if empty_course_reads >= 8:
@@ -358,4 +362,4 @@ async def resolve_sdo_exits(
             states[key] = "navigation_error"
         finally:
             await page.close()
-    return linked, states
+    return linked, states, courses

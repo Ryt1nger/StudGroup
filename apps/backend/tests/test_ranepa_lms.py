@@ -119,6 +119,23 @@ def test_course_url_is_canonical_without_session_parameters():
     assert course_links(html)[0].url == "https://lms.ranepa.ru/mod/url/view.php?id=100"
 
 
+def test_mts_meeting_activity_can_be_selected_with_exact_identity():
+    html = (
+        '<main class="course-content"><a href="/course/view.php?id=1">Курс</a>'
+        '<a href="/mod/mtslinkrnhgs/view.php?id=1329503&sesskey=private">'
+        "Федотова Е.А. Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ постоянная ссылка</a>"
+        '<a href="/mod/mtslinkrnhgs/view.php?id=9">'
+        "Федотова Е.А. Г-ОБ26-СГЯ-лек(46,47,48)</a></main>"
+    )
+    choice = select_lesson_link(
+        course_links(html),
+        teacher="Федотова Елена Алексеевна",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+        day=date(2026, 11, 9),
+    )
+    assert choice.url == "https://lms.ranepa.ru/mod/mtslinkrnhgs/view.php?id=1329503"
+
+
 def test_teacher_surname_must_match_whole_word():
     links = course_links(fixture("Иванова И.И. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка"))
     choice = select_lesson_link(

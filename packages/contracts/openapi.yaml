@@ -1826,6 +1826,10 @@ components:
               lesson_type: { type: [string, "null"] }
               stream_label: { type: [string, "null"] }
               online_url: { type: [string, "null"], format: uri }
+              course_url:
+                type: [string, "null"]
+                format: uri
+                description: Verified Moodle course reached from this SDO lesson; may lack a confirmed meeting link.
               link_state:
                 type: [string, "null"]
                 description: SDO link decision from the last successful scan; null for non-SDO or guarded peer fallback.
@@ -1912,6 +1916,10 @@ components:
           type: [string, "null"]
           format: uri
           description: Optional HTTPS joining URL scoped to this group lesson; not a homework/material link. The external platform may require its own login.
+        course_url:
+          type: [string, "null"]
+          format: uri
+          description: Optional verified Moodle course for an SDO lesson; does not imply a confirmed meeting URL.
     SessionBootstrapRequest:
       type: object
       additionalProperties: false

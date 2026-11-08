@@ -28,7 +28,7 @@ class LinkChoice:
 
 
 def course_links(html: str) -> tuple[LinkCandidate, ...]:
-    """Read every Moodle URL activity; skip quizzes, files and external redirects."""
+    """Read Moodle meeting activities; skip quizzes, files and external redirects."""
     if len(html.encode("utf-8")) > 3_000_000:
         raise SourceAccessError("lms_page_too_large")
     document = Document()
@@ -48,13 +48,13 @@ def course_links(html: str) -> tuple[LinkCandidate, ...]:
         if (
             parsed.scheme != "https"
             or parsed.hostname != "lms.ranepa.ru"
-            or parsed.path != "/mod/url/view.php"
+            or parsed.path not in {"/mod/url/view.php", "/mod/mtslinkrnhgs/view.php"}
         ):
             continue
         ids = parse_qs(parsed.query).get("id", [])
         if len(ids) != 1 or not ids[0].isdigit():
             continue
-        url = f"{URL_BASE}/mod/url/view.php?id={ids[0]}"
+        url = f"{URL_BASE}{parsed.path}?id={ids[0]}"
         label = anchor.text()
         if label:
             result[url] = LinkCandidate(url, label)

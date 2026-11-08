@@ -2,6 +2,7 @@
 
 ## 0.21.0 — 2026-11-06
 
+- RANEPA personal and projected schedule lessons may include `course_url`, a verified Moodle course fallback distinct from `online_url`; existing clients can ignore the optional field.
 - Added `GET /ranepa-schedule` for the caller's cached university lessons, with
   `complete`, `fallback_used`, and `last_success_at`. The optional server-side
   RANEPA view switch makes `GET /schedule` and lesson details use the personal

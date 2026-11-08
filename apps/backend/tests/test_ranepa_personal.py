@@ -72,6 +72,14 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
                     week("Новая история"),
                     links={key: "https://lms.ranepa.ru/mod/url/view.php?id=1&sesskey=private"},
                 )
+            with pytest.raises(ValueError, match="unsafe_lms_course"):
+                await remember_personal(
+                    db,
+                    own.id,
+                    member.user_id,
+                    week("Новая история"),
+                    courses={key: "https://lms.ranepa.ru/course/view.php?id=1&sesskey=private"},
+                )
             with pytest.raises(ValueError, match="contradictory_lms_state"):
                 await remember_personal(
                     db,
@@ -80,6 +88,17 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
                     week("Новая история"),
                     link_states={key: "matched"},
                 )
+            assert (
+                await remember_personal(
+                    db,
+                    own.id,
+                    member.user_id,
+                    week("Новая история"),
+                    courses={key: "https://lms.ranepa.ru/course/view.php?id=89282"},
+                    link_states={key: "no_course_links"},
+                )
+                == "changed"
+            )
             outsider = User(id=uuid4(), telegram_user_id=9991, display_name="Other")
             db.add(outsider)
             await db.flush()
@@ -96,7 +115,8 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
     assert len(body["lessons"]) == 1
     assert body["lessons"][0]["subject"] == "Новая история"
     assert body["lessons"][0]["stream_label"] == "Э-ОБ26-СГЯ-лек(43,44,45)"
-    assert body["lessons"][0]["link_state"] == "not_checked"
+    assert body["lessons"][0]["link_state"] == "no_course_links"
+    assert body["lessons"][0]["course_url"] == "https://lms.ranepa.ru/course/view.php?id=89282"
     projected = schedule_projection(
         {
             "start": date(2026, 11, 2),
@@ -108,6 +128,7 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
     )
     assert projected["week_state"] == "ready"
     assert projected["lessons"][0]["subject"] == "Новая история"
+    assert projected["lessons"][0]["course_url"] == "https://lms.ranepa.ru/course/view.php?id=89282"
     assert projected["lessons"][0]["starts_at"] == "2026-11-02T09:00:00+03:00"
     client.app.state.settings.ranepa_schedule_view_enabled = True
     live = client.get("/v1/schedule?start=2026-11-02&end=2026-11-08", headers=AUTH)

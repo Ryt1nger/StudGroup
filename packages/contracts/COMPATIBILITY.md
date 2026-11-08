@@ -5,6 +5,7 @@
 `GET /ranepa-schedule` is additive. It returns only the caller's group and
 personal cache, plus conservative group fallback when subgroups are confirmed.
 Its optional `link_state` is an advisory diagnostic; older clients may ignore it.
+The optional `course_url` is a Moodle course fallback, not a meeting link; older clients may ignore it.
 The existing `GET /schedule` shape is unchanged. With the optional server-side
 view switch enabled for a configured group, its rows come from the personal
 cache; incomplete coverage reports `week_state=needs_clarification` and never

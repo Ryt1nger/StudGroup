@@ -66,6 +66,10 @@ export type RanepaPersonalSchedule = {
         stream_label?: string | null;
         online_url?: string | null;
         /**
+         * Verified Moodle course reached from this SDO lesson; may lack a confirmed meeting link.
+         */
+        course_url?: string | null;
+        /**
          * SDO link decision from the last successful scan; null for non-SDO or guarded peer fallback.
          */
         link_state?: string | null;
@@ -134,6 +138,10 @@ export type LessonOccurrence = {
      * Optional HTTPS joining URL scoped to this group lesson; not a homework/material link. The external platform may require its own login.
      */
     online_url?: string | null;
+    /**
+     * Optional verified Moodle course for an SDO lesson; does not imply a confirmed meeting URL.
+     */
+    course_url?: string | null;
 };
 
 export type SessionBootstrapRequest = {

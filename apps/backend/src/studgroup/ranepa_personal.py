@@ -27,7 +27,23 @@ def _safe_link(url: str) -> bool:
     return (
         parsed.scheme == "https"
         and parsed.hostname == "lms.ranepa.ru"
-        and parsed.path == "/mod/url/view.php"
+        and parsed.path in {"/mod/url/view.php", "/mod/mtslinkrnhgs/view.php"}
+        and len(parameters) == 1
+        and parameters[0][0] == "id"
+        and parameters[0][1].isdigit()
+        and not parsed.username
+        and not parsed.password
+        and not parsed.fragment
+    )
+
+
+def _safe_course(url: str) -> bool:
+    parsed = urlsplit(url)
+    parameters = parse_qsl(parsed.query, keep_blank_values=True)
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "lms.ranepa.ru"
+        and parsed.path == "/course/view.php"
         and len(parameters) == 1
         and parameters[0][0] == "id"
         and parameters[0][1].isdigit()
@@ -58,6 +74,7 @@ async def remember_personal(
     snapshot: WeekSnapshot,
     *,
     links=None,
+    courses=None,
     link_states=None,
     group_identity_verified=False,
     checked_at=None,
@@ -82,12 +99,18 @@ async def remember_personal(
         raise ValueError("empty_source_requires_review")
     rows = json.loads(encode_rows(snapshot))
     links = links or {}
+    courses = courses or {}
     link_states = link_states or {}
     for row in rows:
         key = (row["day"], row["starts"], row["ends"], row["subject"], row["teacher"], row["room"])
         url = links.get(key)
+        course = courses.get(key)
         if url is not None and not _safe_link(url):
             raise ValueError("unsafe_lms_link")
+        if course is not None and not _safe_course(course):
+            raise ValueError("unsafe_lms_course")
+        if course is not None and row["room"] != "СДО":
+            raise ValueError("course_without_sdo")
         state = link_states.get(key)
         if state is not None and state not in LINK_STATES:
             raise ValueError("unsafe_lms_state")
@@ -96,6 +119,7 @@ async def remember_personal(
         if state == "matched" and url is None:
             raise ValueError("contradictory_lms_state")
         row["online_url"] = url
+        row["course_url"] = course
         row["link_state"] = state or (
             "matched" if url else "not_checked" if row["room"] == "СДО" else None
         )
@@ -177,6 +201,7 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
                         "lesson_type": lesson["lesson_type"],
                         "stream_label": lesson["subgroup_hint"],
                         "online_url": lesson.get("online_url"),
+                        "course_url": lesson.get("course_url"),
                         "link_state": lesson.get("link_state"),
                     }
                 )
@@ -293,6 +318,7 @@ async def personal_with_group_fallback(db, group_id, user_id, start: date, end: 
                 "lesson_type": kind,
                 "stream_label": stream,
                 "online_url": None,
+                "course_url": None,
                 "link_state": None,
             }
         )
@@ -327,6 +353,7 @@ def schedule_projection(personal, group):
                 .isoformat(),
                 "location": row["room"] or None,
                 "online_url": row["online_url"],
+                "course_url": row.get("course_url"),
                 "status": "scheduled",
             }
         )
