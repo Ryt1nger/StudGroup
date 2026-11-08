@@ -204,3 +204,16 @@ def test_webhook_signal_is_idempotent_and_noop_edits_are_free(client):
             assert await db.scalar(select(func.count()).select_from(AIJob)) == 0
 
     asyncio.run(read())
+
+
+def test_production_hourly_slots_cover_night_without_disabling_batching():
+    from datetime import UTC, datetime
+
+    from studgroup.ai_schedule import window
+
+    night = datetime(2026, 11, 6, 1, 23, tzinfo=UTC)
+    assert window(night, "Europe/Moscow") is None
+    slot, cutoff, extended = window(night, "Europe/Moscow", allow_overnight=True)
+    assert slot == datetime(2026, 11, 6, 1, 0, tzinfo=UTC)
+    assert not extended
+    assert cutoff > slot

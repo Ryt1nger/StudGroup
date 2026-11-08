@@ -111,12 +111,196 @@ async def configure(db, group_id, *, amount, since, until, receipt):
     return route
 
 
-async def spent(db, group_id, *, since=None):
+def production_enabled(settings, group_id):
+    """Continuous paid processing for explicitly enrolled live groups only."""
+    return bool(
+        settings is not None
+        and group_id is not None
+        and str(group_id) in getattr(settings, "ai_production_groups", ())
+    )
+
+
+def is_isolated_production_attempt(settings, group_id, kind):
+    """These durable jobs cannot replay the same failed paid attempt automatically."""
+    return production_enabled(settings, group_id) and kind in {"image", "cplus"}
+
+
+def recurring_policy_status(settings, group_id, now):
+    """Return None when not opted in, 'active' only with explicit finite authorization."""
+    if (
+        settings is None
+        or group_id is None
+        or str(group_id) not in settings.ai_recurring_budget_groups
+    ):
+        return None
+    until = settings.ai_recurring_approved_until
+    receipt = settings.ai_recurring_approval_receipt
+    if until is None or utc(until) <= utc(now) or not re.fullmatch(r"[0-9a-f]{64}", receipt):
+        return "recurring_approval_expired"
+    caps = (
+        settings.ai_recurring_daily_budget_usd,
+        settings.ai_recurring_monthly_budget_usd,
+        settings.ai_recurring_text_daily_budget_usd,
+        settings.ai_recurring_text_monthly_budget_usd,
+        settings.ai_recurring_image_daily_budget_usd,
+        settings.ai_recurring_image_monthly_budget_usd,
+    )
+    if (
+        any(Decimal(str(cap)) <= 0 for cap in caps)
+        or Decimal(str(caps[2])) > Decimal(str(caps[0]))
+        or Decimal(str(caps[4])) > Decimal(str(caps[0]))
+        or Decimal(str(caps[3])) > Decimal(str(caps[1]))
+        or Decimal(str(caps[5])) > Decimal(str(caps[1]))
+    ):
+        return "recurring_budget_invalid"
+    return "active"
+
+
+def next_budget_reset(now, *, monthly=False):
+    now = utc(now)
+    if monthly:
+        year, month = (now.year + 1, 1) if now.month == 12 else (now.year, now.month + 1)
+        return datetime(year, month, 1, tzinfo=UTC)
+    return (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+async def _reserve_recurring(
+    db, route, settings, group_id, kind, attempt_key, payload, now, *, production=False
+):
+    """Atomic per-group month/day/category reservation under GroupAnalysisSettings lock."""
+    group = await db.get(Group, group_id)
+    if group is None or group.status != "active" or not group.pilot_authorized:
+        return "recurring_group_not_authorized", None
+    lost = (
+        await db.scalars(
+            select(AnalysisBudgetCall)
+            .where(
+                AnalysisBudgetCall.group_id == group_id,
+                AnalysisBudgetCall.state == "reserved",
+                AnalysisBudgetCall.created_at <= now - UNRESOLVED_AFTER,
+            )
+            .with_for_update()
+        )
+    ).all()
+    for call in lost:
+        call.charged_usd, call.reserved_usd = call.reserved_usd, Decimal(0)
+        call.state, call.settled_at = "unknown", now
+    if lost:
+        if production and all(call.kind in {"image", "cplus"} for call in lost):
+            # A stale reservation is charged conservatively. Its exact attempt
+            # key remains blocked by _begin; the durable job/lease cannot repeat
+            # the same purchase. Keep independent packages moving.
+            from studgroup.processing import incident_once
+
+            await incident_once(
+                db,
+                "ai_request_uncertain",
+                now,
+                detail="kind=durable reason=orphaned_reservation",
+            )
+        else:
+            route.paid_outcome_hold = "ambiguous_paid_attempt"
+            return "recurring_paid_outcome_held", None
+    try:
+        ceiling = request_ceiling(payload)
+    except (ValueError, KeyError, TypeError):
+        return "recurring_request_unpriced", None
+
+    if kind not in {"cplus", "legacy", "image", "cabinet_image"}:
+        return "recurring_unknown_kind", None
+    if not production:
+        is_image = kind in {"image", "cabinet_image"}
+        kinds = ("image", "cabinet_image") if is_image else ("cplus", "legacy")
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        month_start = day_start.replace(day=1)
+        all_daily = Decimal(str(settings.ai_recurring_daily_budget_usd))
+        all_monthly = Decimal(str(settings.ai_recurring_monthly_budget_usd))
+        kind_daily = Decimal(
+            str(
+                settings.ai_recurring_image_daily_budget_usd
+                if is_image
+                else settings.ai_recurring_text_daily_budget_usd
+            )
+        )
+        kind_monthly = Decimal(
+            str(
+                settings.ai_recurring_image_monthly_budget_usd
+                if is_image
+                else settings.ai_recurring_text_monthly_budget_usd
+            )
+        )
+        if await spent(db, group_id, since=month_start) + ceiling > all_monthly:
+            return "recurring_monthly_budget_exhausted", None
+        if await spent(db, group_id, since=month_start, kinds=kinds) + ceiling > kind_monthly:
+            return "recurring_kind_monthly_budget_exhausted", None
+        if await spent(db, group_id, since=day_start) + ceiling > all_daily:
+            return "recurring_daily_budget_exhausted", None
+        if await spent(db, group_id, since=day_start, kinds=kinds) + ceiling > kind_daily:
+            return "recurring_kind_daily_budget_exhausted", None
+        hourly = min(
+            Decimal(str(settings.new_engine_hourly_budget_usd)),
+            Decimal(str(settings.image_hourly_budget_usd)),
+        )
+        if await spent(db, group_id, since=now - timedelta(hours=1)) + ceiling > hourly:
+            return "recurring_hourly_budget_exhausted", None
+
+    ident = uuid.uuid4()
+    db.add(
+        AnalysisBudgetCall(
+            id=ident,
+            group_id=group_id,
+            kind=kind,
+            attempt_key=attempt_key,
+            state="reserved",
+            reserved_usd=ceiling,
+            charged_usd=Decimal(0),
+            created_at=now,
+            # Keep every billable attempt longer than an entire calendar month.
+            delete_at=(
+                now + timedelta(days=3650)
+                if production
+                else next_budget_reset(now, monthly=True) + timedelta(days=45)
+            ),
+        )
+    )
+    return None, ident
+
+
+def release_window_blocker(route, now, *, required=False, settings=None, group_id=None):
+    """No paid attempt may start outside an authorized funding policy."""
+    if route is not None and route.paid_outcome_hold:
+        return "release_paid_outcome_held"
+    if production_enabled(settings, group_id):
+        return None if route is not None else "production_group_not_configured"
+    status = recurring_policy_status(settings, group_id, now)
+    if status is not None:
+        return None if status == "active" else status
+
+    if route is None:
+        return "release_budget_not_configured" if required else None
+    if route.paid_outcome_hold:
+        return "release_paid_outcome_held"
+    if route.release_budget_usd is None:
+        return "release_budget_not_configured" if required else None
+    if (
+        route.release_budget_since is None
+        or route.release_budget_until is None
+        or not route.release_budget_receipt
+        or not utc(route.release_budget_since) <= utc(now) < utc(route.release_budget_until)
+        or utc(route.release_budget_until) - utc(route.release_budget_since) > MAX_WINDOW
+    ):
+        return "release_budget_window_closed"
+    return None
+
+
+async def spent(db, group_id, *, since=None, kinds=None):
     query = select(
         func.coalesce(func.sum(AnalysisBudgetCall.charged_usd + AnalysisBudgetCall.reserved_usd), 0)
     ).where(AnalysisBudgetCall.group_id == group_id)
     if since is not None:
         query = query.where(AnalysisBudgetCall.created_at >= since)
+    if kinds is not None:
+        query = query.where(AnalysisBudgetCall.kind.in_(kinds))
     return Decimal(await db.scalar(query) or 0)
 
 
@@ -136,17 +320,71 @@ class RequestAccounting:
                 .with_for_update()
             )
             required = str(self.group_id) in self.settings.ai_release_budget_required_groups
+            recurring = recurring_policy_status(self.settings, self.group_id, now)
+            production = production_enabled(self.settings, self.group_id)
+            # A settled request may be followed by another C+ pass with the
+            # same package key. An *unsettled* request may never be replayed.
+            same_unknown = (
+                await db.scalar(
+                    select(AnalysisBudgetCall.id)
+                    .where(
+                        AnalysisBudgetCall.group_id == self.group_id,
+                        AnalysisBudgetCall.attempt_key == self.attempt_key,
+                        AnalysisBudgetCall.state.in_(["reserved", "unknown"]),
+                    )
+                    .limit(1)
+                )
+                if production
+                else None
+            )
             if route is None:
-                if required:
+                if production:
+                    reason = "production_group_not_configured"
+                elif recurring is not None:
+                    reason = "recurring_group_not_authorized"
+                elif required:
                     reason = "release_budget_not_configured"
             elif route.paid_outcome_hold:
                 reason = "release_paid_outcome_held"
-            elif required and route.release_budget_usd is None:
+            elif same_unknown is not None:
+                reason = "ambiguous_paid_attempt"
+            elif (
+                required
+                and route.release_budget_usd is None
+                and recurring is None
+                and not production
+            ):
                 reason = "release_budget_not_configured"
             elif (self.mode and route.analysis_mode != self.mode) or (
                 self.kind == "image" and route.analysis_mode not in {"new", "shadow"}
             ):
                 reason = "release_mode_changed"
+            elif production:
+                reason, ident = await _reserve_recurring(
+                    db,
+                    route,
+                    self.settings,
+                    self.group_id,
+                    self.kind,
+                    self.attempt_key,
+                    payload,
+                    now,
+                    production=True,
+                )
+            elif recurring is not None:
+                if recurring != "active":
+                    reason = recurring
+                else:
+                    reason, ident = await _reserve_recurring(
+                        db,
+                        route,
+                        self.settings,
+                        self.group_id,
+                        self.kind,
+                        self.attempt_key,
+                        payload,
+                        now,
+                    )
             elif route.release_budget_usd is not None:
                 group = await db.get(Group, self.group_id)
                 if group is None or not group.pilot_authorized or group.status != "active":
@@ -232,7 +470,7 @@ class RequestAccounting:
             raise ProviderFailure(reason, False, reservation_releasable=True)
         return ident
 
-    async def _finish(self, ident, *, usage=None, releasable=False):
+    async def _finish(self, ident, *, usage=None, releasable=False, failure_code=None):
         now = utc(self.clock())
         unknown = usage is None and not releasable
         try:
@@ -248,7 +486,21 @@ class RequestAccounting:
             if route is None:
                 return
             if unknown:
-                route.paid_outcome_hold = "ambiguous_paid_attempt"
+                if is_isolated_production_attempt(self.settings, self.group_id, self.kind):
+                    # Keep the maximum possible charge and mark the exact HTTP attempt
+                    # unknown, but let *unrelated* durable jobs continue. Image jobs
+                    # and C+ runs quarantine their own failed targets without retrying
+                    # this claim token / package generation.
+                    from studgroup.processing import incident_once
+
+                    await incident_once(
+                        db,
+                        "ai_request_uncertain",
+                        now,
+                        detail=f"kind={self.kind} reason={failure_code or 'no_usage'}",
+                    )
+                else:
+                    route.paid_outcome_hold = "ambiguous_paid_attempt"
             if ident is not None:
                 call = await db.get(AnalysisBudgetCall, ident, with_for_update=True)
                 if call is None:
@@ -270,15 +522,20 @@ class RequestAccounting:
             response = await invoke()
         except asyncio.CancelledError:
             try:
-                await asyncio.shield(self._finish(ident))
+                await asyncio.shield(self._finish(ident, failure_code="worker_cancelled"))
             except ProviderFailure:
                 pass
             raise
         except ProviderFailure as error:
-            await self._finish(ident, usage=error.usage, releasable=error.reservation_releasable)
+            await self._finish(
+                ident,
+                usage=error.usage,
+                releasable=error.reservation_releasable,
+                failure_code=error.code,
+            )
             raise
         except Exception:
-            await self._finish(ident)
+            await self._finish(ident, failure_code="unexpected_exception")
             raise
         usage = response.get("usage") if isinstance(response, dict) else response.usage
         await self._finish(ident, usage=usage)
@@ -339,9 +596,23 @@ def provider_for(engine, settings, group_id, provider=None, *, kind, attempt_key
     )
 
 
-async def hold_lost_attempt(db, route, attempt_key, now):
-    """Caller owns the route lock. A lost lease is not permission to purchase another attempt."""
-    route.paid_outcome_hold = "ambiguous_paid_attempt"
+async def hold_lost_attempt(db, route, attempt_key, now, *, isolate=False):
+    """Quarantine a lost paid attempt; never replay that durable generation."""
+    if isolate:
+        from studgroup.processing import incident_once
+
+        await incident_once(
+            db,
+            "ai_request_uncertain",
+            now,
+            detail=(
+                "kind=image reason=lease_expired"
+                if attempt_key.startswith("image:")
+                else "kind=cplus reason=lease_expired"
+            ),
+        )
+    else:
+        route.paid_outcome_hold = "ambiguous_paid_attempt"
     calls = (
         await db.scalars(
             select(AnalysisBudgetCall)

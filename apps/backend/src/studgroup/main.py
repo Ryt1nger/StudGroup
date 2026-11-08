@@ -1,8 +1,10 @@
 """Application factory; dependency readiness never exposes credentials."""
 
 import asyncio
+import ssl
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
+from time import perf_counter
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -35,6 +37,13 @@ from studgroup.telegram_files import router as files_router
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     database_url: str = "postgresql+asyncpg://studgroup:studgroup@localhost:5432/studgroup"
+    # Optional for the Supabase Session Pooler; unset keeps Render PostgreSQL behavior.
+    database_ca_file: str | None = None
+    database_pool_size: int | None = Field(default=None, ge=1, le=10)
+    database_max_overflow: int | None = Field(default=None, ge=0, le=10)
+    database_pool_timeout: int | None = Field(default=None, ge=1, le=60)
+    # Stage-5 verification gate. When enabled, no startup writes or background loops run.
+    cutover_read_only: bool = False
     redis_url: str = "redis://localhost:6379/0"
     webapp_origin: str = "http://localhost:5173"
     telegram_bot_token: str = ""
@@ -48,6 +57,21 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     ai_release_budget_required_groups: list[str] = Field(default_factory=list)
+    # Live paid operation after pilots: no expiring release grant or amount cap.
+    # Only explicitly enrolled groups; all requests still use accounting and safety holds.
+    ai_production_groups: list[str] = Field(default_factory=list)
+    # Explicitly authorized recurring policy, independent of the one-off release grants.
+    # An empty allowlist/receipt or expired approval is NEVER a spending permission.
+    ai_recurring_budget_groups: list[str] = Field(default_factory=list)
+    ai_recurring_approved_until: AwareDatetime | None = None
+    ai_recurring_approval_receipt: str = ""
+    # All amounts in USD per authorized group, with UTC-day/month accounting.
+    ai_recurring_daily_budget_usd: float = Field(default=0.20, gt=0, allow_inf_nan=False)
+    ai_recurring_monthly_budget_usd: float = Field(default=6.0, gt=0, allow_inf_nan=False)
+    ai_recurring_text_daily_budget_usd: float = Field(default=0.10, gt=0, allow_inf_nan=False)
+    ai_recurring_text_monthly_budget_usd: float = Field(default=3.0, gt=0, allow_inf_nan=False)
+    ai_recurring_image_daily_budget_usd: float = Field(default=0.10, gt=0, allow_inf_nan=False)
+    ai_recurring_image_monthly_budget_usd: float = Field(default=3.0, gt=0, allow_inf_nan=False)
     ai_daily_group_budget_usd: float = 0.05
     ai_hourly_group_budget_usd: float = 0.25
     ai_total_budget_usd: float = 1.70
@@ -213,12 +237,42 @@ class Settings(BaseSettings):
         return value
 
 
+def database_engine_options(settings: Settings) -> dict:
+    options = {}
+    if settings.database_ca_file:
+        if not settings.database_url.startswith("postgresql+asyncpg://"):
+            raise ValueError("database CA requires PostgreSQL with asyncpg")
+        tls = ssl.create_default_context(cafile=settings.database_ca_file)
+        tls.check_hostname = True
+        tls.verify_mode = ssl.CERT_REQUIRED
+        options["connect_args"] = {"ssl": tls, "timeout": 10}
+    for setting, option in (
+        ("database_pool_size", "pool_size"),
+        ("database_max_overflow", "max_overflow"),
+        ("database_pool_timeout", "pool_timeout"),
+    ):
+        if (value := getattr(settings, setting)) is not None:
+            options[option] = value
+    return options
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+        app.state.engine = create_async_engine(
+            settings.database_url, pool_pre_ping=True, **database_engine_options(settings)
+        )
+        if settings.cutover_read_only:
+            app.state.redis = None
+            app.state.processor = None
+            app.state.cabinet_processor = None
+            try:
+                yield
+            finally:
+                await app.state.engine.dispose()
+            return
         from studgroup.reviewed_publication import startup as apply_reviewed_payload
 
         try:
@@ -311,10 +365,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             except Exception as error:  # noqa: BLE001 -- read-only diagnostic, never blocks startup
                 print("SHADOW_WAVE_PREFLIGHT_FAILED " + type(error).__name__, flush=True)
+        # Read-only owner diagnostics are optional: a slow Supabase query must not
+        # delay serving the first Mini App request after a Render cold start.
+        diagnostics_task = None
         if settings.owner_update_notifications_enabled:
             from studgroup.processing_diagnostics import startup
 
-            await startup(app.state.engine, settings)
+            diagnostics_task = asyncio.create_task(startup(app.state.engine, settings))
+        app.state.diagnostics_task = diagnostics_task
         processor = None
         if settings.processing_mode == "embedded":
             from studgroup.runtime import processing_loop
@@ -335,6 +393,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if diagnostics_task is not None:
+                diagnostics_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await diagnostics_task
             if delivery is not None:
                 delivery.cancel()
                 with suppress(asyncio.CancelledError):
@@ -353,6 +415,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="StudGroup", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     configure_file_links(settings.telegram_webhook_secret)
+
+    # Bounded diagnostic for the real Mini App cold path. Never log auth data,
+    # request bodies, tokens, identifiers or query strings: only static routes.
+    @app.middleware("http")
+    async def academic_request_timing(request, call_next):
+        path = request.url.path
+        measured_routes = {
+            "/v1/session/bootstrap",
+            "/v1/today",
+            "/v1/schedule",
+            "/v1/homework",
+            "/v1/deadlines",
+            "/v1/profile",
+        }
+        if path not in measured_routes:
+            return await call_next(request)
+        start = perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        finally:
+            duration_ms = round((perf_counter() - start) * 1000)
+            print(f"ACADEMIC_API_TIMING route={path} status={status} ms={duration_ms}", flush=True)
+
+    @app.middleware("http")
+    async def cutover_write_gate(request, call_next):
+        if settings.cutover_read_only and request.method not in {"GET", "HEAD", "OPTIONS"}:
+            return JSONResponse(
+                {
+                    "error": {
+                        "code": "maintenance",
+                        "message": "Запись временно недоступна",
+                        "retryable": True,
+                    }
+                },
+                status_code=503,
+                headers={"Retry-After": "60"},
+            )
+        return await call_next(request)
+
     app.include_router(router)
     app.include_router(ingestion_router)
     app.include_router(homework_router)
@@ -442,17 +546,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except (OSError, TimeoutError, RedisError, SQLAlchemyError):
                 return False
 
-        if settings.processing_mode == "embedded":
+        if settings.cutover_read_only:
+            database = await check(postgres)
+            redis = None
+            ok = database
+            status = "read_only" if ok else "not_ready"
+        elif settings.processing_mode == "embedded":
             database = await check(postgres)
             redis = None  # SQL inbox is authoritative; no Redis is used in this pilot mode.
             processor_ok = app.state.processor is not None and not app.state.processor.done()
             ok = database and processor_ok
+            status = "ready" if ok else "not_ready"
         else:
             database, redis = await asyncio.gather(check(postgres), check(app.state.redis.ping))
             ok = database and redis
+            status = "ready" if ok else "not_ready"
         return JSONResponse(
             {
-                "status": "ready" if ok else "not_ready",
+                "status": status,
                 "checks": {"postgres": database, "redis": redis},
             },
             status_code=200 if ok else 503,

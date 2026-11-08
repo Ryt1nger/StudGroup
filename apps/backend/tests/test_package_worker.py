@@ -14,7 +14,7 @@ from test_processing import source
 from studgroup.ai import ProviderFailure
 from studgroup.analysis.contracts import ANALYSIS_ENGINE_VERSION, ANALYSIS_SCHEMA_VERSION
 from studgroup.analysis.dispatch import dispatch_next
-from studgroup.analysis.package_worker import process_package_next
+from studgroup.analysis.package_worker import enqueue_next_package, process_package_next
 from studgroup.analysis.pilot import transition_mode
 from studgroup.analysis.provider import ProviderResponse, ProviderUsage
 from studgroup.main import Settings
@@ -25,6 +25,7 @@ from studgroup.models import (
     Group,
     GroupAnalysisSettings,
     Homework,
+    MessageAttachment,
     Notification,
     RawMessage,
     SchedulePattern,
@@ -1092,3 +1093,259 @@ def test_terse_cancellation_requires_explicit_intent_and_item_reply(client, text
             return (await db.scalar(select(CanonicalAcademicItem))).state
 
     assert asyncio.run(inspect()) == expected
+
+
+def test_expired_release_preserves_pending_and_queued_packages_until_authorized(client):
+    seed(client)
+    make_new(client)
+
+    async def run():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "a" * 64
+            group_id = group.id
+            await db.commit()
+            return group_id
+
+    group_id = asyncio.run(run())
+    cfg = settings(ai_release_budget_required_groups=[str(group_id)])
+    # Queue a package in the valid window without invoking the provider.
+    assert asyncio.run(enqueue_next_package(client.app.state.engine, cfg)) == "queued"
+    assert count(client, ShadowEvaluationRun) == 1
+    assert set(states(client).values()) == {"pending"}
+
+    async def expire():
+        async with AsyncSession(client.app.state.engine) as db:
+            route = await db.get(GroupAnalysisSettings, group_id)
+            route.release_budget_until = datetime.now(UTC) - timedelta(seconds=1)
+            await db.commit()
+
+    asyncio.run(expire())
+    provider = PackageProvider()
+    assert step(client, provider, cfg) == "release_budget_window_closed"
+    assert provider.requests == []
+    assert set(states(client).values()) == {"pending"}
+    assert count(client, ShadowEvaluationRun, ShadowEvaluationRun.state == "queued") == 1
+
+    # No new package can be created while the release is closed.
+    assert asyncio.run(enqueue_next_package(client.app.state.engine, cfg)) == "idle"
+    assert count(client, ShadowEvaluationRun) == 1
+
+    async def restore():
+        async with AsyncSession(client.app.state.engine) as db:
+            route = await db.get(GroupAnalysisSettings, group_id)
+            route.release_budget_until = datetime.now(UTC) + timedelta(minutes=30)
+            await db.commit()
+
+    asyncio.run(restore())
+    assert step(client, provider, cfg) == "completed"
+    assert len(provider.requests) == 2
+    assert set(states(client).values()) == {"completed"}
+
+
+def test_unread_photo_in_funded_group_does_not_starve_later_text(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "a" * 64
+            raw = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            db.add(
+                MessageAttachment(
+                    raw_message_id=raw.id,
+                    group_id=group.id,
+                    source_revision=1,
+                    kind="photo",
+                    stable_file_id="unread-photo-31",
+                    telegram_file_id="file31",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            group_id = group.id
+            await db.commit()
+            return group_id
+
+    group_id = asyncio.run(prepare())
+    config = settings(
+        photo_reading_enabled=True,
+        ai_release_budget_required_groups=[str(group_id)],
+    )
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, config) == "completed"
+    assert len(provider.requests) == 2
+    assert states(client) == {31: "pending", 32: "completed", 33: "completed"}
+    # The unread image source was not passed off as analysed.
+    assert step(client, provider, config) == "idle"
+    assert len(provider.requests) == 2
+
+
+def test_photo_caption_and_reply_chain_wait_together_but_unrelated_homework_progresses(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "a" * 64
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            reply = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
+            reply.reply_to_message_id = 31
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="caption-image-31",
+                    telegram_file_id="photo31",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    config = settings(
+        photo_reading_enabled=True,
+        ai_release_budget_required_groups=[str(group_id)],
+    )
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, config) == "completed"
+    assert set(provider.targets) == {33}
+    assert states(client) == {31: "pending", 32: "pending", 33: "completed"}
+    assert step(client, provider, config) == "idle"
+
+    async def finish_photo():
+        async with AsyncSession(client.app.state.engine) as db:
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            attachment = await db.scalar(
+                select(MessageAttachment).where(MessageAttachment.raw_message_id == photo.id)
+            )
+            attachment.processing_state = "ready"
+            attachment.photo_text = "Решить задачи 1–3"
+            attachment.photo_summary = "Условие домашнего задания"
+            await db.commit()
+
+    asyncio.run(finish_photo())
+    assert step(client, provider, config) == "completed"
+    assert set(provider.targets) == {31, 32}
+    assert set(states(client).values()) == {"completed"}
+
+
+def test_text_reply_to_old_picture_keeps_its_full_source_chain(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            rows = (
+                await db.scalars(select(RawMessage).order_by(RawMessage.telegram_message_id))
+            ).all()
+            photo, reply, latest = rows
+            photo.processing_state = "completed"
+            reply.processing_state = "completed"
+            reply.reply_to_message_id = photo.telegram_message_id
+            latest.reply_to_message_id = reply.telegram_message_id
+            latest.message_date = BASE + timedelta(minutes=50)
+            latest.version_date = latest.message_date
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="old-picture-31",
+                    telegram_file_id="picture31",
+                    mime_type="image/jpeg",
+                    processing_state="ready",
+                    photo_text="На доске записано условие задач",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            for mid in range(100, 130):
+                db.add(
+                    RawMessage(
+                        group_id=group.id,
+                        telegram_message_id=mid,
+                        text=f"Промежуточное сообщение {mid}",
+                        message_date=BASE + timedelta(minutes=5 + mid - 100),
+                        version_date=BASE + timedelta(minutes=5 + mid - 100),
+                        processing_state="completed",
+                        imported=False,
+                        delete_at=BASE + timedelta(days=30),
+                    )
+                )
+            await db.commit()
+
+    asyncio.run(prepare())
+    provider = PackageProvider(propose=False)
+    assert step(client, provider) == "completed"
+    context = provider.requests[0].user_payload["messages"]
+    by_id = {entry["telegram_message_id"]: entry for entry in context}
+    assert {31, 32, 33} <= set(by_id)
+    assert by_id[33]["reply_to_message_id"] == 32
+    assert by_id[32]["reply_to_message_id"] == 31
+    assert "условие задач" in by_id[31]["text"]
+    assert states(client)[33] == "completed"
+
+
+def test_production_package_runs_after_engine_and_release_windows_close(client):
+    seed(client)
+    make_new(client, budget="0")
+    now = datetime.now(UTC)
+
+    async def prepare():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal(".001")
+            route.release_budget_since = now - timedelta(days=2)
+            route.release_budget_until = now - timedelta(hours=1)
+            route.release_budget_receipt = "a" * 64
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    config = settings(
+        new_engine_enabled_until=now - timedelta(minutes=5),
+        new_engine_hourly_budget_usd=0,
+        ai_schedule_enabled=True,
+        ai_release_budget_required_groups=[str(group_id)],
+        ai_production_groups=[str(group_id)],
+    )
+    provider = PackageProvider(propose=False)
+    # 04:00 Moscow time: the old hourly pilot window is closed at this hour.
+    overnight = (now + timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0)
+    assert step(client, provider, config, now=overnight) == "completed"
+    assert len(provider.requests) == 2
+    assert set(states(client).values()) == {"completed"}

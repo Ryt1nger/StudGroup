@@ -66,7 +66,9 @@ async def menu(db, session, group):
     await screen(
         db,
         session,
-        f"Староста · {group.name}\nВыбери раздел. Изменения сохраняются только после подтверждения.",
+        f"Староста · {group.name}\n"
+        f"ID РАНХиГС: {group.academic_group_code or 'не указан'}\n"
+        "Выбери раздел. Изменения сохраняются только после подтверждения.",
         [
             [(f"Требует проверки · {len(questions)}", "review")],
             [("Домашние задания", "tasks")],
@@ -100,8 +102,9 @@ async def groups(db, session, forward=None):
         await screen(
             db,
             session,
-            "Нет роли старосты/помощника. Староста становится им, подключив группу кнопкой "
-            "«Я староста» на стартовом экране; помощника назначает владелец проекта.",
+            "Нет роли старосты/помощника. Чтобы подключить учебную группу, откройте "
+            "стартовое меню и нажмите «Подключить группу» → «Я староста». "
+            "Помощника назначает действующий староста.",
             [],
             "closed",
         )
@@ -408,7 +411,11 @@ async def settings_screen(db, session, group, member):
     await screen(
         db,
         session,
-        f"Часовой пояс: {group.timezone}\nЛичные вопросы: {'включены' if enabled else 'выключены'}\nВремя вопросов: {config.digest_times if config else '09:00'}\nНе более двух непустых подборок в день; ручная работа доступна при выключенном ИИ.",
+        f"Официальный ID РАНХиГС: {group.academic_group_code or 'не указан'}\n"
+        f"Часовой пояс: {group.timezone}\n"
+        f"Личные вопросы: {'включены' if enabled else 'выключены'}\n"
+        f"Время вопросов: {config.digest_times if config else '09:00'}\n"
+        "Не более двух непустых подборок в день; ручная работа доступна при выключенном ИИ.",
         [
             [("Выключить вопросы" if enabled else "Включить вопросы", "toggle_questions")],
             [("Время вопросов", "digest_times")],
@@ -472,7 +479,8 @@ async def members_screen(db, session, group, member, page=0):
     if len(rows) > (page + 1) * 8:
         buttons += [[("›", "members_next")]]
     buttons += [
-        [("Создать приглашения", "invite")],
+        [("Создать общую ссылку · 3 часа", "group_link")],
+        [("Одноразовые приглашения · 24 часа", "invite")],
         [("Отозвать действующие приглашения", "revoke_invites")],
         back(),
     ]
@@ -486,7 +494,7 @@ async def members_screen(db, session, group, member, page=0):
     )
 
 
-async def subgroup_settings_screen(db, session, group):
+async def subgroup_settings_screen(db, session, group, *, onboarding=False):
     configured = await subgroups.splits(db, group.id)
     lines = ["Подгруппы по предметам"]
     if configured:
@@ -501,9 +509,14 @@ async def subgroup_settings_screen(db, session, group):
             [(f"{split.subject_name} · {len(rows)}"[:55], f"subgroup_open_{n}")]
             for n, (split, rows) in enumerate(configured)
         ]
-        + [[("Добавить предмет", "subgroup_add")], back()],
+        + [[("Добавить предмет", "subgroup_add")]]
+        + (
+            [[("Далее", "subgroup_finish")], [("‹ Назад", "subgroup_onboarding_back")]]
+            if onboarding
+            else [back()]
+        ),
         "subgroup_list",
-        {"splits": [str(split.id) for split, _ in configured]},
+        {"splits": [str(split.id) for split, _ in configured], "onboarding": onboarding},
     )
 
 
@@ -658,6 +671,7 @@ async def handle(db, update, settings):
             return True
         if action == "subgroup_settings" or session.step in {
             "subgroup_list",
+            "subgroup_saved",
             "subgroup_detail",
             "subgroup_delete",
             "subgroup_draft",
@@ -665,17 +679,33 @@ async def handle(db, update, settings):
             user, member, group = await domain.access(db, sender.id, session.group_id)
         if action == "subgroup_settings":
             domain.headman_only(member)
-            await subgroup_settings_screen(db, session, group)
+            await subgroup_settings_screen(
+                db, session, group, onboarding=data.get("onboarding", False)
+            )
             return True
-        if session.step == "subgroup_list" and action == "subgroup_add":
+        if session.step in {"subgroup_list", "subgroup_saved"} and action == "subgroup_add":
             domain.headman_only(member)
             await ask(
                 db,
                 session,
                 "Как называется предмет с разделением на подгруппы?",
-                {},
+                {"onboarding": data.get("onboarding", False)},
                 "subgroup_subject",
             )
+            return True
+        if session.step in {"subgroup_list", "subgroup_saved"} and action == "subgroup_finish":
+            domain.headman_only(member)
+            if data.get("onboarding"):
+                await bot_start.finish_onboarding_from_cabinet(db, settings, sender.id, group)
+            else:
+                await menu(db, session, group)
+            return True
+        if session.step == "subgroup_list" and action == "subgroup_onboarding_back":
+            domain.headman_only(member)
+            if data.get("onboarding"):
+                await bot_start.return_to_subgroup_question(db, settings, sender.id, group)
+            else:
+                await menu(db, session, group)
             return True
         if session.step == "subgroup_list" and action.startswith("subgroup_open_"):
             domain.headman_only(member)
@@ -727,8 +757,16 @@ async def handle(db, update, settings):
             await screen(
                 db,
                 session,
-                "Подгруппы сохранены. Студенты получили просьбу выбрать свою.",
-                [[("К предметам", "subgroup_settings")], back()],
+                "Предмет сохранён. Можно добавить ещё один или завершить настройку.",
+                [
+                    [("Добавить ещё", "subgroup_add")],
+                    [("К предметам", "subgroup_settings")],
+                    [("Далее", "subgroup_finish")],
+                ]
+                if data.get("onboarding")
+                else [[("Добавить ещё", "subgroup_add")], [("К предметам", "subgroup_settings")]],
+                "subgroup_saved",
+                {"onboarding": data.get("onboarding", False)},
             )
             return True
         if session.step == "groups" and action.startswith("group"):
@@ -1069,6 +1107,14 @@ async def handle(db, update, settings):
                 else "Восстановить доступ? Потребуется проверка участия в Telegram.",
                 {"action": "member_change", "member_id": str(target.id), "expected": target.status},
             )
+        elif action == "group_link":
+            domain.headman_only(member)
+            await preview(
+                db,
+                session,
+                "Создать общую ссылку на 3 часа? Прежняя общая ссылка сразу перестанет действовать.",
+                {"action": "group_link"},
+            )
         elif action == "invite":
             domain.headman_only(member)
             await ask(
@@ -1272,7 +1318,7 @@ async def typed(db, session, group, user, member, data, text, message, settings)
             db,
             session,
             "На сколько подгрупп делится предмет? От 2 до 6.",
-            {"subject": text},
+            {**data, "subject": text},
             "subgroup_count",
         )
     elif field == "subgroup_count":
@@ -1283,7 +1329,7 @@ async def typed(db, session, group, user, member, data, text, message, settings)
         await ask(
             db,
             session,
-            "Сигналы для подгруппы 1 через запятую: фамилия преподавателя, номер группы, аудитория или другие слова из сообщений.",
+            "Укажите фамилию преподавателя или номер группы для подгруппы 1.",
             {**data, "count": count, "signals": []},
             "subgroup_signals",
         )
@@ -1291,18 +1337,19 @@ async def typed(db, session, group, user, member, data, text, message, settings)
         domain.headman_only(member)
         parsed = subgroups.parse_signals(text)
         if not parsed:
-            raise domain.StError("Укажите хотя бы один сигнал.")
+            raise domain.StError("Укажите фамилию преподавателя или номер группы.")
         signals = [*data["signals"], parsed]
         if len(signals) < data["count"]:
             await ask(
                 db,
                 session,
-                f"Сигналы для подгруппы {len(signals) + 1} через запятую:",
+                f"Укажите фамилию преподавателя или номер группы для подгруппы {len(signals) + 1}:",
                 {**data, "signals": signals},
                 "subgroup_signals",
             )
         else:
-            names = await subgroups.suggest_names(settings, data["subject"], signals)
+            # Subgroup setup must not spend AI tokens or invent labels during onboarding.
+            names = [subgroups.fallback_name(n + 1, items) for n, items in enumerate(signals)]
             await subgroup_draft_screen(db, session, {**data, "signals": signals, "names": names})
     elif field == "subgroup_draft_name":
         domain.headman_only(member)
@@ -1584,6 +1631,17 @@ async def apply(db, session, group, user, member, data, settings):
             data["ends_at"],
             data["location"],
         )
+    elif action == "group_link":
+        code = await domain.issue_group_link(db, group, member)
+        await screen(
+            db,
+            session,
+            "Общая ссылка на 3 часа. Перешлите её студентам: "
+            "доступ получат только подтверждённые участники Telegram-чата. "
+            "ID и @username вводить не нужно.\n\n" + bot_start.invite_link(settings, code),
+            [back()],
+        )
+        return
     elif action == "invite":
         codes = await domain.issue_invites(db, group, member, data["count"])
         await screen(

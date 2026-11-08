@@ -336,7 +336,24 @@ async def context_snapshot(db, raw):
     return context
 
 
-async def schedule_group(db, group, now, since, model_key="", provider_identity=None):
+def pass_b_available_at(context, now):
+    """Debounce fresh chat context without delaying historic backfill."""
+    timestamps = [
+        utc(datetime.fromisoformat(message["sent_at"]))
+        for message in context.get("messages", [])
+        if message.get("sent_at")
+    ]
+    if not timestamps:
+        return now
+    # A discussion often continues immediately after the picture. Waiting one
+    # short quiet window prevents paying for results that become stale mid-call.
+    # Cap clock skew so a malformed future Telegram time cannot strand the job.
+    return min(max(now, max(timestamps) + timedelta(seconds=60)), now + timedelta(seconds=60))
+
+
+async def schedule_group(
+    db, group, now, since, model_key="", provider_identity=None, *, quiet_window=False
+):
     """Caller holds group settings lock. Enumerate every retained image, not just six."""
     attachments = (
         await db.scalars(
@@ -430,7 +447,7 @@ async def schedule_group(db, group, now, since, model_key="", provider_identity=
                         pass_number=2,
                         state="pending",
                         attempts=0,
-                        available_at=now,
+                        available_at=pass_b_available_at(context, now) if quiet_window else now,
                         created_at=now,
                         delete_at=min(raw.delete_at, attachment.delete_at),
                     )
@@ -617,9 +634,15 @@ async def claim(db, group, route, settings, now):
             call.state, call.charged_usd = "unknown", call.reserved_usd
             call.reserved_usd = Decimal(0)
         job.state, job.error, job.lease_until = "failed", "ambiguous_paid_attempt", None
-        from studgroup.analysis.release_budget import hold_lost_attempt
+        from studgroup.analysis.release_budget import hold_lost_attempt, production_enabled
 
-        await hold_lost_attempt(db, route, f"image:{job.claim_token}", now)
+        await hold_lost_attempt(
+            db,
+            route,
+            f"image:{job.claim_token}",
+            now,
+            isolate=production_enabled(settings, group.id),
+        )
         return None
     raw = await db.get(RawMessage, job.raw_message_id)
     attachment = await db.get(MessageAttachment, job.attachment_id)
@@ -638,6 +661,24 @@ async def claim(db, group, route, settings, now):
         if cached is not None:
             reuse_reading(job, cached)
             return job.id, None  # no reservation and no paid attempt, even at exhausted budget
+    from studgroup.analysis.release_budget import release_window_blocker
+
+    blocker = release_window_blocker(
+        route,
+        now,
+        required=str(group.id) in settings.ai_release_budget_required_groups,
+        settings=settings,
+        group_id=group.id,
+    )
+    if blocker:
+        job.state, job.error = "budget_deferred", blocker
+        # Recheck soon after an operator approves funding; no paid retry occurs
+        # while the policy remains closed.
+        job.available_at = now + timedelta(minutes=5)
+        return None
+    from studgroup.analysis.release_budget import production_enabled
+
+    production = production_enabled(settings, group.id)
     reserve = Decimal(str(settings.image_pass_reservation_usd))
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     group_filter = ImageAnalysisCall.group_id == group.id
@@ -662,11 +703,13 @@ async def claim(db, group, route, settings, now):
         ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd,
         ImageAnalysisCall.job_id.in_(image_jobs),
     )
-    if reserve <= 0 or committed + text_spent + reserve > Decimal(route.shadow_daily_budget_usd):
+    if reserve <= 0 or (
+        not production and committed + text_spent + reserve > Decimal(route.shadow_daily_budget_usd)
+    ):
         job.state, job.error = "budget_deferred", "image_group_budget"
         job.available_at = day_start + timedelta(days=1)
         return None
-    if image_spent + reserve > Decimal(str(settings.image_total_budget_usd)):
+    if not production and image_spent + reserve > Decimal(str(settings.image_total_budget_usd)):
         job.state, job.error = "budget_deferred", "image_budget_exhausted"
         job.available_at = day_start + timedelta(days=1)
         return None
@@ -698,11 +741,11 @@ async def claim(db, group, route, settings, now):
         ImageAnalysisCall.charged_usd + ImageAnalysisCall.reserved_usd,
         ImageAnalysisCall.job_id.in_(batch_jobs),
     )
-    if hourly + reserve > Decimal(str(settings.image_hourly_budget_usd)):
+    if not production and hourly + reserve > Decimal(str(settings.image_hourly_budget_usd)):
         job.state, job.error = "budget_deferred", "image_hourly_budget"
         job.available_at = now + timedelta(minutes=10)
         return None
-    if batch_spent + reserve > Decimal(str(settings.image_package_budget_usd)):
+    if not production and batch_spent + reserve > Decimal(str(settings.image_package_budget_usd)):
         job.state, job.error = "budget_deferred", "image_package_budget_exhausted"
         job.available_at = day_start + timedelta(days=1)
         return None
@@ -743,6 +786,8 @@ async def perform(provider, image, mime, job, raw, first=None):
 
 
 async def process_images_next(engine, settings, provider=None, now=None, transport=None):
+    from studgroup.analysis.release_budget import production_enabled
+
     if (
         not settings.image_analysis_enabled
         or not settings.image_analysis_groups
@@ -784,6 +829,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                 settings.image_analysis_since,
                 model_identity(settings),
                 provider_identity(settings),
+                quiet_window=production_enabled(settings, group.id),
             )
             await db.flush()
             picked = await claim(db, group, route, settings, now)
@@ -894,7 +940,9 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             or context_changed
         ):
             job.state, job.error = "stale", "context_or_source_revision_changed"
-        elif actual > Decimal(str(settings.image_pass_reservation_usd)):
+        elif actual > Decimal(str(settings.image_pass_reservation_usd)) and not production_enabled(
+            settings, job.group_id
+        ):
             job.state, job.error = "failed", "image_charge_over_reservation"
         elif result is not None and cached is not None:
             reuse_reading(job, cached)
@@ -917,7 +965,18 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             job.visual_coverage_json = json.dumps(coverage) if coverage else None
         else:
             job.error = failure.code
-            if paid and usage is None and not getattr(failure, "reservation_releasable", False):
+            if (
+                failure.code.startswith("recurring_")
+                or failure.code.startswith("release_budget_")
+                or failure.code.startswith("release_daily_budget_")
+                or failure.code.startswith("release_hourly_budget_")
+                or failure.code == "release_paid_outcome_held"
+            ):
+                from studgroup.analysis.release_budget import next_budget_reset
+
+                job.state = "budget_deferred"
+                job.available_at = next_budget_reset(now, monthly="monthly" in failure.code)
+            elif paid and usage is None and not getattr(failure, "reservation_releasable", False):
                 job.state, job.error = "failed", "ambiguous_paid_attempt"
             elif failure.retryable and job.attempts < MAX_ATTEMPTS:
                 job.state = "retry"

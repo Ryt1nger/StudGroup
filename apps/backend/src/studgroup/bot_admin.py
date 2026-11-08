@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import httpx
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,14 +59,14 @@ def enqueue(db, method, payload, dedup_key=None):
     )
 
 
-async def enqueue_once(db, method, payload, dedup_key):
+async def enqueue_once(db, method, payload, dedup_key, *, available_at=None):
     values = {
         "id": uuid.uuid4(),
         "method": method,
         "payload": json.dumps(payload, ensure_ascii=False),
         "state": "pending",
         "attempts": 0,
-        "available_at": datetime.now(UTC),
+        "available_at": available_at or datetime.now(UTC),
         "dedup_key": dedup_key,
     }
     dialect = db.bind.dialect.name
@@ -164,10 +164,7 @@ async def handle(db, update, settings):
         session.expires_at = now + timedelta(minutes=15)
         groups = (
             await db.scalars(
-                select(Group)
-                .where(Group.pilot_authorized.is_(True), Group.status == "active")
-                .order_by(Group.name)
-                .limit(40)
+                select(Group).where(Group.status == "active").order_by(Group.name).limit(40)
             )
         ).all()
         from studgroup.bot_connect import NO_HEADMAN, headmanless_group_ids
@@ -182,7 +179,9 @@ async def handle(db, update, settings):
                 [
                     [
                         (
-                            g.name[:36] + (f" · {NO_HEADMAN}" if g.id in without else ""),
+                            g.name[:30]
+                            + (" · ожидает активации" if not g.pilot_authorized else "")
+                            + (f" · {NO_HEADMAN}" if g.id in without else ""),
                             "g" + g.id.hex,
                         )
                     ]
@@ -699,15 +698,18 @@ async def handle(db, update, settings):
     return True
 
 
-async def telegram_request(settings, method, payload):
-    async with httpx.AsyncClient(timeout=10, trust_env=False, follow_redirects=False) as client:
-        response = await client.post(
-            f"https://api.telegram.org/bot{settings.telegram_bot_token}/{method}", json=payload
-        )
-        data = response.json()
-        if response.status_code != 200:
-            data["ok"] = False
-        return data
+async def telegram_request(settings, method, payload, *, client=None):
+    """Use the delivery loop's pooled HTTP connection when one is supplied."""
+    if client is None:
+        async with httpx.AsyncClient(timeout=10, trust_env=False, follow_redirects=False) as fresh:
+            return await telegram_request(settings, method, payload, client=fresh)
+    response = await client.post(
+        f"https://api.telegram.org/bot{settings.telegram_bot_token}/{method}", json=payload
+    )
+    data = response.json()
+    if response.status_code != 200:
+        data["ok"] = False
+    return data
 
 
 async def telegram_document_request(settings, *, chat_id, filename, document, caption):
@@ -839,21 +841,84 @@ async def deliver_shadow_export(db, row, settings):
     await db.commit()
 
 
-async def deliver(engine, settings):
+async def subgroup_notice_eligibility(db, row, now):
+    """Return the next send time, or None to discard a no-longer-relevant prompt."""
+    from studgroup import subgroups
+    from studgroup.models import MemberSubgroup, SubjectSplit, UserProfile
+    from studgroup.profile import NotificationSettings
+
+    try:
+        _, split_text, user_text = row.dedup_key.split(":")
+        split_id = uuid.UUID(split_text)
+        telegram_id = int(user_text)
+    except (TypeError, ValueError):
+        return None
+    split = await db.get(SubjectSplit, split_id)
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    if not split or not user:
+        return None
+    member = await db.scalar(
+        select(Membership).where(
+            Membership.group_id == split.group_id,
+            Membership.user_id == user.id,
+            Membership.role == "student",
+            Membership.status == "active",
+        )
+    )
+    if not member or await db.get(MemberSubgroup, (member.id, split.id)):
+        return None
+    profile = await db.get(UserProfile, user.id)
+    try:
+        preferences = NotificationSettings.model_validate(
+            (profile.settings or {}) if profile else {}
+        )
+    except ValueError:
+        return None
+    if not preferences.enabled:
+        return None
+    group = await db.get(Group, split.group_id)
+    if group is None or group.status != "active" or not group.pilot_authorized:
+        return None
+    return subgroups.quiet_delivery_at(now, group.timezone, preferences)
+
+
+async def deliver(engine, settings, *, request=None):
     if not settings.telegram_bot_token:
         return
+    request = request or telegram_request
     now = datetime.now(UTC)
     async with AsyncSession(engine, expire_on_commit=False) as db:
         row = await db.scalar(
             select(BotOutbox)
             .where(BotOutbox.state == "pending", BotOutbox.available_at <= now)
             .where((BotOutbox.lease_until.is_(None)) | (BotOutbox.lease_until <= now))
-            .order_by(BotOutbox.available_at)
+            # The user's callback and screen must not wait behind background alerts
+            # or slow deleteMessage cleanup jobs.
+            .order_by(
+                case(
+                    (BotOutbox.method == "answerCallbackQuery", 0),
+                    (BotOutbox.method == "renderPanel", 1),
+                    (BotOutbox.method == "panelAux", 2),
+                    (BotOutbox.method == "sendMessage", 3),
+                    else_=4,
+                ),
+                BotOutbox.available_at,
+            )
             .limit(1)
             .with_for_update(skip_locked=True)
         )
         if not row:
             return
+        if row.method == "sendMessage" and (row.dedup_key or "").startswith("subgroup-choice:"):
+            eligible = await subgroup_notice_eligibility(db, row, now)
+            if eligible is None:
+                row.state = "superseded"
+                await db.commit()
+                return
+            if eligible > now:
+                row.available_at = eligible
+                await db.commit()
+                return
         testing_update = (row.dedup_key or "").startswith("owner-test:")
         if (
             testing_update
@@ -891,7 +956,7 @@ async def deliver(engine, settings):
             if row.panel_id:
                 from studgroup.bot_panels import execute
 
-                outcome = await execute(db, row, settings, telegram_request)
+                outcome = await execute(db, row, settings, request)
                 if outcome == "superseded":
                     row.state = "superseded"
                     row.lease_until = None
@@ -899,7 +964,7 @@ async def deliver(engine, settings):
                     return
                 ok = outcome == "sent"
             elif row.method in ["sendMessage", "answerCallbackQuery"]:
-                result = await telegram_request(settings, row.method, json.loads(row.payload))
+                result = await request(settings, row.method, json.loads(row.payload))
                 ok = result.get("ok") is True
         except (httpx.HTTPError, ValueError):
             pass
@@ -911,22 +976,35 @@ async def deliver(engine, settings):
         await db.commit()
 
 
-async def delivery_loop(engine, settings):
-    iterations = 0
+async def _periodic_delivery_job(engine, interval, task):
+    """Run slow housekeeping without holding up interactive Telegram responses."""
     while True:
         try:
-            await deliver(engine, settings)
-            if iterations % 10 == 0:
-                from studgroup.owner_updates import tick as owner_update_tick
+            await task(engine)
+        except Exception as error:  # noqa: BLE001 -- retry service maintenance, not user work
+            LOGGER.warning("bot_delivery_housekeeping_failed: %s", type(error).__name__)
+        await asyncio.sleep(interval)
 
-                await owner_update_tick(engine, settings)
-            if iterations % 60 == 0:
-                from studgroup.headman_digest import tick
 
-                await tick(engine)
-            iterations += 1
-        except Exception as error:  # noqa: BLE001 -- durable retry; never log sensitive exception text
-            logging.getLogger(__name__).warning(
-                "bot_delivery_iteration_failed: %s", type(error).__name__
-            )
-        await asyncio.sleep(0.5)
+async def delivery_loop(engine, settings):
+    from studgroup.headman_digest import tick as digest_tick
+    from studgroup.owner_updates import tick as owner_tick
+
+    async def send_owner_updates(db_engine):
+        await owner_tick(db_engine, settings)
+
+    # One keep-alive HTTP pool per worker: avoid a fresh TLS handshake per button.
+    async with httpx.AsyncClient(timeout=10, trust_env=False, follow_redirects=False) as client:
+
+        async def request(config, method, payload):
+            return await telegram_request(config, method, payload, client=client)
+
+        async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(_periodic_delivery_job(engine, 5, send_owner_updates))
+            tasks.create_task(_periodic_delivery_job(engine, 30, digest_tick))
+            while True:
+                try:
+                    await deliver(engine, settings, request=request)
+                except Exception as error:  # noqa: BLE001 -- durable retry; never log private data
+                    LOGGER.warning("bot_delivery_iteration_failed: %s", type(error).__name__)
+                await asyncio.sleep(0.1)

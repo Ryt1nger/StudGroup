@@ -1,8 +1,10 @@
+import ssl
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 from fastapi.testclient import TestClient
 
-from studgroup.main import Settings, create_app
+from studgroup.main import Settings, create_app, database_engine_options
 
 
 def test_health_and_readiness_failure():
@@ -55,11 +57,87 @@ def test_embedded_mode_needs_no_redis_and_stops_on_shutdown(tmp_path):
     assert processor.cancelled()
 
 
+def test_slow_optional_owner_diagnostics_does_not_block_startup(tmp_path, monkeypatch):
+    import asyncio
+
+    from studgroup import processing_diagnostics
+
+    async def slow_diagnostics(_engine, _settings):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(processing_diagnostics, "startup", slow_diagnostics)
+    app = create_app(
+        Settings(
+            database_url=f"sqlite+aiosqlite:///{tmp_path}/nonblocking.db",
+            owner_update_notifications_enabled=True,
+            cabinet_schedule_background_enabled=False,
+        )
+    )
+    with TestClient(app) as client:
+        # Startup must finish even though the diagnostic query never finishes.
+        assert client.get("/health").status_code == 200
+        task = app.state.diagnostics_task
+        assert task is not None
+        assert not task.done()
+    assert task.cancelled()
+
+
 def test_render_postgres_urls_are_normalized_without_requiring_manual_driver_edits():
     assert (
         Settings(database_url="postgres://user:placeholder@host/db").database_url
         == "postgresql+asyncpg://user:placeholder@host/db"
     )
+
+
+def test_database_tls_and_pool_are_opt_in():
+    assert database_engine_options(Settings()) == {}
+    ca = Path(__file__).parents[1] / "probes" / "prod-ca-2021.crt"
+    settings = Settings(
+        database_ca_file=str(ca),
+        database_pool_size=3,
+        database_max_overflow=0,
+        database_pool_timeout=10,
+    )
+    options = database_engine_options(settings)
+    assert options["pool_size"] == 3
+    assert options["max_overflow"] == 0
+    assert options["pool_timeout"] == 10
+    assert options["connect_args"]["ssl"].verify_mode == ssl.CERT_REQUIRED
+    assert options["connect_args"]["ssl"].check_hostname
+
+
+def test_database_tls_requires_postgres_and_existing_ca(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError, match="requires PostgreSQL"):
+        database_engine_options(
+            Settings(database_url="sqlite+aiosqlite:///test.db", database_ca_file="missing")
+        )
+    with pytest.raises(FileNotFoundError):
+        database_engine_options(Settings(database_ca_file=str(tmp_path / "missing.crt")))
+
+
+def test_cutover_read_only_skips_startup_tasks_and_rejects_writes(tmp_path):
+    app = create_app(
+        Settings(
+            database_url=f"sqlite+aiosqlite:///{tmp_path}/cutover.db",
+            cutover_read_only=True,
+            telegram_webhook_secret="test-secret",
+        )
+    )
+    with TestClient(app) as client:
+        assert app.state.redis is None
+        assert app.state.processor is None
+        assert app.state.cabinet_processor is None
+        assert client.get("/ready").json() == {
+            "status": "read_only",
+            "checks": {"postgres": True, "redis": None},
+        }
+        for path in ("/v1/telegram/webhook", "/v1/session/bootstrap"):
+            response = client.post(path, json={})
+            assert response.status_code == 503
+            assert response.json()["error"]["code"] == "maintenance"
+        assert client.get("/health").status_code == 200
 
 
 def test_ai_cutoff_rejects_unspecified_timezone():

@@ -4,9 +4,10 @@ import { api } from '../../api/queries';
 import { mergePages } from '../tasks/taskFilters';
 
 /** Complete active list for Today and counters; separate from Tasks' on-demand pagination. */
-export function useAllHomework() {
+export function useAllHomework(enabled = true) {
   return useQuery({
     queryKey: ['homework-counts'],
+    enabled,
     queryFn: async (): Promise<HomeworkSummary[]> => {
       const pages = [];
       let cursor: string | undefined;

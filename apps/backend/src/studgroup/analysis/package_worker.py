@@ -31,6 +31,7 @@ from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
 from studgroup.analysis.manual_dedupe import prompt_memory, recent_manual_cards
 from studgroup.analysis.package_run import DEFAULT_MAX_TARGETS, plan_packages
+from studgroup.analysis.release_budget import release_window_blocker
 from studgroup.analysis.shadow import (
     ShadowPassFailure,
     failure_stage,
@@ -79,7 +80,7 @@ def _gate(settings, now):
     if not settings.new_engine_enabled:
         return False
     until = settings.new_engine_enabled_until
-    return until is None or _utc(until) > now
+    return until is None or _utc(until) > now or bool(getattr(settings, "ai_production_groups", ()))
 
 
 def _source_message(row, *, roles, topics, attachments):
@@ -199,8 +200,14 @@ def _eligible(group, settings, now):
         RawMessage.imported.is_(False),
         RawMessage.delete_at > now,
     ]
+    from studgroup.analysis.release_budget import production_enabled
+
     if settings.ai_schedule_enabled:
-        timing = window(now, settings.ai_schedule_timezone)
+        timing = window(
+            now,
+            settings.ai_schedule_timezone,
+            allow_overnight=production_enabled(settings, group.id),
+        )
         if timing is None:
             return None
         filters += [
@@ -210,6 +217,106 @@ def _eligible(group, settings, now):
     if group.bot_added_at is not None:
         filters.append(RawMessage.message_date >= group.bot_added_at)
     return filters
+
+
+async def _waiting_image_context(db, group, route, settings, now):
+    """Source and reply-chain messages that must wait for their image evidence.
+
+    An unresolved picture must not create incomplete homework from its caption,
+    album or replies. Unrelated chat messages are still eligible for packages.
+    The source/reply links stay in RawMessage, ready to be used by pass B and C+.
+    """
+    from studgroup.analysis.image_jobs import enabled, supported
+    from studgroup.models import ImageAnalysisJob
+
+    independent = enabled(settings, group.id)
+    protected_legacy = settings.photo_reading_enabled and (
+        route.release_budget_usd is not None
+        or bool(route.paid_outcome_hold)
+        or str(group.id) in settings.ai_release_budget_required_groups
+    )
+    if not independent and not protected_legacy:
+        return set()
+
+    attachments = (
+        await db.scalars(
+            select(MessageAttachment).where(
+                MessageAttachment.group_id == group.id,
+                MessageAttachment.active.is_(True),
+                MessageAttachment.delete_at > now,
+            )
+        )
+    ).all()
+    images = [attachment for attachment in attachments if supported(attachment)]
+    if not images:
+        return set()
+
+    sources = (
+        await db.scalars(
+            select(RawMessage).where(
+                RawMessage.group_id == group.id,
+                RawMessage.delete_at > now,
+                RawMessage.id.in_([attachment.raw_message_id for attachment in images]),
+            )
+        )
+    ).all()
+    by_id = {row.id: row for row in sources}
+    ready = set()
+    if independent and settings.image_analysis_mode == "live":
+        finished = (
+            await db.execute(
+                select(ImageAnalysisJob.attachment_id, ImageAnalysisJob.source_revision).where(
+                    ImageAnalysisJob.group_id == group.id,
+                    ImageAnalysisJob.pass_number == 2,
+                    ImageAnalysisJob.state == "ready",
+                    ImageAnalysisJob.delete_at > now,
+                )
+            )
+        ).all()
+        ready = set(finished)
+
+    waiting = set()
+    waiting_albums = set()
+    for attachment in images:
+        source = by_id.get(attachment.raw_message_id)
+        if source is None or attachment.source_revision != source.revision:
+            continue
+        if independent:
+            unresolved = (
+                settings.image_analysis_mode != "live"
+                or (attachment.id, source.revision) not in ready
+            )
+        else:
+            unresolved = attachment.processing_state == "metadata_only"
+        if unresolved:
+            waiting.add(source.telegram_message_id)
+            if attachment.media_group_id:
+                waiting_albums.add(attachment.media_group_id)
+    if not waiting:
+        return set()
+
+    # One pending album photo makes all other parts of its album dependent.
+    for attachment in images:
+        source = by_id.get(attachment.raw_message_id)
+        if source and attachment.media_group_id in waiting_albums:
+            waiting.add(source.telegram_message_id)
+
+    retained = (
+        await db.scalars(
+            select(RawMessage).where(RawMessage.group_id == group.id, RawMessage.delete_at > now)
+        )
+    ).all()
+    # Transitive explicit Telegram replies (reply to a reply) share the source.
+    blocked = set(waiting)
+    while True:
+        children = {
+            row.telegram_message_id for row in retained if row.reply_to_message_id in blocked
+        }
+        expanded = blocked | children
+        if expanded == blocked:
+            break
+        blocked = expanded
+    return {row.id for row in retained if row.telegram_message_id in blocked}
 
 
 async def _read_pending_photos(db, group, rows, target_ids, settings, provider, transport, now):
@@ -249,9 +356,9 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
     if (route and (route.release_budget_usd is not None or route.paid_outcome_hold)) or (
         str(group.id) in settings.ai_release_budget_required_groups
     ):
-        # Only actual unread photos require the independent queue. Text-only packages still
-        # run when legacy photo reading is enabled but the new image feature is switched off.
-        return Decimal(0), True
+        # An unread *context-only* photo is not grounds to block an unrelated
+        # text package. Unread target photos remain pending for separate vision.
+        return Decimal(0), any(a.raw_message_id in target_ids for a in pending)
     if provider is None:
         from studgroup.ai import DeepSeekProvider
 
@@ -294,6 +401,9 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
     filters = _eligible(group, settings, now)
     if filters is None:
         return None
+    blocked = await _waiting_image_context(db, group, route, settings, now)
+    if blocked:
+        filters.append(RawMessage.id.not_in(blocked))
     pending = (
         await db.scalars(
             select(RawMessage)
@@ -334,6 +444,35 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
         )
     ).all()
     rows = {row.id: row for row in [*before, *middle, *after]}
+    # Read explicit reply ancestors from this group even if the original image
+    # arrived long before the fixed chronological context window.
+    by_mid = {row.telegram_message_id: row for row in rows.values()}
+    frontier = {row.reply_to_message_id for row in targets if row.reply_to_message_id}
+    seen = set()
+    for _ in range(8):
+        frontier.difference_update(seen)
+        if not frontier:
+            break
+        missing = frontier - set(by_mid)
+        if missing:
+            parents = (
+                await db.scalars(
+                    select(RawMessage).where(
+                        RawMessage.group_id == group.id,
+                        RawMessage.telegram_message_id.in_(missing),
+                        RawMessage.delete_at > now,
+                    )
+                )
+            ).all()
+            for parent in parents:
+                rows[parent.id] = parent
+                by_mid[parent.telegram_message_id] = parent
+        seen.update(frontier)
+        frontier = {
+            by_mid[mid].reply_to_message_id
+            for mid in frontier
+            if mid in by_mid and by_mid[mid].reply_to_message_id
+        }
     target_row_ids = {row.id for row in targets}
     photo_cost, retry_later = await _read_pending_photos(
         db, group, list(rows.values()), target_row_ids, settings, provider, transport, now
@@ -464,6 +603,14 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
             )
         ).all()
         for group, _route in groups:
+            from studgroup.analysis.release_budget import production_enabled
+
+            if (
+                settings.new_engine_enabled_until is not None
+                and _utc(settings.new_engine_enabled_until) <= now
+                and not production_enabled(settings, group.id)
+            ):
+                continue
             # The settings-row lock serializes enqueue/reserve decisions for this group.
             route = await db.scalar(
                 select(GroupAnalysisSettings)
@@ -471,6 +618,16 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                 .with_for_update(skip_locked=True)
             )
             if route is None:
+                continue
+            # Retain the original live messages until a *new* funded window is
+            # explicitly authorized. Never create doomed paid attempts.
+            if release_window_blocker(
+                route,
+                now,
+                required=str(group.id) in settings.ai_release_budget_required_groups,
+                settings=settings,
+                group_id=group.id,
+            ):
                 continue
             open_run = await db.scalar(
                 select(ShadowEvaluationRun.id).where(
@@ -853,6 +1010,8 @@ async def process_package_next(engine, settings, provider=None, now=None):
         now,
         mode="new",
         hourly_cap=Decimal(str(settings.new_engine_hourly_budget_usd)),
+        funding_required_groups=settings.ai_release_budget_required_groups,
+        funding_settings=settings,
     )
     if claimed is None:
         return "idle" if queued in {"idle", "settled"} else queued
@@ -982,6 +1141,24 @@ async def process_package_next(engine, settings, provider=None, now=None):
             await db.commit()
             print(line, flush=True)
             return "completed"
+        # Financial gates can close between context pass and extraction pass.
+        # This is not a failed academic package: retain every source and wait
+        # for the next funded period, with no phantom reservation charge.
+        if (
+            "recurring_" in failure.code
+            or "release_budget_" in failure.code
+            or "release_daily_budget_" in failure.code
+            or "release_hourly_budget_" in failure.code
+            or "release_paid_outcome_held" in failure.code
+        ):
+            from studgroup.analysis.release_budget import next_budget_reset
+
+            row.charged_usd += actual
+            row.last_error = failure.code
+            row.state = "budget_deferred"
+            row.available_at = next_budget_reset(now, monthly="monthly" in failure.code)
+            await db.commit()
+            return "budget_deferred"
         # If the provider did not report usage, keep the full reservation as a
         # conservative charge unless it explicitly proved that no request ran.
         row.charged_usd += actual if failure.usage_complete else max(actual, SHADOW_RESERVATION_USD)

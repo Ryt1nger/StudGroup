@@ -609,20 +609,18 @@ async def today(
             )
         )
     ).all()
-    # Display order: today's homework, then nearest, then recent changes (owner, 2026-10-21).
-    buckets = {"due_today": [], "upcoming": [], "new_or_changed": []}
-    candidates = []
+    # Choose which rows will actually be displayed *before* enriching them.
+    # Enrichment performs several sequential SQL queries per card, so expanding
+    # every eligible row makes a remote Supabase database unnecessarily slow.
+    bucket_rows = {"due_today": [], "upcoming": [], "new_or_changed": []}
+    upcoming = []
     for row in rows:
-        card = await representation(db, row, user, now)
-        mark = card["my_state"]
-        if mark["completion"] == "completed" and row.deadline_at is None:
-            continue
         deadline = utc(row.deadline_at) if row.deadline_at else None
         due = deadline.astimezone(ZoneInfo(group.timezone)).date() if deadline else None
         if day == "tomorrow" and due != selected_date:
             continue
         if due == selected_date:
-            buckets["due_today"].append(card)
+            bucket_rows["due_today"].append(row)
         elif (
             row.revision > 1
             and row.significant_updated_at
@@ -630,12 +628,22 @@ async def today(
             and utc(row.created_at) < now - CHANGED_WINDOW
             and utc(row.significant_updated_at) >= now - CHANGED_WINDOW
         ):
-            buckets["new_or_changed"].append(card)
+            bucket_rows["new_or_changed"].append(row)
         elif deadline and deadline <= now + timedelta(days=7):
-            candidates.append(card)
-    buckets["upcoming"] = sorted(candidates, key=lambda card: card["deadline"]["at"])[:3]
-    for cards in buckets.values():
-        cards.sort(
+            upcoming.append(row)
+    # Only three upcoming cards can appear. Preserve the original stable
+    # ordering for equal deadlines, including the original database row order.
+    bucket_rows["upcoming"] = sorted(upcoming, key=lambda row: utc(row.deadline_at))[:3]
+
+    buckets = {"due_today": [], "upcoming": [], "new_or_changed": []}
+    for kind, selected_rows in bucket_rows.items():
+        for row in selected_rows:
+            card = await representation(db, row, user, now)
+            # Undated completed edits must not reappear in the update feed.
+            if card["my_state"]["completion"] == "completed" and row.deadline_at is None:
+                continue
+            buckets[kind].append(card)
+        buckets[kind].sort(
             key=lambda card: (
                 card["deadline"]["at"] or datetime.max.replace(tzinfo=UTC),
                 str(card["id"]),

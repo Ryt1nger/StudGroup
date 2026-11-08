@@ -13,10 +13,8 @@ from sqlalchemy.orm import aliased
 
 from studgroup.models import (
     Group,
-    HeadmanDecision,
     LessonOnlineLink,
     RawMessage,
-    ScheduleException,
     SchedulePattern,
 )
 
@@ -74,6 +72,48 @@ def urls(text):
 
 def normalize(value):
     return " ".join(value.casefold().replace("ё", "е").split())
+
+
+def is_remote_lesson(lesson):
+    """Only a lesson explicitly marked remote can receive a discovered joining URL."""
+    return bool(re.search(r"сдо|дистан|онлайн", normalize(lesson.get("location") or "")))
+
+
+def match_remote_lesson(lessons, *, day, stamp, timezone, subject=None, lesson_time=None):
+    """Require a unique scheduled remote occurrence; never guess between two links/lessons."""
+    candidates = [
+        lesson
+        for lesson in lessons
+        if lesson["status"] == "scheduled"
+        and is_remote_lesson(lesson)
+        and datetime.fromisoformat(lesson["starts_at"]).astimezone(ZoneInfo(timezone)).date() == day
+        and (not subject or normalize(lesson["subject"]) == normalize(subject))
+    ]
+    if lesson_time:
+        candidates = [
+            lesson
+            for lesson in candidates
+            if datetime.fromisoformat(lesson["starts_at"])
+            .astimezone(ZoneInfo(timezone))
+            .strftime("%H:%M")
+            == lesson_time
+        ]
+    if day == stamp.date():
+        current = [
+            lesson
+            for lesson in candidates
+            if datetime.fromisoformat(lesson["starts_at"])
+            <= stamp
+            < datetime.fromisoformat(lesson["ends_at"])
+        ]
+        candidates = current or [
+            lesson
+            for lesson in candidates
+            if stamp
+            <= datetime.fromisoformat(lesson["starts_at"])
+            <= stamp + (timedelta(hours=4) if subject else timedelta(minutes=30))
+        ]
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def subject_from(text, patterns):
@@ -187,48 +227,20 @@ async def discover(
             for p in patterns
             if p.subject == subject
             and p.valid_until >= stamp.date()
-            and re.search(r"сдо|дистан|онлайн", normalize(p.location or ""))
+            and is_remote_lesson({"location": p.location})
         ]
     else:
         calendar = await schedule_data(day, day, group, db)
-        candidates = [
-            l
-            for l in calendar["lessons"]
-            if l["status"] == "scheduled"
-            and (not subject or normalize(l["subject"]) == normalize(subject))
-        ]
-        if lesson_time:
-            candidates = [
-                l
-                for l in candidates
-                if datetime.fromisoformat(l["starts_at"])
-                .astimezone(ZoneInfo(group.timezone))
-                .strftime("%H:%M")
-                == lesson_time
-            ]
-        if not subject:
-            candidates = [
-                l
-                for l in candidates
-                if re.search(r"сдо|дистан|онлайн", normalize(l["location"] or ""))
-            ]
-        if day == stamp.date():
-            current = [
-                l
-                for l in candidates
-                if datetime.fromisoformat(l["starts_at"])
-                <= stamp
-                < datetime.fromisoformat(l["ends_at"])
-            ]
-            candidates = current or [
-                l
-                for l in candidates
-                if stamp
-                <= datetime.fromisoformat(l["starts_at"])
-                <= stamp + (timedelta(hours=4) if subject else timedelta(minutes=30))
-            ]
-        if len(candidates) == 1:
-            targets = [(uuid.UUID(candidates[0]["id"].split(":")[0]), day)]
+        matched = match_remote_lesson(
+            calendar["lessons"],
+            day=day,
+            stamp=stamp,
+            timezone=group.timezone,
+            subject=subject,
+            lesson_time=lesson_time,
+        )
+        if matched is not None:
+            targets = [(uuid.UUID(matched["id"].split(":")[0]), day)]
     bound = 0
     for url in direct:
         for pattern_id, occurrence in targets or [(None, None)]:
@@ -285,7 +297,7 @@ async def overlay(db, group, lessons):
             .outerjoin(clarification, clarification.id == LessonOnlineLink.context_id)
             .where(
                 LessonOnlineLink.group_id == group.id,
-                LessonOnlineLink.state == "active",
+                LessonOnlineLink.state.in_(["active", "unmatched"]),
                 LessonOnlineLink.delete_at > now,
             )
             .order_by(
@@ -300,32 +312,22 @@ async def overlay(db, group, lessons):
             )
         )
     ).all()
-    locked = set(
-        (
-            await db.scalars(
-                select(HeadmanDecision.entity_key).where(
-                    HeadmanDecision.group_id == group.id, HeadmanDecision.locked.is_(True)
-                )
-            )
-        ).all()
-    )
+    # An unmatched Telegram message can become unambiguous after the schedule is
+    # corrected. Resolve it on read, without writing to production or sending alerts.
+    unmatched_targets = {}
+    subjects = [SimpleNamespace(subject=lesson["subject"]) for lesson in lessons]
     for lesson in lessons:
-        if lesson.get("online_url") or lesson["status"] == "cancelled":
+        if (
+            lesson.get("online_url")
+            or lesson["status"] == "cancelled"
+            or not is_remote_lesson(lesson)
+        ):
             continue
         pattern, day = lesson["id"].split(":", 1)
-        exception = await db.scalar(
-            select(ScheduleException).where(
-                ScheduleException.group_id == group.id,
-                ScheduleException.pattern_id == uuid.UUID(pattern),
-                ScheduleException.occurrence_date == date.fromisoformat(day),
-            )
-        )
-        if f"p:{pattern}" in locked or (exception and f"x:{exception.id}" in locked):
-            continue
         for row in rows:
-            if str(row.pattern_id) != pattern or row.occurrence_date not in (
-                None,
-                date.fromisoformat(day),
+            if row.state == "active" and (
+                str(row.pattern_id) != pattern
+                or row.occurrence_date not in (None, date.fromisoformat(day))
             ):
                 continue
             source = await db.get(RawMessage, row.source_id)
@@ -344,13 +346,49 @@ async def overlay(db, group, lessons):
                 or utc(context.delete_at) <= now
             ):
                 continue
-            if joining_url(row.url):
-                if row.occurrence_date is None and datetime.fromisoformat(lesson["ends_at"]) <= utc(
-                    source.version_date
-                ):
+            if not joining_url(row.url):
+                continue
+            if row.state == "unmatched":
+                if row.id not in unmatched_targets:
+                    target = None
+                    # A message containing multiple room URLs cannot choose for us.
+                    if urls(source.text or "") == [row.url]:
+                        from studgroup.deadlines import contextual_deadline
+
+                        evidence = (source.text or "") + (
+                            "\n" + context.text if context and context.text else ""
+                        )
+                        stamp = utc(source.message_date).astimezone(ZoneInfo(group.timezone))
+                        reference = utc(context.message_date if context else source.message_date)
+                        resolution = contextual_deadline(
+                            re.sub(r"https?://\\S+", "", evidence, flags=re.IGNORECASE),
+                            reference,
+                            group.timezone,
+                        )
+                        target_day = (
+                            resolution.at.astimezone(ZoneInfo(group.timezone)).date()
+                            if resolution and resolution.at
+                            else stamp.date()
+                        )
+                        if abs((target_day - stamp.date()).days) <= 31:
+                            subject = subject_from(evidence, subjects)
+                            matched = match_remote_lesson(
+                                lessons,
+                                day=target_day,
+                                stamp=stamp,
+                                timezone=group.timezone,
+                                subject=subject,
+                            )
+                            target = matched["id"] if matched is not None else None
+                    unmatched_targets[row.id] = target
+                if unmatched_targets[row.id] != lesson["id"]:
                     continue
-                lesson["online_url"] = row.url
-                break
+            elif row.occurrence_date is None and datetime.fromisoformat(lesson["ends_at"]) <= utc(
+                source.version_date
+            ):
+                continue
+            lesson["online_url"] = row.url
+            break
 
 
 async def backfill(engine):

@@ -78,7 +78,7 @@ describe('headman card editing', () => {
     await userEvent.click(await screen.findByRole('link', { name: 'Редактировать' }));
     expect(router.state.location.pathname).toBe(`/homework/${HW}/edit`);
     expect(await screen.findByRole('heading', { name: /Редактирование/, level: 1 })).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText('Название'), '!');
+    await userEvent.type(await screen.findByLabelText('Название'), '!');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     await waitFor(() => expect(router.state.location.pathname).toBe(`/homework/${HW}`));
   });
@@ -111,7 +111,7 @@ describe('headman card editing', () => {
     );
     renderApp({ route: `/homework/${HW}` });
     await userEvent.click(await screen.findByRole('link', { name: 'Редактировать' }));
-    const title = screen.getByLabelText('Название');
+    const title = await screen.findByLabelText('Название');
     await userEvent.clear(title);
     await userEvent.type(title, 'Новое название');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
@@ -155,7 +155,7 @@ describe('headman card editing', () => {
     );
     renderApp({ route: `/homework/${HW}` });
     await userEvent.click(await screen.findByRole('link', { name: 'Редактировать' }));
-    await userEvent.click(screen.getByRole('radio', { name: 'Дата и время' }));
+    await userEvent.click(await screen.findByRole('radio', { name: 'Дата и время' }));
     await userEvent.clear(screen.getByLabelText('Дата'));
     await userEvent.type(screen.getByLabelText('Дата'), '2026-11-02');
     await userEvent.clear(screen.getByLabelText('Время'));
@@ -176,7 +176,7 @@ describe('headman card editing', () => {
     );
     renderApp({ route: `/homework/${HW}` });
     await userEvent.click(await screen.findByRole('link', { name: 'Редактировать' }));
-    await userEvent.clear(screen.getByLabelText('Название'));
+    await userEvent.clear(await screen.findByLabelText('Название'));
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('название');
     expect(calls).toBe(0);
@@ -204,7 +204,7 @@ describe('headman card editing', () => {
     );
     renderApp({ route: `/homework/${HW}` });
     await userEvent.click(await screen.findByRole('link', { name: 'Редактировать' }));
-    await userEvent.type(screen.getByLabelText('Название'), '!');
+    await userEvent.type(await screen.findByLabelText('Название'), '!');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     const alert = await screen.findByRole('alert');
     expect(alert).not.toHaveTextContent('revision_conflict');
@@ -223,7 +223,7 @@ describe('headman card editing', () => {
     );
     renderApp({ route: `/deadlines/${EV}` });
     await userEvent.click(await screen.findByRole('link', { name: 'Редактировать' }));
-    await userEvent.selectOptions(screen.getByLabelText('Вид'), 'exam');
+    await userEvent.selectOptions(await screen.findByLabelText('Вид'), 'exam');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     await waitFor(() => expect(sent).toEqual({ expected_revision: 3, kind: 'exam' }));
   });

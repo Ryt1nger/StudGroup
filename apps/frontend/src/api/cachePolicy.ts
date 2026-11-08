@@ -1,8 +1,9 @@
 import { isApiRequestError } from './errors';
 
 /**
- * Cache policy. Learning data lives only in TanStack Query's in-memory cache for the current
- * run (owner decision): no persistQueryClient, no storage, no Service Worker.
+ * Live data is held in TanStack Query memory. A restricted, encrypted subset of read-only
+ * academic views may be hydrated from IndexedDB after each verified Telegram login.
+ * Tokens, profile data, photos and editable state are never persisted.
  */
 const MAX_RETRIES = 2;
 

@@ -389,7 +389,16 @@ async def prepare_backfill_wave(engine, settings, now=None):
         return f"wave_prepared_{result['enqueued']}"
 
 
-async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=None):
+async def _claim(
+    engine,
+    now,
+    *,
+    canary_only=False,
+    mode="shadow",
+    hourly_cap=None,
+    funding_required_groups=(),
+    funding_settings=None,
+):
     # Per-message shadow runs name their raw message; package runs of the live ``new`` writer
     # cover several targets and have none, so the two queues never pick each other's rows.
     only_packages = [ShadowEvaluationRun.raw_message_id.is_(None)] if mode == "new" else []
@@ -438,9 +447,15 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
             .with_for_update()
         )
         if row.state == "running":
-            from studgroup.analysis.release_budget import hold_lost_attempt
+            from studgroup.analysis.release_budget import hold_lost_attempt, production_enabled
 
-            await hold_lost_attempt(db, route_row, f"cplus:{row.id}:{row.attempts}", now)
+            await hold_lost_attempt(
+                db,
+                route_row,
+                f"cplus:{row.id}:{row.attempts}",
+                now,
+                isolate=mode == "new" and production_enabled(funding_settings, row.group_id),
+            )
             row.charged_usd += row.reserved_usd
             row.reserved_usd, row.lease_until = Decimal(0), None
             row.state, row.last_error, row.completed_at = "failed", "ambiguous_paid_attempt", now
@@ -449,6 +464,33 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
         if route_row.paid_outcome_hold:
             await db.commit()
             return "paid_outcome_held"
+        if mode == "new":
+            # Block at the locked claim boundary too: a package may have been
+            # queued while its funded window was valid, then waited past expiry.
+            from studgroup.analysis.release_budget import release_window_blocker
+
+            blocker = release_window_blocker(
+                route_row,
+                now,
+                required=str(row.group_id) in funding_required_groups,
+                settings=funding_settings,
+                group_id=row.group_id,
+            )
+            if blocker:
+                await db.commit()
+                return blocker
+        from studgroup.analysis.release_budget import production_enabled
+
+        production = production_enabled(funding_settings, row.group_id)
+        if (
+            mode == "new"
+            and funding_settings is not None
+            and funding_settings.new_engine_enabled_until is not None
+            and _utc(funding_settings.new_engine_enabled_until) <= now
+            and not production
+        ):
+            await db.commit()
+            return "engine_window_closed"
         # The settings-row lock serializes reserve decisions for this group's cap.
         day = _utc(now)
         day_start = datetime(day.year, day.month, day.day, tzinfo=UTC)
@@ -478,7 +520,9 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
         committed = (
             Decimal(charged or 0) + Decimal(reserved_elsewhere or 0) + Decimal(image_day or 0)
         )
-        if committed + SHADOW_RESERVATION_USD > Decimal(route_row.shadow_daily_budget_usd):
+        if not production and committed + SHADOW_RESERVATION_USD > Decimal(
+            route_row.shadow_daily_budget_usd
+        ):
             row.state = "budget_deferred"
             row.last_error = "shadow_budget_exhausted"
             row.available_at = day_start + timedelta(days=1)
@@ -486,7 +530,7 @@ async def _claim(engine, now, *, canary_only=False, mode="shadow", hourly_cap=No
             row.reserved_usd = Decimal(0)
             await db.commit()
             return "budget_deferred"
-        if hourly_cap is not None:
+        if hourly_cap is not None and not production:
             # Rolling one-hour safety cap (live ``new`` writer only): what the group's runs created in
             # the last hour already charged, plus every reservation, plus this one.
             hour_start = _utc(now) - timedelta(hours=1)

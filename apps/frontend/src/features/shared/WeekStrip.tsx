@@ -30,10 +30,18 @@ export function WeekStrip({
 }) {
   const start = useRef<{ x: number; y: number } | null>(null);
   const suppressClick = useRef(false);
-  const [direction, setDirection] = useState(0);
   const first = days[0];
+  const [transition, setTransition] = useState<{ week: string | undefined; direction: -1 | 0 | 1 }>({
+    week: first,
+    direction: 0,
+  });
+  // React preserves the last displayed week so swipe and keyboard navigation
+  // animate in the correct direction without reading mutable refs during render.
+  if (transition.week !== first) {
+    setTransition({ week: first, direction: first && transition.week ? (first > transition.week ? 1 : -1) : 0 });
+  }
   return (
-    <div className="week" role="group" aria-label="День" data-week={first} data-direction={direction} tabIndex={0}
+    <div className="week" role="group" aria-label="День" data-week={first} tabIndex={0}
       onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); onWeekChange?.(event.key === 'ArrowRight' ? 1 : -1); } }}
       onTouchStart={(event) => { start.current = { x: event.touches[0]!.clientX, y: event.touches[0]!.clientY }; }}
       onTouchEnd={(event) => {
@@ -45,20 +53,21 @@ export function WeekStrip({
         suppressClick.current = true;
         window.setTimeout(() => { suppressClick.current = false; }, 350);
         const next = dx < 0 ? 1 : -1;
-        setDirection(next);
         onWeekChange(next);
       }}
     >
-      {days.map((key, index) => {
-        const { weekday, day } = parts(key);
-        return (
-          <button key={key} type="button" className="wd" aria-pressed={index === selected} aria-label={`${weekday}, ${day}`} onClick={() => { if (!suppressClick.current) onSelect(index); }}>
-            <span>{weekday}</span>
-            <b>{day}</b>
-            <i style={marked.has(key) ? undefined : { opacity: 0 }} />
-          </button>
-        );
-      })}
+      <div className="week-track" key={first} data-direction={transition.direction}>
+        {days.map((key, index) => {
+          const { weekday, day } = parts(key);
+          return (
+            <button key={key} type="button" className="wd" aria-pressed={index === selected} aria-label={`${weekday}, ${day}`} onClick={() => { if (!suppressClick.current) onSelect(index); }}>
+              <span>{weekday}</span>
+              <b>{day}</b>
+              <i style={marked.has(key) ? undefined : { opacity: 0 }} />
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
