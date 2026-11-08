@@ -1,4 +1,4 @@
-# Apply only after confirming the existing Render service and database names.
+# Apply only after confirming the API's current database and encryption key.
 # This Blueprint creates one separate browser worker; it does not modify the API.
 services:
   - type: worker
@@ -13,12 +13,13 @@ services:
     maxShutdownDelaySeconds: 300
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: studgroup-db
-          property: connectionString
+        fromService:
+          name: StudGroup
+          type: web
+          envVarKey: DATABASE_URL
       - key: PROFILE_ENCRYPTION_KEY
         fromService:
-          name: studgroup
+          name: StudGroup
           type: web
           envVarKey: PROFILE_ENCRYPTION_KEY
       - key: RANEPA_CRAWL_ENABLED
