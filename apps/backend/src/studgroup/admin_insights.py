@@ -26,6 +26,7 @@ from studgroup.models import (
     ImageAnalysisCall,
     ImageAnalysisJob,
     Membership,
+    Notification,
     OwnerIncidentEpisode,
     RawMessage,
     ShadowEvaluationRun,
@@ -464,6 +465,18 @@ async def details(
                 published_at=x.published_at,
                 revision=x.revision,
             )
+            for x in found
+        ]
+    elif kind == "notifications":
+        query = (
+            select(Notification)
+            .where(*scope(Notification, group_id), Notification.created_at >= since)
+            .order_by(Notification.created_at.desc(), Notification.id.desc())
+        )
+        found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
+        rows = [
+            item(x.id, "Уведомление", "создано", x.created_at,
+                 group_id=x.group_id, entity_type=x.entity_type)
             for x in found
         ]
     elif kind == "incidents":
