@@ -35,4 +35,4 @@ def test_operator_dashboard_uses_native_charts_and_dark_design(client):
     assert "/v1/admin/visuals?" in app.text
     assert "/v1/admin/analytics?" in app.text
     assert "/v1/admin/details/" in app.text
-    assert 'data-detail' in app.text
+    assert "data-detail" in app.text
