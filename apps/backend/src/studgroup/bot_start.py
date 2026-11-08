@@ -949,9 +949,10 @@ async def subgroup_choice(db, session, settings, member, group, *, joined=False)
     picked = await subgroups.choices(db, member.id)
     unanswered = [pair for pair in all_splits if pair[0].id not in picked]
     if not unanswered and joined:
-        await sdo_setup_screen(db, session, settings, member_telegram_id := (
-            await db.get(User, member.user_id)
-        ).telegram_user_id, headman=False)
+        student = await db.get(User, member.user_id)
+        await sdo_setup_screen(
+            db, session, settings, student.telegram_user_id, headman=False
+        )
         return
     if unanswered:
         split, choices = unanswered[0]
