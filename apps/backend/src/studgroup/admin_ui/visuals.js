@@ -8,10 +8,11 @@
   function init(id,title){const host=document.getElementById(id);host.replaceChildren();const svg=el("svg",{viewBox:"0 0 700 250",preserveAspectRatio:"none",role:"img","aria-label":title});host.appendChild(svg);return svg;}
   function empty(id,label="Пока нет записей для графика"){const host=document.getElementById(id);host.replaceChildren();const div=document.createElement("div");div.className="chart-empty";div.textContent=label;host.appendChild(div);}
   const short=v=>{const n=Number(v)||0;return n>=1000?(n/1000).toFixed(1)+" тыс.":n>=10?nf.format(Math.round(n)):n.toFixed(n&&n<1?2:0)};
+  const dateLabel=s=>/^\\d{4}-\\d{2}-\\d{2}$/.test(s)?new Date(s+"T12:00:00Z").toLocaleDateString("ru-RU",{day:"numeric",month:"short",timeZone:"UTC"}):s;
   function axes(svg,max,labels,opts={}){
     const x0=52,x1=687,y0=16,y1=210;
     for(let i=0;i<5;i++){const y=y1-(y1-y0)*i/4;el("line",{x1:x0,y1:y,x2:x1,y2:y,class:"grid-line"},svg);el("text",{x:8,y:y+4,class:"tick"},svg,(opts.currency?"$":"")+short(max*i/4));}
-    if(labels.length){const picks=[0,Math.floor((labels.length-1)/2),labels.length-1];for(let q=0;q<picks.length;q++){const j=picks[q];const x=x0+(labels.length<=1?.5:j/(labels.length-1))*(x1-x0);el("text",{x,y:239,class:"tick","text-anchor":q===0?"start":q===2?"end":"middle"},svg,labels[j]?.slice(5)||"");}}
+    if(labels.length){const picks=[0,Math.floor((labels.length-1)/2),labels.length-1];for(let q=0;q<picks.length;q++){const j=picks[q];const x=x0+(labels.length<=1?.5:j/(labels.length-1))*(x1-x0);el("text",{x,y:239,class:"tick","text-anchor":q===0?"start":q===2?"end":"middle"},svg,dateLabel(labels[j]||""));}}
     return {x0,x1,y0,y1};
   }
   function tooltip(node,text){el("title",{},node,text);}
