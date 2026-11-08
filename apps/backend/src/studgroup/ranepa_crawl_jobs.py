@@ -8,7 +8,8 @@ from sqlalchemy import select
 from studgroup.models import Group, Membership, RanepaCrawlJob
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
 
-LEASE = timedelta(minutes=8)
+LEASE = timedelta(hours=1)
+REFRESH = timedelta(days=1)
 FAILURES = {
     "login_failed",
     "captcha",
@@ -50,6 +51,17 @@ async def enqueue_week(db, week_start: date, candidates: list[CrawlCandidate], n
             )
         )
         if existing is not None:
+            # A completed account becomes eligible for another round after a day.
+            # Never disturb queued or running work: the first fair pass must finish.
+            if (
+                existing.state in {"succeeded", "failed"}
+                and existing.finished_at is not None
+                and existing.finished_at <= now - REFRESH
+            ):
+                existing.state = "queued"
+                existing.priority = priority
+                existing.failure_code = None
+                existing.finished_at = None
             continue
         db.add(
             RanepaCrawlJob(
@@ -89,7 +101,12 @@ async def claim_next(db, now=None):
         .where(
             RanepaCrawlJob.state == "queued",
         )
-        .order_by(RanepaCrawlJob.week_start.desc(), RanepaCrawlJob.priority, RanepaCrawlJob.id)
+        .order_by(
+            RanepaCrawlJob.week_start.desc(),
+            RanepaCrawlJob.attempts,
+            RanepaCrawlJob.priority,
+            RanepaCrawlJob.id,
+        )
         .with_for_update(skip_locked=True)
         .limit(1)
     )

@@ -1,5 +1,6 @@
 """Paced, single-browser university crawl; disabled unless explicitly enabled."""
 
+import argparse
 import asyncio
 import signal
 from collections import Counter
@@ -179,8 +180,41 @@ async def run_forever(settings: Settings):
             loop.remove_signal_handler(signum)
 
 
+async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
+    """Run a bounded hosted-runner shift, finishing the current account before exit."""
+    if not settings.ranepa_crawl_enabled:
+        return 0
+    if not settings.profile_encryption_key.get_secret_value():
+        raise RuntimeError("PROFILE_ENCRYPTION_KEY is required")
+    if not settings.database_url.startswith("postgresql+asyncpg://"):
+        raise RuntimeError("PostgreSQL DATABASE_URL is required")
+    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    completed = 0
+    try:
+        await prepare_week(engine, datetime.now(ZoneInfo("Europe/Moscow")).date())
+        deadline = monotonic() + max_minutes * 60
+        while monotonic() < deadline:
+            today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+            status = await process_one(engine, settings, today)
+            if status == "idle":
+                break
+            completed += 1
+            if monotonic() < deadline:
+                await asyncio.sleep(settings.ranepa_crawl_pause_seconds)
+        return completed
+    finally:
+        await engine.dispose()
+
+
 def main():
-    asyncio.run(run_forever(Settings()))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch-minutes", type=int, choices=range(1, 25))
+    args = parser.parse_args()
+    settings = Settings()
+    if args.batch_minutes:
+        asyncio.run(run_batch(settings, max_minutes=args.batch_minutes))
+    else:
+        asyncio.run(run_forever(settings))
 
 
 if __name__ == "__main__":
