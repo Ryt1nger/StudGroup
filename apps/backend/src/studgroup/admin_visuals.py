@@ -3,6 +3,7 @@
 All numbers come from existing operational records and are scoped before
 aggregation. Missing instrumentation is represented as unavailable, never 0.
 """
+
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
@@ -43,13 +44,17 @@ async def day_values(db, model, column, criteria, *, total_column=None):
     aggregate = func.sum(total_column) if total_column is not None else func.count()
     rows = (
         await db.execute(
-            select(bucket, aggregate).select_from(model).where(*criteria)
-            .group_by(bucket).order_by(bucket)
+            select(bucket, aggregate)
+            .select_from(model)
+            .where(*criteria)
+            .group_by(bucket)
+            .order_by(bucket)
         )
     ).all()
     return {
-        (value.date().isoformat() if hasattr(value, "date") else str(value)[:10]):
-        money(amount) if total_column is not None else int(amount)
+        (value.date().isoformat() if hasattr(value, "date") else str(value)[:10]): money(amount)
+        if total_column is not None
+        else int(amount)
         for value, amount in rows
     }
 
@@ -93,74 +98,123 @@ async def visual_analytics(
     homework_filter = (*scope(Homework, group_id), Homework.created_at >= since)
     events_filter = (*scope(GroupEvent, group_id), GroupEvent.created_at >= since)
     notices_filter = (*scope(Notification, group_id), Notification.created_at >= since)
-    image_calls_filter = (*scope(ImageAnalysisCall, group_id), ImageAnalysisCall.created_at >= since)
-    month_filter = (*scope(AnalysisBudgetCall, group_id), AnalysisBudgetCall.created_at >= month_since)
+    image_calls_filter = (
+        *scope(ImageAnalysisCall, group_id),
+        ImageAnalysisCall.created_at >= since,
+    )
+    month_filter = (
+        *scope(AnalysisBudgetCall, group_id),
+        AnalysisBudgetCall.created_at >= month_since,
+    )
 
     daily_sources = {
         "messages": await day_values(db, RawMessage, RawMessage.message_date, message_filter),
-        "text": await day_values(db, ShadowEvaluationRun, ShadowEvaluationRun.created_at, text_filter),
+        "text": await day_values(
+            db, ShadowEvaluationRun, ShadowEvaluationRun.created_at, text_filter
+        ),
         "images": await day_values(db, ImageAnalysisJob, ImageAnalysisJob.created_at, image_filter),
         "homework": await day_values(db, Homework, Homework.created_at, homework_filter),
         "events": await day_values(db, GroupEvent, GroupEvent.created_at, events_filter),
-        "notifications": await day_values(db, Notification, Notification.created_at, notices_filter),
+        "notifications": await day_values(
+            db, Notification, Notification.created_at, notices_filter
+        ),
         "text_errors": await day_values(
-            db, ShadowEvaluationRun, ShadowEvaluationRun.created_at,
+            db,
+            ShadowEvaluationRun,
+            ShadowEvaluationRun.created_at,
             (*text_filter, ShadowEvaluationRun.state.in_(BAD_STATES)),
         ),
         "image_errors": await day_values(
-            db, ImageAnalysisJob, ImageAnalysisJob.created_at,
+            db,
+            ImageAnalysisJob,
+            ImageAnalysisJob.created_at,
             (*image_filter, ImageAnalysisJob.state.in_(BAD_STATES)),
         ),
         "legacy_errors": await day_values(
-            db, AIJob, AIJob.created_at, (*legacy_filter, AIJob.state.in_(BAD_STATES)),
+            db,
+            AIJob,
+            AIJob.created_at,
+            (*legacy_filter, AIJob.state.in_(BAD_STATES)),
         ),
     }
 
     # Means are calculated from SUM/COUNT, not from the sum of durations.
     async def latency_means(model, when, latency, criteria):
         bucket = day_expression(db, when)
-        rows = (await db.execute(
-            select(bucket, func.avg(latency)).select_from(model)
-            .where(*criteria, latency.is_not(None))
-            .group_by(bucket).order_by(bucket)
-        )).all()
+        rows = (
+            await db.execute(
+                select(bucket, func.avg(latency))
+                .select_from(model)
+                .where(*criteria, latency.is_not(None))
+                .group_by(bucket)
+                .order_by(bucket)
+            )
+        ).all()
         return {
-            date.date().isoformat() if hasattr(date, "date") else str(date)[:10]:
-            round(float(value)) for date, value in rows if value is not None
+            date.date().isoformat() if hasattr(date, "date") else str(date)[:10]: round(
+                float(value)
+            )
+            for date, value in rows
+            if value is not None
         }
 
     latency_text = await latency_means(
-        ShadowEvaluationRun, ShadowEvaluationRun.created_at,
-        ShadowEvaluationRun.latency_ms, text_filter,
+        ShadowEvaluationRun,
+        ShadowEvaluationRun.created_at,
+        ShadowEvaluationRun.latency_ms,
+        text_filter,
     )
     latency_photo = await latency_means(
-        ImageAnalysisCall, ImageAnalysisCall.created_at,
-        ImageAnalysisCall.latency_ms, image_calls_filter,
+        ImageAnalysisCall,
+        ImageAnalysisCall.created_at,
+        ImageAnalysisCall.latency_ms,
+        image_calls_filter,
     )
 
-    hours = (await db.execute(
-        select(extract("hour", RawMessage.message_date), func.count())
-        .where(*message_filter).group_by(extract("hour", RawMessage.message_date))
-    )).all()
+    hours = (
+        await db.execute(
+            select(extract("hour", RawMessage.message_date), func.count())
+            .where(*message_filter)
+            .group_by(extract("hour", RawMessage.message_date))
+        )
+    ).all()
     by_hour = {int(hour): int(count) for hour, count in hours}
-    spend_rows = (await db.execute(
-        select(AnalysisBudgetCall.kind, func.sum(AnalysisBudgetCall.charged_usd))
-        .where(*month_filter).group_by(AnalysisBudgetCall.kind)
-        .order_by(func.sum(AnalysisBudgetCall.charged_usd).desc())
-    )).all()
+    spend_rows = (
+        await db.execute(
+            select(AnalysisBudgetCall.kind, func.sum(AnalysisBudgetCall.charged_usd))
+            .where(*month_filter)
+            .group_by(AnalysisBudgetCall.kind)
+            .order_by(func.sum(AnalysisBudgetCall.charged_usd).desc())
+        )
+    ).all()
 
     errors = (
         await grouped_errors(
-            db, ShadowEvaluationRun, ShadowEvaluationRun.created_at,
-            ShadowEvaluationRun.state, ShadowEvaluationRun.last_error, text_filter, "Текст",
+            db,
+            ShadowEvaluationRun,
+            ShadowEvaluationRun.created_at,
+            ShadowEvaluationRun.state,
+            ShadowEvaluationRun.last_error,
+            text_filter,
+            "Текст",
         )
         + await grouped_errors(
-            db, ImageAnalysisJob, ImageAnalysisJob.created_at,
-            ImageAnalysisJob.state, ImageAnalysisJob.error, image_filter, "Фото",
+            db,
+            ImageAnalysisJob,
+            ImageAnalysisJob.created_at,
+            ImageAnalysisJob.state,
+            ImageAnalysisJob.error,
+            image_filter,
+            "Фото",
         )
         + await grouped_errors(
-            db, AIJob, AIJob.created_at,
-            AIJob.state, AIJob.last_error, legacy_filter, "Старая очередь",
+            db,
+            AIJob,
+            AIJob.created_at,
+            AIJob.state,
+            AIJob.last_error,
+            legacy_filter,
+            "Старая очередь",
         )
     )
     dates = [first_day + timedelta(days=i) for i in range(days)]
@@ -176,20 +230,27 @@ async def visual_analytics(
         daily.append(point)
 
     month_spend = await day_values(
-        db, AnalysisBudgetCall, AnalysisBudgetCall.created_at,
-        month_filter, total_column=AnalysisBudgetCall.charged_usd,
+        db,
+        AnalysisBudgetCall,
+        AnalysisBudgetCall.created_at,
+        month_filter,
+        total_column=AnalysisBudgetCall.charged_usd,
     )
     month_dates = (now.date() - month_since.date()).days + 1
     month_series = [
-        {"date": (month_since.date() + timedelta(days=i)).isoformat(),
-         "value": month_spend.get((month_since.date() + timedelta(days=i)).isoformat(), 0)}
+        {
+            "date": (month_since.date() + timedelta(days=i)).isoformat(),
+            "value": month_spend.get((month_since.date() + timedelta(days=i)).isoformat(), 0),
+        }
         for i in range(month_dates)
     ]
     previous_since = since - timedelta(days=days)
 
     async def preceding_count(model, timestamp, *extra):
         result = await db.scalar(
-            select(func.count()).select_from(model).where(
+            select(func.count())
+            .select_from(model)
+            .where(
                 *scope(model, group_id),
                 timestamp >= previous_since,
                 timestamp < since,
@@ -211,20 +272,23 @@ async def visual_analytics(
         }
     comparison["errors"] = {
         "current": sum(
-            int(row["text_errors"] + row["image_errors"] + row["legacy_errors"])
-            for row in daily
+            int(row["text_errors"] + row["image_errors"] + row["legacy_errors"]) for row in daily
         ),
         "previous": (
             await preceding_count(
-                ShadowEvaluationRun, ShadowEvaluationRun.created_at,
+                ShadowEvaluationRun,
+                ShadowEvaluationRun.created_at,
                 ShadowEvaluationRun.state.in_(BAD_STATES),
             )
             + await preceding_count(
-                ImageAnalysisJob, ImageAnalysisJob.created_at,
+                ImageAnalysisJob,
+                ImageAnalysisJob.created_at,
                 ImageAnalysisJob.state.in_(BAD_STATES),
             )
             + await preceding_count(
-                AIJob, AIJob.created_at, AIJob.state.in_(BAD_STATES),
+                AIJob,
+                AIJob.created_at,
+                AIJob.state.in_(BAD_STATES),
             )
         ),
     }
