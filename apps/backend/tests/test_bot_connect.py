@@ -521,7 +521,8 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
 
     monkeypatch.setattr(domain, "telegram_member", telegram_member)
     deliver(foreman, "/start " + link.split("?start=")[1], uid=88)
-    assert "Готово! Вы подключены к «ИВТ-21»" in last(foreman)["text"]
+    assert "Готово! Вы подключены к StudGroup" in last(foreman)["text"]
+    assert "Пропустить" in labels(foreman)
 
     async def roles(db):
         group = await db.scalar(select(Group).where(Group.telegram_chat_id == NEW_CHAT))
@@ -550,6 +551,8 @@ def test_headman_can_skip_subgroups_after_issuing_an_invite(foreman, monkeypatch
     tap(foreman, "Далее: подгруппы", uid=ADDER)
     assert "Да, настроить" in labels(foreman)
     tap(foreman, "Нет, пропустить", uid=ADDER)
+    assert "Дополнительный шаг · СДО" in last(foreman)["text"]
+    tap(foreman, "Пропустить", uid=ADDER)
     assert "Подключение успешно завершено!" in last(foreman)["text"]
     assert labels(foreman) == ["Перейти в кабинет старосты"]
     tap(foreman, "Перейти в кабинет старосты", uid=ADDER)
@@ -585,6 +588,8 @@ def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeyp
     assert any("Английский" in label for label in labels(foreman))
     assert "Далее" in labels(foreman)
     tap(foreman, "Далее", uid=ADDER)
+    assert "Дополнительный шаг · СДО" in last(foreman)["text"]
+    tap(foreman, "Пропустить", uid=ADDER)
     assert "Подключение успешно завершено!" in last(foreman)["text"]
     assert labels(foreman) == ["Перейти в кабинет старосты"]
     tap(foreman, "Перейти в кабинет старосты", uid=ADDER)
