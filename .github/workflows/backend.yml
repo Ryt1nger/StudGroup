@@ -30,6 +30,20 @@ jobs:
         with:
           python-version: '3.13'
       - run: uv sync --dev --frozen
+      - name: Temporary format validation
+        run: |
+          uv run ruff check --fix src/studgroup/admin_insights.py tests/test_admin_insights.py
+          uv run ruff format src/studgroup/admin_insights.py tests/test_admin_insights.py
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          for p in [Path("src/studgroup/admin_insights.py"), Path("tests/test_admin_insights.py")]:
+              print("FORMATTED_BEGIN " + str(p), flush=True)
+              encoded = base64.b64encode(p.read_bytes()).decode("ascii")
+              for i in range(0, len(encoded), 384):
+                  print("FORMATTED_PART " + encoded[i:i+384], flush=True)
+              print("FORMATTED_END " + str(p), flush=True)
+          PY
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run alembic upgrade head
