@@ -2,12 +2,13 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.admin_telemetry import RequestTelemetry
-from studgroup.models import AnalysisBudgetCall, Group, RawMessage
+from studgroup.models import AnalysisBudgetCall, Group, Notification, RawMessage
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -54,6 +55,18 @@ def test_owner_visuals_real_charts_and_privacy(client):
                     delete_at=now + timedelta(days=30),
                 )
             )
+            db.add(
+                Notification(
+                    group_id=selected.id,
+                    event_key="owner-private-notification",
+                    title="private notification title",
+                    body="private notification body",
+                    entity_type="homework",
+                    entity_id=uuid4(),
+                    created_at=now,
+                    delete_at=now + timedelta(days=30),
+                )
+            )
             selected_id = selected.id
             await db.commit()
             return selected_id
@@ -67,12 +80,21 @@ def test_owner_visuals_real_charts_and_privacy(client):
     data = response.json()
     assert len(data["daily"]) == 7
     assert sum(day["messages"] for day in data["daily"]) == 1
+    assert sum(day["notifications"] for day in data["daily"]) == 1
     assert len(data["by_hour_moscow"]) == 24
     assert sum(item["value"] for item in data["by_hour_moscow"]) == 1
     assert sum(row["usd"] for row in data["finance_month"]["by_kind"]) == 0.019
     assert sum(row["value"] for row in data["finance_month"]["series"]) == 0.019
     assert data["server"]["window_minutes"] == 15
     assert "private message must not appear" not in response.text
+    details = client.get(
+        f"/v1/admin/details/notifications?days=7&group_id={gid}",
+        headers={"Authorization": "Bearer valid"},
+    )
+    assert details.status_code == 200
+    assert len(details.json()["items"]) == 1
+    assert "private notification body" not in details.text
+    assert "private notification title" not in details.text
     assert (
         client.get(
             "/v1/admin/visuals?days=91", headers={"Authorization": "Bearer valid"}
