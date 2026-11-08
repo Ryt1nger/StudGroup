@@ -195,9 +195,54 @@ async def visual_analytics(
          "value": month_spend.get((month_since.date() + timedelta(days=i)).isoformat(), 0)}
         for i in range(month_dates)
     ]
+    previous_since = since - timedelta(days=days)
+
+    async def preceding_count(model, timestamp, *extra):
+        result = await db.scalar(
+            select(func.count()).select_from(model).where(
+                *scope(model, group_id),
+                timestamp >= previous_since,
+                timestamp < since,
+                *extra,
+            )
+        )
+        return int(result or 0)
+
+    comparison = {}
+    for name, model, timestamp in [
+        ("messages", RawMessage, RawMessage.message_date),
+        ("text", ShadowEvaluationRun, ShadowEvaluationRun.created_at),
+        ("images", ImageAnalysisJob, ImageAnalysisJob.created_at),
+        ("homework", Homework, Homework.created_at),
+    ]:
+        comparison[name] = {
+            "current": sum(int(row[name]) for row in daily),
+            "previous": await preceding_count(model, timestamp),
+        }
+    comparison["errors"] = {
+        "current": sum(
+            int(row["text_errors"] + row["image_errors"] + row["legacy_errors"])
+            for row in daily
+        ),
+        "previous": (
+            await preceding_count(
+                ShadowEvaluationRun, ShadowEvaluationRun.created_at,
+                ShadowEvaluationRun.state.in_(BAD_STATES),
+            )
+            + await preceding_count(
+                ImageAnalysisJob, ImageAnalysisJob.created_at,
+                ImageAnalysisJob.state.in_(BAD_STATES),
+            )
+            + await preceding_count(
+                AIJob, AIJob.created_at, AIJob.state.in_(BAD_STATES),
+            )
+        ),
+    }
+
     return {
         "as_of": now.isoformat(),
         "period_days": days,
+        "comparison": comparison,
         "daily": daily,
         "by_hour_utc": [{"hour": i, "value": by_hour.get(i, 0)} for i in range(24)],
         "error_reasons": sorted(errors, key=lambda r: r["count"], reverse=True)[:10],
