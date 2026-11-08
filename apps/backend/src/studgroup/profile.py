@@ -161,6 +161,20 @@ async def update_profile(
     fields = body.model_fields_set
     if not fields:
         raise ApiError("invalid_request", "Нет изменений", 422)
+    # Credentials are voluntary and require a separately recorded, current consent.
+    supplied_sdo = any(
+        name in fields and getattr(body, name) is not None
+        for name in ("sdu_platform", "sdu_url", "sdu_login", "sdu_calendar_url", "sdu_password")
+    )
+    if supplied_sdo:
+        from studgroup.api import active_membership
+        from studgroup.legal import has_consent, legal_ready
+
+        if not legal_ready(request.app.state.settings):
+            raise ApiError("legal_not_ready", "Обработка учётных данных пока недоступна", 503)
+        await active_membership(db, authorization)
+        if not await has_consent(db, user.id, "sdo", request.app.state.settings):
+            raise ApiError("consent_required", "Сначала подтвердите отдельное согласие СДО/ЛК", 403)
     if row is None:
         row = UserProfile(user_id=user.id, updated_at=datetime.now(UTC))
         db.add(row)
