@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from studgroup.academic_deadlines import router as deadlines_router
 from studgroup.admin_dashboard import router as admin_dashboard_router
+from studgroup.admin_insights import router as admin_insights_router
 from studgroup.api import ApiError, router
 from studgroup.card_edit import router as card_edit_router
 from studgroup.homework import router as homework_router
@@ -458,6 +459,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(router)
     app.include_router(admin_dashboard_router)
+    app.include_router(admin_insights_router)
     app.include_router(ingestion_router)
     app.include_router(homework_router)
     app.include_router(card_edit_router)
