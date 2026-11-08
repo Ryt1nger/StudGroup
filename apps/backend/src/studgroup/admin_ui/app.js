@@ -11,7 +11,7 @@ const label={
   text:"Обработки текстовых сообщений",images:"Анализ фотографий",legacy:"Старая очередь",
   errors:"Ошибки обработки",incidents:"Системные предупреждения",expenses:"Списания AI",
   month_expenses:"Расходы на AI в этом месяце",reserves:"Незакрытые резервы AI",
-  homework:"Домашние задания",events:"События",telegram:"Отправка Telegram"
+  homework:"Домашние задания",events:"События",notifications:"Уведомления",telegram:"Отправка Telegram"
 };
 const state={
   completed:"Выполнено",ready:"Готово",sent:"Отправлено",failed:"Ошибка",error:"Ошибка",
@@ -82,7 +82,7 @@ function financeTile(host,title,value,note,kind,primary=false){
   host.append(btn);
 }
 function metric(host,title,value,note){
-  const block=dom("button","server-cell");block.type="button";block.dataset.info=note;
+  const block=dom("button","server-cell");block.type="button";block.dataset.visual="server";
   text(block,"span","",title);text(block,"strong","",value);text(block,"small","",note);
   host.append(block);
 }
@@ -151,7 +151,7 @@ function openVisual(kind){
       const note=dom("article","detail");text(note,"p","detail-explanation","Здесь показаны только результаты и скорость работы API. Мы не сохраняем адреса запросов, личные данные и токены. После перезапуска сервера отсчёт начинается заново.");host.append(note);
       for(const item of telemetry.requests||[]){
         const row=dom("article","detail");const header=dom("div","detail-top");
-        text(header,"strong","",new Date(item.minute).toLocaleTimeString("ru-RU",{timeZone:"UTC",hour:"2-digit",minute:"2-digit"})+" UTC");
+        text(header,"strong","",new Date(item.minute).toLocaleTimeString("ru-RU",{timeZone:"Europe/Moscow",hour:"2-digit",minute:"2-digit"})+" МСК");
         text(header,"span","pill",number(item.count)+" запросов");row.append(header);
         text(row,"p","detail-explanation","Ответов с ошибкой сервера: "+number(item.errors_5xx));
         host.append(row);
@@ -163,7 +163,7 @@ function openVisual(kind){
     $("modal-subtitle").textContent=isAi?"Отдельные журналы текста и изображений":"Детализация созданных материалов за выбранный период";
     const note=dom("article","detail");
     text(note,"p","detail-explanation",isAi?"Один анализ фотографии может состоять из двух проходов. Результаты текста и фото не складываются в число уникальных сообщений.":"Публикации и уведомления — разные операции. Число записей не равно числу просмотров студентами.");host.append(note);
-    const actions=isAi?[["Прогоны текста","text"],["Проходы обработки фото","images"]]:[["Домашние задания","homework"],["События","events"]];
+    const actions=isAi?[["Прогоны текста","text"],["Проходы обработки фото","images"]]:[["Домашние задания","homework"],["События","events"],["Уведомления","notifications"]];
     for(const [title,detail] of actions){
       const b=dom("button","incident-row");b.type="button";b.dataset.detail=detail;
       text(b,"span","incident-title",title);text(b,"span","incident-badge ok","Открыть журнал ↗");host.append(b);
@@ -194,10 +194,10 @@ function renderOutcomes(d){
 }
 function renderAi(d,v){
   const dates=v.daily.map(x=>x.date);
-  C.bars("chart-workload",[{label:"Текст",values:series(v,"text"),color:"#087e83"},{label:"Фото",values:series(v,"images"),color:"#5060bf"}],{labels:dates,title:"Количество прогонов по дням"});visualClickable("chart-workload","ai");
+  C.bars("chart-workload",[{label:"Текст",values:series(v,"text"),color:"#087e83",kind:"text"},{label:"Фото",values:series(v,"images"),color:"#5060bf",kind:"images"}],{labels:dates,title:"Количество прогонов по дням"});visualClickable("chart-workload","ai");
   renderOutcomes(d);
-  C.plot("chart-latency",[{label:"Текст",values:v.daily.map(x=>x.text_latency_ms==null?null:x.text_latency_ms/1000),color:"#087e83"},{label:"Фото",values:v.daily.map(x=>x.photo_latency_ms==null?null:x.photo_latency_ms/1000),color:"#d39051"}],{labels:dates,title:"Скорость обработки AI"});visualClickable("chart-latency","ai");
-  C.bars("chart-output",[{label:"ДЗ",values:series(v,"homework"),color:"#087e83"},{label:"События",values:series(v,"events"),color:"#5060bf"},{label:"Уведомления",values:series(v,"notifications"),color:"#d39051"}],{labels:dates,title:"Созданные записи"});visualClickable("chart-output","materials");
+  C.plot("chart-latency",[{label:"Текст",values:v.daily.map(x=>x.text_latency_ms==null?null:x.text_latency_ms/1000),color:"#087e83",kind:"text"},{label:"Фото",values:v.daily.map(x=>x.photo_latency_ms==null?null:x.photo_latency_ms/1000),color:"#d39051",kind:"images"}],{labels:dates,title:"Скорость обработки AI"});visualClickable("chart-latency","ai");
+  C.bars("chart-output",[{label:"ДЗ",values:series(v,"homework"),color:"#087e83",kind:"homework"},{label:"События",values:series(v,"events"),color:"#5060bf",kind:"events"},{label:"Уведомления",values:series(v,"notifications"),color:"#d39051",kind:"notifications"}],{labels:dates,title:"Созданные записи"});visualClickable("chart-output","materials");
 }
 function renderFinance(d,v){
   clear("finance-summary");financeTile($("finance-summary"),"Списано за месяц",money(d.finance.month_charged_usd),"Календарный месяц, UTC","month_expenses",true);
@@ -227,7 +227,7 @@ function renderServer(d,v,roundTrip){
 }
 function renderErrors(d,v){
   const dates=v.daily.map(x=>x.date);
-  C.bars("chart-errors",[{label:"Текст",values:series(v,"text_errors"),color:"#bf5a55"},{label:"Фото",values:series(v,"image_errors"),color:"#d39051"},{label:"Старая очередь",values:series(v,"legacy_errors"),color:"#9eaab9"}],{labels:dates,title:"Ошибки обработки по дням"});chartClickable("chart-errors","errors");
+  C.bars("chart-errors",[{label:"Текст",values:series(v,"text_errors"),color:"#bf5a55",kind:"errors"},{label:"Фото",values:series(v,"image_errors"),color:"#d39051",kind:"errors"},{label:"Старая очередь",values:series(v,"legacy_errors"),color:"#9eaab9",kind:"errors"}],{labels:dates,title:"Ошибки обработки по дням"});chartClickable("chart-errors","errors");
   C.reasons("chart-reasons",v.error_reasons);
   loadRecent();
 }
@@ -285,7 +285,7 @@ async function loadRecent(){
   }catch(error){text(host,"p","chart-empty","Не удалось загрузить предупреждения: "+error.message);}
 }
 function closeModal(){detailKind=null;detailRequest++;$("modal").hidden=true;document.body.style.overflow="";previousFocus?.focus?.();}
-document.addEventListener("click",e=>{const v=e.target.closest("[data-visual]");if(v){openVisual(v.dataset.visual);return;}const d=e.target.closest("[data-detail]");if(d){openDetail(d.dataset.detail);return;}const i=e.target.closest("[data-info]");if(i)explain(i.dataset.info);});
+document.addEventListener("click",e=>{const d=e.target.closest("[data-detail]");if(d){openDetail(d.dataset.detail);return;}const v=e.target.closest("[data-visual]");if(v){openVisual(v.dataset.visual);return;}const i=e.target.closest("[data-info]");if(i)explain(i.dataset.info);});
 $("outcome-tabs").addEventListener("click",e=>{const tab=e.target.closest("[data-outcome]");if(tab){outcome=tab.dataset.outcome;if(lastData)renderOutcomes(lastData);}});
 $("modal-close").addEventListener("click",closeModal);$("modal-backdrop").addEventListener("click",closeModal);$("modal-more").addEventListener("click",()=>more(true));
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("modal").hidden)closeModal();if(e.key==="Tab"&&!$("modal").hidden){const focus=[...$("modal").querySelectorAll("button:not([hidden]),summary")];if(!focus.length)return;if(e.shiftKey&&document.activeElement===focus[0]){e.preventDefault();focus.at(-1).focus();}else if(!e.shiftKey&&document.activeElement===focus.at(-1)){e.preventDefault();focus[0].focus();}}});
