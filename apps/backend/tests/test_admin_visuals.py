@@ -1,4 +1,5 @@
 """The owner charts use real DB facts and do not leak message or AI content."""
+
 import asyncio
 from datetime import UTC, datetime, timedelta
 
@@ -13,8 +14,10 @@ pytest_plugins = ["test_schedule_api"]
 
 def test_owner_visuals_authentication(client):
     assert client.get("/v1/admin/visuals").status_code == 401
-    assert client.get("/v1/admin/visuals",
-                      headers={"Authorization": "Bearer valid"}).status_code == 403
+    assert (
+        client.get("/v1/admin/visuals", headers={"Authorization": "Bearer valid"}).status_code
+        == 403
+    )
 
 
 def test_owner_visuals_real_charts_and_privacy(client):
@@ -27,26 +30,30 @@ def test_owner_visuals_real_charts_and_privacy(client):
             other = next(group for group in groups if not group.pilot_authorized)
             now = datetime.now(UTC)
             for group, mid in ((selected, 9201), (other, 9202)):
-                db.add(RawMessage(
-                    group_id=group.id,
-                    telegram_message_id=mid,
-                    sender_id=mid,
-                    text="private message must not appear",
-                    message_date=now,
-                    version_date=now,
+                db.add(
+                    RawMessage(
+                        group_id=group.id,
+                        telegram_message_id=mid,
+                        sender_id=mid,
+                        text="private message must not appear",
+                        message_date=now,
+                        version_date=now,
+                        delete_at=now + timedelta(days=30),
+                    )
+                )
+            db.add(
+                AnalysisBudgetCall(
+                    group_id=selected.id,
+                    attempt_key="budget-chart-test",
+                    kind="photo",
+                    state="settled",
+                    reserved_usd=0.03,
+                    charged_usd=0.019,
+                    created_at=now,
+                    settled_at=now,
                     delete_at=now + timedelta(days=30),
-                ))
-            db.add(AnalysisBudgetCall(
-                group_id=selected.id,
-                attempt_key="budget-chart-test",
-                kind="photo",
-                state="settled",
-                reserved_usd=0.03,
-                charged_usd=0.019,
-                created_at=now,
-                settled_at=now,
-                delete_at=now + timedelta(days=30),
-            ))
+                )
+            )
             selected_id = selected.id
             await db.commit()
             return selected_id
@@ -66,9 +73,12 @@ def test_owner_visuals_real_charts_and_privacy(client):
     assert sum(row["value"] for row in data["finance_month"]["series"]) == 0.019
     assert data["server"]["window_minutes"] == 15
     assert "private message must not appear" not in response.text
-    assert client.get(
-        "/v1/admin/visuals?days=91", headers={"Authorization": "Bearer valid"}
-    ).status_code == 422
+    assert (
+        client.get(
+            "/v1/admin/visuals?days=91", headers={"Authorization": "Bearer valid"}
+        ).status_code
+        == 422
+    )
 
 
 def test_http_monitor_uses_real_samples_only():
