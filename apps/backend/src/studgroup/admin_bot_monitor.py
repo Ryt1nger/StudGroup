@@ -51,41 +51,45 @@ async def bot_monitor(
         select(func.max(RawMessage.message_date)).where(*scope(RawMessage, group_id))
     )
     imported = await total(db, RawMessage, (*message_scope, RawMessage.imported.is_(True)))
-    unique_senders = await db.scalar(
-        select(func.count(func.distinct(RawMessage.sender_id)))
-        .where(*message_scope, RawMessage.sender_id.is_not(None))
-    ) or 0
+    unique_senders = (
+        await db.scalar(
+            select(func.count(func.distinct(RawMessage.sender_id))).where(
+                *message_scope, RawMessage.sender_id.is_not(None)
+            )
+        )
+        or 0
+    )
     active_memberships = await total(
         db, Membership, (Membership.status == "active", *scope(Membership, group_id))
     )
 
-    outgoing = (await db.execute(
-        select(BotOutbox.state, func.count())
-        .group_by(BotOutbox.state)
-        .order_by(func.count().desc())
-    )).all()
+    outgoing = (
+        await db.execute(
+            select(BotOutbox.state, func.count())
+            .group_by(BotOutbox.state)
+            .order_by(func.count().desc())
+        )
+    ).all()
     outbox = {str(state or "unknown"): int(count) for state, count in outgoing}
-    pending = sum(value for key, value in outbox.items() if key in ("pending", "retry", "queued", "sending"))
+    pending = sum(
+        value for key, value in outbox.items() if key in ("pending", "retry", "queued", "sending")
+    )
     failed = sum(value for key, value in outbox.items() if key in ("failed", "dead", "dead_letter"))
     sent = outbox.get("sent", 0)
-    panel_counts = (await db.execute(
-        select(BotPanel.mode, func.count()).group_by(BotPanel.mode)
-    )).all()
+    panel_counts = (
+        await db.execute(select(BotPanel.mode, func.count()).group_by(BotPanel.mode))
+    ).all()
     panel_states = {str(mode or "unknown"): int(count) for mode, count in panel_counts}
     sessions = (WebSession.expires_at > now,)
     active_sessions = await total(db, WebSession, sessions)
-    session_users = await db.scalar(
-        select(func.count(func.distinct(WebSession.user_id))).where(*sessions)
-    ) or 0
+    session_users = (
+        await db.scalar(select(func.count(func.distinct(WebSession.user_id))).where(*sessions)) or 0
+    )
     users_total = await total(db, User)
     all_groups = (await db.scalars(select(Group).order_by(Group.name))).all()
 
-    webhook_daily = await day_values(
-        db, ReceivedUpdate, ReceivedUpdate.received_at, received_scope
-    )
-    messages_daily = await day_values(
-        db, RawMessage, RawMessage.message_date, message_scope
-    )
+    webhook_daily = await day_values(db, ReceivedUpdate, ReceivedUpdate.received_at, received_scope)
+    messages_daily = await day_values(db, RawMessage, RawMessage.message_date, message_scope)
     dates = [(start_date + timedelta(days=i)).isoformat() for i in range(days)]
 
     return {
@@ -123,12 +127,20 @@ async def bot_monitor(
             "last_at": stamp(messages_latest),
         },
         "daily": [
-            {"date": date, "updates": webhook_daily.get(date, 0), "messages": messages_daily.get(date, 0)}
+            {
+                "date": date,
+                "updates": webhook_daily.get(date, 0),
+                "messages": messages_daily.get(date, 0),
+            }
             for date in dates
         ],
         "groups": [
-            {"id": str(g.id), "name": g.name, "active": g.status == "active",
-             "pilot": bool(g.pilot_authorized)}
+            {
+                "id": str(g.id),
+                "name": g.name,
+                "active": g.status == "active",
+                "pilot": bool(g.pilot_authorized),
+            }
             for g in all_groups
             if group_id is None or g.id == group_id
         ],
