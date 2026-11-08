@@ -29,3 +29,14 @@
 .kpi-card .kpi-footer{min-width:0}
 .kpi-card .kpi-change{white-space:normal;text-align:right;max-width:110px}
 @media(max-width:460px){.kpi-card .kpi-change{font-size:10px;max-width:86px}}
+
+/* Legibility and accessible chart interactions in owner mode. */
+.kpi-heading{font-size:13px}
+.section-heading p{font-size:13px}
+.chart-foot,.finance-stat .finance-explainer,.strip-stat .strip-explain,.server-cell small{font-size:11.5px;color:#73858d}
+.plot-legend{min-height:26px;height:auto;gap:12px}
+.plot-legend span,.plot-legend button{display:flex;align-items:center;gap:6px;color:#657c84;font-size:11.5px}
+.plot-legend button{border:0;background:transparent;padding:5px 7px;border-radius:5px;cursor:pointer;font-family:inherit}
+.plot-legend button:hover{background:#e9f3f2;color:#106e73}
+.chart-host svg [data-detail]{cursor:pointer}
+.chart-host svg [data-detail]:hover{opacity:.75}
