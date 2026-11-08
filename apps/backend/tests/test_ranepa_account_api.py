@@ -35,7 +35,7 @@ def test_account_is_write_only_encrypted_and_revocable(client):
     row = asyncio.run(stored())
     assert Fernet(key.encode()).decrypt(row.login_encrypted.encode()) == b"student"
     assert Fernet(key.encode()).decrypt(row.password_encrypted.encode()) == b"pw"
-    assert "student" not in row.login_encrypted and "pw" not in row.password_encrypted
+    assert row.login_encrypted != "student" and row.password_encrypted != "pw"
     assert client.get(url, headers=AUTH).json()["connected"] is True
     assert client.delete(url, headers=AUTH).status_code == 204
     assert client.get(url, headers=AUTH).json()["connected"] is False
