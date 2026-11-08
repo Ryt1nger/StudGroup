@@ -516,15 +516,21 @@ async def details(
         )
         found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
         rows = [
-            item(x.update_id, "Обновление от Telegram", "получено", x.received_at)
-            for x in found
+            item(x.update_id, "Обновление от Telegram", "получено", x.received_at) for x in found
         ]
     elif kind == "bot_panels":
         query = select(BotPanel).order_by(BotPanel.mode, BotPanel.id)
         found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
         rows = [
-            item(x.id, "Панель бота", x.mode, None,
-                 mode=x.mode, generation=x.generation, revision=x.revision)
+            item(
+                x.id,
+                "Панель бота",
+                x.mode,
+                None,
+                mode=x.mode,
+                generation=x.generation,
+                revision=x.revision,
+            )
             for x in found
         ]
     elif kind == "bot_sessions":
@@ -536,8 +542,13 @@ async def details(
         )
         found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
         rows = [
-            item(i + offset + 1, "Действующая сессия WebApp", "активна", None,
-                 expires_at=x.expires_at)
+            item(
+                i + offset + 1,
+                "Действующая сессия WebApp",
+                "активна",
+                None,
+                expires_at=x.expires_at,
+            )
             for i, x in enumerate(found)
         ]
     elif kind == "telegram":
