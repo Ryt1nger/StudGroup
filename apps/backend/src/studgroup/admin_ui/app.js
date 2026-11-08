@@ -117,6 +117,47 @@ function renderKpi(s,v){
 }
 function series(data,key){return data.daily.map(d=>Number(d[key])||0);}
 function chartClickable(id,kind){const host=$(id);host.dataset.detail=kind;host.setAttribute("role","button");host.setAttribute("tabindex","0");host.title="Нажмите, чтобы открыть записи";host.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openDetail(kind);}};}
+function visualClickable(id,kind){
+  const host=$(id);delete host.dataset.detail;host.dataset.visual=kind;
+  host.setAttribute("role","button");host.setAttribute("tabindex","0");
+  host.title="Нажмите, чтобы увидеть разбор графика";
+  host.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openVisual(kind);}};
+}
+function openVisual(kind){
+  previousFocus=document.activeElement;detailKind=null;detailRequest++;
+  const modal=$("modal");modal.hidden=false;document.body.style.overflow="hidden";
+  clear("modal-items");$("modal-more").hidden=true;$("modal-status").textContent="";
+  const host=$("modal-items");
+  if(kind==="server"){
+    $("modal-title").textContent="Нагрузка на сервер";
+    $("modal-subtitle").textContent="Фактические запросы за последние 15 минут";
+    const telemetry=lastVisuals?.server;
+    if(!telemetry){text(host,"div","empty","Измерений пока нет.");}
+    else{
+      const note=dom("article","detail");text(note,"p","detail-explanation","Здесь показаны только результаты и скорость работы API. Мы не сохраняем адреса запросов, личные данные и токены. После перезапуска сервера отсчёт начинается заново.");host.append(note);
+      for(const item of telemetry.requests||[]){
+        const row=dom("article","detail");const header=dom("div","detail-top");
+        text(header,"strong","",new Date(item.minute).toLocaleTimeString("ru-RU",{timeZone:"UTC",hour:"2-digit",minute:"2-digit"})+" UTC");
+        text(header,"span","pill",number(item.count)+" запросов");row.append(header);
+        text(row,"p","detail-explanation","Ответов с ошибкой сервера: "+number(item.errors_5xx));
+        host.append(row);
+      }
+    }
+  }else{
+    const isAi=kind==="ai";
+    $("modal-title").textContent=isAi?"Что анализирует AI":"Что появилось у студентов";
+    $("modal-subtitle").textContent=isAi?"Отдельные журналы текста и изображений":"Детализация созданных материалов за выбранный период";
+    const note=dom("article","detail");
+    text(note,"p","detail-explanation",isAi?"Один анализ фотографии может состоять из двух проходов. Результаты текста и фото не складываются в число уникальных сообщений.":"Публикации и уведомления — разные операции. Число записей не равно числу просмотров студентами.");host.append(note);
+    const actions=isAi?[["Прогоны текста","text"],["Проходы обработки фото","images"]]:[["Домашние задания","homework"],["События","events"]];
+    for(const [title,detail] of actions){
+      const b=dom("button","incident-row");b.type="button";b.dataset.detail=detail;
+      text(b,"span","incident-title",title);text(b,"span","incident-badge ok","Открыть журнал ↗");host.append(b);
+    }
+  }
+  $("modal-close").focus();
+}
+
 function renderActivity(d,v){
   const days=v.daily.map(x=>x.date);
   C.plot("chart-activity",[{label:"Сообщения",values:series(v,"messages"),color:"#087e83"}],{labels:days,title:"Сообщения по дням",area:true});chartClickable("chart-activity","messages");
@@ -139,10 +180,10 @@ function renderOutcomes(d){
 }
 function renderAi(d,v){
   const dates=v.daily.map(x=>x.date);
-  C.bars("chart-workload",[{label:"Текст",values:series(v,"text"),color:"#087e83"},{label:"Фото",values:series(v,"images"),color:"#5060bf"}],{labels:dates,title:"Количество прогонов по дням"});chartClickable("chart-workload","text");
+  C.bars("chart-workload",[{label:"Текст",values:series(v,"text"),color:"#087e83"},{label:"Фото",values:series(v,"images"),color:"#5060bf"}],{labels:dates,title:"Количество прогонов по дням"});visualClickable("chart-workload","ai");
   renderOutcomes(d);
-  C.plot("chart-latency",[{label:"Текст",values:v.daily.map(x=>x.text_latency_ms==null?null:x.text_latency_ms/1000),color:"#087e83"},{label:"Фото",values:v.daily.map(x=>x.photo_latency_ms==null?null:x.photo_latency_ms/1000),color:"#d39051"}],{labels:dates,title:"Скорость обработки AI"});chartClickable("chart-latency","text");
-  C.bars("chart-output",[{label:"ДЗ",values:series(v,"homework"),color:"#087e83"},{label:"События",values:series(v,"events"),color:"#5060bf"},{label:"Уведомления",values:series(v,"notifications"),color:"#d39051"}],{labels:dates,title:"Созданные записи"});chartClickable("chart-output","homework");
+  C.plot("chart-latency",[{label:"Текст",values:v.daily.map(x=>x.text_latency_ms==null?null:x.text_latency_ms/1000),color:"#087e83"},{label:"Фото",values:v.daily.map(x=>x.photo_latency_ms==null?null:x.photo_latency_ms/1000),color:"#d39051"}],{labels:dates,title:"Скорость обработки AI"});visualClickable("chart-latency","ai");
+  C.bars("chart-output",[{label:"ДЗ",values:series(v,"homework"),color:"#087e83"},{label:"События",values:series(v,"events"),color:"#5060bf"},{label:"Уведомления",values:series(v,"notifications"),color:"#d39051"}],{labels:dates,title:"Созданные записи"});visualClickable("chart-output","materials");
 }
 function renderFinance(d,v){
   clear("finance-summary");financeTile($("finance-summary"),"Списано за месяц",money(d.finance.month_charged_usd),"Календарный месяц, UTC","month_expenses",true);
@@ -163,7 +204,7 @@ function renderServer(d,v,roundTrip){
   metric(host,"Ошибки сервера",number(server.errors_5xx),"Ответы с кодом 5xx, 15 минут");
   metric(host,"Запросов к API",number(server.sample_count),"Измерены после запуска текущего процесса");
   C.bars("chart-requests",[{label:"Обычные ответы",values:server.requests.map(x=>Math.max(0,x.count-x.errors_5xx)),color:"#087e83"},{label:"Серверные ошибки",values:server.requests.map(x=>x.errors_5xx),color:"#bf5a55"}],{labels:server.requests.map(x=>x.minute.slice(11,16)),title:"Запросы API поминутно"});
-  chartClickable("chart-requests","incidents");
+  visualClickable("chart-requests","server");
   $("server-caption").textContent=server.note+" Последний запрос панели занял "+number(roundTrip)+" мс с учётом сети.";
   clear("queue-detail");const list=$("queue-detail");
   for(const [title,key,detail] of [["Текстовый анализ","text","text"],["Анализ фотографий","images","images"],["Старая обработка","legacy","legacy"],["Исходящие Telegram","telegram","telegram"]]){
@@ -230,7 +271,7 @@ async function loadRecent(){
   }catch(error){text(host,"p","chart-empty","Не удалось загрузить предупреждения: "+error.message);}
 }
 function closeModal(){detailKind=null;detailRequest++;$("modal").hidden=true;document.body.style.overflow="";previousFocus?.focus?.();}
-document.addEventListener("click",e=>{const d=e.target.closest("[data-detail]");if(d){openDetail(d.dataset.detail);return;}const i=e.target.closest("[data-info]");if(i)explain(i.dataset.info);});
+document.addEventListener("click",e=>{const v=e.target.closest("[data-visual]");if(v){openVisual(v.dataset.visual);return;}const d=e.target.closest("[data-detail]");if(d){openDetail(d.dataset.detail);return;}const i=e.target.closest("[data-info]");if(i)explain(i.dataset.info);});
 $("outcome-tabs").addEventListener("click",e=>{const tab=e.target.closest("[data-outcome]");if(tab){outcome=tab.dataset.outcome;if(lastData)renderOutcomes(lastData);}});
 $("modal-close").addEventListener("click",closeModal);$("modal-backdrop").addEventListener("click",closeModal);$("modal-more").addEventListener("click",()=>more(true));
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("modal").hidden)closeModal();if(e.key==="Tab"&&!$("modal").hidden){const focus=[...$("modal").querySelectorAll("button:not([hidden]),summary")];if(!focus.length)return;if(e.shiftKey&&document.activeElement===focus[0]){e.preventDefault();focus.at(-1).focus();}else if(!e.shiftKey&&document.activeElement===focus.at(-1)){e.preventDefault();focus[0].focus();}}});
