@@ -67,8 +67,8 @@ def test_owner_visuals_real_charts_and_privacy(client):
     data = response.json()
     assert len(data["daily"]) == 7
     assert sum(day["messages"] for day in data["daily"]) == 1
-    assert len(data["by_hour_utc"]) == 24
-    assert sum(item["value"] for item in data["by_hour_utc"]) == 1
+    assert len(data["by_hour_moscow"]) == 24
+    assert sum(item["value"] for item in data["by_hour_moscow"]) == 1
     assert sum(row["usd"] for row in data["finance_month"]["by_kind"]) == 0.019
     assert sum(row["value"] for row in data["finance_month"]["series"]) == 0.019
     assert data["server"]["window_minutes"] == 15
