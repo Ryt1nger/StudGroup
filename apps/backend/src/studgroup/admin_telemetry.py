@@ -5,6 +5,8 @@ No paths, headers, IPs, bodies or identities. History resets at each deployment.
 """
 
 from collections import deque
+from math import ceil
+from statistics import median
 from datetime import UTC, datetime, timedelta
 
 
@@ -27,7 +29,10 @@ class RequestTelemetry:
         def percentile(fraction):
             if not elapsed:
                 return None
-            return round(elapsed[min(len(elapsed) - 1, int((len(elapsed) - 1) * fraction))])
+            if fraction == 0.5:
+                return round(median(elapsed))
+            rank = max(0, min(len(elapsed) - 1, ceil(len(elapsed) * fraction) - 1))
+            return round(elapsed[rank])
 
         labels = [
             (now.replace(second=0, microsecond=0) - timedelta(minutes=i)) for i in range(14, -1, -1)
