@@ -1,7 +1,4 @@
-"""Write-only encrypted university account credentials."""
-
-import sqlalchemy as sa
-from alembic import op
+"""Reserved revision: credentials use user_profiles after consent integration."""
 
 revision = "0055"
 down_revision = "0054"
@@ -10,16 +7,8 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
-        "ranepa_accounts",
-        sa.Column(
-            "user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-        ),
-        sa.Column("login_encrypted", sa.Text(), nullable=False),
-        sa.Column("password_encrypted", sa.Text(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-    )
+    pass
 
 
 def downgrade():
-    op.drop_table("ranepa_accounts")
+    pass

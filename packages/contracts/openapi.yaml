@@ -177,40 +177,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /ranepa-account:
-    get:
-      operationId: getRanepaAccount
-      summary: Whether the caller connected their RANEPA account; never returns credentials
-      responses:
-        "200":
-          description: Connection state
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/RanepaAccountState" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-    put:
-      operationId: putRanepaAccount
-      summary: Store the caller's RANEPA login and password encrypted for scheduled read-only collection
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/RanepaAccountInput" }
-      responses:
-        "200":
-          description: Connection state
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/RanepaAccountState" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "422": { $ref: "#/components/responses/InvalidRequest" }
-        "503": { $ref: "#/components/responses/InvalidRequest" }
-    delete:
-      operationId: deleteRanepaAccount
-      summary: Revoke the caller's stored RANEPA credentials
-      responses:
-        "204": { description: Credentials removed }
-        "401": { $ref: "#/components/responses/Unauthorized" }
   /ranepa-schedule:
     get:
       operationId: getMyRanepaSchedule
@@ -1787,20 +1753,6 @@ components:
             password_set: { type: boolean }
         settings:
           $ref: "#/components/schemas/NotificationSettings"
-    RanepaAccountState:
-      type: object
-      additionalProperties: false
-      required: [connected]
-      properties:
-        connected: { type: boolean }
-        updated_at: { type: [string, "null"], format: date-time }
-    RanepaAccountInput:
-      type: object
-      additionalProperties: false
-      required: [login, password]
-      properties:
-        login: { type: string, minLength: 1, maxLength: 120, writeOnly: true }
-        password: { type: string, minLength: 1, maxLength: 200, writeOnly: true }
     RanepaPersonalSchedule:
       type: object
       additionalProperties: false

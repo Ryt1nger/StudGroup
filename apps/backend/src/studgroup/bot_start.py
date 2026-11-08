@@ -35,6 +35,7 @@ from studgroup.models import (
     User,
     UserProfile,
 )
+from studgroup.security import token_hash
 
 SESSION_MINUTES = 30
 CLAIM_HOURS = 24  # how long «Я староста» waits for the bot to be added to a group
@@ -84,14 +85,15 @@ def extract_code(text):
     return text if _BARE_CODE.fullmatch(text) else None
 
 
-def app_button(settings, label="Открыть StudGroup"):
-    return {"text": label, "web_app": {"url": settings.webapp_origin}}
+def app_button(settings, label="Открыть StudGroup", *, path=""):
+    url = settings.webapp_origin.rstrip("/") + path if path else settings.webapp_origin
+    return {"text": label, "web_app": {"url": url}}
 
 
 def ranepa_button(settings):
     return {
-        "text": "Подключить расписание РАНХиГС",
-        "web_app": {"url": settings.webapp_origin.rstrip("/") + "/profile/me"},
+        "text": "Данные СДО / ЛК",
+        "web_app": {"url": settings.webapp_origin.rstrip("/") + "/profile/sdo"},
     }
 
 
@@ -158,6 +160,8 @@ async def topic_screen(db, session, settings, topic):
     rows = []
     if topic == "howto":
         rows.append([app_button(settings)])
+    if topic == "about":
+        rows.append([("Документы и согласия", "legal_docs")])
     links = [(label, action) for label, action in TOPIC_LINKS.get(topic, [])]
     rows += [[link] for link in links]
     if topic != "support":
@@ -186,6 +190,151 @@ async def current_membership(db, telegram_id):
     return row
 
 
+def legal_link(settings, purpose):
+    """Public legal document; never carries a token or credential in the URL."""
+    return {
+        "text": "Прочитать документ",
+        "url": settings.webapp_origin.rstrip("/") + "/legal/" + purpose,
+    }
+
+
+async def legal_documents_screen(db, session, settings):
+    choices = [
+        ("Политика обработки данных", "privacy"),
+        ("Условия использования", "terms"),
+        ("Согласие на обработку данных", "service"),
+        ("Согласие СДО / ЛК", "sdo"),
+        ("Технические данные", "cookies"),
+    ]
+    await screen(
+        db,
+        session,
+        "Документы StudGroup. Согласия оформляются отдельно. "
+        "Сохранение пароля СДО/ЛК добровольно и доступно только в защищённой форме приложения.",
+        [
+            [{"text": label, "url": settings.webapp_origin.rstrip("/") + "/legal/" + slug}]
+            for label, slug in choices
+        ]
+        + [[("‹ Назад", "home")]],
+        "legal_documents",
+    )
+
+
+async def legal_role_gate(db, session, settings, telegram_id, *, pending_invite_hash=None):
+    """Two distinct confirmation screens, separately from the user agreement and SDO consent."""
+    from studgroup import legal
+
+    if not settings.legal_onboarding_required:
+        if pending_invite_hash:
+            await redeem(
+                db,
+                session,
+                settings,
+                telegram_id,
+                "",
+                typed=False,
+                pending_invite_hash=pending_invite_hash,
+            )
+        else:
+            await role_screen(db, session)
+        return
+    if not legal.legal_ready(settings):
+        await screen(
+            db,
+            session,
+            "Подключение новых участников временно недоступно: сведения об операторе "
+            "и правовые документы ещё не утверждены. Доступ действующих участников сохраняется.",
+            [[("Документы", "legal_docs")], [("‹ Назад", "home")]],
+            "legal_not_ready",
+        )
+        return
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    if user is None:
+        user = User(
+            id=uuid.uuid4(),
+            telegram_user_id=telegram_id,
+            display_name="Пользователь Telegram",
+        )
+        db.add(user)
+        await db.flush()
+    if not await legal.has_consent(db, user.id, "terms", settings):
+        await screen(
+            db,
+            session,
+            "Шаг 1 из 2 · Условия использования.\n\n"
+            "Прочитайте отдельный документ по ссылке. Нажмите кнопку подтверждения "
+            "только если согласны. Это не является согласием на обработку данных.",
+            [
+                [legal_link(settings, "terms")],
+                [("Принимаю условия использования", "legal_accept_terms")],
+                [("Не принимаю", "home")],
+            ],
+            "legal_terms",
+            {"pending_invite_hash": pending_invite_hash},
+        )
+        return
+    if not await legal.has_consent(db, user.id, "service", settings):
+        await screen(
+            db,
+            session,
+            "Шаг 2 из 2 · Отдельное согласие на обработку персональных данных.\n\n"
+            "Прочитайте самостоятельный документ и подтвердите добровольно. "
+            "Пароль СДО/ЛК сюда не входит: для него будет отдельное согласие.",
+            [
+                [legal_link(settings, "service")],
+                [("Даю отдельное согласие", "legal_accept_service")],
+                [("Не согласен", "home")],
+            ],
+            "legal_service",
+            {"pending_invite_hash": pending_invite_hash},
+        )
+        return
+    if pending_invite_hash:
+        await redeem(
+            db,
+            session,
+            settings,
+            telegram_id,
+            "",
+            typed=False,
+            pending_invite_hash=pending_invite_hash,
+        )
+    else:
+        await role_screen(db, session)
+
+
+async def sdo_setup_screen(db, session, settings, telegram_id, *, headman=False):
+    """Optional credential step after academic onboarding, never accepts secrets in chat."""
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    profile = await db.get(UserProfile, user.id) if user else None
+    if profile and profile.sdu_login and profile.sdu_password_encrypted:
+        if headman:
+            found = await current_membership(db, telegram_id)
+            if found:
+                await onboarding_complete(db, session, found[1])
+        else:
+            await home(db, session, settings, telegram_id)
+        return
+    await screen(
+        db,
+        session,
+        "Готово! Вы подключены к StudGroup.\n\n"
+        "Дополнительный шаг · СДО и личный кабинет РАНХиГС.\n"
+        "Для них используется одна пара логин/пароль. Вводить её необязательно: "
+        "расписание и задания StudGroup доступны без неё.\n\n"
+        "Нажмите кнопку защищённой формы Mini App. НЕ присылайте пароль в этот чат. "
+        "Сохранение не означает, что вход в СДО уже работает.",
+        [
+            [app_button(settings, "Ввести логин и пароль СДО / ЛК", path="/profile/sdo")],
+            [("Я заполнил", "sdo_check")],
+            [("Пропустить", "sdo_skip")],
+            [("Главное меню", "home")],
+        ],
+        "sdo_setup",
+        {"headman": headman},
+    )
+
+
 async def home(db, session, settings, telegram_id):
     found = await current_membership(db, telegram_id)
     if found:
@@ -200,6 +349,7 @@ async def home(db, session, settings, telegram_id):
             [app_button(settings)],
             [("Проверить подключение", "connection_status")],
             [("Уведомления", "notifications")],
+            [app_button(settings, "СДО / ЛК", path="/profile/sdo")],
         ]
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
@@ -225,7 +375,13 @@ async def home(db, session, settings, telegram_id):
                 )
         if member.role == "student" and await subgroups.splits(db, group.id):
             rows.insert(0, [("Мои подгруппы", "subgroups")])
-        await screen(db, session, text, [*rows, *info_row()], "home")
+        await screen(
+            db,
+            session,
+            text,
+            [*rows, [("Документы и согласия", "legal_docs")], *info_row()],
+            "home",
+        )
         return
     await screen(
         db,
@@ -635,7 +791,7 @@ async def finish_onboarding_from_cabinet(db, settings, telegram_id, group):
     session = await get_session(db, telegram_id)
     token = bot_panels.scope.set((telegram_id, "start"))
     try:
-        await onboarding_complete(db, session, group)
+        await sdo_setup_screen(db, session, settings, telegram_id, headman=True)
     finally:
         bot_panels.scope.reset(token)
 
@@ -819,13 +975,36 @@ async def code_prompt(db, session, notice=None):
     await screen(db, session, text, [[("‹ Назад", "join_back")]], "code")
 
 
-async def redeem(db, session, settings, telegram_id, code, *, typed):
-    """Join by code. A typed code that fails keeps the person waiting for another try."""
+async def redeem(db, session, settings, telegram_id, code, *, typed, pending_invite_hash=None):
+    """Join by code, after any required consents; never persist raw invitation secrets."""
+    if settings.legal_onboarding_required:
+        from studgroup import legal
+
+        user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+        if not (
+            user
+            and legal.legal_ready(settings)
+            and await legal.has_consent(db, user.id, "terms", settings)
+            and await legal.has_consent(db, user.id, "service", settings)
+        ):
+            await legal_role_gate(
+                db,
+                session,
+                settings,
+                telegram_id,
+                pending_invite_hash=pending_invite_hash or token_hash(code),
+            )
+            return
     try:
-        if not code:
+        if not code and not pending_invite_hash:
             raise domain.StError("Это не похоже на код приглашения. Скопируйте его целиком.")
         async with db.begin_nested():
-            group = await domain.redeem_invite(db, settings, telegram_id, code)
+            if pending_invite_hash:
+                group = await domain.redeem_invite_by_hash(
+                    db, settings, telegram_id, pending_invite_hash
+                )
+            else:
+                group = await domain.redeem_invite(db, settings, telegram_id, code)
     except domain.StError as error:
         if typed:
             await code_prompt(db, session, f"Не получилось: {error}")
@@ -840,18 +1019,7 @@ async def redeem(db, session, settings, telegram_id, code, *, typed):
         message = f"Готово! Вы подключены к «{group.name}»."
         if group.academic_group_code:
             message += f"\nОфициальный ID РАНХиГС: {group.academic_group_code}"
-            message += (
-                "\n\nДля личного расписания откройте защищённую форму в приложении."
-                " Не отправляйте пароль в чат."
-            )
-        await screen(
-            db,
-            session,
-            message,
-            ([[ranepa_button(settings)]] if group.academic_group_code else [])
-            + [[app_button(settings)], [("Главное меню", "home")]],
-            "done",
-        )
+        await sdo_setup_screen(db, session, settings, telegram_id, headman=False)
 
 
 async def subgroup_choice(db, session, settings, member, group, *, joined=False):
@@ -859,6 +1027,10 @@ async def subgroup_choice(db, session, settings, member, group, *, joined=False)
     all_splits = await subgroups.splits(db, group.id)
     picked = await subgroups.choices(db, member.id)
     unanswered = [pair for pair in all_splits if pair[0].id not in picked]
+    if not unanswered and joined:
+        student = await db.get(User, member.user_id)
+        await sdo_setup_screen(db, session, settings, student.telegram_user_id, headman=False)
+        return
     if unanswered:
         split, choices = unanswered[0]
         prefix = f"Готово! Вы подключены к «{group.name}».\n\n" if joined else ""
@@ -874,6 +1046,7 @@ async def subgroup_choice(db, session, settings, member, group, *, joined=False)
                 "member_id": str(member.id),
                 "split_id": str(split.id),
                 "subgroups": [str(row.id) for row in choices],
+                "onboarding": joined,
             },
         )
         return
@@ -939,7 +1112,12 @@ async def resume_or_home(db, session, settings, telegram_id):
     """Restore a safe step after /start, without trusting expired callback buttons."""
     found = await current_membership(db, telegram_id)
     if found:
-        if found[0].role == "headman" and session.step in {
+        if session.step == "sdo_setup":
+            payload = json.loads(session.payload)
+            await sdo_setup_screen(
+                db, session, settings, telegram_id, headman=payload.get("headman", False)
+            )
+        elif found[0].role == "headman" and session.step in {
             "academic_code",
             "academic_code_confirm",
         }:
@@ -980,7 +1158,15 @@ async def resume_or_home(db, session, settings, telegram_id):
         data = json.loads(session.payload)
     except (TypeError, ValueError):
         data = {}
-    if step in {"promo", "promo_code"} and data.get("role") in {"student", "headman"}:
+    if step in {"legal_terms", "legal_service"} and settings.legal_onboarding_required:
+        await legal_role_gate(
+            db,
+            session,
+            settings,
+            telegram_id,
+            pending_invite_hash=data.get("pending_invite_hash"),
+        )
+    elif step in {"promo", "promo_code"} and data.get("role") in {"student", "headman"}:
         if step == "promo":
             await promo_screen(db, session, data["role"])
         else:
@@ -1058,6 +1244,21 @@ async def handle(db, update, settings, topic=None):
             return True
         if text in {"/cancel", "Отмена"}:
             await home(db, session, settings, sender.id)
+            return True
+        if session.step == "sdo_setup" and utc(session.expires_at) > datetime.now(UTC):
+            await forget(db, chat, message)
+            await screen(
+                db,
+                session,
+                "Пароль СДО/ЛК нельзя отправлять сообщением Telegram. "
+                "Используйте защищённую форму в приложении.",
+                [
+                    [app_button(settings, "Ввести безопасно", path="/profile/sdo")],
+                    [("Пропустить", "sdo_skip")],
+                ],
+                "sdo_setup",
+                json.loads(session.payload),
+            )
             return True
         if session.step == "academic_code" and utc(session.expires_at) > datetime.now(UTC):
             await forget(db, chat, message)
@@ -1213,8 +1414,50 @@ async def handle(db, update, settings, topic=None):
         await demo_student_summary(db, session, english, data["informatics"])
     elif action == "home":
         await home(db, session, settings, sender.id)
+    elif action == "legal_docs":
+        await legal_documents_screen(db, session, settings)
     elif action == "connect":
-        await role_screen(db, session)
+        await legal_role_gate(db, session, settings, sender.id)
+    elif action == "legal_accept_terms" and session.step == "legal_terms":
+        from studgroup import legal
+
+        pending = json.loads(session.payload).get("pending_invite_hash")
+        if legal.legal_ready(settings):
+            user = await db.scalar(select(User).where(User.telegram_user_id == sender.id))
+            if user is not None:
+                legal.receipt(db, user.id, "terms", "accept", "telegram", settings)
+                await db.flush()
+                await legal_role_gate(db, session, settings, sender.id, pending_invite_hash=pending)
+    elif action == "legal_accept_service" and session.step == "legal_service":
+        from studgroup import legal
+
+        pending = json.loads(session.payload).get("pending_invite_hash")
+        if legal.legal_ready(settings):
+            user = await db.scalar(select(User).where(User.telegram_user_id == sender.id))
+            if user is not None and await legal.has_consent(db, user.id, "terms", settings):
+                legal.receipt(db, user.id, "service", "grant", "telegram", settings)
+                await db.flush()
+                await legal_role_gate(db, session, settings, sender.id, pending_invite_hash=pending)
+    elif action == "sdo_check" and session.step == "sdo_setup":
+        payload = json.loads(session.payload)
+        await sdo_setup_screen(
+            db, session, settings, sender.id, headman=payload.get("headman", False)
+        )
+    elif action == "sdo_skip" and session.step == "sdo_setup":
+        payload = json.loads(session.payload)
+        user = await db.scalar(select(User).where(User.telegram_user_id == sender.id))
+        if user is not None:
+            profile = await db.get(UserProfile, user.id)
+            if profile is None:
+                profile = UserProfile(user_id=user.id, updated_at=datetime.now(UTC))
+                db.add(profile)
+            profile.sdu_setup_skipped_at = datetime.now(UTC)
+            profile.updated_at = datetime.now(UTC)
+        found = await current_membership(db, sender.id)
+        if payload.get("headman") and found and found[0].role == "headman":
+            await onboarding_complete(db, session, found[1])
+        else:
+            await home(db, session, settings, sender.id)
     elif action in {"student", "headman"}:
         await promo_screen(db, session, action)
     elif action == "promo_input" and session.step == "promo":
@@ -1358,7 +1601,7 @@ async def handle(db, update, settings, topic=None):
     elif action == "subgroup_setup_no" and session.step == "subgroup_question":
         found = await current_membership(db, sender.id)
         if found and found[0].role == "headman":
-            await onboarding_complete(db, session, found[1])
+            await sdo_setup_screen(db, session, settings, sender.id, headman=True)
         else:
             await home(db, session, settings, sender.id)
     elif action == "subgroup_setup_yes" and session.step == "subgroup_question":
@@ -1398,7 +1641,14 @@ async def handle(db, update, settings, topic=None):
                 uuid.UUID(data["split_id"]),
                 uuid.UUID(data["subgroups"][index]),
             )
-            await subgroup_choice(db, session, settings, found[0], found[1])
+            await subgroup_choice(
+                db,
+                session,
+                settings,
+                found[0],
+                found[1],
+                joined=bool(data.get("onboarding", False)),
+            )
     elif session.step == "subgroups_done" and action.startswith("subgroup_change_"):
         data = json.loads(session.payload)
         found = await current_membership(db, sender.id)

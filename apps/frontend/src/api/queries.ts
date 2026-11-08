@@ -25,11 +25,6 @@ import {
   type CreateHomeworkRequest,
   getProfile,
   updateProfile,
-  getRanepaAccount,
-  putRanepaAccount,
-  deleteRanepaAccount,
-  type RanepaAccountState,
-  type RanepaAccountInput,
   type UpdateProfileRequest,
   type UserProfile,
   type EditAcademicDeadlineRequest,
@@ -58,9 +53,6 @@ export const api = {
   bootstrap: (initData: string): Promise<SessionBootstrapResponse> =>
     unwrap(bootstrapSession({ body: { init_data: initData } })),
   profile: (): Promise<UserProfile> => unwrap(getProfile()),
-  ranepaAccount: (): Promise<RanepaAccountState> => unwrap(getRanepaAccount()),
-  putRanepaAccount: (body: RanepaAccountInput): Promise<RanepaAccountState> => unwrap(putRanepaAccount({ body })),
-  deleteRanepaAccount: (): Promise<void> => unwrap(deleteRanepaAccount()),
   recheck: (): Promise<SessionContext> => unwrap(recheckMembership()),
   today: (day: 'today' | 'tomorrow' = 'today'): Promise<TodayResponse> =>
     unwrap(getToday({ query: { day } })),
@@ -107,26 +99,6 @@ export function useProfileQuery(options: { enabled?: boolean } = {}) {
     queryFn: api.profile,
     staleTime: 60_000,
     enabled: options.enabled ?? true,
-  });
-}
-
-export function useRanepaAccountQuery() {
-  return useQuery({ queryKey: ['ranepa-account'], queryFn: api.ranepaAccount });
-}
-
-export function useSaveRanepaAccount() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: api.putRanepaAccount,
-    onSuccess: (state) => queryClient.setQueryData(['ranepa-account'], state),
-  });
-}
-
-export function useDeleteRanepaAccount() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: api.deleteRanepaAccount,
-    onSuccess: () => queryClient.setQueryData(['ranepa-account'], { connected: false, updated_at: null }),
   });
 }
 

@@ -13,22 +13,25 @@ from playwright.async_api import async_playwright
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings
-from studgroup.models import Group, Membership, MemberSubgroup, RanepaAccount
+from studgroup.models import Group, Membership, MemberSubgroup, UserProfile
 from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_personal import remember_personal
 
 
-async def prepare_week(engine, today: date) -> int:
+async def prepare_week(engine, today: date, settings: Settings) -> int:
+    if not legal_ready(settings):
+        return 0
     monday = today - timedelta(days=today.weekday())
     async with AsyncSession(engine, expire_on_commit=False) as db:
         members = (
             await db.execute(
                 select(Membership, Group)
                 .join(Group, Group.id == Membership.group_id)
-                .join(RanepaAccount, RanepaAccount.user_id == Membership.user_id)
+                .join(UserProfile, UserProfile.user_id == Membership.user_id)
                 .where(
                     Membership.status == "active",
                     Group.status == "active",
@@ -38,6 +41,11 @@ async def prepare_week(engine, today: date) -> int:
         ).all()
         candidates = []
         for member, group in members:
+            profile = await db.get(UserProfile, member.user_id)
+            if not profile or not profile.sdu_login or not profile.sdu_password_encrypted:
+                continue
+            if not await has_consent(db, member.user_id, "sdo", settings):
+                continue
             subgroups = (
                 await db.scalars(
                     select(MemberSubgroup.subgroup_id).where(
@@ -59,13 +67,22 @@ async def process_one(engine, settings: Settings, today: date) -> str:
             return "idle"
         job_id, group_id, user_id = job.id, job.group_id, job.user_id
         group = await db.get(Group, group_id)
-        account = await db.get(RanepaAccount, user_id)
-        if group is None or account is None or not group.academic_group_code:
+        profile = await db.get(UserProfile, user_id)
+        if (
+            group is None
+            or profile is None
+            or not group.academic_group_code
+            or not profile.sdu_login
+            or not profile.sdu_password_encrypted
+            or not legal_ready(settings)
+            or not await has_consent(db, user_id, "sdo", settings)
+        ):
             await finish(db, job_id, group_id, user_id, failure_code="login_failed")
             await db.commit()
             return "failed"
         code = group.academic_group_code
-        encrypted_login, encrypted_password = account.login_encrypted, account.password_encrypted
+        login = profile.sdu_login
+        encrypted_password = profile.sdu_password_encrypted
         await db.commit()
     secret = settings.profile_encryption_key.get_secret_value()
     if not secret:
@@ -73,7 +90,6 @@ async def process_one(engine, settings: Settings, today: date) -> str:
     else:
         try:
             cipher = Fernet(secret.encode())
-            login = cipher.decrypt(encrypted_login.encode()).decode()
             password = cipher.decrypt(encrypted_password.encode()).decode()
         except (ValueError, InvalidToken, UnicodeDecodeError):
             failure = "login_failed"
@@ -162,7 +178,7 @@ async def run_forever(settings: Settings):
         while not stop.is_set():
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
             if monotonic() >= next_prepare_at:
-                await prepare_week(engine, today)
+                await prepare_week(engine, today, settings)
                 # Pick up new accounts during the week without rescanning every
                 # member before each browser job.
                 next_prepare_at = monotonic() + 3600
@@ -184,6 +200,8 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
     """Run a bounded hosted-runner shift, finishing the current account before exit."""
     if not settings.ranepa_crawl_enabled:
         return 0
+    if not legal_ready(settings):
+        raise RuntimeError("Approved legal settings and consent are required")
     if not settings.profile_encryption_key.get_secret_value():
         raise RuntimeError("PROFILE_ENCRYPTION_KEY is required")
     if not settings.database_url.startswith("postgresql+asyncpg://"):
@@ -191,7 +209,7 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     completed = 0
     try:
-        await prepare_week(engine, datetime.now(ZoneInfo("Europe/Moscow")).date())
+        await prepare_week(engine, datetime.now(ZoneInfo("Europe/Moscow")).date(), settings)
         deadline = monotonic() + max_minutes * 60
         while monotonic() < deadline:
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()

@@ -9,8 +9,17 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from studgroup.legal import VERSION, document_hash
 from studgroup.main import Settings
-from studgroup.models import Base, Group, Membership, RanepaAccount, RanepaCrawlJob, User
+from studgroup.models import (
+    Base,
+    Group,
+    LegalConsentEvent,
+    Membership,
+    RanepaCrawlJob,
+    User,
+    UserProfile,
+)
 from studgroup.ranepa_worker import prepare_week, process_one
 
 
@@ -21,6 +30,15 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
         path = tmp_path / "worker.db"
         engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
         key = Fernet.generate_key()
+        settings = Settings(
+            database_url=f"sqlite+aiosqlite:///{path}",
+            profile_encryption_key=SecretStr(key.decode()),
+            legal_operator_name="Test operator",
+            legal_operator_address="Test address",
+            legal_operator_contact="test@example.test",
+            legal_data_region="Moscow",
+            legal_documents_approved=True,
+        )
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
@@ -44,17 +62,26 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
                         Membership(
                             group_id=group.id, user_id=other.id, role="student", status="active"
                         ),
-                        RanepaAccount(
+                        UserProfile(
                             user_id=user.id,
-                            login_encrypted=Fernet(key).encrypt(b"login").decode(),
-                            password_encrypted=Fernet(key).encrypt(b"password").decode(),
+                            sdu_login="login",
+                            sdu_password_encrypted=Fernet(key).encrypt(b"password").decode(),
                             updated_at=datetime.now(UTC),
+                        ),
+                        LegalConsentEvent(
+                            user_id=user.id,
+                            purpose="sdo",
+                            action="accept",
+                            document_version=VERSION,
+                            document_sha256=document_hash("sdo", settings),
+                            source="web",
+                            created_at=datetime.now(UTC),
                         ),
                     ]
                 )
                 await db.commit()
-            assert await prepare_week(engine, date(2026, 11, 6)) == 1
-            assert await prepare_week(engine, date(2026, 11, 6)) == 0
+            assert await prepare_week(engine, date(2026, 11, 6), settings) == 1
+            assert await prepare_week(engine, date(2026, 11, 6), settings) == 0
             async with AsyncSession(engine) as db:
                 jobs = (await db.scalars(select(RanepaCrawlJob))).all()
                 assert len(jobs) == 1 and jobs[0].user_id == user.id
@@ -65,10 +92,6 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
                 seen.append((group_id, user_id, code, login, password))
 
             monkeypatch.setattr("studgroup.ranepa_worker._collect", fake_collect)
-            settings = Settings(
-                database_url=f"sqlite+aiosqlite:///{path}",
-                profile_encryption_key=SecretStr(key.decode()),
-            )
             assert await process_one(engine, settings, date(2026, 11, 6)) == "succeeded"
             assert seen == [(group.id, user.id, "A-001", "login", "password")]
         finally:

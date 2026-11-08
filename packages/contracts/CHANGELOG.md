@@ -9,10 +9,8 @@
   cache for configured groups. It remains off by default.
   Each lesson can also report the optional SDO `link_state` explaining whether
   a stable join link was matched or why none was stored.
-- Added optional `GET`/`PUT`/`DELETE /ranepa-account` for a student's own encrypted
-  university connection. The login and password are write-only; responses contain
-  only connection state. Older clients can ignore the new route. No weekly crawl or
-  production schedule update is enabled by default.
+- RANEPA collection uses the existing consent-gated `PATCH /profile` SDO/LK credential fields.
+  The experimental `/ranepa-account` route was removed before release; no deployed client used it.
 - `GET /subjects` can also include names observed in verified university snapshots
   for the active group. Its response shape and subject ID formula are unchanged.
 

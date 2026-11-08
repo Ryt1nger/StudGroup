@@ -36,16 +36,6 @@ export type UserProfile = {
     settings: NotificationSettings;
 };
 
-export type RanepaAccountState = {
-    connected: boolean;
-    updated_at?: string | null;
-};
-
-export type RanepaAccountInput = {
-    login: string;
-    password: string;
-};
-
 export type RanepaPersonalSchedule = {
     start: string;
     end: string;
@@ -1448,89 +1438,6 @@ export type UpdateProfileResponses = {
 };
 
 export type UpdateProfileResponse = UpdateProfileResponses[keyof UpdateProfileResponses];
-
-export type DeleteRanepaAccountData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/ranepa-account';
-};
-
-export type DeleteRanepaAccountErrors = {
-    /**
-     * Telegram bootstrap or bearer session is invalid or expired
-     */
-    401: ErrorResponse;
-};
-
-export type DeleteRanepaAccountError = DeleteRanepaAccountErrors[keyof DeleteRanepaAccountErrors];
-
-export type DeleteRanepaAccountResponses = {
-    /**
-     * Credentials removed
-     */
-    204: void;
-};
-
-export type DeleteRanepaAccountResponse = DeleteRanepaAccountResponses[keyof DeleteRanepaAccountResponses];
-
-export type GetRanepaAccountData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/ranepa-account';
-};
-
-export type GetRanepaAccountErrors = {
-    /**
-     * Telegram bootstrap or bearer session is invalid or expired
-     */
-    401: ErrorResponse;
-};
-
-export type GetRanepaAccountError = GetRanepaAccountErrors[keyof GetRanepaAccountErrors];
-
-export type GetRanepaAccountResponses = {
-    /**
-     * Connection state
-     */
-    200: RanepaAccountState;
-};
-
-export type GetRanepaAccountResponse = GetRanepaAccountResponses[keyof GetRanepaAccountResponses];
-
-export type PutRanepaAccountData = {
-    body: RanepaAccountInput;
-    path?: never;
-    query?: never;
-    url: '/ranepa-account';
-};
-
-export type PutRanepaAccountErrors = {
-    /**
-     * Telegram bootstrap or bearer session is invalid or expired
-     */
-    401: ErrorResponse;
-    /**
-     * The request body is malformed or a value is not allowed
-     */
-    422: ErrorResponse;
-    /**
-     * The request body is malformed or a value is not allowed
-     */
-    503: ErrorResponse;
-};
-
-export type PutRanepaAccountError = PutRanepaAccountErrors[keyof PutRanepaAccountErrors];
-
-export type PutRanepaAccountResponses = {
-    /**
-     * Connection state
-     */
-    200: RanepaAccountState;
-};
-
-export type PutRanepaAccountResponse = PutRanepaAccountResponses[keyof PutRanepaAccountResponses];
 
 export type GetMyRanepaScheduleData = {
     body?: never;

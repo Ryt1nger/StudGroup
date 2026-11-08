@@ -21,6 +21,11 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.RANEPA_DATABASE_URL }}
       PROFILE_ENCRYPTION_KEY: ${{ secrets.RANEPA_PROFILE_ENCRYPTION_KEY }}
+      LEGAL_OPERATOR_NAME: ${{ secrets.LEGAL_OPERATOR_NAME }}
+      LEGAL_OPERATOR_ADDRESS: ${{ secrets.LEGAL_OPERATOR_ADDRESS }}
+      LEGAL_OPERATOR_CONTACT: ${{ secrets.LEGAL_OPERATOR_CONTACT }}
+      LEGAL_DATA_REGION: ${{ secrets.LEGAL_DATA_REGION }}
+      LEGAL_DOCUMENTS_APPROVED: ${{ secrets.LEGAL_DOCUMENTS_APPROVED }}
       RANEPA_CRAWL_ENABLED: "true"
       RANEPA_CRAWL_PAUSE_SECONDS: "20"
     defaults:
@@ -35,6 +40,11 @@ jobs:
         run: |
           test -n "$DATABASE_URL"
           test -n "$PROFILE_ENCRYPTION_KEY"
+          test -n "$LEGAL_OPERATOR_NAME"
+          test -n "$LEGAL_OPERATOR_ADDRESS"
+          test -n "$LEGAL_OPERATOR_CONTACT"
+          test -n "$LEGAL_DATA_REGION"
+          test "$LEGAL_DOCUMENTS_APPROVED" = "true"
       - name: Install browser
         run: |
           uv sync --frozen
