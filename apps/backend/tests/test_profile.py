@@ -145,7 +145,10 @@ def test_legal_documents_are_public_and_individual_confirmations_are_audited(cli
 
         async with AsyncSession(client.app.state.engine) as db:
             items = (await db.scalars(select(LegalConsentEvent))).all()
-            return [(event.purpose, event.action, event.document_sha256, event.source) for event in items]
+            return [
+                (event.purpose, event.action, event.document_sha256, event.source)
+                for event in items
+            ]
 
     proof = asyncio.run(evidence())
     assert {purpose for purpose, _, _, _ in proof} == {"terms", "service", "sdo"}
@@ -179,7 +182,9 @@ def test_study_credentials_need_separate_consent_even_with_encryption(client):
     assert client.get("/v1/legal/status", headers=HEADERS).json()["sdo"] is False
     result = client.get("/v1/profile", headers=HEADERS).json()
     assert result["sdu"]["login"] is None and result["sdu"]["password_set"] is False
-    assert client.patch("/v1/profile", json={"sdu_login": "again"}, headers=HEADERS).status_code == 403
+    assert (
+        client.patch("/v1/profile", json={"sdu_login": "again"}, headers=HEADERS).status_code == 403
+    )
 
 
 def test_notification_preferences_are_stored_and_validated(client):
