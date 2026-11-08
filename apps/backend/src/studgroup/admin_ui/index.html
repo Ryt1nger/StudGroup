@@ -62,15 +62,15 @@
           <div class="section-heading"><div><span class="section-number">02 / ОБРАБОТКА</span><h2>Работа искусственного интеллекта</h2><p>Сколько выполняется обработок и что происходит с результатами.</p></div><button class="link-button" data-detail="text" type="button">Все прогоны <span>↗</span></button></div>
           <div class="chart-grid wide">
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">НАГРУЗКА</span><h3>Текст и изображения</h3></div><span class="card-note">проходов / день</span></div><div id="chart-workload" class="chart-host tall"></div><div class="chart-foot">Фото считается по проходам: одно фото может обрабатываться несколько раз.</div></article>
-            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">КАЧЕСТВО</span><h3>Результаты обработки</h3></div><div class="tabs" id="outcome-tabs"><button class="tab active" data-outcome="text" type="button">Текст</button><button class="tab" data-outcome="images" type="button">Фото</button></div></div><div id="chart-outcomes" class="chart-host tall"></div><div class="chart-foot" id="outcome-description"></div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">КАЧЕСТВО</span><h3>Чем закончился анализ</h3></div><div class="tabs" id="outcome-tabs"><button class="tab active" data-outcome="text" type="button">Текст</button><button class="tab" data-outcome="images" type="button">Фото</button></div></div><div id="chart-outcomes" class="chart-host tall"></div><div class="chart-foot" id="outcome-description"></div></article>
           </div>
           <div class="chart-grid balanced extra-top">
-            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПРОИЗВОДИТЕЛЬНОСТЬ</span><h3>Скорость AI по дням</h3></div><span class="card-note">секунд / вызов</span></div><div id="chart-latency" class="chart-host medium"></div><div class="chart-foot">Средняя длительность по журналам AI. Не скорость загрузки интерфейса.</div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПРОИЗВОДИТЕЛЬНОСТЬ</span><h3>Как быстро работает AI</h3></div><span class="card-note">секунд / вызов</span></div><div id="chart-latency" class="chart-host medium"></div><div class="chart-foot">Средняя длительность по журналам AI. Не скорость загрузки интерфейса.</div></article>
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">РЕЗУЛЬТАТ ДЛЯ СТУДЕНТОВ</span><h3>Созданные материалы</h3></div><span class="card-note">записей / день</span></div><div id="chart-output" class="chart-host medium"></div><div class="chart-foot">ДЗ, события и уведомления; учитываются созданные записи, не просмотры.</div></article>
           </div>
         </section>
         <section id="finance" class="report-section">
-          <div class="section-heading"><div><span class="section-number">03 / ФИНАНСЫ</span><h2>Расходы и обязательства</h2><p>Только подтверждённые записи журнала бюджетных AI-вызовов.</p></div><button class="link-button" data-detail="month_expenses" type="button">История списаний <span>↗</span></button></div>
+          <div class="section-heading"><div><span class="section-number">03 / ФИНАНСЫ</span><h2>Деньги и расходы</h2><p>Только подтверждённые записи журнала бюджетных AI-вызовов.</p></div><button class="link-button" data-detail="month_expenses" type="button">История списаний <span>↗</span></button></div>
           <div class="finance-header" id="finance-summary"></div>
           <div class="chart-grid wide">
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ТЕКУЩИЙ МЕСЯЦ</span><h3>Динамика затрат на AI</h3></div><span class="card-note">USD · UTC</span></div><div id="chart-finance" class="chart-host tall"></div><div class="chart-foot">По дате регистрации вызова. Не общий баланс компании.</div></article>
@@ -79,10 +79,10 @@
           <div class="integrations" id="unavailable-finance"></div>
         </section>
         <section id="server" class="report-section">
-          <div class="section-heading"><div><span class="section-number">04 / СИСТЕМА</span><h2>Сервер и API</h2><p>Фактические замеры запросов текущего процесса — без искусственных графиков uptime.</p></div></div>
+          <div class="section-heading"><div><span class="section-number">04 / СИСТЕМА</span><h2>Скорость и стабильность</h2><p>Насколько быстро отвечает приложение и были ли ошибки связи за последние 15 минут.</p></div></div>
           <div class="server-overview" id="server-overview"></div>
           <div class="chart-grid wide">
-            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПОСЛЕДНИЕ 15 МИНУТ</span><h3>Нагрузка на API</h3></div><span class="card-note">запросов / минута</span></div><div id="chart-requests" class="chart-host tall"></div><div class="chart-foot" id="server-caption"></div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПОСЛЕДНИЕ 15 МИНУТ</span><h3>Запросы к серверу</h3></div><span class="card-note">запросов за минуту</span></div><div id="chart-requests" class="chart-host tall"></div><div class="chart-foot" id="server-caption"></div></article>
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ФОНОВЫЕ ПРОЦЕССЫ</span><h3>Состояние очередей</h3></div><span class="card-note">текущие записи</span></div><div id="queue-detail" class="queue-grid"></div><div class="chart-foot">Очередь Telegram общесистемная. Некоторые показатели накопительные.</div></article>
           </div>
         </section>
@@ -90,7 +90,7 @@
           <div class="section-heading"><div><span class="section-number">05 / КОНТРОЛЬ КАЧЕСТВА</span><h2>Сбои и причины</h2><p>Разделяем реальные ошибки, устаревшие результаты и открытые инциденты.</p></div><button class="link-button" data-detail="errors" type="button">Журнал ошибок <span>↗</span></button></div>
           <div class="chart-grid wide">
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ДИНАМИКА</span><h3>Ошибки по дням</h3></div><span class="card-note">ошибок в очередях / день</span></div><div id="chart-errors" class="chart-host tall"></div><div class="chart-foot">Один сбой может встречаться в нескольких очередях. Это не число уникальных инцидентов.</div></article>
-            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ДИАГНОСТИКА</span><h3>Частые причины ошибок</h3></div><span class="card-note">коды из журналов</span></div><div id="chart-reasons" class="reason-list"></div><div class="chart-foot">Коды ошибок показаны без личных сообщений и данных модели.</div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ДИАГНОСТИКА</span><h3>Почему возникали ошибки</h3></div><span class="card-note">коды из журналов</span></div><div id="chart-reasons" class="reason-list"></div><div class="chart-foot">Коды ошибок показаны без личных сообщений и данных модели.</div></article>
           </div>
           <div class="incident-card"><div><span class="card-overline">ПОСЛЕДНИЕ СИГНАЛЫ</span><h3>Журнал событий и инцидентов</h3></div><button class="link-button" type="button" data-detail="incidents">Все инциденты ↗</button><div id="recent-errors" class="incident-list"></div></div>
         </section>
