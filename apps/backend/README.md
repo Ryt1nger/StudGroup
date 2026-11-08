@@ -1,5 +1,13 @@
 # Backend
 
+## Админский дашборд
+
+Read-only страница `/admin/` запускается после слова «админ» и нажатия кнопки в личном чате
+с ботом. Для размещённого backend задайте `ADMIN_PAGE_URL=https://<api-domain>/admin/`
+и существующий `BOT_ADMIN_USER_ID`. Метрики и их ограничения описаны в
+[`docs/architecture/admin-dashboard.md`](../../docs/architecture/admin-dashboard.md).
+Обычный `/health` и `/ready` остаются отдельными проверками доступности сервиса.
+
 Owner: Codex.
 
 ## Core v2 release funding
