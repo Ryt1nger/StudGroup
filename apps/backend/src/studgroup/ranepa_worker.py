@@ -1,6 +1,7 @@
 """Paced, single-browser university crawl; disabled unless explicitly enabled."""
 
 import asyncio
+import signal
 from collections import Counter
 from datetime import date, datetime, timedelta
 from time import monotonic
@@ -150,10 +151,14 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
 async def run_forever(settings: Settings):
     if not settings.ranepa_crawl_enabled:
         return
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(signum, stop.set)
     engine = create_async_engine(settings.database_url)
     try:
         next_prepare_at = 0.0
-        while True:
+        while not stop.is_set():
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
             if monotonic() >= next_prepare_at:
                 await prepare_week(engine, today)
@@ -161,9 +166,17 @@ async def run_forever(settings: Settings):
                 # member before each browser job.
                 next_prepare_at = monotonic() + 3600
             status = await process_one(engine, settings, today)
-            await asyncio.sleep(settings.ranepa_crawl_pause_seconds if status != "idle" else 300)
+            try:
+                await asyncio.wait_for(
+                    stop.wait(),
+                    timeout=settings.ranepa_crawl_pause_seconds if status != "idle" else 300,
+                )
+            except TimeoutError:
+                pass
     finally:
         await engine.dispose()
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            loop.remove_signal_handler(signum)
 
 
 def main():

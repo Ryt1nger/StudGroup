@@ -1,0 +1,27 @@
+# Apply only after confirming the existing Render service and database names.
+# This Blueprint creates one separate browser worker; it does not modify the API.
+services:
+  - type: worker
+    name: studgroup-ranepa-worker
+    runtime: docker
+    plan: standard
+    region: oregon
+    branch: main
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./apps/backend/Dockerfile.ranepa-worker
+    dockerContext: ./apps/backend
+    maxShutdownDelaySeconds: 300
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: studgroup-db
+          property: connectionString
+      - key: PROFILE_ENCRYPTION_KEY
+        fromService:
+          name: studgroup
+          type: web
+          envVarKey: PROFILE_ENCRYPTION_KEY
+      - key: RANEPA_CRAWL_ENABLED
+        value: "true"
+      - key: RANEPA_CRAWL_PAUSE_SECONDS
+        value: "20"
