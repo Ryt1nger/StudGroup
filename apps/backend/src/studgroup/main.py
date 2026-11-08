@@ -21,6 +21,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from studgroup.academic_deadlines import router as deadlines_router
+from studgroup.admin_bot_monitor import router as admin_bot_monitor_router
+from studgroup.admin_dashboard import router as admin_dashboard_router
+from studgroup.admin_insights import router as admin_insights_router
+from studgroup.admin_telemetry import RequestTelemetry
+from studgroup.admin_visuals import router as admin_visuals_router
 from studgroup.api import ApiError, router
 from studgroup.card_edit import router as card_edit_router
 from studgroup.homework import router as homework_router
@@ -53,13 +58,11 @@ class Settings(BaseSettings):
     ranepa_crawl_enabled: bool = False
     ranepa_schedule_view_enabled: bool = False
     ranepa_crawl_pause_seconds: int = Field(default=20, ge=5, le=300)
-    # Required to accept new consents and optional SDO/LK credentials.
     legal_operator_name: str = ""
     legal_operator_address: str = ""
     legal_operator_contact: str = ""
     legal_data_region: str = ""
     legal_documents_approved: bool = False
-    # Enable only after legal review, operator verification and consent E2E testing.
     legal_onboarding_required: bool = False
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -148,6 +151,7 @@ class Settings(BaseSettings):
     owner_update_notifications_enabled: bool = False
     owner_update_notifications_since: datetime | None = None
     bot_admin_user_id: int | None = None
+    admin_page_url: str = ""
     support_contact: str = ""
     bot_username: str = ""  # without @; builds t.me invitation links, else code text is shown
 
@@ -422,6 +426,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="StudGroup", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    app.state.owner_http_telemetry = RequestTelemetry()
     configure_file_links(settings.telegram_webhook_secret)
 
     # Bounded diagnostic for the real Mini App cold path. Never log auth data,
@@ -465,7 +470,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         return await call_next(request)
 
+    # Real HTTP request performance for the operator's console. Kept only in
+    # bounded process memory; exclude probes and never record URLs or user data.
+    @app.middleware("http")
+    async def owner_api_telemetry(request, call_next):
+        if not request.url.path.startswith("/v1/"):
+            return await call_next(request)
+        start = perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        finally:
+            app.state.owner_http_telemetry.record(status, (perf_counter() - start) * 1000)
+
     app.include_router(router)
+    app.include_router(admin_dashboard_router)
+    app.include_router(admin_insights_router)
+    app.include_router(admin_bot_monitor_router)
+    app.include_router(admin_visuals_router)
     app.include_router(ingestion_router)
     app.include_router(homework_router)
     app.include_router(card_edit_router)
@@ -474,11 +498,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(deadlines_router)
     app.include_router(notifications_router)
     app.include_router(profile_router)
+    from studgroup.legal import router as legal_router
     from studgroup.ranepa_personal_api import router as ranepa_personal_router
+    from studgroup.ranepa_schedule_api import router as ranepa_schedule_router
 
     app.include_router(ranepa_personal_router)
-    from studgroup.legal import router as legal_router
-
+    app.include_router(ranepa_schedule_router)
     app.include_router(legal_router)
     app.include_router(subgroup_router)
     app.include_router(staff_router)
@@ -488,9 +513,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from studgroup.cabinet_schedule_api import router as cabinet_schedule_router
 
     app.include_router(cabinet_schedule_router)
-    from studgroup.ranepa_schedule_api import router as ranepa_schedule_router
-
-    app.include_router(ranepa_schedule_router)
     from studgroup.group_event_api import router as group_event_router
 
     app.include_router(group_event_router)

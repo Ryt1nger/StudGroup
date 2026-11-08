@@ -142,8 +142,28 @@ async def handle(db, update, settings):
         enqueue(db, "answerCallbackQuery", {"callback_query_id": callback.id})
     text = message.text or ""
     if sender.id != settings.bot_admin_user_id or chat != sender.id:
-        if text.startswith("/admin"):
+        if text.startswith("/admin") or text.strip().casefold() == "админ":
             await say(db, chat, "Админ-панель недоступна для этого аккаунта.")
+        return True
+    if not callback and text.strip().casefold() == "админ":
+        if settings.admin_page_url:
+            await say(
+                db,
+                chat,
+                "Открой админку:",
+                {
+                    "inline_keyboard": [
+                        [
+                            {
+                                "text": "📊 Открыть админку",
+                                "web_app": {"url": settings.admin_page_url},
+                            }
+                        ]
+                    ]
+                },
+            )
+        else:
+            await say(db, chat, "Админка ещё не подключена: не задан ADMIN_PAGE_URL.")
         return True
     now = datetime.now(UTC)
     session = await db.scalar(
@@ -170,24 +190,29 @@ async def handle(db, update, settings):
         from studgroup.bot_connect import NO_HEADMAN, headmanless_group_ids
 
         without = await headmanless_group_ids(db)
+        markup = buttons(
+            session,
+            [
+                [
+                    (
+                        g.name[:30]
+                        + (" · ожидает активации" if not g.pilot_authorized else "")
+                        + (f" · {NO_HEADMAN}" if g.id in without else ""),
+                        "g" + g.id.hex,
+                    )
+                ]
+                for g in groups
+            ],
+        )
+        if settings.admin_page_url:
+            markup["inline_keyboard"].append(
+                [{"text": "📊 Дашборд", "web_app": {"url": settings.admin_page_url}}]
+            )
         await say(
             db,
             chat,
             "Выбери группу:" if groups else "Нет подключённых групп.",
-            buttons(
-                session,
-                [
-                    [
-                        (
-                            g.name[:30]
-                            + (" · ожидает активации" if not g.pilot_authorized else "")
-                            + (f" · {NO_HEADMAN}" if g.id in without else ""),
-                            "g" + g.id.hex,
-                        )
-                    ]
-                    for g in groups
-                ],
-            ),
+            markup,
         )
         return True
     if not callback and text.split()[:1] and text.split()[0].split("@")[0] == "/explain":

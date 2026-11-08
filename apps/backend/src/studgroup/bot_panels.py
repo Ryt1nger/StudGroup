@@ -323,8 +323,8 @@ async def dispatch(db, update_value, settings):
                 )
                 return True
     elif not start:
-        if command in {"/admin", "/st"}:
-            mode = command[1:]
+        if command in {"/admin", "/st"} or text.casefold() == "админ":
+            mode = "admin" if text.casefold() == "админ" else command[1:]
             owner = await panel(db, chat, mode)
             await reset(db, owner)
             await track(db, owner, message.message_id, "command")
