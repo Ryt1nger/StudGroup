@@ -220,7 +220,12 @@ async def legal_role_gate(db, session, settings, telegram_id, *, pending_invite_
     if not settings.legal_onboarding_required:
         if pending_invite_hash:
             await redeem(
-                db, session, settings, telegram_id, "", typed=False,
+                db,
+                session,
+                settings,
+                telegram_id,
+                "",
+                typed=False,
                 pending_invite_hash=pending_invite_hash,
             )
         else:
@@ -279,7 +284,12 @@ async def legal_role_gate(db, session, settings, telegram_id, *, pending_invite_
         return
     if pending_invite_hash:
         await redeem(
-            db, session, settings, telegram_id, "", typed=False,
+            db,
+            session,
+            settings,
+            telegram_id,
+            "",
+            typed=False,
             pending_invite_hash=pending_invite_hash,
         )
     else:
@@ -358,7 +368,13 @@ async def home(db, session, settings, telegram_id):
                 )
         if member.role == "student" and await subgroups.splits(db, group.id):
             rows.insert(0, [("Мои подгруппы", "subgroups")])
-        await screen(db, session, text, [*rows, [("Документы и согласия", "legal_docs")], *info_row()], "home")
+        await screen(
+            db,
+            session,
+            text,
+            [*rows, [("Документы и согласия", "legal_docs")], *info_row()],
+            "home",
+        )
         return
     await screen(
         db,
@@ -952,9 +968,7 @@ async def code_prompt(db, session, notice=None):
     await screen(db, session, text, [[("‹ Назад", "join_back")]], "code")
 
 
-async def redeem(
-    db, session, settings, telegram_id, code, *, typed, pending_invite_hash=None
-):
+async def redeem(db, session, settings, telegram_id, code, *, typed, pending_invite_hash=None):
     """Join by code, after any required consents; never persist raw invitation secrets."""
     if settings.legal_onboarding_required:
         from studgroup import legal
@@ -967,7 +981,10 @@ async def redeem(
             and await legal.has_consent(db, user.id, "service", settings)
         ):
             await legal_role_gate(
-                db, session, settings, telegram_id,
+                db,
+                session,
+                settings,
+                telegram_id,
                 pending_invite_hash=pending_invite_hash or token_hash(code),
             )
             return
@@ -1134,7 +1151,10 @@ async def resume_or_home(db, session, settings, telegram_id):
         data = {}
     if step in {"legal_terms", "legal_service"} and settings.legal_onboarding_required:
         await legal_role_gate(
-            db, session, settings, telegram_id,
+            db,
+            session,
+            settings,
+            telegram_id,
             pending_invite_hash=data.get("pending_invite_hash"),
         )
     elif step in {"promo", "promo_code"} and data.get("role") in {"student", "headman"}:
@@ -1398,9 +1418,7 @@ async def handle(db, update, settings, topic=None):
             if user is not None:
                 legal.receipt(db, user.id, "terms", "accept", "telegram", settings)
                 await db.flush()
-                await legal_role_gate(
-                    db, session, settings, sender.id, pending_invite_hash=pending
-                )
+                await legal_role_gate(db, session, settings, sender.id, pending_invite_hash=pending)
     elif action == "legal_accept_service" and session.step == "legal_service":
         from studgroup import legal
 
@@ -1410,9 +1428,7 @@ async def handle(db, update, settings, topic=None):
             if user is not None and await legal.has_consent(db, user.id, "terms", settings):
                 legal.receipt(db, user.id, "service", "grant", "telegram", settings)
                 await db.flush()
-                await legal_role_gate(
-                    db, session, settings, sender.id, pending_invite_hash=pending
-                )
+                await legal_role_gate(db, session, settings, sender.id, pending_invite_hash=pending)
     elif action == "sdo_check" and session.step == "sdo_setup":
         payload = json.loads(session.payload)
         await sdo_setup_screen(
