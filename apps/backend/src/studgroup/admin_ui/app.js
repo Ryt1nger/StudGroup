@@ -18,7 +18,8 @@ const state={
   queued:"В очереди",pending:"Ожидает",running:"Обрабатывается",processing:"Обрабатывается",
   stale:"Результат устарел",superseded:"Заменено новой версией",settled:"Списано",
   rejected:"Отклонено",canceled:"Отменено",cancelled:"Отменено",published:"Опубликовано",
-  legacy:"Старый режим",draft:"Черновик",unknown:"Неизвестно",active:"Активно"
+  legacy:"Старый режим",draft:"Черновик",unknown:"Неизвестно",active:"Активно",
+  открыто:"Требует внимания",восстановлено:"Восстановлено"
 };
 const fields={
   id:"Номер записи",group_id:"Идентификатор группы",attempts:"Сколько попыток",
@@ -87,6 +88,19 @@ function metric(host,title,value,note){
 }
 function addInsight(host,value,critical=false){text(host,"span","snapshot-pill"+(critical?" critical":""),value);}
 function explainError(code){return C.humanError(code||"");}
+const incidentLabels={
+  pipeline_error:"Ошибка в процессе обработки",
+  processing_exhausted:"Обработка остановилась после повторов",
+  ai_request_uncertain:"Неизвестен итог запроса AI",
+  ai_hourly_safety_limit:"Сработал часовой лимит AI",
+  invalid_source_reference:"Не найдено исходное сообщение",
+  ai_processing_paused:"Работа AI приостановлена",
+  ai_circuit_open:"Защита временно остановила AI",
+  ai_budget_limit:"Исчерпан доступный бюджет AI",
+  invalid_date_only:"Проблема с датой события"
+};
+function humanIncident(code){return incidentLabels[code]||"Другое системное предупреждение";}
+
 function statusMean(status){
   if(status==="failed"||status==="error")return "Обработка завершилась ошибкой. Откройте технические данные, чтобы увидеть её код.";
   if(status==="stale")return "После изменения исходных данных этот результат стал неактуален. Это не обязательно сбой.";
@@ -254,7 +268,7 @@ function displayFields(host,fieldsObj,id){
 }
 function renderDetailItems(items,append){
   if(!append)clear("modal-items");if(!items.length&&!append){text($("modal-items"),"div","chart-empty","За этот период подробных записей нет.");return;}
-  for(const x of items){const article=dom("article","detail");const top=dom("div","detail-top");text(top,"strong","",x.title);const status=text(top,"span","pill"+(["failed","error"].includes(x.status)?" bad":""),russianState(x.status));article.append(top);
+  for(const x of items){const article=dom("article","detail");const top=dom("div","detail-top");text(top,"strong","",detailKind==="incidents"?humanIncident(x.title):x.title);const status=text(top,"span","pill"+(["failed","error"].includes(x.status)?" bad":""),russianState(x.status));article.append(top);
     let meaning=statusMean(x.status);const code=x.fields?.error_code;if(code)meaning+=" Причина: "+explainError(code)+".";text(article,"p","detail-explanation",meaning);
     text(article,"div","detail-meta","Записано: "+datetime(x.at));displayFields(article,x.fields,x.id);$("modal-items").append(article);
   }
@@ -267,7 +281,7 @@ async function more(append){
 async function loadRecent(){
   const host=$("recent-errors");host.replaceChildren();
   try{const p=criteria();p.set("limit","5");const d=await api("/v1/admin/details/incidents?"+p.toString());if(!d.items.length){text(host,"p","chart-empty","Открытых системных предупреждений нет.");return;}
-    for(const item of d.items){const b=dom("button","incident-row");b.type="button";b.dataset.detail="incidents";const col=dom("span","incident-info");text(col,"strong","incident-title",item.title);text(col,"small","incident-time",datetime(item.at)+" · повторений: "+number(item.fields?.occurrences||0));b.append(col);text(b,"span","incident-badge","Открыть ↗");host.append(b);}
+    for(const item of d.items){const b=dom("button","incident-row");b.type="button";b.dataset.detail="incidents";const col=dom("span","incident-info");text(col,"strong","incident-title",humanIncident(item.title));text(col,"small","incident-time",datetime(item.at)+" · повторений: "+number(item.fields?.occurrences||0));b.append(col);text(b,"span","incident-badge","Открыть ↗");host.append(b);}
   }catch(error){text(host,"p","chart-empty","Не удалось загрузить предупреждения: "+error.message);}
 }
 function closeModal(){detailKind=null;detailRequest++;$("modal").hidden=true;document.body.style.overflow="";previousFocus?.focus?.();}
