@@ -21,6 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from studgroup.academic_deadlines import router as deadlines_router
+from studgroup.admin_dashboard import router as admin_dashboard_router
 from studgroup.api import ApiError, router
 from studgroup.card_edit import router as card_edit_router
 from studgroup.homework import router as homework_router
@@ -137,6 +138,7 @@ class Settings(BaseSettings):
     owner_update_notifications_enabled: bool = False
     owner_update_notifications_since: datetime | None = None
     bot_admin_user_id: int | None = None
+    admin_page_url: str = ""
     support_contact: str = ""
     bot_username: str = ""  # without @; builds t.me invitation links, else code text is shown
 
@@ -455,6 +457,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return await call_next(request)
 
     app.include_router(router)
+    app.include_router(admin_dashboard_router)
     app.include_router(ingestion_router)
     app.include_router(homework_router)
     app.include_router(card_edit_router)

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b2a">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>StudGroup · Админка</title>
+  <link rel="stylesheet" href="/admin/style.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/admin/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="top">
+      <div><span class="eyebrow">STUDGROUP / ОПЕРАЦИИ</span><h1>Пульс приложения</h1><p>Данные из рабочей базы. Обновление каждые 60 секунд.</p></div>
+      <div class="controls"><select id="group" aria-label="Группа"><option value="">Все группы</option></select><button id="refresh" type="button">Обновить</button></div>
+    </header>
+    <div id="status" class="status" role="status">Подключаемся…</div>
+    <section id="dashboard" hidden>
+      <div id="cards" class="cards"></div>
+      <div class="grid">
+        <section class="panel"><h2>Потоки и очереди</h2><div id="queues"></div></section>
+        <section class="panel"><h2>Режимы и расходы AI</h2><div id="ai"></div></section>
+        <section class="panel"><h2>Расписание</h2><div id="schedule"></div></section>
+        <section class="panel"><h2>Активные инциденты</h2><div id="incidents"></div></section>
+      </div>
+      <footer id="updated"></footer>
+    </section>
+  </main>
+</body>
+</html>

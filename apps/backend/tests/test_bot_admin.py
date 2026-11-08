@@ -125,6 +125,22 @@ def test_nonowner_has_no_admin_session_or_group_list(client):
     assert msg[-1].get("reply_markup", {}).get("inline_keyboard", []) == []
 
 
+def test_admin_word_opens_dashboard_button_only_for_configured_operator(client):
+    client.app.state.settings.admin_page_url = "https://api.example.com/admin/"
+    private(client, "/admin", update=299)
+    private(client, "  АдМин  ", update=300)
+    _, messages = session(client)
+    button = messages[-1]["reply_markup"]["inline_keyboard"][0][0]
+    assert button == {
+        "text": "📊 Открыть админку",
+        "web_app": {"url": "https://api.example.com/admin/"},
+    }
+    private(client, "админ", uid=2, update=301)
+    _, messages = session(client)
+    assert "недоступна" in messages[-1]["text"]
+    assert messages[-1].get("reply_markup", {}).get("inline_keyboard", []) == []
+
+
 def test_nonowner_cannot_read_shadow_status(client):
     private(client, "/shadowstatus", uid=2)
     s, messages = session(client)
