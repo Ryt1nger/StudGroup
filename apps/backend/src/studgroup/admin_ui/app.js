@@ -232,7 +232,7 @@ function renderErrors(d,v){
   loadRecent();
 }
 function render(d,v,elapsed){
-  lastData=d;lastVisuals=v;
+  lastData=d;lastVisuals=v;lastElapsedMs=elapsed;
   $("dashboard").hidden=false;
   if(!loadedGroups){for(const g of d.groups){const o=dom("option","",g.name);o.value=g.id;$("group").append(o);}loadedGroups=true;}
   renderSnapshot(d.summary);renderKpi(d.summary,v);renderActivity(d,v);renderAi(d,v);renderFinance(d,v);renderServer(d,v,elapsed);renderErrors(d,v);
@@ -293,7 +293,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("modal").hidden)
 for(const id of ["group","days"])$(id).addEventListener("change",load);
 $("refresh").addEventListener("click",load);
 document.querySelectorAll(".nav-link").forEach(a=>a.addEventListener("click",()=>{document.querySelectorAll(".nav-link").forEach(b=>b.classList.remove("selected"));a.classList.add("selected");}));
-let lastMeasuredWidth=0,resizePending=false;
+let lastMeasuredWidth=0,resizePending=false,lastElapsedMs=null;
 window.addEventListener("resize",()=>{
   if(resizePending||!lastData||!lastVisuals||$("dashboard").hidden)return;
   resizePending=true;
@@ -305,7 +305,7 @@ window.addEventListener("resize",()=>{
     renderActivity(lastData,lastVisuals);
     renderAi(lastData,lastVisuals);
     renderFinance(lastData,lastVisuals);
-    renderServer(lastData,lastVisuals,0);
+    renderServer(lastData,lastVisuals,lastElapsedMs);
     // Avoid re-fetching incidents on resize: re-render charts only.
     const dates=lastVisuals.daily.map(x=>x.date);
     C.bars("chart-errors",[
