@@ -40,17 +40,51 @@ function hint(v){return v===undefined||v===null?"Нет данных":String(v);
 function russianState(v){return state[v]||"Другой статус: "+String(v);}
 function criteria(){const p=new URLSearchParams({days:$("days").value});if($("group").value)p.set("group_id",$("group").value);return p;}
 async function api(url){const r=await fetch(url,{cache:"no-store",headers:{Authorization:"Bearer "+token}});let result;try{result=await r.json();}catch{throw Error("Сервер ответил в непонятном формате");}if(!r.ok)throw Error(result.error?.message||"Сервер ответил с ошибкой "+r.status);return result;}
-function buttonTile(host,title,value,note,detail,extra=""){const b=dom("button","kpi "+extra);b.type="button";b.dataset.detail=detail;text(b,"span","kpi-label",title);text(b,"span","kpi-main",value);text(b,"span","kpi-hint",note+" · открыть детали");host.append(b);}
+function spark(host,values,color){
+  if(!Array.isArray(values)||values.length<2)return;
+  const ns="http://www.w3.org/2000/svg",svg=document.createElementNS(ns,"svg");
+  svg.setAttribute("viewBox","0 0 110 34");svg.setAttribute("preserveAspectRatio","none");
+  const max=Math.max(1,...values.map(Number)),points=values.map((v,i)=>(i/(values.length-1)*110)+","+(31-(Number(v)||0)/max*28));
+  const line=document.createElementNS(ns,"polyline");line.setAttribute("points",points.join(" "));
+  line.setAttribute("fill","none");line.setAttribute("stroke",color||"#087e83");
+  line.setAttribute("stroke-width","2.4");line.setAttribute("stroke-linejoin","round");
+  svg.append(line);host.append(svg);
+}
+function comparisonNote(record,higherIsWorse=false){
+  if(!record)return null;
+  const current=Number(record.current)||0,previous=Number(record.previous)||0;
+  if(!previous)return current?"В предыдущем периоде не было":"Без изменений";
+  const delta=Math.round((current-previous)/previous*100);
+  if(!delta)return "Как в предыдущем периоде";
+  return (delta>0?"↑ ":"↓ ")+Math.abs(delta)+"% к прошлому периоду";
+}
+function buttonTile(host,title,value,note,detail,extra="",seriesValues=null,comparison=null){
+  const b=dom("button","kpi-card "+extra);b.type="button";b.dataset.detail=detail;
+  const header=dom("div","kpi-header");text(header,"span","kpi-heading",title);text(header,"span","kpi-index","↗");
+  const middle=dom("div","kpi-middle");text(middle,"span","kpi-value",value);
+  if(seriesValues?.length>1){const graph=dom("span","kpi-spark");spark(graph,seriesValues,extra==="danger"?"#c45e63":"#087e83");middle.append(graph);}
+  const footer=dom("div","kpi-footer");text(footer,"span","kpi-note",note);
+  const change=comparisonNote(comparison);
+  if(change){const cls=change.startsWith("↑")&&extra==="danger"?"negative":change.startsWith("↓")&&extra==="danger"?"":"neutral";text(footer,"span","kpi-change "+cls,change);}
+  b.append(header,middle,footer);host.append(b);
+}
 function info(host,title,value,note,detail){
-  const b=dom("button","info-tile"+(detail?"":" unavailable"));b.type="button";
+  const b=dom("button","strip-stat");b.type="button";
   if(detail)b.dataset.detail=detail;else b.dataset.info=note;
-  text(b,"span","tile-label",title);text(b,"span","tile-value",value);text(b,"span","tile-note",note);host.append(b);
+  text(b,"span","strip-label",title);text(b,"strong","strip-value",value);text(b,"span","strip-explain",note);
+  host.append(b);
 }
 function financeTile(host,title,value,note,kind,primary=false){
-  const card=dom("article","finance-tile"+(primary?" primary":""));const btn=dom("button");btn.type="button";btn.dataset.detail=kind;
-  text(btn,"span","tile-label",title);text(btn,"div","tile-value",value);text(btn,"span","tile-note",note+" · нажмите для деталей");card.append(btn);host.append(card);
+  const btn=dom("button","finance-stat"+(primary?" primary":""));btn.type="button";
+  if(kind)btn.dataset.detail=kind;else btn.dataset.info=note;
+  text(btn,"span","finance-kicker",title);text(btn,"strong","finance-main",value);text(btn,"span","finance-explainer",note);
+  host.append(btn);
 }
-function metric(host,title,value,note){const block=dom("div","server-metric");text(block,"span","",title);text(block,"b","",value);text(block,"small","",note);host.append(block);}
+function metric(host,title,value,note){
+  const block=dom("button","server-cell");block.type="button";block.dataset.info=note;
+  text(block,"span","",title);text(block,"strong","",value);text(block,"small","",note);
+  host.append(block);
+}
 function addInsight(host,value,critical=false){text(host,"span","snapshot-pill"+(critical?" critical":""),value);}
 function explainError(code){return C.humanError(code||"");}
 function statusMean(status){
@@ -71,15 +105,15 @@ function renderSnapshot(s){
   addInsight(host,number(s.messages)+" сообщений получено");
   addInsight(host,number(s.text_runs+s.image_runs)+" прогонов AI");
 }
-function renderKpi(s){const host=$("kpi-grid");host.replaceChildren();
-  buttonTile(host,"Сообщений в группах",number(s.messages),"За выбранный период","messages","highlight");
-  buttonTile(host,"Анализов текста",number(s.text_runs),"Прогонов текстовой обработки","text");
-  buttonTile(host,"Анализов фото",number(s.image_runs),"Проходов обработки изображений","images");
-  buttonTile(host,"Ошибки обработки",number(s.errors),"Сумма ошибок в разных очередях","errors",s.errors?"danger":"success");
-  buttonTile(host,"Расходы AI за месяц",money(s.month_spent_usd),"Фактически списано по журналу","month_expenses");
-  buttonTile(host,"Активных предупреждений",number(s.incidents_open),"По всей системе, прямо сейчас","incidents",s.incidents_open?"danger":"success");
-  buttonTile(host,"Создано заданий",number(s.homework),"Записи ДЗ за выбранный период","homework");
-  buttonTile(host,"Участников групп",number(s.members),"Активные участники, не посещения","members");
+function renderKpi(s,v){
+  const host=$("kpi-grid");host.replaceChildren();
+  const data=v.daily||[],seriesFor=key=>data.map(d=>Number(d[key])||0);
+  buttonTile(host,"Сообщения в группах",number(s.messages),"За выбранный период","messages","",seriesFor("messages"),v.comparison?.messages);
+  buttonTile(host,"Анализ текста",number(s.text_runs),"Запущенных обработок","text","",seriesFor("text"),v.comparison?.text);
+  buttonTile(host,"Анализ фото",number(s.image_runs),"Проходов анализа, не фотографий","images","",seriesFor("images"),v.comparison?.images);
+  buttonTile(host,"Ошибки обработки",number(s.errors),"В разных очередях","errors",s.errors?"danger":"",data.map(d=>Number(d.text_errors||0)+Number(d.image_errors||0)+Number(d.legacy_errors||0)),v.comparison?.errors);
+  buttonTile(host,"Расходы на AI за месяц",money(s.month_spent_usd),"Из бюджета AI, не все расходы","month_expenses");
+  buttonTile(host,"Открытые предупреждения",number(s.incidents_open),"По всей системе прямо сейчас","incidents",s.incidents_open?"danger":"");
 }
 function series(data,key){return data.daily.map(d=>Number(d[key])||0);}
 function chartClickable(id,kind){const host=$(id);host.dataset.detail=kind;host.setAttribute("role","button");host.setAttribute("tabindex","0");host.title="Нажмите, чтобы открыть записи";host.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openDetail(kind);}};}
@@ -113,12 +147,12 @@ function renderAi(d,v){
 function renderFinance(d,v){
   clear("finance-summary");financeTile($("finance-summary"),"Списано за месяц",money(d.finance.month_charged_usd),"Календарный месяц, UTC","month_expenses",true);
   financeTile($("finance-summary"),"Зарезервировано",money(d.finance.unsettled_reserved_usd),"Незакрытые резервы, за всё время","reserves");
-  financeTile($("finance-summary"),"Оплаты компании","Нет данных","Платежи банков и сервисов не подключены","month_expenses");
+  financeTile($("finance-summary"),"Все оплаты компании","Не подключено","Нет данных о счетах и платёжных сервисах",null);
   C.bars("chart-finance",[{label:"Списано",values:v.finance_month.series.map(x=>Number(x.value)||0),color:"#087e83"}],{labels:v.finance_month.series.map(x=>x.date),currency:true,title:"Дневные расходы на AI"});chartClickable("chart-finance","month_expenses");
   const kinds=v.finance_month.by_kind.map((x,i)=>({label:x.kind,value:Number(x.usd),color:C.colors[i%C.colors.length]}));
   C.donut("chart-finance-kind",kinds,{title:"Распределение расходов AI",centerLabel:"USD"});chartClickable("chart-finance-kind","month_expenses");
   const host=$("unavailable-finance");host.replaceChildren();for(const [title,note] of [["Баланс AI-провайдеров","Нет подключения к биллингу провайдеров"],["Баланс компании и будущие счета","Не подключены банковские и платёжные источники"]]){
-    const b=dom("button","integration-card");b.type="button";b.dataset.info=note;text(b,"span","integration-number","—");const col=dom("span","integration-copy");text(col,"strong","",title);text(col,"small","",note);b.append(col);text(b,"span","integration-status","НЕТ ДАННЫХ");host.append(b);
+    const b=dom("button","integration");b.type="button";b.dataset.info=note;text(b,"span","integration-number","—");const col=dom("span","integration-copy");text(col,"strong","",title);text(col,"small","",note);b.append(col);text(b,"span","integration-status","НЕТ ДАННЫХ");host.append(b);
   }
 }
 function renderServer(d,v,roundTrip){
@@ -144,7 +178,7 @@ function renderErrors(d,v){
 function render(d,v,elapsed){
   lastData=d;lastVisuals=v;
   if(!loadedGroups){for(const g of d.groups){const o=dom("option","",g.name);o.value=g.id;$("group").append(o);}loadedGroups=true;}
-  renderSnapshot(d.summary);renderKpi(d.summary);renderActivity(d,v);renderAi(d,v);renderFinance(d,v);renderServer(d,v,elapsed);renderErrors(d,v);
+  renderSnapshot(d.summary);renderKpi(d.summary,v);renderActivity(d,v);renderAi(d,v);renderFinance(d,v);renderServer(d,v,elapsed);renderErrors(d,v);
   $("snapshot-time").textContent=datetime(d.as_of);
   $("updated").textContent="Источник: действующая база StudGroup. Срез "+datetime(d.as_of)+". Внутренние данные AI не раскрываются. Все суммы в USD. Показатели без источника отмечены отдельно.";
   $("dashboard").hidden=false;
@@ -191,7 +225,7 @@ async function more(append){
 async function loadRecent(){
   const host=$("recent-errors");host.replaceChildren();
   try{const p=criteria();p.set("limit","5");const d=await api("/v1/admin/details/incidents?"+p.toString());if(!d.items.length){text(host,"p","chart-empty","Открытых системных предупреждений нет.");return;}
-    for(const item of d.items){const b=dom("button","incident-row");b.type="button";b.dataset.detail="incidents";text(b,"span","incident-icon","!");const col=dom("span","incident-info");text(col,"strong","",item.title);text(col,"small","",datetime(item.at)+" · повторений: "+number(item.fields?.occurrences||0));b.append(col);text(b,"span","incident-state","Открыть ↗");host.append(b);}
+    for(const item of d.items){const b=dom("button","incident-row");b.type="button";b.dataset.detail="incidents";text(b,"span","incident-icon","!");const col=dom("span","incident-info");text(col,"strong","",item.title);text(col,"small","",datetime(item.at)+" · повторений: "+number(item.fields?.occurrences||0));b.append(col);text(b,"span","incident-badge","Открыть ↗");host.append(b);}
   }catch(error){text(host,"p","chart-empty","Не удалось загрузить предупреждения: "+error.message);}
 }
 function closeModal(){detailKind=null;detailRequest++;$("modal").hidden=true;document.body.style.overflow="";previousFocus?.focus?.();}
