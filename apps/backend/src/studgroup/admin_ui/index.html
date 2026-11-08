@@ -27,16 +27,16 @@
       <div class="nav-caption second">СОСТОЯНИЕ</div>
       <div class="rail-status"><span class="status-dot" id="rail-dot"></span><div><strong id="rail-state">Подключение</strong><small id="rail-updated">Проверяем данные</small></div></div>
     </nav>
-    <div class="rail-footer"><div class="rail-caption">OWNER ACCESS</div><p>Данные доступны только администратору. Содержимое сообщений не выводится.</p><div class="build-tag">StudGroup · Live</div></div>
+    <div class="rail-footer"><div class="rail-caption">ДОСТУП АДМИНИСТРАТОРА</div><p>Данные доступны только администратору. Содержимое сообщений не выводится.</p><div class="build-tag">StudGroup · Live</div></div>
   </aside>
   <div class="content">
     <header class="header">
-      <div class="breadcrumb"><span class="breadcrumb-mark"></span><span>STUDGROUP</span><span class="crumb-divider">/</span><strong>CONTROL ROOM</strong></div>
+      <div class="breadcrumb"><span class="breadcrumb-mark"></span><span>STUDGROUP</span><span class="crumb-divider">/</span><strong>ПАНЕЛЬ УПРАВЛЕНИЯ</strong></div>
       <div class="header-actions"><span class="live-label"><span class="status-dot"></span> Данные из системы</span><button type="button" class="refresh-button" id="refresh" aria-label="Обновить">Обновить <span aria-hidden="true">↻</span></button></div>
     </header>
     <div class="page" id="overview">
       <div class="page-top">
-        <div><div class="overline">КОМАНДНЫЙ ЦЕНТР / 2026</div><h1>Работа приложения<span class="title-period">.</span></h1><p class="lead">Что происходит в StudGroup: нагрузка, качество обработки, деньги и сбои.</p></div>
+        <div><div class="overline">АНАЛИТИКА И СОСТОЯНИЕ СИСТЕМЫ</div><h1>Работа приложения<span class="title-period">.</span></h1><p class="lead">Что происходит в StudGroup: нагрузка, качество обработки, деньги и сбои.</p></div>
         <div class="filterbox">
           <label for="days">ПЕРИОД<select id="days"><option value="1">Сегодня</option><option value="7" selected>7 дней</option><option value="30">30 дней</option><option value="90">90 дней</option></select></label>
           <label for="group">ГРУППА<select id="group"><option value="">Все группы</option></select></label>
@@ -54,12 +54,12 @@
           <div class="section-heading"><div><span class="section-number">01 / АУДИТОРИЯ</span><h2>Активность в группах</h2><p>Реальный поток Telegram-сообщений. Это не посещения WebApp.</p></div><button class="link-button" data-detail="messages" type="button">Журнал сообщений <span>↗</span></button></div>
           <div class="chart-grid wide">
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПО ДНЯМ</span><h3>Динамика сообщений</h3></div><span class="card-note">сообщений / день</span></div><div id="chart-activity" class="chart-host tall"></div><div class="chart-foot" id="activity-caption"></div></article>
-            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">В ТЕЧЕНИЕ СУТОК</span><h3>Когда пишут чаще</h3></div><span class="card-note">UTC</span></div><div id="chart-hours" class="chart-host tall"></div><div class="chart-foot">Распределение сообщений по 24 часам, суммарно за период.</div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">В ТЕЧЕНИЕ СУТОК</span><h3>Когда пишут чаще</h3></div><span class="card-note">время Москвы</span></div><div id="chart-hours" class="chart-host tall"></div><div class="chart-foot">Распределение сообщений по часам по московскому времени, суммарно за период.</div></article>
           </div>
           <div class="summary-strip" id="usage-strip"></div>
         </section>
         <section id="ai" class="report-section">
-          <div class="section-heading"><div><span class="section-number">02 / AI PIPELINE</span><h2>Работа искусственного интеллекта</h2><p>Сколько выполняется обработок и что происходит с результатами.</p></div><button class="link-button" data-detail="text" type="button">Все прогоны <span>↗</span></button></div>
+          <div class="section-heading"><div><span class="section-number">02 / ОБРАБОТКА</span><h2>Работа искусственного интеллекта</h2><p>Сколько выполняется обработок и что происходит с результатами.</p></div><button class="link-button" data-detail="text" type="button">Все прогоны <span>↗</span></button></div>
           <div class="chart-grid wide">
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">НАГРУЗКА</span><h3>Текст и изображения</h3></div><span class="card-note">проходов / день</span></div><div id="chart-workload" class="chart-host tall"></div><div class="chart-foot">Фото считается по проходам: одно фото может обрабатываться несколько раз.</div></article>
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">КАЧЕСТВО</span><h3>Результаты обработки</h3></div><div class="tabs" id="outcome-tabs"><button class="tab active" data-outcome="text" type="button">Текст</button><button class="tab" data-outcome="images" type="button">Фото</button></div></div><div id="chart-outcomes" class="chart-host tall"></div><div class="chart-foot" id="outcome-description"></div></article>
