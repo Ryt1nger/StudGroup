@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, database
-from studgroup.models import LegalConsentEvent, User, UserProfile
+from studgroup.models import LegalConsentEvent, UserProfile
 
 router = APIRouter(prefix="/v1/legal")
 VERSION = "2026-11-08-v1"
