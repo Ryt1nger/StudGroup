@@ -475,8 +475,14 @@ async def details(
         )
         found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
         rows = [
-            item(x.id, "Уведомление", "создано", x.created_at,
-                 group_id=x.group_id, entity_type=x.entity_type)
+            item(
+                x.id,
+                "Уведомление",
+                "создано",
+                x.created_at,
+                group_id=x.group_id,
+                entity_type=x.entity_type,
+            )
             for x in found
         ]
     elif kind == "incidents":
