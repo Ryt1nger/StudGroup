@@ -175,7 +175,7 @@ function openVisual(kind){
 function renderActivity(d,v){
   const days=v.daily.map(x=>x.date);
   C.plot("chart-activity",[{label:"Сообщения",values:series(v,"messages"),color:"#087e83"}],{labels:days,title:"Сообщения по дням",area:true});chartClickable("chart-activity","messages");
-  C.hourBars("chart-hours",v.by_hour_moscow);chartClickable("chart-hours","messages");
+  C.hourBars("chart-hours",v.by_hour_moscow,"МСК");chartClickable("chart-hours","messages");
   const host=$("usage-strip");host.replaceChildren();
   info(host,"Написали хотя бы раз",number(d.summary.chat_authors),"Разные отправители в Telegram-чатах","messages");
   info(host,"Участники",number(d.summary.members),"Активные участники подключённых групп","members");
