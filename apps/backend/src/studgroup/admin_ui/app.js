@@ -8,6 +8,7 @@ const datetime=x=>x?new Date(x).toLocaleString("ru-RU",{day:"numeric",month:"sho
 const date=x=>x?new Date(x).toLocaleDateString("ru-RU",{day:"numeric",month:"short",timeZone:"UTC"}):"";
 const label={
   groups:"Подключённые группы",members:"Участники групп",messages:"Сообщения в чатах",
+  bot_updates:"Обновления Telegram",bot_panels:"Текущие панели бота",bot_sessions:"Действующие сессии приложения",
   text:"Обработки текстовых сообщений",images:"Анализ фотографий",legacy:"Старая очередь",
   errors:"Ошибки обработки",incidents:"Системные предупреждения",expenses:"Списания AI",
   month_expenses:"Расходы на AI в этом месяце",reserves:"Незакрытые резервы AI",
@@ -31,9 +32,10 @@ const fields={
   role:"Роль",published_at:"Дата публикации",verification:"Статус проверки",
   deadline:"Срок выполнения",detail_code:"Код причины",occurrences:"Количество повторений",
   last_seen_at:"Последний сигнал",recovered_at:"Восстановлено",
-  pilot_authorized:"Доступ к пилоту",schedule_version:"Версия расписания"
+  pilot_authorized:"Доступ к пилоту",schedule_version:"Версия расписания",
+  expires_at:"Сессия действует до",mode:"Режим панели",generation:"Версия панели",
 };
-let token=null,loadedGroups=false,activeRequest=0,detailRequest=0,detailKind=null,detailOffset=0,previousFocus=null,lastData=null,lastVisuals=null,outcome="text";
+let token=null,loadedGroups=false,activeRequest=0,detailRequest=0,detailKind=null,detailOffset=0,previousFocus=null,lastData=null,lastVisuals=null,lastBot=null,outcome="text",currentPage="overview";
 function dom(tag,cls,value){const e=document.createElement(tag);if(cls)e.className=cls;if(value!==undefined)e.textContent=String(value);return e;}
 function text(host,tag,cls,value){const e=dom(tag,cls,value);host.append(e);return e;}
 function clear(id){$(id).replaceChildren();}
@@ -172,15 +174,19 @@ function openVisual(kind){
   $("modal-close").focus();
 }
 
-function renderActivity(d,v){
+function renderActivity(d,v,bot){
   const days=v.daily.map(x=>x.date);
   C.plot("chart-activity",[{label:"Сообщения",values:series(v,"messages"),color:"#43d9df"}],{labels:days,title:"Сообщения по дням",area:true});chartClickable("chart-activity","messages");
   C.hourBars("chart-hours",v.by_hour_moscow,"МСК");chartClickable("chart-hours","messages");
   const host=$("usage-strip");host.replaceChildren();
-  info(host,"Написали хотя бы раз",number(d.summary.chat_authors),"Разные отправители в Telegram-чатах","messages");
-  info(host,"Участники",number(d.summary.members),"Активные участники подключённых групп","members");
-  info(host,"Создано событий",number(d.summary.events),"Записи событий за период","events");
-  info(host,"Заходы в WebApp","Нет измерений","До подключения счётчика входов приложение их не записывало",null);
+  info(host,"Пользователей в базе",number(bot.people.users_total),"Все зарегистрированные аккаунты",null);
+  info(host,"Участников групп",number(bot.people.active_memberships),"Действующие членства","members");
+  info(host,"Авторов сообщений",number(bot.people.unique_senders),"Писали в чатах за период","messages");
+  info(host,"Действующих сессий",number(bot.people.active_sessions),"Активные сессии сейчас; не входы","bot_sessions");
+  info(host,"Людей с активной сессией",number(bot.people.session_users),"Разные аккаунты в действующих сессиях","bot_sessions");
+  info(host,"Создано событий",number(d.summary.events),"Записей за выбранный период","events");
+  info(host,"История входов","Не собирается","Сейчас нет данных о прошлых запусках WebApp",null);
+  info(host,"Подключённые группы",number(d.summary.groups),"Активные пилотные группы","groups");
   $("activity-caption").textContent="За "+$("days").selectedOptions[0].textContent.toLowerCase()+" · последнее сообщение: "+datetime(d.summary.last_message_at)+".";
 }
 function renderOutcomes(d){
@@ -231,22 +237,125 @@ function renderErrors(d,v){
   C.reasons("chart-reasons",v.error_reasons);
   loadRecent();
 }
-function render(d,v,elapsed){
-  lastData=d;lastVisuals=v;lastElapsedMs=elapsed;
-  $("dashboard").hidden=false;
-  if(!loadedGroups){for(const g of d.groups){const o=dom("option","",g.name);o.value=g.id;$("group").append(o);}loadedGroups=true;}
-  renderSnapshot(d.summary);renderKpi(d.summary,v);renderActivity(d,v);renderAi(d,v);renderFinance(d,v);renderServer(d,v,elapsed);renderErrors(d,v);
+const PAGE_META={
+ overview:{title:"Обзор",eyebrow:"STUDGROUP / СВОДКА",intro:"Самое важное о работе сервиса — без лишних технических терминов."},
+ bot:{title:"Бот и Telegram",eyebrow:"STUDGROUP / TELEGRAM",intro:"Получение событий, отправка ответов и текущая работа бота."},
+ audience:{title:"Пользователи",eyebrow:"STUDGROUP / ЛЮДИ",intro:"Кто пользуется приложением и насколько активны учебные группы."},
+ ai:{title:"AI и обработка",eyebrow:"STUDGROUP / ОБРАБОТКА",intro:"Нагрузка, скорость, готовые результаты и ошибки искусственного интеллекта."},
+ finance:{title:"Финансы",eyebrow:"STUDGROUP / РАСХОДЫ",intro:"Подтверждённые списания AI. Балансы и другие платежи показаны только при наличии данных."},
+ server:{title:"Система",eyebrow:"STUDGROUP / ПРОИЗВОДИТЕЛЬНОСТЬ",intro:"Скорость ответов сервера, нагрузка и состояние очередей."},
+ errors:{title:"Ошибки",eyebrow:"STUDGROUP / ИНЦИДЕНТЫ",intro:"Что пошло не так, когда произошло и какие причины записала система."}
+};
+function statRow(host,title,value,detail){
+  const el=dom(detail?"button":"div","quick-stat");if(detail){el.type="button";el.dataset.detail=detail;}
+  text(el,"span","",title);text(el,"strong","",value);
+  host.append(el);
+}
+function botTile(host,title,value,note,detail,critical=false){
+  const el=dom("button","bot-tile"+(critical?" critical":""));el.type="button";
+  if(detail)el.dataset.detail=detail;else el.dataset.info=note;
+  text(el,"span","bot-tile-name",title);
+  text(el,"strong","bot-tile-value",value);
+  text(el,"small","bot-tile-note",note);
+  host.append(el);
+}
+function renderOverview(d,v,b){
+  const dates=v.daily.map(p=>p.date);
+  C.plot("chart-overview-messages",[
+    {label:"Сообщения",values:series(v,"messages"),color:"#a1b7d7",kind:"messages"}
+  ],{labels:dates,title:"Активность учебных чатов",area:true});
+  chartClickable("chart-overview-messages","messages");
+  C.bars("chart-overview-ai",[
+    {label:"Текст",values:series(v,"text"),color:"#87a9ef",kind:"text"},
+    {label:"Фото",values:series(v,"images"),color:"#b4a5ca",kind:"images"}
+  ],{labels:dates,title:"Текст и фото по дням"});
+  visualClickable("chart-overview-ai","ai");
+  clear("overview-bot");
+  statRow($("overview-bot"),"Обновления Telegram за период",number(b.bot.webhook_updates),"bot_updates");
+  statRow($("overview-bot"),"Ответы успешно отправлены (всё время)",number(b.bot.sent),"telegram");
+  statRow($("overview-bot"),"Неотправленные ошибки (всё время)",number(b.bot.failed),"telegram");
+  clear("overview-spend");
+  statRow($("overview-spend"),"AI за текущий месяц",money(d.finance.month_charged_usd),"month_expenses");
+  statRow($("overview-spend"),"Незакрытые резервы",money(d.finance.unsettled_reserved_usd),"reserves");
+  statRow($("overview-spend"),"Баланс компании","Не подключён",null);
+}
+function renderBot(d,v,b){
+  clear("bot-stats");const host=$("bot-stats");
+  botTile(host,"События Telegram",number(b.bot.webhook_updates),"За выбранный период · весь бот","bot_updates");
+  botTile(host,"Сообщения в группах",number(b.messages.period_count),"За выбранный период · выбранная группа","messages");
+  botTile(host,"Ответы отправлены",number(b.bot.sent),"За всё время, нет даты отправки","telegram");
+  botTile(host,"Ошибки отправки",number(b.bot.failed),"За всё время · в очереди Telegram","telegram",b.bot.failed>0);
+  botTile(host,"Ожидают отправки",number(b.bot.pending),"Текущее состояние очереди","telegram",b.bot.pending>0);
+  botTile(host,"Панели бота",number(b.bot.panel_total),"Текущие панели, не открытия","bot_panels");
+  C.plot("chart-bot-updates",[{label:"Обновлений Telegram",values:b.daily.map(p=>p.updates),color:"#a8bedb",kind:"bot_updates"}],{
+    labels:b.daily.map(p=>p.date),title:"Входящие обновления от Telegram",area:true
+  });
+  chartClickable("chart-bot-updates","bot_updates");
+  const order=["sent","pending","retry","queued","failed","dead","dead_letter","superseded","sending"];
+  const labels={sent:"Отправлено",pending:"Ожидает",retry:"Повтор",queued:"В очереди",failed:"Ошибка",dead:"Не доставлено",dead_letter:"Не доставлено",superseded:"Заменено",sending:"Отправляется"};
+  const colors={sent:"#dbe5f4",pending:"#83a9dc",retry:"#9baee3",queued:"#90aacd",failed:"#e19ea3",dead:"#df939a",dead_letter:"#df939a",superseded:"#75849b",sending:"#acbcd1"};
+  const items=order.filter(k=>b.bot.outbox_states[k]).map(k=>({label:labels[k]||k,value:b.bot.outbox_states[k],color:colors[k],kind:"telegram"}));
+  for(const [key,value] of Object.entries(b.bot.outbox_states))if(!order.includes(key)&&value>0)items.push({label:key,value,color:"#8193b2",kind:"telegram"});
+  C.donut("chart-bot-delivery",items,{centerLabel:"записей",title:"Состояния исходящих Telegram"});
+  chartClickable("chart-bot-delivery","telegram");
+  clear("bot-signals");
+  statRow($("bot-signals"),"Последнее обновление Telegram",datetime(b.bot.last_webhook_at),null);
+  statRow($("bot-signals"),"Последнее сообщение в чатах",datetime(b.messages.last_at),null);
+  statRow($("bot-signals"),"Новых сообщений за период",number(b.messages.new),"messages");
+  statRow($("bot-signals"),"Импортировано за период",number(b.messages.imported),"messages");
+  clear("bot-panels");
+  const panelModes={student:"Студенческая панель",admin:"Панель управления",owner:"Панель владельца",headman:"Панель старосты",main:"Главное меню",group:"Групповая панель"};
+  for(const [key,value] of Object.entries(b.bot.panel_modes))statRow($("bot-panels"),panelModes[key]||"Другой режим панели",number(value),"bot_panels");
+  if(!Object.keys(b.bot.panel_modes).length)statRow($("bot-panels"),"Активных панелей нет","0",null);
+}
+function renderPage(){
+  if(!lastData||!lastVisuals||!lastBot)return;
+  const d=lastData,v=lastVisuals,b=lastBot;
+  if(currentPage==="overview")renderOverview(d,v,b);
+  else if(currentPage==="bot")renderBot(d,v,b);
+  else if(currentPage==="audience")renderActivity(d,v,b);
+  else if(currentPage==="ai")renderAi(d,v);
+  else if(currentPage==="finance")renderFinance(d,v);
+  else if(currentPage==="server")renderServer(d,v,lastElapsedMs);
+  else if(currentPage==="errors")renderErrors(d,v);
+}
+function selectPage(name,updateHistory=false){
+  const next=PAGE_META[name]?name:"overview";
+  if(updateHistory&&location.hash!=="#"+next)location.hash=next;
+  currentPage=next;
+  for(const panel of document.querySelectorAll("[data-screen]"))panel.hidden=panel.dataset.screen!==next;
+  for(const nav of document.querySelectorAll("[data-nav]")){
+    const on=nav.dataset.nav===next;
+    nav.classList.toggle("selected",on);
+    if(on)nav.setAttribute("aria-current","page");else nav.removeAttribute("aria-current");
+  }
+  const meta=PAGE_META[next];
+  $("page-heading").textContent=meta.title;
+  $("page-overline").textContent=meta.eyebrow;
+  $("page-intro").textContent=meta.intro;
+  $("breadcrumb-page").textContent=meta.title.toUpperCase();
+  document.title=meta.title+" · StudGroup";
+  if(lastData)renderPage();
+}
+function render(d,v,b,elapsed){
+  lastData=d;lastVisuals=v;lastBot=b;lastElapsedMs=elapsed;
+  if(!loadedGroups){
+    for(const g of d.groups){const o=dom("option","",g.name);o.value=g.id;$("group").append(o);}
+    loadedGroups=true;
+  }
+  renderSnapshot(d.summary);renderKpi(d.summary,v);
   $("snapshot-time").textContent=datetime(d.as_of);
-  $("updated").textContent="Источник: действующая база StudGroup. Срез "+datetime(d.as_of)+". Внутренние данные AI не раскрываются. Все суммы в USD. Показатели без источника отмечены отдельно.";
+  $("updated").textContent="Срез: "+datetime(d.as_of)+" · StudGroup · Подробные записи доступны по нажатию. Нет источника — нет числа.";
   $("dashboard").hidden=false;
-  $("rail-state").textContent=d.summary.incidents_open?"Есть предупреждения":"Данные получены";
+  $("rail-state").textContent=d.summary.incidents_open?"Есть предупреждения":"Данные доступны";
   $("rail-updated").textContent="Обновлено "+datetime(d.as_of);
   $("rail-dot").classList.toggle("error",Boolean(d.summary.incidents_open));
+  selectPage((location.hash||"").slice(1)||currentPage);
 }
 async function load(){
   if(!token)return;const id=++activeRequest;const status=$("status");status.classList.remove("error");status.textContent="Обновляем показатели…";
-  try{const begin=performance.now();const query=criteria().toString();const [d,v]=await Promise.all([api("/v1/admin/analytics?"+query),api("/v1/admin/visuals?"+query)]);
-    if(id!==activeRequest)return;render(d,v,Math.round(performance.now()-begin));status.textContent="Данные обновлены · "+datetime(d.as_of)+" · период: "+$("days").selectedOptions[0].textContent.toLowerCase();
+  try{const begin=performance.now();const query=criteria().toString();const [d,v,b]=await Promise.all([api("/v1/admin/analytics?"+query),api("/v1/admin/visuals?"+query),api("/v1/admin/bot-monitor?"+query)]);
+    if(id!==activeRequest)return;render(d,v,b,Math.round(performance.now()-begin));status.textContent="Данные обновлены · "+datetime(d.as_of)+" · период: "+$("days").selectedOptions[0].textContent.toLowerCase();
   }catch(error){if(id!==activeRequest)return;status.classList.add("error");status.textContent="Не удалось загрузить статистику: "+error.message;}
 }
 function explain(message){
@@ -292,31 +401,29 @@ $("modal-close").addEventListener("click",closeModal);$("modal-backdrop").addEve
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("modal").hidden)closeModal();if(e.key==="Tab"&&!$("modal").hidden){const focus=[...$("modal").querySelectorAll("button:not([hidden]),summary")];if(!focus.length)return;if(e.shiftKey&&document.activeElement===focus[0]){e.preventDefault();focus.at(-1).focus();}else if(!e.shiftKey&&document.activeElement===focus.at(-1)){e.preventDefault();focus[0].focus();}}});
 for(const id of ["group","days"])$(id).addEventListener("change",load);
 $("refresh").addEventListener("click",load);
-document.querySelectorAll(".nav-link").forEach(a=>a.addEventListener("click",()=>{document.querySelectorAll(".nav-link").forEach(b=>b.classList.remove("selected"));a.classList.add("selected");}));
+window.addEventListener("hashchange",()=>selectPage(location.hash.slice(1)));
+document.addEventListener("click",e=>{
+  const nav=e.target.closest("[data-nav]");
+  const jump=e.target.closest("[data-goto]");
+  if(nav||jump){
+    e.preventDefault();
+    const destination=nav?nav.dataset.nav:jump.dataset.goto;
+    selectPage(destination,true);
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+});
 let lastMeasuredWidth=0,resizePending=false,lastElapsedMs=null;
 window.addEventListener("resize",()=>{
-  if(resizePending||!lastData||!lastVisuals||$("dashboard").hidden)return;
+  if(resizePending||!lastData||document.hidden)return;
   resizePending=true;
   requestAnimationFrame(()=>{
     resizePending=false;
-    const w=document.documentElement.clientWidth;
-    if(Math.abs(w-lastMeasuredWidth)<3)return;
-    lastMeasuredWidth=w;
-    renderActivity(lastData,lastVisuals);
-    renderAi(lastData,lastVisuals);
-    renderFinance(lastData,lastVisuals);
-    renderServer(lastData,lastVisuals,lastElapsedMs);
-    // Avoid re-fetching incidents on resize: re-render charts only.
-    const dates=lastVisuals.daily.map(x=>x.date);
-    C.bars("chart-errors",[
-      {label:"Текст",values:series(lastVisuals,"text_errors"),color:"#ec708b",kind:"errors"},
-      {label:"Фото",values:series(lastVisuals,"image_errors"),color:"#f4b56d",kind:"errors"},
-      {label:"Старая очередь",values:series(lastVisuals,"legacy_errors"),color:"#83b7ff",kind:"errors"}
-    ],{labels:dates,title:"Ошибки обработки по дням"});
-    chartClickable("chart-errors","errors");
+    const width=document.documentElement.clientWidth;
+    if(Math.abs(width-lastMeasuredWidth)<3)return;
+    lastMeasuredWidth=width;
+    renderPage();
   });
 });
-
 async function start(){
   const tg=window.Telegram?.WebApp;if(!tg?.initData){$("status").classList.add("error");$("status").textContent="Для входа откройте админку через личный чат с ботом StudGroup.";return;}tg.ready();tg.expand();
   try{const r=await fetch("/v1/session/bootstrap",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({init_data:tg.initData}),cache:"no-store"});const result=await r.json();if(!r.ok)throw Error(result.error?.message||"Не удалось авторизоваться");token=result.access_token;await load();}

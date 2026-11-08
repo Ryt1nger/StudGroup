@@ -2,7 +2,7 @@
 (function(){
 "use strict";
 const SVG="http://www.w3.org/2000/svg";
-const COLORS=["#43d9df","#8c8bff","#f4b56d","#ec708b","#83b7ff","#a39adf"];
+const COLORS=["#d5e0ef","#91a9cf","#b8aecb","#d494a1","#8ca6bf","#9b9db8"];
 const nf=new Intl.NumberFormat("ru-RU");
 const clean=v=>Number.isFinite(Number(v))?Number(v):0;
 const format=v=>Math.abs(v)>=1000?nf.format(Math.round(v)):Math.abs(v)>=10?nf.format(Math.round(v)):nf.format(Number(v.toFixed(2)));
