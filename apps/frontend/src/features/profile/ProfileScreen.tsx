@@ -173,44 +173,27 @@ function Me({ profile }: { profile: UserProfile }) {
   const telegramName = state.status === 'ready' ? state.session.user.display_name.trim().split(/\s+/) : [];
   const { toast } = useFeedback();
   const save = useUpdateProfile();
-  const ids = { first: useId(), last: useId(), email: useId(), platform: useId(), url: useId(), login: useId(), pass: useId(), cal: useId(), list: useId() };
+  const ids = { first: useId(), last: useId(), email: useId() };
   const [form, setForm] = useState({
     first: profile.first_name ?? telegramName[0] ?? '',
     last: profile.last_name ?? telegramName.slice(1).join(' '),
     email: profile.email ?? '',
-    platform: profile.sdu.platform ?? '',
-    url: profile.sdu.url ?? '',
-    login: profile.sdu.login ?? '',
-    cal: profile.sdu.calendar_url ?? '',
-    pass: '',
   });
-  const [showPass, setShowPass] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = (key: keyof typeof form) => (event: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: event.target.value }));
 
-  const failed = save.isError
-    ? isApiRequestError(save.error) && save.error.status === 503
-      ? 'Пароль сейчас нельзя сохранить: на сервере не настроено хранение. Остальные данные можно сохранить без него.'
-      : 'Не удалось сохранить. Проверьте поля и попробуйте ещё раз.'
-    : null;
+  const failed = save.isError ? 'Не удалось сохранить. Проверьте поля и попробуйте ещё раз.' : null;
 
   function submit() {
     const next: Record<string, string> = {};
     if (!form.first.trim()) next.first = 'Укажите имя';
     if (form.email.trim() && !/^\S+@\S+\.\S+$/.test(form.email.trim())) next.email = 'Проверьте адрес почты';
-    if (!httpsOrEmpty(form.url.trim())) next.url = 'Нужна ссылка, которая начинается с https://';
-    if (!httpsOrEmpty(form.cal.trim())) next.cal = 'Нужна ссылка, которая начинается с https://';
     setErrors(next);
     if (Object.keys(next).length) return;
     const body: UpdateProfileRequest = {
       first_name: form.first.trim(),
       last_name: form.last.trim() || null,
       email: form.email.trim() || null,
-      sdu_platform: form.platform.trim() || null,
-      sdu_url: form.url.trim() || null,
-      sdu_login: form.login.trim() || null,
-      sdu_calendar_url: form.cal.trim() || null,
-      ...(form.pass ? { sdu_password: form.pass } : {}),
     };
     save.mutate(body, {
       onSuccess: () => {
@@ -233,26 +216,17 @@ function Me({ profile }: { profile: UserProfile }) {
       <Group>
         <div className="srow plain"><div className="st">Telegram</div><span className="sv">{profile.username ? `@${profile.username}` : profile.telegram_user_id}</span></div>
       </Group>
-      <div className="grph">Данные СДО</div>
-      <div className="block" style={{ marginTop: 0, paddingTop: 4 }}>
-        <Field id={ids.platform} label="Платформа">
-          <input id={ids.platform} type="text" maxLength={60} list={ids.list} placeholder="Например, Moodle" value={form.platform} onChange={set('platform')} />
-          <datalist id={ids.list}><option value="Moodle" /><option value="Canvas" /><option value="Google Classroom" /><option value="Яндекс Учебник" /><option value="Другая" /></datalist>
-        </Field>
-        <Field id={ids.url} label="Ссылка на СДО" error={errors.url}><input id={ids.url} type="url" maxLength={200} inputMode="url" placeholder="https://" value={form.url} onChange={set('url')} /></Field>
-        <Field id={ids.login} label="Логин в СДО"><input id={ids.login} type="text" maxLength={80} autoComplete="off" value={form.login} onChange={set('login')} /></Field>
-        <Field id={ids.pass} label="Пароль в СДО">
-          <div className="passw">
-            <input id={ids.pass} type={showPass ? 'text' : 'password'} maxLength={200} autoComplete="new-password" placeholder={profile.sdu.password_set ? 'Пароль указан. Введите новый, чтобы заменить' : 'Пароль'} value={form.pass} onChange={set('pass')} />
-            <button type="button" className="eye" aria-pressed={showPass} aria-label={showPass ? 'Скрыть пароль' : 'Показать пароль'} onClick={() => setShowPass((v) => !v)}><Ic name="eye" size={18} /></button>
+      <div className="grph">СДО и личный кабинет</div>
+      <Group>
+        <Link className="srow" to="/profile/sdo">
+          <Icon name="shield" />
+          <div><div className="st">Логин и пароль СДО / ЛК</div>
+            <div className="ss">{profile.sdu.password_set ? 'Пароль сохранён — открыть настройки' : 'Подключение добровольное, требуется отдельное согласие'}</div>
           </div>
-          {profile.sdu.password_set ? (
-            <button type="button" className="linkbtn" onClick={() => save.mutate({ clear_sdu_password: true }, { onSuccess: () => toast('Пароль удалён') })}>Удалить сохранённый пароль</button>
-          ) : null}
-        </Field>
-        <Field id={ids.cal} label={<>Ссылка на календарь СДО <span style={{ fontWeight: 500, color: 'var(--label-3)' }}>(по желанию)</span></>} error={errors.cal}><input id={ids.cal} type="url" maxLength={300} inputMode="url" placeholder="https://" value={form.cal} onChange={set('cal')} /></Field>
-      </div>
-      <p className="foot">Данные доступа к СДО нужны, чтобы подключаться к парам и загружать материалы. Пароль хранится зашифрованным, его видите только вы и назад он не показывается.</p>
+          <span className="sv"><Ic name="chev" /></span>
+        </Link>
+      </Group>
+      <p className="foot">Не присылайте пароль сообщением Telegram. В отдельной форме можно сохранить его зашифрованным, отозвать согласие и удалить реквизиты.</p>
       {failed ? <Banner tone="danger" icon="alert">{failed}</Banner> : null}
       <div className="cta-space" />
       <Float>
@@ -345,7 +319,13 @@ function Privacy() {
       <h1 className="ptitle">Данные и приватность</h1>
       <div className="block">
         <h3>Что хранится</h3>
-        <p>Из сообщений группы приложение делает карточки заданий. Исходные сообщения хранятся ограниченное время, потом остаётся только карточка. Ваши отметки «Выполнено мной» видны только вам.</p>
+        <p>В приложении обрабатываются данные Telegram-аккаунта и учебной группы. Подробнее о целях, сроках и правах пользователя — в политике обработки персональных данных.</p>
+        <p><Link to="/legal/privacy">Политика обработки персональных данных</Link></p>
+        <p><Link to="/legal/terms">Условия использования</Link></p>
+        <p><Link to="/legal/service">Согласие на обработку данных</Link></p>
+        <p><Link to="/legal/sdo">Отдельное согласие СДО / ЛК</Link></p>
+        <p><Link to="/legal/cookies">Уведомление о технических данных</Link></p>
+        <p><Link to="/profile/sdo">Управлять данными СДО/ЛК и отзывом согласия</Link></p>
       </div>
       <Group title="На этом устройстве">
         <ResetRow />
@@ -400,6 +380,11 @@ function Home() {
           <Icon name="cal" />
           <div><div className="st">Расписание</div></div>
           <span className="sv"><Ic name="chev" /></span>
+        </Link>
+        <Link className="srow" to="/profile/sdo">
+          <Icon name="shield" />
+          <div><div className="st">Подключение СДО / ЛК</div></div>
+          <span className="sv">{profile?.sdu.password_set ? 'Настроено' : 'Не подключено'}<Ic name="chev" /></span>
         </Link>
       </Group>
       <Group title="Приложение">
