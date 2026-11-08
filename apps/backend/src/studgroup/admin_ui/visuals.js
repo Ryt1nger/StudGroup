@@ -17,13 +17,35 @@
   function tooltip(node,text){el("title",{},node,text);}
   function plot(id,series,opts={}){
     const rows=series[0]?.values||[];if(!rows.length){empty(id);return;}
-    const title=opts.title||"График";const svg=init(id,title);const keys=series.map(s=>s.label);const values=series.flatMap(s=>s.values.map(v=>Number(v)||0));const max=Math.max(1,...values)*1.18;const labels=opts.labels||rows.map((_,i)=>String(i+1));const {x0,x1,y1}=axes(svg,max,labels,{currency:opts.currency});const w=x1-x0;const y=v=>y1-(Number(v)||0)/max*185;const x=i=>x0+(rows.length===1?.5:i/(rows.length-1))*w;
-    series.forEach((s,k)=>{
-      const color=s.color||COLORS[k%COLORS.length];const pts=s.values.map((v,i)=>[x(i),y(v)]);
-      if(opts.area&&pts.length>1){const d="M"+pts.map(p=>p.join(",")).join(" L")+" L"+pts.at(-1)[0]+","+y1+" L"+pts[0][0]+","+y1+" Z";el("path",{d,fill:color,opacity:.08},svg);}
-      if(pts.length>1)el("polyline",{points:pts.map(p=>p.join(",")).join(" "),fill:"none",stroke:color,"stroke-width":3.2,"stroke-linejoin":"round","stroke-linecap":"round"},svg);
-      for(let i=0;i<pts.length;i++){const p=pts[i];const dot=el("circle",{cx:p[0],cy:p[1],r:3.4,fill:"#fff",stroke:color,"stroke-width":2.2,class:"chart-point"},svg);tooltip(dot,(labels[i]||"")+" · "+s.label+": "+(opts.currency?"$":"")+short(s.values[i]));}
-    });legend(id,keys,series.map((s,k)=>s.color||COLORS[k%COLORS.length]));
+    const title=opts.title||"График",valid=v=>v!==null&&v!==undefined&&Number.isFinite(Number(v));
+    const values=series.flatMap(s=>s.values.filter(valid).map(Number));
+    if(!values.length){empty(id,"Нет замеров скорости за выбранные дни");return;}
+    const svg=init(id,title),max=Math.max(1,...values)*1.18;
+    const labels=opts.labels||rows.map((_,i)=>String(i+1));
+    const {x0,x1,y1}=axes(svg,max,labels,{currency:opts.currency}),w=x1-x0;
+    const y=v=>y1-Number(v)/max*185;
+    const x=i=>x0+(rows.length===1?.5:i/(rows.length-1))*w;
+    series.forEach((item,k)=>{
+      const color=item.color||COLORS[k%COLORS.length];
+      const segments=[];let segment=[];
+      item.values.forEach((v,i)=>{
+        if(valid(v))segment.push([x(i),y(v),i]);
+        else if(segment.length){segments.push(segment);segment=[];}
+      });
+      if(segment.length)segments.push(segment);
+      if(opts.area&&segments.length===1&&segments[0].length>1){
+        const pts=segments[0];const d="M"+pts.map(p=>p.slice(0,2).join(",")).join(" L")+" L"+pts.at(-1)[0]+","+y1+" L"+pts[0][0]+","+y1+" Z";
+        el("path",{d,fill:color,opacity:.08},svg);
+      }
+      for(const pts of segments){
+        if(pts.length>1)el("polyline",{points:pts.map(p=>p.slice(0,2).join(",")).join(" "),fill:"none",stroke:color,"stroke-width":3.2,"stroke-linejoin":"round","stroke-linecap":"round"},svg);
+        for(const p of pts){
+          const dot=el("circle",{cx:p[0],cy:p[1],r:3.4,fill:"#fff",stroke:color,"stroke-width":2.2,class:"chart-point"},svg);
+          tooltip(dot,(labels[p[2]]||"")+" · "+item.label+": "+(opts.currency?"$":"")+short(item.values[p[2]]));
+        }
+      }
+    });
+    legend(id,series.map(s=>s.label),series.map((s,k)=>s.color||COLORS[k%COLORS.length]));
   }
   function bars(id,series,opts={}){
     const rows=series[0]?.values||[];if(!rows.length){empty(id);return;}
