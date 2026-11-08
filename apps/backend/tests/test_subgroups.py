@@ -12,6 +12,7 @@ from test_headman import foreman as foreman_fixture  # noqa: F401
 from studgroup import subgroups
 from studgroup.models import (
     BotOutbox,
+    BotPanel,
     Group,
     Homework,
     Membership,
@@ -53,6 +54,30 @@ def add_student(client, telegram_id=33):
         return member.id
 
     return run(client, create)
+
+
+def student_start_panel(client):
+    """Read the interactive panel, not a later scheduled subgroup notice."""
+
+    async def read(db):
+        panel = await db.scalar(
+            select(BotPanel).where(BotPanel.chat_id == 33, BotPanel.mode == "start")
+        )
+        row = await db.scalar(
+            select(BotOutbox)
+            .where(BotOutbox.panel_id == panel.id, BotOutbox.method == "renderPanel")
+            .order_by(BotOutbox.available_at.desc())
+            .limit(1)
+        )
+        return json.loads(row.payload)
+
+    return run(client, read)
+
+
+def student_tap(client, label):
+    buttons = student_start_panel(client)["reply_markup"]["inline_keyboard"]
+    button = next(button for row in buttons for button in row if label in button["text"])
+    deliver(client, callback=button["callback_data"], uid=33)
 
 
 def test_recognition_accepts_surnames_and_group_numbers_but_not_ambiguous_text():
@@ -179,12 +204,13 @@ def test_student_picks_and_changes_subgroup_from_start_panel(foreman_fixture):  
     configure_english(foreman_fixture)
 
     deliver(foreman_fixture, "/start subgroups", uid=33)
-    assert "К какой подгруппе" in last(foreman_fixture)["text"]
-    assert "Подгруппа 1 · Иванова" in labels(foreman_fixture)
-    tap(foreman_fixture, "Подгруппа 1", uid=33)
-    assert "Английский язык: Подгруппа 1 · Иванова" in last(foreman_fixture)["text"]
-    tap(foreman_fixture, "Изменить", uid=33)
-    tap(foreman_fixture, "Подгруппа 2", uid=33)
+    assert "К какой подгруппе" in student_start_panel(foreman_fixture)["text"]
+    buttons = student_start_panel(foreman_fixture)["reply_markup"]["inline_keyboard"]
+    assert any(button["text"] == "Подгруппа 1 · Иванова" for row in buttons for button in row)
+    student_tap(foreman_fixture, "Подгруппа 1")
+    assert "Английский язык: Подгруппа 1 · Иванова" in student_start_panel(foreman_fixture)["text"]
+    student_tap(foreman_fixture, "Изменить")
+    student_tap(foreman_fixture, "Подгруппа 2")
 
     async def picked(db):
         user = await db.scalar(select(User).where(User.telegram_user_id == 33))
