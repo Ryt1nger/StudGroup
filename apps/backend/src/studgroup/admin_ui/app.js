@@ -47,7 +47,7 @@ function spark(host,values,color){
   svg.setAttribute("viewBox","0 0 110 34");svg.setAttribute("preserveAspectRatio","none");
   const max=Math.max(1,...values.map(Number)),points=values.map((v,i)=>(i/(values.length-1)*110)+","+(31-(Number(v)||0)/max*28));
   const line=document.createElementNS(ns,"polyline");line.setAttribute("points",points.join(" "));
-  line.setAttribute("fill","none");line.setAttribute("stroke",color||"#087e83");
+  line.setAttribute("fill","none");line.setAttribute("stroke",color||"#43d9df");
   line.setAttribute("stroke-width","2.4");line.setAttribute("stroke-linejoin","round");
   svg.append(line);host.append(svg);
 }
@@ -63,7 +63,7 @@ function buttonTile(host,title,value,note,detail,extra="",seriesValues=null,comp
   const b=dom("button","kpi-card "+extra);b.type="button";b.dataset.detail=detail;
   const header=dom("div","kpi-header");text(header,"span","kpi-heading",title);text(header,"span","kpi-index","↗");
   const middle=dom("div","kpi-middle");text(middle,"span","kpi-value",value);
-  if(seriesValues?.length>1){const graph=dom("span","kpi-spark");spark(graph,seriesValues,extra==="danger"?"#c45e63":"#087e83");middle.append(graph);}
+  if(seriesValues?.length>1){const graph=dom("span","kpi-spark");spark(graph,seriesValues,extra==="danger"?"#c45e63":"#43d9df");middle.append(graph);}
   const footer=dom("div","kpi-footer");text(footer,"span","kpi-note",note);
   const change=comparisonNote(comparison);
   if(change){const cls=change.startsWith("↑")&&extra==="danger"?"negative":change.startsWith("↓")&&extra==="danger"?"":"neutral";text(footer,"span","kpi-change "+cls,change);}
@@ -174,7 +174,7 @@ function openVisual(kind){
 
 function renderActivity(d,v){
   const days=v.daily.map(x=>x.date);
-  C.plot("chart-activity",[{label:"Сообщения",values:series(v,"messages"),color:"#087e83"}],{labels:days,title:"Сообщения по дням",area:true});chartClickable("chart-activity","messages");
+  C.plot("chart-activity",[{label:"Сообщения",values:series(v,"messages"),color:"#43d9df"}],{labels:days,title:"Сообщения по дням",area:true});chartClickable("chart-activity","messages");
   C.hourBars("chart-hours",v.by_hour_moscow,"МСК");chartClickable("chart-hours","messages");
   const host=$("usage-strip");host.replaceChildren();
   info(host,"Написали хотя бы раз",number(d.summary.chat_authors),"Разные отправители в Telegram-чатах","messages");
@@ -185,25 +185,25 @@ function renderActivity(d,v){
 }
 function renderOutcomes(d){
   const statuses=d.states[outcome]||{},kind=outcome;
-  const colors={completed:"#087e83",ready:"#087e83",sent:"#087e83",failed:"#bd5854",error:"#bd5854",stale:"#d2a15f",superseded:"#8196aa",queued:"#8494ab",pending:"#8494ab",running:"#5362af",processing:"#5362af"};
+  const colors={completed:"#43d9df",ready:"#43d9df",sent:"#43d9df",failed:"#ec708b",error:"#ec708b",stale:"#f4b56d",superseded:"#83b7ff",queued:"#83b7ff",pending:"#83b7ff",running:"#8c8bff",processing:"#8c8bff"};
   const entries=Object.entries(statuses).sort((a,b)=>b[1]-a[1]);
-  const items=entries.map(([key,value])=>({label:russianState(key),value,color:colors[key]||"#9dabb7"}));
+  const items=entries.map(([key,value])=>({label:russianState(key),value,color:colors[key]||"#7187a8"}));
   C.donut("chart-outcomes",items,{title:"Распределение результатов обработки",centerLabel:"обработок"});chartClickable("chart-outcomes",kind);
   $("outcome-description").textContent=kind==="images"?"«Устарел» означает, что результат был заменён после изменения исходных данных. Это не сбой.":"Процент готовых результатов не равен точности AI. Проверку качества нужно считать отдельно.";
   for(const tab of $("outcome-tabs").querySelectorAll("button"))tab.classList.toggle("active",tab.dataset.outcome===outcome);
 }
 function renderAi(d,v){
   const dates=v.daily.map(x=>x.date);
-  C.bars("chart-workload",[{label:"Текст",values:series(v,"text"),color:"#087e83",kind:"text"},{label:"Фото",values:series(v,"images"),color:"#5060bf",kind:"images"}],{labels:dates,title:"Количество прогонов по дням"});visualClickable("chart-workload","ai");
+  C.bars("chart-workload",[{label:"Текст",values:series(v,"text"),color:"#43d9df",kind:"text"},{label:"Фото",values:series(v,"images"),color:"#8c8bff",kind:"images"}],{labels:dates,title:"Количество прогонов по дням"});visualClickable("chart-workload","ai");
   renderOutcomes(d);
-  C.plot("chart-latency",[{label:"Текст",values:v.daily.map(x=>x.text_latency_ms==null?null:x.text_latency_ms/1000),color:"#087e83",kind:"text"},{label:"Фото",values:v.daily.map(x=>x.photo_latency_ms==null?null:x.photo_latency_ms/1000),color:"#d39051",kind:"images"}],{labels:dates,title:"Скорость обработки AI"});visualClickable("chart-latency","ai");
-  C.bars("chart-output",[{label:"ДЗ",values:series(v,"homework"),color:"#087e83",kind:"homework"},{label:"События",values:series(v,"events"),color:"#5060bf",kind:"events"},{label:"Уведомления",values:series(v,"notifications"),color:"#d39051",kind:"notifications"}],{labels:dates,title:"Созданные записи"});visualClickable("chart-output","materials");
+  C.plot("chart-latency",[{label:"Текст",values:v.daily.map(x=>x.text_latency_ms==null?null:x.text_latency_ms/1000),color:"#43d9df",kind:"text"},{label:"Фото",values:v.daily.map(x=>x.photo_latency_ms==null?null:x.photo_latency_ms/1000),color:"#f4b56d",kind:"images"}],{labels:dates,title:"Скорость обработки AI"});visualClickable("chart-latency","ai");
+  C.bars("chart-output",[{label:"ДЗ",values:series(v,"homework"),color:"#43d9df",kind:"homework"},{label:"События",values:series(v,"events"),color:"#8c8bff",kind:"events"},{label:"Уведомления",values:series(v,"notifications"),color:"#f4b56d",kind:"notifications"}],{labels:dates,title:"Созданные записи"});visualClickable("chart-output","materials");
 }
 function renderFinance(d,v){
   clear("finance-summary");financeTile($("finance-summary"),"Списано за месяц",money(d.finance.month_charged_usd),"Календарный месяц, UTC","month_expenses",true);
   financeTile($("finance-summary"),"Зарезервировано",money(d.finance.unsettled_reserved_usd),"Незакрытые резервы, за всё время","reserves");
   financeTile($("finance-summary"),"Все оплаты компании","Не подключено","Нет данных о счетах и платёжных сервисах",null);
-  C.bars("chart-finance",[{label:"Списано",values:v.finance_month.series.map(x=>Number(x.value)||0),color:"#087e83"}],{labels:v.finance_month.series.map(x=>x.date),currency:true,title:"Дневные расходы на AI"});chartClickable("chart-finance","month_expenses");
+  C.bars("chart-finance",[{label:"Списано",values:v.finance_month.series.map(x=>Number(x.value)||0),color:"#43d9df"}],{labels:v.finance_month.series.map(x=>x.date),currency:true,title:"Дневные расходы на AI"});chartClickable("chart-finance","month_expenses");
   const kindNames={cplus:"Анализ текста",image:"Обработка фото",cabinet_image:"Фото из учебной системы",text:"Текстовые запросы"};
   const kinds=v.finance_month.by_kind.map((x,i)=>({label:kindNames[x.kind]||"Другая обработка",value:Number(x.usd),color:C.colors[i%C.colors.length]}));
   C.donut("chart-finance-kind",kinds,{title:"Распределение расходов AI",centerLabel:"USD"});chartClickable("chart-finance-kind","month_expenses");
@@ -217,7 +217,7 @@ function renderServer(d,v,roundTrip){
   metric(host,"Медленные ответы сервера",server.p95_ms==null?"Нет замеров":number(server.p95_ms)+" мс","95% измеренных запросов не медленнее");
   metric(host,"Ошибки сервера",number(server.errors_5xx),"Ответы с кодом 5xx, 15 минут");
   metric(host,"Запросов к API",number(server.sample_count),"Измерены после запуска текущего процесса");
-  C.bars("chart-requests",[{label:"Обычные ответы",values:server.requests.map(x=>Math.max(0,x.count-x.errors_5xx)),color:"#087e83"},{label:"Серверные ошибки",values:server.requests.map(x=>x.errors_5xx),color:"#bf5a55"}],{labels:server.requests.map(x=>x.minute.slice(11,16)),title:"Запросы API поминутно"});
+  C.bars("chart-requests",[{label:"Обычные ответы",values:server.requests.map(x=>Math.max(0,x.count-x.errors_5xx)),color:"#43d9df"},{label:"Серверные ошибки",values:server.requests.map(x=>x.errors_5xx),color:"#ec708b"}],{labels:server.requests.map(x=>x.minute.slice(11,16)),title:"Запросы API поминутно"});
   visualClickable("chart-requests","server");
   $("server-caption").textContent=server.note+" Последний запрос панели занял "+number(roundTrip)+" мс с учётом сети.";
   clear("queue-detail");const list=$("queue-detail");
@@ -227,12 +227,13 @@ function renderServer(d,v,roundTrip){
 }
 function renderErrors(d,v){
   const dates=v.daily.map(x=>x.date);
-  C.bars("chart-errors",[{label:"Текст",values:series(v,"text_errors"),color:"#bf5a55",kind:"errors"},{label:"Фото",values:series(v,"image_errors"),color:"#d39051",kind:"errors"},{label:"Старая очередь",values:series(v,"legacy_errors"),color:"#9eaab9",kind:"errors"}],{labels:dates,title:"Ошибки обработки по дням"});chartClickable("chart-errors","errors");
+  C.bars("chart-errors",[{label:"Текст",values:series(v,"text_errors"),color:"#ec708b",kind:"errors"},{label:"Фото",values:series(v,"image_errors"),color:"#f4b56d",kind:"errors"},{label:"Старая очередь",values:series(v,"legacy_errors"),color:"#83b7ff",kind:"errors"}],{labels:dates,title:"Ошибки обработки по дням"});chartClickable("chart-errors","errors");
   C.reasons("chart-reasons",v.error_reasons);
   loadRecent();
 }
 function render(d,v,elapsed){
   lastData=d;lastVisuals=v;
+  $("dashboard").hidden=false;
   if(!loadedGroups){for(const g of d.groups){const o=dom("option","",g.name);o.value=g.id;$("group").append(o);}loadedGroups=true;}
   renderSnapshot(d.summary);renderKpi(d.summary,v);renderActivity(d,v);renderAi(d,v);renderFinance(d,v);renderServer(d,v,elapsed);renderErrors(d,v);
   $("snapshot-time").textContent=datetime(d.as_of);
@@ -292,6 +293,30 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("modal").hidden)
 for(const id of ["group","days"])$(id).addEventListener("change",load);
 $("refresh").addEventListener("click",load);
 document.querySelectorAll(".nav-link").forEach(a=>a.addEventListener("click",()=>{document.querySelectorAll(".nav-link").forEach(b=>b.classList.remove("selected"));a.classList.add("selected");}));
+let lastMeasuredWidth=0,resizePending=false;
+window.addEventListener("resize",()=>{
+  if(resizePending||!lastData||!lastVisuals||$("dashboard").hidden)return;
+  resizePending=true;
+  requestAnimationFrame(()=>{
+    resizePending=false;
+    const w=document.documentElement.clientWidth;
+    if(Math.abs(w-lastMeasuredWidth)<3)return;
+    lastMeasuredWidth=w;
+    renderActivity(lastData,lastVisuals);
+    renderAi(lastData,lastVisuals);
+    renderFinance(lastData,lastVisuals);
+    renderServer(lastData,lastVisuals,0);
+    // Avoid re-fetching incidents on resize: re-render charts only.
+    const dates=lastVisuals.daily.map(x=>x.date);
+    C.bars("chart-errors",[
+      {label:"Текст",values:series(lastVisuals,"text_errors"),color:"#ec708b",kind:"errors"},
+      {label:"Фото",values:series(lastVisuals,"image_errors"),color:"#f4b56d",kind:"errors"},
+      {label:"Старая очередь",values:series(lastVisuals,"legacy_errors"),color:"#83b7ff",kind:"errors"}
+    ],{labels:dates,title:"Ошибки обработки по дням"});
+    chartClickable("chart-errors","errors");
+  });
+});
+
 async function start(){
   const tg=window.Telegram?.WebApp;if(!tg?.initData){$("status").classList.add("error");$("status").textContent="Для входа откройте админку через личный чат с ботом StudGroup.";return;}tg.ready();tg.expand();
   try{const r=await fetch("/v1/session/bootstrap",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({init_data:tg.initData}),cache:"no-store"});const result=await r.json();if(!r.ok)throw Error(result.error?.message||"Не удалось авторизоваться");token=result.access_token;await load();}
