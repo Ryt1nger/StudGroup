@@ -171,11 +171,16 @@ async def visual_analytics(
         image_calls_filter,
     )
 
+    hour_column = (
+        extract("hour", RawMessage.message_date)
+        if db.get_bind().dialect.name == "sqlite"
+        else extract("hour", func.timezone("Europe/Moscow", RawMessage.message_date))
+    )
     hours = (
         await db.execute(
-            select(extract("hour", RawMessage.message_date), func.count())
+            select(hour_column, func.count())
             .where(*message_filter)
-            .group_by(extract("hour", RawMessage.message_date))
+            .group_by(hour_column)
         )
     ).all()
     by_hour = {int(hour): int(count) for hour, count in hours}
@@ -298,7 +303,7 @@ async def visual_analytics(
         "period_days": days,
         "comparison": comparison,
         "daily": daily,
-        "by_hour_utc": [{"hour": i, "value": by_hour.get(i, 0)} for i in range(24)],
+        "by_hour_moscow": [{"hour": i, "value": by_hour.get(i, 0)} for i in range(24)],
         "error_reasons": sorted(errors, key=lambda r: r["count"], reverse=True)[:10],
         "finance_month": {
             "series": month_series,
