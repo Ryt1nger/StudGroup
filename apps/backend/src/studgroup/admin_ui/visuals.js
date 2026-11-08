@@ -1,83 +1,210 @@
-/* Dependency-free charts. Each graph displays live API data only. */
+/* StudGroup operator charts: measured values only, responsive SVG geometry. */
 (function(){
-  "use strict";
-  const S="http://www.w3.org/2000/svg";
-  const COLORS=["#087e83","#5060bf","#db8c45","#ad678f","#5a8c64","#d05e5e"];
-  const nf=new Intl.NumberFormat("ru-RU");
-  function el(tag,attrs={},parent=null,text){const node=document.createElementNS(S,tag);for(const [key,value] of Object.entries(attrs)){node.setAttribute(key,String(value));}if(text!==undefined)node.textContent=String(text);parent?.appendChild(node);return node;}
-  function init(id,title){const host=document.getElementById(id);host.replaceChildren();const svg=el("svg",{viewBox:"0 0 700 250",preserveAspectRatio:"none",role:"img","aria-label":title});host.appendChild(svg);return svg;}
-  function empty(id,label="Пока нет записей для графика"){const host=document.getElementById(id);host.replaceChildren();const div=document.createElement("div");div.className="chart-empty";div.textContent=label;host.appendChild(div);}
-  const short=v=>{const n=Number(v)||0;return n>=1000?(n/1000).toFixed(1)+" тыс.":n>=10?nf.format(Math.round(n)):n.toFixed(n&&n<1?2:0)};
-  const dateLabel=s=>/^\\d{4}-\\d{2}-\\d{2}$/.test(s)?new Date(s+"T12:00:00Z").toLocaleDateString("ru-RU",{day:"numeric",month:"short",timeZone:"UTC"}):s;
-  function axes(svg,max,labels,opts={}){
-    const x0=52,x1=687,y0=16,y1=210;
-    for(let i=0;i<5;i++){const y=y1-(y1-y0)*i/4;el("line",{x1:x0,y1:y,x2:x1,y2:y,class:"grid-line"},svg);el("text",{x:8,y:y+4,class:"tick"},svg,(opts.currency?"$":"")+short(max*i/4));}
-    if(labels.length){const picks=[0,Math.floor((labels.length-1)/2),labels.length-1];for(let q=0;q<picks.length;q++){const j=picks[q];const x=x0+(labels.length<=1?.5:j/(labels.length-1))*(x1-x0);el("text",{x,y:239,class:"tick","text-anchor":q===0?"start":q===2?"end":"middle"},svg,dateLabel(labels[j]||""));}}
-    return {x0,x1,y0,y1};
-  }
-  function tooltip(node,text){el("title",{},node,text);}
-  function plot(id,series,opts={}){
-    const rows=series[0]?.values||[];if(!rows.length){empty(id);return;}
-    const title=opts.title||"График",valid=v=>v!==null&&v!==undefined&&Number.isFinite(Number(v));
-    const values=series.flatMap(s=>s.values.filter(valid).map(Number));
-    if(!values.length){empty(id,"Нет замеров скорости за выбранные дни");return;}
-    const svg=init(id,title),max=Math.max(1,...values)*1.18;
-    const labels=opts.labels||rows.map((_,i)=>String(i+1));
-    const {x0,x1,y1}=axes(svg,max,labels,{currency:opts.currency}),w=x1-x0;
-    const y=v=>y1-Number(v)/max*185;
-    const x=i=>x0+(rows.length===1?.5:i/(rows.length-1))*w;
-    series.forEach((item,k)=>{
-      const color=item.color||COLORS[k%COLORS.length];
-      const segments=[];let segment=[];
-      item.values.forEach((v,i)=>{
-        if(valid(v))segment.push([x(i),y(v),i]);
-        else if(segment.length){segments.push(segment);segment=[];}
-      });
-      if(segment.length)segments.push(segment);
-      if(opts.area&&segments.length===1&&segments[0].length>1){
-        const pts=segments[0];const d="M"+pts.map(p=>p.slice(0,2).join(",")).join(" L")+" L"+pts.at(-1)[0]+","+y1+" L"+pts[0][0]+","+y1+" Z";
-        el("path",{d,fill:color,opacity:.08},svg);
-      }
-      for(const pts of segments){
-        if(pts.length>1)el("polyline",{points:pts.map(p=>p.slice(0,2).join(",")).join(" "),fill:"none",stroke:color,"stroke-width":3.2,"stroke-linejoin":"round","stroke-linecap":"round"},svg);
-        for(const p of pts){
-          const dot=el("circle",{cx:p[0],cy:p[1],r:3.4,fill:"#fff",stroke:color,"stroke-width":2.2,class:"chart-point",...(item.kind?{"data-detail":item.kind}:{})},svg);
-          tooltip(dot,(labels[p[2]]||"")+" · "+item.label+": "+(opts.currency?"$":"")+short(item.values[p[2]]));
-        }
-      }
-    });
-    legend(id,series.map(s=>s.label),series.map((s,k)=>s.color||COLORS[k%COLORS.length]),series.map(s=>s.kind));
-  }
-  function bars(id,series,opts={}){
-    const rows=series[0]?.values||[];if(!rows.length){empty(id);return;}
-    const svg=init(id,opts.title||"Столбчатая диаграмма"),labels=opts.labels||rows.map((_,i)=>String(i+1));const width=635,x0=52,y1=210;
-    const maxima=rows.map((_,i)=>series.reduce((a,s)=>a+(Number(s.values[i])||0),0));const max=Math.max(1,...maxima)*1.16;axes(svg,max,labels,{currency:opts.currency});const gap=width/rows.length,barW=Math.max(2,Math.min(35,gap*.64));
-    rows.forEach((_,i)=>{let acc=0;series.forEach((s,k)=>{const v=Number(s.values[i])||0;const h=v/max*185;const r=el("rect",{x:x0+i*gap+(gap-barW)/2,y:y1-(acc+h),width:barW,height:Math.max(0,h),rx:Math.min(3,h/2),fill:s.color||COLORS[k%COLORS.length],...(s.kind?{"data-detail":s.kind}:{})},svg);tooltip(r,(labels[i]||"")+" · "+s.label+": "+(opts.currency?"$":"")+short(v));acc+=h;});});
-    legend(id,series.map(s=>s.label),series.map((s,k)=>s.color||COLORS[k%COLORS.length]),series.map(s=>s.kind));
-  }
-  function donut(id,items,opts={}){
-    const active=items.filter(d=>Number(d.value)>0);const total=active.reduce((a,d)=>a+Number(d.value),0);if(!total){empty(id,"Нет обработок за выбранный период");return;}
-    const svg=init(id,opts.title||"Распределение");const cx=209,cy=125,r=76,stroke=23,circ=2*Math.PI*r;el("circle",{cx,cy,r,fill:"none",stroke:"#e8ecf0","stroke-width":stroke},svg);
-    let off=0;active.forEach((d,i)=>{const portion=Number(d.value)/total;const arc=el("circle",{cx,cy,r,fill:"none",stroke:d.color||COLORS[i%COLORS.length],"stroke-width":stroke,"stroke-dasharray":(portion*circ)+" "+circ,"stroke-dashoffset":-(off*circ),"transform":"rotate(-90 "+cx+" "+cy+")"},svg);tooltip(arc,d.label+": "+nf.format(d.value)+" · "+(portion*100).toFixed(1)+"%");off+=portion;});
-    el("text",{x:cx,y:119,"text-anchor":"middle",class:"donut-number"},svg,nf.format(total));el("text",{x:cx,y:141,"text-anchor":"middle",class:"donut-label"},svg,opts.centerLabel||"всего");
-    const shown=active.slice(0,7);shown.forEach((d,i)=>{const y=46+i*28;el("circle",{cx:370,cy:y-4,r:5,fill:d.color||COLORS[i%COLORS.length]},svg);el("text",{x:384,y,class:"donut-legend"},svg,d.label.length>21?d.label.slice(0,20)+"…":d.label);el("text",{x:681,y,class:"donut-value","text-anchor":"end"},svg,short(d.value));});
-  }
-  function hourBars(id,items,timeZone='UTC'){
-    if(!items.length){empty(id);return;}const svg=init(id,"Активность по московскому времени"),values=items.map(x=>Number(x.value)||0),max=Math.max(1,...values);axes(svg,max,[],{});const width=635;
-    values.forEach((v,i)=>{const slot=width/24,bw=slot*.65,x=52+i*slot+(slot-bw)/2,h=v/max*185;const r=el("rect",{x,y:210-h,width:bw,height:h,rx:3,fill:i>=7&&i<=18?"#087e83":"#9bb7c0"},svg);tooltip(r,i+":00–"+(i+1)+":00 МСК · "+nf.format(v)+" сообщений");if(i%4===0)el("text",{x:x+bw/2,y:239,"text-anchor":"middle",class:"tick"},svg,String(i).padStart(2,"0")+":00");});
-  }
-  function reasons(id,items){
-    const host=document.getElementById(id);host.replaceChildren();if(!items.length){const n=document.createElement("div");n.className="chart-empty";n.textContent="Причины ошибок не зафиксированы";host.append(n);return;}
-    const max=Math.max(1,...items.map(x=>x.count));for(const item of items.slice(0,7)){const b=document.createElement("button");b.className="reason-row";b.type="button";b.dataset.detail="errors";const title=document.createElement("div");title.className="reason-top";const name=document.createElement("strong");name.textContent=item.source+": "+humanError(item.code);const count=document.createElement("span");count.textContent=nf.format(item.count);title.append(name,count);const track=document.createElement("div");track.className="reason-track";const progress=document.createElement("div");progress.style.width=(item.count/max*100)+"%";track.append(progress);b.append(title,track);b.title="Технический код: "+item.code;host.append(b);}
-  }
-  const knownErrors={
-    invalid_shadow_context:"Контекст сообщения не подошёл для анализа",
-    context_schema_invalid:"AI вернул данные в неправильном формате",
-    extraction_release_budget_exhausted:"Лимит расходов на AI исчерпан",
-    context_insufficient_balance:"Не хватило бюджета для анализа",
-    context_evidence_outside_envelope:"Данные не прошли проверку источника"
-  };
-  function humanError(code){return knownErrors[code]||"Другая техническая ошибка";}
-  function legend(id,labels,colors,kinds=[]){if(labels.length<=1)return;const host=document.getElementById(id);const div=document.createElement("div");div.className="plot-legend";for(let i=0;i<labels.length;i++){const a=document.createElement(kinds[i]?"button":"span");if(kinds[i]){a.type="button";a.dataset.detail=kinds[i];a.title="Открыть записи: "+labels[i];}const dot=document.createElement("i");dot.style.background=colors[i];a.append(dot,document.createTextNode(labels[i]));div.append(a);}host.append(div);}
-  window.StudCharts={plot,bars,donut,hourBars,reasons,empty,humanError,colors:COLORS};
+"use strict";
+const SVG="http://www.w3.org/2000/svg";
+const COLORS=["#43d9df","#8c8bff","#f4b56d","#ec708b","#83b7ff","#a39adf"];
+const nf=new Intl.NumberFormat("ru-RU");
+const clean=v=>Number.isFinite(Number(v))?Number(v):0;
+const format=v=>Math.abs(v)>=1000?nf.format(Math.round(v)):Math.abs(v)>=10?nf.format(Math.round(v)):nf.format(Number(v.toFixed(2)));
+const dollars=v=>"$"+(Math.abs(v)<0.01?Number(v).toFixed(4):Number(v).toFixed(2));
+const dateLabel=s=>/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+"T12:00:00Z").toLocaleDateString("ru-RU",{day:"numeric",month:"short",timeZone:"UTC"}):String(s);
+function element(name,attributes={},parent,text){
+ const el=document.createElementNS(SVG,name);
+ for(const [key,value] of Object.entries(attributes))el.setAttribute(key,String(value));
+ if(text!==undefined)el.textContent=String(text);
+ if(parent)parent.append(el);
+ return el;
+}
+function empty(id,message="За выбранный период данных нет"){
+ const host=document.getElementById(id);host.replaceChildren();
+ const el=document.createElement("div");el.className="chart-empty";
+ el.textContent=message;host.append(el);
+}
+function hostCanvas(id,label,height=248){
+ const host=document.getElementById(id);host.replaceChildren();
+ const figure=document.createElement("div");figure.className="chart-figure";
+ const canvas=document.createElement("div");canvas.className="chart-canvas";
+ const width=Math.max(340,Math.round(host.getBoundingClientRect().width)||660);
+ const svg=element("svg",{viewBox:"0 0 "+width+" "+height,preserveAspectRatio:"xMidYMid meet",role:"img","aria-label":label},canvas);
+ figure.append(canvas);host.append(figure);
+ return {host,figure,canvas,svg,width,height};
+}
+function tooltip(shape,txt){element("title",{},shape,txt);}
+function niceMaximum(value){
+ if(value<=0)return 1;
+ const raw=value*1.12;
+ const p=Math.pow(10,Math.floor(Math.log10(raw)));
+ const unit=raw/p;
+ return (unit<=1?1:unit<=2?2:unit<=2.5?2.5:unit<=5?5:10)*p;
+}
+function grid(svg,width,height,max,opts={}){
+ const margin={left:58,right:15,top:14,bottom:36};
+ const innerW=width-margin.left-margin.right,innerH=height-margin.top-margin.bottom;
+ for(let n=0;n<=4;n++){
+   const y=margin.top+innerH*n/4;
+   element("line",{x1:margin.left,y1:y,x2:width-margin.right,y2:y,class:"grid-line"},svg);
+   const tick=max*(4-n)/4;
+   element("text",{x:margin.left-13,y:y+4,"text-anchor":"end",class:"tick"},svg,opts.currency?dollars(tick):format(tick));
+ }
+ return {...margin,innerW,innerH,baseline:margin.top+innerH};
+}
+function axisDates(svg,labels,atX,y,all=false){
+ if(!labels.length)return;
+ const indices=all&&labels.length<=8?labels.map((_,i)=>i):
+   [...new Set([0,Math.floor((labels.length-1)/4),Math.floor((labels.length-1)/2),Math.floor((labels.length-1)*3/4),labels.length-1])];
+ indices.forEach((i,k)=>element("text",{
+   x:atX(i),y,"text-anchor":i===0?"start":i===labels.length-1?"end":"middle",class:"tick date-tick"
+ },svg,dateLabel(labels[i])));
+}
+function legend(figure,series){
+ if(series.length<=1)return;
+ const wrap=document.createElement("div");wrap.className="plot-legend";
+ series.forEach((item,i)=>{
+   const node=document.createElement(item.kind?"button":"span");
+   if(item.kind){node.type="button";node.dataset.detail=item.kind;node.title="Открыть: "+item.label;}
+   const dot=document.createElement("i");dot.style.background=item.color||COLORS[i%COLORS.length];
+   node.append(dot,document.createTextNode(item.label));wrap.append(node);
+ });
+ figure.append(wrap);
+}
+function plot(id,series,opts={}){
+ const rows=series[0]?.values||[];if(!rows.length)return empty(id);
+ const valid=x=>x!==null&&x!==undefined&&Number.isFinite(Number(x));
+ const numbers=series.flatMap(s=>s.values.filter(valid).map(Number));
+ if(!numbers.length)return empty(id,"Замеры скорости пока отсутствуют");
+ const {figure,svg,width,height}=hostCanvas(id,opts.title||"Динамика");
+ const maximum=niceMaximum(Math.max(...numbers));
+ const geo=grid(svg,width,height,maximum,{currency:opts.currency});
+ const labels=opts.labels||rows.map((_,i)=>String(i+1));
+ const x=i=>geo.left+(rows.length<2?.5:i/(rows.length-1))*geo.innerW;
+ const y=v=>geo.baseline-clean(v)/maximum*geo.innerH;
+ axisDates(svg,labels,x,height-7);
+ series.forEach((item,index)=>{
+   const color=item.color||COLORS[index%COLORS.length];
+   const chunks=[];let chunk=[];
+   item.values.forEach((value,i)=>{
+     if(valid(value))chunk.push({x:x(i),y:y(value),value,index:i});
+     else if(chunk.length){chunks.push(chunk);chunk=[];}
+   });if(chunk.length)chunks.push(chunk);
+   chunks.forEach(points=>{
+     if(opts.area&&points.length>1){
+       const fill="M"+points.map(p=>p.x+","+p.y).join("L")+"L"+points.at(-1).x+","+geo.baseline+"L"+points[0].x+","+geo.baseline+"Z";
+       element("path",{d:fill,fill:color,opacity:".12"},svg);
+     }
+     if(points.length>1)element("polyline",{
+       points:points.map(p=>p.x+","+p.y).join(" "),fill:"none",stroke:color,
+       "stroke-width":"2.8","stroke-linecap":"round","stroke-linejoin":"round"
+     },svg);
+     points.forEach(point=>{
+       const circle=element("circle",{cx:point.x,cy:point.y,r:3.7,fill:color,stroke:"#141e32","stroke-width":"2",class:"chart-point",...(item.kind?{"data-detail":item.kind}:{})},svg);
+       tooltip(circle,dateLabel(labels[point.index])+" · "+item.label+": "+(opts.currency?dollars(point.value):format(point.value)));
+     });
+   });
+ });
+ legend(figure,series);
+}
+function bars(id,series,opts={}){
+ const rows=series[0]?.values||[];if(!rows.length)return empty(id);
+ const {figure,svg,width,height}=hostCanvas(id,opts.title||"Объёмы обработки");
+ const maxValues=rows.map((_,i)=>series.reduce((s,item)=>s+Math.max(0,clean(item.values[i])),0));
+ const maximum=niceMaximum(Math.max(...maxValues));
+ const geo=grid(svg,width,height,maximum,{currency:opts.currency}),slot=geo.innerW/rows.length;
+ const barWidth=Math.min(36,Math.max(3,slot*.68));
+ const labels=opts.labels||rows.map((_,i)=>String(i+1));
+ rows.forEach((_,i)=>{
+   let accumulated=0;
+   series.forEach((item,k)=>{
+     const count=Math.max(0,clean(item.values[i]));if(count<=0)return;
+     const h=count/maximum*geo.innerH,rect=element("rect",{
+       x:geo.left+i*slot+(slot-barWidth)/2,
+       y:geo.baseline-accumulated-h,
+       width:barWidth,height:h,
+       fill:item.color||COLORS[k%COLORS.length],
+       rx:Math.min(2.6,h/2),
+       class:"chart-bar",...(item.kind?{"data-detail":item.kind}:{})
+     },svg);
+     tooltip(rect,dateLabel(labels[i])+" · "+item.label+": "+(opts.currency?dollars(count):format(count)));
+     accumulated+=h;
+   });
+ });
+ axisDates(svg,labels,i=>geo.left+(i+.5)*slot,height-7);
+ legend(figure,series);
+}
+function donut(id,items,opts={}){
+ const currency=opts.centerLabel==="USD";
+ const records=items.filter(item=>clean(item.value)>0);
+ const total=records.reduce((sum,item)=>sum+clean(item.value),0);
+ if(!total)return empty(id,"За этот период анализ не выполнялся");
+ const host=document.getElementById(id);host.replaceChildren();
+ const layout=document.createElement("div");layout.className="donut-layout";
+ const chart=document.createElement("div");chart.className="donut-visual";
+ const svg=element("svg",{viewBox:"0 0 240 240",preserveAspectRatio:"xMidYMid meet",role:"img","aria-label":opts.title||"Распределение результатов"},chart);
+ const center=120,radius=89,stroke=23,circ=2*Math.PI*radius;
+ element("circle",{cx:center,cy:center,r:radius,fill:"none",stroke:"#25324b","stroke-width":stroke},svg);
+ let offset=0;
+ records.forEach((item,i)=>{
+   const amount=clean(item.value),share=amount/total;
+   const arc=element("circle",{cx:center,cy:center,r:radius,fill:"none",
+     stroke:item.color||COLORS[i%COLORS.length],"stroke-width":stroke,
+     "stroke-dasharray":share*circ+" "+circ,"stroke-dashoffset":-offset*circ,
+     transform:"rotate(-90 120 120)",class:"donut-arc",
+     ...(item.kind?{"data-detail":item.kind}:{})
+   },svg);
+   tooltip(arc,item.label+": "+(currency?dollars(amount):nf.format(amount))+" ("+Math.round(share*100)+"%)");
+   offset+=share;
+ });
+ element("text",{x:120,y:119,class:"donut-number","text-anchor":"middle"},svg,currency?dollars(total):nf.format(total));
+ element("text",{x:120,y:144,class:"donut-label","text-anchor":"middle"},svg,opts.centerLabel||"всего");
+ const legendNode=document.createElement("div");legendNode.className="donut-legend-list";
+ records.forEach((item,i)=>{
+   const line=document.createElement("div");line.className="donut-legend-row";
+   if(item.kind){line.dataset.detail=item.kind;line.tabIndex=0;}
+   const dot=document.createElement("span");dot.className="donut-legend-dot";dot.style.background=item.color||COLORS[i%COLORS.length];
+   const name=document.createElement("span");name.className="donut-name";name.textContent=item.label;
+   const count=document.createElement("strong");count.className="donut-count";count.textContent=currency?dollars(clean(item.value)):nf.format(item.value);
+   const percent=document.createElement("span");percent.className="donut-percent";percent.textContent=Math.round(item.value/total*100)+"%";
+   line.append(dot,name,count,percent);legendNode.append(line);
+ });
+ layout.append(chart,legendNode);host.append(layout);
+}
+function hourBars(id,items,timeZone="Europe/Moscow"){
+ if(!items?.length)return empty(id);
+ const {svg,width,height}=hostCanvas(id,"Сообщения по часам, время Москвы");
+ const max=niceMaximum(Math.max(...items.map(item=>clean(item.value))));
+ const geo=grid(svg,width,height,max);
+ const slot=geo.innerW/24,barWidth=Math.min(27,slot*.7);
+ items.forEach((entry,i)=>{
+   const height=clean(entry.value)/max*geo.innerH;
+   if(height>0){
+     const rectangle=element("rect",{x:geo.left+i*slot+(slot-barWidth)/2,y:geo.baseline-height,
+       width:barWidth,height,rx:2.5,fill:i>=8&&i<21?"#43d9df":"#517195",class:"chart-bar"},svg);
+     tooltip(rectangle,String(i).padStart(2,"0")+":00–"+String((i+1)%24).padStart(2,"0")+":00 МСК · "+nf.format(entry.value)+" сообщений");
+   }
+   if(i%4===0)element("text",{x:geo.left+(i+.5)*slot,y:geo.baseline+26,"text-anchor":"middle",class:"tick"},svg,String(i).padStart(2,"0")+":00");
+ });
+}
+const knownErrors={
+ invalid_shadow_context:"Контекст сообщения не подошёл для анализа",
+ context_schema_invalid:"AI вернул данные в неправильном формате",
+ extraction_release_budget_exhausted:"Достигнут лимит расходов на AI",
+ context_insufficient_balance:"Не хватило бюджета для анализа",
+ context_evidence_outside_envelope:"Данные не прошли проверку источника"
+};
+function humanError(code){return knownErrors[code]||"Другая техническая ошибка";}
+function reasons(id,items){
+ const host=document.getElementById(id);host.replaceChildren();
+ if(!items?.length)return empty(id,"Причин ошибок за период не обнаружено");
+ const maximum=Math.max(...items.map(item=>clean(item.count)),1);
+ items.slice(0,7).forEach((item,i)=>{
+   const button=document.createElement("button");button.className="reason-row";button.type="button";button.dataset.detail="errors";
+   const top=document.createElement("div");top.className="reason-top";
+   const name=document.createElement("strong");name.textContent=item.source+": "+humanError(item.code);
+   const count=document.createElement("span");count.textContent=nf.format(item.count);
+   top.append(name,count);const track=document.createElement("div");track.className="reason-track";
+   const indicator=document.createElement("div");indicator.style.width=(clean(item.count)/maximum*100)+"%";
+   indicator.style.background=i===0?"#ec708b":"#8c8bff";track.append(indicator);
+   button.append(top,track);button.title="Код: "+item.code;host.append(button);
+ });
+}
+window.StudCharts={plot,bars,donut,hourBars,reasons,empty,humanError,colors:COLORS};
 })();

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f4f6fa">
+  <meta name="theme-color" content="#090f1d">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
   <title>StudGroup / Control</title>
   <link rel="stylesheet" href="/admin/style.css">
@@ -18,12 +18,12 @@
     <div class="rail-divider"></div>
     <nav class="navigation">
       <div class="nav-caption">АНАЛИТИКА</div>
-      <a href="#overview" class="nav-link selected"><span class="nav-index">01</span> Обзор</a>
-      <a href="#activity" class="nav-link"><span class="nav-index">02</span> Активность</a>
-      <a href="#ai" class="nav-link"><span class="nav-index">03</span> Обработка AI</a>
-      <a href="#finance" class="nav-link"><span class="nav-index">04</span> Финансы</a>
-      <a href="#server" class="nav-link"><span class="nav-index">05</span> Сервер</a>
-      <a href="#errors" class="nav-link"><span class="nav-index">06</span> Ошибки</a>
+      <a href="#overview" class="nav-link selected"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg> Обзор</a>
+      <a href="#activity" class="nav-link"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V13M9 19V7M14 19V10M19 19V4"/><path d="M2 21h20"/></svg> Активность</a>
+      <a href="#ai" class="nav-link"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z"/></svg> Обработка AI</a>
+      <a href="#finance" class="nav-link"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M3 9h18M16 15h2"/></svg> Финансы</a>
+      <a href="#server" class="nav-link"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="8" rx="2"/><rect x="3" y="13" width="18" height="8" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></svg> Сервер</a>
+      <a href="#errors" class="nav-link"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5m0 4h.01"/></svg> Ошибки</a>
       <div class="nav-caption second">СОСТОЯНИЕ</div>
       <div class="rail-status"><span class="status-dot" id="rail-dot"></span><div><strong id="rail-state">Подключение</strong><small id="rail-updated">Проверяем данные</small></div></div>
     </nav>
