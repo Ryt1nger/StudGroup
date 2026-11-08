@@ -32,6 +32,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 from sqlalchemy import select
 
@@ -41,7 +42,7 @@ from studgroup.analysis.contracts import (
     SubjectCatalog,
     SubjectEntry,
 )
-from studgroup.models import SchedulePattern
+from studgroup.models import GroupOfficialSubject, SchedulePattern
 from studgroup.subgroups import signals_of, splits
 from studgroup.subject_identity import match_key, subject_uuid
 
@@ -256,6 +257,12 @@ async def load_subject_catalog(db, group_id, facts=()):
     rows = (
         await db.scalars(select(SchedulePattern).where(SchedulePattern.group_id == group_id))
     ).all()
+    official = (
+        await db.scalars(
+            select(GroupOfficialSubject).where(GroupOfficialSubject.group_id == group_id)
+        )
+    ).all()
+    rows.extend(SimpleNamespace(subject=row.name, teacher=None) for row in official)
     catalog = with_subgroups(build_catalog(group_id, rows, facts), await splits(db, group_id))
     return catalog if catalog.subjects else None
 

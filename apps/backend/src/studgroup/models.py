@@ -48,6 +48,87 @@ class Group(Base):
     bot_added_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class GroupScheduleSource(Base):
+    """Per-group university source configuration; writes are opt-in and disabled by default."""
+
+    __tablename__ = "group_schedule_sources"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    upstream_group_uuid: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    collection_mode: Mapped[str] = mapped_column(String(24), default="public")
+    sync_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(80))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GroupScheduleSnapshot(Base):
+    """An isolated university schedule snapshot; never directly projected into live lessons."""
+
+    __tablename__ = "group_schedule_snapshots"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    week_end: Mapped[date] = mapped_column(Date)
+    data_digest: Mapped[str] = mapped_column(String(64))
+    rows_json: Mapped[str] = mapped_column(Text)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GroupOfficialSubject(Base):
+    """Observed university subject for one group; never creates a live lesson."""
+
+    __tablename__ = "group_official_subjects"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    name_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    subject_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    name: Mapped[str] = mapped_column(String(255))
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RanepaCrawlJob(Base):
+    """One account attempt in a weekly fair crawl; contains identifiers only."""
+
+    __tablename__ = "ranepa_crawl_jobs"
+    __table_args__ = (UniqueConstraint("group_id", "user_id", "week_start"),)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    week_start: Mapped[date] = mapped_column(Date)
+    priority: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(16), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_code: Mapped[str | None] = mapped_column(String(48))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RanepaPersonalSnapshot(Base):
+    """Last complete personal week, owned by one active group member."""
+
+    __tablename__ = "ranepa_personal_snapshots"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    week_end: Mapped[date] = mapped_column(Date)
+    data_digest: Mapped[str] = mapped_column(String(64))
+    rows_json: Mapped[str] = mapped_column(Text)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    identity_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+
 class SchedulePattern(Base):
     __tablename__ = "schedule_patterns"
     __table_args__ = (
@@ -104,8 +185,25 @@ class UserProfile(Base):
     sdu_login: Mapped[str | None] = mapped_column(String(80))
     sdu_calendar_url: Mapped[str | None] = mapped_column(String(300))
     sdu_password_encrypted: Mapped[str | None] = mapped_column(Text)
+    sdu_setup_skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     settings: Mapped[dict | None] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LegalConsentEvent(Base):
+    """Append-only record of explicit, separate user actions for published legal documents."""
+
+    __tablename__ = "legal_consent_events"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    purpose: Mapped[str] = mapped_column(String(32), index=True)
+    action: Mapped[str] = mapped_column(String(16))
+    document_version: Mapped[str] = mapped_column(String(32))
+    document_sha256: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Membership(Base):

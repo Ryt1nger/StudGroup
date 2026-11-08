@@ -1,5 +1,19 @@
 # Contract changelog
 
+## 0.21.0 — 2026-11-06
+
+- RANEPA personal and projected schedule lessons may include `course_url`, a verified Moodle course fallback distinct from `online_url`; existing clients can ignore the optional field.
+- Added `GET /ranepa-schedule` for the caller's cached university lessons, with
+  `complete`, `fallback_used`, and `last_success_at`. The optional server-side
+  RANEPA view switch makes `GET /schedule` and lesson details use the personal
+  cache for configured groups. It remains off by default.
+  Each lesson can also report the optional SDO `link_state` explaining whether
+  a stable join link was matched or why none was stored.
+- RANEPA collection uses the existing consent-gated `PATCH /profile` SDO/LK credential fields.
+  The experimental `/ranepa-account` route was removed before release; no deployed client used it.
+- `GET /subjects` can also include names observed in verified university snapshots
+  for the active group. Its response shape and subject ID formula are unchanged.
+
 ## 0.20.0 — 2026-10-31
 
 - Added card material operations for headmen and deputies: add HTTPS links, rename/change links, remove materials, and upload or replace files directly from the Mini App. Each operation requires the current card revision and returns the new revision and material list. Uploaded files are kept in Telegram and limited to 20 MB.

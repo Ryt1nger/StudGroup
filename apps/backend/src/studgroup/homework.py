@@ -479,30 +479,49 @@ async def completion(
 
 @router.get("/lessons/{lesson_id}/subject")
 async def lesson_subject(
-    lesson_id: str, group: CurrentGroup, db: Database, authorization: str = Header()
+    lesson_id: str,
+    group: CurrentGroup,
+    db: Database,
+    request: Request,
+    authorization: str = Header(),
 ):
-    try:
-        pattern_id, day_text = lesson_id.split(":", 1)
-        pattern_id = UUID(pattern_id)
-        lesson_day = date.fromisoformat(day_text)
-    except (ValueError, TypeError):
-        raise ApiError("not_found", "Пара не найдена", 404) from None
-    pattern = await db.get(SchedulePattern, pattern_id)
-    if pattern is None or pattern.group_id != group.id:
-        raise ApiError("not_found", "Пара не найдена", 404)
-    exception = await db.scalar(
-        select(ScheduleException).where(
-            ScheduleException.group_id == group.id,
-            ScheduleException.pattern_id == pattern.id,
-            ScheduleException.occurrence_date == lesson_day,
+    if lesson_id.startswith("ranepa:") and request.app.state.settings.ranepa_schedule_view_enabled:
+        from studgroup.ranepa_personal import personal_with_group_fallback, schedule_projection
+
+        try:
+            lesson_day = date.fromisoformat(lesson_id.split(":", 2)[1])
+        except (ValueError, IndexError):
+            raise ApiError("not_found", "Пара не найдена", 404) from None
+        personal = await personal_with_group_fallback(
+            db, group.id, await user_id(db, authorization), lesson_day, lesson_day
         )
-    )
-    if exception:
-        lesson_day = utc(exception.starts_at).astimezone(ZoneInfo(group.timezone)).date()
-    calendar = await schedule_data(lesson_day, lesson_day, group, db)
-    lesson = next((item for item in calendar["lessons"] if item["id"] == lesson_id), None)
-    if lesson is None:
-        raise ApiError("not_found", "Пара не найдена", 404)
+        calendar = schedule_projection(personal, group)
+        lesson = next((item for item in calendar["lessons"] if item["id"] == lesson_id), None)
+        if lesson is None:
+            raise ApiError("not_found", "Пара не найдена", 404)
+    else:
+        try:
+            pattern_id, day_text = lesson_id.split(":", 1)
+            pattern_id = UUID(pattern_id)
+            lesson_day = date.fromisoformat(day_text)
+        except (ValueError, TypeError):
+            raise ApiError("not_found", "Пара не найдена", 404) from None
+        pattern = await db.get(SchedulePattern, pattern_id)
+        if pattern is None or pattern.group_id != group.id:
+            raise ApiError("not_found", "Пара не найдена", 404)
+        exception = await db.scalar(
+            select(ScheduleException).where(
+                ScheduleException.group_id == group.id,
+                ScheduleException.pattern_id == pattern.id,
+                ScheduleException.occurrence_date == lesson_day,
+            )
+        )
+        if exception:
+            lesson_day = utc(exception.starts_at).astimezone(ZoneInfo(group.timezone)).date()
+        calendar = await schedule_data(lesson_day, lesson_day, group, db)
+        lesson = next((item for item in calendar["lessons"] if item["id"] == lesson_id), None)
+        if lesson is None:
+            raise ApiError("not_found", "Пара не найдена", 404)
     now = datetime.now(UTC)
     starts = datetime.fromisoformat(lesson["starts_at"])
     user = await user_id(db, authorization)
@@ -569,6 +588,7 @@ async def lesson_subject(
 async def today(
     group: CurrentGroup,
     db: Database,
+    request: Request,
     authorization: str = Header(),
     day: Literal["today", "tomorrow"] = "today",
 ):
@@ -635,21 +655,43 @@ async def today(
         .where(RawMessage.group_id == group.id, RawMessage.processing_state == "pending")
         .limit(1)
     )
-    calendar = await schedule_data(
-        selected_date,
-        selected_date if day == "tomorrow" else current_date + timedelta(days=31),
-        group,
-        db,
+    personal_enabled = bool(
+        request.app.state.settings.ranepa_schedule_view_enabled and group.academic_group_code
     )
-    coverage = await db.scalar(
-        select(SchedulePattern.id)
-        .where(
-            SchedulePattern.group_id == group.id,
-            SchedulePattern.valid_from <= selected_date,
-            SchedulePattern.valid_until >= selected_date,
+    if personal_enabled:
+        from studgroup.ranepa_personal import personal_with_group_fallback, schedule_projection
+
+        personal = await personal_with_group_fallback(
+            db,
+            group.id,
+            user,
+            selected_date,
+            selected_date if day == "tomorrow" else current_date + timedelta(days=31),
         )
-        .limit(1)
-    )
+        selected_personal = await personal_with_group_fallback(
+            db, group.id, user, selected_date, selected_date
+        )
+        calendar = schedule_projection(personal, group)
+        covered = selected_personal["complete"]
+        last_success = personal["last_success_at"]
+    else:
+        calendar = await schedule_data(
+            selected_date,
+            selected_date if day == "tomorrow" else current_date + timedelta(days=31),
+            group,
+            db,
+        )
+        coverage = await db.scalar(
+            select(SchedulePattern.id)
+            .where(
+                SchedulePattern.group_id == group.id,
+                SchedulePattern.valid_from <= selected_date,
+                SchedulePattern.valid_until >= selected_date,
+            )
+            .limit(1)
+        )
+        covered = coverage is not None
+        last_success = now
     selected_lessons = [
         lesson
         for lesson in calendar["lessons"]
@@ -657,7 +699,7 @@ async def today(
         == selected_date
         and lesson["status"] == "scheduled"
     ]
-    if coverage is None or calendar["week_state"] != "ready":
+    if not covered or (not personal_enabled and calendar["week_state"] != "ready"):
         day_lessons_state = "unknown"
     elif not selected_lessons:
         day_lessons_state = "empty"
@@ -671,7 +713,11 @@ async def today(
         "generated_at": now,
         "server_time": now,
         "group_timezone": group.timezone,
-        "freshness": {"last_successful_sync_at": now, "stale": False},
+        "freshness": {
+            "last_successful_sync_at": utc(last_success) if last_success else now,
+            "stale": personal_enabled
+            and (last_success is None or now - utc(last_success) > timedelta(days=7)),
+        },
         "processing": {
             "state": "updating" if pending else "idle",
             "retry_after_seconds": 10 if pending else None,

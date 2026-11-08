@@ -13,6 +13,20 @@ export function safeLessonUrl(url?: string | null): string | null {
   return url;
 }
 
+/** Course navigation is separate from a verified meeting link. */
+export function safeRanepaCourseUrl(url?: string | null): string | null {
+  if (!safeLessonUrl(url)) return null;
+  try {
+    const parsed = new URL(url!);
+    if (parsed.hostname !== 'lms.ranepa.ru' || parsed.pathname !== '/course/view.php' || parsed.hash) return null;
+    const keys = [...parsed.searchParams.keys()];
+    if (keys.length !== 1 || keys[0] !== 'id' || !/^\d+$/.test(parsed.searchParams.get('id') ?? '')) return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
 /** Click handler that opens the lesson through Telegram, keeping the plain link as the fallback. */
 export function useLessonLinkClick(url: string) {
   const { adapter } = useTelegram();

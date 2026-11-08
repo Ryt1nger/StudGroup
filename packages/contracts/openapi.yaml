@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.20.0
+  version: 0.21.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -177,6 +177,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /ranepa-schedule:
+    get:
+      operationId: getMyRanepaSchedule
+      summary: Last successful personal university schedule for the active group
+      parameters:
+        - { name: start, in: query, required: true, schema: { type: string, format: date } }
+        - { name: end, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: Cached personal lessons with source freshness; may be incomplete
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RanepaPersonalSchedule" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
   /subgroups:
     get:
       tags: [Membership]
@@ -1738,6 +1753,38 @@ components:
             password_set: { type: boolean }
         settings:
           $ref: "#/components/schemas/NotificationSettings"
+    RanepaPersonalSchedule:
+      type: object
+      additionalProperties: false
+      required: [start, end, complete, fallback_used, lessons, last_success_at]
+      properties:
+        start: { type: string, format: date }
+        end: { type: string, format: date }
+        complete: { type: boolean }
+        fallback_used: { type: boolean, description: True when compatible peer data fills a missing personal week; complete remains false }
+        last_success_at: { type: [string, "null"], format: date-time }
+        lessons:
+          type: array
+          items:
+            type: object
+            required: [day, starts, ends, subject]
+            properties:
+              day: { type: string, format: date }
+              starts: { type: string }
+              ends: { type: string }
+              subject: { type: string }
+              teacher: { type: [string, "null"] }
+              room: { type: [string, "null"] }
+              lesson_type: { type: [string, "null"] }
+              stream_label: { type: [string, "null"] }
+              online_url: { type: [string, "null"], format: uri }
+              course_url:
+                type: [string, "null"]
+                format: uri
+                description: Verified Moodle course reached from this SDO lesson; may lack a confirmed meeting link.
+              link_state:
+                type: [string, "null"]
+                description: SDO link decision from the last successful scan; null for non-SDO or guarded peer fallback.
     UpdateProfileRequest:
       type: object
       additionalProperties: false
@@ -1821,6 +1868,10 @@ components:
           type: [string, "null"]
           format: uri
           description: Optional HTTPS joining URL scoped to this group lesson; not a homework/material link. The external platform may require its own login.
+        course_url:
+          type: [string, "null"]
+          format: uri
+          description: Optional verified Moodle course for an SDO lesson; does not imply a confirmed meeting URL.
     SessionBootstrapRequest:
       type: object
       additionalProperties: false

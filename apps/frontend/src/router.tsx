@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createBrowserRouter, createMemoryRouter, Navigate, useRouteError } from 'react-router';
 import { TodayScreen } from './features/today/TodayScreen';
+import { LegalDocumentScreen } from './features/profile/SdoCredentialsScreen';
 import { ru } from './i18n/ru';
 import { homeworkIdFromStartParam } from './lib/deeplink';
 import { AppShell } from './shell/AppShell';
@@ -30,6 +31,7 @@ export function appRoutes(startParam: string | null) {
   // backend still enforces session, membership and ownership on the resulting request.
   const deepLinkId = homeworkIdFromStartParam(startParam);
   return [
+    { path: '/legal/:document', Component: LegalDocumentScreen },
     {
       path: '/',
       Component: AppShell,
@@ -53,6 +55,7 @@ export function appRoutes(startParam: string | null) {
         { path: 'subjects/lessons/:lessonId', lazy: async () => ({ Component: (await import('./features/subjects/LessonSubjectScreen')).LessonSubjectScreen }) },
         { path: 'subjects/:subjectId', lazy: async () => ({ Component: (await import('./features/subjects/SubjectScreen')).SubjectScreen }) },
         { path: 'profile', lazy: async () => ({ Component: (await import('./features/profile/ProfileScreen')).ProfileScreen }) },
+        { path: 'profile/sdo', lazy: async () => ({ Component: (await import('./features/profile/SdoCredentialsScreen')).SdoCredentialsScreen }) },
         { path: 'profile/:section', lazy: async () => ({ Component: (await import('./features/profile/ProfileScreen')).ProfileScreen }) },
         { path: 'deadlines', lazy: async () => ({ Component: (await import('./features/deadlines/DeadlinesScreen')).DeadlinesScreen }) },
         { path: 'deadlines/:deadlineId', lazy: async () => ({ Component: (await import('./features/deadlines/AcademicDeadlineScreen')).AcademicDeadlineScreen }) },

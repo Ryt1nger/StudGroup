@@ -36,6 +36,36 @@ export type UserProfile = {
     settings: NotificationSettings;
 };
 
+export type RanepaPersonalSchedule = {
+    start: string;
+    end: string;
+    complete: boolean;
+    /**
+     * True when compatible peer data fills a missing personal week; complete remains false
+     */
+    fallback_used: boolean;
+    last_success_at: string | null;
+    lessons: Array<{
+        day: string;
+        starts: string;
+        ends: string;
+        subject: string;
+        teacher?: string | null;
+        room?: string | null;
+        lesson_type?: string | null;
+        stream_label?: string | null;
+        online_url?: string | null;
+        /**
+         * Verified Moodle course reached from this SDO lesson; may lack a confirmed meeting link.
+         */
+        course_url?: string | null;
+        /**
+         * SDO link decision from the last successful scan; null for non-SDO or guarded peer fallback.
+         */
+        link_state?: string | null;
+    }>;
+};
+
 export type UpdateProfileRequest = {
     first_name?: string | null;
     last_name?: string | null;
@@ -98,6 +128,10 @@ export type LessonOccurrence = {
      * Optional HTTPS joining URL scoped to this group lesson; not a homework/material link. The external platform may require its own login.
      */
     online_url?: string | null;
+    /**
+     * Optional verified Moodle course for an SDO lesson; does not imply a confirmed meeting URL.
+     */
+    course_url?: string | null;
 };
 
 export type SessionBootstrapRequest = {
@@ -1404,6 +1438,38 @@ export type UpdateProfileResponses = {
 };
 
 export type UpdateProfileResponse = UpdateProfileResponses[keyof UpdateProfileResponses];
+
+export type GetMyRanepaScheduleData = {
+    body?: never;
+    path?: never;
+    query: {
+        start: string;
+        end: string;
+    };
+    url: '/ranepa-schedule';
+};
+
+export type GetMyRanepaScheduleErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type GetMyRanepaScheduleError = GetMyRanepaScheduleErrors[keyof GetMyRanepaScheduleErrors];
+
+export type GetMyRanepaScheduleResponses = {
+    /**
+     * Cached personal lessons with source freshness; may be incomplete
+     */
+    200: RanepaPersonalSchedule;
+};
+
+export type GetMyRanepaScheduleResponse = GetMyRanepaScheduleResponses[keyof GetMyRanepaScheduleResponses];
 
 export type ListMySubgroupsData = {
     body?: never;

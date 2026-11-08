@@ -6,7 +6,7 @@ import { demoProfile } from '../src/mocks/profile';
 import { API, renderApp, server, useScenario } from './helpers';
 
 describe('profile', () => {
-  it('saves name, contacts and study-platform data, sending the password only when it was typed', async () => {
+  it('saves personal data and opens the separate, consent-gated SDO/LK form', async () => {
     useScenario();
     const sent: Array<Record<string, unknown>> = [];
     server.use(
@@ -20,16 +20,12 @@ describe('profile', () => {
     const first = await screen.findByLabelText('Имя');
     await userEvent.clear(first);
     await userEvent.type(first, 'Тимофей');
-    await userEvent.type(screen.getByLabelText('Ссылка на СДО'), 'http://sdo.example.edu');
-    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
-    expect(await screen.findByText('Нужна ссылка, которая начинается с https://')).toBeInTheDocument();
-    expect(sent).toHaveLength(0);
-    await userEvent.clear(screen.getByLabelText('Ссылка на СДО'));
-    await userEvent.type(screen.getByLabelText('Ссылка на СДО'), 'https://sdo.example.edu');
+    expect(screen.getByRole('link', { name: /Логин и пароль СДО \/ ЛК/ })).toHaveAttribute('href', '/profile/sdo');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
     await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toMatchObject({ first_name: 'Тимофей', sdu_url: 'https://sdo.example.edu' });
+    expect(sent[0]).toMatchObject({ first_name: 'Тимофей' });
     expect(sent[0]).not.toHaveProperty('sdu_password');
+    expect(sent[0]).not.toHaveProperty('sdu_login');
   });
 
   it('writes a notification preference straight to the server', async () => {
