@@ -304,7 +304,8 @@ function renderBot(d,v,b){
   statRow($("bot-signals"),"Новых сообщений за период",number(b.messages.new),"messages");
   statRow($("bot-signals"),"Импортировано за период",number(b.messages.imported),"messages");
   clear("bot-panels");
-  for(const [key,value] of Object.entries(b.bot.panel_modes))statRow($("bot-panels"),"Режим панели: "+key,number(value),"bot_panels");
+  const panelModes={student:"Студенческая панель",admin:"Панель управления",owner:"Панель владельца",headman:"Панель старосты",main:"Главное меню",group:"Групповая панель"};
+  for(const [key,value] of Object.entries(b.bot.panel_modes))statRow($("bot-panels"),panelModes[key]||"Другой режим панели",number(value),"bot_panels");
   if(!Object.keys(b.bot.panel_modes).length)statRow($("bot-panels"),"Активных панелей нет","0",null);
 }
 function renderPage(){
@@ -402,8 +403,14 @@ for(const id of ["group","days"])$(id).addEventListener("change",load);
 $("refresh").addEventListener("click",load);
 window.addEventListener("hashchange",()=>selectPage(location.hash.slice(1)));
 document.addEventListener("click",e=>{
+  const nav=e.target.closest("[data-nav]");
   const jump=e.target.closest("[data-goto]");
-  if(jump){selectPage(jump.dataset.goto,true);window.scrollTo({top:0,behavior:"smooth"});}
+  if(nav||jump){
+    e.preventDefault();
+    const destination=nav?nav.dataset.nav:jump.dataset.goto;
+    selectPage(destination,true);
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
 });
 let lastMeasuredWidth=0,resizePending=false,lastElapsedMs=null;
 window.addEventListener("resize",()=>{
