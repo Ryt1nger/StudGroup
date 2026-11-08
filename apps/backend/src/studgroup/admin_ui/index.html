@@ -3,79 +3,110 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#080c1b">
+  <meta name="theme-color" content="#f4f6fa">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
-  <title>StudGroup — Центр управления</title>
+  <title>StudGroup / Control</title>
   <link rel="stylesheet" href="/admin/style.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/admin/visuals.js" defer></script>
   <script src="/admin/app.js" defer></script>
 </head>
 <body>
-  <div class="workspace">
-    <aside class="sidebar" aria-label="Навигация">
-      <a class="brand" href="#overview"><span class="brandmark">▱</span><span><b>StudGroup</b><small>Центр управления</small></span></a>
-      <nav>
-        <a class="active" href="#overview">⌂ <span>Главная</span></a>
-        <a href="#audience">◉ <span>Пользователи</span></a>
-        <a href="#processing">✧ <span>AI и обработка</span></a>
-        <a href="#finance">◈ <span>Финансы</span></a>
-        <a href="#health">◇ <span>Работа системы</span></a>
-        <a href="#log">☷ <span>События и ошибки</span></a>
-      </nav>
-      <div class="sidebar-foot"><span class="pulse"></span><span>Только реальные данные<br><small>Доступ только владельцу</small></span></div>
-    </aside>
-    <main class="main" id="overview">
-      <header class="header">
-        <div><div class="eyebrow">Панель владельца / StudGroup</div><h1>Обзор приложения</h1><p>Люди, AI, финансы и состояние системы — на одном экране.</p></div>
-        <div class="controls">
-          <label>Группа <select id="group"><option value="">Все группы</option></select></label>
-          <label>Период <select id="days"><option value="1">24 часа</option><option value="7" selected>7 дней</option><option value="30">30 дней</option><option value="90">90 дней</option></select></label>
-          <button id="refresh" type="button" aria-label="Обновить данные">↻ Обновить</button>
+<div class="workspace">
+  <aside class="rail" aria-label="Разделы панели">
+    <div class="brand"><span class="brand-symbol" aria-hidden="true">sg<span>.</span></span><div class="brand-caption"><b>StudGroup</b><span>операционная панель</span></div></div>
+    <div class="rail-divider"></div>
+    <nav class="navigation">
+      <div class="nav-caption">АНАЛИТИКА</div>
+      <a href="#overview" class="nav-link selected"><span class="nav-index">01</span> Обзор</a>
+      <a href="#activity" class="nav-link"><span class="nav-index">02</span> Активность</a>
+      <a href="#ai" class="nav-link"><span class="nav-index">03</span> Обработка AI</a>
+      <a href="#finance" class="nav-link"><span class="nav-index">04</span> Финансы</a>
+      <a href="#server" class="nav-link"><span class="nav-index">05</span> Сервер</a>
+      <a href="#errors" class="nav-link"><span class="nav-index">06</span> Ошибки</a>
+      <div class="nav-caption second">СОСТОЯНИЕ</div>
+      <div class="rail-status"><span class="status-dot" id="rail-dot"></span><div><strong id="rail-state">Подключение</strong><small id="rail-updated">Проверяем данные</small></div></div>
+    </nav>
+    <div class="rail-footer"><div class="rail-caption">ДОСТУП АДМИНИСТРАТОРА</div><p>Данные доступны только администратору. Содержимое сообщений не выводится.</p><div class="build-tag">StudGroup · Live</div></div>
+  </aside>
+  <div class="content">
+    <header class="header">
+      <div class="breadcrumb"><span class="breadcrumb-mark"></span><span>STUDGROUP</span><span class="crumb-divider">/</span><strong>ПАНЕЛЬ УПРАВЛЕНИЯ</strong></div>
+      <div class="header-actions"><span class="live-label"><span class="status-dot"></span> Данные из системы</span><button type="button" class="refresh-button" id="refresh" aria-label="Обновить">Обновить <span aria-hidden="true">↻</span></button></div>
+    </header>
+    <div class="page" id="overview">
+      <div class="page-top">
+        <div><div class="overline">АНАЛИТИКА И СОСТОЯНИЕ СИСТЕМЫ</div><h1>Работа приложения<span class="title-period">.</span></h1><p class="lead">Что происходит в StudGroup: нагрузка, качество обработки, деньги и сбои.</p></div>
+        <div class="filterbox">
+          <label for="days">ПЕРИОД<select id="days"><option value="1">Сегодня</option><option value="7" selected>7 дней</option><option value="30">30 дней</option><option value="90">90 дней</option></select></label>
+          <label for="group">ГРУППА<select id="group"><option value="">Все группы</option></select></label>
         </div>
-      </header>
-      <div class="status" id="status" role="status">Подключаемся к рабочим данным…</div>
-      <div id="dashboard" hidden>
-        <section class="hero" id="spotlight" aria-label="Главные показатели"></section>
-        <div class="section-label" id="audience"><span>01</span> Люди и использование</div>
-        <div class="dashboard-grid two">
-          <section class="panel">
-            <div class="panel-head"><div><h2>Активность чатов</h2><p>Сколько сообщений поступило по дням</p></div><button type="button" class="text-btn" data-detail="messages">Подробнее ↗</button></div>
-            <div id="chart-messages"></div><div class="footnote">Это активность Telegram-групп, не число входов в WebApp.</div>
-          </section>
-          <section class="panel"><div class="panel-head"><div><h2>Использование приложения</h2><p>Что мы действительно можем измерить</p></div></div><div id="audience-metrics" class="mini-grid"></div></section>
-        </div>
-        <div class="section-label" id="processing"><span>02</span> AI и обработка</div>
-        <div class="dashboard-grid two">
-          <section class="panel"><div class="panel-head"><div><h2>Прогоны AI по дням</h2><p>Текст и изображения считаются отдельно</p></div><button type="button" class="text-btn" data-detail="text">Все прогоны ↗</button></div><div id="chart-ai"></div><div class="legend"><span><i class="dot violet"></i>Текст</span><span><i class="dot aqua"></i>Фото</span></div></section>
-          <section class="panel"><div class="panel-head"><div><h2>Результаты обработки</h2><p>Реальные состояния очередей</p></div></div><div id="ai-status"></div></section>
-        </div>
-        <div class="section-label" id="finance"><span>03</span> Деньги и оплаты</div>
-        <div class="dashboard-grid two">
-          <section class="panel"><div class="panel-head"><div><h2>Расходы на AI</h2><p>Списания из основного бюджетного журнала</p></div><button type="button" class="text-btn" data-detail="expenses">Все списания ↗</button></div><div id="chart-spend"></div><div id="finance-breakdown"></div></section>
-          <section class="panel"><div class="panel-head"><div><h2>Финансовое положение</h2><p>Никаких догадок о балансе компании</p></div></div><div id="finance-status"></div></section>
-        </div>
-        <div class="section-label" id="health"><span>04</span> Скорость и стабильность</div>
-        <div class="dashboard-grid two">
-          <section class="panel"><div class="panel-head"><div><h2>Скорость обработки AI</h2><p>Среднее время из записей о выполненных вызовах</p></div></div><div id="speed" class="mini-grid"></div></section>
-          <section class="panel"><div class="panel-head"><div><h2>Работа сервера</h2><p>Измерения этого подключения, не выдуманный uptime</p></div></div><div id="server-status"></div></section>
-        </div>
-        <div class="section-label" id="log"><span>05</span> Ошибки и события</div>
-        <div class="dashboard-grid two">
-          <section class="panel"><div class="panel-head"><div><h2>Последние ошибки</h2><p>Откройте запись, чтобы увидеть причину и этап</p></div><button type="button" class="text-btn" data-detail="errors">Все ошибки ↗</button></div><div id="recent-errors"></div></section>
-          <section class="panel"><div class="panel-head"><div><h2>Состояние очередей</h2><p>Можно открыть каждый источник</p></div></div><div id="queues"></div></section>
-        </div>
-        <footer id="updated"></footer>
       </div>
-    </main>
+      <div id="status" class="connection" role="status">Проверяем доступ и загружаем показатели…</div>
+      <main id="dashboard" hidden>
+        <div class="snapshot">
+          <span class="snapshot-title">ОПЕРАТИВНАЯ СВОДКА</span>
+          <div id="snapshot-summary" class="snapshot-summary"></div>
+          <span id="snapshot-time" class="snapshot-time"></span>
+        </div>
+        <div class="kpi-grid" id="kpi-grid"></div>
+        <section id="activity" class="report-section">
+          <div class="section-heading"><div><span class="section-number">01 / АУДИТОРИЯ</span><h2>Активность в группах</h2><p>Реальный поток Telegram-сообщений. Это не посещения WebApp.</p></div><button class="link-button" data-detail="messages" type="button">Журнал сообщений <span>↗</span></button></div>
+          <div class="chart-grid wide">
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПО ДНЯМ</span><h3>Динамика сообщений</h3></div><span class="card-note">сообщений / день</span></div><div id="chart-activity" class="chart-host tall"></div><div class="chart-foot" id="activity-caption"></div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">В ТЕЧЕНИЕ СУТОК</span><h3>Когда пишут чаще</h3></div><span class="card-note">время Москвы</span></div><div id="chart-hours" class="chart-host tall"></div><div class="chart-foot">Распределение сообщений по часам по московскому времени, суммарно за период.</div></article>
+          </div>
+          <div class="summary-strip" id="usage-strip"></div>
+        </section>
+        <section id="ai" class="report-section">
+          <div class="section-heading"><div><span class="section-number">02 / ОБРАБОТКА</span><h2>Работа искусственного интеллекта</h2><p>Сколько выполняется обработок и что происходит с результатами.</p></div><button class="link-button" data-detail="text" type="button">Все прогоны <span>↗</span></button></div>
+          <div class="chart-grid wide">
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">НАГРУЗКА</span><h3>Текст и изображения</h3></div><span class="card-note">проходов / день</span></div><div id="chart-workload" class="chart-host tall"></div><div class="chart-foot">Фото считается по проходам: одно фото может обрабатываться несколько раз.</div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">КАЧЕСТВО</span><h3>Чем закончился анализ</h3></div><div class="tabs" id="outcome-tabs"><button class="tab active" data-outcome="text" type="button">Текст</button><button class="tab" data-outcome="images" type="button">Фото</button></div></div><div id="chart-outcomes" class="chart-host tall"></div><div class="chart-foot" id="outcome-description"></div></article>
+          </div>
+          <div class="chart-grid balanced extra-top">
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПРОИЗВОДИТЕЛЬНОСТЬ</span><h3>Как быстро работает AI</h3></div><span class="card-note">секунд / вызов</span></div><div id="chart-latency" class="chart-host medium"></div><div class="chart-foot">Средняя длительность по журналам AI. Не скорость загрузки интерфейса.</div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">РЕЗУЛЬТАТ ДЛЯ СТУДЕНТОВ</span><h3>Созданные материалы</h3></div><span class="card-note">записей / день</span></div><div id="chart-output" class="chart-host medium"></div><div class="chart-foot">ДЗ, события и уведомления; учитываются созданные записи, не просмотры.</div></article>
+          </div>
+        </section>
+        <section id="finance" class="report-section">
+          <div class="section-heading"><div><span class="section-number">03 / ФИНАНСЫ</span><h2>Деньги и расходы</h2><p>Только подтверждённые записи журнала бюджетных AI-вызовов.</p></div><button class="link-button" data-detail="month_expenses" type="button">История списаний <span>↗</span></button></div>
+          <div class="finance-header" id="finance-summary"></div>
+          <div class="chart-grid wide">
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ТЕКУЩИЙ МЕСЯЦ</span><h3>Динамика затрат на AI</h3></div><span class="card-note">USD · UTC</span></div><div id="chart-finance" class="chart-host tall"></div><div class="chart-foot">По дате регистрации вызова. Не общий баланс компании.</div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">СТРУКТУРА РАСХОДОВ</span><h3>На что уходят деньги</h3></div><span class="card-note">за текущий месяц</span></div><div id="chart-finance-kind" class="chart-host tall"></div><div class="chart-foot">Категории берутся из реального биллингового журнала.</div></article>
+          </div>
+          <div class="integrations" id="unavailable-finance"></div>
+        </section>
+        <section id="server" class="report-section">
+          <div class="section-heading"><div><span class="section-number">04 / СИСТЕМА</span><h2>Скорость и стабильность</h2><p>Насколько быстро отвечает приложение и были ли ошибки связи за последние 15 минут.</p></div></div>
+          <div class="server-overview" id="server-overview"></div>
+          <div class="chart-grid wide">
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПОСЛЕДНИЕ 15 МИНУТ</span><h3>Запросы к серверу</h3></div><span class="card-note">запросов за минуту</span></div><div id="chart-requests" class="chart-host tall"></div><div class="chart-foot" id="server-caption"></div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ФОНОВЫЕ ПРОЦЕССЫ</span><h3>Состояние очередей</h3></div><span class="card-note">текущие записи</span></div><div id="queue-detail" class="queue-grid"></div><div class="chart-foot">Очередь Telegram общесистемная. Некоторые показатели накопительные.</div></article>
+          </div>
+        </section>
+        <section id="errors" class="report-section">
+          <div class="section-heading"><div><span class="section-number">05 / КОНТРОЛЬ КАЧЕСТВА</span><h2>Сбои и причины</h2><p>Разделяем реальные ошибки, устаревшие результаты и открытые инциденты.</p></div><button class="link-button" data-detail="errors" type="button">Журнал ошибок <span>↗</span></button></div>
+          <div class="chart-grid wide">
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ДИНАМИКА</span><h3>Ошибки по дням</h3></div><span class="card-note">ошибок в очередях / день</span></div><div id="chart-errors" class="chart-host tall"></div><div class="chart-foot">Один сбой может встречаться в нескольких очередях. Это не число уникальных инцидентов.</div></article>
+            <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ДИАГНОСТИКА</span><h3>Почему возникали ошибки</h3></div><span class="card-note">коды из журналов</span></div><div id="chart-reasons" class="reason-list"></div><div class="chart-foot">Коды ошибок показаны без личных сообщений и данных модели.</div></article>
+          </div>
+          <div class="incident-card"><div><span class="card-overline">ПОСЛЕДНИЕ СИГНАЛЫ</span><h3>Журнал событий и инцидентов</h3></div><button class="link-button" type="button" data-detail="incidents">Все инциденты ↗</button><div id="recent-errors" class="incident-list"></div></div>
+        </section>
+        <footer class="footer" id="updated"></footer>
+      </main>
+    </div>
   </div>
-  <div id="modal" class="modal" hidden>
-    <div class="modal-backdrop" id="modal-backdrop"></div>
-    <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
-      <div class="modal-head"><div><div class="eyebrow">Реальные записи · StudGroup</div><h2 id="modal-title">Подробности</h2><p id="modal-subtitle"></p></div><button type="button" class="close" id="modal-close" aria-label="Закрыть">×</button></div>
-      <div id="modal-status" role="status"></div>
-      <div id="modal-items"></div>
-      <div class="modal-actions"><button type="button" id="modal-more" hidden>Показать ещё</button></div>
-    </section>
-  </div>
+</div>
+<div id="modal" class="modal" hidden>
+  <div class="modal-backdrop" id="modal-backdrop"></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1">
+    <div class="modal-header"><div><div class="card-overline">ДЕТАЛИЗАЦИЯ / РЕАЛЬНЫЕ ЗАПИСИ</div><h2 id="modal-title">Подробности</h2><p id="modal-subtitle"></p></div><button class="modal-close" type="button" id="modal-close" aria-label="Закрыть">×</button></div>
+    <div id="modal-status" class="modal-status" role="status"></div>
+    <div id="modal-items" class="modal-items"></div>
+    <div class="modal-footer"><button type="button" class="refresh-button" id="modal-more" hidden>Показать ещё</button></div>
+  </section>
+</div>
 </body>
 </html>

@@ -26,6 +26,7 @@ from studgroup.models import (
     ImageAnalysisCall,
     ImageAnalysisJob,
     Membership,
+    Notification,
     OwnerIncidentEpisode,
     RawMessage,
     ShadowEvaluationRun,
@@ -94,7 +95,7 @@ async def daily(db, model, date_column, criteria, days, value=None):
             "date": (today - timedelta(days=i)).isoformat(),
             "value": values.get((today - timedelta(days=i)).isoformat(), 0),
         }
-        for i in range(days, -1, -1)
+        for i in range(days - 1, -1, -1)
     ]
 
 
@@ -108,7 +109,8 @@ async def analytics(
     await ensure_group(db, group_id)
     start = perf_counter()
     now = datetime.now(UTC)
-    since = now - timedelta(days=days)
+    first_day = now.date() - timedelta(days=days - 1)
+    since = datetime(first_day.year, first_day.month, first_day.day, tzinfo=UTC)
     month_start = datetime(now.year, now.month, 1, tzinfo=UTC)
     source = (*scope(RawMessage, group_id), RawMessage.message_date >= since)
     text = (*scope(ShadowEvaluationRun, group_id), ShadowEvaluationRun.created_at >= since)
@@ -279,7 +281,8 @@ async def details(
     limit: int = Query(40, ge=1, le=100),
 ):
     await ensure_group(db, group_id)
-    since = datetime.now(UTC) - timedelta(days=days)
+    first_day = datetime.now(UTC).date() - timedelta(days=days - 1)
+    since = datetime(first_day.year, first_day.month, first_day.day, tzinfo=UTC)
     # Each detail row is selected from the same live source as its summary.
     # Never return raw Telegram text, model outputs, payloads or credentials.
     rows = []
@@ -461,6 +464,24 @@ async def details(
                 group_id=x.group_id,
                 published_at=x.published_at,
                 revision=x.revision,
+            )
+            for x in found
+        ]
+    elif kind == "notifications":
+        query = (
+            select(Notification)
+            .where(*scope(Notification, group_id), Notification.created_at >= since)
+            .order_by(Notification.created_at.desc(), Notification.id.desc())
+        )
+        found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
+        rows = [
+            item(
+                x.id,
+                "Уведомление",
+                "создано",
+                x.created_at,
+                group_id=x.group_id,
+                entity_type=x.entity_type,
             )
             for x in found
         ]
