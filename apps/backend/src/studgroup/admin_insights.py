@@ -291,8 +291,14 @@ async def details(
         query = query.order_by(Group.name)
         found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
         rows = [
-            item(x.id, x.name, x.status, x.bot_added_at,
-                 pilot_authorized=x.pilot_authorized, schedule_version=x.schedule_version)
+            item(
+                x.id,
+                x.name,
+                x.status,
+                x.bot_added_at,
+                pilot_authorized=x.pilot_authorized,
+                schedule_version=x.schedule_version,
+            )
             for x in found
         ]
     elif kind == "members":
