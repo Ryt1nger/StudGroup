@@ -120,7 +120,7 @@ function chartClickable(id,kind){const host=$(id);host.dataset.detail=kind;host.
 function renderActivity(d,v){
   const days=v.daily.map(x=>x.date);
   C.plot("chart-activity",[{label:"Сообщения",values:series(v,"messages"),color:"#087e83"}],{labels:days,title:"Сообщения по дням",area:true});chartClickable("chart-activity","messages");
-  C.hourBars("chart-hours",v.by_hour_utc);chartClickable("chart-hours","messages");
+  C.hourBars("chart-hours",v.by_hour_moscow);chartClickable("chart-hours","messages");
   const host=$("usage-strip");host.replaceChildren();
   info(host,"Написали хотя бы раз",number(d.summary.chat_authors),"Разные отправители в Telegram-чатах","messages");
   info(host,"Участники",number(d.summary.members),"Активные участники подключённых групп","members");
@@ -158,8 +158,8 @@ function renderFinance(d,v){
 }
 function renderServer(d,v,roundTrip){
   const server=v.server,host=$("server-overview");host.replaceChildren();
-  metric(host,"Обычный ответ API, p50",server.p50_ms==null?"Нет замеров":number(server.p50_ms)+" мс","Медиана за 15 минут");
-  metric(host,"Медленные запросы, p95",server.p95_ms==null?"Нет замеров":number(server.p95_ms)+" мс","95% измеренных запросов не медленнее");
+  metric(host,"Обычный ответ сервера",server.p50_ms==null?"Нет замеров":number(server.p50_ms)+" мс","Медиана за 15 минут");
+  metric(host,"Медленные ответы сервера",server.p95_ms==null?"Нет замеров":number(server.p95_ms)+" мс","95% измеренных запросов не медленнее");
   metric(host,"Ошибки сервера",number(server.errors_5xx),"Ответы с кодом 5xx, 15 минут");
   metric(host,"Запросов к API",number(server.sample_count),"Измерены после запуска текущего процесса");
   C.bars("chart-requests",[{label:"Обычные ответы",values:server.requests.map(x=>Math.max(0,x.count-x.errors_5xx)),color:"#087e83"},{label:"Серверные ошибки",values:server.requests.map(x=>x.errors_5xx),color:"#bf5a55"}],{labels:server.requests.map(x=>x.minute.slice(11,16)),title:"Запросы API поминутно"});
