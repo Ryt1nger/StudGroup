@@ -84,8 +84,9 @@ def extract_code(text):
     return text if _BARE_CODE.fullmatch(text) else None
 
 
-def app_button(settings, label="Открыть StudGroup"):
-    return {"text": label, "web_app": {"url": settings.webapp_origin}}
+def app_button(settings, label="Открыть StudGroup", *, path=""):
+    url = settings.webapp_origin.rstrip("/") + path if path else settings.webapp_origin
+    return {"text": label, "web_app": {"url": url}}
 
 
 async def get_session(db, chat):
@@ -128,7 +129,7 @@ def info_row():
     return [
         [("О нас", "info_about"), ("Помощь", "info_howto")],
         [("Поддержка", "info_support"), ("Партнёрка", "info_partners")],
-        [("Тарифы", "info_tariffs")],
+        [("Тарифы", "info_tariffs"), ("Документы и согласия", "legal_docs")],
     ]
 
 
@@ -179,6 +180,111 @@ async def current_membership(db, telegram_id):
     return row
 
 
+def legal_link(settings, purpose):
+    """Public legal document; never carries a token or credential in the URL."""
+    return {"text": "Прочитать документ", "url": settings.webapp_origin.rstrip("/") + "/legal/" + purpose}
+
+
+async def legal_documents_screen(db, session, settings):
+    choices = [
+        ("Политика обработки данных", "privacy"),
+        ("Условия использования", "terms"),
+        ("Согласие на обработку данных", "service"),
+        ("Согласие СДО / ЛК", "sdo"),
+        ("Технические данные", "cookies"),
+    ]
+    await screen(
+        db,
+        session,
+        "Документы StudGroup. Согласия оформляются отдельно. "
+        "Сохранение пароля СДО/ЛК добровольно и доступно только в защищённой форме приложения.",
+        [[{"text": label, "url": settings.webapp_origin.rstrip("/") + "/legal/" + slug}]
+         for label, slug in choices] + [[("‹ Назад", "home")]],
+        "legal_documents",
+    )
+
+
+async def legal_role_gate(db, session, settings, telegram_id, *, notice=None):
+    """Two distinct confirmation screens, separately from the user agreement and SDO consent."""
+    from studgroup import legal
+
+    if not settings.legal_onboarding_required:
+        await role_screen(db, session)
+        return
+    if not legal.legal_ready(settings):
+        await screen(
+            db, session,
+            "Подключение новых участников временно недоступно: сведения об операторе "
+            "и правовые документы ещё не утверждены. Доступ действующих участников сохраняется.",
+            [[("Документы", "legal_docs")], [("‹ Назад", "home")]],
+            "legal_not_ready",
+        )
+        return
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    if user is None:
+        user = User(
+            id=uuid.uuid4(),
+            telegram_user_id=telegram_id,
+            display_name="Пользователь Telegram",
+        )
+        db.add(user)
+        await db.flush()
+    if not await legal.has_consent(db, user.id, "terms", settings):
+        await screen(
+            db, session,
+            "Шаг 1 из 2 · Условия использования.\n\n"
+            "Прочитайте отдельный документ по ссылке. Нажмите кнопку подтверждения "
+            "только если согласны. Это не является согласием на обработку данных.",
+            [[legal_link(settings, "terms")], [("Принимаю условия использования", "legal_accept_terms")],
+             [("Не принимаю", "home")]],
+            "legal_terms",
+        )
+        return
+    if not await legal.has_consent(db, user.id, "service", settings):
+        await screen(
+            db, session,
+            "Шаг 2 из 2 · Отдельное согласие на обработку персональных данных.\n\n"
+            "Прочитайте самостоятельный документ и подтвердите добровольно. "
+            "Пароль СДО/ЛК сюда не входит: для него будет отдельное согласие.",
+            [[legal_link(settings, "service")], [("Даю отдельное согласие", "legal_accept_service")],
+             [("Не согласен", "home")]],
+            "legal_service",
+        )
+        return
+    await role_screen(db, session)
+
+
+async def sdo_setup_screen(db, session, settings, telegram_id, *, headman=False):
+    """Optional credential step after academic onboarding, never accepts secrets in chat."""
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    profile = await db.get(UserProfile, user.id) if user else None
+    if profile and profile.sdu_login and profile.sdu_password_encrypted:
+        if headman:
+            found = await current_membership(db, telegram_id)
+            if found:
+                await onboarding_complete(db, session, found[1])
+        else:
+            await home(db, session, settings, telegram_id)
+        return
+    await screen(
+        db, session,
+        "Готово! Вы подключены к StudGroup.\n\n"
+        "Дополнительный шаг · СДО и личный кабинет РАНХиГС.\n"
+        "Для них используется одна пара логин/пароль. Вводить её необязательно: "
+        "расписание и задания StudGroup доступны без неё.\n\n"
+        "Нажмите кнопку защищённой формы Mini App. НЕ присылайте пароль в этот чат. "
+        "Сохранение не означает, что вход в СДО уже работает.",
+        [
+            [app_button(settings, "Ввести логин и пароль СДО / ЛК", path="/profile/sdo")],
+            [("Я заполнил", "sdo_check")],
+            [("Пропустить", "sdo_skip")],
+            [("Главное меню", "home")],
+        ],
+        "sdo_setup",
+        {"headman": headman},
+    )
+
+
 async def home(db, session, settings, telegram_id):
     found = await current_membership(db, telegram_id)
     if found:
@@ -193,6 +299,7 @@ async def home(db, session, settings, telegram_id):
             [app_button(settings)],
             [("Проверить подключение", "connection_status")],
             [("Уведомления", "notifications")],
+            [app_button(settings, "СДО / ЛК", path="/profile/sdo")],
         ]
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
