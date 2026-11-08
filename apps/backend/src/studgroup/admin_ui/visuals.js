@@ -131,6 +131,7 @@ function bars(id,series,opts={}){
  legend(figure,series);
 }
 function donut(id,items,opts={}){
+ const currency=opts.centerLabel==="USD";
  const records=items.filter(item=>clean(item.value)>0);
  const total=records.reduce((sum,item)=>sum+clean(item.value),0);
  if(!total)return empty(id,"За этот период анализ не выполнялся");
@@ -149,10 +150,10 @@ function donut(id,items,opts={}){
      transform:"rotate(-90 120 120)",class:"donut-arc",
      ...(item.kind?{"data-detail":item.kind}:{})
    },svg);
-   tooltip(arc,item.label+": "+nf.format(amount)+" ("+Math.round(share*100)+"%)");
+   tooltip(arc,item.label+": "+(currency?dollars(amount):nf.format(amount))+" ("+Math.round(share*100)+"%)");
    offset+=share;
  });
- element("text",{x:120,y:119,class:"donut-number","text-anchor":"middle"},svg,nf.format(total));
+ element("text",{x:120,y:119,class:"donut-number","text-anchor":"middle"},svg,currency?dollars(total):nf.format(total));
  element("text",{x:120,y:144,class:"donut-label","text-anchor":"middle"},svg,opts.centerLabel||"всего");
  const legendNode=document.createElement("div");legendNode.className="donut-legend-list";
  records.forEach((item,i)=>{
@@ -160,7 +161,7 @@ function donut(id,items,opts={}){
    if(item.kind){line.dataset.detail=item.kind;line.tabIndex=0;}
    const dot=document.createElement("span");dot.className="donut-legend-dot";dot.style.background=item.color||COLORS[i%COLORS.length];
    const name=document.createElement("span");name.className="donut-name";name.textContent=item.label;
-   const count=document.createElement("strong");count.className="donut-count";count.textContent=nf.format(item.value);
+   const count=document.createElement("strong");count.className="donut-count";count.textContent=currency?dollars(clean(item.value)):nf.format(item.value);
    const percent=document.createElement("span");percent.className="donut-percent";percent.textContent=Math.round(item.value/total*100)+"%";
    line.append(dot,name,count,percent);legendNode.append(line);
  });
