@@ -247,7 +247,8 @@ async def visual_analytics(
         }
         for i in range(month_dates)
     ]
-    previous_since = since - timedelta(days=days)
+    # Compare equal elapsed durations: the current day is not complete yet.
+    previous_since = since - (now - since)
 
     async def preceding_count(model, timestamp, *extra):
         result = await db.scalar(
@@ -300,6 +301,7 @@ async def visual_analytics(
         "as_of": now.isoformat(),
         "period_days": days,
         "comparison": comparison,
+        "comparison_basis": "Сравнение с предыдущим периодом той же длительности.",
         "daily": daily,
         "by_hour_moscow": [{"hour": i, "value": by_hour.get(i, 0)} for i in range(24)],
         "error_reasons": sorted(errors, key=lambda r: r["count"], reverse=True)[:10],
