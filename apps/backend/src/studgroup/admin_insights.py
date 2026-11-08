@@ -9,14 +9,14 @@ from time import perf_counter
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.admin_dashboard import admin_session
 from studgroup.api import ApiError, database
 from studgroup.models import (
-    AIJob, AIAttempt, AnalysisBudgetCall, BotOutbox, Group, GroupEvent,
+    AIJob, AnalysisBudgetCall, BotOutbox, Group, GroupEvent,
     Homework, ImageAnalysisCall, ImageAnalysisJob, Membership,
     OwnerIncidentEpisode, RawMessage, ShadowEvaluationRun, User,
 )
@@ -25,7 +25,6 @@ router = APIRouter()
 DATABASE = Annotated[AsyncSession, Depends(database)]
 OWNER = Annotated[User, Depends(admin_session)]
 BAD_STATES = ("failed", "error", "dead", "dead_letter")
-OK_STATES = ("completed", "done", "ready", "succeeded", "success", "sent")
 
 
 def money(value):
@@ -60,14 +59,16 @@ async def distribution(db, model, state, criteria):
 
 
 async def daily(db, model, date_column, criteria, days, value=None):
-    day = func.date_trunc("day", date_column)
+    day = (func.date(date_column) if db.get_bind().dialect.name == "sqlite"
+           else func.date_trunc("day", date_column))
     aggregate = func.sum(value) if value is not None else func.count()
     found = (await db.execute(
         select(day, aggregate).select_from(model).where(*criteria)
         .group_by(day).order_by(day)
     )).all()
-    values = {date.date().isoformat(): money(qty) if value is not None else int(qty)
-              for date, qty in found}
+    values = {(day_value.date().isoformat() if hasattr(day_value, "date")
+               else str(day_value)[:10]): money(qty) if value is not None else int(qty)
+              for day_value, qty in found}
     today = datetime.now(UTC).date()
     return [{"date": (today - timedelta(days=i)).isoformat(),
              "value": values.get((today - timedelta(days=i)).isoformat(), 0)}
@@ -76,7 +77,7 @@ async def daily(db, model, date_column, criteria, days, value=None):
 
 @router.get("/v1/admin/analytics")
 async def analytics(
-    request: Request, db: DATABASE, _owner: OWNER,
+    db: DATABASE, _owner: OWNER,
     days: int = Query(7, ge=1, le=90), group_id: UUID | None = None,
 ):
     await ensure_group(db, group_id)
