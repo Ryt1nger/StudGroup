@@ -391,11 +391,19 @@ async def details(
             for x in found
         ]
     elif kind in ("expenses", "month_expenses", "reserves"):
-        financial_since = (datetime.now(UTC).replace(day=1, hour=0, minute=0,
-                            second=0, microsecond=0) if kind == "month_expenses" else since)
+        financial_since = (
+            datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            if kind == "month_expenses"
+            else since
+        )
+        criteria = scope(AnalysisBudgetCall, group_id)
+        if kind == "reserves":
+            criteria += (AnalysisBudgetCall.state != "settled",)
+        else:
+            criteria += (AnalysisBudgetCall.created_at >= financial_since,)
         query = (
             select(AnalysisBudgetCall)
-            .where(*scope(AnalysisBudgetCall, group_id), AnalysisBudgetCall.created_at >= since)
+            .where(*criteria)
             .order_by(AnalysisBudgetCall.created_at.desc(), AnalysisBudgetCall.id.desc())
         )
         found = (await db.scalars(query.offset(offset).limit(limit + 1))).all()
