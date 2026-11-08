@@ -36,7 +36,6 @@ def accept_study_credentials(client):
         assert result.status_code == 200, result.text
 
 
-
 def test_an_empty_profile_has_calm_defaults_and_needs_a_session(client):
     assert client.get("/v1/profile").status_code == 401
     bad = client.get("/v1/profile", headers={"Authorization": "Bearer nope"})
