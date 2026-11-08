@@ -182,7 +182,10 @@ async def current_membership(db, telegram_id):
 
 def legal_link(settings, purpose):
     """Public legal document; never carries a token or credential in the URL."""
-    return {"text": "Прочитать документ", "url": settings.webapp_origin.rstrip("/") + "/legal/" + purpose}
+    return {
+        "text": "Прочитать документ",
+        "url": settings.webapp_origin.rstrip("/") + "/legal/" + purpose,
+    }
 
 
 async def legal_documents_screen(db, session, settings):
@@ -198,8 +201,11 @@ async def legal_documents_screen(db, session, settings):
         session,
         "Документы StudGroup. Согласия оформляются отдельно. "
         "Сохранение пароля СДО/ЛК добровольно и доступно только в защищённой форме приложения.",
-        [[{"text": label, "url": settings.webapp_origin.rstrip("/") + "/legal/" + slug}]
-         for label, slug in choices] + [[("‹ Назад", "home")]],
+        [
+            [{"text": label, "url": settings.webapp_origin.rstrip("/") + "/legal/" + slug}]
+            for label, slug in choices
+        ]
+        + [[("‹ Назад", "home")]],
         "legal_documents",
     )
 
@@ -213,7 +219,8 @@ async def legal_role_gate(db, session, settings, telegram_id, *, notice=None):
         return
     if not legal.legal_ready(settings):
         await screen(
-            db, session,
+            db,
+            session,
             "Подключение новых участников временно недоступно: сведения об операторе "
             "и правовые документы ещё не утверждены. Доступ действующих участников сохраняется.",
             [[("Документы", "legal_docs")], [("‹ Назад", "home")]],
@@ -231,23 +238,31 @@ async def legal_role_gate(db, session, settings, telegram_id, *, notice=None):
         await db.flush()
     if not await legal.has_consent(db, user.id, "terms", settings):
         await screen(
-            db, session,
+            db,
+            session,
             "Шаг 1 из 2 · Условия использования.\n\n"
             "Прочитайте отдельный документ по ссылке. Нажмите кнопку подтверждения "
             "только если согласны. Это не является согласием на обработку данных.",
-            [[legal_link(settings, "terms")], [("Принимаю условия использования", "legal_accept_terms")],
-             [("Не принимаю", "home")]],
+            [
+                [legal_link(settings, "terms")],
+                [("Принимаю условия использования", "legal_accept_terms")],
+                [("Не принимаю", "home")],
+            ],
             "legal_terms",
         )
         return
     if not await legal.has_consent(db, user.id, "service", settings):
         await screen(
-            db, session,
+            db,
+            session,
             "Шаг 2 из 2 · Отдельное согласие на обработку персональных данных.\n\n"
             "Прочитайте самостоятельный документ и подтвердите добровольно. "
             "Пароль СДО/ЛК сюда не входит: для него будет отдельное согласие.",
-            [[legal_link(settings, "service")], [("Даю отдельное согласие", "legal_accept_service")],
-             [("Не согласен", "home")]],
+            [
+                [legal_link(settings, "service")],
+                [("Даю отдельное согласие", "legal_accept_service")],
+                [("Не согласен", "home")],
+            ],
             "legal_service",
         )
         return
@@ -267,7 +282,8 @@ async def sdo_setup_screen(db, session, settings, telegram_id, *, headman=False)
             await home(db, session, settings, telegram_id)
         return
     await screen(
-        db, session,
+        db,
+        session,
         "Готово! Вы подключены к StudGroup.\n\n"
         "Дополнительный шаг · СДО и личный кабинет РАНХиГС.\n"
         "Для них используется одна пара логин/пароль. Вводить её необязательно: "
@@ -950,9 +966,7 @@ async def subgroup_choice(db, session, settings, member, group, *, joined=False)
     unanswered = [pair for pair in all_splits if pair[0].id not in picked]
     if not unanswered and joined:
         student = await db.get(User, member.user_id)
-        await sdo_setup_screen(
-            db, session, settings, student.telegram_user_id, headman=False
-        )
+        await sdo_setup_screen(db, session, settings, student.telegram_user_id, headman=False)
         return
     if unanswered:
         split, choices = unanswered[0]
@@ -1161,7 +1175,8 @@ async def handle(db, update, settings, topic=None):
         if session.step == "sdo_setup" and utc(session.expires_at) > datetime.now(UTC):
             await forget(db, chat, message)
             await screen(
-                db, session,
+                db,
+                session,
                 "Пароль СДО/ЛК нельзя отправлять сообщением Telegram. "
                 "Используйте защищённую форму в приложении.",
                 [
@@ -1552,7 +1567,11 @@ async def handle(db, update, settings, topic=None):
                 uuid.UUID(data["subgroups"][index]),
             )
             await subgroup_choice(
-                db, session, settings, found[0], found[1],
+                db,
+                session,
+                settings,
+                found[0],
+                found[1],
                 joined=bool(data.get("onboarding", False)),
             )
     elif session.step == "subgroups_done" and action.startswith("subgroup_change_"):
