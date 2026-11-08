@@ -50,6 +50,13 @@ async def admin_script():
     )
 
 
+@router.get("/admin/visuals.js", include_in_schema=False)
+async def admin_visual_script():
+    return FileResponse(
+        UI / "visuals.js", media_type="text/javascript", headers={"Cache-Control": "no-store"}
+    )
+
+
 @router.get("/admin/style.css", include_in_schema=False)
 async def admin_style():
     return FileResponse(
