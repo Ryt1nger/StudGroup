@@ -178,9 +178,7 @@ async def visual_analytics(
     )
     hours = (
         await db.execute(
-            select(hour_column, func.count())
-            .where(*message_filter)
-            .group_by(hour_column)
+            select(hour_column, func.count()).where(*message_filter).group_by(hour_column)
         )
     ).all()
     by_hour = {int(hour): int(count) for hour, count in hours}
