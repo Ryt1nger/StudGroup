@@ -130,7 +130,7 @@ def info_row():
     return [
         [("О нас", "info_about"), ("Помощь", "info_howto")],
         [("Поддержка", "info_support"), ("Партнёрка", "info_partners")],
-        [("Тарифы", "info_tariffs"), ("Документы и согласия", "legal_docs")],
+        [("Тарифы", "info_tariffs")],
     ]
 
 
@@ -153,6 +153,8 @@ async def topic_screen(db, session, settings, topic):
     rows = []
     if topic == "howto":
         rows.append([app_button(settings)])
+    if topic == "about":
+        rows.append([("Документы и согласия", "legal_docs")])
     links = [(label, action) for label, action in TOPIC_LINKS.get(topic, [])]
     rows += [[link] for link in links]
     if topic != "support":
@@ -356,7 +358,7 @@ async def home(db, session, settings, telegram_id):
                 )
         if member.role == "student" and await subgroups.splits(db, group.id):
             rows.insert(0, [("Мои подгруппы", "subgroups")])
-        await screen(db, session, text, [*rows, *info_row()], "home")
+        await screen(db, session, text, [*rows, [("Документы и согласия", "legal_docs")], *info_row()], "home")
         return
     await screen(
         db,
