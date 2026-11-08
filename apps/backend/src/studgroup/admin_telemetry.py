@@ -5,8 +5,6 @@ No paths, headers, IPs, bodies or identities. History resets at each deployment.
 """
 from collections import deque
 from datetime import UTC, datetime, timedelta
-from statistics import median
-from time import monotonic
 
 
 class RequestTelemetry:
