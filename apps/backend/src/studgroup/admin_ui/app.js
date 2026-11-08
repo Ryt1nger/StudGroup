@@ -98,7 +98,7 @@ function statusMean(status){
 }
 function renderSnapshot(s){
   clear("snapshot-summary");const host=$("snapshot-summary");
-  if(s.incidents_open)addInsight(host,number(s.incidents_open)+" активных предупреждения",true);
+  if(s.incidents_open)addInsight(host,number(s.incidents_open)+" открытых предупреждений",true);
   else addInsight(host,"Нет открытых системных предупреждений");
   if(s.errors)addInsight(host,number(s.errors)+" ошибок обработки за период",true);
   else addInsight(host,"Ошибки обработки не зафиксированы");
@@ -141,7 +141,7 @@ function renderAi(d,v){
   const dates=v.daily.map(x=>x.date);
   C.bars("chart-workload",[{label:"Текст",values:series(v,"text"),color:"#087e83"},{label:"Фото",values:series(v,"images"),color:"#5060bf"}],{labels:dates,title:"Количество прогонов по дням"});chartClickable("chart-workload","text");
   renderOutcomes(d);
-  C.plot("chart-latency",[{label:"Текст",values:v.daily.map(x=>x.text_latency_ms==null?0:x.text_latency_ms/1000),color:"#087e83"},{label:"Фото",values:v.daily.map(x=>x.photo_latency_ms==null?0:x.photo_latency_ms/1000),color:"#d39051"}],{labels:dates,title:"Скорость обработки AI"});chartClickable("chart-latency","text");
+  C.plot("chart-latency",[{label:"Текст",values:v.daily.map(x=>x.text_latency_ms==null?null:x.text_latency_ms/1000),color:"#087e83"},{label:"Фото",values:v.daily.map(x=>x.photo_latency_ms==null?null:x.photo_latency_ms/1000),color:"#d39051"}],{labels:dates,title:"Скорость обработки AI"});chartClickable("chart-latency","text");
   C.bars("chart-output",[{label:"ДЗ",values:series(v,"homework"),color:"#087e83"},{label:"События",values:series(v,"events"),color:"#5060bf"},{label:"Уведомления",values:series(v,"notifications"),color:"#d39051"}],{labels:dates,title:"Созданные записи"});chartClickable("chart-output","homework");
 }
 function renderFinance(d,v){
@@ -149,10 +149,11 @@ function renderFinance(d,v){
   financeTile($("finance-summary"),"Зарезервировано",money(d.finance.unsettled_reserved_usd),"Незакрытые резервы, за всё время","reserves");
   financeTile($("finance-summary"),"Все оплаты компании","Не подключено","Нет данных о счетах и платёжных сервисах",null);
   C.bars("chart-finance",[{label:"Списано",values:v.finance_month.series.map(x=>Number(x.value)||0),color:"#087e83"}],{labels:v.finance_month.series.map(x=>x.date),currency:true,title:"Дневные расходы на AI"});chartClickable("chart-finance","month_expenses");
-  const kinds=v.finance_month.by_kind.map((x,i)=>({label:x.kind,value:Number(x.usd),color:C.colors[i%C.colors.length]}));
+  const kindNames={cplus:"Анализ текста",image:"Обработка фото",cabinet_image:"Фото из учебной системы",text:"Текстовые запросы"};
+  const kinds=v.finance_month.by_kind.map((x,i)=>({label:kindNames[x.kind]||"Другая обработка",value:Number(x.usd),color:C.colors[i%C.colors.length]}));
   C.donut("chart-finance-kind",kinds,{title:"Распределение расходов AI",centerLabel:"USD"});chartClickable("chart-finance-kind","month_expenses");
   const host=$("unavailable-finance");host.replaceChildren();for(const [title,note] of [["Баланс AI-провайдеров","Нет подключения к биллингу провайдеров"],["Баланс компании и будущие счета","Не подключены банковские и платёжные источники"]]){
-    const b=dom("button","integration");b.type="button";b.dataset.info=note;text(b,"span","integration-number","—");const col=dom("span","integration-copy");text(col,"strong","",title);text(col,"small","",note);b.append(col);text(b,"span","integration-status","НЕТ ДАННЫХ");host.append(b);
+    const b=dom("button","integration");b.type="button";b.dataset.info=note;text(b,"small","","НЕТ ПОДКЛЮЧЕНИЯ");text(b,"b","",title);text(b,"span","",note);host.append(b);
   }
 }
 function renderServer(d,v,roundTrip){
@@ -225,7 +226,7 @@ async function more(append){
 async function loadRecent(){
   const host=$("recent-errors");host.replaceChildren();
   try{const p=criteria();p.set("limit","5");const d=await api("/v1/admin/details/incidents?"+p.toString());if(!d.items.length){text(host,"p","chart-empty","Открытых системных предупреждений нет.");return;}
-    for(const item of d.items){const b=dom("button","incident-row");b.type="button";b.dataset.detail="incidents";text(b,"span","incident-icon","!");const col=dom("span","incident-info");text(col,"strong","",item.title);text(col,"small","",datetime(item.at)+" · повторений: "+number(item.fields?.occurrences||0));b.append(col);text(b,"span","incident-badge","Открыть ↗");host.append(b);}
+    for(const item of d.items){const b=dom("button","incident-row");b.type="button";b.dataset.detail="incidents";const col=dom("span","incident-info");text(col,"strong","incident-title",item.title);text(col,"small","incident-time",datetime(item.at)+" · повторений: "+number(item.fields?.occurrences||0));b.append(col);text(b,"span","incident-badge","Открыть ↗");host.append(b);}
   }catch(error){text(host,"p","chart-empty","Не удалось загрузить предупреждения: "+error.message);}
 }
 function closeModal(){detailKind=null;detailRequest++;$("modal").hidden=true;document.body.style.overflow="";previousFocus?.focus?.();}
