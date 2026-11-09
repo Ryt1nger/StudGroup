@@ -16,6 +16,22 @@ pytest_plugins = ["test_schedule_api"]
 SETTINGS_URL = "http://localhost:5173"
 
 
+def publish_legal(client):
+    settings = client.app.state.settings
+    settings.legal_operator_name = "Тестовый оператор"
+    settings.legal_operator_address = "Москва, тестовый адрес"
+    settings.legal_operator_contact = "legal@example.test"
+    settings.legal_data_region = "Россия, Москва"
+    settings.legal_documents_approved = True
+
+
+def finish_legal(client, uid=33):
+    assert "Принимаю условия использования" in labels(client)
+    tap(client, "Принимаю условия использования", uid=uid)
+    assert "Даю отдельное согласие" in labels(client)
+    tap(client, "Даю отдельное согласие", uid=uid)
+
+
 def labels(client):
     markup = last(client).get("reply_markup", {}).get("inline_keyboard", [])
     return [button["text"] for row in markup for button in row]
@@ -29,6 +45,8 @@ def tap(client, label, uid=33):
 
 
 def issue(client):
+    publish_legal(client)
+
     async def make(db):
         _, member, group = await actor(db)
         return (await domain.issue_invites(db, group, member, 1))[0]
@@ -107,11 +125,12 @@ def test_student_joins_by_typing_a_code_and_the_code_is_removed_from_the_chat(fo
     assert "одним сообщением" in last(foreman)["text"]
     deliver(foreman, code, uid=33)
     typed = foreman.app.state._st_test_update
+    finish_legal(foreman)
     final = last(foreman)
     assert "Готово! Вы подключены" in final["text"]
     web_app = next(b for row in final["reply_markup"]["inline_keyboard"] for b in row)
-    assert web_app["web_app"]["url"] == SETTINGS_URL + "/onboarding"
-    assert "Продолжить знакомство" in labels(foreman)
+    assert web_app["web_app"]["url"] == SETTINGS_URL + "/profile/sdo"
+    assert "Пропустить" in labels(foreman)
     assert typed in deletions(foreman)
     assert code not in json.dumps(final)
 
@@ -138,6 +157,7 @@ def test_a_wrong_code_keeps_the_person_on_the_panel_with_a_way_forward(foreman, 
     deliver(foreman, "x" * 32, uid=33)
     assert "использовано, отозвано или истекло" in last(foreman)["text"]
     deliver(foreman, issue(foreman), uid=33)
+    finish_legal(foreman)
     assert "Готово!" in last(foreman)["text"]
 
 
@@ -146,6 +166,7 @@ def test_an_invitation_link_joins_in_one_tap_and_removes_the_link_message(forema
     code = issue(foreman)
     deliver(foreman, f"/start invite_{code}", uid=33)
     tapped = foreman.app.state._st_test_update
+    finish_legal(foreman)
     assert "Готово! Вы подключены" in last(foreman)["text"]
     assert tapped in deletions(foreman)
 
@@ -158,8 +179,10 @@ def test_shared_group_link_allows_multiple_verified_students(foreman, monkeypatc
         return await domain.issue_group_link(db, group, member)
 
     code = run(foreman, make)
+    publish_legal(foreman)
     for uid in (33, 34):
         deliver(foreman, f"/start invite_{code}", uid=uid)
+        finish_legal(foreman, uid=uid)
         assert "Готово! Вы подключены" in last(foreman)["text"]
 
     async def joined(db):
@@ -211,13 +234,22 @@ def test_shared_link_rejects_a_member_of_another_group(foreman, monkeypatch):
 
     code = run(foreman, prepare)
     deliver(foreman, f"/start invite_{code}", uid=33)
-    assert "уже подключены к другой группе" in last(foreman)["text"]
+    assert "Вы подключены к «Другая группа»." in last(foreman)["text"]
+
+    async def memberships(db):
+        user = await db.scalar(select(User).where(User.telegram_user_id == 33))
+        return (
+            await db.scalars(select(Membership.group_id).where(Membership.user_id == user.id))
+        ).all()
+
+    assert len(run(foreman, memberships)) == 1
 
 
 def test_student_with_no_configured_subgroups_sees_no_subgroup_question(foreman, monkeypatch):
     allow_telegram(monkeypatch)
     code = issue(foreman)
     deliver(foreman, f"/start invite_{code}", uid=33)
+    finish_legal(foreman)
     assert "Готово! Вы подключены" in last(foreman)["text"]
     assert "подгруппе" not in last(foreman)["text"]
     deliver(foreman, "/start", uid=33)
@@ -480,7 +512,9 @@ def test_rotating_shared_link_revokes_previous_link(foreman, monkeypatch):
         return old_code, new_code
 
     old_code, new_code = run(foreman, prepare)
+    publish_legal(foreman)
     deliver(foreman, f"/start invite_{old_code}", uid=33)
     assert "отозвано" in last(foreman)["text"]
     deliver(foreman, f"/start invite_{new_code}", uid=33)
+    finish_legal(foreman)
     assert "Готово! Вы подключены" in last(foreman)["text"]

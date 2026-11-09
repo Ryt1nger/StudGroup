@@ -283,6 +283,17 @@ async def claim_headman(db, settings, session, group, telegram_id):
     ):
         await refuse("Для подключения назначьте StudGroup администратором Telegram-группы.")
         return False
+    from studgroup import legal
+
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    if (
+        not legal.legal_ready(settings)
+        or user is None
+        or not await legal.has_consent(db, user.id, "terms", settings)
+        or not await legal.has_consent(db, user.id, "service", settings)
+    ):
+        await refuse("Сначала подтвердите действующие условия и отдельное согласие в боте.")
+        return False
     if await make_headman(db, settings, locked, telegram_id) is None:
         await refuse("Не удалось назначить старосту: у группы уже есть староста.")
         return False
