@@ -112,7 +112,8 @@ describe('premium membership-scoped onboarding', () => {
     const first = await screen.findByRole('textbox', { name: /Имя/ });
     if (!(first as HTMLInputElement).value) await userEvent.type(first, 'Анна');
     await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
-    await userEvent.click(await screen.findByRole('button', { name: /Далее/ }));
+    expect(await screen.findByText('Контакты для связи')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
     expect(await screen.findByText('Подгруппы по предметам')).toBeInTheDocument();
     await userEvent.click(await screen.findByRole('button', { name: /Сохранить и продолжить/ }));
     expect(await screen.findByText('СДО и личный кабинет')).toBeInTheDocument();
