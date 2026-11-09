@@ -139,6 +139,8 @@ def test_expired_shared_link_is_not_shown_as_active(foreman):
 def test_cabinet_invite_entry_uses_same_persistent_screen(foreman):
     configure(foreman)
     deliver(foreman, "/st")
+    if "Группа" in labels(foreman):
+        tap(foreman, "Группа", uid=1)
     assert "Пригласить участников" in labels(foreman)
     tap(foreman, "Пригласить участников", uid=1)
     assert "Создать ссылку" in labels(foreman)
@@ -148,6 +150,8 @@ def test_cabinet_invite_entry_uses_same_persistent_screen(foreman):
     assert "‹ В кабинет старосты" in labels(foreman)
 
     tap(foreman, "В кабинет старосты", uid=1)
+    if "Группа" in labels(foreman):
+        tap(foreman, "Группа", uid=1)
     assert "Староста · " in last(foreman)["text"]
     tap(foreman, "Пригласить участников", uid=1)
     assert link_from_panel(foreman) == url
