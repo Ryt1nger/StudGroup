@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     # Fernet key (urlsafe base64, 32 bytes) that protects study-platform passwords; empty disables them.
     profile_encryption_key: SecretStr = SecretStr("")
     ranepa_crawl_enabled: bool = False
+    ranepa_access_approved: bool = False
     ranepa_schedule_view_enabled: bool = False
     ranepa_crawl_pause_seconds: int = Field(default=20, ge=5, le=300)
     legal_operator_name: str = ""

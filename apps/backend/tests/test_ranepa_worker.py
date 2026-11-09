@@ -38,6 +38,7 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
             legal_operator_contact="test@example.test",
             legal_data_region="Moscow",
             legal_documents_approved=True,
+            ranepa_access_approved=True,
         )
         try:
             async with engine.begin() as conn:
@@ -80,6 +81,9 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
                     ]
                 )
                 await db.commit()
+            settings.ranepa_access_approved = False
+            assert await prepare_week(engine, date(2026, 11, 6), settings) == 0
+            settings.ranepa_access_approved = True
             assert await prepare_week(engine, date(2026, 11, 6), settings) == 1
             assert await prepare_week(engine, date(2026, 11, 6), settings) == 0
             async with AsyncSession(engine) as db:

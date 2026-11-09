@@ -23,7 +23,7 @@ from studgroup.ranepa_personal import remember_personal
 
 
 async def prepare_week(engine, today: date, settings: Settings) -> int:
-    if not legal_ready(settings):
+    if not legal_ready(settings) or not settings.ranepa_access_approved:
         return 0
     monday = today - timedelta(days=today.weekday())
     async with AsyncSession(engine, expire_on_commit=False) as db:
@@ -75,6 +75,7 @@ async def process_one(engine, settings: Settings, today: date) -> str:
             or not profile.sdu_login
             or not profile.sdu_password_encrypted
             or not legal_ready(settings)
+            or not settings.ranepa_access_approved
             or not await has_consent(db, user_id, "sdo", settings)
         ):
             await finish(db, job_id, group_id, user_id, failure_code="login_failed")
@@ -200,8 +201,8 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
     """Run a bounded hosted-runner shift, finishing the current account before exit."""
     if not settings.ranepa_crawl_enabled:
         return 0
-    if not legal_ready(settings):
-        raise RuntimeError("Approved legal settings and consent are required")
+    if not legal_ready(settings) or not settings.ranepa_access_approved:
+        raise RuntimeError("Approved legal settings and university access are required")
     if not settings.profile_encryption_key.get_secret_value():
         raise RuntimeError("PROFILE_ENCRYPTION_KEY is required")
     if not settings.database_url.startswith("postgresql+asyncpg://"):

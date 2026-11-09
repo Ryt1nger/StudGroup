@@ -26,6 +26,7 @@ jobs:
       LEGAL_OPERATOR_CONTACT: ${{ secrets.LEGAL_OPERATOR_CONTACT }}
       LEGAL_DATA_REGION: ${{ secrets.LEGAL_DATA_REGION }}
       LEGAL_DOCUMENTS_APPROVED: ${{ secrets.LEGAL_DOCUMENTS_APPROVED }}
+      RANEPA_ACCESS_APPROVED: ${{ secrets.RANEPA_ACCESS_APPROVED }}
       RANEPA_CRAWL_ENABLED: "true"
       RANEPA_CRAWL_PAUSE_SECONDS: "20"
     defaults:
@@ -45,6 +46,7 @@ jobs:
           test -n "$LEGAL_OPERATOR_CONTACT"
           test -n "$LEGAL_DATA_REGION"
           test "$LEGAL_DOCUMENTS_APPROVED" = "true"
+          test "$RANEPA_ACCESS_APPROVED" = "true"
       - name: Install browser
         run: |
           uv sync --frozen
