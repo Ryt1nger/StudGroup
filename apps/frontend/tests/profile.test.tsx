@@ -11,7 +11,7 @@ describe('profile', () => {
     server.use(
       http.get(`${API}/profile`, () => HttpResponse.json(demoProfile())),
       http.get(`${API}/legal/status`, () => HttpResponse.json({
-        version: '2026-11-08-v1', ready: false, terms: false, service: false, sdo: false,
+        version: '2026-11-09-v2', ready: false, terms: false, service: false, sdo: false,
       })),
     );
     renderApp({ route: '/profile/sdo' });
