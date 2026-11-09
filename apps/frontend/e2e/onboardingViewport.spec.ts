@@ -67,3 +67,26 @@ test('all eight onboarding screens fit a phone without page scrolling or clipped
     await expect(page.getByRole('button', { name: 'Посмотреть первый запуск' })).toBeVisible();
   }
 });
+
+test('a late illustration never pops in after the next screen is shown', async ({ page }) => {
+  await page.addInitScript(() => {
+    const decode = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function () {
+      if (this.src.includes('folder-large.light')) {
+        return new Promise<void>(resolve => setTimeout(resolve, 900));
+      }
+      return decode ? decode.call(this) : Promise.resolve();
+    };
+  });
+  await page.goto('/profile?scenario=populated');
+  await page.getByRole('button', { name: 'Посмотреть первый запуск' }).click();
+  await page.getByRole('button', { name: 'Начать настройку' }).click();
+
+  const scene = page.locator('.ob-scene');
+  await expect(scene).toHaveCSS('visibility', 'hidden');
+  await expect(scene).toHaveCSS('visibility', 'visible');
+  await expect(page.getByRole('heading', { name: 'Как к вам обращаться?' })).toBeVisible();
+  await expect(scene.locator('.ob-art')).toHaveCSS('display', 'none');
+  await page.waitForTimeout(900);
+  await expect(scene.locator('.ob-art')).toHaveCSS('display', 'none');
+});
