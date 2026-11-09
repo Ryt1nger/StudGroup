@@ -148,3 +148,30 @@ def test_students_must_have_active_membership_for_onboarding(client):
         client.get("/v1/onboarding", headers={"Authorization": "Bearer expired"}).status_code == 401
     )
     assert client.put("/v1/onboarding/progress", json={"step": "legal"}).status_code == 401
+
+
+def test_new_eight_screen_flow_persists_and_does_not_reopen_after_completion(client):
+    """The new screen order is server-persisted; completion is one-time per membership."""
+    steps = ("personal", "contacts", "subgroups", "sdo", "legal", "appearance", "finish")
+    for step in steps:
+        saved = move(client, step)
+        assert saved.json()["step"] == step
+        assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == step
+    assert client.patch("/v1/profile", json={"first_name": "Анна"}, headers=AUTH).status_code == 200
+    assert client.post("/v1/onboarding/complete", headers=AUTH).json()["completed"]
+    assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "complete"
+    assert move(client, "welcome").json()["completed"] is True
+
+
+def test_new_staff_wizard_accepts_contacts_and_appearance_without_subgroup_selection(client):
+    async def make_headman():
+        async with AsyncSession(client.app.state.engine) as db:
+            member = await db.scalar(select(Membership))
+            member.role = "headman"
+            await db.commit()
+    asyncio.run(make_headman())
+    assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "personal"
+    for step in ("contacts", "subgroups", "sdo", "legal", "appearance", "finish"):
+        move(client, step)
+    assert client.patch("/v1/profile", json={"first_name": "Андрей"}, headers=AUTH).status_code == 200
+    assert client.post("/v1/onboarding/complete", headers=AUTH).json()["completed"]
