@@ -192,11 +192,11 @@ def test_adding_the_bot_only_discovers_the_group_until_private_confirmation(fore
     assert new_group(foreman)[1] == [("headman", ADDER)]
     assert new_group(foreman)[0].pilot_authorized
     assert new_group(foreman)[0].academic_group_code_required
-    assert "Создать приглашение" not in labels(foreman)
+    assert "Пригласить участников" not in labels(foreman)
     finish_group_identifier(foreman)
     assert panel(foreman, ADDER)["text"].startswith("Готово! Группа «ИВТ-21» подключена")
     assert new_group(foreman)[0].academic_group_code == "Э-ОБ-385-04-26-02"
-    assert labels(foreman) == ["Создать приглашение"]
+    assert labels(foreman) == ["Пригласить участников"]
 
     async def profile(db):
         return await db.get(GroupAIProfile, group.id)
@@ -311,7 +311,7 @@ def test_ranepa_code_can_be_suggested_from_telegram_title(foreman, monkeypatch):
 
 def test_legacy_headman_can_add_official_group_code_without_new_registration(foreman):
     deliver(foreman, "/start", uid=1)
-    assert "Создать приглашение" in labels(foreman)
+    assert "Пригласить участников" in labels(foreman)
     assert "Указать ID группы РАНХиГС" in labels(foreman)
     tap(foreman, "Указать ID группы РАНХиГС", uid=1)
     deliver(foreman, "неверный код", uid=1)
@@ -322,7 +322,7 @@ def test_legacy_headman_can_add_official_group_code_without_new_registration(for
     assert "Да, сохранить" in labels(foreman)  # confirm survives a restart
     tap(foreman, "Да, сохранить", uid=1)
     assert "Официальный ID РАНХиГС: Э-ОБ-385-04-26-02" in last(foreman)["text"]
-    assert "Создать приглашение" in labels(foreman)
+    assert "Пригласить участников" in labels(foreman)
 
 
 def test_a_bot_without_admin_rights_is_discovered_but_cannot_confirm_headman(foreman, monkeypatch):
@@ -530,7 +530,9 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
     tap(foreman, "Проверить: ИВТ-21", uid=ADDER)
     tap(foreman, "Да, подключить", uid=ADDER)
     finish_group_identifier(foreman)
-    tap(foreman, "Создать приглашение", uid=ADDER)
+    tap(foreman, "Пригласить участников", uid=ADDER)
+    assert "Создать ссылку" in labels(foreman)
+    tap(foreman, "Создать ссылку", uid=ADDER)
     text = last(foreman)["text"]
     link = next(line for line in text.splitlines() if line.startswith("https://t.me/"))
     assert link.startswith("https://t.me/studgroup_rf_bot?start=invite_")
@@ -571,7 +573,9 @@ def test_headman_can_skip_subgroups_after_issuing_an_invite(foreman, monkeypatch
     tap(foreman, "Проверить: ИВТ-21", uid=ADDER)
     tap(foreman, "Да, подключить", uid=ADDER)
     finish_group_identifier(foreman)
-    tap(foreman, "Создать приглашение", uid=ADDER)
+    tap(foreman, "Пригласить участников", uid=ADDER)
+    assert "Создать ссылку" in labels(foreman)
+    tap(foreman, "Создать ссылку", uid=ADDER)
     assert "Далее: подгруппы" in labels(foreman)
     tap(foreman, "Далее: подгруппы", uid=ADDER)
     assert "Да, настроить" in labels(foreman)
@@ -593,7 +597,9 @@ def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeyp
     added_to_chat(foreman)
     tap(foreman, "Да, подключить", uid=ADDER)
     finish_group_identifier(foreman)
-    tap(foreman, "Создать приглашение", uid=ADDER)
+    tap(foreman, "Пригласить участников", uid=ADDER)
+    assert "Создать ссылку" in labels(foreman)
+    tap(foreman, "Создать ссылку", uid=ADDER)
     tap(foreman, "Далее: подгруппы", uid=ADDER)
     tap(foreman, "Да, настроить", uid=ADDER)
     assert "Добавить предмет" in labels(foreman)
@@ -624,7 +630,7 @@ def test_a_deputy_gets_no_invite_button(foreman):
 
     run(foreman, make_deputy)
     deliver(foreman, "/start", uid=1)
-    assert "Создать приглашение" not in labels(foreman)
+    assert "Пригласить участников" not in labels(foreman)
     assert json.dumps(last(foreman)).count("invite") == 0
 
 
