@@ -471,9 +471,16 @@ function SubgroupStep({ staff, back, busy, next }: { staff: boolean; back?: () =
   const queryClient = useQueryClient();
   const splits = useQuery({ queryKey: ['onboarding-subgroups'], queryFn: getStudentSplits, enabled: !staff });
   const [saving, setSaving] = useState<string | null>(null);
+  const [pageIndex, setPageIndex] = useState(0);
   const [error, setError] = useState('');
   const items = splits.data?.items ?? [];
-  const missing = !staff && items.some(item => !item.selected_subgroup_id);
+  const pageCount = Math.max(1, Math.ceil(items.length / 2));
+  const page = Math.min(pageIndex, pageCount - 1);
+  const visibleItems = items.slice(page * 2, page * 2 + 2);
+  const missingVisible = visibleItems.some(item => !item.selected_subgroup_id);
+  const missingAny = items.some(item => !item.selected_subgroup_id);
+  const hasNextPage = !staff && page + 1 < pageCount;
+
   async function select(split: string, selected: string) {
     setSaving(split);
     try {
@@ -485,17 +492,17 @@ function SubgroupStep({ staff, back, busy, next }: { staff: boolean; back?: () =
   }
   return (
     <>
-      <Title lead={staff ? 'Подгруппы нужны только студентам.' :
-        'Укажите свою подгруппу по каждому предмету.'}>
+      <Title lead={staff ? 'Подгруппы нужны только студентам.' : 'Укажите свою подгруппу по каждому предмету.'}>
         Подгруппы по предметам
       </Title>
-      {staff ? <div className="ob-empty">Для роли старосты выбор подгрупп не требуется.</div> :
+      {staff ? <div className="ob-empty">Вы видите все подгруппы. Этот шаг можно пропустить.</div> :
         splits.isPending ? <div className="ob-help">Загружаем предметы…</div> :
         splits.isError ? <Notice message="Не удалось загрузить подгруппы" retry={() => { void splits.refetch(); }} /> :
-        items.length === 0 ? <div className="ob-empty">В вашей группе пока нет разделения по предметам. Можно продолжать.</div> :
-        <><div className="ob-count">{items.length} предмета требуют выбора</div>
+        items.length === 0 ? <div className="ob-empty">В группе пока нет предметов с подгруппами.</div> :
+        <>
+          <div className="ob-count">{items.length} предметов · {page + 1} из {pageCount}</div>
           <div className="ob-split-list">
-            {items.map(item => <div className="ob-split" key={item.split_id}>
+            {visibleItems.map(item => <div className="ob-split" key={item.split_id}>
               <strong>{item.subject.name}</strong>
               <div className="ob-options" role="group" aria-label={'Подгруппа: ' + item.subject.name}>
                 {item.options.map(option =>
@@ -504,11 +511,15 @@ function SubgroupStep({ staff, back, busy, next }: { staff: boolean; back?: () =
                     onClick={() => { void select(item.split_id, option.id); }}>{option.name}</button>)}
               </div>
             </div>)}
-          </div></>}
-      {missing ? <div className="ob-help">Для продолжения нужно выбрать подгруппу по каждому предмету.</div> : null}
+          </div>
+          {missingVisible ? <p className="ob-subject-nav">Выберите подгруппу для каждого предмета на экране.</p> : null}
+        </>}
       {error ? <Notice message={error} /> : null}
-      <Actions back={back} busy={busy || saving !== null}
-        disabled={!staff && (splits.isPending || splits.isError || missing)} label="Сохранить и продолжить" next={next} />
+      <Actions back={page > 0 && !staff ? () => setPageIndex(page - 1) : back}
+        busy={busy || saving !== null}
+        disabled={!staff && (splits.isPending || splits.isError || missingVisible || (!hasNextPage && missingAny))}
+        label={hasNextPage ? 'Следующие предметы' : 'Сохранить и продолжить'}
+        next={hasNextPage ? () => setPageIndex(page + 1) : next} />
     </>
   );
 }
