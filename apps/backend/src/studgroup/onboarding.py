@@ -78,10 +78,13 @@ async def save_progress(
         return {"step": "complete", "completed": True}
     if member.role != "student" and body.step == "welcome":
         raise ApiError("invalid_step", "Для старосты доступна настройка профиля", 422)
-    if body.step != current and body.step not in NEXT_STEPS[current]:
-        # Older staff builds finish their one-page form directly from personal.
-        if not (member.role != "student" and body.step == "finish"):
-            raise ApiError("invalid_step", "Завершите текущий этап регистрации", 422)
+    # Older staff builds finish their one-page form directly from personal.
+    if (
+        body.step != current
+        and body.step not in NEXT_STEPS[current]
+        and not (member.role != "student" and body.step == "finish")
+    ):
+        raise ApiError("invalid_step", "Завершите текущий этап регистрации", 422)
     if row is None:
         row = OnboardingProgress(
             membership_id=member.id, step=body.step, updated_at=datetime.now(UTC)
