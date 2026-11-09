@@ -1058,6 +1058,8 @@ class GroupInvitation(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     reusable: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Only new shared links store recoverable tokens; the code is encrypted, never plaintext.
+    token_ciphertext: Mapped[str | None] = mapped_column(Text)
     used_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
 
