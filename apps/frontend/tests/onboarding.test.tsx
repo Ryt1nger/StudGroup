@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
@@ -181,8 +181,8 @@ describe('premium membership-scoped onboarding', () => {
 
     for (const subject of subjects.slice(0, 2)) {
       const group = screen.getByRole('group', { name: 'Подгруппа: ' + subject });
-      await userEvent.click(group.getByRole('button', { name: '2' }));
-      await waitFor(() => expect(group.getByRole('button', { name: '2' })).toHaveAttribute('aria-pressed', 'true'));
+      await userEvent.click(within(group).getByRole('button', { name: '2' }));
+      await waitFor(() => expect(within(group).getByRole('button', { name: '2' })).toHaveAttribute('aria-pressed', 'true'));
     }
     await userEvent.click(nextSubjects);
     expect(await screen.findByText('Физическая культура')).toBeInTheDocument();
@@ -191,8 +191,8 @@ describe('premium membership-scoped onboarding', () => {
 
     for (const subject of subjects.slice(2)) {
       const group = screen.getByRole('group', { name: 'Подгруппа: ' + subject });
-      await userEvent.click(group.getByRole('button', { name: '1' }));
-      await waitFor(() => expect(group.getByRole('button', { name: '1' })).toHaveAttribute('aria-pressed', 'true'));
+      await userEvent.click(within(group).getByRole('button', { name: '1' }));
+      await waitFor(() => expect(within(group).getByRole('button', { name: '1' })).toHaveAttribute('aria-pressed', 'true'));
     }
     await userEvent.click(screen.getByRole('button', { name: /Сохранить и продолжить/ }));
     expect(await screen.findByText('СДО и личный кабинет')).toBeInTheDocument();
