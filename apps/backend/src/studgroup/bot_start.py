@@ -146,7 +146,8 @@ async def role_screen(db, session, *, pending_invite_hash=None):
     await screen(
         db,
         session,
-        "Приглашение проверено. Выберите роль для продолжения регистрации."
+        "Группа определена по пригласительной ссылке. Повторно вводить код приглашения "
+        "или ID учебной группы не нужно. Выберите роль."
         if pending_invite_hash
         else "Как ты хочешь подключиться к StudGroup?",
         [
@@ -220,6 +221,58 @@ async def legal_documents_screen(db, session, settings):
         ]
         + [[("‹ Назад", "home")]],
         "legal_documents",
+    )
+
+
+async def invite_error_screen(db, session, notice, *, retry_digest=None):
+    """Keep deep-link failures distinct from manual code entry."""
+    rows = []
+    if retry_digest:
+        rows.append([("Проверить участие ещё раз", "invite_retry")])
+    rows.append([("Главное меню", "home")])
+    await screen(
+        db,
+        session,
+        f"Не удалось подключиться по пригласительной ссылке: {notice}\n\n"
+        "Повторно вводить код не нужно. Если ссылка отозвана или истекла, "
+        "попросите старосту отправить новую.",
+        rows,
+        "invite_error",
+        {"pending_invite_hash": retry_digest} if retry_digest else {},
+    )
+
+
+async def inspect_invite(db, session, settings, telegram_id, digest):
+    """Validate the existing link again without redeeming it or skipping consents."""
+    try:
+        await domain.validate_invite_by_hash(db, settings, telegram_id, digest)
+    except domain.StError as error:
+        notice = str(error)
+        await invite_error_screen(
+            db,
+            session,
+            notice,
+            retry_digest=digest if "Не удалось подтвердить участие" in notice else None,
+        )
+    else:
+        await role_screen(db, session, pending_invite_hash=digest)
+
+
+async def invite_headman_notice(db, session, digest):
+    """An existing group's student invite does not grant its headman role."""
+    await screen(
+        db,
+        session,
+        "По этой ссылке подключаются участники группы, которую староста уже создал. "
+        "ID учебной группы указан старостой; вводить его снова не нужно. "
+        "Назначить второго старосту через приглашение нельзя.\n\n"
+        "Если вы участник этой группы, продолжите как студент. "
+        "Если хотите создать другую группу, начните её подключение из главного меню.",
+        [[("Продолжить как студент", "invite_student_continue")],
+         [("Назад к выбору роли", "invite_roles")],
+         [("Главное меню", "home")]],
+        "invite_headman_notice",
+        {"pending_invite_hash": digest},
     )
 
 
@@ -989,14 +1042,17 @@ async def redeem(db, session, settings, telegram_id, code, *, typed, pending_inv
             async with db.begin_nested():
                 group = await domain.redeem_invite_by_hash(db, settings, telegram_id, digest)
         else:
-            await domain.validate_invite_by_hash(db, settings, telegram_id, digest)
-            await role_screen(db, session, pending_invite_hash=digest)
+            if typed:
+                await domain.validate_invite_by_hash(db, settings, telegram_id, digest)
+                await role_screen(db, session, pending_invite_hash=digest)
+            else:
+                await inspect_invite(db, session, settings, telegram_id, digest)
             return
     except domain.StError as error:
         if typed:
             await code_prompt(db, session, f"Не получилось: {error}")
         else:
-            await join(db, session, f"Не получилось: {error}")
+            await invite_error_screen(db, session, str(error))
         return
     found = await current_membership(db, telegram_id)
     if found:
@@ -1146,8 +1202,17 @@ async def resume_or_home(db, session, settings, telegram_id):
         data = json.loads(session.payload)
     except (TypeError, ValueError):
         data = {}
-    if step == "roles" and data.get("pending_invite_hash"):
+    if step in {"roles", "invite_headman_notice"} and data.get("pending_invite_hash"):
         await role_screen(db, session, pending_invite_hash=data["pending_invite_hash"])
+    elif step == "invite_error":
+        if data.get("pending_invite_hash"):
+            await inspect_invite(db, session, settings, telegram_id, data["pending_invite_hash"])
+        else:
+            await screen(
+                db, session,
+                "Ссылка недействительна. Попросите старосту отправить новую.",
+                [[("Главное меню", "home")]], "invite_error",
+            )
     elif step in {"legal_terms", "legal_service", "legal_not_ready"}:
         await legal_role_gate(
             db,
@@ -1446,12 +1511,30 @@ async def handle(db, update, settings, topic=None):
     elif action in {"sdo_check", "sdo_skip"} and session.step == "sdo_setup":
         # Old bot buttons cannot require credentials after this release.
         await registration_complete(db, session, settings, sender.id)
+    elif action == "invite_retry" and session.step == "invite_error":
+        digest = json.loads(session.payload).get("pending_invite_hash")
+        if digest:
+            await inspect_invite(db, session, settings, sender.id, digest)
+        else:
+            await home(db, session, settings, sender.id)
+    elif action == "invite_roles" and session.step == "invite_headman_notice":
+        await role_screen(
+            db, session, pending_invite_hash=json.loads(session.payload)["pending_invite_hash"]
+        )
+    elif action == "invite_student_continue" and session.step == "invite_headman_notice":
+        await legal_role_gate(
+            db, session, settings, sender.id,
+            pending_invite_hash=json.loads(session.payload)["pending_invite_hash"],
+        )
     elif action in {"student", "headman"} and session.step == "roles":
         pending_invite_hash = json.loads(session.payload).get("pending_invite_hash")
-        if action == "student" and pending_invite_hash:
-            await legal_role_gate(
-                db, session, settings, sender.id, pending_invite_hash=pending_invite_hash
-            )
+        if pending_invite_hash:
+            if action == "student":
+                await legal_role_gate(
+                    db, session, settings, sender.id, pending_invite_hash=pending_invite_hash
+                )
+            else:
+                await invite_headman_notice(db, session, pending_invite_hash)
         else:
             await promo_screen(db, session, action)
     elif action == "promo_input" and session.step == "promo":
@@ -1462,7 +1545,7 @@ async def handle(db, update, settings, topic=None):
         await next_after_promo(
             db, session, settings, sender.id, json.loads(session.payload)["role"]
         )
-    elif action == "enter_code":
+    elif action == "enter_code" and session.step == "join":
         await code_prompt(db, session)
     elif action == "join_back":
         await join(db, session)
