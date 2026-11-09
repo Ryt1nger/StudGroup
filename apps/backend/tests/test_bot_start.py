@@ -211,6 +211,33 @@ def test_pilot_member_with_single_shared_invite_skips_manual_code(foreman, monke
     assert "Готово! Вы подключены" in last(foreman)["text"]
 
 
+def test_restart_from_old_join_screen_recovers_verified_invite(foreman, monkeypatch):
+    allow_telegram(monkeypatch)
+
+    async def make(db):
+        _, member, group = await actor(db)
+        return await domain.issue_group_link(db, group, member)
+
+    run(foreman, make)
+    deliver(foreman, "/start", uid=33)
+    tap(foreman, "Подключить группу")
+    tap(foreman, "Я студент")
+    tap(foreman, "Нет промокода")
+    assert "Регистрация · шаг 1 из 3" in last(foreman)["text"]
+    # Simulate the old persisted code-entry session of a previously stuck student.
+    async def old_state(db):
+        from studgroup.models import StartSession
+
+        session = await db.get(StartSession, 33)
+        session.step = "code"
+        session.payload = "{}"
+
+    run(foreman, old_state)
+    deliver(foreman, "/start", uid=33)
+    assert "Регистрация · шаг 1 из 3" in last(foreman)["text"]
+    assert "Ввести код" not in labels(foreman)
+
+
 def test_unverified_telegram_member_cannot_autoconnect_without_invite(foreman, monkeypatch):
     allow_telegram(monkeypatch, answer=False)
 

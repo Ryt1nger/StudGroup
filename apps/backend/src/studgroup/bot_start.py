@@ -1440,7 +1440,15 @@ async def resume_or_home(db, session, settings, telegram_id):
         data = json.loads(session.payload)
     except (TypeError, ValueError):
         data = {}
-    if step in {"profile_first", "profile_last", "profile_email"} and (
+    if step in {"join", "code"}:
+        digest = await single_verified_pilot_invite(db, settings, telegram_id)
+        if digest:
+            await legal_role_gate(db, session, settings, telegram_id, pending_invite_hash=digest)
+        elif step == "code":
+            await code_prompt(db, session)
+        else:
+            await join(db, session)
+    elif step in {"profile_first", "profile_last", "profile_email"} and (
         data.get("pending_invite_hash") or data.get("pending_group_id")
     ):
         await registration_profile_screen(db, session, step, data)
