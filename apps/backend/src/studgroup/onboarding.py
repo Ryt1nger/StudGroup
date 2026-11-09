@@ -20,7 +20,9 @@ router = APIRouter(prefix="/v1/onboarding")
 # New flow follows the screen order. Legacy adjacent transitions remain permitted
 # while older Mini App bundles are still cached by Telegram.
 STEPS = ("welcome", "personal", "contacts", "subgroups", "sdo", "legal", "appearance", "finish")
-Step = Literal["welcome", "personal", "contacts", "subgroups", "sdo", "legal", "appearance", "finish"]
+Step = Literal[
+    "welcome", "personal", "contacts", "subgroups", "sdo", "legal", "appearance", "finish"
+]
 NEXT_STEPS = {
     "welcome": {"personal", "legal"},
     "personal": {"welcome", "contacts", "subgroups", "legal"},
