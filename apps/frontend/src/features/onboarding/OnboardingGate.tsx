@@ -61,10 +61,6 @@ function Shell({ children, role, group, step, preview, onClose, previewTheme, pr
       data-ob-preview-text={preview ? previewText : undefined}
       style={previewStyle}>
       <main className="ob-card">
-        {preview ? <div className="ob-preview-banner" role="status">
-          <span>Предпросмотр · данные не сохраняются</span>
-          <button type="button" onClick={onClose}>Закрыть ✕</button>
-        </div> : null}
         <header className="ob-topline">
           <div className="ob-brand">
             <img src={`${import.meta.env.BASE_URL}studgroup-logo.png`} width="42" height="42" alt="" />
@@ -72,7 +68,12 @@ function Shell({ children, role, group, step, preview, onClose, previewTheme, pr
           </div>
           <span className="ob-campus">{group}</span>
         </header>
-        <div className="ob-role">ПЕРВЫЙ ЗАПУСК · {role}</div>
+        <div className="ob-meta-line">
+          <span className="ob-role" role={preview ? 'status' : undefined}>
+            {preview ? 'Предпросмотр · данные не сохраняются' : `ПЕРВЫЙ ЗАПУСК · ${role}`}
+          </span>
+          {preview ? <button className="ob-preview-close" type="button" onClick={onClose}>Закрыть ✕</button> : null}
+        </div>
         <div className="ob-progress-head">
           <span>Шаг {index + 1} из {steps.length}</span>
           <span>{Math.round(((index + 1) / steps.length) * 100)}%</span>
@@ -153,6 +154,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
   const [last, setLast] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [localSplitChoices, setLocalSplitChoices] = useState<Record<string, string>>({});
+  const [subjectPage, setSubjectPage] = useState(0);
   const [terms, setTerms] = useState(false);
   const [service, setService] = useState(false);
   const profile = useProfileQuery();
@@ -161,8 +163,16 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
   const step = steps[index]!;
   const next = () => setIndex(n => Math.min(steps.length - 1, n + 1));
   const back = index > 0 ? () => setIndex(n => Math.max(0, n - 1)) : undefined;
+  const subjectPageCount = staff ? 1 : Math.max(1, Math.ceil((splits.data?.items.length ?? 0) / 2));
+  const onNext = () => {
+    if (step === 'subgroups' && subjectPage < subjectPageCount - 1) setSubjectPage(page => page + 1);
+    else if (step === 'finish') onClose();
+    else next();
+  };
+  const onBack = step === 'subgroups' && subjectPage > 0
+    ? () => setSubjectPage(page => page - 1) : back;
   const previewActions = (label = 'Далее') =>
-    <Actions back={back} label={label} next={step === 'finish' ? onClose : next} />;
+    <Actions back={onBack} label={label} next={onNext} />;
   const currentFirst = first ?? profile.data?.first_name ?? '';
   const currentLast = last ?? profile.data?.last_name ?? '';
   const currentEmail = email ?? profile.data?.email ?? '';
@@ -171,7 +181,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
     role={staff ? (state.role === 'headman' ? 'СТАРОСТА' : 'ЗАМЕСТИТЕЛЬ') : 'СТУДЕНТ'}
     preview onClose={onClose} previewTheme={previewTheme} previewAccent={previewAccent} previewText={previewText}>
     {step === 'welcome' ? <>
-      <Title lead="Пара минут — и все задания, пары и события вашей группы будут под рукой.">Настроим StudGroup под вас</Title>
+      <Title lead="Расписание, задания и события группы — в одном месте.">Настроим StudGroup под вас</Title>
       <div className="ob-feature-list">
         <div><span className="ob-feature-icon">▦</span><span><strong>Удобное расписание</strong><small>Пары и важные изменения</small></span></div>
         <div><span className="ob-feature-icon">☑</span><span><strong>Задания и дедлайны</strong><small>Всё важное по предметам</small></span></div>
@@ -180,7 +190,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
       {previewActions('Начать настройку')}
     </> : null}
     {step === 'personal' ? <>
-      <Title lead="Укажите имя и фамилию, чтобы мы могли правильно отображать ваш профиль и подписи к карточкам.">Как к вам обращаться?</Title>
+      <Title lead="Ваше имя будет видно в профиле и карточках.">Как к вам обращаться?</Title>
       <div className="ob-form">
         <label>Имя <span className="ob-required">*</span>
           <input type="text" autoComplete="off" maxLength={60} value={currentFirst}
@@ -193,7 +203,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
       {previewActions()}
     </> : null}
     {step === 'contacts' ? <>
-      <Title lead="Почта пригодится для связи. Telegram уже подключён, поэтому этот шаг можно пропустить.">Контакты для связи</Title>
+      <Title lead="Почта для связи необязательна. Telegram уже подключён.">Контакты для связи</Title>
       <div className="ob-form"><label>Почта <small>необязательно</small>
         <input type="email" autoComplete="off" value={currentEmail}
           placeholder="name@example.com" maxLength={120} onChange={e => setEmail(e.target.value)} /></label></div>
@@ -202,9 +212,9 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
       {previewActions()}
     </> : null}
     {step === 'subgroups' ? <>
-      <Title lead="Выберите свою подгруппу отдельно для каждого предмета, который староста разделил на подгруппы.">Подгруппы по предметам</Title>
+      <Title lead="Укажите подгруппу для каждого предмета.">Подгруппы по предметам</Title>
       {staff ? <>
-        <div className="ob-help">Для старосты выбор подгрупп не требуется. Ниже — пример экрана студента.</div>
+        <div className="ob-help">Пример для студента: старосте выбирать подгруппу не нужно.</div>
         <div className="ob-count">Пример: 2 предмета</div>
         <div className="ob-split-list">
           {[
@@ -224,9 +234,9 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
       splits.isPending ? <div className="ob-help">Загружаем предметы…</div> :
       splits.isError ? <div className="ob-help">Не удалось загрузить список предметов для предпросмотра.</div> :
       (splits.data?.items ?? []).length === 0 ? <div className="ob-empty">В вашей группе пока нет разделения по предметам.</div> :
-      <><div className="ob-count">{splits.data?.items.length ?? 0} предметов</div>
+      <><div className="ob-count">{splits.data?.items.length ?? 0} предметов · экран {subjectPage + 1} из {subjectPageCount}</div>
         <div className="ob-split-list">
-          {splits.data?.items.map(item => <div className="ob-split" key={item.split_id}>
+          {splits.data?.items.slice(subjectPage * 2, (subjectPage + 1) * 2).map(item => <div className="ob-split" key={item.split_id}>
             <strong>{item.subject.name}</strong>
             <div className="ob-options" role="group" aria-label={'Подгруппа: ' + item.subject.name}>
               {item.options.map(option =>
@@ -241,7 +251,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
       {previewActions('Сохранить и продолжить')}
     </> : null}
     {step === 'sdo' ? <>
-      <Title badge="Необязательно" lead="Подключите СДО и личный кабинет для учебных материалов. Этот шаг можно пропустить.">
+      <Title badge="Необязательно" lead="Подключение СДО можно настроить позже в профиле.">
         СДО и личный кабинет
       </Title>
       <div className="ob-form">
@@ -252,7 +262,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
       {previewActions('Продолжить')}
     </> : null}
     {step === 'legal' ? <>
-      <Title lead="Ознакомьтесь с документами и подтвердите необходимые согласия. Отметки не установлены заранее.">Почти готово</Title>
+      <Title lead="Ознакомьтесь с документами. Отметки не проставлены заранее.">Почти готово</Title>
       <div className="ob-consents">
         <label className="ob-checkbox"><input type="checkbox" checked={terms} onChange={e => setTerms(e.target.checked)} />
           <span>Принимаю условия использования <span className="ob-preview-document">Прочитать документ ↗</span></span></label>
@@ -263,7 +273,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
       {previewActions('Продолжить')}
     </> : null}
     {step === 'appearance' ? <>
-      <Title lead="Последний штрих: выберите оформление, в котором вам комфортнее учиться. Всё можно поменять в профиле.">
+      <Title lead="Выберите оформление. Его всегда можно изменить в профиле.">
         Подстроим приложение под вас
       </Title>
       <div className="ob-setting"><strong>Тема</strong>
@@ -301,7 +311,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
       {previewActions('Сохранить оформление')}
     </> : null}
     {step === 'finish' ? <>
-      <Title lead="Ваш профиль настроен. Теперь можно пользоваться расписанием, заданиями и событиями группы.">
+      <Title lead="Расписание, задания и события уже ждут вас.">
         Настройка завершена!
       </Title>
       <div className="ob-done-lines">
@@ -364,7 +374,7 @@ function Wizard({ state, membershipId }: { state: OnboardingState; membershipId:
     <Shell step={shown} role={isStaff ? (state.role === 'headman' ? 'СТАРОСТА' : 'ЗАМЕСТИТЕЛЬ') : 'СТУДЕНТ'} group={state.group_name}>
       {shown === 'welcome' ? (
         <>
-          <Title lead="Пара минут — и все задания, пары и события вашей группы будут под рукой.">Настроим StudGroup под вас</Title>
+          <Title lead="Расписание, задания и события группы — в одном месте.">Настроим StudGroup под вас</Title>
           <div className="ob-feature-list">
             <div><span className="ob-feature-icon">▦</span><span><strong>Удобное расписание</strong><small>Пары и важные изменения</small></span></div>
             <div><span className="ob-feature-icon">☑</span><span><strong>Задания и дедлайны</strong><small>Всё важное по предметам</small></span></div>
@@ -384,7 +394,7 @@ function Wizard({ state, membershipId }: { state: OnboardingState; membershipId:
       {shown === 'appearance' ? <AppearanceStep back={back} busy={progress.busy} next={next('finish')} /> : null}
       {shown === 'finish' ? (
         <>
-          <Title lead="Ваш профиль настроен. Теперь можно пользоваться расписанием, заданиями и событиями группы.">Настройка завершена!</Title>
+          <Title lead="Расписание, задания и события уже ждут вас.">Настройка завершена!</Title>
           <div className="ob-done-lines">
             <span><b>✓</b> Группа: {state.group_name}</span>
             <span><b>✓</b> Личные данные сохранены</span>
@@ -416,7 +426,7 @@ function PersonalStep({ back, busy, next }: { back?: () => void; busy: boolean; 
   }
   return (
     <>
-      <Title lead="Укажите имя и фамилию, чтобы мы могли правильно отображать ваш профиль и подписи к карточкам.">Как к вам обращаться?</Title>
+      <Title lead="Ваше имя будет видно в профиле и карточках.">Как к вам обращаться?</Title>
       <div className="ob-form">
         <label>Имя <span className="ob-required">*</span><input type="text" autoComplete="given-name" maxLength={60}
           placeholder="Ваше имя" value={firstValue} onChange={e => setFirst(e.target.value)} required /></label>
@@ -446,7 +456,7 @@ function ContactsStep({ back, busy, next }: { back?: () => void; busy: boolean; 
   }
   return (
     <>
-      <Title lead="Почта пригодится для связи. Telegram уже подключён, поэтому этот шаг можно пропустить.">Контакты для связи</Title>
+      <Title lead="Почта для связи необязательна. Telegram уже подключён.">Контакты для связи</Title>
       <div className="ob-form"><label>Почта <small>необязательно</small><input type="email" autoComplete="email"
         placeholder="name@example.com" maxLength={120} value={value} onChange={e => setEmail(e.target.value)} /></label></div>
       <div className="ob-confirm">✓ Telegram уже подключён</div>
@@ -461,9 +471,16 @@ function SubgroupStep({ staff, back, busy, next }: { staff: boolean; back?: () =
   const queryClient = useQueryClient();
   const splits = useQuery({ queryKey: ['onboarding-subgroups'], queryFn: getStudentSplits, enabled: !staff });
   const [saving, setSaving] = useState<string | null>(null);
+  const [pageIndex, setPageIndex] = useState(0);
   const [error, setError] = useState('');
   const items = splits.data?.items ?? [];
-  const missing = !staff && items.some(item => !item.selected_subgroup_id);
+  const pageCount = Math.max(1, Math.ceil(items.length / 2));
+  const page = Math.min(pageIndex, pageCount - 1);
+  const visibleItems = items.slice(page * 2, page * 2 + 2);
+  const missingVisible = visibleItems.some(item => !item.selected_subgroup_id);
+  const missingAny = items.some(item => !item.selected_subgroup_id);
+  const hasNextPage = !staff && page + 1 < pageCount;
+
   async function select(split: string, selected: string) {
     setSaving(split);
     try {
@@ -475,17 +492,17 @@ function SubgroupStep({ staff, back, busy, next }: { staff: boolean; back?: () =
   }
   return (
     <>
-      <Title lead={staff ? 'Предметы и подгруппы добавляются старостой для студентов. Вы всегда видите все подгруппы.' :
-        'Выберите свою подгруппу отдельно для каждого предмета, который староста разделил на подгруппы.'}>
+      <Title lead={staff ? 'Подгруппы нужны только студентам.' : 'Укажите свою подгруппу по каждому предмету.'}>
         Подгруппы по предметам
       </Title>
-      {staff ? <div className="ob-empty">Для роли старосты выбор подгрупп не требуется.</div> :
+      {staff ? <div className="ob-empty">Вы видите все подгруппы. Этот шаг можно пропустить.</div> :
         splits.isPending ? <div className="ob-help">Загружаем предметы…</div> :
         splits.isError ? <Notice message="Не удалось загрузить подгруппы" retry={() => { void splits.refetch(); }} /> :
-        items.length === 0 ? <div className="ob-empty">В вашей группе пока нет разделения по предметам. Можно продолжать.</div> :
-        <><div className="ob-count">{items.length} предмета требуют выбора</div>
+        items.length === 0 ? <div className="ob-empty">В группе пока нет предметов с подгруппами.</div> :
+        <>
+          <div className="ob-count">{items.length} предметов · {page + 1} из {pageCount}</div>
           <div className="ob-split-list">
-            {items.map(item => <div className="ob-split" key={item.split_id}>
+            {visibleItems.map(item => <div className="ob-split" key={item.split_id}>
               <strong>{item.subject.name}</strong>
               <div className="ob-options" role="group" aria-label={'Подгруппа: ' + item.subject.name}>
                 {item.options.map(option =>
@@ -494,11 +511,15 @@ function SubgroupStep({ staff, back, busy, next }: { staff: boolean; back?: () =
                     onClick={() => { void select(item.split_id, option.id); }}>{option.name}</button>)}
               </div>
             </div>)}
-          </div></>}
-      {missing ? <div className="ob-help">Для продолжения нужно выбрать подгруппу по каждому предмету.</div> : null}
+          </div>
+          {missingVisible ? <p className="ob-subject-nav">Выберите подгруппу для каждого предмета на экране.</p> : null}
+        </>}
       {error ? <Notice message={error} /> : null}
-      <Actions back={back} busy={busy || saving !== null}
-        disabled={!staff && (splits.isPending || splits.isError || missing)} label="Сохранить и продолжить" next={next} />
+      <Actions back={page > 0 && !staff ? () => setPageIndex(page - 1) : back}
+        busy={busy || saving !== null}
+        disabled={!staff && (splits.isPending || splits.isError || missingVisible || (!hasNextPage && missingAny))}
+        label={hasNextPage ? 'Следующие предметы' : 'Сохранить и продолжить'}
+        next={hasNextPage ? () => setPageIndex(page + 1) : next} />
     </>
   );
 }
@@ -541,7 +562,7 @@ function CredentialsStep({ back, busy, next, draft, onDraft }: {
   }
   return (
     <>
-      <Title badge="Необязательно" lead="Подключите СДО и личный кабинет для учебных материалов. Этот шаг можно пропустить.">
+      <Title badge="Необязательно" lead="СДО можно подключить позже в профиле.">
         СДО и личный кабинет
       </Title>
       <div className="ob-form">
@@ -598,7 +619,7 @@ function LegalStep({ required, back, busy, next, pendingSdo, clearSdo }: {
   }
   return (
     <>
-      <Title lead="Ознакомьтесь с документами и подтвердите необходимые согласия. Отметки не установлены заранее.">
+      <Title lead="Ознакомьтесь с документами перед продолжением.">
         Почти готово
       </Title>
       <div className="ob-consents">
@@ -626,7 +647,7 @@ function AppearanceStep({ back, busy, next }: { back?: () => void; busy: boolean
   const [display, setDisplay] = useDisplay();
   return (
     <>
-      <Title lead="Последний штрих: выберите оформление, в котором вам комфортнее учиться. Всё можно поменять в профиле.">
+      <Title lead="Выберите оформление. Его всегда можно изменить в профиле.">
         Подстроим приложение под вас
       </Title>
       <div className="ob-setting">
