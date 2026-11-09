@@ -5,8 +5,9 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
-from test_bot_start import deliver, labels, last, run, tap as base_tap
+from test_bot_start import deliver, labels, last, run
 from test_bot_start import foreman as foreman  # noqa: PLC0414 -- pytest fixture
+from test_bot_start import tap as base_tap
 from test_ingestion import send
 
 from studgroup import bot_admin

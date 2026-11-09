@@ -13,12 +13,13 @@ from test_bot_start import (
     publish_legal,
     tap,
 )
-from test_headman import deliver, foreman, run  # noqa: F401
+from test_headman import deliver, run
+from test_headman import foreman as foreman  # noqa: PLC0414 -- pytest fixture
 
 from studgroup.models import (
     LegalConsentEvent,
-    MemberSubgroup,
     Membership,
+    MemberSubgroup,
     StartSession,
     Subgroup,
     SubjectSplit,

@@ -26,6 +26,7 @@ from studgroup import bot_info, bot_panels, subgroups
 from studgroup import headman_domain as domain
 from studgroup.bot_admin import enqueue, say
 from studgroup.homework import utc
+from studgroup.security import token_hash
 from studgroup.models import (
     Group,
     GroupInvitation,
@@ -1469,8 +1470,6 @@ async def handle(db, update, settings, topic=None):
     elif action in {"check_group", "headman_back"}:
         await headman_entry(db, session, settings, sender.id)
     elif action.startswith("pick") and session.step == "headman":
-        from studgroup import bot_connect
-
         try:
             group = await db.get(
                 Group, uuid.UUID(json.loads(session.payload)["groups"][int(action[4:])])
