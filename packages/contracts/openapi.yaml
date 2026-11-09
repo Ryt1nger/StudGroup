@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.20.0
+  version: 0.21.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -11,6 +11,7 @@ servers:
 security:
   - bearerAuth: []
 tags:
+  - name: Onboarding
   - name: Schedule
   - name: Session
   - name: Today
@@ -19,6 +20,53 @@ tags:
   - name: Staff
     description: Headman/deputy cabinet. Every route re-checks the active membership role.
 paths:
+  /onboarding:
+    get:
+      tags: [Onboarding]
+      operationId: getOnboardingState
+      summary: Resume first-run setup for the active membership
+      responses:
+        "200":
+          description: Saved membership progress and group context
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingState" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /onboarding/progress:
+    put:
+      tags: [Onboarding]
+      operationId: saveOnboardingProgress
+      summary: Save an allowed step transition for the active membership
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OnboardingProgressRequest" }
+      responses:
+        "200":
+          description: Persisted step; completed memberships remain complete
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingProgressResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
+  /onboarding/complete:
+    post:
+      tags: [Onboarding]
+      operationId: completeOnboarding
+      summary: Complete setup after profile, subgroup and enabled legal checks
+      responses:
+        "200":
+          description: Membership setup complete
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OnboardingProgressResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
   /cards/{kind}/{card_id}/materials:
     parameters:
       - { name: kind, in: path, required: true, schema: { type: string, enum: [homework, deadline] } }
@@ -1700,6 +1748,35 @@ components:
         permissions: [homework.read, homework.completion.write]
         generated_at: "2026-10-04T12:00:00Z"
   schemas:
+    OnboardingStep:
+      type: string
+      enum: [welcome, legal, personal, subgroups, sdo, finish, complete]
+    OnboardingState:
+      type: object
+      additionalProperties: false
+      required: [role, step, completed, legal_required, group_name, academic_group_code]
+      properties:
+        role: { type: string, enum: [student, headman, deputy] }
+        step: { $ref: "#/components/schemas/OnboardingStep" }
+        completed: { type: boolean }
+        legal_required: { type: boolean }
+        group_name: { type: string }
+        academic_group_code: { type: [string, "null"] }
+    OnboardingProgressRequest:
+      type: object
+      additionalProperties: false
+      required: [step]
+      properties:
+        step:
+          type: string
+          enum: [welcome, legal, personal, subgroups, sdo, finish]
+    OnboardingProgressResponse:
+      type: object
+      additionalProperties: false
+      required: [step, completed]
+      properties:
+        step: { $ref: "#/components/schemas/OnboardingStep" }
+        completed: { type: boolean }
     CardRemoval:
       type: object
       required: [undo_id]
@@ -2905,6 +2982,12 @@ components:
             - gone
             - revision_conflict
             - action_rejected
+            - invalid_step
+            - profile_required
+            - subgroups_required
+            - legal_not_ready
+            - terms_required
+            - consent_required
             - rate_limited
             - service_unavailable
             - internal_error

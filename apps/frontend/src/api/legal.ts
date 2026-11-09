@@ -1,8 +1,8 @@
 /** The legal API is deliberately outside generated profile types. No credential is logged or cached. */
+import { client } from '@studgroup/shared-types';
 import { apiAuthorization } from './client';
 
-const rawBase = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
-const legalBase = `${rawBase.endsWith('/v1') ? rawBase : `${rawBase}/v1`}/legal`;
+const legalBase = () => `${(client.getConfig().baseUrl ?? '/v1').replace(/\/$/, '')}/legal`;
 export const LEGAL_VERSION = '2026-11-08-v1';
 
 export interface LegalStatus {
@@ -15,7 +15,7 @@ export interface LegalStatus {
 
 async function legalRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const auth = apiAuthorization();
-  const response = await fetch(`${legalBase}${path}`, {
+  const response = await fetch(`${legalBase()}${path}`, {
     ...options,
     credentials: 'omit',
     cache: 'no-store',
@@ -50,7 +50,7 @@ export function revokeSdoConsent(): Promise<void> {
 export async function legalDocument(document: string): Promise<string> {
   const slug = ['privacy', 'terms', 'service', 'sdo', 'cookies'].includes(document) ? document : null;
   if (!slug) throw new Error('Документ не найден');
-  const response = await fetch(`${legalBase}/documents/${slug}`, {
+  const response = await fetch(`${legalBase()}/documents/${slug}`, {
     credentials: 'omit',
     cache: 'no-store',
   });
