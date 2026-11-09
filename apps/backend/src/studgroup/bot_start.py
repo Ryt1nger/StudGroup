@@ -1407,7 +1407,8 @@ async def handle(db, update, settings, topic=None):
             argument = parts[1].strip() if len(parts) == 2 else ""
             if argument == "headman":  # the button under the bot's note in the group chat
                 await headman_entry(db, session, settings, sender.id)
-            elif argument.startswith("invite_"):
+            elif argument.startswith("invite_") or _BARE_CODE.fullmatch(argument):
+                # Accept older links carrying the raw token as well as current invite_* links.
                 await forget(db, chat, message)  # the code is a secret: never leave it in the chat
                 await redeem(db, session, settings, sender.id, extract_code(argument), typed=False)
             elif argument == "subgroups":

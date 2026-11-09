@@ -177,6 +177,16 @@ def test_an_invitation_link_joins_in_one_tap_and_removes_the_link_message(forema
     assert tapped in deletions(foreman)
 
 
+def test_legacy_raw_token_deep_link_joins_without_typing_code(foreman, monkeypatch):
+    allow_telegram(monkeypatch)
+    code = issue(foreman)
+    deliver(foreman, f"/start {code}", uid=33)
+    assert "Я студент" in labels(foreman)
+    finish_legal(foreman)
+    assert "Готово! Вы подключены" in last(foreman)["text"]
+    assert "Ввести код" not in labels(foreman)
+
+
 def test_shared_group_link_allows_multiple_verified_students(foreman, monkeypatch):
     allow_telegram(monkeypatch)
 
