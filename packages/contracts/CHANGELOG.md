@@ -1,5 +1,9 @@
 # Contract changelog
 
+## 0.21.1 — 2026-11-09
+
+- Documented `GET /legal/status` and added `credentials_ready`; clients can disable SDO/LK password entry until both operator documents and a valid encryption key are configured. `ready` retains its meaning for general consents.
+
 ## 0.21.0 — 2026-11-08
 
 - Added membership-scoped onboarding state, progress and completion endpoints. They resume after a

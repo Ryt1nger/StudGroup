@@ -1,5 +1,9 @@
 # Contract compatibility
 
+## Credential readiness (0.21.1, 2026-11-09)
+
+`GET /legal/status` adds `credentials_ready` without changing `ready`. Older clients may ignore the field; the server still rejects password writes without a valid encryption key. Updated clients use `credentials_ready` to keep SDO/LK inputs disabled while allowing ordinary consent and onboarding to proceed.
+
 ## Membership onboarding (0.21.0, 2026-11-08)
 
 Additive `/onboarding` routes are scoped to the bearer session's active membership. Older clients

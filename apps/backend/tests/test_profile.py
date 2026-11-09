@@ -29,6 +29,8 @@ def approve_legal_documents(client):
 
 def accept_study_credentials(client):
     approve_legal_documents(client)
+    if not client.app.state.settings.profile_encryption_key.get_secret_value():
+        client.app.state.settings.profile_encryption_key = SecretStr(Fernet.generate_key().decode())
     from studgroup.legal import VERSION
 
     for purpose in ("terms", "service", "sdo"):
@@ -125,12 +127,25 @@ def test_legal_documents_are_public_and_individual_confirmations_are_audited(cli
     assert not_ready.status_code == 503
 
     approve_legal_documents(client)
+    assert client.get("/v1/legal/status", headers=HEADERS).json()["credentials_ready"] is False
     without_terms = client.post(
         "/v1/legal/consents",
         json={"purpose": "sdo", "version": VERSION, "confirmed": True},
         headers=HEADERS,
     )
     assert without_terms.status_code == 403
+    for purpose in ("terms", "service"):
+        assert client.post(
+            "/v1/legal/consents",
+            json={"purpose": purpose, "version": VERSION, "confirmed": True},
+            headers=HEADERS,
+        ).status_code == 200
+    no_key = client.post(
+        "/v1/legal/consents",
+        json={"purpose": "sdo", "version": VERSION, "confirmed": True},
+        headers=HEADERS,
+    )
+    assert no_key.status_code == 503
     wrong_version = client.post(
         "/v1/legal/consents",
         json={"purpose": "terms", "version": "obsolete", "confirmed": True},

@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
+from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
@@ -94,6 +95,19 @@ def legal_ready(settings):
         and settings.legal_data_region.strip()
         and settings.legal_documents_approved
     )
+
+
+def credentials_ready(settings):
+    if not legal_ready(settings):
+        return False
+    key = settings.profile_encryption_key.get_secret_value()
+    if not key:
+        return False
+    try:
+        Fernet(key.encode())
+    except ValueError:
+        return False
+    return True
 
 
 def document_text(document, settings):
@@ -184,6 +198,7 @@ async def status(
     return {
         "version": VERSION,
         "ready": legal_ready(settings),
+        "credentials_ready": credentials_ready(settings),
         "terms": await has_consent(db, user.id, "terms", settings),
         "service": await has_consent(db, user.id, "service", settings),
         "sdo": await has_consent(db, user.id, "sdo", settings),
@@ -208,6 +223,8 @@ async def accept(
             raise ApiError("terms_required", "Подтвердите условия использования", 403)
         if not await has_consent(db, user.id, "service", settings):
             raise ApiError("consent_required", "Отдельно подтвердите обработку данных", 403)
+        if not credentials_ready(settings):
+            raise ApiError("credentials_unavailable", "Хранение пароля ещё не настроено", 503)
     receipt(
         db,
         user.id,

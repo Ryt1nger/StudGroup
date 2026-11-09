@@ -128,7 +128,7 @@ function LegalFields({ status, required, checks, setChecks, includeSdo = false }
       {entries.map(([key, label, document]) => (
         <label key={key} className="ob-consent">
           <input type="checkbox" checked={status?.[key] === true || checks[key]}
-            disabled={status?.[key] === true || !status?.ready}
+            disabled={status?.[key] === true || !status?.ready || (key === 'sdo' && !status.credentials_ready)}
             onChange={(event) => setChecks({ ...checks, [key]: event.target.checked })} />
           <span>{label}<a href={'/legal/' + document} target="_blank" rel="noopener noreferrer">Прочитать документ</a></span>
         </label>
@@ -148,6 +148,9 @@ async function ensureConsents(status: LegalStatus | undefined, checks: ConsentCh
   if (!status?.ready) {
     if (required || includeSdo) throw new Error('Документы оператора ещё не утверждены');
     return;
+  }
+  if (includeSdo && !status.credentials_ready) {
+    throw new Error('Хранение пароля ещё не настроено');
   }
   const purposes: (keyof ConsentChecks)[] = includeSdo ? ['terms', 'service', 'sdo'] : ['terms', 'service'];
   for (const purpose of purposes) {
@@ -336,7 +339,7 @@ function CredentialsStep({ back, busy, next }: { back?: () => void; busy: boolea
   const [password, setPassword] = useState('');
   const [checks, setChecks] = useState<ConsentChecks>({ terms: false, service: false, sdo: false });
   const [error, setError] = useState('');
-  const ready = legal.data?.ready === true;
+  const ready = legal.data?.credentials_ready === true;
 
   async function submit() {
     if (!login?.trim() && !profile.data?.sdu.login) { setError('Введи логин СДО/ЛК'); return; }
@@ -368,7 +371,9 @@ function CredentialsStep({ back, busy, next }: { back?: () => void; busy: boolea
           placeholder={profile.data?.sdu.password_set ? 'Пароль уже сохранён' : 'Твой пароль'}
           value={password} onChange={(e) => setPassword(e.target.value)} disabled={!ready} /></label>
         {ready ? <LegalFields status={legal.data} required checks={checks} setChecks={setChecks} includeSdo /> :
-          <p className="ob-subtle">Сохранение пароля пока отключено до утверждения документов оператора.</p>}
+          <p className="ob-subtle">{legal.data?.ready
+            ? 'Сохранение пароля пока отключено: на сервере не настроен ключ шифрования.'
+            : 'Сохранение пароля пока отключено до утверждения документов оператора.'}</p>}
       </div>
       <p className="ob-subtle">Пароль не отправляется в Telegram и не показывается другим участникам. Сохранение не означает, что интеграция с вузом уже работает.</p>
       {error ? <Notice message={error} /> : null}
@@ -405,11 +410,12 @@ function StaffFirstRun({ state, membershipId }: { state: OnboardingState; member
     if (!firstValue.trim()) { setError('Укажите имя'); return; }
     setError('');
     try {
-      await ensureConsents(legal.data, checks, state.legal_required, Boolean(loginValue || password));
+      const wantsSdo = Boolean(legal.data?.credentials_ready && (login || password));
+      await ensureConsents(legal.data, checks, state.legal_required, wantsSdo);
       await save.mutateAsync({
         first_name: firstValue.trim(), last_name: lastValue.trim() || null, email: emailValue.trim() || null,
       });
-      if (loginValue || password) {
+      if (wantsSdo) {
         if (!loginValue.trim() || (!password && !profile.data?.sdu.password_set)) {
           throw new Error('Для СДО/ЛК нужны логин и пароль. Или оставьте оба поля пустыми.');
         }
@@ -442,13 +448,13 @@ function StaffFirstRun({ state, membershipId }: { state: OnboardingState; member
             value={emailValue} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" /></label>
           <div className="ob-divider">СДО и личный кабинет · необязательно</div>
           <label>Логин СДО/ЛК<input type="text" autoComplete="off" maxLength={80}
-            disabled={!legal.data?.ready} value={loginValue} onChange={(e) => setLogin(e.target.value)}
+            disabled={!legal.data?.credentials_ready} value={loginValue} onChange={(e) => setLogin(e.target.value)}
             placeholder="Логин" /></label>
           <label>Пароль СДО/ЛК<input type="password" autoComplete="new-password" maxLength={200}
-            disabled={!legal.data?.ready} value={password} onChange={(e) => setPassword(e.target.value)}
+            disabled={!legal.data?.credentials_ready} value={password} onChange={(e) => setPassword(e.target.value)}
             placeholder={profile.data?.sdu.password_set ? 'Сохранён, менять необязательно' : 'Пароль'} /></label>
           <LegalFields status={legal.data} required={state.legal_required} checks={checks} setChecks={setChecks}
-            includeSdo={Boolean(loginValue || password)} />
+            includeSdo={Boolean(legal.data?.credentials_ready && (login || password))} />
         </div>
         {error || progress.error ? <Notice message={error || progress.error} /> : null}
         <Actions next={() => { void submit(); }} busy={progress.busy || save.isPending} disabled={profile.isPending || legal.isPending || (state.legal_required && !legal.data?.ready)}

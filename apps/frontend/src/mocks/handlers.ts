@@ -85,6 +85,10 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
       role: 'student', step: 'complete', completed: true, group_name: 'БИ 1.2',
       academic_group_code: null, legal_required: false,
     })),
+    http.get(url('/legal/status'), () => HttpResponse.json({
+      version: '2026-11-09-v2', ready: false, credentials_ready: false,
+      terms: false, service: false, sdo: false,
+    })),
     http.get(url('/profile'), () => HttpResponse.json(profile)),
     http.patch(url('/profile'), async ({ request }) => {
       profile = applyProfilePatch(profile, (await request.json()) as Record<string, unknown>);

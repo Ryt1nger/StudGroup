@@ -3,11 +3,10 @@ import { client } from '@studgroup/shared-types';
 import { apiAuthorization } from './client';
 
 const legalBase = () => `${(client.getConfig().baseUrl ?? '/v1').replace(/\/$/, '')}/legal`;
-export const LEGAL_VERSION = '2026-11-08-v1';
-
 export interface LegalStatus {
   version: string;
   ready: boolean;
+  credentials_ready: boolean;
   terms: boolean;
   service: boolean;
   sdo: boolean;

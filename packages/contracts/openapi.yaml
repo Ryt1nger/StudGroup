@@ -12,6 +12,7 @@ security:
   - bearerAuth: []
 tags:
   - name: Onboarding
+  - name: Legal
   - name: Schedule
   - name: Session
   - name: Today
@@ -20,6 +21,18 @@ tags:
   - name: Staff
     description: Headman/deputy cabinet. Every route re-checks the active membership role.
 paths:
+  /legal/status:
+    get:
+      tags: [Legal]
+      operationId: getLegalStatus
+      summary: Return the caller's current consent and credential readiness state
+      responses:
+        "200":
+          description: No credentials or secret key are returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegalStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /onboarding:
     get:
       tags: [Onboarding]
@@ -1763,6 +1776,17 @@ components:
         permissions: [homework.read, homework.completion.write]
         generated_at: "2026-10-04T12:00:00Z"
   schemas:
+    LegalStatus:
+      type: object
+      additionalProperties: false
+      required: [version, ready, credentials_ready, terms, service, sdo]
+      properties:
+        version: { type: string }
+        ready: { type: boolean, description: Operator documents are approved }
+        credentials_ready: { type: boolean, description: Operator documents and a valid encryption key are configured }
+        terms: { type: boolean }
+        service: { type: boolean }
+        sdo: { type: boolean }
     OnboardingStep:
       type: string
       enum: [welcome, legal, personal, subgroups, sdo, finish, complete]

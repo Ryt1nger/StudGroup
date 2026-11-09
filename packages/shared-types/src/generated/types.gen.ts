@@ -4,6 +4,21 @@ export type ClientOptions = {
     baseUrl: 'https://api.studgroup.example/v1' | (string & {});
 };
 
+export type LegalStatus = {
+    version: string;
+    /**
+     * Operator documents are approved
+     */
+    ready: boolean;
+    /**
+     * Operator documents and a valid encryption key are configured
+     */
+    credentials_ready: boolean;
+    terms: boolean;
+    service: boolean;
+    sdo: boolean;
+};
+
 export type OnboardingStep = 'welcome' | 'legal' | 'personal' | 'subgroups' | 'sdo' | 'finish' | 'complete';
 
 export type OnboardingState = {
@@ -997,6 +1012,31 @@ export type UpdateProfileRequestWritable = {
 export type StaffItemId = string;
 
 export type HomeworkId = string;
+
+export type GetLegalStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/legal/status';
+};
+
+export type GetLegalStatusErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+};
+
+export type GetLegalStatusError = GetLegalStatusErrors[keyof GetLegalStatusErrors];
+
+export type GetLegalStatusResponses = {
+    /**
+     * No credentials or secret key are returned
+     */
+    200: LegalStatus;
+};
+
+export type GetLegalStatusResponse = GetLegalStatusResponses[keyof GetLegalStatusResponses];
 
 export type GetOnboardingStateData = {
     body?: never;

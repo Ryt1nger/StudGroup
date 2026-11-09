@@ -61,7 +61,7 @@ export function SdoCredentialsScreen() {
   }, []);
 
   async function submit() {
-    if (!status || !status.ready || busy) return;
+    if (!status?.credentials_ready || busy) return;
     const actualLogin = (login ?? profile?.sdu.login ?? '').trim();
     if (!actualLogin) { setError('Введите логин СДО/ЛК'); return; }
     if (!password && !profile?.sdu.password_set) { setError('Введите пароль СДО/ЛК'); return; }
@@ -124,16 +124,17 @@ export function SdoCredentialsScreen() {
       <p>Пароль вводится только здесь, не в Telegram-переписке. StudGroup не сообщает, что вход в СДО уже выполнен.</p>
       {profileQuery.isPending || !status ? <p>Загрузка настроек…</p> : null}
       {status && !status.ready ? <p role="alert">Сохранение пока недоступно: оператор ещё не утвердил документы и реквизиты в настройках сервера.</p> : null}
+      {status?.ready && !status.credentials_ready ? <p role="alert">Сохранение пока недоступно: на сервере не настроен ключ шифрования паролей.</p> : null}
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }} autoComplete="off">
         <label htmlFor="study-login">Логин СДО / ЛК</label>
         <input id="study-login" name="study-login" type="text" autoComplete="off" maxLength={80}
           value={login ?? profile?.sdu.login ?? ''} onChange={(event) => setLogin(event.target.value)}
-          disabled={!status?.ready || profileQuery.isPending}
+          disabled={!status?.credentials_ready || profileQuery.isPending}
           placeholder="Ваш логин" style={{ display: 'block', width: '100%', margin: '8px 0 16px' }} />
         <label htmlFor="study-password">Пароль СДО / ЛК</label>
         <input id="study-password" name="study-password" type="password" autoComplete="new-password" maxLength={200}
           value={password} onChange={(event) => setPassword(event.target.value)}
-          disabled={!status?.ready || profileQuery.isPending}
+          disabled={!status?.credentials_ready || profileQuery.isPending}
           placeholder={profile?.sdu.password_set ? 'Пароль уже сохранён. Введите новый для замены' : 'Ваш пароль'}
           style={{ display: 'block', width: '100%', margin: '8px 0 22px' }} />
         <p>Ознакомьтесь с документами. Для каждого ещё не подтверждённого документа нужна отдельная отметка.</p>
@@ -144,7 +145,7 @@ export function SdoCredentialsScreen() {
           return (
             <div key={purpose} style={{ marginBottom: 16 }}>
               <label>
-                <input type="checkbox" checked={accepted[purpose]} disabled={!status?.ready} onChange={(e) =>
+                <input type="checkbox" checked={accepted[purpose]} disabled={!status?.credentials_ready} onChange={(e) =>
                   setAccepted((old) => ({ ...old, [purpose]: e.target.checked }))} />
                 {' '}{label}
               </label>
@@ -155,7 +156,7 @@ export function SdoCredentialsScreen() {
         <p><Link to="/legal/privacy">Политика обработки данных</Link> · <Link to="/legal/cookies">Технические данные</Link></p>
         {error ? <p role="alert">{error}</p> : null}
         {success ? <p role="status">{success}</p> : null}
-        <button type="submit" className="btn" disabled={busy || !status?.ready || profileQuery.isPending}>
+        <button type="submit" className="btn" disabled={busy || !status?.credentials_ready || profileQuery.isPending}>
           {busy ? 'Сохраняем…' : 'Сохранить данные СДО / ЛК'}
         </button>
       </form>

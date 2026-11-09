@@ -11,7 +11,7 @@ describe('profile', () => {
     server.use(
       http.get(`${API}/profile`, () => HttpResponse.json(demoProfile())),
       http.get(`${API}/legal/status`, () => HttpResponse.json({
-        version: '2026-11-09-v2', ready: false, terms: false, service: false, sdo: false,
+        version: '2026-11-09-v2', ready: false, credentials_ready: false, terms: false, service: false, sdo: false,
       })),
     );
     renderApp({ route: '/profile/sdo' });
@@ -19,6 +19,21 @@ describe('profile', () => {
     expect(screen.getByLabelText('Логин СДО / ЛК')).toBeDisabled();
     expect(screen.getByLabelText('Пароль СДО / ЛК')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Сохранить данные СДО / ЛК' })).toBeDisabled();
+  });
+
+  it('blocks credential entry when documents are approved but encryption is unavailable', async () => {
+    useScenario();
+    server.use(
+      http.get(`${API}/profile`, () => HttpResponse.json(demoProfile())),
+      http.get(`${API}/legal/status`, () => HttpResponse.json({
+        version: '2026-11-09-v2', ready: true, credentials_ready: false,
+        terms: true, service: true, sdo: false,
+      })),
+    );
+    renderApp({ route: '/profile/sdo' });
+    expect(await screen.findByText(/не настроен ключ шифрования/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Логин СДО / ЛК')).toBeDisabled();
+    expect(screen.getByLabelText('Пароль СДО / ЛК')).toBeDisabled();
   });
 
   it('saves personal data and opens the separate, consent-gated SDO/LK form', async () => {
