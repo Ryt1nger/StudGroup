@@ -6,8 +6,10 @@ import { useProfileQuery, useUpdateProfile } from '../../api/queries';
 import { useSession } from '../../session/SessionProvider';
 import { Float } from '../../shell/AppRoot';
 import { useDisplay } from '../../shell/display';
+import { useOnboardingPreview } from '../onboarding/OnboardingPreviewContext';
+import { ACCENT_INFO, THEMES, TEXT_SIZES, DENSITIES } from '../../shell/appearanceOptions';
 import { BackTop, initialsOf } from '../../shell/TopBar';
-import { ACCENTS, useTelegram, type Accent } from '../../telegram/TelegramProvider';
+import { ACCENTS, useTelegram } from '../../telegram/TelegramProvider';
 import { Banner, Empty, Skeleton, Spinner } from '../../ui/Blocks';
 import { useFeedback } from '../../ui/Feedback';
 import { Ic } from '../../ui/Ic';
@@ -17,22 +19,6 @@ import appPackage from '../../../package.json';
 
 const ROLE = { student: 'Студент', headman: 'Староста', deputy: 'Помощник старосты' } as const;
 
-const ACCENT_INFO: Record<Accent, { name: string; h: number; s: string; l: string; on?: string }> = {
-  green: { name: 'Зелёный', h: 150, s: '60%', l: '42%' },
-  red: { name: 'Красный', h: 355, s: '86%', l: '60%' },
-  violet: { name: 'Фиолетовый', h: 246, s: '100%', l: '68%' },
-  blue: { name: 'Голубой', h: 212, s: '100%', l: '58%' },
-  gray: { name: 'Серый', h: 230, s: '8%', l: '56%' },
-  yellow: { name: 'Жёлтый', h: 44, s: '100%', l: '52%', on: '#1c1500' },
-  pink: { name: 'Нежно-розовый', h: 335, s: '82%', l: '78%', on: '#24101b' },
-  teal: { name: 'Бирюзовый', h: 177, s: '64%', l: '55%', on: '#062321' },
-};
-
-const THEMES = [
-  ['light', 'Светлая'],
-  ['dark', 'Тёмная'],
-  [null, 'Системная'],
-] as const;
 
 function Icon({ name }: { name: IconName }) {
   return <span className="ri"><Ic name={name} size={18} /></span>;
@@ -102,8 +88,8 @@ function Personal() {
         </div>
       </div>
       <Group title="Вид">
-        <Segment title="Размер текста" options={[['s', 'Мелкий'], ['m', 'Обычный'], ['l', 'Крупный']] as const} value={display.text} onChange={(text) => setDisplay({ text })} />
-        <Segment title="Плотность списков" options={[['normal', 'Обычная'], ['compact', 'Компактная']] as const} value={display.density} onChange={(density) => setDisplay({ density })} />
+        <Segment title="Размер текста" options={TEXT_SIZES} value={display.text} onChange={(text) => setDisplay({ text })} />
+        <Segment title="Плотность списков" options={DENSITIES} value={display.density} onChange={(density) => setDisplay({ density })} />
         <Toggle icon="palette" title="Анимации" sub="Плавные переходы и появление карточек" checked={display.motion} onChange={(motion) => setDisplay({ motion })} />
       </Group>
     </>
@@ -341,6 +327,7 @@ function Home() {
   const { state } = useSession();
   const { preference, accent } = useTelegram();
   const profileQuery = useProfileQuery();
+  const openOnboardingPreview = useOnboardingPreview();
   if (state.status !== 'ready') return null;
   const { user, group, membership } = state.session;
   const profile = profileQuery.data;
@@ -388,6 +375,14 @@ function Home() {
           <div><div className="st">Уведомления</div></div>
           <span className="sv">{enabled ? 'Включены' : 'Выключены'}<Ic name="chev" /></span>
         </Link>
+        {openOnboardingPreview ? <button className="srow" type="button" onClick={openOnboardingPreview}
+          aria-label="Посмотреть первый запуск">
+          <Icon name="info" />
+          <div><div className="st">Посмотреть первый запуск</div>
+            <div className="ss">Повторно открыть экраны настройки без сохранения данных</div>
+          </div>
+          <span className="sv"><Ic name="chev" /></span>
+        </button> : null}
       </Group>
       <Group title="Данные и помощь">
         <Link className="srow" to="/profile/privacy">

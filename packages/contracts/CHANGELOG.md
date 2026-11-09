@@ -1,5 +1,10 @@
 # Contract changelog
 
+## 0.22.0 — 2026-11-09
+
+- Expanded first-run progress with contacts and appearance stages. The new onboarding screen sequence is welcome → personal → contacts → subgroups → SDO → legal → appearance → finish. Saved completion still applies per membership; old completed memberships remain completed. The existing profile, subgroup, legal, and appearance preference storage APIs remain unchanged.
+- Legacy step transitions used by old Telegram cached web builds continue to work during the rollout. No data migration is needed for the VARCHAR-backed progress field.
+
 ## 0.21.1 — 2026-11-09
 
 - Documented `GET /legal/status` and added `credentials_ready`; clients can disable SDO/LK password entry until both operator documents and a valid encryption key are configured. `ready` retains its meaning for general consents.

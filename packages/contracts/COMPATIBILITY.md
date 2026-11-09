@@ -1,5 +1,9 @@
 # Contract compatibility
 
+## Multi-step first run (0.22.0, 2026-11-09)
+
+Onboarding now supports `contacts` and `appearance` in addition to the existing stages. Responses remain membership-scoped and existing completed memberships continue to bypass the wizard. Old clients can still use their original legal-first student transitions and staff single-form finish. Personalization is client-side and reuses exactly the existing Telegram theme/accent cookies and display cookie; no user profile payload or new credential storage is introduced.
+
 ## Credential readiness (0.21.1, 2026-11-09)
 
 `GET /legal/status` adds `credentials_ready` without changing `ready`. Older clients may ignore the field; the server still rejects password writes without a valid encryption key. Updated clients use `credentials_ready` to keep SDO/LK inputs disabled while allowing ordinary consent and onboarding to proceed.

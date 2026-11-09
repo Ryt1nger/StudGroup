@@ -19,7 +19,7 @@ export type LegalStatus = {
     sdo: boolean;
 };
 
-export type OnboardingStep = 'welcome' | 'legal' | 'personal' | 'subgroups' | 'sdo' | 'finish' | 'complete';
+export type OnboardingStep = 'welcome' | 'personal' | 'contacts' | 'subgroups' | 'sdo' | 'legal' | 'appearance' | 'finish' | 'complete';
 
 export type OnboardingState = {
     role: 'student' | 'headman' | 'deputy';
@@ -31,7 +31,7 @@ export type OnboardingState = {
 };
 
 export type OnboardingProgressRequest = {
-    step: 'welcome' | 'legal' | 'personal' | 'subgroups' | 'sdo' | 'finish';
+    step: 'welcome' | 'personal' | 'contacts' | 'subgroups' | 'sdo' | 'legal' | 'appearance' | 'finish';
 };
 
 export type OnboardingProgressResponse = {
