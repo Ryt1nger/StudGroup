@@ -543,6 +543,10 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
     base_tap(foreman, "Я студент", uid=88)
     base_tap(foreman, "Принимаю условия использования", uid=88)
     base_tap(foreman, "Даю отдельное согласие", uid=88)
+    assert "Регистрация · шаг 1" in last(foreman)["text"]
+    deliver(foreman, "Анна", uid=88)
+    base_tap(foreman, "Пропустить", uid=88)
+    base_tap(foreman, "Пропустить", uid=88)
     assert "Готово! Вы подключены" in last(foreman)["text"]
 
     async def roles(db):
