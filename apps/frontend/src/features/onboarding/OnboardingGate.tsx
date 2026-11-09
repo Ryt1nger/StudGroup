@@ -28,7 +28,7 @@ import './onboarding.css';
 
 const steps = ['welcome', 'personal', 'contacts', 'subgroups', 'sdo', 'legal', 'appearance', 'finish'] as const;
 type Step = (typeof steps)[number];
-type Checks = { terms: boolean; service: boolean; sdo: boolean };
+type Checks = { terms: boolean; service: boolean };
 type SdoDraft = { login: string; password: string };
 const ART: Record<Step, [string, string]> = {
   welcome: [welcomeLight, welcomeDark],
@@ -312,7 +312,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
     </> : null}
     {step === 'finish' ? <>
       <Title lead="Расписание, задания и события уже ждут вас.">
-        Настройка завершена!
+        Всё готово! StudGroup настроен
       </Title>
       <div className="ob-done-lines">
         <span><b>✓</b> Группа: {state.group_name}</span>
@@ -389,23 +389,36 @@ function Wizard({ state, membershipId }: { state: OnboardingState; membershipId:
       {shown === 'subgroups' ? <SubgroupStep staff={isStaff} back={back} busy={progress.busy} next={next('sdo')} /> : null}
       {shown === 'sdo' ? <CredentialsStep back={back} busy={progress.busy} next={next('legal')}
         draft={sdoDraft} onDraft={setSdoDraft} /> : null}
-      {shown === 'legal' ? <LegalStep required={state.legal_required} back={back} busy={progress.busy}
+      {shown === 'legal' ? <LegalStep back={back} busy={progress.busy}
         next={next('appearance')} pendingSdo={sdoDraft} clearSdo={() => setSdoDraft(null)} /> : null}
       {shown === 'appearance' ? <AppearanceStep back={back} busy={progress.busy} next={next('finish')} /> : null}
-      {shown === 'finish' ? (
-        <>
-          <Title lead="Расписание, задания и события уже ждут вас.">Настройка завершена!</Title>
-          <div className="ob-done-lines">
-            <span><b>✓</b> Группа: {state.group_name}</span>
-            <span><b>✓</b> Личные данные сохранены</span>
-            <span><b>✓</b> Оформление настроено</span>
-          </div>
-          <Actions back={back} busy={progress.busy} label="Перейти в StudGroup" next={() => { void progress.finish(); }} />
-        </>
-      ) : null}
+      {shown === 'finish' ? <FinishStep group={state.group_name} staff={isStaff} back={back}
+        busy={progress.busy} finish={() => { void progress.finish(); }} /> : null}
       {progress.error ? <Notice message={progress.error} /> : null}
     </Shell>
   );
+}
+
+function FinishStep({ group, staff, back, busy, finish }: {
+  group: string; staff: boolean; back?: () => void; busy: boolean; finish: () => void;
+}) {
+  const splits = useQuery({ queryKey: ['onboarding-subgroups'], queryFn: getStudentSplits, enabled: !staff });
+  const items = splits.data?.items ?? [];
+  const chosen = items.filter(item => item.selected_subgroup_id).length;
+  return <>
+    <Title lead="Расписание, задания и события уже ждут вас.">Всё готово! StudGroup настроен</Title>
+    <div className="ob-done-lines">
+      <span><b>✓</b> Группа: {group}</span>
+      <span><b>✓</b> Личные данные сохранены</span>
+      <span><b>{splits.isPending && !staff ? '…' : '✓'}</b> {staff ? 'Подгруппы для роли не требуются'
+        : splits.isPending ? 'Проверяем подгруппы…' : splits.isError ? 'Проверка подгрупп не удалась'
+          : items.length ? `Подгруппы: ${chosen} из ${items.length} выбраны` : 'Предметов с подгруппами нет'}</span>
+      <span><b>✓</b> Оформление настроено</span>
+    </div>
+    {splits.isError ? <Notice message="Не удалось проверить подгруппы" retry={() => { void splits.refetch(); }} /> : null}
+    <Actions back={back} busy={busy} disabled={!staff && (splits.isPending || splits.isError || chosen !== items.length)}
+      label="Перейти в StudGroup" next={finish} />
+  </>;
 }
 
 function PersonalStep({ back, busy, next }: { back?: () => void; busy: boolean; next: () => void }) {
@@ -524,15 +537,12 @@ function SubgroupStep({ staff, back, busy, next }: { staff: boolean; back?: () =
   );
 }
 
-async function ensureConsents(status: LegalStatus | undefined, checks: Checks, required: boolean, purposes: Array<keyof Checks>) {
-  if (!status?.ready) {
-    if (required) throw new Error('Юридические документы ещё не утверждены');
-    return;
-  }
+async function ensureConsents(status: LegalStatus | undefined, checks: Checks, purposes: Array<keyof Checks>) {
+  if (!status?.ready) throw new Error('Юридические документы ещё не утверждены');
   for (const purpose of purposes) {
     if (status[purpose]) continue;
     if (checks[purpose]) await acceptLegal(purpose, status.version);
-    else if (required) throw new Error('Подтвердите согласие перед продолжением');
+    else throw new Error('Подтвердите согласие перед продолжением');
   }
 }
 
@@ -590,20 +600,20 @@ function CredentialsStep({ back, busy, next, draft, onDraft }: {
   );
 }
 
-function LegalStep({ required, back, busy, next, pendingSdo, clearSdo }: {
-  required: boolean; back?: () => void; busy: boolean; next: () => void;
+function LegalStep({ back, busy, next, pendingSdo, clearSdo }: {
+  back?: () => void; busy: boolean; next: () => void;
   pendingSdo: SdoDraft | null; clearSdo: () => void;
 }) {
   const legal = useQuery({ queryKey: ['onboarding-legal'], queryFn: legalStatus });
   const saveProfile = useUpdateProfile();
-  const [checks, setChecks] = useState<Checks>({ terms: false, service: false, sdo: false });
+  const [checks, setChecks] = useState<Checks>({ terms: false, service: false });
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   async function submit() {
     setSending(true);
     try {
       setError('');
-      await ensureConsents(legal.data, checks, required || Boolean(pendingSdo), ['terms', 'service']);
+      await ensureConsents(legal.data, checks, ['terms', 'service']);
       if (pendingSdo) {
         if (!legal.data?.credentials_ready) throw new Error('Для подключения СДО нужны утверждённые документы и шифрование пароля');
         if (!legal.data.sdo) await acceptLegal('sdo', legal.data.version);
@@ -634,8 +644,8 @@ function LegalStep({ required, back, busy, next, pendingSdo, clearSdo }: {
       {pendingSdo ? <div className="ob-help">Данные СДО будут сохранены только после подтверждения этих документов.</div> : null}
       {!legal.data?.ready ? <div className="ob-help">Документы пока находятся на утверждении. Обязательные согласия станут доступны после публикации.</div> : null}
       {error ? <Notice message={error} /> : null}
-      <Actions back={back} busy={busy || sending} disabled={legal.isPending || legal.isError ||
-        ((required || Boolean(pendingSdo)) && !legal.data?.ready)}
+      <Actions back={back} busy={busy || sending} disabled={legal.isPending || legal.isError || !legal.data?.ready ||
+        (!legal.data.terms && !checks.terms) || (!legal.data.service && !checks.service)}
         next={() => { void submit(); }} label="Продолжить" />
     </>
   );

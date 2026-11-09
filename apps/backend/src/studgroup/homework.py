@@ -526,6 +526,8 @@ async def lesson_subject(
     starts = datetime.fromisoformat(lesson["starts_at"])
     user = await user_id(db, authorization)
     hidden = await subgroups.hidden(db, group.id, user)
+    if lesson.get("subgroup_id") in {str(value) for value in hidden}:
+        raise ApiError("not_found", "Пара не найдена", 404)
     rows = (
         await db.scalars(
             select(Homework).where(
@@ -692,6 +694,9 @@ async def today(
         )
         covered = coverage is not None
         last_success = now
+    calendar["lessons"] = subgroups.visible_lessons(
+        calendar["lessons"], await subgroups.hidden(db, group.id, user)
+    )
     selected_lessons = [
         lesson
         for lesson in calendar["lessons"]

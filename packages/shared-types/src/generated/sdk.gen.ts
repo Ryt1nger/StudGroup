@@ -50,7 +50,7 @@ export const saveOnboardingProgress = <ThrowOnError extends boolean = false>(opt
 });
 
 /**
- * Complete setup after profile, subgroup and enabled legal checks
+ * Complete setup after profile, subgroup and mandatory legal checks
  */
 export const completeOnboarding = <ThrowOnError extends boolean = false>(options?: Options<CompleteOnboardingData, ThrowOnError>): RequestResult<CompleteOnboardingResponses, CompleteOnboardingErrors, ThrowOnError> => (options?.client ?? client).post<CompleteOnboardingResponses, CompleteOnboardingErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

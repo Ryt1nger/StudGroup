@@ -114,9 +114,8 @@ def test_legal_documents_are_public_and_individual_confirmations_are_audited(cli
     from studgroup.legal import VERSION
 
     public = client.get("/v1/legal/documents/sdo")
-    assert public.status_code == 200
-    assert "СДО / ЛК" in public.text
-    assert "secret-1" not in public.text
+    assert public.status_code == 503
+    assert "[ОПЕРАТОР НЕ УКАЗАН]" not in public.text
 
     assert client.get("/v1/legal/status").status_code == 401
     not_ready = client.post(
@@ -127,6 +126,10 @@ def test_legal_documents_are_public_and_individual_confirmations_are_audited(cli
     assert not_ready.status_code == 503
 
     approve_legal_documents(client)
+    public = client.get("/v1/legal/documents/sdo")
+    assert public.status_code == 200
+    assert "СДО / ЛК" in public.text
+    assert "secret-1" not in public.text
     assert client.get("/v1/legal/status", headers=HEADERS).json()["credentials_ready"] is False
     without_terms = client.post(
         "/v1/legal/consents",
@@ -172,6 +175,7 @@ def test_legal_documents_are_public_and_individual_confirmations_are_audited(cli
             ]
 
     proof = asyncio.run(evidence())
+    assert len(proof) == 3  # repeated acceptance of the same version is idempotent
     assert {purpose for purpose, _, _, _ in proof} == {"terms", "service", "sdo"}
     assert all(len(digest) == 64 and source == "webapp" for _, _, digest, source in proof)
 

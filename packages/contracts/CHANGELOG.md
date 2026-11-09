@@ -1,5 +1,11 @@
 # Contract changelog
 
+## 0.23.0 — 2026-11-09
+
+- Require current terms and personal-data processing consent for every new onboarding completion. Preserve completed memberships, keep SDO consent optional, and withhold unpublished legal drafts.
+
+- Apply recorded subgroup choices to student schedule and Today lesson projections without changing response schemas.
+
 ## 0.22.0 — 2026-11-09
 
 - Expanded first-run progress with contacts and appearance stages. The new onboarding screen sequence is welcome → personal → contacts → subgroups → SDO → legal → appearance → finish. Saved completion still applies per membership; old completed memberships remain completed. The existing profile, subgroup, legal, and appearance preference storage APIs remain unchanged.

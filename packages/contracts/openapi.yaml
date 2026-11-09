@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.21.0
+  version: 0.23.0
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -65,11 +65,12 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "422": { $ref: "#/components/responses/InvalidRequest" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
   /onboarding/complete:
     post:
       tags: [Onboarding]
       operationId: completeOnboarding
-      summary: Complete setup after profile, subgroup and enabled legal checks
+      summary: Complete setup after profile, subgroup and mandatory legal checks
       responses:
         "200":
           description: Membership setup complete
@@ -1798,7 +1799,9 @@ components:
         role: { type: string, enum: [student, headman, deputy] }
         step: { $ref: "#/components/schemas/OnboardingStep" }
         completed: { type: boolean }
-        legal_required: { type: boolean }
+        legal_required:
+          type: boolean
+          description: Always true for first-run setup; retained for older clients. Completed memberships remain complete.
         group_name: { type: string }
         academic_group_code: { type: [string, "null"] }
     OnboardingProgressRequest:

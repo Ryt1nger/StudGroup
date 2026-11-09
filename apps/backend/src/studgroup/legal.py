@@ -181,6 +181,8 @@ async def authenticated_user(db, authorization):
 
 @router.get("/documents/{document}", response_class=PlainTextResponse)
 async def public_document(document: str, request: Request):
+    if not legal_ready(request.app.state.settings):
+        raise ApiError("legal_not_ready", "Документы оператора ещё не опубликованы", 503)
     return PlainTextResponse(
         document_text(document, request.app.state.settings),
         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
@@ -225,6 +227,8 @@ async def accept(
             raise ApiError("consent_required", "Отдельно подтвердите обработку данных", 403)
         if not credentials_ready(settings):
             raise ApiError("credentials_unavailable", "Хранение пароля ещё не настроено", 503)
+    if await has_consent(db, user.id, body.purpose, settings):
+        return {"purpose": body.purpose, "granted": True, "version": VERSION}
     receipt(
         db,
         user.id,
