@@ -137,7 +137,7 @@
   --ob-muted: #77778b; --ob-line: #e7e7ef; --ob-inset: #f5f5fa; --ob-tint: #f0effb;
 }
 .ob-root.ob-preview[data-ob-preview-text='s'] .ob-scene h1 { font-size: 21px; }
-.ob-root.ob-preview[data-ob-preview-text='l'] .ob-scene h1 { font-size: 26px; }
+.ob-root.ob-preview[data-ob-preview-text='l'] .ob-scene h1 { font-size: 24px; }
 .ob-root.ob-preview[data-ob-preview-text='s'] .ob-lead { font-size: 11.5px; }
 .ob-root.ob-preview[data-ob-preview-text='l'] .ob-lead { font-size: 13px; }
 
@@ -161,8 +161,8 @@
   .ob-art-appearance { display: none; }
   .ob-scene h1 { font-size: 21px; margin: 1px 0 5px; }
   .ob-lead { font-size: 11.8px; margin-bottom: 8px; }
-  .ob-setting { padding: 7px 9px; margin-bottom: 5px; }
-  .ob-setting > strong { margin-bottom: 5px; }
+  .ob-setting { padding: 5px 9px; margin-bottom: 3px; }
+  .ob-setting > strong { margin-bottom: 4px; }
   .ob-actions { padding-top: 6px; }
 }
 @media (max-height: 620px) {
