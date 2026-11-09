@@ -28,6 +28,7 @@ import './onboarding.css';
 const steps = ['welcome', 'personal', 'contacts', 'subgroups', 'sdo', 'legal', 'appearance', 'finish'] as const;
 type Step = (typeof steps)[number];
 type Checks = { terms: boolean; service: boolean; sdo: boolean };
+type SdoDraft = { login: string; password: string };
 const ART: Record<Step, [string, string]> = {
   welcome: [welcomeLight, welcomeDark],
   personal: [personalLight, personalDark],
@@ -149,6 +150,9 @@ function Wizard({ state, membershipId }: { state: OnboardingState; membershipId:
   // Staff had a legacy one-form entry stage named 'personal'. Show the intro
   // before that stage without changing their persisted backend state.
   const [staffIntro, setStaffIntro] = useState(isStaff && stage === 'personal');
+  // Password is only held in this wizard's memory until legal consent is confirmed.
+  // Never write it to cookies, storage or the React Query cache.
+  const [sdoDraft, setSdoDraft] = useState<SdoDraft | null>(null);
   const shown: Step = staffIntro && stage === 'personal' ? 'welcome' : stage;
   const index = steps.indexOf(stage);
   const back = shown === 'welcome' ? undefined : () => {
@@ -173,8 +177,10 @@ function Wizard({ state, membershipId }: { state: OnboardingState; membershipId:
       {shown === 'personal' ? <PersonalStep back={back} busy={progress.busy} next={next('contacts')} /> : null}
       {shown === 'contacts' ? <ContactsStep back={back} busy={progress.busy} next={next('subgroups')} /> : null}
       {shown === 'subgroups' ? <SubgroupStep staff={isStaff} back={back} busy={progress.busy} next={next('sdo')} /> : null}
-      {shown === 'sdo' ? <CredentialsStep back={back} busy={progress.busy} next={next('legal')} /> : null}
-      {shown === 'legal' ? <LegalStep required={state.legal_required} back={back} busy={progress.busy} next={next('appearance')} /> : null}
+      {shown === 'sdo' ? <CredentialsStep back={back} busy={progress.busy} next={next('legal')}
+        draft={sdoDraft} onDraft={setSdoDraft} /> : null}
+      {shown === 'legal' ? <LegalStep required={state.legal_required} back={back} busy={progress.busy}
+        next={next('appearance')} pendingSdo={sdoDraft} clearSdo={() => setSdoDraft(null)} /> : null}
       {shown === 'appearance' ? <AppearanceStep back={back} busy={progress.busy} next={next('finish')} /> : null}
       {shown === 'finish' ? (
         <>
@@ -309,35 +315,33 @@ async function ensureConsents(status: LegalStatus | undefined, checks: Checks, r
   }
 }
 
-function CredentialsStep({ back, busy, next }: { back?: () => void; busy: boolean; next: () => void }) {
+function CredentialsStep({ back, busy, next, draft, onDraft }: {
+  back?: () => void; busy: boolean; next: () => void;
+  draft: SdoDraft | null; onDraft: (draft: SdoDraft | null) => void;
+}) {
   const legal = useQuery({ queryKey: ['onboarding-legal'], queryFn: legalStatus });
   const profile = useProfileQuery();
-  const save = useUpdateProfile();
-  const [login, setLogin] = useState<string | null>(null);
-  const [password, setPassword] = useState('');
-  const [agreeSdo, setAgreeSdo] = useState(false);
+  const [login, setLogin] = useState<string | null>(draft?.login ?? null);
+  const [password, setPassword] = useState(draft?.password ?? '');
+  const [agreeSdo, setAgreeSdo] = useState(Boolean(draft));
   const [error, setError] = useState('');
   const ready = legal.data?.ready === true;
   const loginValue = login ?? profile.data?.sdu.login ?? '';
-  async function submit() {
+  function submit() {
     if (!loginValue.trim() || (!password && !profile.data?.sdu.password_set)) {
       setError('Для подключения нужны логин и пароль. Или нажмите «Подключить позже».'); return;
     }
-    try {
-      setError('');
-      if (!legal.data?.terms || !legal.data?.service) {
-        throw new Error('Сначала подтвердите условия и согласие на следующем этапе. СДО можно подключить после настройки в профиле.');
-      }
-      await ensureConsents(legal.data, { terms: false, service: false, sdo: agreeSdo }, true, ['sdo']);
-      await save.mutateAsync({ sdu_platform: 'РАНХиГС — СДО / ЛК', sdu_login: loginValue.trim(),
-        ...(password ? { sdu_password: password } : {}) });
-      setPassword('');
-      next();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось подключить СДО'); }
+    if (!legal.data?.sdo && !agreeSdo) {
+      setError('Для хранения реквизитов нужно отдельное согласие на СДО/ЛК.'); return;
+    }
+    setError('');
+    onDraft({ login: loginValue.trim(), password });
+    setPassword('');
+    next();
   }
   return (
     <>
-      <Title badge="Необязательно" lead="Подключите СДО и личный кабинет, чтобы видеть учебные материалы. Это можно сделать позднее.">
+      <Title badge="Необязательно" lead="Подключите СДО и личный кабинет для учебных материалов. Этот шаг можно пропустить.">
         СДО и личный кабинет
       </Title>
       <div className="ob-form">
@@ -351,16 +355,24 @@ function CredentialsStep({ back, busy, next }: { back?: () => void; busy: boolea
         disabled={legal.data?.sdo === true} onChange={e => setAgreeSdo(e.target.checked)} />
         <span>Разрешаю хранить реквизиты СДО / ЛК <a href="/legal/sdo" target="_blank" rel="noopener noreferrer">Прочитать документ</a></span>
       </label> : <div className="ob-help">Подключение пока отключено до утверждения правовых документов.</div>}
-      <div className="ob-help">🔒 Реквизиты не отправляются в чат Telegram.</div>
+      <div className="ob-help">🔒 Пароль сохраняется только после согласий на следующем шаге и не отправляется в чат Telegram.</div>
       {error ? <Notice message={error} /> : null}
-      <div className="ob-link-row"><button type="button" disabled={busy || save.isPending} onClick={next}>Подключить позже</button></div>
-      <Actions back={back} busy={busy || save.isPending} disabled={!ready || profile.isPending} next={() => { void submit(); }} />
+      <div className="ob-link-row"><button type="button" disabled={busy} onClick={() => {
+        onDraft(null);
+        setPassword('');
+        next();
+      }}>Подключить позже</button></div>
+      <Actions back={back} busy={busy} disabled={!ready || profile.isPending} next={submit} label="Продолжить" />
     </>
   );
 }
 
-function LegalStep({ required, back, busy, next }: { required: boolean; back?: () => void; busy: boolean; next: () => void }) {
+function LegalStep({ required, back, busy, next, pendingSdo, clearSdo }: {
+  required: boolean; back?: () => void; busy: boolean; next: () => void;
+  pendingSdo: SdoDraft | null; clearSdo: () => void;
+}) {
   const legal = useQuery({ queryKey: ['onboarding-legal'], queryFn: legalStatus });
+  const saveProfile = useUpdateProfile();
   const [checks, setChecks] = useState<Checks>({ terms: false, service: false, sdo: false });
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -368,7 +380,16 @@ function LegalStep({ required, back, busy, next }: { required: boolean; back?: (
     setSending(true);
     try {
       setError('');
-      await ensureConsents(legal.data, checks, required, ['terms', 'service']);
+      await ensureConsents(legal.data, checks, required || Boolean(pendingSdo), ['terms', 'service']);
+      if (pendingSdo) {
+        if (!legal.data?.ready) throw new Error('Для подключения СДО нужны опубликованные документы');
+        if (!legal.data.sdo) await acceptLegal('sdo', legal.data.version);
+        await saveProfile.mutateAsync({
+          sdu_platform: 'РАНХиГС — СДО / ЛК', sdu_login: pendingSdo.login,
+          ...(pendingSdo.password ? { sdu_password: pendingSdo.password } : {}),
+        });
+        clearSdo();
+      }
       next();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось подтвердить документы'); }
     finally { setSending(false); }
@@ -387,9 +408,11 @@ function LegalStep({ required, back, busy, next }: { required: boolean; back?: (
             <span>{label}<a href={'/legal/' + kind} target="_blank" rel="noopener noreferrer">Прочитать документ ↗</a></span>
           </label>)}
       </div>
+      {pendingSdo ? <div className="ob-help">Данные СДО будут сохранены только после подтверждения этих документов.</div> : null}
       {!legal.data?.ready ? <div className="ob-help">Документы пока находятся на утверждении. Обязательные согласия станут доступны после публикации.</div> : null}
       {error ? <Notice message={error} /> : null}
-      <Actions back={back} busy={busy || sending} disabled={legal.isPending || legal.isError || (required && !legal.data?.ready)}
+      <Actions back={back} busy={busy || sending} disabled={legal.isPending || legal.isError ||
+        ((required || Boolean(pendingSdo)) && !legal.data?.ready)}
         next={() => { void submit(); }} label="Продолжить" />
     </>
   );
