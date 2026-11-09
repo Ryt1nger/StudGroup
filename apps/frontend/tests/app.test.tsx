@@ -10,6 +10,27 @@ const HW = '44444444-4444-4444-8444-444444444444';
 const HW_UNAVAILABLE = '66666666-6666-4666-8666-666666666666';
 
 describe('session and access', () => {
+  it('opens old /onboarding URLs directly into Today without requesting onboarding', async () => {
+    useScenario();
+    let onboardingRequests = 0;
+    server.use(http.get(`${API}/onboarding`, () => {
+      onboardingRequests += 1;
+      return HttpResponse.json({ completed: false, step: 'welcome' });
+    }));
+    renderApp({ route: '/onboarding' });
+    expect(await screen.findByRole('heading', { name: 'Сегодня', level: 1 })).toBeInTheDocument();
+    expect(onboardingRequests).toBe(0);
+    expect(screen.queryByText('Настроим StudGroup под вас')).not.toBeInTheDocument();
+  });
+
+  it('keeps the ordinary profile without the first-launch preview', async () => {
+    useScenario();
+    renderApp({ route: '/profile' });
+    expect(await screen.findByText('Мои данные')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Посмотреть первый запуск' })).not.toBeInTheDocument();
+    expect(await screen.findByText('Подключение СДО / ЛК')).toBeInTheDocument();
+  });
+
   it('shows the Today feed after bootstrap and keeps the token out of browser storage', async () => {
     useScenario();
     renderApp();

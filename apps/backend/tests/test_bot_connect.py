@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
-from test_bot_start import deliver, labels, last, run, tap
+from test_bot_start import deliver, labels, last, run, tap as base_tap
 from test_bot_start import foreman as foreman  # noqa: PLC0414 -- pytest fixture
 from test_ingestion import send
 
@@ -18,6 +18,15 @@ ADDER = 77
 OTHER = 78
 NEW_CHAT = -100777
 BOT = 999
+
+
+def tap(client, label, uid=33):
+    """Complete explicit consents in legacy headman tests after confirmation."""
+    button = base_tap(client, label, uid=uid)
+    if label == "Да, подключить" and "Принимаю условия использования" in labels(client):
+        base_tap(client, "Принимаю условия использования", uid=uid)
+        base_tap(client, "Даю отдельное согласие", uid=uid)
+    return button
 
 
 def finish_group_identifier(
@@ -41,6 +50,11 @@ def setup_bot(client, monkeypatch, statuses, *, list_works=True, username="studg
     settings = client.app.state.settings
     settings.telegram_bot_token = f"{BOT}:fake-no-network"
     settings.bot_username = username
+    settings.legal_operator_name = "Тестовый оператор"
+    settings.legal_operator_address = "Москва, тестовый адрес"
+    settings.legal_operator_contact = "legal@example.test"
+    settings.legal_data_region = "Россия, Москва"
+    settings.legal_documents_approved = True
 
     async def request(_settings, method, data):
         if not list_works:
@@ -521,6 +535,8 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
 
     monkeypatch.setattr(domain, "telegram_member", telegram_member)
     deliver(foreman, "/start " + link.split("?start=")[1], uid=88)
+    base_tap(foreman, "Принимаю условия использования", uid=88)
+    base_tap(foreman, "Даю отдельное согласие", uid=88)
     assert "Готово! Вы подключены к «ИВТ-21»" in last(foreman)["text"]
 
     async def roles(db):
@@ -550,8 +566,9 @@ def test_headman_can_skip_subgroups_after_issuing_an_invite(foreman, monkeypatch
     tap(foreman, "Далее: подгруппы", uid=ADDER)
     assert "Да, настроить" in labels(foreman)
     tap(foreman, "Нет, пропустить", uid=ADDER)
-    assert "При первом запуске Mini App заполните личный профиль" in last(foreman)["text"]
-    assert labels(foreman) == ["Настроить личный профиль", "Кабинет старосты"]
+    assert "защищённой формы Mini App" in last(foreman)["text"]
+    assert "Пропустить" in labels(foreman)
+    tap(foreman, "Пропустить", uid=ADDER)
     tap(foreman, "Кабинет старосты", uid=ADDER)
     assert "Староста · ИВТ-21" in last(foreman)["text"]
 
@@ -585,8 +602,9 @@ def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeyp
     assert any("Английский" in label for label in labels(foreman))
     assert "Далее" in labels(foreman)
     tap(foreman, "Далее", uid=ADDER)
-    assert "При первом запуске Mini App заполните личный профиль" in last(foreman)["text"]
-    assert labels(foreman) == ["Настроить личный профиль", "Кабинет старосты"]
+    assert "защищённой формы Mini App" in last(foreman)["text"]
+    assert "Пропустить" in labels(foreman)
+    tap(foreman, "Пропустить", uid=ADDER)
     tap(foreman, "Кабинет старосты", uid=ADDER)
     assert "Староста · ИВТ-21" in last(foreman)["text"]
 

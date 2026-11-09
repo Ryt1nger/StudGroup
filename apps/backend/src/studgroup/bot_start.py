@@ -1443,7 +1443,6 @@ async def handle(db, update, settings, topic=None):
             db, session, settings, sender.id, headman=payload.get("headman", False)
         )
     elif action == "sdo_skip" and session.step == "sdo_setup":
-        payload = json.loads(session.payload)
         user = await db.scalar(select(User).where(User.telegram_user_id == sender.id))
         if user is not None:
             profile = await db.get(UserProfile, user.id)
@@ -1452,7 +1451,6 @@ async def handle(db, update, settings, topic=None):
                 db.add(profile)
             profile.sdu_setup_skipped_at = datetime.now(UTC)
             profile.updated_at = datetime.now(UTC)
-        found = await current_membership(db, sender.id)
         await home(db, session, settings, sender.id)
     elif action in {"student", "headman"}:
         await promo_screen(db, session, action)
@@ -1484,8 +1482,6 @@ async def handle(db, update, settings, topic=None):
         else:
             await confirm_group_screen(db, session, group)
     elif action == "confirm_group" and session.step == "confirm_group":
-        from studgroup import bot_connect
-
         data = json.loads(session.payload)
         group = await db.get(Group, uuid.UUID(data["group_id"]))
         if group is None:

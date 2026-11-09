@@ -63,7 +63,6 @@ async def state(
     authorization: str | None = Header(None),
 ):
     group, member = await active_membership(db, authorization)
-    row = await progress_row(db, member)
     return {
         "role": member.role,
         "step": "complete",

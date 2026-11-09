@@ -884,6 +884,26 @@ async def validate_invite_by_hash(db, settings, telegram_id, digest, *, lock=Fal
         raise StError(
             "Не удалось подтвердить участие в Telegram-группе. Вступи в неё; бот должен иметь права администратора для проверки."
         )
+    existing_user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    if existing_user is not None:
+        other = await db.scalar(
+            select(Membership.id).where(
+                Membership.user_id == existing_user.id,
+                Membership.group_id != group.id,
+                Membership.status == "active",
+            )
+        )
+        if other is not None:
+            raise StError("Вы уже подключены к другой группе. Сначала смените группу через поддержку.")
+        revoked = await db.scalar(
+            select(Membership.id).where(
+                Membership.user_id == existing_user.id,
+                Membership.group_id == group.id,
+                Membership.status != "active",
+            )
+        )
+        if revoked is not None:
+            raise StError("Доступ был отозван. Обратись к старосте.")
     return invitation, group
 
 

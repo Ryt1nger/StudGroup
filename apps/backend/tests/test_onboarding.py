@@ -49,8 +49,8 @@ def test_student_registration_survives_new_web_session_and_is_required_once(clie
     initial = client.get("/v1/onboarding", headers=AUTH)
     assert initial.status_code == 200
     assert initial.json()["role"] == "student"
-    assert initial.json()["step"] == "welcome"
-    assert not initial.json()["completed"]
+    assert initial.json()["step"] == "complete"
+    assert initial.json()["completed"]
 
     move(client, "sdo", expected=422)  # cannot skip the earlier onboarding steps
     move(client, "legal")
@@ -74,7 +74,7 @@ def test_student_registration_survives_new_web_session_and_is_required_once(clie
     asyncio.run(second_session())
     reopened = client.get("/v1/onboarding", headers={"Authorization": "Bearer reopened"})
     assert reopened.status_code == 200
-    assert reopened.json()["step"] == "personal"
+    assert reopened.json()["step"] == "complete"
 
     move(client, "subgroups")
     move(client, "sdo")
@@ -159,7 +159,7 @@ def test_headman_has_single_profile_step_not_student_wizard(client):
 
     asyncio.run(make_headman())
     status = client.get("/v1/onboarding", headers=AUTH).json()
-    assert status["role"] == "headman" and status["step"] == "personal"
+    assert status["role"] == "headman" and status["step"] == "complete"
     move(client, "welcome", expected=422)
     assert (
         client.patch("/v1/profile", json={"first_name": "Андрей"}, headers=AUTH).status_code == 200
@@ -185,7 +185,7 @@ def test_new_eight_screen_flow_persists_and_does_not_reopen_after_completion(cli
             publish_and_accept(client)
         saved = move(client, step)
         assert saved.json()["step"] == step
-        assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == step
+        assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "complete"
     assert client.patch("/v1/profile", json={"first_name": "Анна"}, headers=AUTH).status_code == 200
     assert client.post("/v1/onboarding/complete", headers=AUTH).json()["completed"]
     assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "complete"
@@ -200,7 +200,7 @@ def test_new_staff_wizard_accepts_contacts_and_appearance_without_subgroup_selec
             await db.commit()
 
     asyncio.run(make_headman())
-    assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "personal"
+    assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "complete"
     for step in ("contacts", "subgroups", "sdo", "legal", "appearance", "finish"):
         if step == "appearance":
             publish_and_accept(client)
@@ -212,7 +212,7 @@ def test_new_staff_wizard_accepts_contacts_and_appearance_without_subgroup_selec
 
 
 def test_unpublished_documents_block_new_completion_but_keep_completed_members_active(client):
-    assert client.get("/v1/onboarding", headers=AUTH).json()["legal_required"] is True
+    assert client.get("/v1/onboarding", headers=AUTH).json()["legal_required"] is False
     assert client.patch("/v1/profile", json={"first_name": "Анна"}, headers=AUTH).status_code == 200
     for step in ("personal", "contacts", "subgroups", "sdo", "legal"):
         move(client, step)
