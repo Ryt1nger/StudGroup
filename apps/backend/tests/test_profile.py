@@ -2,13 +2,17 @@
 
 import asyncio
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from cryptography.fernet import Fernet
+from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.models import UserProfile
+from studgroup.main import create_app
+from studgroup.models import Membership, User, UserProfile, WebSession
+from studgroup.security import token_hash
 
 pytest_plugins = ["test_schedule_api"]
 HEADERS = {"Authorization": "Bearer valid"}
@@ -184,6 +188,91 @@ def test_study_credentials_need_separate_consent_even_with_encryption(client):
     assert (
         client.patch("/v1/profile", json={"sdu_login": "again"}, headers=HEADERS).status_code == 403
     )
+
+
+def test_synthetic_credentials_survive_restart_and_stay_personal(client, caplog):
+    key = Fernet.generate_key().decode()
+    client.app.state.settings.profile_encryption_key = SecretStr(key)
+    accept_study_credentials(client)
+    original = "test-only-password-1"
+    replacement = "test-only-password-2"
+    saved = client.patch(
+        "/v1/profile",
+        json={"sdu_login": "test-student", "sdu_password": original},
+        headers=HEADERS,
+    )
+    assert saved.status_code == 200 and saved.json()["sdu"]["password_set"]
+
+    async def stored():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(
+                select(UserProfile).where(UserProfile.sdu_login == "test-student")
+            )
+            return row.sdu_password_encrypted if row else None
+
+    first_ciphertext = asyncio.run(stored())
+    assert first_ciphertext and original not in first_ciphertext
+    assert Fernet(key.encode()).decrypt(first_ciphertext.encode()) == original.encode()
+
+    # A fresh app instance reads the same disk-backed database, as after a server restart.
+    with TestClient(create_app(client.app.state.settings)) as restarted:
+        reread = restarted.get("/v1/profile", headers=HEADERS)
+        assert reread.status_code == 200
+        assert reread.json()["sdu"]["login"] == "test-student"
+        assert reread.json()["sdu"]["password_set"] is True
+        assert original not in reread.text
+        changed = restarted.patch(
+            "/v1/profile",
+            json={"sdu_login": "test-student", "sdu_password": replacement},
+            headers=HEADERS,
+        )
+        assert changed.status_code == 200 and replacement not in changed.text
+
+    second_ciphertext = asyncio.run(stored())
+    assert second_ciphertext != first_ciphertext
+    assert Fernet(key.encode()).decrypt(second_ciphertext.encode()) == replacement.encode()
+
+    async def seed_other_user():
+        async with AsyncSession(client.app.state.engine) as db:
+            first = await db.scalar(select(Membership).where(Membership.status == "active"))
+            other = User(id=uuid.uuid4(), telegram_user_id=9002, display_name="Test other")
+            db.add(other)
+            await db.flush()
+            member = Membership(
+                id=uuid.uuid4(),
+                group_id=first.group_id,
+                user_id=other.id,
+                role="student",
+                status="active",
+            )
+            db.add(member)
+            db.add(
+                WebSession(
+                    token_hash=token_hash("other-test-token"),
+                    user_id=other.id,
+                    membership_id=member.id,
+                    expires_at=datetime.now(UTC) + timedelta(hours=1),
+                )
+            )
+            await db.commit()
+
+    asyncio.run(seed_other_user())
+    other = client.get("/v1/profile", headers={"Authorization": "Bearer other-test-token"})
+    assert other.status_code == 200
+    assert other.json()["sdu"]["login"] is None
+    assert other.json()["sdu"]["password_set"] is False
+    assert client.get("/v1/profile", headers={"Authorization": "Bearer expired"}).status_code == 401
+
+    revoked = client.delete("/v1/legal/consents/sdo", headers=HEADERS)
+    assert revoked.status_code == 200 and revoked.json()["credentials_deleted"]
+
+    async def cleared():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(UserProfile).where(UserProfile.sdu_login.is_(None)))
+            return row.sdu_password_encrypted if row else "missing"
+
+    assert asyncio.run(cleared()) is None
+    assert original not in caplog.text and replacement not in caplog.text
 
 
 def test_notification_preferences_are_stored_and_validated(client):
