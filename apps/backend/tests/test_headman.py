@@ -289,6 +289,11 @@ def test_invite_membership_check_and_single_use(foreman, monkeypatch):
     settings.legal_documents_approved = True
 
     deliver(foreman, "/start invite_" + code, uid=33)
+    buttons = last(foreman)["reply_markup"]["inline_keyboard"]
+    role_button = next(
+        button["callback_data"] for row in buttons for button in row if button["text"] == "Я студент"
+    )
+    deliver(foreman, callback=role_button, uid=33)
     for label in ("Принимаю условия использования", "Даю отдельное согласие"):
         buttons = last(foreman)["reply_markup"]["inline_keyboard"]
         callback = next(
