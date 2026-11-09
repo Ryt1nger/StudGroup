@@ -147,6 +147,58 @@ describe('premium membership-scoped onboarding', () => {
     expect(await screen.findByText('Подстроим приложение под вас')).toBeInTheDocument();
   });
 
+  it('shows at most two subject groups at a time and persists every choice', async () => {
+    useScenario();
+    stubOnboarding();
+    const choices = new Map<string, string>();
+    const subjects = ['Английский язык', 'Информатика', 'Физическая культура', 'Лабораторный практикум'];
+    const getItems = () => subjects.map((name, index) => ({
+      split_id: String(index + 1), subject: { id: String(index + 1), name },
+      options: [{ id: 'one', name: '1' }, { id: 'two', name: '2' }],
+      selected_subgroup_id: choices.get(String(index + 1)) ?? null,
+    }));
+    server.use(
+      http.get(API + '/subgroups', () => HttpResponse.json({ items: getItems() })),
+      http.put(API + '/subgroups/:splitId', async ({ params, request }) => {
+        const body = (await request.json()) as { subgroup_id: string };
+        choices.set(String(params.splitId), body.subgroup_id);
+        return HttpResponse.json({ items: getItems() });
+      }),
+    );
+    renderApp();
+    await userEvent.click(await screen.findByRole('button', { name: /Начать настройку/ }));
+    const name = await screen.findByRole('textbox', { name: /Имя/ });
+    if (!(name as HTMLInputElement).value) await userEvent.type(name, 'Мария');
+    await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
+    await screen.findByText('Контакты для связи');
+    await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
+    await screen.findByText('Подгруппы по предметам');
+    expect(await screen.findByText('Английский язык')).toBeInTheDocument();
+    expect(screen.getByText('Информатика')).toBeInTheDocument();
+    expect(screen.queryByText('Физическая культура')).not.toBeInTheDocument();
+    const nextSubjects = screen.getByRole('button', { name: /Следующие предметы/ });
+    expect(nextSubjects).toBeDisabled();
+
+    for (const subject of subjects.slice(0, 2)) {
+      const group = screen.getByRole('group', { name: 'Подгруппа: ' + subject });
+      await userEvent.click(group.getByRole('button', { name: '2' }));
+      await waitFor(() => expect(group.getByRole('button', { name: '2' })).toHaveAttribute('aria-pressed', 'true'));
+    }
+    await userEvent.click(nextSubjects);
+    expect(await screen.findByText('Физическая культура')).toBeInTheDocument();
+    expect(screen.getByText('Лабораторный практикум')).toBeInTheDocument();
+    expect(screen.queryByText('Английский язык')).not.toBeInTheDocument();
+
+    for (const subject of subjects.slice(2)) {
+      const group = screen.getByRole('group', { name: 'Подгруппа: ' + subject });
+      await userEvent.click(group.getByRole('button', { name: '1' }));
+      await waitFor(() => expect(group.getByRole('button', { name: '1' })).toHaveAttribute('aria-pressed', 'true'));
+    }
+    await userEvent.click(screen.getByRole('button', { name: /Сохранить и продолжить/ }));
+    expect(await screen.findByText('СДО и личный кабинет')).toBeInTheDocument();
+    expect([...choices.entries()]).toEqual([['1', 'two'], ['2', 'two'], ['3', 'one'], ['4', 'one']]);
+  });
+
   it('never shows onboarding outside a verified active membership', async () => {
     useScenario('no-group');
     renderApp();
