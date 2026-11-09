@@ -303,6 +303,17 @@ def test_invite_membership_check_and_single_use(foreman, monkeypatch):
             button["callback_data"] for row in buttons for button in row if label in button["text"]
         )
         deliver(foreman, callback=callback, uid=33)
+    assert "Регистрация · шаг 1" in last(foreman)["text"]
+    deliver(foreman, "Анна", uid=33)
+    for _ in range(2):
+        buttons = last(foreman)["reply_markup"]["inline_keyboard"]
+        skip = next(
+            button["callback_data"]
+            for row in buttons
+            for button in row
+            if button["text"] == "Пропустить"
+        )
+        deliver(foreman, callback=skip, uid=33)
     assert "Вы подключены" in last(foreman)["text"]
     deliver(foreman, "/start invite_" + code, uid=34)
     assert "использовано" in last(foreman)["text"]

@@ -32,6 +32,10 @@ def finish_legal(client, uid=33):
     tap(client, "Принимаю условия использования", uid=uid)
     assert "Даю отдельное согласие" in labels(client)
     tap(client, "Даю отдельное согласие", uid=uid)
+    if "Регистрация · шаг 1" in last(client)["text"]:
+        deliver(client, "Анна", uid=uid)
+        tap(client, "Пропустить", uid=uid)
+        tap(client, "Пропустить", uid=uid)
 
 
 def labels(client):
@@ -173,6 +177,16 @@ def test_an_invitation_link_joins_in_one_tap_and_removes_the_link_message(forema
     assert tapped in deletions(foreman)
 
 
+def test_legacy_raw_token_deep_link_joins_without_typing_code(foreman, monkeypatch):
+    allow_telegram(monkeypatch)
+    code = issue(foreman)
+    deliver(foreman, f"/start {code}", uid=33)
+    assert "Я студент" in labels(foreman)
+    finish_legal(foreman)
+    assert "Готово! Вы подключены" in last(foreman)["text"]
+    assert "Ввести код" not in labels(foreman)
+
+
 def test_shared_group_link_allows_multiple_verified_students(foreman, monkeypatch):
     allow_telegram(monkeypatch)
 
@@ -263,7 +277,8 @@ def test_a_failed_telegram_check_is_explained_on_the_panel(foreman, monkeypatch)
     allow_telegram(monkeypatch, answer=False)
     deliver(foreman, f"/start invite_{issue(foreman)}", uid=33)
     assert "Не удалось подтвердить участие" in last(foreman)["text"]
-    assert "Ввести код" in labels(foreman)
+    assert "Проверить участие ещё раз" in labels(foreman)
+    assert "Ввести код" not in labels(foreman)
 
 
 def test_buttons_of_an_older_screen_stop_working_after_a_new_start(foreman):
@@ -476,7 +491,7 @@ def test_an_info_command_replaces_the_screen_instead_of_adding_a_message(transpo
     assert len(sent) == 2  # one panel message per command, never a pile
 
 
-def test_shared_group_link_expires_after_three_hours(foreman, monkeypatch):
+def test_shared_group_link_expires_after_seven_days(foreman, monkeypatch):
     """Shared invitations expire server-side; a forwarded old URL cannot grant access."""
     from studgroup.models import GroupInvitation
     from studgroup.security import token_hash
@@ -490,7 +505,7 @@ def test_shared_group_link_expires_after_three_hours(foreman, monkeypatch):
             select(GroupInvitation).where(GroupInvitation.token_hash == token_hash(code))
         )
         remaining = domain.utc(invitation.expires_at) - datetime.now(UTC)
-        assert timedelta(hours=2, minutes=59) < remaining <= timedelta(hours=3)
+        assert timedelta(days=6, hours=23) < remaining <= timedelta(days=7)
         invitation.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         return code
 

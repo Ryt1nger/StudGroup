@@ -844,7 +844,7 @@ async def issue_group_link(db, group, member):
             token_hash=token_hash(code),
             group_id=group.id,
             issuer_id=member.id,
-            expires_at=now + timedelta(hours=3),
+            expires_at=now + timedelta(days=7),
             reusable=True,
         )
     )
