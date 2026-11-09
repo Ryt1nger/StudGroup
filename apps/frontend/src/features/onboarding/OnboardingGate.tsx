@@ -525,7 +525,7 @@ function CredentialsStep({ back, busy, next, draft, onDraft }: {
   const [password, setPassword] = useState(draft?.password ?? '');
   const [agreeSdo, setAgreeSdo] = useState(Boolean(draft));
   const [error, setError] = useState('');
-  const ready = legal.data?.ready === true;
+  const ready = legal.data?.credentials_ready === true;
   const loginValue = login ?? profile.data?.sdu.login ?? '';
   function submit() {
     if (!loginValue.trim() || (!password && !profile.data?.sdu.password_set)) {
@@ -554,7 +554,9 @@ function CredentialsStep({ back, busy, next, draft, onDraft }: {
       {ready ? <label className="ob-checkbox"><input type="checkbox" checked={legal.data?.sdo === true || agreeSdo}
         disabled={legal.data?.sdo === true} onChange={e => setAgreeSdo(e.target.checked)} />
         <span>Разрешаю хранить реквизиты СДО / ЛК <a href="/legal/sdo" target="_blank" rel="noopener noreferrer">Прочитать документ</a></span>
-      </label> : <div className="ob-help">Подключение пока отключено до утверждения правовых документов.</div>}
+      </label> : <div className="ob-help">{legal.data?.ready
+        ? 'Подключение пока отключено: на сервере не настроено шифрование пароля.'
+        : 'Подключение пока отключено до утверждения правовых документов.'}</div>}
       <div className="ob-help">🔒 Пароль сохраняется только после согласий на следующем шаге и не отправляется в чат Telegram.</div>
       {error ? <Notice message={error} /> : null}
       <div className="ob-link-row"><button type="button" disabled={busy} onClick={() => {
@@ -582,7 +584,7 @@ function LegalStep({ required, back, busy, next, pendingSdo, clearSdo }: {
       setError('');
       await ensureConsents(legal.data, checks, required || Boolean(pendingSdo), ['terms', 'service']);
       if (pendingSdo) {
-        if (!legal.data?.ready) throw new Error('Для подключения СДО нужны опубликованные документы');
+        if (!legal.data?.credentials_ready) throw new Error('Для подключения СДО нужны утверждённые документы и шифрование пароля');
         if (!legal.data.sdo) await acceptLegal('sdo', legal.data.version);
         await saveProfile.mutateAsync({
           sdu_platform: 'РАНХиГС — СДО / ЛК', sdu_login: pendingSdo.login,

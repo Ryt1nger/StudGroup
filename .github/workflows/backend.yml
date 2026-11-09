@@ -34,4 +34,8 @@ jobs:
       - run: uv run ruff format --diff . || true
       - run: uv run ruff format --check .
       - run: uv run alembic upgrade head
+      - name: Verify upgrade from deployed 0053
+        run: |
+          uv run alembic downgrade 0053
+          uv run alembic upgrade head
       - run: uv run pytest

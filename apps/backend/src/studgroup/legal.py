@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
+from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
@@ -19,7 +20,7 @@ from studgroup.api import ApiError, database
 from studgroup.models import LegalConsentEvent, UserProfile
 
 router = APIRouter(prefix="/v1/legal")
-VERSION = "2026-11-08-v1"
+VERSION = "2026-11-09-v2"
 
 DOCUMENTS = {
     "privacy": """ПОЛИТИКА ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ STUDGROUP
@@ -71,11 +72,11 @@ DOCUMENTS = {
 Редакция: {version}.
 
 Я добровольно разрешаю приём и обработку моего личного логина и пароля, одинаковых для СДО и личного кабинета (ЛК) моего вуза, а также адреса учебной платформы.
-Цель — безопасно сохранить их для запрошенных мной функций взаимодействия с учебными системами, если такая интеграция будет разрешена и реализована.
-Действия: получение из защищённой формы Mini App по HTTPS, серверное шифрование, хранение, обновление, удаление после моего отзыва, последующее использование только при наличии разрешённого механизма и законного основания.
+Цель — показывать моё расписание и ссылки на дистанционные занятия из ЛК и СДО РАНХиГС в StudGroup.
+Действия: получение из защищённой формы Mini App по HTTPS, серверное шифрование, хранение, обновление, автоматический вход в ЛК и СДО от моего имени, чтение месячного и недельного расписания и страниц курсов с пометкой СДО, сохранение подтверждённых занятий и ссылок в базе StudGroup, удаление реквизитов после моего отзыва. Обход может повторяться примерно раз в сутки с ограниченной скоростью; при истечении сессии выполняется повторный вход. Если вход не удался, ранее подтверждённое расписание может оставаться доступным с отметкой о времени проверки.
 Я понимаю, что передача этих реквизитов НЕ обязательна для получения доступа к расписанию, заданиям и другим обычным функциям StudGroup. Я могу отказаться и отозвать согласие в профиле; при отзыве сохранённые логин и пароль удаляются.
 Пароль не отправляется сообщением в Telegram, не показывается старосте и не возвращается API, не направляется внешним AI-поставщикам.
-Сохранение данных НЕ означает, что подключение к сайту РАНХиГС уже работает. Использование должно соответствовать правилам системы вуза.
+Сохранение данных само по себе НЕ означает, что вход удался или расписание получено. Статус подключения и время последней успешной проверки показываются отдельно. Автоматический вход включается оператором только после проверки правил систем вуза и условий обработки персональных данных. Баллы БРС, контрольные точки и посещаемость этим согласием и текущим модулем не собираются.
 Согласие действует до достижения цели или моего отзыва. Отзыв: в профиле или через {contact}.
 """,
     "cookies": """ТЕХНИЧЕСКИЕ ДАННЫЕ MINI APP STUDGROUP
@@ -94,6 +95,19 @@ def legal_ready(settings):
         and settings.legal_data_region.strip()
         and settings.legal_documents_approved
     )
+
+
+def credentials_ready(settings):
+    if not legal_ready(settings):
+        return False
+    key = settings.profile_encryption_key.get_secret_value()
+    if not key:
+        return False
+    try:
+        Fernet(key.encode())
+    except ValueError:
+        return False
+    return True
 
 
 def document_text(document, settings):
@@ -184,6 +198,7 @@ async def status(
     return {
         "version": VERSION,
         "ready": legal_ready(settings),
+        "credentials_ready": credentials_ready(settings),
         "terms": await has_consent(db, user.id, "terms", settings),
         "service": await has_consent(db, user.id, "service", settings),
         "sdo": await has_consent(db, user.id, "sdo", settings),
@@ -208,6 +223,8 @@ async def accept(
             raise ApiError("terms_required", "Подтвердите условия использования", 403)
         if not await has_consent(db, user.id, "service", settings):
             raise ApiError("consent_required", "Отдельно подтвердите обработку данных", 403)
+        if not credentials_ready(settings):
+            raise ApiError("credentials_unavailable", "Хранение пароля ещё не настроено", 503)
     receipt(
         db,
         user.id,

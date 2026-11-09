@@ -58,13 +58,15 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = ""
     # Fernet key (urlsafe base64, 32 bytes) that protects study-platform passwords; empty disables them.
     profile_encryption_key: SecretStr = SecretStr("")
-    # Required to accept new consents and optional SDO/LK credentials.
+    ranepa_crawl_enabled: bool = False
+    ranepa_access_approved: bool = False
+    ranepa_schedule_view_enabled: bool = False
+    ranepa_crawl_pause_seconds: int = Field(default=20, ge=5, le=300)
     legal_operator_name: str = ""
     legal_operator_address: str = ""
     legal_operator_contact: str = ""
     legal_data_region: str = ""
     legal_documents_approved: bool = False
-    # Enable only after legal review, operator verification and consent E2E testing.
     legal_onboarding_required: bool = False
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -511,7 +513,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(notifications_router)
     app.include_router(profile_router)
     from studgroup.legal import router as legal_router
+    from studgroup.ranepa_personal_api import router as ranepa_personal_router
+    from studgroup.ranepa_schedule_api import router as ranepa_schedule_router
 
+    app.include_router(ranepa_personal_router)
+    app.include_router(ranepa_schedule_router)
     app.include_router(legal_router)
     from studgroup.onboarding import router as onboarding_router
 

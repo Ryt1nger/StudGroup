@@ -4,7 +4,7 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { API, renderApp, server, useScenario } from './helpers';
 
-const legal = { version: '2026-11-08-v1', ready: false, terms: false, service: false, sdo: false };
+const legal = { version: '2026-11-09-v2', ready: false, credentials_ready: false, terms: false, service: false, sdo: false };
 
 function stubOnboarding(role: 'student' | 'headman' = 'student') {
   let step = role === 'student' ? 'welcome' : 'personal';
@@ -100,7 +100,7 @@ describe('premium membership-scoped onboarding', () => {
     const receipts: string[] = [];
     let credentialWrites = 0;
     server.use(
-      http.get(API + '/legal/status', () => HttpResponse.json({ ...legal, ready: true })),
+      http.get(API + '/legal/status', () => HttpResponse.json({ ...legal, ready: true, credentials_ready: true })),
       http.post(API + '/legal/consents', async ({ request }) => {
         const { purpose } = (await request.json()) as { purpose: string };
         receipts.push(purpose);

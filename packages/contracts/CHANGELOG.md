@@ -5,12 +5,29 @@
 - Expanded first-run progress with contacts and appearance stages. The new onboarding screen sequence is welcome → personal → contacts → subgroups → SDO → legal → appearance → finish. Saved completion still applies per membership; old completed memberships remain completed. The existing profile, subgroup, legal, and appearance preference storage APIs remain unchanged.
 - Legacy step transitions used by old Telegram cached web builds continue to work during the rollout. No data migration is needed for the VARCHAR-backed progress field.
 
+## 0.21.1 — 2026-11-09
+
+- Documented `GET /legal/status` and added `credentials_ready`; clients can disable SDO/LK password entry until both operator documents and a valid encryption key are configured. `ready` retains its meaning for general consents.
 
 ## 0.21.0 — 2026-11-08
 
 - Added membership-scoped onboarding state, progress and completion endpoints. They resume after a
   new web session and leave already-completed memberships complete. Existing profile and subgroup
   API shapes are unchanged.
+
+## 0.21.0 — 2026-11-06
+
+- RANEPA personal and projected schedule lessons may include `course_url`, a verified Moodle course fallback distinct from `online_url`; existing clients can ignore the optional field.
+- Added `GET /ranepa-schedule` for the caller's cached university lessons, with
+  `complete`, `fallback_used`, and `last_success_at`. The optional server-side
+  RANEPA view switch makes `GET /schedule` and lesson details use the personal
+  cache for configured groups. It remains off by default.
+  Each lesson can also report the optional SDO `link_state` explaining whether
+  a stable join link was matched or why none was stored.
+- RANEPA collection uses the existing consent-gated `PATCH /profile` SDO/LK credential fields.
+  The experimental `/ranepa-account` route was removed before release; no deployed client used it.
+- `GET /subjects` can also include names observed in verified university snapshots
+  for the active group. Its response shape and subject ID formula are unchanged.
 
 ## 0.20.0 — 2026-10-31
 

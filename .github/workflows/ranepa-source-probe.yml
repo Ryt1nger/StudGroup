@@ -1,0 +1,28 @@
+name: RANEPA one-shot source probe
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Install backend and one-shot headless Chromium
+        working-directory: apps/backend
+        run: |
+          uv sync --frozen
+          uv run --with playwright python -m playwright install chromium --with-deps
+      - name: Find pilot group and inspect actual timetable
+        working-directory: apps/backend
+        env:
+          RANEPA_PROXY_URL: ${{ secrets.RANEPA_PROXY_URL }}
+        run: |
+          uv run --with playwright python scripts/ranepa_live_probe.py \
+            --group-code 'Э-ОБ-385-04-26-02'
