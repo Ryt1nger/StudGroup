@@ -604,9 +604,7 @@ def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeyp
     assert "Далее" in labels(foreman)
     tap(foreman, "Далее", uid=ADDER)
     assert "Профиль можно заполнить в приложении" in last(foreman)["text"]
-    assert {"Открыть StudGroup", "Подключить СДО / ЛК", "Кабинет старосты"} <= set(
-        labels(foreman)
-    )
+    assert {"Открыть StudGroup", "Подключить СДО / ЛК", "Кабинет старосты"} <= set(labels(foreman))
     tap(foreman, "Кабинет старосты", uid=ADDER)
     assert "Староста · ИВТ-21" in last(foreman)["text"]
 

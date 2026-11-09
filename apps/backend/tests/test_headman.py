@@ -292,10 +292,7 @@ def test_invite_membership_check_and_single_use(foreman, monkeypatch):
     for label in ("Принимаю условия использования", "Даю отдельное согласие"):
         buttons = last(foreman)["reply_markup"]["inline_keyboard"]
         callback = next(
-            button["callback_data"]
-            for row in buttons
-            for button in row
-            if label in button["text"]
+            button["callback_data"] for row in buttons for button in row if label in button["text"]
         )
         deliver(foreman, callback=callback, uid=33)
     assert "Вы подключены" in last(foreman)["text"]

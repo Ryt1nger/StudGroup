@@ -238,9 +238,9 @@ def test_shared_link_rejects_a_member_of_another_group(foreman, monkeypatch):
 
     async def memberships(db):
         user = await db.scalar(select(User).where(User.telegram_user_id == 33))
-        return (await db.scalars(
-            select(Membership.group_id).where(Membership.user_id == user.id)
-        )).all()
+        return (
+            await db.scalars(select(Membership.group_id).where(Membership.user_id == user.id))
+        ).all()
 
     assert len(run(foreman, memberships)) == 1
 

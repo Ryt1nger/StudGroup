@@ -1506,7 +1506,9 @@ async def handle(db, update, settings, topic=None):
             await headman_entry(db, session, settings, sender.id)
         elif await bot_connect.has_headman(db, group.id):
             await headman_prompt(
-                db, session, settings,
+                db,
+                session,
+                settings,
                 "У этой группы уже есть староста. Роль нельзя занять второй раз.",
             )
         else:
