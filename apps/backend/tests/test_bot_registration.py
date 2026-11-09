@@ -245,8 +245,10 @@ def test_profile_validation_blocks_invalid_email_before_membership(foreman, monk
     tap(foreman, "Пропустить")
     deliver(foreman, "нет почты", uid=33)
     assert "Адрес почты некорректен" in last(foreman)["text"]
+
     async def count(db):
         return await db.scalar(select(Membership.id).join(User).where(User.telegram_user_id == 33))
+
     assert run(foreman, count) is None
     tap(foreman, "Пропустить")
     assert "Открыть StudGroup" in labels(foreman)

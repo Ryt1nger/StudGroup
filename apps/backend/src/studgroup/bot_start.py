@@ -108,9 +108,14 @@ async def awaiting_input(db, chat):
     session = await db.get(StartSession, chat)
     return bool(
         session
-        and session.step in {
-            "code", "promo_code", "academic_code",
-            "profile_first", "profile_last", "profile_email",
+        and session.step
+        in {
+            "code",
+            "promo_code",
+            "academic_code",
+            "profile_first",
+            "profile_last",
+            "profile_email",
         }
         and utc(session.expires_at) > datetime.now(UTC)
     )
@@ -272,9 +277,11 @@ async def invite_headman_notice(db, session, digest):
         "Назначить второго старосту через приглашение нельзя.\n\n"
         "Если вы участник этой группы, продолжите как студент. "
         "Если хотите создать другую группу, начните её подключение из главного меню.",
-        [[("Продолжить как студент", "invite_student_continue")],
-         [("Назад к выбору роли", "invite_roles")],
-         [("Главное меню", "home")]],
+        [
+            [("Продолжить как студент", "invite_student_continue")],
+            [("Назад к выбору роли", "invite_roles")],
+            [("Главное меню", "home")],
+        ],
         "invite_headman_notice",
         {"pending_invite_hash": digest},
     )
@@ -1307,7 +1314,10 @@ async def resume_or_home(db, session, settings, telegram_id):
         data.get("pending_invite_hash") or data.get("pending_group_id")
     ):
         await legal_role_gate(
-            db, session, settings, telegram_id,
+            db,
+            session,
+            settings,
+            telegram_id,
             pending_invite_hash=data.get("pending_invite_hash"),
             pending_group_id=data.get("pending_group_id"),
         )
@@ -1318,9 +1328,11 @@ async def resume_or_home(db, session, settings, telegram_id):
             await inspect_invite(db, session, settings, telegram_id, data["pending_invite_hash"])
         else:
             await screen(
-                db, session,
+                db,
+                session,
                 "Ссылка недействительна. Попросите старосту отправить новую.",
-                [[("Главное меню", "home")]], "invite_error",
+                [[("Главное меню", "home")]],
+                "invite_error",
             )
     elif step in {"legal_terms", "legal_service", "legal_not_ready"}:
         await legal_role_gate(
@@ -1588,13 +1600,18 @@ async def handle(db, update, settings, topic=None):
     elif action == "legal_docs":
         data = json.loads(session.payload)
         await legal_documents_screen(
-            db, session, settings,
+            db,
+            session,
+            settings,
             return_to=data if session.step == "legal_not_ready" else None,
         )
     elif action == "legal_docs_back" and session.step == "legal_documents":
         data = json.loads(session.payload)
         await legal_role_gate(
-            db, session, settings, sender.id,
+            db,
+            session,
+            settings,
+            sender.id,
             pending_invite_hash=data.get("pending_invite_hash"),
             pending_group_id=data.get("pending_group_id"),
         )
@@ -1651,7 +1668,10 @@ async def handle(db, update, settings, topic=None):
         )
     elif action == "invite_student_continue" and session.step == "invite_headman_notice":
         await legal_role_gate(
-            db, session, settings, sender.id,
+            db,
+            session,
+            settings,
+            sender.id,
             pending_invite_hash=json.loads(session.payload)["pending_invite_hash"],
         )
     elif action in {"student", "headman"} and session.step == "roles":

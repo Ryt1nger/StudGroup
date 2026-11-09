@@ -308,7 +308,9 @@ def test_invite_membership_check_and_single_use(foreman, monkeypatch):
     for _ in range(2):
         buttons = last(foreman)["reply_markup"]["inline_keyboard"]
         skip = next(
-            button["callback_data"] for row in buttons for button in row
+            button["callback_data"]
+            for row in buttons
+            for button in row
             if button["text"] == "Пропустить"
         )
         deliver(foreman, callback=skip, uid=33)
