@@ -7,7 +7,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.main import Settings, create_app
-from studgroup.models import Base, Group, Membership, SchedulePattern, User, WebSession
+from studgroup.models import (
+    Base,
+    Group,
+    Membership,
+    SchedulePattern,
+    Subgroup,
+    SubjectSplit,
+    User,
+    WebSession,
+)
 from studgroup.security import token_hash
 
 
@@ -89,6 +98,63 @@ def test_schedule_is_group_scoped(client):
     assert body["selected_week"] == "first"
     assert [row["subject"] for row in body["lessons"]] == ["Математика"]
     assert body["lessons"][0]["starts_at"].endswith("+03:00")
+
+
+def test_schedule_uses_the_students_recorded_subgroup_choice(client):
+    from sqlalchemy import select
+
+    async def seed_split():
+        async with AsyncSession(client.app.state.engine) as db:
+            member = await db.scalar(select(Membership))
+            split = SubjectSplit(
+                id=uuid.uuid4(),
+                group_id=member.group_id,
+                subject_id=uuid.uuid4(),
+                subject_name="Английский язык",
+                created_at=datetime.now(UTC),
+            )
+            db.add(split)
+            await db.flush()
+            choices = [
+                Subgroup(
+                    id=uuid.uuid4(), split_id=split.id, name=f"Группа {n}", position=n, signals="[]"
+                )
+                for n in (1, 2)
+            ]
+            db.add_all(choices)
+            for n, subgroup in enumerate(choices):
+                db.add(
+                    SchedulePattern(
+                        group_id=member.group_id,
+                        subject=f"Английский {n + 1}",
+                        weekday=0,
+                        starts=time(11 + n),
+                        ends=time(12 + n),
+                        valid_from=date(2026, 9, 1),
+                        valid_until=date(2027, 1, 31),
+                        week="all",
+                        subgroup_id=subgroup.id,
+                    )
+                )
+            split_id, chosen_id = str(split.id), str(choices[0].id)
+            await db.commit()
+            return split_id, chosen_id
+
+    split_id, chosen_id = asyncio.run(seed_split())
+    url = "/v1/schedule?start=2026-10-05&end=2026-10-11"
+    auth = {"Authorization": "Bearer valid"}
+    before = client.get(url, headers=auth)
+    assert [item["subject"] for item in before.json()["lessons"]] == [
+        "Математика",
+        "Английский 1",
+        "Английский 2",
+    ]
+    selected = client.put(
+        f"/v1/subgroups/{split_id}", json={"subgroup_id": chosen_id}, headers=auth
+    )
+    assert selected.status_code == 200
+    after = client.get(url, headers=auth)
+    assert [item["subject"] for item in after.json()["lessons"]] == ["Математика", "Английский 1"]
 
 
 def test_expired_and_missing_credentials(client):

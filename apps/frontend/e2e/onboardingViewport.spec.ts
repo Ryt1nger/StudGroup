@@ -23,7 +23,7 @@ test('all eight onboarding screens fit a phone without page scrolling or clipped
       ['СДО и личный кабинет', 'Продолжить'],
       ['Почти готово', 'Продолжить'],
       ['Подстроим приложение под вас', 'Сохранить оформление'],
-      ['Настройка завершена!', 'Вернуться в приложение'],
+      ['Всё готово! StudGroup настроен', 'Вернуться в приложение'],
     ] as const;
 
     for (const [heading, action] of transitions) {

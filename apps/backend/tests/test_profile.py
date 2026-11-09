@@ -175,6 +175,7 @@ def test_legal_documents_are_public_and_individual_confirmations_are_audited(cli
             ]
 
     proof = asyncio.run(evidence())
+    assert len(proof) == 3  # repeated acceptance of the same version is idempotent
     assert {purpose for purpose, _, _, _ in proof} == {"terms", "service", "sdo"}
     assert all(len(digest) == 64 and source == "webapp" for _, _, digest, source in proof)
 

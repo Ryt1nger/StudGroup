@@ -181,11 +181,12 @@ def test_new_eight_screen_flow_persists_and_does_not_reopen_after_completion(cli
     """The new screen order is server-persisted; completion is one-time per membership."""
     steps = ("personal", "contacts", "subgroups", "sdo", "legal", "appearance", "finish")
     for step in steps:
+        if step == "appearance":
+            publish_and_accept(client)
         saved = move(client, step)
         assert saved.json()["step"] == step
         assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == step
     assert client.patch("/v1/profile", json={"first_name": "Анна"}, headers=AUTH).status_code == 200
-    publish_and_accept(client)
     assert client.post("/v1/onboarding/complete", headers=AUTH).json()["completed"]
     assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "complete"
     assert move(client, "welcome").json()["completed"] is True
@@ -201,19 +202,24 @@ def test_new_staff_wizard_accepts_contacts_and_appearance_without_subgroup_selec
     asyncio.run(make_headman())
     assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "personal"
     for step in ("contacts", "subgroups", "sdo", "legal", "appearance", "finish"):
+        if step == "appearance":
+            publish_and_accept(client)
         move(client, step)
     assert (
         client.patch("/v1/profile", json={"first_name": "Андрей"}, headers=AUTH).status_code == 200
     )
-    publish_and_accept(client)
     assert client.post("/v1/onboarding/complete", headers=AUTH).json()["completed"]
 
 
 def test_unpublished_documents_block_new_completion_but_keep_completed_members_active(client):
     assert client.get("/v1/onboarding", headers=AUTH).json()["legal_required"] is True
     assert client.patch("/v1/profile", json={"first_name": "Анна"}, headers=AUTH).status_code == 200
-    for step in ("personal", "contacts", "subgroups", "sdo", "legal", "appearance", "finish"):
+    for step in ("personal", "contacts", "subgroups", "sdo", "legal"):
         move(client, step)
+    denied_step = move(client, "appearance", expected=503)
+    assert denied_step.json()["error"]["code"] == "legal_not_ready"
+    move(client, "sdo")
+    move(client, "finish")  # cached legacy client can skip the screen, but not completion
     response = client.post("/v1/onboarding/complete", headers=AUTH)
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "legal_not_ready"

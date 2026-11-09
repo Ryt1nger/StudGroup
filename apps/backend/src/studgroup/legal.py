@@ -227,6 +227,8 @@ async def accept(
             raise ApiError("consent_required", "Отдельно подтвердите обработку данных", 403)
         if not credentials_ready(settings):
             raise ApiError("credentials_unavailable", "Хранение пароля ещё не настроено", 503)
+    if await has_consent(db, user.id, body.purpose, settings):
+        return {"purpose": body.purpose, "granted": True, "version": VERSION}
     receipt(
         db,
         user.id,

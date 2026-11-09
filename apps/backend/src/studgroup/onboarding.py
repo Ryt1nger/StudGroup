@@ -39,6 +39,17 @@ async def progress_row(db: AsyncSession, member):
     return await db.get(OnboardingProgress, member.id)
 
 
+async def require_legal(db, user_id, settings):
+    from studgroup.legal import has_consent, legal_ready
+
+    if not legal_ready(settings):
+        raise ApiError("legal_not_ready", "Документы оператора ещё не утверждены", 503)
+    if not await has_consent(db, user_id, "terms", settings):
+        raise ApiError("terms_required", "Примите условия использования", 403)
+    if not await has_consent(db, user_id, "service", settings):
+        raise ApiError("consent_required", "Подтвердите обработку данных", 403)
+
+
 def stage_for(member, row):
     if row and row.completed_at:
         return "complete"
@@ -70,6 +81,7 @@ class ProgressBody(BaseModel):
 @router.put("/progress")
 async def save_progress(
     body: ProgressBody,
+    request: Request,
     db: Annotated[AsyncSession, Depends(database)],
     authorization: str | None = Header(None),
 ):
@@ -87,6 +99,8 @@ async def save_progress(
         and not (member.role != "student" and body.step == "finish")
     ):
         raise ApiError("invalid_step", "Завершите текущий этап регистрации", 422)
+    if current == "legal" and body.step == "appearance":
+        await require_legal(db, member.user_id, request.app.state.settings)
     if row is None:
         row = OnboardingProgress(
             membership_id=member.id, step=body.step, updated_at=datetime.now(UTC)
@@ -116,15 +130,7 @@ async def complete(
         raise ApiError("profile_required", "Укажите имя для профиля", 422)
     if member.role == "student" and await subgroups.unanswered(db, member):
         raise ApiError("subgroups_required", "Выберите подгруппы по всем предметам", 422)
-    from studgroup.legal import has_consent, legal_ready
-
-    settings = request.app.state.settings
-    if not legal_ready(settings):
-        raise ApiError("legal_not_ready", "Документы оператора ещё не утверждены", 503)
-    if not await has_consent(db, member.user_id, "terms", settings):
-        raise ApiError("terms_required", "Примите условия использования", 403)
-    if not await has_consent(db, member.user_id, "service", settings):
-        raise ApiError("consent_required", "Подтвердите обработку данных", 403)
+    await require_legal(db, member.user_id, request.app.state.settings)
     if row is None:
         row = OnboardingProgress(
             membership_id=member.id, step="complete", updated_at=datetime.now(UTC)

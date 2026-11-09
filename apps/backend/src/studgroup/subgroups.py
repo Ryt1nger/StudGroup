@@ -316,6 +316,12 @@ def visible(column, hidden_ids):
     return column.is_(None) | column.not_in(list(hidden_ids))
 
 
+def visible_lessons(lessons, hidden_ids):
+    """Apply the same membership visibility rule to schedule projections."""
+    hidden_strings = {str(value) for value in hidden_ids}
+    return [lesson for lesson in lessons if lesson.get("subgroup_id") not in hidden_strings]
+
+
 async def label(db, subgroup_id):
     """``{"id", "name"}`` of a card's subgroup for the API, or None."""
     if subgroup_id is None:

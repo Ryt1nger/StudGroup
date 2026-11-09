@@ -312,7 +312,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
     </> : null}
     {step === 'finish' ? <>
       <Title lead="Расписание, задания и события уже ждут вас.">
-        Настройка завершена!
+        Всё готово! StudGroup настроен
       </Title>
       <div className="ob-done-lines">
         <span><b>✓</b> Группа: {state.group_name}</span>
@@ -392,20 +392,33 @@ function Wizard({ state, membershipId }: { state: OnboardingState; membershipId:
       {shown === 'legal' ? <LegalStep back={back} busy={progress.busy}
         next={next('appearance')} pendingSdo={sdoDraft} clearSdo={() => setSdoDraft(null)} /> : null}
       {shown === 'appearance' ? <AppearanceStep back={back} busy={progress.busy} next={next('finish')} /> : null}
-      {shown === 'finish' ? (
-        <>
-          <Title lead="Расписание, задания и события уже ждут вас.">Настройка завершена!</Title>
-          <div className="ob-done-lines">
-            <span><b>✓</b> Группа: {state.group_name}</span>
-            <span><b>✓</b> Личные данные сохранены</span>
-            <span><b>✓</b> Оформление настроено</span>
-          </div>
-          <Actions back={back} busy={progress.busy} label="Перейти в StudGroup" next={() => { void progress.finish(); }} />
-        </>
-      ) : null}
+      {shown === 'finish' ? <FinishStep group={state.group_name} staff={isStaff} back={back}
+        busy={progress.busy} finish={() => { void progress.finish(); }} /> : null}
       {progress.error ? <Notice message={progress.error} /> : null}
     </Shell>
   );
+}
+
+function FinishStep({ group, staff, back, busy, finish }: {
+  group: string; staff: boolean; back?: () => void; busy: boolean; finish: () => void;
+}) {
+  const splits = useQuery({ queryKey: ['onboarding-subgroups'], queryFn: getStudentSplits, enabled: !staff });
+  const items = splits.data?.items ?? [];
+  const chosen = items.filter(item => item.selected_subgroup_id).length;
+  return <>
+    <Title lead="Расписание, задания и события уже ждут вас.">Всё готово! StudGroup настроен</Title>
+    <div className="ob-done-lines">
+      <span><b>✓</b> Группа: {group}</span>
+      <span><b>✓</b> Личные данные сохранены</span>
+      <span><b>{splits.isPending && !staff ? '…' : '✓'}</b> {staff ? 'Подгруппы для роли не требуются'
+        : splits.isPending ? 'Проверяем подгруппы…' : splits.isError ? 'Проверка подгрупп не удалась'
+          : items.length ? `Подгруппы: ${chosen} из ${items.length} выбраны` : 'Предметов с подгруппами нет'}</span>
+      <span><b>✓</b> Оформление настроено</span>
+    </div>
+    {splits.isError ? <Notice message="Не удалось проверить подгруппы" retry={() => { void splits.refetch(); }} /> : null}
+    <Actions back={back} busy={busy} disabled={!staff && (splits.isPending || splits.isError || chosen !== items.length)}
+      label="Перейти в StudGroup" next={finish} />
+  </>;
 }
 
 function PersonalStep({ back, busy, next }: { back?: () => void; busy: boolean; next: () => void }) {

@@ -59,8 +59,10 @@ describe('premium membership-scoped onboarding', () => {
     const first = await screen.findByRole('textbox', { name: /Имя/ });
     if (!(first as HTMLInputElement).value) await userEvent.type(first, 'Анна');
     await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
-    await userEvent.click(await screen.findByRole('button', { name: /Далее/ }));
-    await userEvent.click(await screen.findByRole('button', { name: /Сохранить и продолжить/ }));
+    expect(await screen.findByText('Контакты для связи')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
+    expect(await screen.findByText('Подгруппы по предметам')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Сохранить и продолжить/ }));
     await userEvent.click(await screen.findByRole('button', { name: /Подключить позже/ }));
     expect(await screen.findByText('Почти готово')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: /Принимаю условия/ })).not.toBeChecked();
@@ -87,10 +89,10 @@ describe('premium membership-scoped onboarding', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Тёмная' }));
     await userEvent.click(screen.getByRole('button', { name: 'Крупный' }));
     await userEvent.click(screen.getByRole('button', { name: /Сохранить оформление/ }));
-    expect(await screen.findByText('Настройка завершена!')).toBeInTheDocument();
+    expect(await screen.findByText('Всё готово! StudGroup настроен')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /Перейти в StudGroup/ }));
     await waitFor(() => expect(state.isComplete()).toBe(true));
-    await waitFor(() => expect(screen.queryByText('Настройка завершена!')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Всё готово! StudGroup настроен')).not.toBeInTheDocument());
     expect(state.calls).toEqual(['personal', 'contacts', 'subgroups', 'sdo', 'legal', 'appearance', 'finish']);
     second.unmount();
 
@@ -267,7 +269,7 @@ describe('premium membership-scoped onboarding', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Крупный' }));
     expect(screen.getByRole('button', { name: 'Тёмная' })).toHaveAttribute('aria-pressed', 'true');
     await userEvent.click(screen.getByRole('button', { name: /Сохранить оформление/ }));
-    expect(await screen.findByText('Настройка завершена!')).toBeInTheDocument();
+    expect(await screen.findByText('Всё готово! StudGroup настроен')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /Вернуться в приложение/ }));
     expect(await screen.findByRole('button', { name: 'Посмотреть первый запуск' })).toBeInTheDocument();
     expect(writes).toBe(0);

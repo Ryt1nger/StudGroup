@@ -25,6 +25,9 @@ export type OnboardingState = {
     role: 'student' | 'headman' | 'deputy';
     step: OnboardingStep;
     completed: boolean;
+    /**
+     * Always true for first-run setup; retained for older clients. Completed memberships remain complete.
+     */
     legal_required: boolean;
     group_name: string;
     academic_group_code: string | null;
@@ -1087,6 +1090,10 @@ export type SaveOnboardingProgressErrors = {
      * The request body is malformed or a value is not allowed
      */
     422: ErrorResponse;
+    /**
+     * A transient dependency or server failure
+     */
+    503: ErrorResponse;
 };
 
 export type SaveOnboardingProgressError = SaveOnboardingProgressErrors[keyof SaveOnboardingProgressErrors];

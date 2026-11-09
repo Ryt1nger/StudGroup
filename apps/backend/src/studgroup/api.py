@@ -199,6 +199,9 @@ async def schedule(
     request: Request,
     authorization: str | None = Header(None),
 ):
+    from studgroup import subgroups
+
+    _, member = await active_membership(db, authorization)
     if request.app.state.settings.ranepa_schedule_view_enabled and group.academic_group_code:
         from studgroup.profile import current
         from studgroup.ranepa_personal import personal_with_group_fallback, schedule_projection
@@ -208,8 +211,12 @@ async def schedule(
             personal = await personal_with_group_fallback(db, group.id, user.id, start, end)
         except ValueError:
             raise ApiError("invalid_request", "Выберите период до 32 дней", 422) from None
-        return schedule_projection(personal, group)
-    return await schedule_data(start, end, group, db)
+        result = schedule_projection(personal, group)
+    else:
+        result = await schedule_data(start, end, group, db)
+    hidden = await subgroups.hidden(db, group.id, member.user_id)
+    result["lessons"] = subgroups.visible_lessons(result["lessons"], hidden)
+    return result
 
 
 async def schedule_data(start: date, end: date, group: Group, db: AsyncSession):

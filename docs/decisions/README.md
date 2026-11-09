@@ -33,6 +33,7 @@ Accepted decisions:
 - [ADR-013: Versioned visual evidence inside C+](ADR-013-versioned-image-analysis.md): offline implementation, independent image passes and safe publication gates.
 - [ADR-014: Target-grounded card mutations](ADR-014-target-grounded-card-mutations.md)
 - [ADR-016: Operator-only dashboard access](ADR-016-owner-dashboard-access.md)
+- [ADR-017: Mandatory legal acceptance at first-run completion](ADR-017-mandatory-onboarding-consent.md)
 
 Proposed decisions:
 

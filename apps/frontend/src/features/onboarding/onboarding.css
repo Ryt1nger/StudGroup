@@ -166,6 +166,7 @@
   .ob-actions { padding-top: 6px; }
 }
 @media (max-height: 620px) {
+  .ob-scene { overflow-y: auto; overscroll-behavior: contain; }
   .ob-art { display: none; }
   .ob-feature-list > div { min-height: 40px; padding: 4px 8px; }
   .ob-feature-icon { width: 27px; height: 27px; }
