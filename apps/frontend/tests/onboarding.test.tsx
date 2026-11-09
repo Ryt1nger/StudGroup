@@ -12,8 +12,7 @@ function stubOnboarding(role: 'student' | 'headman' = 'student') {
   const calls: string[] = [];
   server.use(
     http.get(API + '/onboarding', () => HttpResponse.json({
-      role, step, completed, group_name: 'БИ 1.2', academic_group_code: null,
-      legal_required: false,
+      role, step, completed, group_name: 'БИ 1.2', academic_group_code: null, legal_required: false,
     })),
     http.put(API + '/onboarding/progress', async ({ request }) => {
       const body = (await request.json()) as { step: string };
@@ -32,52 +31,82 @@ function stubOnboarding(role: 'student' | 'headman' = 'student') {
   return { calls, getStep: () => step, isComplete: () => completed };
 }
 
-describe('resumable Mini App onboarding', () => {
-  it('keeps the Telegram-linked student on the saved step after closing and reopening', async () => {
+async function advancePastPersonal() {
+  const first = await screen.findByRole('textbox', { name: /Имя/ });
+  if (!('value' in first) || !(first as HTMLInputElement).value) await userEvent.type(first, 'Анна');
+  await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
+  expect(await screen.findByText('Контакты для связи')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
+  expect(await screen.findByText('Подгруппы по предметам')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /Сохранить и продолжить/ }));
+  expect(await screen.findByText('СДО и личный кабинет')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /Подключить позже/ }));
+  expect(await screen.findByText('Почти готово')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /Продолжить/ }));
+  expect(await screen.findByText('Подстроим приложение под вас')).toBeInTheDocument();
+}
+
+describe('premium membership-scoped onboarding', () => {
+  it('resumes from the server, uses the profile appearance controls and never repeats once completed', async () => {
     useScenario();
     const state = stubOnboarding();
     const first = renderApp();
-    expect(await screen.findByText(/Твоя учёба/)).toBeInTheDocument();
-    expect(screen.getByText('Шаг 1 из 6')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /Начать знакомство/ }));
-    expect(await screen.findByText('Сначала о данных')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /Продолжить/ }));
-    expect(await screen.findByText('Давай знакомиться')).toBeInTheDocument();
-    expect(state.getStep()).toBe('personal');
-
+    expect(await screen.findByText('Настроим StudGroup под вас')).toBeInTheDocument();
+    expect(screen.getByLabelText('Шаг 1 из 8')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Начать настройку/ }));
+    expect(await screen.findByText('Как к вам обращаться?')).toBeInTheDocument();
     first.unmount();
-    renderApp();
-    expect(await screen.findByText('Давай знакомиться')).toBeInTheDocument();
-    expect(screen.getByText('Шаг 3 из 6')).toBeInTheDocument();
-    await userEvent.type(await screen.findByRole('textbox', { name: /Имя/ }), 'Анна');
-    await userEvent.click(screen.getByRole('button', { name: /Продолжить/ }));
-    expect(await screen.findByText('Твои подгруппы')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /Продолжить/ }));
-    expect(await screen.findByText('СДО и личный кабинет')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Пропустить' }));
-    expect(await screen.findByText('Всё готово!')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /Открыть StudGroup/ }));
+
+    const second = renderApp();
+    expect(await screen.findByText('Как к вам обращаться?')).toBeInTheDocument();
+    expect(screen.getByLabelText('Шаг 2 из 8')).toBeInTheDocument();
+    await advancePastPersonal();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Бирюзовый' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Тёмная' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Крупный' }));
+    await userEvent.click(screen.getByRole('button', { name: /Сохранить оформление/ }));
+    expect(await screen.findByText('Настройка завершена!')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Перейти в StudGroup/ }));
     await waitFor(() => expect(state.isComplete()).toBe(true));
-    await waitFor(() => expect(screen.queryByText('Всё готово!')).not.toBeInTheDocument());
-    expect(state.calls).toEqual(['legal', 'personal', 'subgroups', 'sdo', 'finish']);
+    await waitFor(() => expect(screen.queryByText('Настройка завершена!')).not.toBeInTheDocument());
+    expect(state.calls).toEqual(['personal', 'contacts', 'subgroups', 'sdo', 'legal', 'appearance', 'finish']);
+    second.unmount();
+
+    renderApp();
+    await waitFor(() => expect(state.getStep()).toBe('complete'));
+    expect(screen.queryByText('Настроим StudGroup под вас')).not.toBeInTheDocument();
+    expect(screen.queryByText('Как к вам обращаться?')).not.toBeInTheDocument();
   });
 
-  it('gives a new headman one profile form instead of the student carousel', async () => {
+  it('gives a headman the same multi-step design without requiring a subgroup choice', async () => {
     useScenario();
     const state = stubOnboarding('headman');
     renderApp();
-    expect(await screen.findByText('Добро пожаловать!')).toBeInTheDocument();
-    expect(screen.queryByText('Шаг 1 из 6')).not.toBeInTheDocument();
-    await userEvent.type(screen.getByRole('textbox', { name: /Имя/ }), 'Андрей');
-    await userEvent.click(screen.getByRole('button', { name: /Завершить настройку/ }));
+    expect(await screen.findByText('Настроим StudGroup под вас')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Начать настройку/ }));
+    expect(await screen.findByText('Как к вам обращаться?')).toBeInTheDocument();
+    await advancePastPersonal();
+    await userEvent.click(screen.getByRole('button', { name: /Сохранить оформление/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /Перейти в StudGroup/ }));
     await waitFor(() => expect(state.isComplete()).toBe(true));
-    expect(state.calls).toEqual(['finish']);
+    expect(state.calls).toEqual(['contacts', 'subgroups', 'sdo', 'legal', 'appearance', 'finish']);
   });
 
-  it('does not open Mini App onboarding without a verified active group', async () => {
+  it('never shows onboarding outside a verified active membership', async () => {
     useScenario('no-group');
     renderApp();
-    await waitFor(() => expect(screen.queryByText('Давай знакомиться')).not.toBeInTheDocument());
-    expect(screen.queryByText('Твоя учёба.')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Настроим StudGroup под вас')).not.toBeInTheDocument());
+  });
+
+  it('does not flash registration for a server-completed membership', async () => {
+    useScenario();
+    server.use(http.get(API + '/onboarding', () => HttpResponse.json({
+      role: 'headman', step: 'complete', completed: true, group_name: 'БИ 1.2',
+      academic_group_code: null, legal_required: false,
+    })));
+    renderApp();
+    expect(screen.queryByText('Настроим StudGroup под вас')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Настроим StudGroup под вас')).not.toBeInTheDocument());
   });
 });
