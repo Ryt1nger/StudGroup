@@ -536,6 +536,7 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
 
     monkeypatch.setattr(domain, "telegram_member", telegram_member)
     deliver(foreman, "/start " + link.split("?start=")[1], uid=88)
+    base_tap(foreman, "Я студент", uid=88)
     base_tap(foreman, "Принимаю условия использования", uid=88)
     base_tap(foreman, "Даю отдельное согласие", uid=88)
     assert "Готово! Вы подключены" in last(foreman)["text"]
@@ -567,9 +568,8 @@ def test_headman_can_skip_subgroups_after_issuing_an_invite(foreman, monkeypatch
     tap(foreman, "Далее: подгруппы", uid=ADDER)
     assert "Да, настроить" in labels(foreman)
     tap(foreman, "Нет, пропустить", uid=ADDER)
-    assert "защищённой формы Mini App" in last(foreman)["text"]
-    assert "Пропустить" in labels(foreman)
-    tap(foreman, "Пропустить", uid=ADDER)
+    assert "Логин и пароль СДО не требуются" in last(foreman)["text"]
+    assert "Кабинет старосты" in labels(foreman)
     tap(foreman, "Кабинет старосты", uid=ADDER)
     assert "Староста · ИВТ-21" in last(foreman)["text"]
 
@@ -604,7 +604,8 @@ def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeyp
     assert "Далее" in labels(foreman)
     tap(foreman, "Далее", uid=ADDER)
     assert "Профиль можно заполнить в приложении" in last(foreman)["text"]
-    assert {"Открыть StudGroup", "Подключить СДО / ЛК", "Кабинет старосты"} <= set(labels(foreman))
+    assert {"Открыть StudGroup", "Кабинет старосты"} <= set(labels(foreman))
+    assert "Подключить СДО / ЛК" not in labels(foreman)
     tap(foreman, "Кабинет старосты", uid=ADDER)
     assert "Староста · ИВТ-21" in last(foreman)["text"]
 

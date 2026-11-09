@@ -35,13 +35,17 @@ def test_legal_consents_precede_membership_and_resume_after_start(foreman, monke
     allow_telegram(monkeypatch)
     code = issue(foreman)
     deliver(foreman, f"/start invite_{code}", uid=33)
-    assert "Принимаю условия использования" in labels(foreman)
+    assert "Я студент" in labels(foreman)
+    assert "Я староста" in labels(foreman)
+    assert "Принимаю условия использования" not in labels(foreman)
 
     async def membership(db):
         return await db.scalar(select(Membership).join(User).where(User.telegram_user_id == 33))
 
     assert run(foreman, membership) is None
     deliver(foreman, "/start", uid=33)
+    assert "Я студент" in labels(foreman)
+    tap(foreman, "Я студент")
     assert "Принимаю условия использования" in labels(foreman)
     tap(foreman, "Принимаю условия использования")
     assert "Даю отдельное согласие" in labels(foreman)
@@ -50,9 +54,8 @@ def test_legal_consents_precede_membership_and_resume_after_start(foreman, monke
     assert "Даю отдельное согласие" in labels(foreman)
     tap(foreman, "Даю отдельное согласие")
     assert run(foreman, membership).role == "student"
-    assert "Пропустить" in labels(foreman)
+    assert "Пропустить" not in labels(foreman)
     assert "/onboarding" not in str(last(foreman))
-    tap(foreman, "Пропустить")
     assert "Открыть StudGroup" in labels(foreman)
 
     async def persisted(db):
@@ -66,13 +69,13 @@ def test_legal_consents_precede_membership_and_resume_after_start(foreman, monke
             )
         ).all()
         return (
-            profile.sdu_setup_skipped_at,
-            profile.sdu_password_encrypted,
+            profile.sdu_login if profile else None,
+            profile.sdu_password_encrypted if profile else None,
             {(e.purpose, e.source) for e in events},
         )
 
-    skipped, password, receipts = run(foreman, persisted)
-    assert skipped is not None and password is None
+    login, password, receipts = run(foreman, persisted)
+    assert login is None and password is None
     assert receipts == {("terms", "telegram"), ("service", "telegram")}
 
 
@@ -96,6 +99,8 @@ def test_unapproved_documents_block_new_members_but_not_existing(foreman, monkey
     code = issue(foreman)
     foreman.app.state.settings.legal_documents_approved = False
     deliver(foreman, f"/start invite_{code}", uid=33)
+    assert "Я студент" in labels(foreman)
+    tap(foreman, "Я студент")
     assert "правовые документы ещё не утверждены" in last(foreman)["text"]
     deliver(foreman, "/start", uid=33)
     assert "правовые документы ещё не утверждены" in last(foreman)["text"]
@@ -162,7 +167,8 @@ def test_two_real_subgroups_persist_and_survive_repeated_start(foreman, monkeypa
     deliver(foreman, "/start", uid=33)
     assert "Информатика" in last(foreman)["text"]
     tap(foreman, "Информатика 2")
-    assert "Пропустить" in labels(foreman)
+    assert "Открыть StudGroup" in labels(foreman)
+    assert "Пропустить" not in labels(foreman)
 
     async def loaded(db):
         member = await db.scalar(select(Membership).join(User).where(User.telegram_user_id == 33))
@@ -176,10 +182,7 @@ def test_two_real_subgroups_persist_and_survive_repeated_start(foreman, monkeypa
 
     chosen, step = run(foreman, loaded)
     assert chosen == set(expected)
-    assert step == "sdo_setup"
-    deliver(foreman, "/start", uid=33)
-    assert "Пропустить" in labels(foreman)
-    tap(foreman, "Пропустить")
+    assert step == "registration_complete"
     deliver(foreman, "/start", uid=33)
     assert "Открыть StudGroup" in labels(foreman)
 

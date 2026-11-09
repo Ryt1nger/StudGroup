@@ -26,6 +26,8 @@ def publish_legal(client):
 
 
 def finish_legal(client, uid=33):
+    if "Я студент" in labels(client):
+        tap(client, "Я студент", uid=uid)
     assert "Принимаю условия использования" in labels(client)
     tap(client, "Принимаю условия использования", uid=uid)
     assert "Даю отдельное согласие" in labels(client)
@@ -129,8 +131,8 @@ def test_student_joins_by_typing_a_code_and_the_code_is_removed_from_the_chat(fo
     final = last(foreman)
     assert "Готово! Вы подключены" in final["text"]
     web_app = next(b for row in final["reply_markup"]["inline_keyboard"] for b in row)
-    assert web_app["web_app"]["url"] == SETTINGS_URL + "/profile/sdo"
-    assert "Пропустить" in labels(foreman)
+    assert web_app["web_app"]["url"] == SETTINGS_URL
+    assert "Пропустить" not in labels(foreman)
     assert typed in deletions(foreman)
     assert code not in json.dumps(final)
 
