@@ -1005,9 +1005,7 @@ async def invitation_entry(db, session, settings, telegram_id):
         await academic_code_prompt(db, session, group)
         return
     pending = (
-        json.loads(session.payload)
-        if session.step in {"invite", "invite_replace_confirm"}
-        else {}
+        json.loads(session.payload) if session.step in {"invite", "invite_replace_confirm"} else {}
     )
     setup = session.step in {"connected", "subgroup_question"} or pending.get("setup", False)
     from_cabinet = pending.get("from_cabinet", False)
@@ -1053,7 +1051,11 @@ async def invitation_entry(db, session, settings, telegram_id):
         else [("‹ Назад", "invite_back" if setup else "home")]
     )
     await screen(
-        db, session, text, rows, "invite",
+        db,
+        session,
+        text,
+        rows,
+        "invite",
         {"setup": setup, "from_cabinet": from_cabinet},
     )
 
@@ -1073,9 +1075,7 @@ async def invite(db, session, settings, telegram_id, *, replacing=False):
         await invitation_entry(db, session, settings, telegram_id)
         return
     try:
-        await domain.issue_group_link(
-            db, group, member, bot_token=settings.telegram_bot_token
-        )
+        await domain.issue_group_link(db, group, member, bot_token=settings.telegram_bot_token)
     except domain.StError as error:
         await screen(db, session, str(error), [[("‹ Назад", "home")]], "invite")
         return
@@ -1096,8 +1096,7 @@ async def invite_replace_confirmation(db, session, settings, telegram_id):
         session,
         "Заменить действующую ссылку? Она сразу перестанет работать, включая "
         "уже разосланные приглашения. Новую ссылку можно будет пересылать 7 дней.",
-        [[("Да, заменить ссылку", "invite_replace_yes")],
-         [("Отмена", "invite_replace_cancel")]],
+        [[("Да, заменить ссылку", "invite_replace_yes")], [("Отмена", "invite_replace_cancel")]],
         "invite_replace_confirm",
         {"setup": state.get("setup", False), "from_cabinet": state.get("from_cabinet", False)},
     )
@@ -1354,9 +1353,7 @@ async def resume_or_home(db, session, settings, telegram_id):
                 )
         elif found[0].role == "headman" and session.step == "connected":
             await connected(db, session, settings, found[1])
-        elif found[0].role == "headman" and session.step in {
-            "invite", "invite_replace_confirm"
-        }:
+        elif found[0].role == "headman" and session.step in {"invite", "invite_replace_confirm"}:
             try:
                 prev = json.loads(session.payload)
             except (ValueError, TypeError):

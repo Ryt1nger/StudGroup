@@ -1630,9 +1630,7 @@ async def apply(db, session, group, user, member, data, settings):
         )
     elif action == "group_link":
         # Compatibility for a previously confirmed cabinet action: same share panel.
-        await domain.issue_group_link(
-            db, group, member, bot_token=settings.telegram_bot_token
-        )
+        await domain.issue_group_link(db, group, member, bot_token=settings.telegram_bot_token)
         await bot_start.open_invitation_from_cabinet(db, settings, session.telegram_user_id)
         return
     elif action == "invite":

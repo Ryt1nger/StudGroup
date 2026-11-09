@@ -32,7 +32,8 @@ def active(client):
 
 def link_from_panel(client):
     return next(
-        line for line in last(client)["text"].splitlines()
+        line
+        for line in last(client)["text"].splitlines()
         if line.startswith("https://t.me/studgroup_rf_bot?start=invite_")
     )
 
@@ -58,12 +59,16 @@ def test_invitation_screen_create_share_reopen_without_rotation(foreman):
     assert "Скопировать ссылку" in labels(foreman)
 
     buttons = last(foreman)["reply_markup"]["inline_keyboard"]
-    share = next(button for row in buttons for button in row if button["text"] == "Переслать приглашение")
+    share = next(
+        button for row in buttons for button in row if button["text"] == "Переслать приглашение"
+    )
     query = parse_qs(urlsplit(share["url"]).query)
     assert urlsplit(share["url"]).hostname == "t.me"
     assert query["url"] == [url]
     assert "StudGroup" in query["text"][0]
-    copied = next(button for row in buttons for button in row if button["text"] == "Скопировать ссылку")
+    copied = next(
+        button for row in buttons for button in row if button["text"] == "Скопировать ссылку"
+    )
     assert copied["copy_text"]["text"] == url
 
     deliver(foreman, "/start")
