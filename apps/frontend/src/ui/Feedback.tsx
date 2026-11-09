@@ -21,11 +21,21 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
   const [undo, setUndo] = useState<UndoState | null>(null);
   const counter = useRef(0);
+  const toastTimers = useRef<Set<number>>(new Set());
+  useEffect(() => () => {
+    // Clear pending toast callbacks before the WebView or test DOM unmounts.
+    for (const timer of toastTimers.current) window.clearTimeout(timer);
+    toastTimers.current.clear();
+  }, []);
 
   const toast = useCallback((message: string) => {
     const id = ++counter.current;
     setToasts((current) => [...current, { id, text: message }]);
-    window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 1600);
+    const timer = window.setTimeout(() => {
+      toastTimers.current.delete(timer);
+      setToasts((current) => current.filter((item) => item.id !== id));
+    }, 1600);
+    toastTimers.current.add(timer);
   }, []);
   const showUndo = useCallback((text: string, onUndo: () => void) => {
     setUndo({ id: ++counter.current, text, action: 'Отменить', onUndo });
