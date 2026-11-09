@@ -153,6 +153,59 @@ describe('premium membership-scoped onboarding', () => {
     await waitFor(() => expect(screen.queryByText('Настроим StudGroup под вас')).not.toBeInTheDocument());
   });
 
+
+  it('lets a completed member preview all screens without any registration or profile writes', async () => {
+    useScenario();
+    let writes = 0;
+    server.use(
+      http.get(API + '/onboarding', () => HttpResponse.json({
+        role: 'headman', step: 'complete', completed: true, group_name: 'БИ 1.2',
+        academic_group_code: null, legal_required: false,
+      })),
+      http.put(API + '/onboarding/progress', () => { writes += 1; return HttpResponse.json({ completed: true }); }),
+      http.post(API + '/onboarding/complete', () => { writes += 1; return HttpResponse.json({ completed: true }); }),
+      http.patch(API + '/profile', () => { writes += 1; return HttpResponse.json({}); }),
+      http.post(API + '/legal/consents', () => { writes += 1; return HttpResponse.json({}); }),
+      http.put(API + '/subgroups/:splitId', () => { writes += 1; return HttpResponse.json({}); }),
+    );
+    renderApp({ route: '/profile' });
+    const open = await screen.findByRole('button', { name: 'Посмотреть первый запуск' });
+    await userEvent.click(open);
+    expect(await screen.findByText('Настроим StudGroup под вас')).toBeInTheDocument();
+    expect(screen.getByText(/Предпросмотр · данные не сохраняются/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Начать настройку/ }));
+    expect(await screen.findByText('Как к вам обращаться?')).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('textbox', { name: /Фамилия/ }), 'Предпросмотр');
+    await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
+    expect(await screen.findByText('Контакты для связи')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
+    expect(await screen.findByText('Подгруппы по предметам')).toBeInTheDocument();
+    expect(screen.getByText('Пример: 2 предмета')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Сохранить и продолжить/ }));
+    expect(await screen.findByText('СДО и личный кабинет')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Пароль')).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: /Продолжить/ }));
+    expect(await screen.findByText('Почти готово')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: /Принимаю условия/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Продолжить/ }));
+    expect(await screen.findByText('Подстроим приложение под вас')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Тёмная' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Бирюзовый' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Крупный' }));
+    expect(screen.getByRole('button', { name: 'Тёмная' })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: /Сохранить оформление/ }));
+    expect(await screen.findByText('Настройка завершена!')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Вернуться в приложение/ }));
+    expect(await screen.findByRole('button', { name: 'Посмотреть первый запуск' })).toBeInTheDocument();
+    expect(writes).toBe(0);
+    // Reopening is an explicit action; it does not change completed server state.
+    await userEvent.click(screen.getByRole('button', { name: 'Посмотреть первый запуск' }));
+    expect(await screen.findByText('Настроим StudGroup под вас')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Закрыть/ }));
+    expect(await screen.findByRole('button', { name: 'Посмотреть первый запуск' })).toBeInTheDocument();
+    expect(writes).toBe(0);
+  });
+
   it('does not flash registration for a server-completed membership', async () => {
     useScenario();
     server.use(http.get(API + '/onboarding', () => HttpResponse.json({
