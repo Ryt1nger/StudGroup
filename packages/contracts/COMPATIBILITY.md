@@ -1,5 +1,10 @@
 # Contract compatibility
 
+## Multi-step first run (0.22.0, 2026-11-09)
+
+Onboarding now supports `contacts` and `appearance` in addition to the existing stages. Responses remain membership-scoped and existing completed memberships continue to bypass the wizard. Old clients can still use their original legal-first student transitions and staff single-form finish. Personalization is client-side and reuses exactly the existing Telegram theme/accent cookies and display cookie; no user profile payload or new credential storage is introduced.
+
+
 ## Membership onboarding (0.21.0, 2026-11-08)
 
 Additive `/onboarding` routes are scoped to the bearer session's active membership. Older clients

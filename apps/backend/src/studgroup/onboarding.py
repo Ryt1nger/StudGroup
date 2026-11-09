@@ -17,15 +17,21 @@ from studgroup.models import OnboardingProgress, UserProfile
 
 router = APIRouter(prefix="/v1/onboarding")
 
-STEPS = ("welcome", "legal", "personal", "subgroups", "sdo", "finish")
-Step = Literal["welcome", "legal", "personal", "subgroups", "sdo", "finish"]
+# New flow follows the screen order. Legacy adjacent transitions remain permitted
+# while older Mini App bundles are still cached by Telegram.
+STEPS = ("welcome", "personal", "contacts", "subgroups", "sdo", "legal", "appearance", "finish")
+Step = Literal[
+    "welcome", "personal", "contacts", "subgroups", "sdo", "legal", "appearance", "finish"
+]
 NEXT_STEPS = {
-    "welcome": {"legal"},
-    "legal": {"personal", "welcome"},
-    "personal": {"subgroups", "legal"},
-    "subgroups": {"sdo", "personal"},
-    "sdo": {"finish", "subgroups"},
-    "finish": {"sdo"},
+    "welcome": {"personal", "legal"},
+    "personal": {"welcome", "contacts", "subgroups", "legal"},
+    "contacts": {"personal", "subgroups"},
+    "subgroups": {"contacts", "personal", "sdo"},
+    "sdo": {"subgroups", "legal", "finish"},
+    "legal": {"sdo", "appearance", "personal", "welcome"},
+    "appearance": {"legal", "finish"},
+    "finish": {"appearance", "sdo"},
 }
 
 
@@ -72,11 +78,15 @@ async def save_progress(
     current = stage_for(member, row)
     if current == "complete":
         return {"step": "complete", "completed": True}
-    if member.role == "student":
-        if body.step != current and body.step not in NEXT_STEPS[current]:
-            raise ApiError("invalid_step", "Завершите текущий этап регистрации", 422)
-    elif body.step not in {"personal", "sdo", "finish"}:
-        raise ApiError("invalid_step", "Для старосты доступна настройка личных данных", 422)
+    if member.role != "student" and body.step == "welcome":
+        raise ApiError("invalid_step", "Для старосты доступна настройка профиля", 422)
+    # Older staff builds finish their one-page form directly from personal.
+    if (
+        body.step != current
+        and body.step not in NEXT_STEPS[current]
+        and not (member.role != "student" and body.step == "finish")
+    ):
+        raise ApiError("invalid_step", "Завершите текущий этап регистрации", 422)
     if row is None:
         row = OnboardingProgress(
             membership_id=member.id, step=body.step, updated_at=datetime.now(UTC)

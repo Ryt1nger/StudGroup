@@ -11,7 +11,7 @@ function Screen({ children }: { children: ReactNode }) {
   );
 }
 
-function Splash() {
+export function Splash() {
   return (
     <div className="app">
       <div className="gate">
