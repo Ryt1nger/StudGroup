@@ -116,6 +116,7 @@ def test_unapproved_documents_block_new_members_but_not_existing(foreman, monkey
     allow_telegram(monkeypatch)
     code = issue(foreman)
     foreman.app.state.settings.legal_documents_approved = False
+    foreman.app.state.settings.registration_legal_required = True
     deliver(foreman, f"/start invite_{code}", uid=33)
     assert "Я студент" in labels(foreman)
     tap(foreman, "Я студент")

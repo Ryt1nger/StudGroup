@@ -287,6 +287,7 @@ def test_invite_membership_check_and_single_use(foreman, monkeypatch):
     settings.legal_operator_contact = "legal@example.test"
     settings.legal_data_region = "Россия, Москва"
     settings.legal_documents_approved = True
+    settings.registration_legal_required = True
 
     deliver(foreman, "/start invite_" + code, uid=33)
     buttons = last(foreman)["reply_markup"]["inline_keyboard"]

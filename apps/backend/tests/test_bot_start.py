@@ -23,6 +23,7 @@ def publish_legal(client):
     settings.legal_operator_contact = "legal@example.test"
     settings.legal_data_region = "Россия, Москва"
     settings.legal_documents_approved = True
+    settings.registration_legal_required = True
 
 
 def finish_legal(client, uid=33):
