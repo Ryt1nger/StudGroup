@@ -856,11 +856,12 @@ async def redeem_invite(db, settings, telegram_id, code):
     return await redeem_invite_by_hash(db, settings, telegram_id, token_hash(code))
 
 
-async def redeem_invite_by_hash(db, settings, telegram_id, digest):
-    """Only server-internal consent resumption may redeem a hashed pending invitation."""
-    invitation = await db.scalar(
-        select(GroupInvitation).where(GroupInvitation.token_hash == digest).with_for_update()
-    )
+async def validate_invite_by_hash(db, settings, telegram_id, digest, *, lock=False):
+    """Check invitation validity and Telegram group participation without writing."""
+    query = select(GroupInvitation).where(GroupInvitation.token_hash == digest)
+    if lock:
+        query = query.with_for_update()
+    invitation = await db.scalar(query)
     now = datetime.now(UTC)
     if (
         not invitation
@@ -883,6 +884,14 @@ async def redeem_invite_by_hash(db, settings, telegram_id, digest):
         raise StError(
             "Не удалось подтвердить участие в Telegram-группе. Вступи в неё; бот должен иметь права администратора для проверки."
         )
+    return invitation, group
+
+
+async def redeem_invite_by_hash(db, settings, telegram_id, digest):
+    """Redeem after distinct, current legal consents, rechecking invite under a lock."""
+    invitation, group = await validate_invite_by_hash(
+        db, settings, telegram_id, digest, lock=True
+    )
     await db.execute(
         insert(User)
         .values(id=uuid.uuid4(), telegram_user_id=telegram_id, display_name="Участник")

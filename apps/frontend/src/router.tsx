@@ -39,6 +39,7 @@ export function appRoutes(startParam: string | null) {
       children: [
         { index: true, element: <Navigate to={deepLinkId ? `/homework/${deepLinkId}` : '/today'} replace /> },
         { path: 'today', Component: TodayScreen },
+        { path: 'onboarding', element: <Navigate to="/today" replace /> },
         { path: 'events', lazy: async () => ({ Component: (await import('./features/events/EventsScreen')).EventsScreen }) },
         { path: 'events/review', lazy: async () => ({ Component: (await import('./features/events/EventsScreen')).EventReviewScreen }) },
         { path: 'events/review/:eventId', lazy: async () => ({ Component: (await import('./features/events/EventReviewDetailScreen')).EventReviewDetailScreen }) },

@@ -2,7 +2,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { RouterProvider } from 'react-router';
 import { AccessGate } from './session/AccessGate';
-import { OnboardingGate } from './features/onboarding/OnboardingGate';
 import { SessionProvider } from './session/SessionProvider';
 import type { TelegramAdapter } from './telegram/adapter';
 import { TelegramProvider } from './telegram/TelegramProvider';
@@ -21,7 +20,7 @@ export function App({ adapter, router: injectedRouter }: { adapter: TelegramAdap
             <RouterProvider router={router} />
           ) : (
             <AccessGate>
-              <OnboardingGate><RouterProvider router={router} /></OnboardingGate>
+              <RouterProvider router={router} />
             </AccessGate>
           )}
         </SessionProvider>

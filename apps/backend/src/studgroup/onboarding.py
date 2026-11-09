@@ -66,9 +66,9 @@ async def state(
     row = await progress_row(db, member)
     return {
         "role": member.role,
-        "step": stage_for(member, row),
-        "completed": bool(row and row.completed_at),
-        "legal_required": True,
+        "step": "complete",
+        "completed": True,
+        "legal_required": False,
         "group_name": group.name,
         "academic_group_code": group.academic_group_code,
     }
