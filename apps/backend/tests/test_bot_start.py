@@ -178,6 +178,55 @@ def test_an_invitation_link_joins_in_one_tap_and_removes_the_link_message(forema
     assert tapped in deletions(foreman)
 
 
+def test_forwarded_telegram_invite_url_joins_without_manual_code(foreman, monkeypatch):
+    from studgroup import bot_start
+
+    allow_telegram(monkeypatch)
+    code = issue(foreman)
+    foreman.app.state.settings.bot_username = "studgroup_rf_bot"
+    url = bot_start.invite_link(foreman.app.state.settings, code)
+    deliver(foreman, url, uid=33)
+    assert "Я студент" in labels(foreman)
+    finish_legal(foreman)
+    assert "Готово! Вы подключены" in last(foreman)["text"]
+
+
+def test_pilot_member_with_single_shared_invite_skips_manual_code(foreman, monkeypatch):
+    allow_telegram(monkeypatch)
+
+    async def make(db):
+        _, member, group = await actor(db)
+        return await domain.issue_group_link(db, group, member)
+
+    run(foreman, make)
+    deliver(foreman, "/start", uid=33)
+    tap(foreman, "Подключить группу")
+    tap(foreman, "Я студент")
+    tap(foreman, "Нет промокода")
+    assert "Регистрация · шаг 1 из 3" in last(foreman)["text"]
+    assert "Ввести код" not in labels(foreman)
+    deliver(foreman, "Анна", uid=33)
+    tap(foreman, "Пропустить")
+    tap(foreman, "Пропустить")
+    assert "Готово! Вы подключены" in last(foreman)["text"]
+
+
+def test_unverified_telegram_member_cannot_autoconnect_without_invite(foreman, monkeypatch):
+    allow_telegram(monkeypatch, answer=False)
+
+    async def make(db):
+        _, member, group = await actor(db)
+        return await domain.issue_group_link(db, group, member)
+
+    run(foreman, make)
+    deliver(foreman, "/start", uid=33)
+    tap(foreman, "Подключить группу")
+    tap(foreman, "Я студент")
+    tap(foreman, "Нет промокода")
+    assert "Подключение к группе" in last(foreman)["text"]
+    assert "Регистрация · шаг 1 из 3" not in last(foreman)["text"]
+
+
 def test_legacy_raw_token_deep_link_joins_without_typing_code(foreman, monkeypatch):
     allow_telegram(monkeypatch)
     code = issue(foreman)
