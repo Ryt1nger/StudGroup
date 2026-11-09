@@ -1750,7 +1750,7 @@ components:
   schemas:
     OnboardingStep:
       type: string
-      enum: [welcome, legal, personal, subgroups, sdo, finish, complete]
+      enum: [welcome, personal, contacts, subgroups, sdo, legal, appearance, finish, complete]
     OnboardingState:
       type: object
       additionalProperties: false
@@ -1769,7 +1769,7 @@ components:
       properties:
         step:
           type: string
-          enum: [welcome, legal, personal, subgroups, sdo, finish]
+          enum: [welcome, personal, contacts, subgroups, sdo, legal, appearance, finish]
     OnboardingProgressResponse:
       type: object
       additionalProperties: false
