@@ -135,11 +135,14 @@ def test_legal_documents_are_public_and_individual_confirmations_are_audited(cli
     )
     assert without_terms.status_code == 403
     for purpose in ("terms", "service"):
-        assert client.post(
-            "/v1/legal/consents",
-            json={"purpose": purpose, "version": VERSION, "confirmed": True},
-            headers=HEADERS,
-        ).status_code == 200
+        assert (
+            client.post(
+                "/v1/legal/consents",
+                json={"purpose": purpose, "version": VERSION, "confirmed": True},
+                headers=HEADERS,
+            ).status_code
+            == 200
+        )
     no_key = client.post(
         "/v1/legal/consents",
         json={"purpose": "sdo", "version": VERSION, "confirmed": True},
