@@ -994,10 +994,34 @@ async def subgroup_question(db, session, group):
     )
 
 
+async def invitation_owner(db, session, telegram_id):
+    """Resolve invitation permissions from the cabinet-selected group, not alphabetical order."""
+    try:
+        data = json.loads(session.payload)
+        selected = uuid.UUID(data["invite_group_id"]) if data.get("invite_group_id") else None
+    except (ValueError, TypeError):
+        return None
+    query = (
+        select(Membership, Group)
+        .join(User, User.id == Membership.user_id)
+        .join(Group, Group.id == Membership.group_id)
+        .where(
+            User.telegram_user_id == telegram_id,
+            Membership.role == "headman",
+            Membership.status == "active",
+            Group.status == "active",
+            Group.pilot_authorized.is_(True),
+        )
+    )
+    if selected is not None:
+        query = query.where(Group.id == selected)
+    return (await db.execute(query.order_by(Group.name).limit(1))).first()
+
+
 async def invitation_entry(db, session, settings, telegram_id):
     """One stable invite screen: show existing link, offer creation only if absent."""
-    found = await current_membership(db, telegram_id)
-    if not found or found[0].role != "headman":
+    found = await invitation_owner(db, session, telegram_id)
+    if not found:
         await home(db, session, settings, telegram_id)
         return
     _, group = found
@@ -1009,6 +1033,7 @@ async def invitation_entry(db, session, settings, telegram_id):
     )
     setup = session.step in {"connected", "subgroup_question"} or pending.get("setup", False)
     from_cabinet = pending.get("from_cabinet", False)
+    invite_group_id = pending.get("invite_group_id")
     active = await domain.active_group_invite(db, group.id)
     if active is None:
         text = (
@@ -1056,14 +1081,14 @@ async def invitation_entry(db, session, settings, telegram_id):
         text,
         rows,
         "invite",
-        {"setup": setup, "from_cabinet": from_cabinet},
+        {"setup": setup, "from_cabinet": from_cabinet, "invite_group_id": invite_group_id},
     )
 
 
 async def invite(db, session, settings, telegram_id, *, replacing=False):
     """An explicit creation/confirmed replacement, never from simply opening a menu."""
-    found = await current_membership(db, telegram_id)
-    if not found or found[0].role != "headman":
+    found = await invitation_owner(db, session, telegram_id)
+    if not found:
         await home(db, session, settings, telegram_id)
         return
     member, group = found
@@ -1083,8 +1108,8 @@ async def invite(db, session, settings, telegram_id, *, replacing=False):
 
 
 async def invite_replace_confirmation(db, session, settings, telegram_id):
-    found = await current_membership(db, telegram_id)
-    if not found or found[0].role != "headman":
+    found = await invitation_owner(db, session, telegram_id)
+    if not found:
         await home(db, session, settings, telegram_id)
         return
     state = json.loads(session.payload)
@@ -1098,7 +1123,11 @@ async def invite_replace_confirmation(db, session, settings, telegram_id):
         "уже разосланные приглашения. Новую ссылку можно будет пересылать 7 дней.",
         [[("Да, заменить ссылку", "invite_replace_yes")], [("Отмена", "invite_replace_cancel")]],
         "invite_replace_confirm",
-        {"setup": state.get("setup", False), "from_cabinet": state.get("from_cabinet", False)},
+        {
+            "setup": state.get("setup", False),
+            "from_cabinet": state.get("from_cabinet", False),
+            "invite_group_id": state.get("invite_group_id"),
+        },
     )
 
 
@@ -1158,7 +1187,7 @@ async def open_start(db, settings, telegram_id):
         bot_panels.scope.reset(token)
 
 
-async def open_invitation_from_cabinet(db, settings, telegram_id):
+async def open_invitation_from_cabinet(db, settings, telegram_id, group):
     """Switch cabinet panel to the same invite screen used by /start."""
     await switch_panel(db, telegram_id, "st", "start")
     session = await get_session(db, telegram_id)
@@ -1172,7 +1201,9 @@ async def open_invitation_from_cabinet(db, settings, telegram_id):
         )
         db.add(session)
     session.step = "invite"
-    session.payload = json.dumps({"from_cabinet": True, "setup": False})
+    session.payload = json.dumps(
+        {"from_cabinet": True, "setup": False, "invite_group_id": str(group.id)}
+    )
     token = bot_panels.scope.set((telegram_id, "start"))
     try:
         await invitation_entry(db, session, settings, telegram_id)

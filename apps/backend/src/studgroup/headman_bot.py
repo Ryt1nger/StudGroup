@@ -1110,7 +1110,7 @@ async def handle(db, update, settings):
             )
         elif action in {"group_invites", "group_link"}:
             domain.headman_only(member)
-            await bot_start.open_invitation_from_cabinet(db, settings, sender.id)
+            await bot_start.open_invitation_from_cabinet(db, settings, sender.id, group)
             return True
         elif action == "invite":
             domain.headman_only(member)
@@ -1631,7 +1631,7 @@ async def apply(db, session, group, user, member, data, settings):
     elif action == "group_link":
         # Compatibility for a previously confirmed cabinet action: same share panel.
         await domain.issue_group_link(db, group, member, bot_token=settings.telegram_bot_token)
-        await bot_start.open_invitation_from_cabinet(db, settings, session.telegram_user_id)
+        await bot_start.open_invitation_from_cabinet(db, settings, session.telegram_user_id, group)
         return
     elif action == "invite":
         codes = await domain.issue_invites(db, group, member, data["count"])
