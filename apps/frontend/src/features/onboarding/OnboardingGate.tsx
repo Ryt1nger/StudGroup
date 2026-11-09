@@ -8,9 +8,10 @@ import {
 } from '../../api/onboarding';
 import { useSession } from '../../session/SessionProvider';
 import { Splash } from '../../session/AccessGate';
-import { ACCENTS, useTelegram } from '../../telegram/TelegramProvider';
+import { ACCENTS, useTelegram, type Accent } from '../../telegram/TelegramProvider';
 import { useDisplay } from '../../shell/display';
 import { ACCENT_INFO, THEMES, TEXT_SIZES, DENSITIES } from '../../shell/appearanceOptions';
+import { OnboardingPreviewContext } from './OnboardingPreviewContext';
 import welcomeLight from '../../../../../design/extracted/illustrations/glass-cards.light.png';
 import welcomeDark from '../../../../../design/extracted/illustrations/glass-cards.dark.png';
 import personalLight from '../../../../../design/extracted/illustrations/folder-large.light.png';
@@ -40,13 +41,30 @@ const ART: Record<Step, [string, string]> = {
   finish: [finishLight, finishDark],
 };
 
-function Shell({ children, role, group, step }: { children: ReactNode; role: string; group: string; step: Step }) {
+function Shell({ children, role, group, step, preview, onClose, previewTheme, previewAccent, previewText }: {
+  children: ReactNode; role: string; group: string; step: Step;
+  preview?: boolean; onClose?: () => void;
+  previewTheme?: 'light' | 'dark' | null; previewAccent?: Accent; previewText?: 's' | 'm' | 'l';
+}) {
   const index = steps.indexOf(step);
   const { scheme } = useTelegram();
-  const art = ART[step][scheme === 'dark' ? 1 : 0];
+  const activeScheme = preview && previewTheme ? previewTheme : scheme;
+  const art = ART[step][activeScheme === 'dark' ? 1 : 0];
+  const accentInfo = preview && previewAccent ? ACCENT_INFO[previewAccent] : null;
+  const previewStyle = accentInfo ? {
+    '--ob-active': `hsl(${accentInfo.h} ${accentInfo.s} ${accentInfo.l})`,
+    '--ob-active-text': accentInfo.on ?? '#fff',
+  } as CSSProperties : undefined;
   return (
-    <div className="ob-root">
+    <div className={'ob-root' + (preview ? ' ob-preview' : '')}
+      data-ob-preview-theme={preview ? activeScheme : undefined}
+      data-ob-preview-text={preview ? previewText : undefined}
+      style={previewStyle}>
       <main className="ob-card">
+        {preview ? <div className="ob-preview-banner" role="status">
+          <span>Предпросмотр · данные не сохраняются</span>
+          <button type="button" onClick={onClose}>Закрыть ✕</button>
+        </div> : null}
         <header className="ob-topline">
           <div className="ob-brand">
             <img src={`${import.meta.env.BASE_URL}studgroup-logo.png`} width="42" height="42" alt="" />
@@ -95,6 +113,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   const active = state.status === 'ready' && state.session.access_state === 'active';
   const isDemo = import.meta.env.MODE === 'demo';
   const membershipId = active ? state.session.membership?.id : null;
+  const [preview, setPreview] = useState(false);
   const progress = useQuery({
     queryKey: ['first-run', membershipId], queryFn: getOnboarding,
     enabled: Boolean(membershipId) && !isDemo,
@@ -110,8 +129,189 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
       <Notice message="Не удалось проверить статус настройки. Данные не сброшены." retry={() => { void progress.refetch(); }} />
     </div>;
   }
-  if (progress.data.completed) return <>{children}</>;
+  if (progress.data.completed) {
+    if (preview) return <PreviewWizard state={progress.data} onClose={() => setPreview(false)} />;
+    return <OnboardingPreviewContext.Provider value={() => setPreview(true)}>{children}</OnboardingPreviewContext.Provider>;
+  }
   return <Wizard state={progress.data} membershipId={membershipId} />;
+}
+
+
+/**
+ * A read-only, client-side tour of the exact onboarding layout for people who
+ * have already completed setup. No progress, profile, subgroup, credential or
+ * legal writes are ever invoked. It never changes the server's completion flag.
+ */
+function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: () => void }) {
+  const [index, setIndex] = useState(0);
+  const [previewTheme, setPreviewTheme] = useState<'light' | 'dark' | null>(null);
+  const [previewAccent, setPreviewAccent] = useState<Accent>('violet');
+  const [previewText, setPreviewText] = useState<'s' | 'm' | 'l'>('m');
+  const [previewDensity, setPreviewDensity] = useState<'normal' | 'compact'>('normal');
+  const [previewMotion, setPreviewMotion] = useState(true);
+  const [first, setFirst] = useState<string | null>(null);
+  const [last, setLast] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
+  const [localSplitChoices, setLocalSplitChoices] = useState<Record<string, string>>({});
+  const [terms, setTerms] = useState(false);
+  const [service, setService] = useState(false);
+  const profile = useProfileQuery();
+  const staff = state.role !== 'student';
+  const splits = useQuery({ queryKey: ['onboarding-subgroups-preview'], queryFn: getStudentSplits, enabled: !staff });
+  const step = steps[index]!;
+  const next = () => setIndex(n => Math.min(steps.length - 1, n + 1));
+  const back = index > 0 ? () => setIndex(n => Math.max(0, n - 1)) : undefined;
+  const previewActions = (label = 'Далее') =>
+    <Actions back={back} label={label} next={step === 'finish' ? onClose : next} />;
+  const currentFirst = first ?? profile.data?.first_name ?? '';
+  const currentLast = last ?? profile.data?.last_name ?? '';
+  const currentEmail = email ?? profile.data?.email ?? '';
+
+  return <Shell step={step} group={state.group_name}
+    role={staff ? (state.role === 'headman' ? 'СТАРОСТА' : 'ЗАМЕСТИТЕЛЬ') : 'СТУДЕНТ'}
+    preview onClose={onClose} previewTheme={previewTheme} previewAccent={previewAccent} previewText={previewText}>
+    {step === 'welcome' ? <>
+      <Title lead="Пара минут — и все задания, пары и события вашей группы будут под рукой.">Настроим StudGroup под вас</Title>
+      <div className="ob-feature-list">
+        <div><span className="ob-feature-icon">▦</span><span><strong>Удобное расписание</strong><small>Пары и важные изменения</small></span></div>
+        <div><span className="ob-feature-icon">☑</span><span><strong>Задания и дедлайны</strong><small>Всё важное по предметам</small></span></div>
+        <div><span className="ob-feature-icon">♧</span><span><strong>События и объявления</strong><small>Новости вашей группы в одном месте</small></span></div>
+      </div>
+      {previewActions('Начать настройку')}
+    </> : null}
+    {step === 'personal' ? <>
+      <Title lead="Укажите имя и фамилию, чтобы мы могли правильно отображать ваш профиль и подписи к карточкам.">Как к вам обращаться?</Title>
+      <div className="ob-form">
+        <label>Имя <span className="ob-required">*</span>
+          <input type="text" autoComplete="off" maxLength={60} value={currentFirst}
+            placeholder="Ваше имя" onChange={e => setFirst(e.target.value)} /></label>
+        <label>Фамилия <small>необязательно</small>
+          <input type="text" autoComplete="off" maxLength={60} value={currentLast}
+            placeholder="Ваша фамилия" onChange={e => setLast(e.target.value)} /></label>
+      </div>
+      <div className="ob-help">ⓘ Это демонстрация формы. Ваш профиль не изменится.</div>
+      {previewActions()}
+    </> : null}
+    {step === 'contacts' ? <>
+      <Title lead="Почта пригодится для связи. Telegram уже подключён, поэтому этот шаг можно пропустить.">Контакты для связи</Title>
+      <div className="ob-form"><label>Почта <small>необязательно</small>
+        <input type="email" autoComplete="off" value={currentEmail}
+          placeholder="name@example.com" maxLength={120} onChange={e => setEmail(e.target.value)} /></label></div>
+      <div className="ob-confirm">✓ Telegram уже подключён</div>
+      <div className="ob-help">ⓘ Изменения почты здесь не сохраняются.</div>
+      {previewActions()}
+    </> : null}
+    {step === 'subgroups' ? <>
+      <Title lead="Выберите свою подгруппу отдельно для каждого предмета, который староста разделил на подгруппы.">Подгруппы по предметам</Title>
+      {staff ? <>
+        <div className="ob-help">Для старосты выбор подгрупп не требуется. Ниже — пример экрана студента.</div>
+        <div className="ob-count">Пример: 2 предмета</div>
+        <div className="ob-split-list">
+          {[
+            { id: 'english', subject: 'Английский язык', options: ['1', '2'] },
+            { id: 'informatics', subject: 'Информатика', options: ['1', '2'] },
+          ].map(item => <div className="ob-split" key={item.id}>
+            <strong>{item.subject}</strong>
+            <div className="ob-options" role="group" aria-label={'Пример: ' + item.subject}>
+              {item.options.map(option =>
+                <button type="button" key={option}
+                  aria-pressed={(localSplitChoices[item.id] ?? '1') === option}
+                  onClick={() => setLocalSplitChoices(current => ({ ...current, [item.id]: option }))}>{option}</button>)}
+            </div>
+          </div>)}
+        </div>
+      </> :
+      splits.isPending ? <div className="ob-help">Загружаем предметы…</div> :
+      splits.isError ? <div className="ob-help">Не удалось загрузить список предметов для предпросмотра.</div> :
+      (splits.data?.items ?? []).length === 0 ? <div className="ob-empty">В вашей группе пока нет разделения по предметам.</div> :
+      <><div className="ob-count">{splits.data?.items.length ?? 0} предметов</div>
+        <div className="ob-split-list">
+          {splits.data?.items.map(item => <div className="ob-split" key={item.split_id}>
+            <strong>{item.subject.name}</strong>
+            <div className="ob-options" role="group" aria-label={'Подгруппа: ' + item.subject.name}>
+              {item.options.map(option =>
+                <button type="button" key={option.id}
+                  aria-pressed={(localSplitChoices[item.split_id] ?? item.selected_subgroup_id) === option.id}
+                  onClick={() => setLocalSplitChoices(current => ({ ...current, [item.split_id]: option.id }))}>
+                  {option.name}
+                </button>)}
+            </div>
+          </div>)}
+        </div></>}
+      {previewActions('Сохранить и продолжить')}
+    </> : null}
+    {step === 'sdo' ? <>
+      <Title badge="Необязательно" lead="Подключите СДО и личный кабинет для учебных материалов. Этот шаг можно пропустить.">
+        СДО и личный кабинет
+      </Title>
+      <div className="ob-form">
+        <label>Логин СДО/ЛК<input type="text" placeholder="Логин" disabled /></label>
+        <label>Пароль СДО/ЛК<input type="password" placeholder="Пароль" disabled /></label>
+      </div>
+      <div className="ob-help">🔒 В предпросмотре ввод реквизитов отключён. Подключение доступно в профиле.</div>
+      {previewActions('Продолжить')}
+    </> : null}
+    {step === 'legal' ? <>
+      <Title lead="Ознакомьтесь с документами и подтвердите необходимые согласия. Отметки не установлены заранее.">Почти готово</Title>
+      <div className="ob-consents">
+        <label className="ob-checkbox"><input type="checkbox" checked={terms} onChange={e => setTerms(e.target.checked)} />
+          <span>Принимаю условия использования <span className="ob-preview-document">Прочитать документ ↗</span></span></label>
+        <label className="ob-checkbox"><input type="checkbox" checked={service} onChange={e => setService(e.target.checked)} />
+          <span>Даю согласие на обработку персональных данных <span className="ob-preview-document">Прочитать документ ↗</span></span></label>
+      </div>
+      <div className="ob-help">Это демонстрация. Отметки не записываются и согласия не отправляются.</div>
+      {previewActions('Продолжить')}
+    </> : null}
+    {step === 'appearance' ? <>
+      <Title lead="Последний штрих: выберите оформление, в котором вам комфортнее учиться. Всё можно поменять в профиле.">
+        Подстроим приложение под вас
+      </Title>
+      <div className="ob-setting"><strong>Тема</strong>
+        <div className="ob-options" role="group" aria-label="Тема">
+          {THEMES.map(([value, label]) => <button key={String(value)} type="button"
+            aria-pressed={previewTheme === value} onClick={() => setPreviewTheme(value)}>{label}</button>)}
+        </div>
+      </div>
+      <div className="ob-setting"><strong>Цвет акцента</strong>
+        <div className="ob-swatches" role="group" aria-label="Цвет акцента">
+          {ACCENTS.map(id => {
+            const info = ACCENT_INFO[id];
+            const style = { ['--swatch-h' as string]: info.h, ['--swatch-s' as string]: info.s,
+              ['--swatch-l' as string]: info.l } as CSSProperties;
+            return <button type="button" key={id} style={style} aria-label={info.name} title={info.name}
+              aria-pressed={previewAccent === id} onClick={() => setPreviewAccent(id)}><i /></button>;
+          })}
+        </div>
+      </div>
+      <div className="ob-setting"><strong>Размер текста</strong>
+        <div className="ob-options" role="group" aria-label="Размер текста">
+          {TEXT_SIZES.map(([value, label]) => <button type="button" key={value}
+            aria-pressed={previewText === value} onClick={() => setPreviewText(value)}>{label}</button>)}
+        </div>
+      </div>
+      <div className="ob-setting ob-extra"><strong>Плотность списков</strong>
+        <div className="ob-options" role="group" aria-label="Плотность списков">
+          {DENSITIES.map(([value, label]) => <button type="button" key={value}
+            aria-pressed={previewDensity === value} onClick={() => setPreviewDensity(value)}>{label}</button>)}
+        </div>
+      </div>
+      <label className="ob-motion">Анимации <input type="checkbox" checked={previewMotion}
+        onChange={e => setPreviewMotion(e.target.checked)} /></label>
+      <div className="ob-help">Выбор действует только внутри предпросмотра.</div>
+      {previewActions('Сохранить оформление')}
+    </> : null}
+    {step === 'finish' ? <>
+      <Title lead="Ваш профиль настроен. Теперь можно пользоваться расписанием, заданиями и событиями группы.">
+        Настройка завершена!
+      </Title>
+      <div className="ob-done-lines">
+        <span><b>✓</b> Группа: {state.group_name}</span>
+        <span><b>✓</b> Личные данные сохранены</span>
+        <span><b>✓</b> Оформление настроено</span>
+      </div>
+      {previewActions('Вернуться в приложение')}
+    </> : null}
+  </Shell>;
 }
 
 function useMove(membershipId: string) {
