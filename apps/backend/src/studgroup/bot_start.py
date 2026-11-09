@@ -141,17 +141,20 @@ def info_row():
     ]
 
 
-async def role_screen(db, session):
-    """New users choose a role only after pressing «Подключить группу»."""
+async def role_screen(db, session, *, pending_invite_hash=None):
+    """Choose a role first, retaining a verified invite for the student path."""
     await screen(
         db,
         session,
-        "Как ты хочешь подключиться к StudGroup?",
+        "Приглашение проверено. Выберите роль для продолжения регистрации."
+        if pending_invite_hash
+        else "Как ты хочешь подключиться к StudGroup?",
         [
             [("Я студент", "student"), ("Я староста", "headman")],
             [("‹ Назад", "home")],
         ],
         "roles",
+        {"pending_invite_hash": pending_invite_hash} if pending_invite_hash else None,
     )
 
 
@@ -307,30 +310,20 @@ async def legal_role_gate(
         await role_screen(db, session)
 
 
-async def sdo_setup_screen(db, session, settings, telegram_id, *, headman=False):
-    """Optional credential step after academic onboarding, never accepts secrets in chat."""
-    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
-    profile = await db.get(UserProfile, user.id) if user else None
-    if profile and profile.sdu_login and profile.sdu_password_encrypted:
+async def registration_complete(db, session, settings, telegram_id):
+    """Finish registration without asking for university credentials."""
+    found = await current_membership(db, telegram_id)
+    if not found:
         await home(db, session, settings, telegram_id)
         return
+    _, group = found
     await screen(
         db,
         session,
-        "Готово! Вы подключены к StudGroup.\n\n"
-        "Дополнительный шаг · СДО и личный кабинет РАНХиГС.\n"
-        "Для них используется одна пара логин/пароль. Вводить её необязательно: "
-        "расписание и задания StudGroup доступны без неё.\n\n"
-        "Нажмите кнопку защищённой формы Mini App. НЕ присылайте пароль в этот чат. "
-        "Сохранение не означает, что вход в СДО уже работает.",
-        [
-            [app_button(settings, "Ввести логин и пароль СДО / ЛК", path="/profile/sdo")],
-            [("Я заполнил", "sdo_check")],
-            [("Пропустить", "sdo_skip")],
-            [("Главное меню", "home")],
-        ],
-        "sdo_setup",
-        {"headman": headman},
+        f"Готово! Вы подключены к «{group.name}».\n\n"
+        "Можно сразу пользоваться StudGroup. Логин и пароль СДО для регистрации не нужны.",
+        [[app_button(settings)], [("Главное меню", "home")]],
+        "registration_complete",
     )
 
 
@@ -787,13 +780,8 @@ async def staff_app_screen(db, session, settings, group):
         db,
         session,
         f"Группа «{group.name}» успешно подключена. ✅\n\n"
-        "Профиль можно заполнить в приложении. "
-        "СДО/ЛК необязательно и вводится только в защищённой форме.",
-        [
-            [app_button(settings)],
-            [app_button(settings, "Подключить СДО / ЛК", path="/profile/sdo")],
-            [("Кабинет старосты", "cabinet")],
-        ],
+        "Профиль можно заполнить в приложении. Логин и пароль СДО не требуются.",
+        [[app_button(settings)], [("Кабинет старосты", "cabinet")]],
         "onboarding_complete",
     )
 
@@ -1002,7 +990,7 @@ async def redeem(db, session, settings, telegram_id, code, *, typed, pending_inv
                 group = await domain.redeem_invite_by_hash(db, settings, telegram_id, digest)
         else:
             await domain.validate_invite_by_hash(db, settings, telegram_id, digest)
-            await legal_role_gate(db, session, settings, telegram_id, pending_invite_hash=digest)
+            await role_screen(db, session, pending_invite_hash=digest)
             return
     except domain.StError as error:
         if typed:
@@ -1022,7 +1010,7 @@ async def subgroup_choice(db, session, settings, member, group, *, joined=False)
     unanswered = [pair for pair in all_splits if pair[0].id not in picked]
     if not unanswered and joined:
         student = await db.get(User, member.user_id)
-        await sdo_setup_screen(db, session, settings, student.telegram_user_id, headman=False)
+        await registration_complete(db, session, settings, student.telegram_user_id)
         return
     if unanswered:
         split, choices = unanswered[0]
@@ -1115,10 +1103,8 @@ async def resume_or_home(db, session, settings, telegram_id):
             else:
                 await home(db, session, settings, telegram_id)
         elif session.step == "sdo_setup":
-            payload = json.loads(session.payload)
-            await sdo_setup_screen(
-                db, session, settings, telegram_id, headman=payload.get("headman", False)
-            )
+            # Complete a registration left at the old optional SDO prompt.
+            await registration_complete(db, session, settings, telegram_id)
         elif found[0].role == "headman" and session.step in {
             "academic_code",
             "academic_code_confirm",
@@ -1160,7 +1146,9 @@ async def resume_or_home(db, session, settings, telegram_id):
         data = json.loads(session.payload)
     except (TypeError, ValueError):
         data = {}
-    if step in {"legal_terms", "legal_service", "legal_not_ready"}:
+    if step == "roles" and data.get("pending_invite_hash"):
+        await role_screen(db, session, pending_invite_hash=data["pending_invite_hash"])
+    elif step in {"legal_terms", "legal_service", "legal_not_ready"}:
         await legal_role_gate(
             db,
             session,
@@ -1455,23 +1443,17 @@ async def handle(db, update, settings, topic=None):
                     pending_invite_hash=pending_data.get("pending_invite_hash"),
                     pending_group_id=pending_data.get("pending_group_id"),
                 )
-    elif action == "sdo_check" and session.step == "sdo_setup":
-        payload = json.loads(session.payload)
-        await sdo_setup_screen(
-            db, session, settings, sender.id, headman=payload.get("headman", False)
-        )
-    elif action == "sdo_skip" and session.step == "sdo_setup":
-        user = await db.scalar(select(User).where(User.telegram_user_id == sender.id))
-        if user is not None:
-            profile = await db.get(UserProfile, user.id)
-            if profile is None:
-                profile = UserProfile(user_id=user.id, updated_at=datetime.now(UTC))
-                db.add(profile)
-            profile.sdu_setup_skipped_at = datetime.now(UTC)
-            profile.updated_at = datetime.now(UTC)
-        await home(db, session, settings, sender.id)
-    elif action in {"student", "headman"}:
-        await promo_screen(db, session, action)
+    elif action in {"sdo_check", "sdo_skip"} and session.step == "sdo_setup":
+        # Old bot buttons cannot require credentials after this release.
+        await registration_complete(db, session, settings, sender.id)
+    elif action in {"student", "headman"} and session.step == "roles":
+        pending_invite_hash = json.loads(session.payload).get("pending_invite_hash")
+        if action == "student" and pending_invite_hash:
+            await legal_role_gate(
+                db, session, settings, sender.id, pending_invite_hash=pending_invite_hash
+            )
+        else:
+            await promo_screen(db, session, action)
     elif action == "promo_input" and session.step == "promo":
         await promo_input(db, session, json.loads(session.payload)["role"])
     elif action == "promo_back" and session.step == "promo_code":
@@ -1618,7 +1600,7 @@ async def handle(db, update, settings, topic=None):
     elif action == "subgroup_setup_no" and session.step == "subgroup_question":
         found = await current_membership(db, sender.id)
         if found and found[0].role == "headman":
-            await sdo_setup_screen(db, session, settings, sender.id, headman=True)
+            await staff_app_screen(db, session, settings, found[1])
         else:
             await home(db, session, settings, sender.id)
     elif action == "subgroup_setup_yes" and session.step == "subgroup_question":
