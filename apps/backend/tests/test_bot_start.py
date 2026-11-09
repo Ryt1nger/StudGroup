@@ -224,6 +224,7 @@ def test_restart_from_old_join_screen_recovers_verified_invite(foreman, monkeypa
     tap(foreman, "Я студент")
     tap(foreman, "Нет промокода")
     assert "Регистрация · шаг 1 из 3" in last(foreman)["text"]
+
     # Simulate the old persisted code-entry session of a previously stuck student.
     async def old_state(db):
         from studgroup.models import StartSession
