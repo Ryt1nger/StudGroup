@@ -108,7 +108,10 @@ async def awaiting_input(db, chat):
     session = await db.get(StartSession, chat)
     return bool(
         session
-        and session.step in {"code", "promo_code", "academic_code"}
+        and session.step in {
+            "code", "promo_code", "academic_code",
+            "profile_first", "profile_last", "profile_email",
+        }
         and utc(session.expires_at) > datetime.now(UTC)
     )
 
@@ -202,7 +205,7 @@ def legal_link(settings, purpose):
     }
 
 
-async def legal_documents_screen(db, session, settings):
+async def legal_documents_screen(db, session, settings, *, return_to=None):
     choices = [
         ("Политика обработки данных", "privacy"),
         ("Условия использования", "terms"),
@@ -219,8 +222,9 @@ async def legal_documents_screen(db, session, settings):
             [{"text": label, "url": settings.webapp_origin.rstrip("/") + "/legal/" + slug}]
             for label, slug in choices
         ]
-        + [[("‹ Назад", "home")]],
+        + [[("‹ Назад", "legal_docs_back" if return_to else "home")]],
         "legal_documents",
+        return_to,
     )
 
 
@@ -274,6 +278,94 @@ async def invite_headman_notice(db, session, digest):
         "invite_headman_notice",
         {"pending_invite_hash": digest},
     )
+
+
+async def registration_profile_screen(db, session, step, context, notice=None):
+    """Collect real profile fields before granting membership. No university codes."""
+    if step == "profile_first":
+        message = (
+            "Регистрация · шаг 1 из 3\n\nНапишите ваше имя одним сообщением. "
+            "Это обязательное поле профиля StudGroup."
+        )
+        buttons = []
+    elif step == "profile_last":
+        message = (
+            "Регистрация · шаг 2 из 3\n\nНапишите фамилию. "
+            "Если не хотите указывать её, нажмите «Пропустить»."
+        )
+        buttons = [[("Пропустить", "registration_skip")]]
+    elif step == "profile_email":
+        message = (
+            "Регистрация · шаг 3 из 3\n\nНапишите адрес электронной почты для связи. "
+            "Поле необязательно; при желании можно пропустить."
+        )
+        buttons = [[("Пропустить", "registration_skip")]]
+    else:
+        raise ValueError("invalid registration profile step")
+    if notice:
+        message = f"{notice}\n\n{message}"
+    await screen(db, session, message, buttons, step, context)
+
+
+async def save_registration_profile(db, session, settings, telegram_id, value, *, skipped=False):
+    """Persist fields in user_profiles; continue only after real DB writes."""
+    from studgroup.profile import text as normalize_text
+
+    if session.step not in {"profile_first", "profile_last", "profile_email"}:
+        return
+    context = json.loads(session.payload)
+    user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
+    if user is None or not (context.get("pending_invite_hash") or context.get("pending_group_id")):
+        await home(db, session, settings, telegram_id)
+        return
+    profile = await db.get(UserProfile, user.id)
+    if profile is None:
+        profile = UserProfile(user_id=user.id, updated_at=datetime.now(UTC))
+        db.add(profile)
+    stage = session.step
+    limit = 120 if stage == "profile_email" else 60
+    try:
+        entered = None if skipped else normalize_text(value, limit)
+    except ValueError:
+        await registration_profile_screen(
+            db, session, stage, context, "Слишком длинное значение. Проверьте ввод."
+        )
+        return
+    if stage == "profile_first":
+        if not entered:
+            await registration_profile_screen(
+                db, session, stage, context, "Имя обязательно. Напишите его текстом."
+            )
+            return
+        profile.first_name = entered
+        user.display_name = entered
+        next_step = "profile_last"
+    elif stage == "profile_last":
+        profile.last_name = entered
+        if entered:
+            user.display_name = f"{profile.first_name} {entered}"
+        next_step = "profile_email"
+    else:
+        if entered and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", entered):
+            await registration_profile_screen(
+                db, session, stage, context, "Адрес почты некорректен."
+            )
+            return
+        profile.email = entered
+        next_step = None
+    profile.updated_at = datetime.now(UTC)
+    await db.flush()
+    if next_step:
+        await registration_profile_screen(db, session, next_step, context)
+    else:
+        await legal_role_gate(
+            db,
+            session,
+            settings,
+            telegram_id,
+            pending_invite_hash=context.get("pending_invite_hash"),
+            pending_group_id=context.get("pending_group_id"),
+        )
 
 
 async def legal_role_gate(
@@ -338,6 +430,11 @@ async def legal_role_gate(
             pending,
         )
         return
+    if pending_invite_hash or pending_group_id:
+        profile = await db.get(UserProfile, user.id)
+        if profile is None or not profile.first_name:
+            await registration_profile_screen(db, session, "profile_first", pending)
+            return
     if pending_invite_hash:
         await redeem(
             db,
@@ -1202,7 +1299,19 @@ async def resume_or_home(db, session, settings, telegram_id):
         data = json.loads(session.payload)
     except (TypeError, ValueError):
         data = {}
-    if step in {"roles", "invite_headman_notice"} and data.get("pending_invite_hash"):
+    if step in {"profile_first", "profile_last", "profile_email"} and (
+        data.get("pending_invite_hash") or data.get("pending_group_id")
+    ):
+        await registration_profile_screen(db, session, step, data)
+    elif step == "legal_documents" and (
+        data.get("pending_invite_hash") or data.get("pending_group_id")
+    ):
+        await legal_role_gate(
+            db, session, settings, telegram_id,
+            pending_invite_hash=data.get("pending_invite_hash"),
+            pending_group_id=data.get("pending_group_id"),
+        )
+    elif step in {"roles", "invite_headman_notice"} and data.get("pending_invite_hash"):
         await role_screen(db, session, pending_invite_hash=data["pending_invite_hash"])
     elif step == "invite_error":
         if data.get("pending_invite_hash"):
@@ -1300,6 +1409,12 @@ async def handle(db, update, settings, topic=None):
             return True
         if text in {"/cancel", "Отмена"}:
             await home(db, session, settings, sender.id)
+            return True
+        if session.step in {"profile_first", "profile_last", "profile_email"} and (
+            utc(session.expires_at) > datetime.now(UTC)
+        ):
+            await forget(db, chat, message)
+            await save_registration_profile(db, session, settings, sender.id, text)
             return True
         if session.step == "sdo_setup" and utc(session.expires_at) > datetime.now(UTC):
             await forget(db, chat, message)
@@ -1471,7 +1586,20 @@ async def handle(db, update, settings, topic=None):
     elif action == "home":
         await home(db, session, settings, sender.id)
     elif action == "legal_docs":
-        await legal_documents_screen(db, session, settings)
+        data = json.loads(session.payload)
+        await legal_documents_screen(
+            db, session, settings,
+            return_to=data if session.step == "legal_not_ready" else None,
+        )
+    elif action == "legal_docs_back" and session.step == "legal_documents":
+        data = json.loads(session.payload)
+        await legal_role_gate(
+            db, session, settings, sender.id,
+            pending_invite_hash=data.get("pending_invite_hash"),
+            pending_group_id=data.get("pending_group_id"),
+        )
+    elif action == "registration_skip" and session.step in {"profile_last", "profile_email"}:
+        await save_registration_profile(db, session, settings, sender.id, "", skipped=True)
     elif action == "connect":
         await role_screen(db, session)
     elif action == "legal_accept_terms" and session.step == "legal_terms":
