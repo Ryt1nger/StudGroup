@@ -12,11 +12,12 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import AwareDatetime, Field, SecretStr, field_validator
+from pydantic import AwareDatetime, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -42,6 +43,8 @@ from studgroup.telegram_files import router as files_router
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     database_url: str = "postgresql+asyncpg://studgroup:studgroup@localhost:5432/studgroup"
+    # Refuse to start when the configured production database is a different project.
+    database_project_ref: str | None = None
     # Optional for the Supabase Session Pooler; unset keeps Render PostgreSQL behavior.
     database_ca_file: str | None = None
     database_pool_size: int | None = Field(default=None, ge=1, le=10)
@@ -162,6 +165,16 @@ class Settings(BaseSettings):
             if isinstance(value, str) and value.startswith(prefix):
                 return "postgresql+asyncpg://" + value[len(prefix) :]
         return value
+
+    @model_validator(mode="after")
+    def expected_database_project(self):
+        if not self.database_project_ref:
+            return self
+        url = make_url(self.database_url)
+        ref = self.database_project_ref
+        if url.host != f"db.{ref}.supabase.co" and not (url.username or "").endswith(f".{ref}"):
+            raise ValueError("DATABASE_URL does not match DATABASE_PROJECT_REF")
+        return self
 
     @field_validator(
         "ai_enabled_until",
