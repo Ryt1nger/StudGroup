@@ -169,9 +169,12 @@ def test_new_staff_wizard_accepts_contacts_and_appearance_without_subgroup_selec
             member = await db.scalar(select(Membership))
             member.role = "headman"
             await db.commit()
+
     asyncio.run(make_headman())
     assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "personal"
     for step in ("contacts", "subgroups", "sdo", "legal", "appearance", "finish"):
         move(client, step)
-    assert client.patch("/v1/profile", json={"first_name": "Андрей"}, headers=AUTH).status_code == 200
+    assert (
+        client.patch("/v1/profile", json={"first_name": "Андрей"}, headers=AUTH).status_code == 200
+    )
     assert client.post("/v1/onboarding/complete", headers=AUTH).json()["completed"]
