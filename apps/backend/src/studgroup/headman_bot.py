@@ -76,6 +76,7 @@ async def menu(db, session, group):
             [("Расписание", "schedule")],
             [("Подгруппы по предметам", "subgroup_settings")],
             [("Участники", "members")],
+            [("Пригласить участников", "group_invites")],
             [("Сводка группы", "summary")],
             [("Настройки", "settings")],
             [("Журнал правок / откат", "journal")],
@@ -479,7 +480,7 @@ async def members_screen(db, session, group, member, page=0):
     if len(rows) > (page + 1) * 8:
         buttons += [[("›", "members_next")]]
     buttons += [
-        [("Создать общую ссылку · 3 часа", "group_link")],
+        [("Пригласить участников", "group_invites")],
         [("Одноразовые приглашения · 24 часа", "invite")],
         [("Отозвать действующие приглашения", "revoke_invites")],
         back(),
@@ -1107,14 +1108,10 @@ async def handle(db, update, settings):
                 else "Восстановить доступ? Потребуется проверка участия в Telegram.",
                 {"action": "member_change", "member_id": str(target.id), "expected": target.status},
             )
-        elif action == "group_link":
+        elif action in {"group_invites", "group_link"}:
             domain.headman_only(member)
-            await preview(
-                db,
-                session,
-                "Создать общую ссылку на 3 часа? Прежняя общая ссылка сразу перестанет действовать.",
-                {"action": "group_link"},
-            )
+            await bot_start.open_invitation_from_cabinet(db, settings, sender.id, group)
+            return True
         elif action == "invite":
             domain.headman_only(member)
             await ask(
@@ -1632,15 +1629,9 @@ async def apply(db, session, group, user, member, data, settings):
             data["location"],
         )
     elif action == "group_link":
-        code = await domain.issue_group_link(db, group, member)
-        await screen(
-            db,
-            session,
-            "Общая ссылка на 3 часа. Перешлите её студентам: "
-            "доступ получат только подтверждённые участники Telegram-чата. "
-            "ID и @username вводить не нужно.\n\n" + bot_start.invite_link(settings, code),
-            [back()],
-        )
+        # Compatibility for a previously confirmed cabinet action: same share panel.
+        await domain.issue_group_link(db, group, member, bot_token=settings.telegram_bot_token)
+        await bot_start.open_invitation_from_cabinet(db, settings, session.telegram_user_id, group)
         return
     elif action == "invite":
         codes = await domain.issue_invites(db, group, member, data["count"])

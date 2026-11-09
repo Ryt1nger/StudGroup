@@ -1,5 +1,7 @@
 """Group-scoped manual decisions. No provider calls; mutations, audit and inbox are atomic."""
 
+import base64
+import hashlib
 import json
 import secrets
 import uuid
@@ -9,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import sqlalchemy as sa
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
@@ -816,7 +819,42 @@ async def issue_invites(db, group, member, count):
     return result
 
 
-async def issue_group_link(db, group, member):
+def _group_invite_cipher(bot_token):
+    """Use the configured Telegram bot credential to protect recoverable share links."""
+    if not bot_token:
+        return None
+    digest = hashlib.sha256(b"studgroup-group-invite-v1\0" + bot_token.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def recover_group_invite_code(invitation, bot_token):
+    """Return a verified code only for an unmodified, decryptable active invitation."""
+    cipher = _group_invite_cipher(bot_token)
+    if cipher is None or not invitation.token_ciphertext:
+        return None
+    try:
+        raw = cipher.decrypt(invitation.token_ciphertext.encode()).decode("ascii")
+    except (InvalidToken, UnicodeError, ValueError):
+        return None
+    return raw if secrets.compare_digest(token_hash(raw), invitation.token_hash) else None
+
+
+async def active_group_invite(db, group_id):
+    """Find the existing live reusable link, without creating or rotating tokens."""
+    return await db.scalar(
+        select(GroupInvitation)
+        .where(
+            GroupInvitation.group_id == group_id,
+            GroupInvitation.reusable.is_(True),
+            GroupInvitation.revoked.is_(False),
+            GroupInvitation.expires_at > datetime.now(UTC),
+        )
+        .order_by(GroupInvitation.expires_at.desc())
+        .limit(1)
+    )
+
+
+async def issue_group_link(db, group, member, *, bot_token=None):
     """Create one revocable link usable by many verified members; rotate the old one."""
     headman_only(member)
     locked = await db.scalar(select(Group).where(Group.id == group.id).with_for_update())
@@ -846,6 +884,11 @@ async def issue_group_link(db, group, member):
             issuer_id=member.id,
             expires_at=now + timedelta(days=7),
             reusable=True,
+            token_ciphertext=(
+                _group_invite_cipher(bot_token).encrypt(code.encode()).decode()
+                if bot_token
+                else None
+            ),
         )
     )
     await db.flush()

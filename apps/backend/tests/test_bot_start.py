@@ -303,7 +303,9 @@ def test_a_connected_person_sees_the_app_and_staff_a_pointer_to_the_cabinet(fore
     deliver(foreman, "/start", uid=1)  # uid 1 is the pilot group's headman
     text = last(foreman)["text"]
     assert text.startswith("Вы подключены к «Группа»") and "/" not in text
-    assert {"Кабинет старосты", "Создать приглашение", "Открыть StudGroup"} <= set(labels(foreman))
+    assert {"Кабинет старосты", "Пригласить участников", "Открыть StudGroup"} <= set(
+        labels(foreman)
+    )
 
 
 def test_plain_text_outside_the_code_step_still_reaches_the_headman_flow(foreman):
@@ -363,7 +365,7 @@ def test_connection_status_checks_live_telegram_without_changing_membership(fore
     tap(foreman, "Проверить ещё раз", uid=1)
     assert len(calls) == 4
     tap(foreman, "Главное меню", uid=1)
-    assert "Создать приглашение" in labels(foreman)
+    assert "Пригласить участников" in labels(foreman)
 
 
 def test_connection_status_does_not_revoke_access_on_telegram_failure(foreman, monkeypatch):
