@@ -30,6 +30,7 @@ from studgroup.bot_admin import enqueue, say
 from studgroup.homework import utc
 from studgroup.models import (
     Group,
+    GroupInvitation,
     HeadmanSession,
     Membership,
     StartSession,
@@ -783,11 +784,43 @@ async def promo_input(db, session, role, notice=None):
     )
 
 
+async def single_verified_pilot_invite(db, settings, telegram_id):
+    """Recover admission when exactly one live shared pilot invite matches this Telegram user.
+
+    Never guess between multiple groups, grant membership, or bypass Telegram checks.
+    """
+    invites = (
+        await db.scalars(
+            select(GroupInvitation)
+            .join(Group, Group.id == GroupInvitation.group_id)
+            .where(
+                GroupInvitation.reusable.is_(True),
+                GroupInvitation.revoked.is_(False),
+                GroupInvitation.expires_at > datetime.now(UTC),
+                Group.status == "active",
+                Group.pilot_authorized.is_(True),
+            )
+            .limit(2)
+        )
+    ).all()
+    if len(invites) != 1:
+        return None
+    try:
+        await domain.validate_invite_by_hash(db, settings, telegram_id, invites[0].token_hash)
+    except domain.StError:
+        return None
+    return invites[0].token_hash
+
+
 async def next_after_promo(db, session, settings, telegram_id, role):
     if role == "headman":
         await headman_entry(db, session, settings, telegram_id)
     else:
-        await join(db, session)
+        digest = await single_verified_pilot_invite(db, settings, telegram_id)
+        if digest is not None:
+            await legal_role_gate(db, session, settings, telegram_id, pending_invite_hash=digest)
+        else:
+            await join(db, session)
 
 
 async def headman_prompt(db, session, settings, notice=None, groups=()):
@@ -1520,6 +1553,11 @@ async def handle(db, update, settings, topic=None):
                     await home(db, session, settings, sender.id)
             else:
                 await resume_or_home(db, session, settings, sender.id)
+            return True
+        if _LINK_CODE.search(text) and "t.me/" in text:
+            # A link pasted or forwarded into the chat is treated like a Telegram deep link.
+            await forget(db, chat, message)
+            await redeem(db, session, settings, sender.id, extract_code(text), typed=False)
             return True
         if text in {"/cancel", "Отмена"}:
             await home(db, session, settings, sender.id)
