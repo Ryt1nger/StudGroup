@@ -267,7 +267,8 @@ def test_a_failed_telegram_check_is_explained_on_the_panel(foreman, monkeypatch)
     allow_telegram(monkeypatch, answer=False)
     deliver(foreman, f"/start invite_{issue(foreman)}", uid=33)
     assert "Не удалось подтвердить участие" in last(foreman)["text"]
-    assert "Ввести код" in labels(foreman)
+    assert "Проверить участие ещё раз" in labels(foreman)
+    assert "Ввести код" not in labels(foreman)
 
 
 def test_buttons_of_an_older_screen_stop_working_after_a_new_start(foreman):
