@@ -130,6 +130,7 @@ describe('premium membership-scoped onboarding', () => {
     }));
 
     const login = screen.getByRole('textbox', { name: /Логин СДО/ });
+    await waitFor(() => expect(login).toBeEnabled());
     await userEvent.clear(login);
     await userEvent.type(login, 'student-login');
     await userEvent.type(screen.getByLabelText('Пароль СДО/ЛК'), 'example-password');
