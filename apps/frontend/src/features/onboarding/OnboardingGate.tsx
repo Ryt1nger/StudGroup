@@ -214,7 +214,7 @@ function PreviewWizard({ state, onClose }: { state: OnboardingState; onClose: ()
     {step === 'subgroups' ? <>
       <Title lead="Укажите подгруппу для каждого предмета.">Подгруппы по предметам</Title>
       {staff ? <>
-        <div className="ob-help">Для старосты выбор подгрупп не требуется. Ниже — пример экрана студента.</div>
+        <div className="ob-help">Пример для студента: старосте выбирать подгруппу не нужно.</div>
         <div className="ob-count">Пример: 2 предмета</div>
         <div className="ob-split-list">
           {[
