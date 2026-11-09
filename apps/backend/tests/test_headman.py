@@ -281,7 +281,23 @@ def test_invite_membership_check_and_single_use(foreman, monkeypatch):
         return True
 
     monkeypatch.setattr(domain, "telegram_member", yes)
+    settings = foreman.app.state.settings
+    settings.legal_operator_name = "Тестовый оператор"
+    settings.legal_operator_address = "Москва, тестовый адрес"
+    settings.legal_operator_contact = "legal@example.test"
+    settings.legal_data_region = "Россия, Москва"
+    settings.legal_documents_approved = True
+
     deliver(foreman, "/start invite_" + code, uid=33)
+    for label in ("Принимаю условия использования", "Даю отдельное согласие"):
+        buttons = last(foreman)["reply_markup"]["inline_keyboard"]
+        callback = next(
+            button["callback_data"]
+            for row in buttons
+            for button in row
+            if label in button["text"]
+        )
+        deliver(foreman, callback=callback, uid=33)
     assert "Вы подключены" in last(foreman)["text"]
     deliver(foreman, "/start invite_" + code, uid=34)
     assert "использовано" in last(foreman)["text"]

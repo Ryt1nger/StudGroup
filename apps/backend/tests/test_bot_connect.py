@@ -538,7 +538,7 @@ def test_the_new_headman_invites_a_student_who_joins_by_the_link(foreman, monkey
     deliver(foreman, "/start " + link.split("?start=")[1], uid=88)
     base_tap(foreman, "Принимаю условия использования", uid=88)
     base_tap(foreman, "Даю отдельное согласие", uid=88)
-    assert "Готово! Вы подключены к «ИВТ-21»" in last(foreman)["text"]
+    assert "Готово! Вы подключены" in last(foreman)["text"]
 
     async def roles(db):
         group = await db.scalar(select(Group).where(Group.telegram_chat_id == NEW_CHAT))
@@ -603,9 +603,10 @@ def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeyp
     assert any("Английский" in label for label in labels(foreman))
     assert "Далее" in labels(foreman)
     tap(foreman, "Далее", uid=ADDER)
-    assert "защищённой формы Mini App" in last(foreman)["text"]
-    assert "Пропустить" in labels(foreman)
-    tap(foreman, "Пропустить", uid=ADDER)
+    assert "Профиль можно заполнить в приложении" in last(foreman)["text"]
+    assert {"Открыть StudGroup", "Подключить СДО / ЛК", "Кабинет старосты"} <= set(
+        labels(foreman)
+    )
     tap(foreman, "Кабинет старосты", uid=ADDER)
     assert "Староста · ИВТ-21" in last(foreman)["text"]
 

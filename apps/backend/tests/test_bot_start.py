@@ -234,7 +234,15 @@ def test_shared_link_rejects_a_member_of_another_group(foreman, monkeypatch):
 
     code = run(foreman, prepare)
     deliver(foreman, f"/start invite_{code}", uid=33)
-    assert "уже подключены к другой группе" in last(foreman)["text"]
+    assert "Вы подключены к «Другая группа»." in last(foreman)["text"]
+
+    async def memberships(db):
+        user = await db.scalar(select(User).where(User.telegram_user_id == 33))
+        return (await db.scalars(
+            select(Membership.group_id).where(Membership.user_id == user.id)
+        )).all()
+
+    assert len(run(foreman, memberships)) == 1
 
 
 def test_student_with_no_configured_subgroups_sees_no_subgroup_question(foreman, monkeypatch):

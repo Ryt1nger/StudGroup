@@ -1498,10 +1498,17 @@ async def handle(db, update, settings, topic=None):
         else:
             await confirm_group_screen(db, session, group)
     elif action == "confirm_group" and session.step == "confirm_group":
+        from studgroup import bot_connect
+
         data = json.loads(session.payload)
         group = await db.get(Group, uuid.UUID(data["group_id"]))
         if group is None:
             await headman_entry(db, session, settings, sender.id)
+        elif await bot_connect.has_headman(db, group.id):
+            await headman_prompt(
+                db, session, settings,
+                "У этой группы уже есть староста. Роль нельзя занять второй раз.",
+            )
         else:
             await legal_role_gate(db, session, settings, sender.id, pending_group_id=str(group.id))
     elif action == "academic_code_back" and session.step == "academic_code":
