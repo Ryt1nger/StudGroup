@@ -17,8 +17,8 @@ import personalLight from '../../../../../design/extracted/illustrations/folder-
 import personalDark from '../../../../../design/extracted/illustrations/folder-large.dark.png';
 import contactsLight from '../../../../../design/extracted/illustrations/illustration-announcement.light.png';
 import contactsDark from '../../../../../design/extracted/illustrations/illustration-announcement.dark.png';
-import subgroupLight from '../../../../../design/extracted/illustrations/glass-strip.light.png';
-import subgroupDark from '../../../../../design/extracted/illustrations/glass-strip.dark.png';
+import subgroupLight from '../../../../../design/extracted/illustrations/folder-compact.light.png';
+import subgroupDark from '../../../../../design/extracted/illustrations/folder-compact.dark.png';
 import sdoLight from '../../../../../design/extracted/illustrations/illustration-materials.light.png';
 import sdoDark from '../../../../../design/extracted/illustrations/illustration-materials.dark.png';
 import finishLight from '../../../../../design/extracted/illustrations/sparkle-badge.light.png';
@@ -151,7 +151,10 @@ function Wizard({ state, membershipId }: { state: OnboardingState; membershipId:
   const [staffIntro, setStaffIntro] = useState(isStaff && stage === 'personal');
   const shown: Step = staffIntro && stage === 'personal' ? 'welcome' : stage;
   const index = steps.indexOf(stage);
-  const back = shown === 'welcome' ? undefined : () => { void progress.move(steps[index - 1]!); };
+  const back = shown === 'welcome' ? undefined : () => {
+    if (isStaff && stage === 'personal') setStaffIntro(true);
+    else void progress.move(steps[index - 1]!);
+  };
   const next = (step: Step) => () => { void progress.move(step); };
   return (
     <Shell step={shown} role={isStaff ? (state.role === 'headman' ? 'СТАРОСТА' : 'ЗАМЕСТИТЕЛЬ') : 'СТУДЕНТ'} group={state.group_name}>
@@ -322,6 +325,9 @@ function CredentialsStep({ back, busy, next }: { back?: () => void; busy: boolea
     }
     try {
       setError('');
+      if (!legal.data?.terms || !legal.data?.service) {
+        throw new Error('Сначала подтвердите условия и согласие на следующем этапе. СДО можно подключить после настройки в профиле.');
+      }
       await ensureConsents(legal.data, { terms: false, service: false, sdo: agreeSdo }, true, ['sdo']);
       await save.mutateAsync({ sdu_platform: 'РАНХиГС — СДО / ЛК', sdu_login: loginValue.trim(),
         ...(password ? { sdu_password: password } : {}) });
