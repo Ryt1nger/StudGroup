@@ -28,6 +28,10 @@ test('all eight onboarding screens fit a phone without page scrolling or clipped
 
     for (const [heading, action] of transitions) {
       await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+      if (heading === 'Подстроим приложение под вас') {
+        await page.getByRole('button', { name: 'Крупный' }).click();
+        await page.getByRole('button', { name: 'Тёмная' }).click();
+      }
       const button = page.getByRole('button', { name: action });
       await expect(button).toBeVisible();
       const sizes = await page.evaluate(() => {
