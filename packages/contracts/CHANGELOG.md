@@ -1,5 +1,11 @@
 # Contract changelog
 
+## 0.22.0 — 2026-11-09
+
+- Expanded first-run progress with contacts and appearance stages. The new onboarding screen sequence is welcome → personal → contacts → subgroups → SDO → legal → appearance → finish. Saved completion still applies per membership; old completed memberships remain completed. The existing profile, subgroup, legal, and appearance preference storage APIs remain unchanged.
+- Legacy step transitions used by old Telegram cached web builds continue to work during the rollout. No data migration is needed for the VARCHAR-backed progress field.
+
+
 ## 0.21.0 — 2026-11-08
 
 - Added membership-scoped onboarding state, progress and completion endpoints. They resume after a
