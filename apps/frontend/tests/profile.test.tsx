@@ -6,6 +6,21 @@ import { demoProfile } from '../src/mocks/profile';
 import { API, renderApp, server, useScenario } from './helpers';
 
 describe('profile', () => {
+  it('blocks credential entry while operator documents are unapproved', async () => {
+    useScenario();
+    server.use(
+      http.get(`${API}/profile`, () => HttpResponse.json(demoProfile())),
+      http.get(`${API}/legal/status`, () => HttpResponse.json({
+        version: '2026-11-08-v1', ready: false, terms: false, service: false, sdo: false,
+      })),
+    );
+    renderApp({ route: '/profile/sdo' });
+    expect(await screen.findByText(/Сохранение пока недоступно/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Логин СДО / ЛК')).toBeDisabled();
+    expect(screen.getByLabelText('Пароль СДО / ЛК')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Сохранить данные СДО / ЛК' })).toBeDisabled();
+  });
+
   it('saves personal data and opens the separate, consent-gated SDO/LK form', async () => {
     useScenario();
     const sent: Array<Record<string, unknown>> = [];

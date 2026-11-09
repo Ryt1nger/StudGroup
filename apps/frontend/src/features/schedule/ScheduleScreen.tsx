@@ -206,7 +206,8 @@ export function ScheduleScreen() {
       {query.isError && data ? <Banner tone="warning" icon="clock">{ru.freshness.stale(formatTime(data.generated_at, data.group_timezone))}</Banner> : null}
       {query.isPending ? <Skeleton label={ru.states.loading} /> : null}
       {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
-      {data && lessons.length === 0 ? <Empty title="Пар нет" body="В этот день занятий не запланировано." /> : null}
+      {data && lessons.length === 0 && data.week_state === 'ready' ? <Empty title="Пар нет" body="В этот день занятий не запланировано." /> : null}
+      {data && lessons.length === 0 && data.week_state !== 'ready' ? <Empty title="Расписание ещё не подтверждено" body="Для этого дня пока нет проверенных данных." /> : null}
       {data && lessons.length > 0 ? (
         <div ref={ref} className="tline" style={{ height: (HR1 - HR0) * PX + 20 }}>
           {hours}

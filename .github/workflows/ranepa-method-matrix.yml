@@ -1,0 +1,26 @@
+name: RANEPA method matrix
+on:
+  push:
+    branches:
+      - feat/ranepa-schedule-subgroup-pilot
+    paths:
+      - .github/workflows/ranepa-method-matrix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  methods:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Run unauthenticated read-only timetable channels test
+        working-directory: apps/backend
+        run: |
+          uv sync --frozen
+          uv run python scripts/ranepa_method_matrix.py

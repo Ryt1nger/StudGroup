@@ -6,7 +6,7 @@ import { queryKeys } from '../../api/keys';
 import { ru } from '../../i18n/ru';
 import { dayKey, formatLongDay, formatTime } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
-import { safeLessonUrl, useLessonLinkClick } from '../../lib/lessonLink';
+import { safeLessonUrl, safeRanepaCourseUrl, useLessonLinkClick } from '../../lib/lessonLink';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
 import { subjectStyle } from '../../lib/subjectColor';
 import { SubjectMark } from '../../ui/SubjectMark';
@@ -80,6 +80,15 @@ function JoinBar({ url }: { url: string }) {
   );
 }
 
+function CourseLink({ url }: { url: string }) {
+  const open = useLessonLinkClick(url);
+  return <a className="srow" href={url} target="_blank" rel="noopener noreferrer" onClick={open}>
+    <span className="ri"><Ic name="book" size={18} /></span>
+    <div><div className="st">Открыть курс СДО</div><div className="ss">Ссылка на занятие уточняется в курсе</div></div>
+    <span className="sv"><Ic name="chev" /></span>
+  </a>;
+}
+
 /** `/schedule/lesson/:lessonId`: only fields of the lesson occurrence, plus the subject's open homework. */
 export function LessonScreen() {
   const { lessonId = '' } = useParams();
@@ -113,6 +122,7 @@ export function LessonScreen() {
   const range = `${formatTime(lesson.starts_at, timeZone)} — ${formatTime(lesson.ends_at, timeZone)}`;
   const minutes = Math.max(0, Math.round((endMs - startMs) / 60_000));
   const online = safeLessonUrl(lesson.online_url);
+  const course = safeRanepaCourseUrl(lesson.course_url);
   const canJoin = online !== null && lesson.status !== 'cancelled' && endMs > nowMs;
   const homework = (subject.data?.homework ?? []).filter(
     (item) => item.my_state.completion !== 'completed' && !isHomeworkArchived(item, nowMs, timeZone),
@@ -144,6 +154,7 @@ export function LessonScreen() {
         ))}
       </div>
       <div className="grp">
+        {course && !online ? <CourseLink url={course} /> : null}
         <Link className="srow" to={`/subjects/lessons/${encodeURIComponent(lesson.id)}`}>
           <span className="ri"><Ic name="book" size={18} /></span>
           <div><div className="st">Всё по предмету</div><div className="ss">{lesson.subject}</div></div>

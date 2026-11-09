@@ -49,7 +49,7 @@ describe('creating and removing cards', () => {
     );
     const { router } = renderApp({ route: '/tasks' });
     await userEvent.click(await screen.findByRole('link', { name: 'Новая карточка' }));
-    expect(router.state.location.pathname).toBe('/cards/new');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/cards/new'));
     await userEvent.type(await screen.findByLabelText('Название'), 'Номера 1–5');
     await userEvent.type(screen.getByLabelText('Предмет'), 'Математический анализ');
     await userEvent.click(screen.getByRole('button', { name: 'Создать' }));

@@ -4,6 +4,26 @@ export type ClientOptions = {
     baseUrl: 'https://api.studgroup.example/v1' | (string & {});
 };
 
+export type OnboardingStep = 'welcome' | 'legal' | 'personal' | 'subgroups' | 'sdo' | 'finish' | 'complete';
+
+export type OnboardingState = {
+    role: 'student' | 'headman' | 'deputy';
+    step: OnboardingStep;
+    completed: boolean;
+    legal_required: boolean;
+    group_name: string;
+    academic_group_code: string | null;
+};
+
+export type OnboardingProgressRequest = {
+    step: 'welcome' | 'legal' | 'personal' | 'subgroups' | 'sdo' | 'finish';
+};
+
+export type OnboardingProgressResponse = {
+    step: OnboardingStep;
+    completed: boolean;
+};
+
 export type CardRemoval = {
     undo_id: string;
 };
@@ -34,6 +54,36 @@ export type UserProfile = {
         password_set: boolean;
     };
     settings: NotificationSettings;
+};
+
+export type RanepaPersonalSchedule = {
+    start: string;
+    end: string;
+    complete: boolean;
+    /**
+     * True when compatible peer data fills a missing personal week; complete remains false
+     */
+    fallback_used: boolean;
+    last_success_at: string | null;
+    lessons: Array<{
+        day: string;
+        starts: string;
+        ends: string;
+        subject: string;
+        teacher?: string | null;
+        room?: string | null;
+        lesson_type?: string | null;
+        stream_label?: string | null;
+        online_url?: string | null;
+        /**
+         * Verified Moodle course reached from this SDO lesson; may lack a confirmed meeting link.
+         */
+        course_url?: string | null;
+        /**
+         * SDO link decision from the last successful scan; null for non-SDO or guarded peer fallback.
+         */
+        link_state?: string | null;
+    }>;
 };
 
 export type UpdateProfileRequest = {
@@ -98,6 +148,10 @@ export type LessonOccurrence = {
      * Optional HTTPS joining URL scoped to this group lesson; not a homework/material link. The external platform may require its own login.
      */
     online_url?: string | null;
+    /**
+     * Optional verified Moodle course for an SDO lesson; does not imply a confirmed meeting URL.
+     */
+    course_url?: string | null;
 };
 
 export type SessionBootstrapRequest = {
@@ -709,7 +763,7 @@ export type ErrorResponse = {
 };
 
 export type ApiError = {
-    code: 'invalid_request' | 'unauthenticated' | 'initdata_invalid' | 'initdata_expired' | 'session_expired' | 'no_active_group' | 'not_group_member' | 'membership_suspended' | 'membership_left' | 'group_not_authorized_for_pilot' | 'invitation_expired' | 'invitation_consumed' | 'group_deletion_pending' | 'permission_denied' | 'not_found' | 'gone' | 'revision_conflict' | 'action_rejected' | 'rate_limited' | 'service_unavailable' | 'internal_error';
+    code: 'invalid_request' | 'unauthenticated' | 'initdata_invalid' | 'initdata_expired' | 'session_expired' | 'no_active_group' | 'not_group_member' | 'membership_suspended' | 'membership_left' | 'group_not_authorized_for_pilot' | 'invitation_expired' | 'invitation_consumed' | 'group_deletion_pending' | 'permission_denied' | 'not_found' | 'gone' | 'revision_conflict' | 'action_rejected' | 'invalid_step' | 'profile_required' | 'subgroups_required' | 'legal_not_ready' | 'terms_required' | 'consent_required' | 'rate_limited' | 'service_unavailable' | 'internal_error';
     message: string;
     correlation_id: string;
     retryable: boolean;
@@ -943,6 +997,105 @@ export type UpdateProfileRequestWritable = {
 export type StaffItemId = string;
 
 export type HomeworkId = string;
+
+export type GetOnboardingStateData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/onboarding';
+};
+
+export type GetOnboardingStateErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+};
+
+export type GetOnboardingStateError = GetOnboardingStateErrors[keyof GetOnboardingStateErrors];
+
+export type GetOnboardingStateResponses = {
+    /**
+     * Saved membership progress and group context
+     */
+    200: OnboardingState;
+};
+
+export type GetOnboardingStateResponse = GetOnboardingStateResponses[keyof GetOnboardingStateResponses];
+
+export type SaveOnboardingProgressData = {
+    body: OnboardingProgressRequest;
+    path?: never;
+    query?: never;
+    url: '/onboarding/progress';
+};
+
+export type SaveOnboardingProgressErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type SaveOnboardingProgressError = SaveOnboardingProgressErrors[keyof SaveOnboardingProgressErrors];
+
+export type SaveOnboardingProgressResponses = {
+    /**
+     * Persisted step; completed memberships remain complete
+     */
+    200: OnboardingProgressResponse;
+};
+
+export type SaveOnboardingProgressResponse = SaveOnboardingProgressResponses[keyof SaveOnboardingProgressResponses];
+
+export type CompleteOnboardingData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/onboarding/complete';
+};
+
+export type CompleteOnboardingErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+    /**
+     * A transient dependency or server failure
+     */
+    503: ErrorResponse;
+};
+
+export type CompleteOnboardingError = CompleteOnboardingErrors[keyof CompleteOnboardingErrors];
+
+export type CompleteOnboardingResponses = {
+    /**
+     * Membership setup complete
+     */
+    200: OnboardingProgressResponse;
+};
+
+export type CompleteOnboardingResponse = CompleteOnboardingResponses[keyof CompleteOnboardingResponses];
 
 export type AddCardMaterialData = {
     body: MaterialChange;
@@ -1404,6 +1557,38 @@ export type UpdateProfileResponses = {
 };
 
 export type UpdateProfileResponse = UpdateProfileResponses[keyof UpdateProfileResponses];
+
+export type GetMyRanepaScheduleData = {
+    body?: never;
+    path?: never;
+    query: {
+        start: string;
+        end: string;
+    };
+    url: '/ranepa-schedule';
+};
+
+export type GetMyRanepaScheduleErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * The request body is malformed or a value is not allowed
+     */
+    422: ErrorResponse;
+};
+
+export type GetMyRanepaScheduleError = GetMyRanepaScheduleErrors[keyof GetMyRanepaScheduleErrors];
+
+export type GetMyRanepaScheduleResponses = {
+    /**
+     * Cached personal lessons with source freshness; may be incomplete
+     */
+    200: RanepaPersonalSchedule;
+};
+
+export type GetMyRanepaScheduleResponse = GetMyRanepaScheduleResponses[keyof GetMyRanepaScheduleResponses];
 
 export type ListMySubgroupsData = {
     body?: never;

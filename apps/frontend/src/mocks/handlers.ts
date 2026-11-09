@@ -81,6 +81,10 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
   const handlers: HttpHandler[] = [
     ...(scenario === 'events' && !publicDemo ? eventHandlers(baseUrl) : []),
     ...(scenario === 'schedule-review' && !publicDemo ? imageScheduleHandlers(baseUrl) : []),
+    http.get(url('/onboarding'), () => HttpResponse.json({
+      role: 'student', step: 'complete', completed: true, group_name: 'БИ 1.2',
+      academic_group_code: null, legal_required: false,
+    })),
     http.get(url('/profile'), () => HttpResponse.json(profile)),
     http.patch(url('/profile'), async ({ request }) => {
       profile = applyProfilePatch(profile, (await request.json()) as Record<string, unknown>);

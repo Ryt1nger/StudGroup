@@ -7,6 +7,7 @@ import { createHandlers } from '../src/mocks/handlers';
 import type { Scenario } from '../src/mocks/scenarios';
 import { createTestRouter } from '../src/router';
 import { AccessGate } from '../src/session/AccessGate';
+import { OnboardingGate } from '../src/features/onboarding/OnboardingGate';
 import { SessionProvider } from '../src/session/SessionProvider';
 import type { TelegramAdapter } from '../src/telegram/adapter';
 import { TelegramProvider } from '../src/telegram/TelegramProvider';
@@ -53,7 +54,7 @@ export function renderApp(options: { route?: string; adapter?: TelegramAdapter |
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
           <AccessGate>
-            <RouterProvider router={router} />
+            <OnboardingGate><RouterProvider router={router} /></OnboardingGate>
           </AccessGate>
         </SessionProvider>
       </QueryClientProvider>

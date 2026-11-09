@@ -128,10 +128,12 @@ export function SdoCredentialsScreen() {
         <label htmlFor="study-login">Логин СДО / ЛК</label>
         <input id="study-login" name="study-login" type="text" autoComplete="off" maxLength={80}
           value={login ?? profile?.sdu.login ?? ''} onChange={(event) => setLogin(event.target.value)}
+          disabled={!status?.ready || profileQuery.isPending}
           placeholder="Ваш логин" style={{ display: 'block', width: '100%', margin: '8px 0 16px' }} />
         <label htmlFor="study-password">Пароль СДО / ЛК</label>
         <input id="study-password" name="study-password" type="password" autoComplete="new-password" maxLength={200}
           value={password} onChange={(event) => setPassword(event.target.value)}
+          disabled={!status?.ready || profileQuery.isPending}
           placeholder={profile?.sdu.password_set ? 'Пароль уже сохранён. Введите новый для замены' : 'Ваш пароль'}
           style={{ display: 'block', width: '100%', margin: '8px 0 22px' }} />
         <p>Ознакомьтесь с документами. Для каждого ещё не подтверждённого документа нужна отдельная отметка.</p>
@@ -142,7 +144,7 @@ export function SdoCredentialsScreen() {
           return (
             <div key={purpose} style={{ marginBottom: 16 }}>
               <label>
-                <input type="checkbox" checked={accepted[purpose]} onChange={(e) =>
+                <input type="checkbox" checked={accepted[purpose]} disabled={!status?.ready} onChange={(e) =>
                   setAccepted((old) => ({ ...old, [purpose]: e.target.checked }))} />
                 {' '}{label}
               </label>
