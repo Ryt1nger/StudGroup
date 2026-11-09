@@ -150,6 +150,8 @@
   }
   .ob-card { width: 100%; padding: 4px 18px 8px; border: 0; border-radius: 0; box-shadow: none; }
   .ob-scene h1 { font-size: clamp(21px, 6vw, 25px); }
+  /* The three requested preferences get priority over secondary list density. */
+  .ob-extra { display: none; }
 }
 @media (max-height: 740px) {
   .ob-meta-line { margin-top: 5px; }
