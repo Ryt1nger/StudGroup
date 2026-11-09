@@ -62,11 +62,13 @@
 /* Decorative art is intentionally small, subordinate to the actual form. */
 .ob-art { flex: none; height: clamp(42px, 9dvh, 78px); margin: 9px auto 5px; width: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none; overflow: hidden; }
 .ob-art img { height: 100%; width: auto; max-width: min(100%, 192px); object-fit: contain; filter: none; }
+.ob-art.is-unavailable { display: none; }
 .ob-art-subgroups, .ob-art-contacts, .ob-art-personal, .ob-art-sdo { height: clamp(35px, 7.5dvh, 58px); }
 .ob-art-appearance { display: none; }
 .ob-art-legal { height: 40px; }
 .ob-art-finish { height: clamp(48px, 8dvh, 70px); }
-.ob-scene { flex: 1; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; animation: ob-in .16s ease both; }
+.ob-scene { flex: 1; min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; visibility: hidden; }
+.ob-scene.is-ready { visibility: visible; animation: ob-in .16s ease both; }
 .ob-scene h1 { font-size: clamp(22px, 4.6vw, 29px); line-height: 1.13; font-weight: 780; letter-spacing: -.038em; color: var(--ob-ink); margin: 2px 0 7px; text-wrap: balance; }
 .ob-lead { color: var(--ob-muted); font-size: 12.5px; line-height: 1.4; margin: 0 0 12px; }
 .ob-feature-list { display: grid; gap: 6px; margin: 0; }

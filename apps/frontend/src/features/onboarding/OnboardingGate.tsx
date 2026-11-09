@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useProfileQuery, useUpdateProfile } from '../../api/queries';
 import { acceptLegal, legalStatus, type LegalStatus } from '../../api/legal';
@@ -50,6 +50,28 @@ function Shell({ children, role, group, step, preview, onClose, previewTheme, pr
   const { scheme } = useTelegram();
   const activeScheme = preview && previewTheme ? previewTheme : scheme;
   const art = ART[step][activeScheme === 'dark' ? 1 : 0];
+  const currentArt = useRef(art);
+  useEffect(() => { currentArt.current = art; }, [art]);
+  const [visual, setVisual] = useState<{ src: string; showArt: boolean } | null>(null);
+  const visualReady = step === 'appearance' || visual?.src === art;
+  const showArt = visual?.src === art && visual.showArt;
+  useEffect(() => {
+    // Keep a slow decorative asset from holding up the form. Once the fallback
+    // wins, do not let a late image appear separately from the screen.
+    const timeout = window.setTimeout(() => {
+      setVisual(previous => previous?.src === art ? previous : { src: art, showArt: false });
+    }, 250);
+    const nextStep = steps[steps.indexOf(step) + 1];
+    if (nextStep) {
+      const next = new Image();
+      next.src = ART[nextStep][activeScheme === 'dark' ? 1 : 0];
+    }
+    return () => window.clearTimeout(timeout);
+  }, [art, step, activeScheme]);
+  const settleArt = (loaded: boolean) => {
+    if (currentArt.current !== art) return;
+    setVisual(previous => previous?.src === art ? previous : { src: art, showArt: loaded });
+  };
   const accentInfo = preview && previewAccent ? ACCENT_INFO[previewAccent] : null;
   const previewStyle = accentInfo ? {
     '--ob-active': `hsl(${accentInfo.h} ${accentInfo.s} ${accentInfo.l})`,
@@ -81,8 +103,16 @@ function Shell({ children, role, group, step, preview, onClose, previewTheme, pr
         <div className="ob-progress" aria-label={`Шаг ${index + 1} из ${steps.length}`}>
           {steps.map((s, i) => <span key={s} className={'ob-progress-segment ' + (i <= index ? 'is-active' : '')} />)}
         </div>
-        <div className={'ob-art ob-art-' + step} aria-hidden="true"><img src={art} alt="" /></div>
-        <section className="ob-scene" key={step}>{children}</section>
+        <section className={'ob-scene' + (visualReady ? ' is-ready' : '')} key={step}>
+          <div className={'ob-art ob-art-' + step + (showArt ? '' : ' is-unavailable')} aria-hidden="true">
+            <img src={art} alt="" onLoad={event => {
+              const image = event.currentTarget;
+              if (image.decode) void image.decode().then(() => settleArt(true), () => settleArt(false));
+              else settleArt(true);
+            }} onError={() => settleArt(false)} />
+          </div>
+          {children}
+        </section>
       </main>
     </div>
   );
