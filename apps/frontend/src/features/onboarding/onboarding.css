@@ -122,3 +122,41 @@
 }
 @media (max-height: 700px) { .ob-art { height: 108px; margin: 9px auto 0; } .ob-scene h1 { font-size: 25px; } .ob-role { margin-top: 15px; } .ob-progress-head { margin-top: 15px; } }
 @media (prefers-reduced-motion: reduce) { .ob-root *, .ob-root *::before, .ob-root *::after { animation: none !important; transition: none !important; } }
+
+
+/* Read-only tour opened from Profile by an already-registered member. */
+.ob-preview-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin: -7px -7px 18px; padding: 10px 12px;
+  border-radius: 13px; color: var(--ob-muted); background: var(--ob-inset);
+  font-size: 11px; line-height: 1.35; font-weight: 660;
+}
+.ob-preview-banner button {
+  flex: none; font-size: 12px; font-weight: 750; color: var(--ob-ink);
+  padding: 8px; border-radius: 8px; cursor: pointer;
+}
+.ob-preview-banner button:focus-visible { outline: 2px solid var(--ob-active); outline-offset: 2px; }
+.ob-preview-document { display: block; color: var(--ob-active); font-size: 12px; font-weight: 600; margin-top: 8px; text-decoration: underline; text-underline-offset: 3px; }
+/* Preview theme changes only this tour, not the saved Telegram/profile preference. */
+.ob-root.ob-preview[data-ob-preview-theme='dark'] {
+  --ob-surface: #17171f;
+  --ob-page: #090910;
+  --ob-ink: #f8f8ff;
+  --ob-muted: #a5a5ba;
+  --ob-line: #343440;
+  --ob-inset: #24242f;
+  --ob-tint: #262238;
+}
+.ob-root.ob-preview[data-ob-preview-theme='light'] {
+  --ob-surface: #fff;
+  --ob-page: #f6f6fa;
+  --ob-ink: #151528;
+  --ob-muted: #74758d;
+  --ob-line: #e8e8f1;
+  --ob-inset: #f5f5fa;
+  --ob-tint: #f0effc;
+}
+.ob-root.ob-preview[data-ob-preview-text='s'] .ob-scene h1 { font-size: 24px; }
+.ob-root.ob-preview[data-ob-preview-text='l'] .ob-scene h1 { font-size: 32px; }
+.ob-root.ob-preview[data-ob-preview-text='s'] .ob-lead { font-size: 13px; }
+.ob-root.ob-preview[data-ob-preview-text='l'] .ob-lead { font-size: 16px; }
