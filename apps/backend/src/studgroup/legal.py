@@ -181,6 +181,8 @@ async def authenticated_user(db, authorization):
 
 @router.get("/documents/{document}", response_class=PlainTextResponse)
 async def public_document(document: str, request: Request):
+    if not legal_ready(request.app.state.settings):
+        raise ApiError("legal_not_ready", "Документы оператора ещё не опубликованы", 503)
     return PlainTextResponse(
         document_text(document, request.app.state.settings),
         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},

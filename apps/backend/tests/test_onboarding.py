@@ -20,6 +20,24 @@ pytest_plugins = ["test_schedule_api"]
 AUTH = {"Authorization": "Bearer valid"}
 
 
+def publish_and_accept(client, purposes=("terms", "service")):
+    from studgroup.legal import VERSION
+
+    settings = client.app.state.settings
+    settings.legal_operator_name = "ООО Тестовый оператор"
+    settings.legal_operator_address = "Москва, тестовый адрес"
+    settings.legal_operator_contact = "privacy@example.test"
+    settings.legal_data_region = "Российская Федерация, Москва"
+    settings.legal_documents_approved = True
+    for purpose in purposes:
+        response = client.post(
+            "/v1/legal/consents",
+            json={"purpose": purpose, "version": VERSION, "confirmed": True},
+            headers=AUTH,
+        )
+        assert response.status_code == 200, response.text
+
+
 def move(client, step, expected=200):
     answer = client.put("/v1/onboarding/progress", json={"step": step}, headers=AUTH)
     assert answer.status_code == expected, answer.text
@@ -62,12 +80,19 @@ def test_student_registration_survives_new_web_session_and_is_required_once(clie
     move(client, "sdo")
     move(client, "finish")
     assert client.post("/v1/onboarding/complete", headers=AUTH).status_code == 422
-    saved = client.patch("/v1/profile", json={"first_name": "Анна"}, headers=AUTH)
+    saved = client.patch(
+        "/v1/profile",
+        json={"first_name": "Анна", "last_name": "Иванова", "email": "anna@example.test"},
+        headers=AUTH,
+    )
     assert saved.status_code == 200
     reopened_profile = client.get("/v1/profile", headers={"Authorization": "Bearer reopened"})
     assert reopened_profile.status_code == 200
     assert reopened_profile.json()["first_name"] == "Анна"
+    assert reopened_profile.json()["last_name"] == "Иванова"
+    assert reopened_profile.json()["email"] == "anna@example.test"
 
+    publish_and_accept(client)
     completed = client.post("/v1/onboarding/complete", headers=AUTH)
     assert completed.status_code == 200 and completed.json()["completed"]
     assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "complete"
@@ -121,6 +146,7 @@ def test_required_subgroup_must_be_selected_before_completion(client):
         headers=AUTH,
     )
     assert selected.status_code == 200
+    publish_and_accept(client)
     assert client.post("/v1/onboarding/complete", headers=AUTH).status_code == 200
 
 
@@ -139,6 +165,7 @@ def test_headman_has_single_profile_step_not_student_wizard(client):
         client.patch("/v1/profile", json={"first_name": "Андрей"}, headers=AUTH).status_code == 200
     )
     move(client, "finish")
+    publish_and_accept(client)
     assert client.post("/v1/onboarding/complete", headers=AUTH).status_code == 200
     assert client.get("/v1/onboarding", headers=AUTH).json()["completed"]
 
@@ -158,6 +185,7 @@ def test_new_eight_screen_flow_persists_and_does_not_reopen_after_completion(cli
         assert saved.json()["step"] == step
         assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == step
     assert client.patch("/v1/profile", json={"first_name": "Анна"}, headers=AUTH).status_code == 200
+    publish_and_accept(client)
     assert client.post("/v1/onboarding/complete", headers=AUTH).json()["completed"]
     assert client.get("/v1/onboarding", headers=AUTH).json()["step"] == "complete"
     assert move(client, "welcome").json()["completed"] is True
@@ -177,4 +205,30 @@ def test_new_staff_wizard_accepts_contacts_and_appearance_without_subgroup_selec
     assert (
         client.patch("/v1/profile", json={"first_name": "Андрей"}, headers=AUTH).status_code == 200
     )
+    publish_and_accept(client)
     assert client.post("/v1/onboarding/complete", headers=AUTH).json()["completed"]
+
+
+def test_unpublished_documents_block_new_completion_but_keep_completed_members_active(client):
+    assert client.get("/v1/onboarding", headers=AUTH).json()["legal_required"] is True
+    assert client.patch("/v1/profile", json={"first_name": "Анна"}, headers=AUTH).status_code == 200
+    for step in ("personal", "contacts", "subgroups", "sdo", "legal", "appearance", "finish"):
+        move(client, step)
+    response = client.post("/v1/onboarding/complete", headers=AUTH)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "legal_not_ready"
+    assert client.get("/v1/legal/documents/terms").status_code == 503
+
+    publish_and_accept(client, ())
+    response = client.post("/v1/onboarding/complete", headers=AUTH)
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "terms_required"
+    publish_and_accept(client, ("terms",))
+    response = client.post("/v1/onboarding/complete", headers=AUTH)
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "consent_required"
+    publish_and_accept(client, ("service",))
+    assert client.post("/v1/onboarding/complete", headers=AUTH).status_code == 200
+    client.app.state.settings.legal_documents_approved = False
+    assert client.get("/v1/onboarding", headers=AUTH).json()["completed"] is True
+    assert client.post("/v1/onboarding/complete", headers=AUTH).status_code == 200

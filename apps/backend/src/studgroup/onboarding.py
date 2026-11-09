@@ -57,7 +57,7 @@ async def state(
         "role": member.role,
         "step": stage_for(member, row),
         "completed": bool(row and row.completed_at),
-        "legal_required": request.app.state.settings.legal_onboarding_required,
+        "legal_required": True,
         "group_name": group.name,
         "academic_group_code": group.academic_group_code,
     }
@@ -116,16 +116,15 @@ async def complete(
         raise ApiError("profile_required", "Укажите имя для профиля", 422)
     if member.role == "student" and await subgroups.unanswered(db, member):
         raise ApiError("subgroups_required", "Выберите подгруппы по всем предметам", 422)
-    if request.app.state.settings.legal_onboarding_required:
-        from studgroup.legal import has_consent, legal_ready
+    from studgroup.legal import has_consent, legal_ready
 
-        settings = request.app.state.settings
-        if not legal_ready(settings):
-            raise ApiError("legal_not_ready", "Документы оператора ещё не утверждены", 503)
-        if not await has_consent(db, member.user_id, "terms", settings):
-            raise ApiError("terms_required", "Примите условия использования", 403)
-        if not await has_consent(db, member.user_id, "service", settings):
-            raise ApiError("consent_required", "Подтвердите обработку данных", 403)
+    settings = request.app.state.settings
+    if not legal_ready(settings):
+        raise ApiError("legal_not_ready", "Документы оператора ещё не утверждены", 503)
+    if not await has_consent(db, member.user_id, "terms", settings):
+        raise ApiError("terms_required", "Примите условия использования", 403)
+    if not await has_consent(db, member.user_id, "service", settings):
+        raise ApiError("consent_required", "Подтвердите обработку данных", 403)
     if row is None:
         row = OnboardingProgress(
             membership_id=member.id, step="complete", updated_at=datetime.now(UTC)

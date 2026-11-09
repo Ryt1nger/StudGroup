@@ -1,5 +1,9 @@
 # Contract compatibility
 
+## Mandatory first-run legal acceptance (0.23.0, 2026-11-09)
+
+`/onboarding/complete` now requires current, separately recorded acceptance of the terms and personal-data processing consent for every incomplete membership. It returns `503 legal_not_ready` while documents are unpublished, or `403 terms_required` / `consent_required` when acceptance is missing. `legal_required` remains in the response and is always true for first-run setup. Existing completed memberships still return complete without new consent. Cached older clients cannot bypass the server check and should show the returned error; users can resume on an updated client. SDO credential consent remains independent and optional. Public document routes return `503 legal_not_ready` until publication, without exposing draft operator placeholders.
+
 ## Multi-step first run (0.22.0, 2026-11-09)
 
 Onboarding now supports `contacts` and `appearance` in addition to the existing stages. Responses remain membership-scoped and existing completed memberships continue to bypass the wizard. Old clients can still use their original legal-first student transitions and staff single-form finish. Personalization is client-side and reuses exactly the existing Telegram theme/accent cookies and display cookie; no user profile payload or new credential storage is introduced.

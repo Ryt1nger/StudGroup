@@ -4,7 +4,7 @@ import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { API, renderApp, server, useScenario } from './helpers';
 
-const legal = { version: '2026-11-09-v2', ready: false, credentials_ready: false, terms: false, service: false, sdo: false };
+const legal = { version: '2026-11-09-v2', ready: true, credentials_ready: false, terms: false, service: false, sdo: false };
 
 function stubOnboarding(role: 'student' | 'headman' = 'student') {
   let step = role === 'student' ? 'welcome' : 'personal';
@@ -12,7 +12,7 @@ function stubOnboarding(role: 'student' | 'headman' = 'student') {
   const calls: string[] = [];
   server.use(
     http.get(API + '/onboarding', () => HttpResponse.json({
-      role, step, completed, group_name: 'БИ 1.2', academic_group_code: null, legal_required: false,
+      role, step, completed, group_name: 'БИ 1.2', academic_group_code: null, legal_required: true,
     })),
     http.put(API + '/onboarding/progress', async ({ request }) => {
       const body = (await request.json()) as { step: string };
@@ -27,6 +27,7 @@ function stubOnboarding(role: 'student' | 'headman' = 'student') {
     }),
     http.get(API + '/subgroups', () => HttpResponse.json({ items: [] })),
     http.get(API + '/legal/status', () => HttpResponse.json(legal)),
+    http.post(API + '/legal/consents', () => HttpResponse.json({ granted: true })),
   );
   return { calls, getStep: () => step, isComplete: () => completed };
 }
@@ -42,11 +43,31 @@ async function advancePastPersonal() {
   expect(await screen.findByText('СДО и личный кабинет')).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: /Подключить позже/ }));
   expect(await screen.findByText('Почти готово')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('checkbox', { name: /Принимаю условия/ }));
+  await userEvent.click(screen.getByRole('checkbox', { name: /Даю согласие/ }));
   await userEvent.click(screen.getByRole('button', { name: /Продолжить/ }));
   expect(await screen.findByText('Подстроим приложение под вас')).toBeInTheDocument();
 }
 
 describe('premium membership-scoped onboarding', () => {
+  it('keeps the legal step blocked while documents are unpublished', async () => {
+    useScenario();
+    stubOnboarding();
+    server.use(http.get(API + '/legal/status', () => HttpResponse.json({ ...legal, ready: false })));
+    renderApp();
+    await userEvent.click(await screen.findByRole('button', { name: /Начать настройку/ }));
+    const first = await screen.findByRole('textbox', { name: /Имя/ });
+    if (!(first as HTMLInputElement).value) await userEvent.type(first, 'Анна');
+    await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /Далее/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /Сохранить и продолжить/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /Подключить позже/ }));
+    expect(await screen.findByText('Почти готово')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Принимаю условия/ })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Даю согласие/ })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: /Продолжить/ })).toBeDisabled();
+    expect(screen.getByText(/Документы пока находятся на утверждении/)).toBeInTheDocument();
+  });
   it('resumes from the server, uses the profile appearance controls and never repeats once completed', async () => {
     useScenario();
     const state = stubOnboarding();
