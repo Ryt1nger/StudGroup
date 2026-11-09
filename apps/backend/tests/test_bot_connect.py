@@ -27,6 +27,10 @@ def tap(client, label, uid=33):
     if label == "Да, подключить" and "Принимаю условия использования" in labels(client):
         base_tap(client, "Принимаю условия использования", uid=uid)
         base_tap(client, "Даю отдельное согласие", uid=uid)
+        if "Регистрация · шаг 1" in last(client)["text"]:
+            deliver(client, "Алексей", uid=uid)
+            base_tap(client, "Пропустить", uid=uid)
+            base_tap(client, "Пропустить", uid=uid)
     return button
 
 

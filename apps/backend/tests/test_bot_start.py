@@ -32,6 +32,10 @@ def finish_legal(client, uid=33):
     tap(client, "Принимаю условия использования", uid=uid)
     assert "Даю отдельное согласие" in labels(client)
     tap(client, "Даю отдельное согласие", uid=uid)
+    if "Регистрация · шаг 1" in last(client)["text"]:
+        deliver(client, "Анна", uid=uid)
+        tap(client, "Пропустить", uid=uid)
+        tap(client, "Пропустить", uid=uid)
 
 
 def labels(client):
