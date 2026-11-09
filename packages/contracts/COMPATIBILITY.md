@@ -1,5 +1,15 @@
 # Contract compatibility
 
+## Membership onboarding (0.21.0, 2026-11-08)
+
+Additive `/onboarding` routes are scoped to the bearer session's active membership. Older clients
+can ignore them; the server never uses these routes to join a group. Progress is persisted per
+membership and a completed membership cannot be moved back to a first-run step. Existing active
+memberships are marked complete by migration 0053. The personal profile and subgroup choices
+continue to use their existing endpoints. Completion requires an entered first name and all
+applicable subgroup choices; when legal onboarding is enabled, the separate consent checks also
+apply. The `legal_required` flag reports server configuration, not a client authorization grant.
+
 ## Mini App card materials (0.20.0, 2026-10-31)
 
 Additive operations under `/cards/{kind}/{card_id}/materials`. Existing clients can continue using the bot file link; existing card and material response fields are unchanged. The server checks group membership and card revision for every change. File uploads use multipart form data and retain the existing signed read URL shape; no raw Telegram file ID is exposed to clients. A client should refresh the card after a successful material change.

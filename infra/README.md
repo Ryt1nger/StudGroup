@@ -17,11 +17,16 @@ Native PostgreSQL migrations and concurrent processing tests have passed.
 
 ### Render pilot
 
-The owner selected Render Free. `studgroup-db` (PostgreSQL 17, Oregon) and
-`studgroup-frontend` are provisioned alongside the existing StudGroup API. The free
-database expires on 2026-11-05; it is not permanent storage. After deployment the
-owner explicitly approved importing their export. Actual live Telegram ingestion
-remains a separate step.
+As of 2026-11-09, the active pilot database is Supabase US West project
+`ytghmfxjjyxkcaglbhfj`. The other Supabase project (`egbodayfttbiznwtfiih`,
+EU West) and the suspended Render database `studgroup-db` are not release targets.
+Set `DATABASE_PROJECT_REF=ytghmfxjjyxkcaglbhfj` on the Render API alongside its
+existing `DATABASE_URL`; startup then rejects a URL for another Supabase project
+or the old Render database. Keep database credentials out of Git. The API and
+`studgroup-frontend` remain separate Render services, both sourced from `main`.
+
+The former Render Free PostgreSQL database expired on 2026-11-05. Historical
+notes below describe the earlier import and are not current connection guidance.
 
 Set `PROCESSING_MODE=embedded` for the free API pilot: one async SQL-inbox loop runs
 inside the API, and Redis is not a readiness requirement. Shutdown cancels the loop;
@@ -29,11 +34,13 @@ committed jobs, leases and budget reservations remain in PostgreSQL. It runs onl
 while the Render instance is awake. `AI_ENABLED=false` remains the initial setting.
 The external Celery deployment is unchanged for a later always-on worker topology.
 
-The API accepts Render's standard `postgres://`/`postgresql://` connection URLs and
-normalizes them to its asyncpg driver internally. Use the internal URL in the same
-region. Do not publish credentials. The frontend uses only the public API base URL
-(`https://studgroup.onrender.com/v1`), never bot or AI keys. The native build runs
-`uv sync --frozen --no-dev`; startup applies migrations before Uvicorn binds `$PORT`.
+The API accepts standard `postgres://`/`postgresql://` connection URLs and
+normalizes them to its asyncpg driver internally. Use the configured Supabase US
+connection. Do not publish credentials. The frontend uses only the public API base
+URL (`https://studgroup.onrender.com/v1`), never bot or AI keys. The native build
+runs `uv sync --frozen --no-dev`. The current Render start command does not run
+Alembic; apply and verify migrations against the US project before deploying API
+code that requires them.
 
 Static site build: repository root; `corepack pnpm install --frozen-lockfile
 && corepack pnpm --filter @studgroup/frontend build`; publish `apps/frontend/dist`.

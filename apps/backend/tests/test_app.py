@@ -89,6 +89,24 @@ def test_render_postgres_urls_are_normalized_without_requiring_manual_driver_edi
     )
 
 
+def test_database_project_guard_accepts_only_the_configured_supabase_project():
+    import pytest
+
+    ref = "ytghmfxjjyxkcaglbhfj"
+    direct = f"postgresql://postgres:secret@db.{ref}.supabase.co:5432/postgres"
+    pooler = f"postgresql://postgres.{ref}:secret@aws-0-us-west-1.pooler.supabase.com:5432/postgres"
+    assert Settings(_env_file=None, database_url=direct, database_project_ref=ref)
+    assert Settings(_env_file=None, database_url=pooler, database_project_ref=ref)
+    with pytest.raises(ValueError, match="DATABASE_PROJECT_REF"):
+        Settings(_env_file=None, database_url=direct, database_project_ref="oldproject")
+    with pytest.raises(ValueError, match="DATABASE_PROJECT_REF"):
+        Settings(
+            _env_file=None,
+            database_url="postgresql://user:pass@old-render-db/db",
+            database_project_ref=ref,
+        )
+
+
 def test_database_tls_and_pool_are_opt_in():
     assert database_engine_options(Settings()) == {}
     ca = Path(__file__).parents[1] / "probes" / "prod-ca-2021.crt"

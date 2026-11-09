@@ -125,6 +125,18 @@ class LegalConsentEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class OnboardingProgress(Base):
+    """Per-membership first-run progress; survives closed Mini Apps and new web sessions."""
+
+    __tablename__ = "onboarding_progress"
+    membership_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("memberships.id", ondelete="CASCADE"), primary_key=True
+    )
+    step: Mapped[str] = mapped_column(String(24), default="welcome")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class Membership(Base):
     __tablename__ = "memberships"
     __table_args__ = (
