@@ -1005,10 +1005,13 @@ async def invitation_entry(db, session, settings, telegram_id):
     if group.academic_group_code_required and not group.academic_group_code:
         await academic_code_prompt(db, session, group)
         return
-    setup = session.step in {"connected", "subgroup_question"} or (
-        session.step in {"invite", "invite_replace_confirm"}
-        and json.loads(session.payload).get("setup", False)
+    pending = (
+        json.loads(session.payload)
+        if session.step in {"invite", "invite_replace_confirm"}
+        else {}
     )
+    setup = session.step in {"connected", "subgroup_question"} or pending.get("setup", False)
+    from_cabinet = pending.get("from_cabinet", False)
     active = await domain.active_group_invite(db, group.id)
     if active is None:
         text = (
@@ -1045,8 +1048,15 @@ async def invitation_entry(db, session, settings, telegram_id):
             ]
     if setup:
         rows.append([("Далее: подгруппы", "subgroup_setup")])
-    rows.append([("‹ Назад", "invite_back" if setup else "home")])
-    await screen(db, session, text, rows, "invite", {"setup": setup})
+    rows.append(
+        [("‹ В кабинет старосты", "cabinet")]
+        if from_cabinet
+        else [("‹ Назад", "invite_back" if setup else "home")]
+    )
+    await screen(
+        db, session, text, rows, "invite",
+        {"setup": setup, "from_cabinet": from_cabinet},
+    )
 
 
 async def invite(db, session, settings, telegram_id, *, replacing=False):
@@ -1078,7 +1088,7 @@ async def invite_replace_confirmation(db, session, settings, telegram_id):
     if not found or found[0].role != "headman":
         await home(db, session, settings, telegram_id)
         return
-    setup = json.loads(session.payload).get("setup", False)
+    state = json.loads(session.payload)
     if await domain.active_group_invite(db, found[1].id) is None:
         await invitation_entry(db, session, settings, telegram_id)
         return
@@ -1090,7 +1100,7 @@ async def invite_replace_confirmation(db, session, settings, telegram_id):
         [[("Да, заменить ссылку", "invite_replace_yes")],
          [("Отмена", "invite_replace_cancel")]],
         "invite_replace_confirm",
-        {"setup": setup},
+        {"setup": state.get("setup", False), "from_cabinet": state.get("from_cabinet", False)},
     )
 
 
@@ -1146,6 +1156,28 @@ async def open_start(db, settings, telegram_id):
     token = bot_panels.scope.set((telegram_id, "start"))
     try:
         await home(db, session, settings, telegram_id)
+    finally:
+        bot_panels.scope.reset(token)
+
+
+async def open_invitation_from_cabinet(db, settings, telegram_id):
+    """Switch cabinet panel to the same invite screen used by /start."""
+    await switch_panel(db, telegram_id, "st", "start")
+    session = await get_session(db, telegram_id)
+    if session is None:
+        session = StartSession(
+            telegram_user_id=telegram_id,
+            nonce="",
+            step="home",
+            payload="{}",
+            expires_at=datetime.now(UTC),
+        )
+        db.add(session)
+    session.step = "invite"
+    session.payload = json.dumps({"from_cabinet": True, "setup": False})
+    token = bot_panels.scope.set((telegram_id, "start"))
+    try:
+        await invitation_entry(db, session, settings, telegram_id)
     finally:
         bot_panels.scope.reset(token)
 
