@@ -6,6 +6,7 @@ import { useProfileQuery, useUpdateProfile } from '../../api/queries';
 import { useSession } from '../../session/SessionProvider';
 import { Float } from '../../shell/AppRoot';
 import { useDisplay } from '../../shell/display';
+import { useOnboardingPreview } from '../onboarding/OnboardingPreviewContext';
 import { ACCENT_INFO, THEMES, TEXT_SIZES, DENSITIES } from '../../shell/appearanceOptions';
 import { BackTop, initialsOf } from '../../shell/TopBar';
 import { ACCENTS, useTelegram } from '../../telegram/TelegramProvider';
@@ -326,6 +327,7 @@ function Home() {
   const { state } = useSession();
   const { preference, accent } = useTelegram();
   const profileQuery = useProfileQuery();
+  const openOnboardingPreview = useOnboardingPreview();
   if (state.status !== 'ready') return null;
   const { user, group, membership } = state.session;
   const profile = profileQuery.data;
@@ -373,6 +375,14 @@ function Home() {
           <div><div className="st">Уведомления</div></div>
           <span className="sv">{enabled ? 'Включены' : 'Выключены'}<Ic name="chev" /></span>
         </Link>
+        {openOnboardingPreview ? <button className="srow" type="button" onClick={openOnboardingPreview}
+          aria-label="Посмотреть первый запуск">
+          <Icon name="info" />
+          <div><div className="st">Посмотреть первый запуск</div>
+            <div className="ss">Повторно открыть экраны настройки без сохранения данных</div>
+          </div>
+          <span className="sv"><Ic name="chev" /></span>
+        </button> : null}
       </Group>
       <Group title="Данные и помощь">
         <Link className="srow" to="/profile/privacy">
