@@ -30,7 +30,6 @@ from studgroup.bot_admin import enqueue, say
 from studgroup.homework import utc
 from studgroup.models import (
     Group,
-    GroupInvitation,
     HeadmanSession,
     Membership,
     StartSession,

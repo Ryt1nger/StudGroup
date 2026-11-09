@@ -1108,11 +1108,7 @@ async def handle(db, update, settings):
                 else "Восстановить доступ? Потребуется проверка участия в Telegram.",
                 {"action": "member_change", "member_id": str(target.id), "expected": target.status},
             )
-        elif action == "group_invites":
-            domain.headman_only(member)
-            await bot_start.open_invitation_from_cabinet(db, settings, sender.id)
-            return True
-        elif action == "group_link":
+        elif action in {"group_invites", "group_link"}:
             domain.headman_only(member)
             await bot_start.open_invitation_from_cabinet(db, settings, sender.id)
             return True
