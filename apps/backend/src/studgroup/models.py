@@ -104,8 +104,25 @@ class UserProfile(Base):
     sdu_login: Mapped[str | None] = mapped_column(String(80))
     sdu_calendar_url: Mapped[str | None] = mapped_column(String(300))
     sdu_password_encrypted: Mapped[str | None] = mapped_column(Text)
+    sdu_setup_skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     settings: Mapped[dict | None] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class LegalConsentEvent(Base):
+    """Append-only record of explicit, separate user actions for published legal documents."""
+
+    __tablename__ = "legal_consent_events"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    purpose: Mapped[str] = mapped_column(String(32), index=True)
+    action: Mapped[str] = mapped_column(String(16))
+    document_version: Mapped[str] = mapped_column(String(32))
+    document_sha256: Mapped[str] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Membership(Base):

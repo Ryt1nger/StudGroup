@@ -14,6 +14,28 @@ pytest_plugins = ["test_schedule_api"]
 HEADERS = {"Authorization": "Bearer valid"}
 
 
+def approve_legal_documents(client):
+    settings = client.app.state.settings
+    settings.legal_operator_name = "ООО Тестовый оператор"
+    settings.legal_operator_address = "Москва, тестовый адрес"
+    settings.legal_operator_contact = "privacy@example.test"
+    settings.legal_data_region = "Российская Федерация, Москва"
+    settings.legal_documents_approved = True
+
+
+def accept_study_credentials(client):
+    approve_legal_documents(client)
+    from studgroup.legal import VERSION
+
+    for purpose in ("terms", "service", "sdo"):
+        result = client.post(
+            "/v1/legal/consents",
+            json={"purpose": purpose, "version": VERSION, "confirmed": True},
+            headers=HEADERS,
+        )
+        assert result.status_code == 200, result.text
+
+
 def test_an_empty_profile_has_calm_defaults_and_needs_a_session(client):
     assert client.get("/v1/profile").status_code == 401
     bad = client.get("/v1/profile", headers={"Authorization": "Bearer nope"})
@@ -25,6 +47,7 @@ def test_an_empty_profile_has_calm_defaults_and_needs_a_session(client):
 
 
 def test_contact_data_and_study_platform_are_saved_and_validated(client):
+    accept_study_credentials(client)
     saved = client.patch(
         "/v1/profile",
         json={
@@ -57,6 +80,7 @@ def test_the_study_platform_password_is_encrypted_and_never_returned(client):
     assert refused.status_code == 503  # no encryption key configured
     key = Fernet.generate_key().decode()
     client.app.state.settings.profile_encryption_key = SecretStr(key)
+    accept_study_credentials(client)
     saved = client.patch("/v1/profile", json={"sdu_password": "secret-1"}, headers=HEADERS)
     assert saved.status_code == 200 and saved.json()["sdu"]["password_set"] is True
     assert "secret-1" not in saved.text and "password" not in client.get(
@@ -78,6 +102,88 @@ def test_the_study_platform_password_is_encrypted_and_never_returned(client):
     )
     cleared = client.patch("/v1/profile", json={"clear_sdu_password": True}, headers=HEADERS)
     assert cleared.json()["sdu"]["password_set"] is False
+
+
+def test_legal_documents_are_public_and_individual_confirmations_are_audited(client):
+    from studgroup.legal import VERSION
+
+    public = client.get("/v1/legal/documents/sdo")
+    assert public.status_code == 200
+    assert "СДО / ЛК" in public.text
+    assert "secret-1" not in public.text
+
+    assert client.get("/v1/legal/status").status_code == 401
+    not_ready = client.post(
+        "/v1/legal/consents",
+        json={"purpose": "sdo", "version": VERSION, "confirmed": True},
+        headers=HEADERS,
+    )
+    assert not_ready.status_code == 503
+
+    approve_legal_documents(client)
+    without_terms = client.post(
+        "/v1/legal/consents",
+        json={"purpose": "sdo", "version": VERSION, "confirmed": True},
+        headers=HEADERS,
+    )
+    assert without_terms.status_code == 403
+    wrong_version = client.post(
+        "/v1/legal/consents",
+        json={"purpose": "terms", "version": "obsolete", "confirmed": True},
+        headers=HEADERS,
+    )
+    assert wrong_version.status_code == 409
+    accept_study_credentials(client)
+    status = client.get("/v1/legal/status", headers=HEADERS).json()
+    assert status["ready"] is True
+    assert status["terms"] and status["service"] and status["sdo"]
+    assert client.get("/v1/legal/documents/privacy").status_code == 200
+
+    async def evidence():
+        from studgroup.models import LegalConsentEvent
+
+        async with AsyncSession(client.app.state.engine) as db:
+            items = (await db.scalars(select(LegalConsentEvent))).all()
+            return [
+                (event.purpose, event.action, event.document_sha256, event.source)
+                for event in items
+            ]
+
+    proof = asyncio.run(evidence())
+    assert {purpose for purpose, _, _, _ in proof} == {"terms", "service", "sdo"}
+    assert all(len(digest) == 64 and source == "webapp" for _, _, digest, source in proof)
+
+
+def test_study_credentials_need_separate_consent_even_with_encryption(client):
+    client.app.state.settings.profile_encryption_key = SecretStr(Fernet.generate_key().decode())
+    approve_legal_documents(client)
+    result = client.patch(
+        "/v1/profile",
+        json={"sdu_login": "student", "sdu_password": "must-not-store"},
+        headers=HEADERS,
+    )
+    assert result.status_code == 403
+    assert "must-not-store" not in result.text
+
+    accept_study_credentials(client)
+    saved = client.patch(
+        "/v1/profile",
+        json={"sdu_login": "student", "sdu_password": "student-secret"},
+        headers=HEADERS,
+    )
+    assert saved.status_code == 200
+    assert "student-secret" not in saved.text
+    assert saved.json()["sdu"]["password_set"] is True
+
+    revoked = client.delete("/v1/legal/consents/sdo", headers=HEADERS)
+    assert revoked.status_code == 200
+    assert revoked.json()["credentials_deleted"]
+    assert client.get("/v1/legal/status", headers=HEADERS).json()["sdo"] is False
+    result = client.get("/v1/profile", headers=HEADERS).json()
+    assert result["sdu"]["login"] is None and result["sdu"]["password_set"] is False
+    assert (
+        client.patch("/v1/profile", json={"sdu_login": "again"}, headers=HEADERS).status_code == 403
+    )
 
 
 def test_notification_preferences_are_stored_and_validated(client):

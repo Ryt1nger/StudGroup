@@ -853,10 +853,13 @@ async def issue_group_link(db, group, member):
 
 
 async def redeem_invite(db, settings, telegram_id, code):
+    return await redeem_invite_by_hash(db, settings, telegram_id, token_hash(code))
+
+
+async def redeem_invite_by_hash(db, settings, telegram_id, digest):
+    """Only server-internal consent resumption may redeem a hashed pending invitation."""
     invitation = await db.scalar(
-        select(GroupInvitation)
-        .where(GroupInvitation.token_hash == token_hash(code))
-        .with_for_update()
+        select(GroupInvitation).where(GroupInvitation.token_hash == digest).with_for_update()
     )
     now = datetime.now(UTC)
     if (
