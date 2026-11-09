@@ -38,9 +38,7 @@ def test_legal_consents_precede_membership_and_resume_after_start(foreman, monke
     assert "Принимаю условия использования" in labels(foreman)
 
     async def membership(db):
-        return await db.scalar(
-            select(Membership).join(User).where(User.telegram_user_id == 33)
-        )
+        return await db.scalar(select(Membership).join(User).where(User.telegram_user_id == 33))
 
     assert run(foreman, membership) is None
     deliver(foreman, "/start", uid=33)
@@ -67,9 +65,11 @@ def test_legal_consents_precede_membership_and_resume_after_start(foreman, monke
                 .order_by(LegalConsentEvent.created_at)
             )
         ).all()
-        return profile.sdu_setup_skipped_at, profile.sdu_password_encrypted, {
-            (e.purpose, e.source) for e in events
-        }
+        return (
+            profile.sdu_setup_skipped_at,
+            profile.sdu_password_encrypted,
+            {(e.purpose, e.source) for e in events},
+        )
 
     skipped, password, receipts = run(foreman, persisted)
     assert skipped is not None and password is None
@@ -101,9 +101,7 @@ def test_unapproved_documents_block_new_members_but_not_existing(foreman, monkey
     assert "правовые документы ещё не утверждены" in last(foreman)["text"]
 
     async def count(db):
-        return await db.scalar(
-            select(Membership.id).join(User).where(User.telegram_user_id == 33)
-        )
+        return await db.scalar(select(Membership.id).join(User).where(User.telegram_user_id == 33))
 
     assert run(foreman, count) is None
     deliver(foreman, "/start", uid=1)
@@ -115,9 +113,7 @@ def test_two_real_subgroups_persist_and_survive_repeated_start(foreman, monkeypa
     allow_telegram(monkeypatch)
 
     async def make_splits(db):
-        headman = await db.scalar(
-            select(Membership).where(Membership.role == "headman")
-        )
+        headman = await db.scalar(select(Membership).where(Membership.role == "headman"))
         expected = []
         for name in ("Английский", "Информатика"):
             split = SubjectSplit(
@@ -129,22 +125,24 @@ def test_two_real_subgroups_persist_and_survive_repeated_start(foreman, monkeypa
             )
             db.add(split)
             await db.flush()
-            db.add_all([
-                Subgroup(
-                    id=uuid.uuid4(),
-                    split_id=split.id,
-                    name=f"{name} 1",
-                    position=1,
-                    signals="[]",
-                ),
-                Subgroup(
-                    id=uuid.uuid4(),
-                    split_id=split.id,
-                    name=f"{name} 2",
-                    position=2,
-                    signals="[]",
-                ),
-            ])
+            db.add_all(
+                [
+                    Subgroup(
+                        id=uuid.uuid4(),
+                        split_id=split.id,
+                        name=f"{name} 1",
+                        position=1,
+                        signals="[]",
+                    ),
+                    Subgroup(
+                        id=uuid.uuid4(),
+                        split_id=split.id,
+                        name=f"{name} 2",
+                        position=2,
+                        signals="[]",
+                    ),
+                ]
+            )
             await db.flush()
             second = await db.scalar(
                 select(Subgroup).where(
@@ -167,9 +165,7 @@ def test_two_real_subgroups_persist_and_survive_repeated_start(foreman, monkeypa
     assert "Пропустить" in labels(foreman)
 
     async def loaded(db):
-        member = await db.scalar(
-            select(Membership).join(User).where(User.telegram_user_id == 33)
-        )
+        member = await db.scalar(select(Membership).join(User).where(User.telegram_user_id == 33))
         choices = (
             await db.scalars(
                 select(MemberSubgroup).where(MemberSubgroup.membership_id == member.id)

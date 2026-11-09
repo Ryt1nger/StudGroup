@@ -26,7 +26,7 @@ describe('session and access', () => {
   it('keeps the ordinary profile without the first-launch preview', async () => {
     useScenario();
     renderApp({ route: '/profile' });
-    expect(await screen.findByText('Мои данные')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Мои данные' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Посмотреть первый запуск' })).not.toBeInTheDocument();
     expect(await screen.findByText('Подключение СДО / ЛК')).toBeInTheDocument();
   });

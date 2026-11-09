@@ -894,7 +894,9 @@ async def validate_invite_by_hash(db, settings, telegram_id, digest, *, lock=Fal
             )
         )
         if other is not None:
-            raise StError("Вы уже подключены к другой группе. Сначала смените группу через поддержку.")
+            raise StError(
+                "Вы уже подключены к другой группе. Сначала смените группу через поддержку."
+            )
         revoked = await db.scalar(
             select(Membership.id).where(
                 Membership.user_id == existing_user.id,
@@ -909,9 +911,7 @@ async def validate_invite_by_hash(db, settings, telegram_id, digest, *, lock=Fal
 
 async def redeem_invite_by_hash(db, settings, telegram_id, digest):
     """Redeem after distinct, current legal consents, rechecking invite under a lock."""
-    invitation, group = await validate_invite_by_hash(
-        db, settings, telegram_id, digest, lock=True
-    )
+    invitation, group = await validate_invite_by_hash(db, settings, telegram_id, digest, lock=True)
     await db.execute(
         insert(User)
         .values(id=uuid.uuid4(), telegram_user_id=telegram_id, display_name="Участник")

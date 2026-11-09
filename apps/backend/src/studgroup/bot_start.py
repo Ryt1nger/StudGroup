@@ -232,23 +232,28 @@ async def legal_role_gate(
     }
     if not legal.legal_ready(settings):
         await screen(
-            db, session,
+            db,
+            session,
             "Подключение новых участников временно недоступно: сведения об операторе "
             "и правовые документы ещё не утверждены. Доступ действующих участников сохраняется.",
-            [[("Документы", "legal_docs")]], "legal_not_ready", pending,
+            [[("Документы", "legal_docs")]],
+            "legal_not_ready",
+            pending,
         )
         return
     user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
     if user is None:
         user = User(
-            id=uuid.uuid4(), telegram_user_id=telegram_id,
+            id=uuid.uuid4(),
+            telegram_user_id=telegram_id,
             display_name="Пользователь Telegram",
         )
         db.add(user)
         await db.flush()
     if not await legal.has_consent(db, user.id, "terms", settings):
         await screen(
-            db, session,
+            db,
+            session,
             "Шаг 1 из 2 · Условия использования.\n\n"
             "Прочитайте отдельный документ. Подтвердите принятие, только если согласны. "
             "Это не является согласием на обработку данных.",
@@ -257,12 +262,14 @@ async def legal_role_gate(
                 [("Принимаю условия использования", "legal_accept_terms")],
                 [("Не принимаю", "home")],
             ],
-            "legal_terms", pending,
+            "legal_terms",
+            pending,
         )
         return
     if not await legal.has_consent(db, user.id, "service", settings):
         await screen(
-            db, session,
+            db,
+            session,
             "Шаг 2 из 2 · Отдельное согласие на обработку персональных данных.\n\n"
             "Прочитайте документ и подтвердите отдельно. "
             "СДО/ЛК требует другого, необязательного согласия.",
@@ -271,12 +278,18 @@ async def legal_role_gate(
                 [("Даю отдельное согласие", "legal_accept_service")],
                 [("Не согласен", "home")],
             ],
-            "legal_service", pending,
+            "legal_service",
+            pending,
         )
         return
     if pending_invite_hash:
         await redeem(
-            db, session, settings, telegram_id, "", typed=False,
+            db,
+            session,
+            settings,
+            telegram_id,
+            "",
+            typed=False,
             pending_invite_hash=pending_invite_hash,
         )
     elif pending_group_id:
@@ -771,7 +784,8 @@ async def onboarding_complete(db, session, group):
 async def staff_app_screen(db, session, settings, group):
     """Normal app and secure optional SDO instead of any Mini App registration."""
     await screen(
-        db, session,
+        db,
+        session,
         f"Группа «{group.name}» успешно подключена. ✅\n\n"
         "Профиль можно заполнить в приложении. "
         "СДО/ЛК необязательно и вводится только в защищённой форме.",
@@ -985,14 +999,10 @@ async def redeem(db, session, settings, telegram_id, code, *, typed, pending_inv
         digest = pending_invite_hash or token_hash(code)
         if pending_invite_hash:
             async with db.begin_nested():
-                group = await domain.redeem_invite_by_hash(
-                    db, settings, telegram_id, digest
-                )
+                group = await domain.redeem_invite_by_hash(db, settings, telegram_id, digest)
         else:
             await domain.validate_invite_by_hash(db, settings, telegram_id, digest)
-            await legal_role_gate(
-                db, session, settings, telegram_id, pending_invite_hash=digest
-            )
+            await legal_role_gate(db, session, settings, telegram_id, pending_invite_hash=digest)
             return
     except domain.StError as error:
         if typed:
@@ -1101,9 +1111,7 @@ async def resume_or_home(db, session, settings, telegram_id):
             except (ValueError, TypeError):
                 payload = {}
             if payload.get("onboarding") and payload.get("member_id") == str(found[0].id):
-                await subgroup_choice(
-                    db, session, settings, found[0], found[1], joined=True
-                )
+                await subgroup_choice(db, session, settings, found[0], found[1], joined=True)
             else:
                 await home(db, session, settings, telegram_id)
         elif session.step == "sdo_setup":
@@ -1154,7 +1162,10 @@ async def resume_or_home(db, session, settings, telegram_id):
         data = {}
     if step in {"legal_terms", "legal_service", "legal_not_ready"}:
         await legal_role_gate(
-            db, session, settings, telegram_id,
+            db,
+            session,
+            settings,
+            telegram_id,
             pending_invite_hash=data.get("pending_invite_hash"),
             pending_group_id=data.get("pending_group_id"),
         )
@@ -1420,7 +1431,10 @@ async def handle(db, update, settings, topic=None):
                 legal.receipt(db, user.id, "terms", "accept", "telegram", settings)
                 await db.flush()
                 await legal_role_gate(
-                    db, session, settings, sender.id,
+                    db,
+                    session,
+                    settings,
+                    sender.id,
                     pending_invite_hash=pending_data.get("pending_invite_hash"),
                     pending_group_id=pending_data.get("pending_group_id"),
                 )
@@ -1434,7 +1448,10 @@ async def handle(db, update, settings, topic=None):
                 legal.receipt(db, user.id, "service", "grant", "telegram", settings)
                 await db.flush()
                 await legal_role_gate(
-                    db, session, settings, sender.id,
+                    db,
+                    session,
+                    settings,
+                    sender.id,
                     pending_invite_hash=pending_data.get("pending_invite_hash"),
                     pending_group_id=pending_data.get("pending_group_id"),
                 )
@@ -1486,9 +1503,7 @@ async def handle(db, update, settings, topic=None):
         if group is None:
             await headman_entry(db, session, settings, sender.id)
         else:
-            await legal_role_gate(
-                db, session, settings, sender.id, pending_group_id=str(group.id)
-            )
+            await legal_role_gate(db, session, settings, sender.id, pending_group_id=str(group.id))
     elif action == "academic_code_back" and session.step == "academic_code":
         found = await current_membership(db, sender.id)
         group_id = json.loads(session.payload).get("group_id")
