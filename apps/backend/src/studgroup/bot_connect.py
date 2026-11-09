@@ -286,7 +286,7 @@ async def claim_headman(db, settings, session, group, telegram_id):
     from studgroup import legal
 
     user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
-    if (
+    if settings.registration_legal_required and (
         not legal.legal_ready(settings)
         or user is None
         or not await legal.has_consent(db, user.id, "terms", settings)

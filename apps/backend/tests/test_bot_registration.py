@@ -94,6 +94,60 @@ def test_legal_consents_precede_membership_and_resume_after_start(foreman, monke
     assert receipts == {("terms", "telegram"), ("service", "telegram")}
 
 
+def test_pilot_student_registration_works_without_legal_configuration(foreman, monkeypatch):
+    """Persist a real user/profile/membership without legal docs or mock DB rows."""
+    allow_telegram(monkeypatch)
+    code = issue(foreman)
+    settings = foreman.app.state.settings
+    settings.registration_legal_required = False
+    settings.legal_documents_approved = False
+    settings.legal_operator_name = ""
+    settings.legal_operator_address = ""
+    settings.legal_operator_contact = ""
+    settings.legal_data_region = ""
+
+    deliver(foreman, f"/start invite_{code}", uid=33)
+    assert "Я студент" in labels(foreman)
+    tap(foreman, "Я студент")
+    assert "Регистрация · шаг 1 из 3" in last(foreman)["text"]
+    assert "Принимаю условия использования" not in labels(foreman)
+    assert "Даю отдельное согласие" not in labels(foreman)
+    deliver(foreman, "/start", uid=33)
+    assert "Регистрация · шаг 1 из 3" in last(foreman)["text"]
+    deliver(foreman, "Анна", uid=33)
+    tap(foreman, "Пропустить", uid=33)
+    tap(foreman, "Пропустить", uid=33)
+    assert "Открыть StudGroup" in labels(foreman)
+
+    async def persisted(db):
+        user = await db.scalar(select(User).where(User.telegram_user_id == 33))
+        member = await db.scalar(select(Membership).where(Membership.user_id == user.id))
+        profile = await db.get(UserProfile, user.id)
+        consents = (
+            await db.scalars(select(LegalConsentEvent).where(LegalConsentEvent.user_id == user.id))
+        ).all()
+        return user.display_name, member.role, member.status, profile.first_name, consents
+
+    assert run(foreman, persisted) == ("Анна", "student", "active", "Анна", [])
+
+
+def test_pilot_restart_resumes_previous_legal_block_without_documents(foreman, monkeypatch):
+    allow_telegram(monkeypatch)
+    code = issue(foreman)
+    settings = foreman.app.state.settings
+    settings.registration_legal_required = True
+    settings.legal_documents_approved = False
+    deliver(foreman, f"/start invite_{code}", uid=33)
+    tap(foreman, "Я студент")
+    assert "legal" not in labels(foreman)
+    assert "правовые документы ещё не утверждены" in last(foreman)["text"]
+
+    settings.registration_legal_required = False
+    deliver(foreman, "/start", uid=33)
+    assert "Регистрация · шаг 1 из 3" in last(foreman)["text"]
+    assert "Документы" not in labels(foreman)
+
+
 def test_invalid_invitation_or_failed_telegram_check_cannot_join(foreman, monkeypatch):
     publish_legal(foreman)
     allow_telegram(monkeypatch)
@@ -116,6 +170,7 @@ def test_unapproved_documents_block_new_members_but_not_existing(foreman, monkey
     allow_telegram(monkeypatch)
     code = issue(foreman)
     foreman.app.state.settings.legal_documents_approved = False
+    foreman.app.state.settings.registration_legal_required = True
     deliver(foreman, f"/start invite_{code}", uid=33)
     assert "Я студент" in labels(foreman)
     tap(foreman, "Я студент")

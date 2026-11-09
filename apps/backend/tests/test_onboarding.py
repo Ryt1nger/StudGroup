@@ -212,6 +212,7 @@ def test_new_staff_wizard_accepts_contacts_and_appearance_without_subgroup_selec
 
 
 def test_unpublished_documents_block_new_completion_but_keep_completed_members_active(client):
+    client.app.state.settings.registration_legal_required = True
     assert client.get("/v1/onboarding", headers=AUTH).json()["legal_required"] is False
     assert client.patch("/v1/profile", json={"first_name": "Анна"}, headers=AUTH).status_code == 200
     for step in ("personal", "contacts", "subgroups", "sdo", "legal"):

@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     legal_data_region: str = ""
     legal_documents_approved: bool = False
     legal_onboarding_required: bool = False
+    # Pilot: registration is allowed without published legal documents; SDO secrets stay gated.
+    registration_legal_required: bool = False
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"

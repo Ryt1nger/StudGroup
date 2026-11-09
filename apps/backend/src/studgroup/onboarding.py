@@ -40,6 +40,8 @@ async def progress_row(db: AsyncSession, member):
 
 
 async def require_legal(db, user_id, settings):
+    if not settings.registration_legal_required:
+        return
     from studgroup.legal import has_consent, legal_ready
 
     if not legal_ready(settings):

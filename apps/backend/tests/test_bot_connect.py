@@ -60,6 +60,7 @@ def setup_bot(client, monkeypatch, statuses, *, list_works=True, username="studg
     settings.legal_operator_contact = "legal@example.test"
     settings.legal_data_region = "Россия, Москва"
     settings.legal_documents_approved = True
+    settings.registration_legal_required = True
 
     async def request(_settings, method, data):
         if not list_works:

@@ -392,14 +392,14 @@ async def save_registration_profile(db, session, settings, telegram_id, value, *
 async def legal_role_gate(
     db, session, settings, telegram_id, *, pending_invite_hash=None, pending_group_id=None
 ):
-    """Two explicit consents before granting a new group membership."""
+    """Continue pilot registration without a document gate; enforce it if explicitly enabled."""
     from studgroup import legal
 
     pending = {
         "pending_invite_hash": pending_invite_hash,
         "pending_group_id": pending_group_id,
     }
-    if not legal.legal_ready(settings):
+    if settings.registration_legal_required and not legal.legal_ready(settings):
         await screen(
             db,
             session,
@@ -419,7 +419,9 @@ async def legal_role_gate(
         )
         db.add(user)
         await db.flush()
-    if not await legal.has_consent(db, user.id, "terms", settings):
+    if settings.registration_legal_required and not await legal.has_consent(
+        db, user.id, "terms", settings
+    ):
         await screen(
             db,
             session,
@@ -435,7 +437,9 @@ async def legal_role_gate(
             pending,
         )
         return
-    if not await legal.has_consent(db, user.id, "service", settings):
+    if settings.registration_legal_required and not await legal.has_consent(
+        db, user.id, "service", settings
+    ):
         await screen(
             db,
             session,
