@@ -93,6 +93,57 @@ describe('premium membership-scoped onboarding', () => {
     expect(state.calls).toEqual(['contacts', 'subgroups', 'sdo', 'legal', 'appearance', 'finish']);
   });
 
+
+  it('stores optional SDO credentials only after the separate approvals', async () => {
+    useScenario();
+    stubOnboarding();
+    const receipts: string[] = [];
+    let credentialWrites = 0;
+    server.use(
+      http.get(API + '/legal/status', () => HttpResponse.json({ ...legal, ready: true })),
+      http.post(API + '/legal/consents', async ({ request }) => {
+        const { purpose } = (await request.json()) as { purpose: string };
+        receipts.push(purpose);
+        return HttpResponse.json({ purpose, granted: true });
+      }),
+    );
+    renderApp();
+    await userEvent.click(await screen.findByRole('button', { name: /Начать настройку/ }));
+    const first = await screen.findByRole('textbox', { name: /Имя/ });
+    if (!(first as HTMLInputElement).value) await userEvent.type(first, 'Анна');
+    await userEvent.click(screen.getByRole('button', { name: /Далее/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /Далее/ }));
+    await userEvent.click(await screen.findByRole('button', { name: /Сохранить и продолжить/ }));
+    expect(await screen.findByText('СДО и личный кабинет')).toBeInTheDocument();
+
+    // Intercept credential writes after the ordinary profile fields have been saved.
+    server.use(http.patch(API + '/profile', async ({ request }) => {
+      const body = (await request.json()) as Record<string, unknown>;
+      if (body.sdu_login) credentialWrites += 1;
+      return HttpResponse.json({
+        first_name: 'Анна', last_name: null, email: null,
+        sdu: { platform: 'РАНХиГС — СДО / ЛК', login: body.sdu_login ?? null, password_set: true },
+        settings: { enabled: true },
+      });
+    }));
+
+    const login = screen.getByRole('textbox', { name: /Логин СДО/ });
+    await userEvent.clear(login);
+    await userEvent.type(login, 'student-login');
+    await userEvent.type(screen.getByLabelText('Пароль СДО/ЛК'), 'example-password');
+    await userEvent.click(screen.getByRole('checkbox', { name: /Разрешаю хранить реквизиты СДО/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Продолжить/ }));
+    expect(await screen.findByText('Почти готово')).toBeInTheDocument();
+    expect(credentialWrites).toBe(0);
+    expect(receipts).toHaveLength(0);
+    await userEvent.click(screen.getByRole('checkbox', { name: /Принимаю условия/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /Даю согласие/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Продолжить/ }));
+    await waitFor(() => expect(credentialWrites).toBe(1));
+    expect(receipts).toEqual(['terms', 'service', 'sdo']);
+    expect(await screen.findByText('Подстроим приложение под вас')).toBeInTheDocument();
+  });
+
   it('never shows onboarding outside a verified active membership', async () => {
     useScenario('no-group');
     renderApp();
