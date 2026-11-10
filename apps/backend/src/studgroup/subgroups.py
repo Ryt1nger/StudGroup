@@ -392,6 +392,44 @@ async def create_split(db, group, subject, entries, now=None):
     return split
 
 
+async def append_subgroup(db, group_id, split_id, signals):
+    """Append one subgroup without replacing the split or losing students' saved selections."""
+    split = await db.scalar(
+        select(SubjectSplit)
+        .where(SubjectSplit.id == split_id, SubjectSplit.group_id == group_id)
+        .with_for_update()
+    )
+    if split is None:
+        raise ValueError("unknown_split")
+    clean = parse_signals(",".join(signals))
+    if not clean:
+        raise ValueError("subgroup_signals")
+    existing = (
+        await db.scalars(
+            select(Subgroup).where(Subgroup.split_id == split.id).order_by(Subgroup.position)
+        )
+    ).all()
+    if len(existing) >= MAX_SUBGROUPS:
+        raise ValueError("subgroup_limit")
+    previous_signals = {match_key(item) for subgroup in existing for item in signals_of(subgroup)}
+    if any(match_key(item) in previous_signals for item in clean):
+        raise ValueError("duplicate_subgroup_signals")
+    position = max((subgroup.position for subgroup in existing), default=0) + 1
+    name = fallback_name(position, clean)
+    if match_key(name) in {match_key(subgroup.name) for subgroup in existing}:
+        raise ValueError("duplicate_subgroup_name")
+    subgroup = Subgroup(
+        id=uuid.uuid4(),
+        split_id=split.id,
+        position=position,
+        name=name,
+        signals=json.dumps(clean, ensure_ascii=False),
+    )
+    db.add(subgroup)
+    await db.flush()
+    return subgroup
+
+
 async def delete_split(db, group_id, split_id):
     """Remove a split: its cards become cards of the whole group again (FK sets them to NULL)."""
     split = await db.get(SubjectSplit, split_id)

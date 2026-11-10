@@ -628,6 +628,11 @@ async def subgroup_detail(db, session, group, split_id, *, onboarding=False):
             [(f"Переименовать · {row.name}"[:55], f"subgroup_rename_{n}")]
             for n, row in enumerate(rows)
         ]
+        + (
+            [[("Добавить подгруппу", "subgroup_append")]]
+            if len(rows) < subgroups.MAX_SUBGROUPS
+            else []
+        )
         + [[("Удалить разделение", "subgroup_delete")], [("‹ К предметам", "subgroup_settings")]],
         "subgroup_detail",
         {
@@ -709,7 +714,7 @@ async def subgroup_back(db, session, group, member, data):
         )
     elif field == "subgroup_draft_name":
         await subgroup_draft_screen(db, session, data)
-    elif field == "subgroup_existing_name":
+    elif field in {"subgroup_append_signals", "subgroup_existing_name"}:
         await subgroup_detail(
             db,
             session,
@@ -872,6 +877,19 @@ async def handle(db, update, settings):
                 group,
                 uuid.UUID(data["splits"][index]),
                 onboarding=data.get("onboarding", False),
+            )
+            return True
+        if session.step == "subgroup_detail" and action == "subgroup_append":
+            domain.headman_only(member)
+            if len(data["subgroups"]) >= subgroups.MAX_SUBGROUPS:
+                raise domain.StError("Максимум 6 подгрупп для одного предмета.")
+            await ask(
+                db,
+                session,
+                "Укажите фамилию преподавателя, номер группы или другие сигналы "
+                "для новой подгруппы (можно через запятую).",
+                {"split_id": data["split_id"], "onboarding": data.get("onboarding", False)},
+                "subgroup_append_signals",
             )
             return True
         if session.step == "subgroup_detail" and action.startswith("subgroup_rename_"):
@@ -1563,6 +1581,21 @@ async def typed(db, session, group, user, member, data, text, message, settings)
         if len({subgroups.match_key(value) for value in names}) != len(names):
             raise domain.StError("Названия подгрупп должны отличаться.")
         await subgroup_draft_screen(db, session, {**data, "names": names})
+    elif field == "subgroup_append_signals":
+        domain.headman_only(member)
+        signals = subgroups.parse_signals(text)
+        if not signals:
+            raise domain.StError("Укажите хотя бы один сигнал для новой подгруппы.")
+        await preview(
+            db,
+            session,
+            "Добавить подгруппу с сигналами: " + ", ".join(signals) + "?",
+            {
+                "action": "subgroup_append",
+                "split_id": data["split_id"],
+                "signals": signals,
+            },
+        )
     elif field == "subgroup_existing_name":
         domain.headman_only(member)
         subgroup = await db.get(Subgroup, uuid.UUID(data["subgroup_id"]))
@@ -1866,6 +1899,30 @@ async def apply(db, session, group, user, member, data, settings):
         ).all()
         for invitation in rows:
             invitation.revoked = True
+    elif action == "subgroup_append":
+        domain.headman_only(member)
+        try:
+            added = await subgroups.append_subgroup(
+                db, group.id, uuid.UUID(data["split_id"]), data["signals"]
+            )
+        except ValueError as error:
+            reason = str(error)
+            if reason == "subgroup_limit":
+                raise domain.StError("Максимум 6 подгрупп для одного предмета.") from error
+            if reason == "duplicate_subgroup_signals":
+                raise domain.StError("Такие сигналы уже используются другой подгруппой.") from error
+            if reason == "duplicate_subgroup_name":
+                raise domain.StError("Название новой подгруппы уже занято.") from error
+            raise domain.StError("Предмет изменился. Откройте список заново.") from error
+        split = await db.get(SubjectSplit, uuid.UUID(data["split_id"]))
+        await screen(
+            db,
+            session,
+            f"Подгруппа «{added.name}» добавлена в «{split.subject_name}». "
+            "Существующие подгруппы и выбор студентов сохранены.",
+            [[("‹ К подгруппам", "subgroup_settings")], back()],
+        )
+        return
     elif action == "assign_role":
         domain.headman_only(member)
         role = data["role"]
