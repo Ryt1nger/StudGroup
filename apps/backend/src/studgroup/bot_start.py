@@ -157,7 +157,7 @@ async def screen(db, session, text, rows, step, data=None, minutes=SESSION_MINUT
 
 SUPPORT_URL = "https://t.me/studgroup_admin"
 SDO_URL = "https://lms.ranepa.ru/"
-RANEPA_CABINET_URL = "https://my.ranepa.ru/"
+RANEPA_CABINET_URL = "https://my.ranepa.ru/student/"
 
 
 def support_button():
