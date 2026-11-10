@@ -1,14 +1,14 @@
 import asyncio
 import json
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_image_jobs import cfg, download_ok, reading, stored, tick
 from test_package_worker import make_new
 from test_photo_reading import VisionProvider, photo_message
 from test_staff_api import AUTH, make
 
-from studgroup.models import ImageScheduleSuggestion, ScheduleChange, SchedulePattern
+from studgroup.models import Group, ImageScheduleSuggestion, ScheduleChange, SchedulePattern
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -545,14 +545,25 @@ def test_clipped_timetable_fragments_can_be_confirmed_without_guessing(client, m
     assert confirmed["room"] == "Ауд. 12…"
 
 
-def test_first_pilot_photo_timetable_is_published_without_headman_confirmation(client, monkeypatch):
-    from studgroup.models import Group
+def empty_primary_schedule(client):
+    """Only the target group has no timetable; the other group stays isolated."""
 
+    async def clear():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            await db.execute(delete(SchedulePattern).where(SchedulePattern.group_id == group.id))
+            await db.commit()
+
+    asyncio.run(clear())
+
+
+def test_first_pilot_photo_timetable_is_published_without_headman_confirmation(client, monkeypatch):
+    empty_primary_schedule(client)
     suggestion = prepare(client, monkeypatch, owner_funded_pilot=True)
     current = stored(client, ImageScheduleSuggestion)[0]
     assert current.id == suggestion.id
     assert current.state == "confirmed"
-    assert len(stored(client, SchedulePattern)) == 1
+    assert len(stored(client, SchedulePattern)) == 2  # own first + other group's fixture
     changes = stored(client, ScheduleChange)
     assert len(changes) == 1
     assert changes[0].input_method == "image_auto"
@@ -572,11 +583,12 @@ def test_first_pilot_photo_with_unknown_dates_is_bounded_to_source_week(client, 
 
     from test_package_worker import BASE
 
+    empty_primary_schedule(client)
     suggestion = prepare(
         client, monkeypatch, owner_funded_pilot=True, valid_from=None, valid_until=None
     )
     assert suggestion.state == "confirmed"
-    row = stored(client, SchedulePattern)[0]
+    row = next(p for p in stored(client, SchedulePattern) if p.subject == "Алгебра")
     local = BASE.astimezone(ZoneInfo("Europe/Moscow")).date()
     monday = local - timedelta(days=local.weekday())
     assert row.valid_from == monday
@@ -584,47 +596,27 @@ def test_first_pilot_photo_with_unknown_dates_is_bounded_to_source_week(client, 
 
 
 def test_existing_timetable_still_requires_explicit_review_in_owner_pilot(client, monkeypatch):
-    from datetime import date, time
-
-    from studgroup.models import Group
-
-    async def existing():
-        async with AsyncSession(client.app.state.engine) as db:
-            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
-            db.add(
-                SchedulePattern(
-                    group_id=group.id,
-                    subject="Существующая пара",
-                    weekday=0,
-                    starts=time(9, 0),
-                    ends=time(10, 20),
-                    valid_from=date(2026, 1, 1),
-                    valid_until=date(2026, 12, 31),
-                    week="all",
-                    revision=1,
-                )
-            )
-            await db.commit()
-
-    asyncio.run(existing())
+    # The shared fixture already contains a real timetable for the current group.
     suggestion = prepare(client, monkeypatch, owner_funded_pilot=True)
     assert suggestion.state == "pending"
-    assert len(stored(client, SchedulePattern)) == 1
+    assert not any(p.subject == "Алгебра" for p in stored(client, SchedulePattern))
     assert stored(client, ScheduleChange) == []
 
 
 def test_first_schedule_subgroups_need_mapping_before_publication(client, monkeypatch):
+    empty_primary_schedule(client)
     suggestion = prepare(client, monkeypatch, owner_funded_pilot=True, subgroup="Первая")
     assert suggestion.state == "pending"
-    assert stored(client, SchedulePattern) == []
+    assert not any(p.subject == "Алгебра" for p in stored(client, SchedulePattern))
 
 
 def test_pending_first_schedule_recovers_after_restart_without_more_vision(client, monkeypatch):
     from studgroup.analysis.first_schedule import recover_pending_first
 
+    empty_primary_schedule(client)
     suggestion = prepare(client, monkeypatch)
     assert suggestion.state == "pending"
     assert asyncio.run(recover_pending_first(client.app.state.engine)) == 1
     assert asyncio.run(recover_pending_first(client.app.state.engine)) == 0
     assert stored(client, ImageScheduleSuggestion)[0].state == "confirmed"
-    assert len(stored(client, SchedulePattern)) == 1
+    assert len(stored(client, SchedulePattern)) == 2
