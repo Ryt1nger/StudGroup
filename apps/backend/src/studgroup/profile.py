@@ -147,7 +147,8 @@ async def current(db, authorization):
 @router.get("/profile")
 async def read_profile(
     request: Request,
-    db: Annotated[AsyncSession, Depends(database)], authorization: str | None = Header(None)
+    db: Annotated[AsyncSession, Depends(database)],
+    authorization: str | None = Header(None),
 ):
     user, row = await current(db, authorization)
     result = representation(user, row)
@@ -211,18 +212,26 @@ async def update_profile(
             setattr(row, name, getattr(body, name))
     if "settings" in fields and body.settings is not None:
         row.settings = body.settings.model_dump()
-    if store and ("sdu_login" in fields or body.sdu_password is not None or body.clear_sdu_password):
+    if store and (
+        "sdu_login" in fields or body.sdu_password is not None or body.clear_sdu_password
+    ):
         if body.clear_sdu_password:
             if row.sdu_credential_id:
                 try:
                     await store.delete(row.sdu_credential_id)
                 except CredentialStoreUnavailable:
-                    raise ApiError("service_unavailable", "Удаление реквизитов не подтверждено", 503) from None
+                    raise ApiError(
+                        "service_unavailable", "Удаление реквизитов не подтверждено", 503
+                    ) from None
             row.sdu_credential_id = None
             row.sdu_login = None
             row.sdu_password_encrypted = None
         else:
-            login = body.sdu_login if "sdu_login" in fields else (ydb_record[0] if ydb_record else row.sdu_login)
+            login = (
+                body.sdu_login
+                if "sdu_login" in fields
+                else (ydb_record[0] if ydb_record else row.sdu_login)
+            )
             if body.sdu_password is not None:
                 secret = body.sdu_password.get_secret_value()
                 if not secret:
@@ -238,7 +247,9 @@ async def update_profile(
                 try:
                     await store.put(record_id, login, ciphertext, "v1")
                 except CredentialStoreUnavailable:
-                    raise ApiError("service_unavailable", "Сохранение реквизитов не подтверждено", 503) from None
+                    raise ApiError(
+                        "service_unavailable", "Сохранение реквизитов не подтверждено", 503
+                    ) from None
                 row.sdu_credential_id = record_id
                 row.sdu_login = None
                 row.sdu_password_encrypted = None

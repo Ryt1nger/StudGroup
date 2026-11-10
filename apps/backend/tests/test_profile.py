@@ -355,6 +355,7 @@ def test_ydb_write_error_does_not_claim_password_saved(client, monkeypatch):
     )
     assert result.status_code == 503
     assert "synthetic-password" not in result.text
+
     async def stored():
         async with AsyncSession(client.app.state.engine) as db:
             row = await db.scalar(select(UserProfile))

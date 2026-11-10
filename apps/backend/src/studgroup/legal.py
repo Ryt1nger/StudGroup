@@ -261,7 +261,9 @@ async def revoke_sdo(
             try:
                 await store.delete(profile.sdu_credential_id)
             except CredentialStoreUnavailable:
-                raise ApiError("service_unavailable", "Удаление реквизитов не подтверждено", 503) from None
+                raise ApiError(
+                    "service_unavailable", "Удаление реквизитов не подтверждено", 503
+                ) from None
             profile.sdu_credential_id = None
         profile.sdu_login = None
         profile.sdu_password_encrypted = None

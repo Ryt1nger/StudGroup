@@ -62,7 +62,9 @@ class CredentialStore:
                 for _ in range(10):
                     await asyncio.sleep(1)
                     try:
-                        response = await asyncio.to_thread(self.client.describe_table, TableName=TABLE)
+                        response = await asyncio.to_thread(
+                            self.client.describe_table, TableName=TABLE
+                        )
                         break
                     except self.client.exceptions.ResourceNotFoundException:
                         continue
