@@ -44,7 +44,7 @@ class CredentialStore:
             endpoint_url=endpoint,
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
-            config=Config(connect_timeout=3, read_timeout=5, retries={"max_attempts": 2}),
+            config=Config(connect_timeout=3, read_timeout=15, retries={"max_attempts": 3}),
         )
 
     async def ensure_table(self):
@@ -136,6 +136,27 @@ def main():
 
     async def verify():
         await store.ensure_table()
+
+        async def remove_probe_records():
+            key = None
+            while True:
+                request = {
+                    "TableName": TABLE,
+                    "FilterExpression": "#login = :probe",
+                    "ExpressionAttributeNames": {"#login": "login"},
+                    "ExpressionAttributeValues": {":probe": {"S": "studgroup-storage-check"}},
+                    "ProjectionExpression": "id",
+                }
+                if key is not None:
+                    request["ExclusiveStartKey"] = key
+                response = await asyncio.to_thread(store.client.scan, **request)
+                for item in response.get("Items", []):
+                    await store.delete(uuid.UUID(item["id"]["S"]))
+                key = response.get("LastEvaluatedKey")
+                if key is None:
+                    break
+
+        await remove_probe_records()
         record_id = uuid.uuid4()
         try:
             await store.put(record_id, "studgroup-storage-check", "test-ciphertext", "v1")
@@ -146,6 +167,7 @@ def main():
             ):
                 raise CredentialStoreUnavailable()
         finally:
+            await asyncio.sleep(1.2)
             await store.delete(record_id)
 
     asyncio.run(verify())
