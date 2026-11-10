@@ -19,7 +19,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import photo_dedupe
@@ -657,9 +657,13 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                 # group route lock; image jobs and retries of the same run are
                 # independent of it.
                 last_run_at = await db.scalar(
-                    select(func.max(func.coalesce(
-                        ShadowEvaluationRun.completed_at, ShadowEvaluationRun.created_at
-                    ))).where(
+                    select(
+                        func.max(
+                            func.coalesce(
+                                ShadowEvaluationRun.completed_at, ShadowEvaluationRun.created_at
+                            )
+                        )
+                    ).where(
                         ShadowEvaluationRun.group_id == group.id,
                         ShadowEvaluationRun.raw_message_id.is_(None),
                         ShadowEvaluationRun.delete_at > now,
