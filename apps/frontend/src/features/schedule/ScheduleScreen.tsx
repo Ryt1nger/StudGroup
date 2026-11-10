@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import type { LessonOccurrence, PublishedEvent } from '@studgroup/shared-types';
 import { useScheduleQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
@@ -101,8 +101,12 @@ export function ScheduleScreen() {
   const serverNow = useSessionServerNow();
   const [startMs] = useState(() => serverNow() ?? Date.now());
   const today = dayKey(startMs, timeZone);
-  const [selectedKey, setSelectedKey] = useState(today);
-  const [displayedWeek, setDisplayedWeek] = useState(today);
+  const [params] = useSearchParams();
+  const requestedDay = params.get('day');
+  const initialDay = requestedDay && /^\d{4}-\d{2}-\d{2}$/.test(requestedDay) &&
+    !Number.isNaN(Date.parse(\`${requestedDay}T12:00:00Z\`)) ? requestedDay : today;
+  const [selectedKey, setSelectedKey] = useState(initialDay);
+  const [displayedWeek, setDisplayedWeek] = useState(initialDay);
   const days = weekKeys(displayedWeek);
   const selected = days.indexOf(selectedKey);
   const query = useScheduleQuery(days[0]!, days[6]!, allowed);
