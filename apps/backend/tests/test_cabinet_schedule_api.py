@@ -666,9 +666,9 @@ def test_failed_second_pass_records_safe_reason_without_hidden_provider_text(cli
 def test_first_pilot_cabinet_schedule_autopublishes_without_second_confirmation(
     client, monkeypatch
 ):
-    from studgroup.models import SchedulePattern
-
     from sqlalchemy import delete
+
+    from studgroup.models import SchedulePattern
 
     make(client, "headman")
     authorize_analysis(client)
