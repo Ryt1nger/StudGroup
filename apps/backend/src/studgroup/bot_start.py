@@ -155,11 +155,21 @@ async def screen(db, session, text, rows, step, data=None, minutes=SESSION_MINUT
     await say(db, session.telegram_user_id, text[:4000], keyboard)
 
 
+SUPPORT_URL = "https://t.me/studgroup_admin"
+SDO_URL = "https://lms.ranepa.ru/"
+RANEPA_CABINET_URL = "https://my.ranepa.ru/"
+
+
+def support_button():
+    """Use a Telegram URL button instead of an extra informational screen."""
+    return {"text": "Поддержка", "url": SUPPORT_URL}
+
+
 def info_row():
     """Public information reachable with buttons, without requiring a command."""
     return [
         [("О нас", "info_about"), ("Помощь", "info_howto")],
-        [("Поддержка", "info_support"), ("Партнёрка", "info_partners")],
+        [support_button(), ("Партнёрка", "info_partners")],
         [("Тарифы", "info_tariffs")],
     ]
 
@@ -191,10 +201,9 @@ async def topic_screen(db, session, settings, topic):
         rows.append([("Документы и согласия", "legal_docs")])
     links = [(label, action) for label, action in TOPIC_LINKS.get(topic, [])]
     rows += [[link] for link in links]
-    if topic != "support":
-        rows.append([("Поддержка", "info_support")])
+    rows.append([support_button()])
     rows.append([("‹ Назад", "home")])
-    body = bot_info.render(topic, settings.support_contact)
+    body = bot_info.render(topic, "@studgroup_admin")
     await screen(db, session, body, rows, "info")
 
 
@@ -534,26 +543,12 @@ async def home(db, session, settings, telegram_id):
             text += f"\nОфициальный ID РАНХиГС: {group.academic_group_code}"
         rows = [
             [app_button(settings)],
-            [("Проверить подключение", "connection_status")],
             [("Уведомления", "notifications")],
-            [app_button(settings, "СДО / ЛК", path="/profile/sdo")],
+            [("СДО / ЛК", "external_services")],
         ]
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
         if member.role == "headman":
-            if group.academic_group_code or not group.academic_group_code_required:
-                rows.insert(1, [("Пригласить участников", "invite")])
-            rows.insert(
-                1,
-                [
-                    (
-                        "Изменить ID РАНХиГС"
-                        if group.academic_group_code
-                        else "Указать ID группы РАНХиГС",
-                        "academic_code_edit",
-                    )
-                ],
-            )
             if not group.academic_group_code:
                 text += (
                     "\nУкажите официальный ID РАНХиГС, чтобы завершить подключение."
@@ -566,7 +561,7 @@ async def home(db, session, settings, telegram_id):
             db,
             session,
             text,
-            [*rows, [("Документы и согласия", "legal_docs")], *info_row()],
+            [*rows, *info_row()],
             "home",
         )
         return
@@ -579,6 +574,22 @@ async def home(db, session, settings, telegram_id):
         "Здесь можно узнать о проекте или подключиться к своей группе.",
         [[("Подключить группу", "connect")], *info_row()],
         "home",
+    )
+
+
+async def external_services_screen(db, session):
+    """Show only official RANEPA sites, opened by ordinary browser URL buttons."""
+    await screen(
+        db,
+        session,
+        "Куда перейти? Выберите сервис РАНХиГС. Откроется официальный сайт; "
+        "пароли и логины через StudGroup не передаются.",
+        [
+            [{"text": "Открыть СДО", "url": SDO_URL}],
+            [{"text": "Открыть ЛК РАНХиГС", "url": RANEPA_CABINET_URL}],
+            [("‹ Назад", "home")],
+        ],
+        "external_services",
     )
 
 
@@ -633,7 +644,7 @@ async def connection_status(db, session, settings, telegram_id):
         "и не расходует бюджет ИИ.",
         [
             [("Проверить ещё раз", "connection_status")],
-            [("Поддержка", "info_support")],
+            [support_button()],
             [("‹ Главное меню", "home")],
         ],
         "connection_status",
@@ -1255,6 +1266,31 @@ async def open_start(db, settings, telegram_id):
         bot_panels.scope.reset(token)
 
 
+async def open_staff_setting_from_cabinet(db, settings, telegram_id, group, action):
+    """Move a staff-only setting into the start panel without showing it in home."""
+    if action not in {"academic_code_edit", "connection_status"}:
+        raise ValueError("unsupported_staff_setting")
+    await switch_panel(db, telegram_id, "st", "start")
+    session = await get_session(db, telegram_id)
+    if session is None:
+        session = StartSession(
+            telegram_user_id=telegram_id,
+            nonce="",
+            step="home",
+            payload="{}",
+            expires_at=datetime.now(UTC),
+        )
+        db.add(session)
+    token = bot_panels.scope.set((telegram_id, "start"))
+    try:
+        if action == "academic_code_edit":
+            await academic_code_prompt(db, session, group, onboarding=False)
+        else:
+            await connection_status(db, session, settings, telegram_id)
+    finally:
+        bot_panels.scope.reset(token)
+
+
 async def open_invitation_from_cabinet(db, settings, telegram_id, group):
     """Switch cabinet panel to the same invite screen used by /start."""
     await switch_panel(db, telegram_id, "st", "start")
@@ -1790,6 +1826,11 @@ async def handle(db, update, settings, topic=None):
         await demo_student_summary(db, session, english, data["informatics"])
     elif action == "home":
         await home(db, session, settings, sender.id)
+    elif action == "external_services":
+        if await current_membership(db, sender.id):
+            await external_services_screen(db, session)
+        else:
+            await home(db, session, settings, sender.id)
     elif action == "legal_docs":
         data = json.loads(session.payload)
         await legal_documents_screen(
