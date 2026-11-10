@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from test_staff_api import AUTH, make
 
 from studgroup.ai import ProviderFailure
+from studgroup.api import group_features
 from studgroup.analysis.image_jobs import enabled, live_mode
 from studgroup.analysis.package_worker import _gate
 from studgroup.analysis.pilot_access import enroll_existing, ensure_route
@@ -149,3 +150,23 @@ def test_staff_can_upload_schedule_photo_without_group_budget(client):
     assert response.status_code == 201, response.text
     assert response.json()["state"] == "queued"
     assert client.get("/v1/staff/image-findings/schedule", headers=AUTH).status_code == 200
+
+
+def test_pilot_capabilities_are_visible_to_staff_but_not_students(client):
+    settings = pilot(client)
+
+    async def check():
+        async with AsyncSession(client.app.state.engine) as db:
+            from studgroup.models import Membership
+
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            member = await db.scalar(select(Membership).where(Membership.group_id == group.id))
+            assert not group_features(settings, group, member)["schedule_review"]
+            member.role = "headman"
+            features = group_features(settings, group, member)
+            assert features["schedule_review"]
+            assert features["event_review"]
+            other = await db.scalar(select(Group).where(Group.telegram_chat_id == -1002))
+            assert not group_features(settings, other, member)["schedule_review"]
+
+    asyncio.run(check())
