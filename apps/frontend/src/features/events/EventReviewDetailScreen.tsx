@@ -10,23 +10,7 @@ import { RequestError } from '../../ui/RequestError';
 import { EventSource, EventStatus } from './EventCard';
 import { useEventCapabilities, useEventReview, useReviewEvent } from './api';
 import { eventDate } from './calendar';
-
-function payloadOf(item: EventPayload): EventPayload {
-  return {
-    title: item.title,
-    description: item.description ?? '',
-    starts_at: item.starts_at ?? null,
-    ends_at: item.ends_at ?? null,
-    starts_on: item.starts_on ?? null,
-    ends_on: item.ends_on ?? null,
-    multi_day: item.multi_day ?? false,
-    when_text: item.when_text ?? null,
-    place: item.place ?? null,
-    conditions: item.conditions ?? null,
-    audience: item.audience ?? 'unknown',
-    audience_label: item.audience_label ?? null,
-  };
-}
+import { eventPayload } from './eventPayload';
 
 export function EventReviewDetailScreen() {
   const { eventId = '' } = useParams();
@@ -37,7 +21,7 @@ export function EventReviewDetailScreen() {
   return (
     <>
       <BackTop fallback="/events/review" />
-      <h1 className="ptitle">Проверка события</h1>
+      <h1 className="ptitle">Редактирование события</h1>
       {!features.event_review ? (
         <StateView
           icon="lock"
@@ -110,7 +94,7 @@ function ReviewForm({ item, reload }: { item: EventReview; reload: () => Promise
     setProblem(null);
     const payload: EventPayload =
       state === 'cancelled'
-        ? payloadOf(initial)
+        ? eventPayload(initial)
         : {
             title: title.trim(),
             description,
@@ -158,7 +142,7 @@ function ReviewForm({ item, reload }: { item: EventReview; reload: () => Promise
         <fieldset disabled={mutation.isPending} className="event-fields">
           <div className="field">
             <label>
-              Название
+              Название события
               <input
                 value={title}
                 maxLength={255}
@@ -169,7 +153,7 @@ function ReviewForm({ item, reload }: { item: EventReview; reload: () => Promise
           </div>
           <div className="field">
             <label>
-              Описание
+              Описание события
               <textarea
                 value={description}
                 maxLength={8000}
@@ -181,13 +165,13 @@ function ReviewForm({ item, reload }: { item: EventReview; reload: () => Promise
           <p className="dim">Дата и время по часовому поясу группы: {timeZone}</p>
           <div className="field">
             <label>
-              Дата начала
+              Дата события
               <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
             </label>
           </div>
           <div className="field">
             <label>
-              Время начала, если известно
+              Время события, если известно
               <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
             </label>
           </div>
@@ -213,7 +197,7 @@ function ReviewForm({ item, reload }: { item: EventReview; reload: () => Promise
           </label>
           <div className="field">
             <label>
-              Место
+              Место проведения
               <input value={place} maxLength={500} onChange={(event) => setPlace(event.target.value)} />
             </label>
           </div>
