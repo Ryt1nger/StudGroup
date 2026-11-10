@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   crawl:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.RANEPA_CRAWL_PILOT_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 29
     env:
