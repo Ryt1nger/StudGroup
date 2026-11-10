@@ -211,6 +211,92 @@ def test_pilot_member_with_single_shared_invite_skips_manual_code(foreman, monke
     assert "Готово! Вы подключены" in last(foreman)["text"]
 
 
+def issue_two_shared_pilot_invites(foreman):
+    """Two independently configured groups, headmen and real database invitations."""
+    import uuid
+
+    from studgroup.models import Group
+
+    async def setup(db):
+        _, first_headman, first_group = await actor(db)
+        await domain.issue_group_link(db, first_group, first_headman)
+        second_group = Group(
+            id=uuid.uuid4(),
+            telegram_chat_id=-1000042,
+            name="Другая пилотная группа",
+            timezone="Europe/Moscow",
+            status="active",
+            pilot_authorized=True,
+        )
+        second_owner = User(
+            id=uuid.uuid4(),
+            telegram_user_id=424242,
+            display_name="Второй староста",
+        )
+        db.add_all([second_group, second_owner])
+        await db.flush()
+        second_headman = Membership(
+            id=uuid.uuid4(),
+            user_id=second_owner.id,
+            group_id=second_group.id,
+            role="headman",
+            status="active",
+        )
+        db.add(second_headman)
+        await db.flush()
+        await domain.issue_group_link(db, second_group, second_headman)
+        return first_group.id, second_group.id
+
+    return run(foreman, setup)
+
+
+def test_two_live_groups_select_only_verified_telegram_group(foreman, monkeypatch):
+    first_group_id, second_group_id = issue_two_shared_pilot_invites(foreman)
+
+    async def telegram_check(settings, group, telegram_id):
+        return telegram_id == 33 and group.id == second_group_id
+
+    monkeypatch.setattr(domain, "telegram_member", telegram_check)
+    deliver(foreman, "/start", uid=33)
+    tap(foreman, "Подключить группу")
+    tap(foreman, "Я студент")
+    tap(foreman, "Нет промокода")
+    assert "Регистрация · шаг 1 из 3" in last(foreman)["text"]
+    assert "Ввести код" not in labels(foreman)
+    deliver(foreman, "Алина", uid=33)
+    tap(foreman, "Пропустить")
+    tap(foreman, "Пропустить")
+    assert "Готово! Вы подключены" in last(foreman)["text"]
+
+    async def enrolled(db):
+        user = await db.scalar(select(User).where(User.telegram_user_id == 33))
+        rows = (
+            await db.scalars(select(Membership.group_id).where(Membership.user_id == user.id))
+        ).all()
+        return rows
+
+    assert run(foreman, enrolled) == [second_group_id]
+    assert second_group_id != first_group_id
+
+
+def test_two_verified_groups_never_guess_or_grant_student_access(foreman, monkeypatch):
+    issue_two_shared_pilot_invites(foreman)
+    allow_telegram(monkeypatch)
+    deliver(foreman, "/start", uid=33)
+    tap(foreman, "Подключить группу")
+    tap(foreman, "Я студент")
+    tap(foreman, "Нет промокода")
+    assert "Подключение к группе" in last(foreman)["text"]
+    assert "Ввести код" in labels(foreman)
+    assert "Регистрация · шаг 1 из 3" not in last(foreman)["text"]
+
+    async def enrolled(db):
+        user = await db.scalar(select(User).where(User.telegram_user_id == 33))
+        return user is not None
+
+    assert not run(foreman, enrolled)
+
+
 def test_restart_from_old_join_screen_recovers_verified_invite(foreman, monkeypatch):
     allow_telegram(monkeypatch)
 
