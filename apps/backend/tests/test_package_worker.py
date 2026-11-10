@@ -1349,3 +1349,24 @@ def test_production_package_runs_after_engine_and_release_windows_close(client):
     assert step(client, provider, config, now=overnight) == "completed"
     assert len(provider.requests) == 2
     assert set(states(client).values()) == {"completed"}
+
+
+def test_owner_funded_pilot_runs_at_most_one_new_package_per_group_per_hour(client):
+    seed(client)
+    make_new(client)
+    cfg = settings(owner_funded_pilot=True)
+    now = datetime.now(UTC)
+    first = PackageProvider()
+    assert step(client, first, cfg, now) == "completed"
+    assert len(first.requests) == 2
+    source(client, mid=34, text="по математике добавили задачу 4", when=BASE + timedelta(minutes=5))
+    second = PackageProvider(cited=(34,), propose=False)
+    # The durable gate is consulted again with the same database and new settings
+    # instance, so a restart cannot accelerate chargeable text analysis.
+    assert step(client, second, settings(owner_funded_pilot=True), now + timedelta(minutes=59)) == "idle"
+    assert second.requests == []
+    assert count(client, ShadowEvaluationRun) == 1
+    assert step(client, second, settings(owner_funded_pilot=True), now + timedelta(hours=1, minutes=1)) == "completed"
+    assert len(second.requests) == 2
+    assert count(client, ShadowEvaluationRun) == 2
+    assert set(states(client).values()) == {"completed"}
