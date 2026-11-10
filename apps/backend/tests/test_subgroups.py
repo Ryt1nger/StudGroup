@@ -126,6 +126,112 @@ def test_headman_configures_split_and_existing_student_gets_prompt(foreman_fixtu
     assert any(p.get("chat_id") == 33 and "Выберите свою" in p.get("text", "") for p in payloads)
 
 
+
+def test_headman_can_add_subgroup_to_existing_subject_without_resetting_choices(
+    foreman_fixture,
+):  # noqa: F811
+    add_student(foreman_fixture)
+    configure_english(foreman_fixture)
+
+    async def initial(db):
+        split = await db.scalar(select(SubjectSplit))
+        rows = (
+            await db.scalars(
+                select(Subgroup).where(Subgroup.split_id == split.id).order_by(Subgroup.position)
+            )
+        ).all()
+        member = await db.scalar(
+            select(Membership)
+            .join(User, User.id == Membership.user_id)
+            .where(User.telegram_user_id == 33)
+        )
+        await subgroups.choose(db, member, split.id, rows[0].id)
+        return split.id, [row.id for row in rows]
+
+    split_id, original_ids = run(foreman_fixture, initial)
+    click(foreman_fixture, "К предметам")
+    click(foreman_fixture, "Английский язык")
+    assert "Добавить подгруппу" in [
+        button["text"]
+        for row in last(foreman_fixture)["reply_markup"]["inline_keyboard"]
+        for button in row
+    ]
+    click(foreman_fixture, "Добавить подгруппу")
+    type_answer(foreman_fixture, "Сидорова, группа 3")
+    assert "Добавить подгруппу с сигналами" in last(foreman_fixture)["text"]
+    click(foreman_fixture, "Подтвердить изменение")
+    assert "добавлена" in last(foreman_fixture)["text"]
+
+    async def result(db):
+        split = await db.get(SubjectSplit, split_id)
+        rows = (
+            await db.scalars(
+                select(Subgroup).where(Subgroup.split_id == split_id).order_by(Subgroup.position)
+            )
+        ).all()
+        selection = await db.scalar(
+            select(MemberSubgroup).where(MemberSubgroup.split_id == split_id)
+        )
+        return split, rows, selection
+
+    split, rows, choice = run(foreman_fixture, result)
+    assert split.subject_name == "Английский язык"
+    assert [row.id for row in rows[:2]] == original_ids
+    assert [row.position for row in rows] == [1, 2, 3]
+    assert "Сидорова" in rows[-1].name
+    assert choice.subgroup_id == original_ids[0]
+
+
+def test_append_subgroup_is_generic_and_enforces_six_option_limit(foreman_fixture):  # noqa: F811
+    async def seed(db):
+        group = await db.scalar(select(Group))
+        return (
+            await subgroups.create_split(
+                db, group, "Физика", [("1", ["Иванова"]), ("2", ["Петрова"])]
+            )
+        ).id
+
+    split_id = run(foreman_fixture, seed)
+    enter(foreman_fixture)
+    click(foreman_fixture, "Подгруппы")
+    click(foreman_fixture, "Физика")
+    click(foreman_fixture, "Добавить подгруппу")
+    type_answer(foreman_fixture, "Сидорова")
+    click(foreman_fixture, "Подтвердить изменение")
+    assert "добавлена" in last(foreman_fixture)["text"]
+
+    async def fill_and_check(db):
+        group = await db.scalar(select(Group))
+        for signal in ["Четвертая", "Пятая", "Шестая"]:
+            await subgroups.append_subgroup(db, group.id, split_id, [signal])
+        return len((await subgroups.splits(db, group.id))[0][1])
+
+    assert run(foreman_fixture, fill_and_check) == 6
+    click(foreman_fixture, "К подгруппам")
+    click(foreman_fixture, "Физика")
+    assert "Добавить подгруппу" not in [
+        button["text"]
+        for row in last(foreman_fixture)["reply_markup"]["inline_keyboard"]
+        for button in row
+    ]
+
+
+def test_append_subgroup_rejects_duplicate_signal_and_preserves_existing(foreman_fixture):  # noqa: F811
+    configure_english(foreman_fixture)
+    click(foreman_fixture, "К предметам")
+    click(foreman_fixture, "Английский язык")
+    click(foreman_fixture, "Добавить подгруппу")
+    type_answer(foreman_fixture, "Иванова")
+    click(foreman_fixture, "Подтвердить изменение")
+    assert "сигналы уже используются" in last(foreman_fixture)["text"]
+
+    async def count(db):
+        group = await db.scalar(select(Group))
+        return len((await subgroups.splits(db, group.id))[0][1])
+
+    assert run(foreman_fixture, count) == 2
+
+
 def test_subgroup_notice_respects_notification_opt_out_and_deduplication(foreman_fixture):  # noqa: F811
     add_student(foreman_fixture, telegram_id=33)
     add_student(foreman_fixture, telegram_id=34)
