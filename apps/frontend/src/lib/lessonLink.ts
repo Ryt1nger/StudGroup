@@ -13,6 +13,36 @@ export function safeLessonUrl(url?: string | null): string | null {
   return url;
 }
 
+/** Copy the exact meeting URL, including in older Telegram WebViews without Clipboard API. */
+export async function copyLessonUrl(url: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      return true;
+    }
+  } catch {
+    // Older Telegram clients may reject Clipboard API. Try the classic selection fallback.
+  }
+
+  const field = document.createElement('textarea');
+  field.value = url;
+  field.readOnly = true;
+  field.style.position = 'fixed';
+  field.style.opacity = '0';
+  field.style.left = '-9999px';
+  document.body.appendChild(field);
+  try {
+    field.focus();
+    field.select();
+    field.setSelectionRange(0, url.length);
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    field.remove();
+  }
+}
+
 /** Course navigation is separate from a verified meeting link. */
 export function safeRanepaCourseUrl(url?: string | null): string | null {
   if (!safeLessonUrl(url)) return null;
