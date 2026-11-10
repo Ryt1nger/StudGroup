@@ -554,7 +554,7 @@ async def home(db, session, settings, telegram_id):
                 if group.academic_group_code_required
                 else "\nОфициальный ID РАНХиГС ещё не указан."
             )
-        if member.role == "student" and await subgroups.splits(db, group.id):
+        if await subgroups.splits(db, group.id):
             rows.insert(0, [("Мои подгруппы", "subgroups")])
         await screen(
             db,
@@ -1041,7 +1041,13 @@ async def finish_onboarding_from_cabinet(db, settings, telegram_id, group):
     session = await get_session(db, telegram_id)
     token = bot_panels.scope.set((telegram_id, "start"))
     try:
-        await staff_app_screen(db, session, settings, group)
+        found = await current_membership(db, telegram_id)
+        if found and found[0].role == "headman" and found[1].id == group.id:
+            # The creator is also a student of the group: do not finish setup
+            # before letting them choose their own subgroup for each subject.
+            await subgroup_choice(db, session, settings, found[0], group, joined=True)
+        else:
+            await staff_app_screen(db, session, settings, group)
     finally:
         bot_panels.scope.reset(token)
 
@@ -1369,8 +1375,11 @@ async def subgroup_choice(db, session, settings, member, group, *, joined=False,
     picked = await subgroups.choices(db, member.id)
     unanswered = [pair for pair in all_splits if pair[0].id not in picked]
     if not unanswered and joined and focus is None:
-        student = await db.get(User, member.user_id)
-        await registration_complete(db, session, settings, student.telegram_user_id)
+        if member.role == "headman":
+            await staff_app_screen(db, session, settings, group)
+        else:
+            student = await db.get(User, member.user_id)
+            await registration_complete(db, session, settings, student.telegram_user_id)
         return
     if unanswered or focus is not None:
         focused_pair = (
@@ -1467,7 +1476,7 @@ async def resume_or_home(db, session, settings, telegram_id):
     """Restore a safe step after /start, without trusting expired callback buttons."""
     found = await current_membership(db, telegram_id)
     if found:
-        if found[0].role == "student" and session.step == "subgroups":
+        if found[0].role in {"student", "headman"} and session.step == "subgroups":
             try:
                 payload = json.loads(session.payload)
             except (ValueError, TypeError):
@@ -1512,6 +1521,10 @@ async def resume_or_home(db, session, settings, telegram_id):
                 await home(db, session, settings, telegram_id)
         elif found[0].role == "headman" and session.step == "subgroup_question":
             await subgroup_question(db, session, found[1])
+        elif found[0].role == "headman" and await subgroups.unanswered(db, found[0]):
+            # Cover previously connected headmen who finished the old setup
+            # before the personal subgroup step was introduced.
+            await subgroup_choice(db, session, settings, found[0], found[1], joined=True)
         else:
             await home(db, session, settings, telegram_id)
         return
