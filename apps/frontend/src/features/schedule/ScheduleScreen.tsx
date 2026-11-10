@@ -104,7 +104,7 @@ export function ScheduleScreen() {
   const [params] = useSearchParams();
   const requestedDay = params.get('day');
   const initialDay = requestedDay && /^\d{4}-\d{2}-\d{2}$/.test(requestedDay) &&
-    !Number.isNaN(Date.parse(\`${requestedDay}T12:00:00Z\`)) ? requestedDay : today;
+    !Number.isNaN(Date.parse(`${requestedDay}T12:00:00Z`)) ? requestedDay : today;
   const [selectedKey, setSelectedKey] = useState(initialDay);
   const [displayedWeek, setDisplayedWeek] = useState(initialDay);
   const days = weekKeys(displayedWeek);
@@ -123,7 +123,7 @@ export function ScheduleScreen() {
   const lessons = data ? lessonsOfDay(data.lessons, key, timeZone) : [];
   const lessonSignature = lessons.map((lesson) => [lesson.id, lesson.starts_at, lesson.ends_at, lesson.subject, lesson.location, lesson.teacher, lesson.online_url].join(':')).join('|');
   const expansions = layout.key === key ? layout.expansions : [];
-  const y = (minute: number) => scheduleY(minute, PX, expansions);
+  const timelineY = (minute: number) => scheduleY(minute, PX, expansions);
 
   useLayoutEffect(() => {
     const cards = [...(ref.current?.querySelectorAll<HTMLElement>('.ev') ?? [])];
@@ -192,10 +192,10 @@ export function ScheduleScreen() {
   const clock = formatTime(new Date(nowMs).toISOString(), timeZone);
   const nowM = minutesOf(clock);
   const nowOn = key === today && nowM > 0 && nowM < (HR1 - HR0) * 60;
-  const nowY = y(nowM);
+  const nowY = timelineY(nowM);
   const lineBehindLesson = nowOn && lessonAt(lessons, nowMs);
   const hours = Array.from({ length: HR1 - HR0 + 1 }, (_, i) => {
-    const top = y(i * 60);
+    const top = timelineY(i * 60);
     const covered = nowOn && Math.abs(nowY - top) < 19;
     return (
       <div key={i} className="hr" style={{ top }}>
@@ -243,10 +243,10 @@ export function ScheduleScreen() {
       {data && lessons.length === 0 && data.week_state === 'ready' ? <Empty title="Пар нет" body="В этот день занятий не запланировано." /> : null}
       {data && lessons.length === 0 && data.week_state !== 'ready' ? <Empty title="Расписание ещё не подтверждено" body="Для этого дня пока нет проверенных данных." /> : null}
       {data && lessons.length > 0 ? (
-        <div ref={ref} className="tline" style={{ height: y((HR1 - HR0) * 60) + 20 }}>
+        <div ref={ref} className="tline" style={{ height: timelineY((HR1 - HR0) * 60) + 20 }}>
           {hours}
           {nowOn ? <div className={`nowline${lineBehindLesson ? ' behind-event' : ''}`} style={{ top: nowY }}><span>{clock}</span></div> : null}
-          {lessons.map((lesson) => <Event key={lesson.id} lesson={lesson} timeZone={data.group_timezone} nowMs={nowMs} isToday={key === today} y={y} />)}
+          {lessons.map((lesson) => <Event key={lesson.id} lesson={lesson} timeZone={data.group_timezone} nowMs={nowMs} isToday={key === today} y={timelineY} />)}
         </div>
       ) : null}
     </>
