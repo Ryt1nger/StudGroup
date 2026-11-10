@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_ingestion import send
 
-from studgroup.models import BotAdminAudit, BotAdminSession, BotOutbox, Membership, User
+from studgroup.models import BotAdminAudit, BotAdminSession, BotOutbox, Group, Membership, User
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -61,8 +61,10 @@ def test_admin_id_flow_requires_confirmation_and_is_idempotent(client):
     group = msg[-1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
     private(client, "", update=101, callback=group)
     s, _ = session(client)
-    private(client, "", update=102, callback=f"a:{s.nonce}:id")
-    private(client, "123456789", update=103)
+    private(client, "", update=102, callback=f"a:{s.nonce}:deputy")
+    s, _ = session(client)
+    private(client, "", update=103, callback=f"a:{s.nonce}:id")
+    private(client, "123456789", update=104)
     s, _ = session(client)
 
     async def count():
@@ -73,9 +75,9 @@ def test_admin_id_flow_requires_confirmation_and_is_idempotent(client):
 
     assert asyncio.run(count()) == 0
     command = f"a:{s.nonce}:yes"
-    private(client, "", update=104, callback=command)
-    private(client, "", update=104, callback=command)
     private(client, "", update=105, callback=command)
+    private(client, "", update=105, callback=command)
+    private(client, "", update=106, callback=command)
     assert asyncio.run(count()) == 1
 
     async def check():
@@ -83,38 +85,75 @@ def test_admin_id_flow_requires_confirmation_and_is_idempotent(client):
             assert await db.scalar(select(func.count(BotAdminAudit.id))) == 1
             u = await db.scalar(select(User).where(User.telegram_user_id == 123456789))
             m = await db.scalar(select(Membership).where(Membership.user_id == u.id))
-            assert (m.role, m.status) == ("student", "active")
+            assert (m.role, m.status) == ("deputy", "active")
 
     asyncio.run(check())
 
 
-def test_owner_cannot_assign_a_second_headman_to_one_group(client):
-    def assign(target, update):
-        private(client, "/admin", update=update)
-        _, msg = session(client)
-        group = msg[-1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
-        private(client, "", update=update + 1, callback=group)
-        s, _ = session(client)
-        private(client, "", update=update + 2, callback=f"a:{s.nonce}:headman")
-        private(client, str(target), update=update + 3)
-        s, _ = session(client)
-        private(client, "", update=update + 4, callback=f"a:{s.nonce}:yes")
+def assign_staff_by_id(client, role, target, update):
+    private(client, "/admin", update=update)
+    _, msg = session(client)
+    group = msg[-1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+    private(client, "", update=update + 1, callback=group)
+    s, _ = session(client)
+    private(client, "", update=update + 2, callback=f"a:{s.nonce}:{role}")
+    s, _ = session(client)
+    private(client, "", update=update + 3, callback=f"a:{s.nonce}:id")
+    private(client, str(target), update=update + 4)
+    s, _ = session(client)
+    private(client, "", update=update + 5, callback=f"a:{s.nonce}:yes")
 
-    def role(target):
-        async def read():
-            async with AsyncSession(client.app.state.engine) as db:
-                user = await db.scalar(select(User).where(User.telegram_user_id == target))
-                if user is None:
-                    return None
-                return await db.scalar(select(Membership.role).where(Membership.user_id == user.id))
 
-        return asyncio.run(read())
+def member_role(client, target):
+    async def read():
+        async with AsyncSession(client.app.state.engine) as db:
+            user = await db.scalar(select(User).where(User.telegram_user_id == target))
+            if user is None:
+                return None
+            return await db.scalar(select(Membership.role).where(Membership.user_id == user.id))
 
-    assign(123456789, 200)
-    assert role(123456789) == "headman"
-    assign(987654321, 210)
-    assert role(987654321) is None  # refused before anything was created
-    assert any("уже есть староста" in m["text"] for m in session(client)[1])
+    return asyncio.run(read())
+
+
+def test_owner_can_assign_two_headmen_but_not_three(client):
+    assign_staff_by_id(client, "headman", 123456789, 200)
+    assert member_role(client, 123456789) == "headman"
+    assign_staff_by_id(client, "headman", 987654321, 210)
+    assert member_role(client, 987654321) == "headman"
+    assign_staff_by_id(client, "headman", 987654322, 220)
+    assert member_role(client, 987654322) is None
+    assert any("максимально допустимое число старост" in m["text"] for m in session(client)[1])
+    # Reassigning the same person must not consume an additional slot.
+    assign_staff_by_id(client, "headman", 123456789, 230)
+    assert member_role(client, 123456789) == "headman"
+
+
+def test_owner_can_assign_three_deputies_but_not_four(client):
+    for index, target in enumerate((123000001, 123000002, 123000003)):
+        assign_staff_by_id(client, "deputy", target, 300 + index * 10)
+        assert member_role(client, target) == "deputy"
+    assign_staff_by_id(client, "deputy", 123000004, 340)
+    assert member_role(client, 123000004) is None
+    assert any("максимально допустимое число заместителей" in m["text"] for m in session(client)[1])
+
+
+def test_owner_role_controls_work_before_pilot_approval(client):
+    async def disable_pilot():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group))
+            group.pilot_authorized = False
+            await db.commit()
+
+    asyncio.run(disable_pilot())
+    private(client, "/admin", update=400)
+    _, messages = session(client)
+    group_button = messages[-1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+    private(client, "", update=401, callback=group_button)
+    _, messages = session(client)
+    choices = [button["text"] for row in messages[-1]["reply_markup"]["inline_keyboard"] for button in row]
+    assert choices == ["Назначить старосту", "Назначить заместителя"]
+    assign_staff_by_id(client, "deputy", 123456789, 410)
+    assert member_role(client, 123456789) == "deputy"
 
 
 def test_nonowner_has_no_admin_session_or_group_list(client):
@@ -158,15 +197,17 @@ def test_native_picker_is_bound_to_its_request(client):
         callback=msg[-1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"],
     )
     s, _ = session(client)
-    private(client, "", update=102, callback=f"a:{s.nonce}:pick")
+    private(client, "", update=102, callback=f"a:{s.nonce}:headman")
+    s, _ = session(client)
+    private(client, "", update=103, callback=f"a:{s.nonce}:pick")
     s, msg = session(client)
     assert msg[-1]["reply_markup"]["keyboard"][0][0]["request_users"]["user_is_bot"] is False
     private(
-        client, "", update=103, shared={"request_id": s.request_id + 1, "users": [{"user_id": 123}]}
+        client, "", update=104, shared={"request_id": s.request_id + 1, "users": [{"user_id": 123}]}
     )
     assert session(client)[0].step == "pick"
     private(
-        client, "", update=104, shared={"request_id": s.request_id, "users": [{"user_id": 123}]}
+        client, "", update=105, shared={"request_id": s.request_id, "users": [{"user_id": 123}]}
     )
     assert session(client)[0].step == "confirm"
 
