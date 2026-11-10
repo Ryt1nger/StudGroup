@@ -632,6 +632,15 @@ a.pcard:active { transform: scale(.98); }
 .group-event-main .group-event-summary { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
 .event-source { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; color: var(--accent); }
 .event-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-calendar-action { margin-top: 12px; font-size: 13px; padding: 9px 13px; max-width: 100%; white-space: normal; }
+.modal-back.event-date-overlay { position: fixed; z-index: 50; padding: 18px 20px max(18px, env(safe-area-inset-bottom)); }
+.event-date-modal { max-width: 360px; max-height: 86dvh; overflow-y: auto; text-align: left; }
+.event-date-modal > h3, .event-date-modal > p { text-align: left; }
+.event-date-modal .form { margin-top: 8px; }
+.event-date-modal .field { margin-top: 14px; }
+.event-date-modal .field input { width: 100%; }
+.event-date-modal .mbtns { grid-template-columns: 1fr 1fr; margin-top: 20px; }
+.event-date-modal .mbtns button { min-width: 0; }
 .event-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
 .event-review-source { border-top: .5px solid var(--card-edge); padding: 12px 0; }
 .event-review-source label { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
