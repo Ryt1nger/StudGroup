@@ -237,6 +237,10 @@ def test_two_real_subgroups_persist_and_survive_repeated_start(foreman, monkeypa
     assert "Английский" in last(foreman)["text"]
     tap(foreman, "Английский 2")
     assert "Информатика" in last(foreman)["text"]
+    tap(foreman, "‹ Назад")
+    assert "Английский" in last(foreman)["text"]
+    tap(foreman, "Английский 2")
+    assert "Информатика" in last(foreman)["text"]
     deliver(foreman, "/start", uid=33)
     assert "Информатика" in last(foreman)["text"]
     tap(foreman, "Информатика 2")
