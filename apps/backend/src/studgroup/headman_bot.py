@@ -567,12 +567,12 @@ async def role_candidates_screen(db, session, group, member, role, page=0):
     await screen(
         db,
         session,
-        f"Назначить {label}. Сейчас назначено {current}/{ROLE_LIMITS[role]}.\\n"
+        f"Назначить {label}. Сейчас назначено {current}/{ROLE_LIMITS[role]}.\n"
         "Выбери зарегистрированного участника своей группы. "
         "Новая роль появится после подтверждения. "
         "Не зарегистрированные участники сначала должны подключиться к StudGroup."
         if people
-        else f"Назначить {label}. Сейчас назначено {current}/{ROLE_LIMITS[role]}.\\n"
+        else f"Назначить {label}. Сейчас назначено {current}/{ROLE_LIMITS[role]}.\n"
         "Нет подходящих зарегистрированных участников.",
         rows,
         "role_assign",
@@ -1261,8 +1261,7 @@ async def handle(db, update, settings):
             domain.headman_only(member)
             ident = uuid.UUID(data["members"][int(action.removeprefix("assign_member"))])
             target = await db.scalar(
-                select(Membership)
-                .where(Membership.id == ident, Membership.group_id == group.id)
+                select(Membership).where(Membership.id == ident, Membership.group_id == group.id)
             )
             if target is None or target.status != "active" or target.role == data["role"]:
                 raise domain.StError("Участник или его роль изменились. Открой список заново.")
@@ -1873,9 +1872,7 @@ async def apply(db, session, group, user, member, data, settings):
         if role not in ROLE_LIMITS:
             raise domain.StError("Неизвестная роль.")
         # Serialize promotions in the group; count again after locking, not only in the UI.
-        locked_group = await db.scalar(
-            select(Group).where(Group.id == group.id).with_for_update()
-        )
+        locked_group = await db.scalar(select(Group).where(Group.id == group.id).with_for_update())
         if locked_group is None or locked_group.status != "active":
             raise domain.StError("Группа недоступна.")
         target = await db.scalar(
@@ -1900,8 +1897,7 @@ async def apply(db, session, group, user, member, data, settings):
         )
         if count >= ROLE_LIMITS[role]:
             raise domain.StError(
-                f"Лимит роли уже достигнут: {ROLE_LIMITS[role]}. "
-                "Сначала освободите место."
+                f"Лимит роли уже достигнут: {ROLE_LIMITS[role]}. Сначала освободите место."
             )
         target.role = role
     elif action == "member_change":
