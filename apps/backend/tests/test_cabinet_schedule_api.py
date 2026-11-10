@@ -691,7 +691,9 @@ def test_first_pilot_cabinet_schedule_autopublishes_without_second_confirmation(
         group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
         return len(
             (
-                await db.scalars(select(SchedulePattern).where(SchedulePattern.group_id == group.id))
+                await db.scalars(
+                    select(SchedulePattern).where(SchedulePattern.group_id == group.id)
+                )
             ).all()
         )
 
