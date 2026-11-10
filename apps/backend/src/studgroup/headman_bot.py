@@ -586,7 +586,7 @@ async def subgroup_back(db, session, group, member, data):
         await ask(
             db,
             session,
-            f"Как называется предмет с разделением на подгруппы?\\n"
+            f"Как называется предмет с разделением на подгруппы?\n"
             f"Ранее: {data['subject']}. Отправьте исправленное название.",
             data,
             "subgroup_subject",
@@ -599,7 +599,7 @@ async def subgroup_back(db, session, group, member, data):
                 db,
                 session,
                 f"Укажите фамилию преподавателя или номер группы для подгруппы "
-                f"{len(signals) + 1}.\\nРанее: {', '.join(previous)}.",
+                f"{len(signals) + 1}.\nРанее: {', '.join(previous)}.",
                 {**data, "signals": signals},
                 "subgroup_signals",
             )
@@ -607,7 +607,7 @@ async def subgroup_back(db, session, group, member, data):
             await ask(
                 db,
                 session,
-                f"На сколько подгрупп делится предмет? От 2 до 6.\\nРанее: {data['count']}.",
+                f"На сколько подгрупп делится предмет? От 2 до 6.\nРанее: {data['count']}.",
                 data,
                 "subgroup_count",
             )
@@ -620,7 +620,7 @@ async def subgroup_back(db, session, group, member, data):
             db,
             session,
             f"Укажите фамилию преподавателя или номер группы для подгруппы "
-            f"{len(signals) + 1}.\\nРанее: {', '.join(previous)}.",
+            f"{len(signals) + 1}.\nРанее: {', '.join(previous)}.",
             {**data, "signals": signals},
             "subgroup_signals",
         )
