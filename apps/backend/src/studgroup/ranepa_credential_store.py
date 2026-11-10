@@ -136,28 +136,7 @@ def main():
 
     async def verify():
         await store.ensure_table()
-
-        async def remove_probe_records():
-            key = None
-            while True:
-                request = {
-                    "TableName": TABLE,
-                    "FilterExpression": "#login = :probe",
-                    "ExpressionAttributeNames": {"#login": "login"},
-                    "ExpressionAttributeValues": {":probe": {"S": "studgroup-storage-check"}},
-                    "ProjectionExpression": "id",
-                }
-                if key is not None:
-                    request["ExclusiveStartKey"] = key
-                response = await asyncio.to_thread(store.client.scan, **request)
-                for item in response.get("Items", []):
-                    await store.delete(uuid.UUID(item["id"]["S"]))
-                key = response.get("LastEvaluatedKey")
-                if key is None:
-                    break
-
-        await remove_probe_records()
-        record_id = uuid.uuid4()
+        record_id = uuid.uuid5(uuid.NAMESPACE_URL, "studgroup:credential-store-smoke")
         try:
             await store.put(record_id, "studgroup-storage-check", "test-ciphertext", "v1")
             if await store.get(record_id) != (
