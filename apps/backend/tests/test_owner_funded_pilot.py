@@ -4,6 +4,7 @@ import asyncio
 import io
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from test_staff_api import AUTH, make
 
 from studgroup.ai import ProviderFailure
-from studgroup.analysis.image_jobs import enabled, live_mode
+from studgroup.analysis.image_jobs import enabled, live_mode, pilot_backfill_since
 from studgroup.analysis.package_worker import _gate
 from studgroup.analysis.pilot_access import enroll_existing, ensure_route
 from studgroup.analysis.release_budget import RequestAccounting, release_window_blocker
@@ -170,3 +171,13 @@ def test_pilot_capabilities_are_visible_to_staff_but_not_students(client):
             assert not group_features(settings, other, member)["schedule_review"]
 
     asyncio.run(check())
+
+
+def test_pilot_photo_backfill_never_spends_on_older_than_week_or_prejoin_images():
+    now = datetime(2026, 11, 10, 12, tzinfo=UTC)
+    group = SimpleNamespace(bot_added_at=now - timedelta(days=30))
+    assert pilot_backfill_since(group, now) == now - timedelta(days=7)
+    group.bot_added_at = now - timedelta(days=2)
+    assert pilot_backfill_since(group, now) == now - timedelta(days=2)
+    group.bot_added_at = None
+    assert pilot_backfill_since(group, now) == now - timedelta(days=7)
