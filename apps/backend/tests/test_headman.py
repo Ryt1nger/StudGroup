@@ -164,9 +164,7 @@ def test_headman_cabinet_role_controls_and_limits(foreman):
     seed_role_candidates(foreman)
     enter(foreman)
     captions = [
-        button["text"]
-        for row in last(foreman)["reply_markup"]["inline_keyboard"]
-        for button in row
+        button["text"] for row in last(foreman)["reply_markup"]["inline_keyboard"] for button in row
     ]
     assert "Назначить старосту" in captions
     assert "Назначить заместителя" in captions
@@ -215,9 +213,7 @@ def test_deputy_cannot_assign_roles_in_cabinet(foreman):
     run(foreman, demote)
     enter(foreman)
     captions = [
-        button["text"]
-        for row in last(foreman)["reply_markup"]["inline_keyboard"]
-        for button in row
+        button["text"] for row in last(foreman)["reply_markup"]["inline_keyboard"] for button in row
     ]
     assert "Назначить старосту" not in captions
     assert "Назначить заместителя" not in captions
