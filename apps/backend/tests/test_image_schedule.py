@@ -13,7 +13,9 @@ from studgroup.models import ImageScheduleSuggestion, ScheduleChange, SchedulePa
 pytest_plugins = ["test_schedule_api"]
 
 
-def prepare(client, monkeypatch, schedule_interpretation=None, *, owner_funded_pilot=False, **row_patch):
+def prepare(
+    client, monkeypatch, schedule_interpretation=None, *, owner_funded_pilot=False, **row_patch
+):
     download_ok(monkeypatch)
     photo_message(client)
     make_new(client)
