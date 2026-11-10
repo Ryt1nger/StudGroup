@@ -292,11 +292,14 @@ async def choices(db, membership_id):
     return {row.split_id: row.subgroup_id for row in rows}
 
 
-async def hidden(db, group_id, user_id):
-    """Subgroup ids whose cards this user must not see: the other subgroups of every split
-    subject the user answered. Editors and people without a choice see everything."""
+async def hidden(db, group_id, user_id, *, personal_schedule=False):
+    """Hide other subgroups for personal reads while leaving staff editing unfiltered.
+
+    Editors continue to see every subgroup's cards in their review and management
+    tools, but their *own timetable* follows the subgroup they selected.
+    """
     member = await membership(db, group_id, user_id) if user_id else None
-    if member is None or member.role in EDITOR_ROLES:
+    if member is None or (member.role in EDITOR_ROLES and not personal_schedule):
         return set()
     picked = await choices(db, member.id)
     if not picked:
