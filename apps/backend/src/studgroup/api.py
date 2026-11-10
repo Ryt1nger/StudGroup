@@ -138,11 +138,7 @@ def group_features(settings, group, member):
         group
         and (
             str(group.id) in settings.image_analysis_groups
-            or (
-                settings.owner_funded_pilot
-                and group.status == "active"
-                and group.pilot_authorized
-            )
+            or (settings.owner_funded_pilot and group.status == "active" and group.pilot_authorized)
         )
     )
     editor = bool(member and member.role in {"headman", "deputy"})
