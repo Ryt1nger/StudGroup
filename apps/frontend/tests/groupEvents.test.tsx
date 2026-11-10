@@ -117,7 +117,8 @@ describe('separate persisted group events', () => {
       ),
     ).toEqual(['Задания', 'Расписание', 'Сегодня', 'События', 'Предметы']);
     expect(await screen.findByText('Пока нет событий')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('link', { name: 'Проверить черновики и изменения' }));
+    expect(screen.queryByRole('link', { name: 'Проверить черновики и изменения' })).not.toBeInTheDocument();
+    await go(app.router, '/events/review');
     await userEvent.click(await screen.findByRole('link', { name: /Открытая лекция о космосе/ }));
     expect(await screen.findByLabelText('Название события')).toHaveValue('Открытая лекция о космосе');
     await userEvent.click(screen.getByRole('button', { name: 'Подтвердить публикацию' }));
