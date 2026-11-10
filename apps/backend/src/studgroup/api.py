@@ -221,7 +221,7 @@ async def schedule(
         result = schedule_projection(personal, group)
     else:
         result = await schedule_data(start, end, group, db)
-    hidden = await subgroups.hidden(db, group.id, member.user_id)
+    hidden = await subgroups.hidden(db, group.id, member.user_id, personal_schedule=True)
     result["lessons"] = subgroups.visible_lessons(result["lessons"], hidden)
     return result
 
