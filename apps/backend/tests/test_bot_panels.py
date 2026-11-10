@@ -131,22 +131,22 @@ def test_latest_callback_controls_where_text_input_goes(transport):
     input_message(client, 204, "/admin")
     drain(client)
     press(client, "admin", "Группа", 205)
-    press(client, "admin", "Добавить по ID", 206)  # Admin also awaits text.
+    press(client, "admin", "Назначить старосту", 206)
+    press(client, "admin", "Ввести Telegram ID", 207)  # Admin also awaits text.
     before = len(calls)
-    input_message(client, 207, "123456789")
+    input_message(client, 208, "123456789")
     drain(client)
     admin_mid, data = current(client, "admin")
     assert "123456789" in data["text"]
     assert any(m == "editMessageText" and d["message_id"] == admin_mid for m, d in calls[before:])
     # Restore ST focus by clicking its still-active back button.
-    press(client, "st", "Главное меню", 208)
-    press(client, "st", "Домашние задания", 209)
-    press(client, "st", "Добавить ДЗ", 210)
-    input_message(client, 211, "Математика")
+    press(client, "st", "Главное меню", 209)
+    press(client, "st", "Домашние задания", 210)
+    press(client, "st", "Добавить ДЗ", 211)
+    input_message(client, 212, "Математика")
     drain(client)
     assert "Название задания" in current(client, "st")[1]["text"]
     assert current(client, "admin")[0] == admin_mid
-
 
 def test_restart_supersedes_queued_old_frames(transport):
     client, calls = transport
