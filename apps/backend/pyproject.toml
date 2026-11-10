@@ -16,6 +16,7 @@ dependencies = [
     "pillow>=12,<13",
     "python-multipart>=0.0.20,<1",
     "playwright>=1.55,<2",
+    "boto3>=1.35,<2",
 ]
 
 [dependency-groups]

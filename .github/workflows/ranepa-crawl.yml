@@ -15,12 +15,15 @@ concurrency:
 
 jobs:
   crawl:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.RANEPA_CRAWL_PILOT_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 29
     env:
       DATABASE_URL: ${{ secrets.RANEPA_DATABASE_URL }}
       PROFILE_ENCRYPTION_KEY: ${{ secrets.RANEPA_PROFILE_ENCRYPTION_KEY }}
+      YDB_DOCUMENT_ENDPOINT: ${{ secrets.RANEPA_YDB_DOCUMENT_ENDPOINT }}
+      YDB_ACCESS_KEY_ID: ${{ secrets.RANEPA_YDB_ACCESS_KEY_ID }}
+      YDB_SECRET_ACCESS_KEY: ${{ secrets.RANEPA_YDB_SECRET_ACCESS_KEY }}
       LEGAL_OPERATOR_NAME: ${{ secrets.LEGAL_OPERATOR_NAME }}
       LEGAL_OPERATOR_ADDRESS: ${{ secrets.LEGAL_OPERATOR_ADDRESS }}
       LEGAL_OPERATOR_CONTACT: ${{ secrets.LEGAL_OPERATOR_CONTACT }}
@@ -41,6 +44,9 @@ jobs:
         run: |
           test -n "$DATABASE_URL"
           test -n "$PROFILE_ENCRYPTION_KEY"
+          test -n "$YDB_DOCUMENT_ENDPOINT"
+          test -n "$YDB_ACCESS_KEY_ID"
+          test -n "$YDB_SECRET_ACCESS_KEY"
           test -n "$LEGAL_OPERATOR_NAME"
           test -n "$LEGAL_OPERATOR_ADDRESS"
           test -n "$LEGAL_OPERATOR_CONTACT"

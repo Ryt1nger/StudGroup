@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, database
 from studgroup.models import LegalConsentEvent, UserProfile
+from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 
 router = APIRouter(prefix="/v1/legal")
 VERSION = "2026-11-09-v2"
@@ -99,6 +100,8 @@ def legal_ready(settings):
 
 def credentials_ready(settings):
     if not legal_ready(settings):
+        return False
+    if configured_store(settings) is None and not settings.ranepa_legacy_credentials_allowed:
         return False
     key = settings.profile_encryption_key.get_secret_value()
     if not key:
@@ -251,6 +254,17 @@ async def revoke_sdo(
     user = await authenticated_user(db, authorization)
     profile = await db.get(UserProfile, user.id)
     if profile is not None:
+        if profile.sdu_credential_id:
+            store = configured_store(settings)
+            if store is None:
+                raise ApiError("service_unavailable", "Удаление реквизитов не подтверждено", 503)
+            try:
+                await store.delete(profile.sdu_credential_id)
+            except CredentialStoreUnavailable:
+                raise ApiError(
+                    "service_unavailable", "Удаление реквизитов не подтверждено", 503
+                ) from None
+            profile.sdu_credential_id = None
         profile.sdu_login = None
         profile.sdu_password_encrypted = None
         profile.sdu_platform = None

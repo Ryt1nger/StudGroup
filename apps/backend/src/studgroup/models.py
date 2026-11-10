@@ -185,6 +185,8 @@ class UserProfile(Base):
     sdu_login: Mapped[str | None] = mapped_column(String(80))
     sdu_calendar_url: Mapped[str | None] = mapped_column(String(300))
     sdu_password_encrypted: Mapped[str | None] = mapped_column(Text)
+    # Opaque pointer only. The login and ciphertext live in YDB after cutover.
+    sdu_credential_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     sdu_setup_skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     settings: Mapped[dict | None] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

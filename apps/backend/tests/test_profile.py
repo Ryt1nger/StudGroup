@@ -29,6 +29,7 @@ def approve_legal_documents(client):
 
 def accept_study_credentials(client):
     approve_legal_documents(client)
+    client.app.state.settings.ranepa_legacy_credentials_allowed = True
     if not client.app.state.settings.profile_encryption_key.get_secret_value():
         client.app.state.settings.profile_encryption_key = SecretStr(Fernet.generate_key().decode())
     from studgroup.legal import VERSION
@@ -295,6 +296,72 @@ def test_synthetic_credentials_survive_restart_and_stay_personal(client, caplog)
 
     assert asyncio.run(cleared()) is None
     assert original not in caplog.text and replacement not in caplog.text
+
+
+def test_ydb_credential_path_keeps_main_database_empty_and_confirms_revocation(client, monkeypatch):
+    accept_study_credentials(client)
+    records = {}
+
+    class FakeStore:
+        async def get(self, key):
+            return records.get(key)
+
+        async def put(self, key, login, ciphertext, version):
+            records[key] = (login, ciphertext, version)
+
+        async def delete(self, key):
+            records.pop(key, None)
+
+    store = FakeStore()
+    monkeypatch.setattr("studgroup.profile.configured_store", lambda _: store)
+    monkeypatch.setattr("studgroup.legal.configured_store", lambda _: store)
+    saved = client.patch(
+        "/v1/profile",
+        json={"sdu_login": "pilot-user", "sdu_password": "synthetic-password"},
+        headers=HEADERS,
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["sdu"]["login"] == "pilot-user"
+    assert saved.json()["sdu"]["password_set"]
+
+    async def stored():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(UserProfile))
+            return row.sdu_login, row.sdu_password_encrypted, row.sdu_credential_id
+
+    login, encrypted, pointer = asyncio.run(stored())
+    assert login is None and encrypted is None and pointer in records
+    assert client.get("/v1/profile", headers=HEADERS).json()["sdu"]["login"] == "pilot-user"
+    revoked = client.delete("/v1/legal/consents/sdo", headers=HEADERS)
+    assert revoked.status_code == 200 and revoked.json()["credentials_deleted"]
+    assert pointer not in records
+    assert asyncio.run(stored()) == (None, None, None)
+
+
+def test_ydb_write_error_does_not_claim_password_saved(client, monkeypatch):
+    from studgroup.ranepa_credential_store import CredentialStoreUnavailable
+
+    accept_study_credentials(client)
+
+    class FailedStore:
+        async def put(self, *_args):
+            raise CredentialStoreUnavailable()
+
+    monkeypatch.setattr("studgroup.profile.configured_store", lambda _: FailedStore())
+    result = client.patch(
+        "/v1/profile",
+        json={"sdu_login": "pilot-user", "sdu_password": "synthetic-password"},
+        headers=HEADERS,
+    )
+    assert result.status_code == 503
+    assert "synthetic-password" not in result.text
+
+    async def stored():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(UserProfile))
+            return row.sdu_login if row else None, row.sdu_password_encrypted if row else None
+
+    assert asyncio.run(stored()) == (None, None)
 
 
 def test_notification_preferences_are_stored_and_validated(client):

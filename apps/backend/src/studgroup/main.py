@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = ""
     # Fernet key (urlsafe base64, 32 bytes) that protects study-platform passwords; empty disables them.
     profile_encryption_key: SecretStr = SecretStr("")
+    ydb_document_endpoint: str = ""
+    ydb_access_key_id: SecretStr = SecretStr("")
+    ydb_secret_access_key: SecretStr = SecretStr("")
+    # Test-only compatibility while old synthetic fixtures are migrated.
+    ranepa_legacy_credentials_allowed: bool = False
     ranepa_crawl_enabled: bool = False
     ranepa_access_approved: bool = False
     ranepa_schedule_view_enabled: bool = False
