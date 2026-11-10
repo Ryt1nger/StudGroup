@@ -19,7 +19,12 @@ async def ensure_route(db, group, now=None):
     """Idempotently create the live C+ route for an already authorized group."""
     # Serialize a fresh enrollment with other app instances and headman claims.
     # The locked row is the authority: a group may have been revoked since lookup.
-    locked = await db.scalar(select(Group).where(Group.id == group.id).with_for_update())
+    locked = await db.scalar(
+        select(Group)
+        .where(Group.id == group.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if locked is None or locked.status != "active" or not locked.pilot_authorized:
         return None
     route = await db.get(GroupAnalysisSettings, locked.id, with_for_update=True)
