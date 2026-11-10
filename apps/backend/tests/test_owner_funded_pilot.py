@@ -41,9 +41,12 @@ def test_existing_approved_group_gets_cplus_route_without_spending_grant(client)
             assert route.shadow_daily_budget_usd == Decimal(0)
             assert await ensure_route(db, other) is None
             assert await db.get(GroupAnalysisSettings, other.id) is None
-            assert release_window_blocker(
-                route, datetime.now(UTC), settings=settings, group_id=approved.id
-            ) is None
+            assert (
+                release_window_blocker(
+                    route, datetime.now(UTC), settings=settings, group_id=approved.id
+                )
+                is None
+            )
             assert enabled(settings, approved.id)
             assert live_mode(settings)
             assert _gate(settings, datetime.now(UTC))
