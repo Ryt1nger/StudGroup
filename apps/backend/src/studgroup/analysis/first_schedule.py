@@ -118,7 +118,9 @@ async def publish_first(db, suggestion, source_at, now, *, reading=None):
         or suggestion.schedule_version != 0
     ):
         return False
-    if await db.scalar(select(SchedulePattern.id).where(SchedulePattern.group_id == group.id).limit(1)):
+    if await db.scalar(
+        select(SchedulePattern.id).where(SchedulePattern.group_id == group.id).limit(1)
+    ):
         return False
     if await db.scalar(
         select(GroupScheduleSnapshot.week_start)
