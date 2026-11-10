@@ -5,6 +5,8 @@ import { useGroupTimeZone } from '../../session/useGroupTimeZone';
 import { BackTop, SectionTop } from '../../shell/TopBar';
 import { Banner, Empty, Skeleton, StateView } from '../../ui/Blocks';
 import { RequestError } from '../../ui/RequestError';
+import { Ic } from '../../ui/Ic';
+import { EventCalendarAction } from './EventCalendarAction';
 import { EventCard, EventCards, EventSource, EventStatus } from './EventCard';
 import { useEventCapabilities, useEventReview, useGroupEvent, useGroupEvents } from './api';
 import { eventDate, eventInHistory } from './calendar';
@@ -67,7 +69,7 @@ export function EventsScreen() {
               }
             />
           ) : null}
-          <EventCards items={items} timeZone={timeZone} />
+          <EventCards items={items} timeZone={timeZone} calendarAction />
         </>
       )}
     </>
@@ -87,7 +89,7 @@ export function GroupEventScreen() {
         right={
           features.event_review ? (
             <Link className="pillb" to={`/events/review/${eventId}`}>
-              Редактировать
+              <Ic name="edit" size={15} /> Редактировать
             </Link>
           ) : undefined
         }
@@ -106,6 +108,7 @@ export function GroupEventScreen() {
                 <h1>{item.title}</h1>
                 <EventStatus item={item} />
                 <p>{eventDate(item, timeZone)}</p>
+                <EventCalendarAction item={item} />
               </div>
               {item.state === 'cancelled' ? (
                 <Banner tone="warning" icon="alert">
