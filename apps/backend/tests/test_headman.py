@@ -482,10 +482,12 @@ def test_owner_role_assignment_is_explicit(client):
     )
     s, _ = session(client)
     private(client, "", update=102, callback=f"a:{s.nonce}:headman")
-    private(client, "1", update=103)
+    s, _ = session(client)
+    private(client, "", update=103, callback=f"a:{s.nonce}:id")
+    private(client, "1", update=104)
     assert run(client, lambda db: db.scalar(select(Membership.role))) == "student"
     s, _ = session(client)
-    private(client, "", update=104, callback=f"a:{s.nonce}:yes")
+    private(client, "", update=105, callback=f"a:{s.nonce}:yes")
     assert run(client, lambda db: db.scalar(select(Membership.role))) == "headman"
 
 
