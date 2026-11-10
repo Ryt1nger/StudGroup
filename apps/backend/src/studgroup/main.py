@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-flash"
     ai_release_budget_required_groups: list[str] = Field(default_factory=list)
+    # During owner-funded pilots every verified group gets live C+ and DeepSeek vision.
+    # No per-group financial activation is required. Set OWNER_FUNDED_PILOT=false to
+    # restore the previous manually funded/allowlisted operating mode.
+    owner_funded_pilot: bool = True
     # Live paid operation after pilots: no expiring release grant or amount cap.
     # Only explicitly enrolled groups; all requests still use accounting and safety holds.
     ai_production_groups: list[str] = Field(default_factory=list)
@@ -308,6 +312,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception as error:  # noqa: BLE001 -- startup must not expose private SQL payloads
             print("REVIEWED_PUBLICATION_FAILED " + type(error).__name__, flush=True)
             raise RuntimeError("reviewed_publication_failed") from None
+        if settings.owner_funded_pilot:
+            from studgroup.analysis.pilot_access import enroll_existing
+
+            enrolled = await enroll_existing(app.state.engine)
+            if enrolled:
+                print(f"OWNER_FUNDED_PILOT_ENROLLED groups={enrolled}", flush=True)
         # One-off, owner-approved BI 1.2 manual screenshot pilot: immutable $0.05
         # ledger window. Missing environment approval makes this a no-op.
         try:
