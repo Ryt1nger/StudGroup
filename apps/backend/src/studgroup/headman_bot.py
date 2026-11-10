@@ -424,7 +424,16 @@ async def settings_screen(db, session, group, member):
             [("Время вопросов", "digest_times")],
             [("Часовой пояс группы", "timezone")],
             *(
-                [[("Изменить ID РАНХиГС" if group.academic_group_code else "Указать ID РАНХиГС", "academic_code_edit")]]
+                [
+                    [
+                        (
+                            "Изменить ID РАНХиГС"
+                            if group.academic_group_code
+                            else "Указать ID РАНХиГС",
+                            "academic_code_edit",
+                        )
+                    ]
+                ]
                 if member.role == "headman"
                 else []
             ),
