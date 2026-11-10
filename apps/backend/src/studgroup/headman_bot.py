@@ -581,9 +581,7 @@ async def subgroup_back(db, session, group, member, data):
     domain.headman_only(member)
     field = data.get("field") if session.step == "text" else "subgroup_draft"
     if field == "subgroup_subject":
-        await subgroup_settings_screen(
-            db, session, group, onboarding=data.get("onboarding", False)
-        )
+        await subgroup_settings_screen(db, session, group, onboarding=data.get("onboarding", False))
     elif field == "subgroup_count":
         await ask(
             db,
