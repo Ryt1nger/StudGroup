@@ -28,6 +28,4 @@ def test_postgres_two_live_groups_enroll_only_verified_student(postgres_client, 
 
 def test_postgres_two_verified_groups_never_guess_or_grant_access(postgres_client, monkeypatch):
     promote_headman(postgres_client)
-    bot.test_two_verified_groups_never_guess_or_grant_student_access(
-        postgres_client, monkeypatch
-    )
+    bot.test_two_verified_groups_never_guess_or_grant_student_access(postgres_client, monkeypatch)
