@@ -548,13 +548,12 @@ async def home(db, session, settings, telegram_id):
         ]
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
-        if member.role == "headman":
-            if not group.academic_group_code:
-                text += (
-                    "\nУкажите официальный ID РАНХиГС, чтобы завершить подключение."
-                    if group.academic_group_code_required
-                    else "\nОфициальный ID РАНХиГС ещё не указан."
-                )
+        if member.role == "headman" and not group.academic_group_code:
+            text += (
+                "\nУкажите официальный ID РАНХиГС, чтобы завершить подключение."
+                if group.academic_group_code_required
+                else "\nОфициальный ID РАНХиГС ещё не указан."
+            )
         if member.role == "student" and await subgroups.splits(db, group.id):
             rows.insert(0, [("Мои подгруппы", "subgroups")])
         await screen(
