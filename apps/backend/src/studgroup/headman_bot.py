@@ -714,12 +714,7 @@ async def subgroup_back(db, session, group, member, data):
         )
     elif field == "subgroup_draft_name":
         await subgroup_draft_screen(db, session, data)
-    elif field == "subgroup_append_signals":
-        await subgroup_detail(
-            db, session, group, uuid.UUID(data["split_id"]),
-            onboarding=data.get("onboarding", False),
-        )
-    elif field == "subgroup_existing_name":
+    elif field in {"subgroup_append_signals", "subgroup_existing_name"}:
         await subgroup_detail(
             db,
             session,
