@@ -151,9 +151,9 @@ a { color: inherit; text-decoration: none; }
 .hr span { position: absolute; left: 0; top: -9px; font-size: 12px; color: var(--label-3); font-weight: 500; font-variant-numeric: tabular-nums; }
 .ev { z-index: 2; position: absolute; left: 6px; right: 0; padding: 10px 14px 10px 18px; border-radius: 20px; background: var(--card); border: .5px solid hsl(var(--sc-hsl) / 0.35); overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
 .ev .bar { left: 7px; top: 11px; bottom: 11px; }
-.ev b { font-size: 15.5px; font-weight: 650; letter-spacing: -.02em; display: flex; align-items: center; justify-content: space-between; }
+.ev b { font-size: 15.5px; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; overflow-wrap: anywhere; }
 .ev span:not(.bar) { font-size: 12.5px; color: var(--label-2); }
-.ev .dim { color: var(--label-3) !important; }
+.ev .dim { color: var(--label-3) !important; line-height: 1.35; overflow-wrap: anywhere; }
 .ev .vid { color: var(--sc); display: grid; }
 .ev.now { box-shadow: 0 0 0 1.5px var(--sc); }
 .nowline { position: absolute; left: -52px; right: 0; border-top: 2px solid var(--accent); z-index: 0; pointer-events: none; }
@@ -632,6 +632,15 @@ a.pcard:active { transform: scale(.98); }
 .group-event-main .group-event-summary { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
 .event-source { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; color: var(--accent); }
 .event-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.event-calendar-action { margin-top: 12px; font-size: 13px; padding: 9px 13px; max-width: 100%; white-space: normal; }
+.modal-back.event-date-overlay { position: fixed; z-index: 50; padding: 18px 20px max(18px, env(safe-area-inset-bottom)); }
+.event-date-modal { max-width: 360px; max-height: 86dvh; overflow-y: auto; text-align: left; }
+.event-date-modal > h3, .event-date-modal > p { text-align: left; }
+.event-date-modal .form { margin-top: 8px; }
+.event-date-modal .field { margin-top: 14px; }
+.event-date-modal .field input { width: 100%; }
+.event-date-modal .mbtns { grid-template-columns: 1fr 1fr; margin-top: 20px; }
+.event-date-modal .mbtns button { min-width: 0; }
 .event-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
 .event-review-source { border-top: .5px solid var(--card-edge); padding: 12px 0; }
 .event-review-source label { display: flex; gap: 8px; align-items: center; margin-top: 12px; }

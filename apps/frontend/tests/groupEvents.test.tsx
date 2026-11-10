@@ -42,6 +42,63 @@ describe('separate persisted group events', () => {
     expect(screen.getByText('Событие')).toBeInTheDocument();
   });
 
+  it('asks for a missing date in the existing modal, saves with revision and opens that schedule day', async () => {
+    useScenario('events');
+    const undated: PublishedEvent = {
+      id: ID,
+      revision: 4,
+      state: 'active',
+      title: 'Собрание группы',
+      description: 'Встречаемся после занятий',
+      audience: 'group',
+      source_availability: 'available',
+      retained_until: '2026-12-01T00:00:00Z',
+    };
+    let saved: Record<string, unknown> | null = null;
+    server.use(
+      http.get(`${API}/group-events`, () => HttpResponse.json({ events: [undated] })),
+      http.put(`${API}/staff/image-findings/events/${ID}`, async ({ request }) => {
+        saved = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...undated, starts_on: '2026-11-12', revision: 5 });
+      }),
+    );
+    const app = renderApp({ route: '/events' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Добавить в расписание' }));
+    const modal = screen.getByRole('dialog', { name: 'Добавить дату события' });
+    await userEvent.type(within(modal).getByLabelText('Дата события (дедлайн)'), '2026-11-12');
+    await userEvent.click(within(modal).getByRole('button', { name: 'Сохранить дату' }));
+    await waitFor(() => expect(saved).toMatchObject({
+      expected_revision: 4,
+      state: 'active',
+      payload: { title: 'Собрание группы', starts_on: '2026-11-12', starts_at: null },
+    }));
+    await waitFor(() => expect(app.router.state.location).toMatchObject({
+      pathname: '/schedule',
+      search: '?day=2026-11-12',
+    }));
+  });
+
+  it('opens an already dated event in schedule without attempting a second write', async () => {
+    useScenario('events');
+    let putCount = 0;
+    server.use(
+      http.get(`${API}/group-events`, () => HttpResponse.json({
+        events: [{
+          id: ID, revision: 2, state: 'active', audience: 'group', title: 'Лекция',
+          starts_on: '2026-11-12', retained_until: '2026-11-20T00:00:00Z',
+        }],
+      })),
+      http.put(`${API}/staff/image-findings/events/${ID}`, () => {
+        putCount += 1;
+        return HttpResponse.json({});
+      }),
+    );
+    const app = renderApp({ route: '/events' });
+    await userEvent.click(await screen.findByRole('link', { name: 'В расписании · Открыть' }));
+    await waitFor(() => expect(app.router.state.location.search).toBe('?day=2026-11-12'));
+    expect(putCount).toBe(0);
+  });
+
   it('hides navigation and makes no event requests when capabilities are absent', async () => {
     useScenario();
     renderApp({ route: '/events' });
@@ -60,9 +117,10 @@ describe('separate persisted group events', () => {
       ),
     ).toEqual(['Задания', 'Расписание', 'Сегодня', 'События', 'Предметы']);
     expect(await screen.findByText('Пока нет событий')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('link', { name: 'Проверить черновики и изменения' }));
+    expect(screen.queryByRole('link', { name: 'Проверить черновики и изменения' })).not.toBeInTheDocument();
+    await go(app.router, '/events/review');
     await userEvent.click(await screen.findByRole('link', { name: /Открытая лекция о космосе/ }));
-    expect(await screen.findByLabelText('Название')).toHaveValue('Открытая лекция о космосе');
+    expect(await screen.findByLabelText('Название события')).toHaveValue('Открытая лекция о космосе');
     await userEvent.click(screen.getByRole('button', { name: 'Подтвердить публикацию' }));
     expect(
       await screen.findByRole('heading', { name: 'Открытая лекция о космосе', level: 1 }),
@@ -73,7 +131,7 @@ describe('separate persisted group events', () => {
     await go(app.router, '/today?day=1');
     expect(await screen.findByRole('heading', { name: 'Открытая лекция о космосе' })).toBeInTheDocument();
     await go(app.router, `/events/review/${ID}`);
-    const date = await screen.findByLabelText('Дата начала');
+    const date = await screen.findByLabelText('Дата события');
     await userEvent.clear(date);
     await userEvent.type(date, '2026-10-08');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }));
@@ -156,7 +214,7 @@ describe('separate persisted group events', () => {
       }),
     );
     renderApp({ route: `/events/review/${ID}` });
-    const title = await screen.findByLabelText('Название');
+    const title = await screen.findByLabelText('Название события');
     await userEvent.type(title, ' — мои правки');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }));
     await screen.findByText(/Событие или источник изменились/);
@@ -164,7 +222,7 @@ describe('separate persisted group events', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }));
     expect(revisions).toEqual([1, 1]);
     await userEvent.click(screen.getByRole('button', { name: 'Загрузить актуальную версию' }));
-    await waitFor(() => expect(screen.getByLabelText('Название')).toHaveValue('Новое название'));
+    await waitFor(() => expect(screen.getByLabelText('Название события')).toHaveValue('Новое название'));
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }));
     await waitFor(() => expect(revisions).toEqual([1, 1, 2]));
   });

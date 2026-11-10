@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { useTelegram } from '../../telegram/TelegramProvider';
 import { Ic } from '../../ui/Ic';
 import { eventDate } from './calendar';
+import { EventCalendarAction } from './EventCalendarAction';
 
 export function EventSource({ url }: { url?: string | null }) {
   const { adapter } = useTelegram();
@@ -44,10 +45,12 @@ export function EventCard({
   item,
   timeZone,
   to,
+  calendarItem,
 }: {
   item: EventPayload & { id: string; state: string; rescheduled?: boolean; source_url?: string | null };
   timeZone: string;
   to?: string;
+  calendarItem?: PublishedEvent;
 }) {
   return (
     <article className="block group-event-card">
@@ -66,15 +69,16 @@ export function EventCard({
         <EventStatus item={item} />
       </Link>
       <EventSource url={item.source_url} />
+      {calendarItem ? <EventCalendarAction item={calendarItem} /> : null}
     </article>
   );
 }
 
-export function EventCards({ items, timeZone }: { items: readonly PublishedEvent[]; timeZone: string }) {
+export function EventCards({ items, timeZone, calendarAction = false }: { items: readonly PublishedEvent[]; timeZone: string; calendarAction?: boolean }) {
   return (
     <>
       {items.map((item) => (
-        <EventCard key={item.id} item={item} timeZone={timeZone} />
+        <EventCard key={item.id} item={item} timeZone={timeZone} calendarItem={calendarAction ? item : undefined} />
       ))}
     </>
   );

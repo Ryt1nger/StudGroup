@@ -13,8 +13,8 @@ for (const theme of ['light', 'dark']) {
     await expect(page.getByRole('navigation')).toHaveCSS('position', 'absolute');
     await page.getByRole('link', { name: 'Проверить черновики и изменения' }).click();
     await page.getByRole('link', { name: /Открытая лекция о космосе/ }).click();
-    await expect(page.getByLabel('Название')).toHaveValue('Открытая лекция о космосе');
-    const original = await page.getByLabel('Дата начала', { exact: true }).inputValue();
+    await expect(page.getByLabel('Название события')).toHaveValue('Открытая лекция о космосе');
+    const original = await page.getByLabel('Дата события', { exact: true }).inputValue();
     await page.getByRole('button', { name: 'Подтвердить публикацию' }).click();
     await expect(page.getByRole('heading', { name: 'Открытая лекция о космосе', level: 1 })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
@@ -26,7 +26,7 @@ for (const theme of ['light', 'dark']) {
     await page.getByRole('link', { name: /Открытая лекция о космосе/ }).click();
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
     const moved = new Date(Date.parse(`${original}T12:00:00Z`) + 2 * 86_400_000).toISOString().slice(0, 10);
-    await page.getByLabel('Дата начала', { exact: true }).fill(moved);
+    await page.getByLabel('Дата события', { exact: true }).fill(moved);
     await page.getByRole('button', { name: 'Сохранить изменения' }).click();
     await expect(page.getByText('Перенесено', { exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'Расписание', exact: true }).click();
