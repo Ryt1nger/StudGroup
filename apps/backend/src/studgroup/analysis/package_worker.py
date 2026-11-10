@@ -19,7 +19,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import photo_dedupe
@@ -228,7 +228,12 @@ async def _waiting_image_context(db, group, route, settings, now):
     album or replies. Unrelated chat messages are still eligible for packages.
     The source/reply links stay in RawMessage, ready to be used by pass B and C+.
     """
-    from studgroup.analysis.image_jobs import enabled, live_mode, supported
+    from studgroup.analysis.image_jobs import (
+        enabled,
+        live_mode,
+        pilot_backfill_since,
+        supported,
+    )
     from studgroup.models import ImageAnalysisJob
 
     independent = enabled(settings, group.id)
@@ -264,13 +269,18 @@ async def _waiting_image_context(db, group, route, settings, now):
     ).all()
     by_id = {row.id: row for row in sources}
     ready = set()
+    # Photos outside the owner-funded one-week backfill are intentionally not
+    # purchased; they must never block the text package that references them.
+    pilot_cutoff = (
+        pilot_backfill_since(group, now) if getattr(settings, "owner_funded_pilot", False) else None
+    )
     if independent and live_mode(settings):
         finished = (
             await db.execute(
                 select(ImageAnalysisJob.attachment_id, ImageAnalysisJob.source_revision).where(
                     ImageAnalysisJob.group_id == group.id,
-                    ImageAnalysisJob.pass_number == 2,
-                    ImageAnalysisJob.state == "ready",
+                    ImageAnalysisJob.state.in_(("ready", "failed")),
+                    or_(ImageAnalysisJob.pass_number == 2, ImageAnalysisJob.state == "failed"),
                     ImageAnalysisJob.delete_at > now,
                 )
             )
@@ -282,6 +292,8 @@ async def _waiting_image_context(db, group, route, settings, now):
     for attachment in images:
         source = by_id.get(attachment.raw_message_id)
         if source is None or attachment.source_revision != source.revision:
+            continue
+        if pilot_cutoff is not None and _utc(source.message_date) < pilot_cutoff:
             continue
         if independent:
             unresolved = not live_mode(settings) or (attachment.id, source.revision) not in ready
