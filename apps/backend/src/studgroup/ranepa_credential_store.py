@@ -127,14 +127,29 @@ class CredentialStore:
 
 
 def main():
-    """Create the document table from a restricted one-off job, without printing secrets."""
+    """Create the document table and verify a disposable record without printing secrets."""
     store = CredentialStore(
         os.environ["YDB_DOCUMENT_ENDPOINT"],
         os.environ["YDB_ACCESS_KEY_ID"],
         os.environ["YDB_SECRET_ACCESS_KEY"],
     )
-    asyncio.run(store.ensure_table())
-    print("YDB credential table ready")
+
+    async def verify():
+        await store.ensure_table()
+        record_id = uuid.uuid4()
+        try:
+            await store.put(record_id, "studgroup-storage-check", "test-ciphertext", "v1")
+            if await store.get(record_id) != (
+                "studgroup-storage-check",
+                "test-ciphertext",
+                "v1",
+            ):
+                raise CredentialStoreUnavailable()
+        finally:
+            await store.delete(record_id)
+
+    asyncio.run(verify())
+    print("YDB credential table and disposable record verified")
 
 
 if __name__ == "__main__":
