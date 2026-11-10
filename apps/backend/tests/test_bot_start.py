@@ -732,7 +732,7 @@ def test_ranepa_external_browser_choice_and_direct_support_links(foreman):
     }
     assert button(foreman, "Открыть ЛК РАНХиГС") == {
         "text": "Открыть ЛК РАНХиГС",
-        "url": "https://my.ranepa.ru/",
+        "url": "https://my.ranepa.ru/student/",
     }
     assert all(
         "web_app" not in b for row in last(foreman)["reply_markup"]["inline_keyboard"] for b in row
