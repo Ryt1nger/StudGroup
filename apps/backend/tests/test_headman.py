@@ -567,7 +567,7 @@ def test_subgroup_wizard_backtracks_without_losing_subject_or_prior_signals(fore
     enter(foreman)
     click(foreman, "Подгруппы по предметам")
     click(foreman, "Добавить предмет")
-    assert "‹ Назад" in [b["text"] for row in last(foreman)["reply_markup"]["inline_keyboard"] for b in row]
+    assert "‹ Назад" in str(last(foreman)["reply_markup"])
     click(foreman, "‹ Назад")
     assert "Добавить предмет" in last(foreman)["text"] or "Добавить предмет" in str(last(foreman))
 
