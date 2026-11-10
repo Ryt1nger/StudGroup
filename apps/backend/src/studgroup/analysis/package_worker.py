@@ -650,6 +650,23 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
             )
             if open_run is not None:
                 continue
+            if settings.owner_funded_pilot:
+                # A group may have more than one 24-message package waiting, but
+                # the pilot must buy at most ONE new text analysis per hour.
+                # This durable SQL gate survives restarts and runs under the
+                # group route lock; image jobs and retries of the same run are
+                # independent of it.
+                last_run_at = await db.scalar(
+                    select(func.max(func.coalesce(
+                        ShadowEvaluationRun.completed_at, ShadowEvaluationRun.created_at
+                    ))).where(
+                        ShadowEvaluationRun.group_id == group.id,
+                        ShadowEvaluationRun.raw_message_id.is_(None),
+                        ShadowEvaluationRun.delete_at > now,
+                    )
+                )
+                if last_run_at is not None and now < _utc(last_run_at) + timedelta(hours=1):
+                    continue
             if settings.photo_reading_enabled and settings.photo_backfill_since is not None:
                 await reopen_unread_photo_messages(db, group, settings.photo_backfill_since, now)
             planned = await _plan_next(db, group, route, settings, now, provider, transport)
