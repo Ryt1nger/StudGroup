@@ -634,6 +634,9 @@ def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeyp
     tap(foreman, "‹ К предметам", uid=ADDER)
     assert "Далее" in labels(foreman)  # reopening the subject preserves onboarding
     tap(foreman, "Далее", uid=ADDER)
+    assert "К какой подгруппе по предмету «Английский»" in last(foreman)["text"]
+    assert {"Подгруппа 1 · Иванова", "Подгруппа 2 · 2 группа"} <= set(labels(foreman))
+    tap(foreman, "Подгруппа 1 · Иванова", uid=ADDER)
     assert "Профиль можно заполнить в приложении" in last(foreman)["text"]
     assert {"Открыть StudGroup", "Кабинет старосты"} <= set(labels(foreman))
     assert "Подключить СДО / ЛК" not in labels(foreman)
