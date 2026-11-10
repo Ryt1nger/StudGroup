@@ -126,7 +126,6 @@ def test_headman_configures_split_and_existing_student_gets_prompt(foreman_fixtu
     assert any(p.get("chat_id") == 33 and "Выберите свою" in p.get("text", "") for p in payloads)
 
 
-
 def test_headman_can_add_subgroup_to_existing_subject_without_resetting_choices(
     foreman_fixture,  # noqa: F811
 ):
