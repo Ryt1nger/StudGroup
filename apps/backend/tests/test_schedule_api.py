@@ -25,6 +25,7 @@ def client(tmp_path):
     settings = Settings(
         database_url=f"sqlite+aiosqlite:///{tmp_path}/test.db",
         cabinet_schedule_background_enabled=False,
+        owner_funded_pilot=False,  # existing financial-gate tests opt out explicitly
     )
     app = create_app(settings)
     with TestClient(app) as http:

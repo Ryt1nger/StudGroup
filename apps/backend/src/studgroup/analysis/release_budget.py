@@ -112,11 +112,18 @@ async def configure(db, group_id, *, amount, since, until, receipt):
 
 
 def production_enabled(settings, group_id):
-    """Continuous paid processing for explicitly enrolled live groups only."""
+    """Owner-funded pilot or explicitly enrolled live group.
+
+    This only changes financial routing; the caller still verifies active group
+    authorization and stores a reserved/settled record for every HTTP attempt.
+    """
     return bool(
         settings is not None
         and group_id is not None
-        and str(group_id) in getattr(settings, "ai_production_groups", ())
+        and (
+            getattr(settings, "owner_funded_pilot", False)
+            or str(group_id) in getattr(settings, "ai_production_groups", ())
+        )
     )
 
 

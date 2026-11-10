@@ -299,6 +299,10 @@ async def claim_headman(db, settings, session, group, telegram_id):
         return False
     # Activation is part of the same transaction as verified, explicit headman claiming.
     locked.pilot_authorized = True
+    if settings.owner_funded_pilot:
+        from studgroup.analysis.pilot_access import ensure_route
+
+        await ensure_route(db, locked)
     bot_id = own_bot_id(settings)
     bot_is_admin = (
         bot_id is not None

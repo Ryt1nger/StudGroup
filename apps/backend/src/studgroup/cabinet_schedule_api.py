@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import Response
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import delete, select
@@ -90,7 +90,7 @@ def check_image(data: bytes):
     return mime
 
 
-async def eligible(db, group, now):
+async def eligible(db, group, now, settings=None):
     route = await db.get(GroupAnalysisSettings, group.id)
     if group.status != "active" or not group.pilot_authorized or route is None:
         raise ApiError("analysis_unavailable", "Для этой группы анализ не настроен", 409)
@@ -99,6 +99,10 @@ async def eligible(db, group, now):
     # waking background AI processing or changing its normal publication mode.
     if route.paid_outcome_hold:
         raise ApiError("analysis_unavailable", "Анализ временно недоступен", 409)
+    # No per-group paid activation in the owner-funded pilot; provider requests
+    # still pass through the durable reservation and accounting layer.
+    if settings is not None and settings.owner_funded_pilot:
+        return route
     if route.release_budget_usd is None:
         raise ApiError(
             "analysis_budget_closed",
@@ -182,6 +186,7 @@ async def upload_schedule(
     duration: Annotated[Literal["one_week", "recurring"], Form()],
     context: CurrentStaff,
     db: Db,
+    request: Request,
 ):
     if week_start.weekday() != 0:
         raise ApiError("invalid_week", "Выберите понедельник нужной недели", 422)
@@ -191,7 +196,7 @@ async def upload_schedule(
     data = await image.read(MAX_IMAGE_BYTES + 1)
     mime = check_image(data)
     sha = hashlib.sha256(data).hexdigest()
-    await eligible(db, context.group, now)
+    await eligible(db, context.group, now, request.app.state.settings)
     # Serialize concurrent identical submissions by group. Commit BEFORE DeepSeek HTTP.
     group = await db.scalar(select(Group).where(Group.id == context.group.id).with_for_update())
     await prune(db, context.group.id, now)
@@ -244,7 +249,7 @@ async def upload_schedule(
 
 
 @router.post("/{ident}/retry", status_code=202)
-async def retry_upload(ident: uuid.UUID, context: CurrentStaff, db: Db):
+async def retry_upload(ident: uuid.UUID, context: CurrentStaff, db: Db, request: Request):
     """Explicit retry only; never silently repeat an unknown paid attempt."""
     now = datetime.now(UTC)
     row = await db.scalar(
@@ -260,7 +265,7 @@ async def retry_upload(ident: uuid.UUID, context: CurrentStaff, db: Db):
         raise ApiError("not_found", "Черновик недоступен", 404)
     if row.state != "failed" or (row.retry_count >= 1 and not unlimited_retry_for(row, context)):
         raise ApiError("retry_unavailable", "Повторная обработка недоступна", 409)
-    await eligible(db, context.group, now)
+    await eligible(db, context.group, now, request.app.state.settings)
     row.retry_count += 1
     row.progress_percent = 50 if row.first_pass_json else 5
     row.progress_stage = "queued_b" if row.first_pass_json else "queued_a"

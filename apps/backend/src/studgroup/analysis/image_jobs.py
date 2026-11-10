@@ -38,11 +38,23 @@ def utc(stamp):
 
 
 def enabled(settings, group_id):
+    if getattr(settings, "owner_funded_pilot", False) and group_id is not None:
+        return True
     return (
         settings.image_analysis_enabled
         and settings.image_analysis_since is not None
         and str(group_id) in settings.image_analysis_groups
     )
+
+
+def live_mode(settings):
+    return getattr(settings, "owner_funded_pilot", False) or settings.image_analysis_mode == "live"
+
+
+def pilot_backfill_since(group, now):
+    """Only catch up one week of photos, never photos before the bot joined."""
+    week_ago = utc(now) - timedelta(days=7)
+    return max(week_ago, utc(group.bot_added_at)) if group.bot_added_at else week_ago
 
 
 def supported(attachment):
@@ -788,7 +800,7 @@ async def perform(provider, image, mime, job, raw, first=None):
 async def process_images_next(engine, settings, provider=None, now=None, transport=None):
     from studgroup.analysis.release_budget import production_enabled
 
-    if (
+    if not getattr(settings, "owner_funded_pilot", False) and (
         not settings.image_analysis_enabled
         or not settings.image_analysis_groups
         or settings.image_analysis_since is None
@@ -822,11 +834,19 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             group = await db.get(Group, route.group_id)
             if group.status != "active" or not group.pilot_authorized:
                 continue
+            # The pilot must not silently purchase a second reading of the entire
+            # historical BI 1.2 photo archive after a deploy or cold restart.
+            # Only retained photos from the previous week are eligible for catch-up.
+            since = (
+                pilot_backfill_since(group, now)
+                if getattr(settings, "owner_funded_pilot", False)
+                else settings.image_analysis_since
+            )
             await schedule_group(
                 db,
                 group,
                 now,
-                settings.image_analysis_since,
+                since,
                 model_identity(settings),
                 provider_identity(settings),
                 quiet_window=production_enabled(settings, group.id),
@@ -991,7 +1011,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             await capture_image(db, job, result, raw, now)
         job.lease_until = None
         if (
-            settings.image_analysis_mode == "live"
+            live_mode(settings)
             and job.state in {"ready", "failed"}
             and (job.pass_number == 2 or job.state == "failed")
             and raw is not None

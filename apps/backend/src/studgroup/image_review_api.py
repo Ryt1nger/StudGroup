@@ -26,7 +26,7 @@ router = APIRouter(prefix="/v1/staff/image-findings")
 
 def gate(request, group_id):
     settings = request.app.state.settings
-    if (
+    if not settings.owner_funded_pilot and (
         not settings.image_schedule_review_enabled
         or str(group_id) not in settings.image_analysis_groups
     ):
@@ -136,7 +136,7 @@ async def image_diagnostics(request: Request, context: CurrentStaff, db: Db):
     from studgroup.models import ImageAnalysisCall
 
     settings = request.app.state.settings
-    if (
+    if not settings.owner_funded_pilot and (
         not settings.image_diagnostics_enabled
         or str(context.group.id) not in settings.image_analysis_groups
     ):

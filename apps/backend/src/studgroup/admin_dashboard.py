@@ -250,8 +250,11 @@ async def dashboard(
             "processing_mode": request.app.state.settings.processing_mode,
             "legacy_ai_enabled": request.app.state.settings.ai_enabled
             and request.app.state.settings.legacy_engine_enabled,
-            "new_engine_enabled": request.app.state.settings.new_engine_enabled,
+            "new_engine_enabled": request.app.state.settings.new_engine_enabled
+            or request.app.state.settings.owner_funded_pilot,
             "shadow_enabled": request.app.state.settings.ai_shadow_enabled,
-            "image_enabled": request.app.state.settings.image_analysis_enabled,
+            "image_enabled": request.app.state.settings.image_analysis_enabled
+            or request.app.state.settings.owner_funded_pilot,
+            "owner_funded_pilot": request.app.state.settings.owner_funded_pilot,
         },
     }

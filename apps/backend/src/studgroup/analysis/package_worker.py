@@ -19,7 +19,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import photo_dedupe
@@ -77,6 +77,8 @@ PHOTO_MEMORY = timedelta(days=14)  # how far back a repeated photo is still reco
 
 
 def _gate(settings, now):
+    if getattr(settings, "owner_funded_pilot", False):
+        return True
     if not settings.new_engine_enabled:
         return False
     until = settings.new_engine_enabled_until
@@ -226,7 +228,12 @@ async def _waiting_image_context(db, group, route, settings, now):
     album or replies. Unrelated chat messages are still eligible for packages.
     The source/reply links stay in RawMessage, ready to be used by pass B and C+.
     """
-    from studgroup.analysis.image_jobs import enabled, supported
+    from studgroup.analysis.image_jobs import (
+        enabled,
+        live_mode,
+        pilot_backfill_since,
+        supported,
+    )
     from studgroup.models import ImageAnalysisJob
 
     independent = enabled(settings, group.id)
@@ -262,13 +269,18 @@ async def _waiting_image_context(db, group, route, settings, now):
     ).all()
     by_id = {row.id: row for row in sources}
     ready = set()
-    if independent and settings.image_analysis_mode == "live":
+    # Photos outside the owner-funded one-week backfill are intentionally not
+    # purchased; they must never block the text package that references them.
+    pilot_cutoff = (
+        pilot_backfill_since(group, now) if getattr(settings, "owner_funded_pilot", False) else None
+    )
+    if independent and live_mode(settings):
         finished = (
             await db.execute(
                 select(ImageAnalysisJob.attachment_id, ImageAnalysisJob.source_revision).where(
                     ImageAnalysisJob.group_id == group.id,
-                    ImageAnalysisJob.pass_number == 2,
-                    ImageAnalysisJob.state == "ready",
+                    ImageAnalysisJob.state.in_(("ready", "failed")),
+                    or_(ImageAnalysisJob.pass_number == 2, ImageAnalysisJob.state == "failed"),
                     ImageAnalysisJob.delete_at > now,
                 )
             )
@@ -281,11 +293,10 @@ async def _waiting_image_context(db, group, route, settings, now):
         source = by_id.get(attachment.raw_message_id)
         if source is None or attachment.source_revision != source.revision:
             continue
+        if pilot_cutoff is not None and _utc(source.message_date) < pilot_cutoff:
+            continue
         if independent:
-            unresolved = (
-                settings.image_analysis_mode != "live"
-                or (attachment.id, source.revision) not in ready
-            )
+            unresolved = not live_mode(settings) or (attachment.id, source.revision) not in ready
         else:
             unresolved = attachment.processing_state == "metadata_only"
         if unresolved:
@@ -481,9 +492,9 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
         await db.commit()  # keep the cost and the photos already read
         return "photo_retry"
     from studgroup.analysis.image_evidence import add_image_facts, load_image_evidence
-    from studgroup.analysis.image_jobs import enabled
+    from studgroup.analysis.image_jobs import enabled, live_mode
 
-    structured = enabled(settings, group.id) and settings.image_analysis_mode == "live"
+    structured = enabled(settings, group.id) and live_mode(settings)
     messages = await _source_messages(db, group, list(rows.values()), structured_images=structured)
     images = (
         await load_image_evidence(db, group.id, messages, now, settings.image_analysis_since)

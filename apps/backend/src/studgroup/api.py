@@ -134,15 +134,22 @@ async def bootstrap(
 
 
 def group_features(settings, group, member):
-    allowed = bool(group and str(group.id) in settings.image_analysis_groups)
+    allowed = bool(
+        group
+        and (
+            str(group.id) in settings.image_analysis_groups
+            or (settings.owner_funded_pilot and group.status == "active" and group.pilot_authorized)
+        )
+    )
     editor = bool(member and member.role in {"headman", "deputy"})
     return {
-        # StudGroup currently has one active group.  The Events destination is a
-        # read-only first-class part of its navigation, including when it is empty;
-        # do not hide it behind the internal image-pilot allowlist.
         "events": bool(group),
-        "event_review": allowed and editor and settings.image_event_review_enabled,
-        "schedule_review": allowed and editor and settings.image_schedule_review_enabled,
+        "event_review": allowed
+        and editor
+        and (settings.image_event_review_enabled or settings.owner_funded_pilot),
+        "schedule_review": allowed
+        and editor
+        and (settings.image_schedule_review_enabled or settings.owner_funded_pilot),
     }
 
 

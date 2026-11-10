@@ -62,7 +62,7 @@ async def inspect(engine, settings, now=None):
                 continue
             production = production_enabled(settings, group.id)
             recurring = None if production else recurring_policy_status(settings, group.id, now)
-            if not settings.new_engine_enabled:
+            if not (settings.new_engine_enabled or settings.owner_funded_pilot):
                 reason = "engine_disabled"
             elif (
                 not production
