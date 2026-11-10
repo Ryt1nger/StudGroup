@@ -828,11 +828,22 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             group = await db.get(Group, route.group_id)
             if group.status != "active" or not group.pilot_authorized:
                 continue
+            # The pilot must not silently purchase a second reading of the entire
+            # historical BI 1.2 photo archive after a deploy or cold restart.
+            # Only retained photos from the previous week are eligible for catch-up.
+            since = (
+                max(
+                    now - timedelta(days=7),
+                    utc(group.bot_added_at) if group.bot_added_at else now - timedelta(days=7),
+                )
+                if getattr(settings, "owner_funded_pilot", False)
+                else settings.image_analysis_since
+            )
             await schedule_group(
                 db,
                 group,
                 now,
-                settings.image_analysis_since or group.bot_added_at or now - timedelta(days=10),
+                since,
                 model_identity(settings),
                 provider_identity(settings),
                 quiet_window=production_enabled(settings, group.id),
