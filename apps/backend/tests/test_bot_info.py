@@ -127,12 +127,14 @@ def test_howto_offers_the_webapp_button(client):
     assert button["web_app"]["url"] == client.app.state.settings.webapp_origin
 
 
-def test_support_contact_comes_from_settings(client):
+def test_support_opens_the_fixed_studgroup_admin_contact(client):
     private(client, "/support", uid=2)
-    assert "скоро появятся" in panel_frames(client)[-1]["text"]
-    client.app.state.settings.support_contact = "@studgroup_support"
+    frame = panel_frames(client)[-1]
+    assert "@studgroup_admin" in frame["text"]
+    assert {"text": "Поддержка", "url": "https://t.me/studgroup_admin"} in buttons(frame)
+    client.app.state.settings.support_contact = "@unrelated_contact"
     private(client, "/support", uid=2, update=101)
-    assert "@studgroup_support" in panel_frames(client)[-1]["text"]
+    assert "@studgroup_admin" in panel_frames(client)[-1]["text"]
 
 
 def test_invite_codes_are_not_swallowed(client):

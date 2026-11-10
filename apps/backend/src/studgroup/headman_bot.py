@@ -423,6 +423,21 @@ async def settings_screen(db, session, group, member):
             [("Выключить вопросы" if enabled else "Включить вопросы", "toggle_questions")],
             [("Время вопросов", "digest_times")],
             [("Часовой пояс группы", "timezone")],
+            *(
+                [
+                    [
+                        (
+                            "Изменить ID РАНХиГС"
+                            if group.academic_group_code
+                            else "Указать ID РАНХиГС",
+                            "academic_code_edit",
+                        )
+                    ]
+                ]
+                if member.role == "headman"
+                else []
+            ),
+            [("Проверить подключение", "connection_status")],
             back(),
         ],
         "settings",
@@ -1235,6 +1250,11 @@ async def handle(db, update, settings):
             )
         elif action == "settings":
             await settings_screen(db, session, group, member)
+        elif session.step == "settings" and action in {"academic_code_edit", "connection_status"}:
+            if action == "academic_code_edit":
+                domain.headman_only(member)
+            await bot_start.open_staff_setting_from_cabinet(db, settings, sender.id, group, action)
+            return True
         elif session.step == "settings" and action == "toggle_questions":
             await preview(
                 db,

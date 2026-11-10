@@ -162,7 +162,7 @@ class Settings(BaseSettings):
     owner_update_notifications_since: datetime | None = None
     bot_admin_user_id: int | None = None
     admin_page_url: str = ""
-    support_contact: str = ""
+    support_contact: str = "@studgroup_admin"
     bot_username: str = ""  # without @; builds t.me invitation links, else code text is shown
 
     @field_validator("database_url", mode="before")
@@ -313,11 +313,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             print("REVIEWED_PUBLICATION_FAILED " + type(error).__name__, flush=True)
             raise RuntimeError("reviewed_publication_failed") from None
         if settings.owner_funded_pilot:
+            from studgroup.analysis.first_schedule import recover_pending_first
             from studgroup.analysis.pilot_access import enroll_existing
 
             enrolled = await enroll_existing(app.state.engine)
             if enrolled:
                 print(f"OWNER_FUNDED_PILOT_ENROLLED groups={enrolled}", flush=True)
+            # Apply already-read first timetables without buying a second AI request.
+            recovered = await recover_pending_first(app.state.engine)
+            if recovered:
+                print(f"INITIAL_SCHEDULE_RECOVERED groups={recovered}", flush=True)
         # One-off, owner-approved BI 1.2 manual screenshot pilot: immutable $0.05
         # ledger window. Missing environment approval makes this a no-op.
         try:

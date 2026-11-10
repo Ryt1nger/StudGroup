@@ -237,6 +237,10 @@ async def process_next(engine, settings, provider=None, now=None):
             progress=100,
             rows=rows,
         )
+        if saved and settings.owner_funded_pilot and not partial:
+            from studgroup.analysis.first_schedule import publish_cabinet_first
+
+            await publish_cabinet_first(engine, task["id"], now)
         if saved:
             # Only after the durable draft exists; notification failure cannot
             # turn a successful (already paid) scan into a failed scan.

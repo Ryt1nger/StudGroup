@@ -312,9 +312,13 @@ def test_ranepa_code_can_be_suggested_from_telegram_title(foreman, monkeypatch):
 
 def test_legacy_headman_can_add_official_group_code_without_new_registration(foreman):
     deliver(foreman, "/start", uid=1)
+    assert "Пригласить участников" not in labels(foreman)
+    assert "Указать ID группы РАНХиГС" not in labels(foreman)
+    tap(foreman, "Кабинет старосты", uid=1)
     assert "Пригласить участников" in labels(foreman)
-    assert "Указать ID группы РАНХиГС" in labels(foreman)
-    tap(foreman, "Указать ID группы РАНХиГС", uid=1)
+    tap(foreman, "Настройки", uid=1)
+    assert "Указать ID РАНХиГС" in labels(foreman)
+    tap(foreman, "Указать ID РАНХиГС", uid=1)
     deliver(foreman, "неверный код", uid=1)
     assert "Не удалось распознать код" in last(foreman)["text"]
     deliver(foreman, "Э-ОБ-385-04-26-02", uid=1)
@@ -323,6 +327,8 @@ def test_legacy_headman_can_add_official_group_code_without_new_registration(for
     assert "Да, сохранить" in labels(foreman)  # confirm survives a restart
     tap(foreman, "Да, сохранить", uid=1)
     assert "Официальный ID РАНХиГС: Э-ОБ-385-04-26-02" in last(foreman)["text"]
+    assert "Пригласить участников" not in labels(foreman)
+    tap(foreman, "Кабинет старосты", uid=1)
     assert "Пригласить участников" in labels(foreman)
 
 

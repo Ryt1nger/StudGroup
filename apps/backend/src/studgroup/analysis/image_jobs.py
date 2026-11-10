@@ -1007,7 +1007,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             from studgroup.analysis.group_events import capture_image
             from studgroup.analysis.image_schedule import capture
 
-            await capture(db, job, result, now)
+            await capture(db, job, result, now, owner_funded_pilot=settings.owner_funded_pilot)
             await capture_image(db, job, result, raw, now)
         job.lease_until = None
         if (

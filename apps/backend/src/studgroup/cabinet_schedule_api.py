@@ -1,4 +1,4 @@
-"""Staff-only, opt-in timetable screenshot reading; no Telegram ingestion or auto-publishing."""
+"""Staff-only timetable screenshots; first safe timetable may bootstrap automatically."""
 
 import hashlib
 import io

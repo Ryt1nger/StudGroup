@@ -1,4 +1,4 @@
-"""Draft timetable proposals; an explicit authorized confirmation is the only write path."""
+"""Review suggestions, with a one-time guarded auto-import for an empty pilot timetable."""
 
 import hashlib
 import json
@@ -62,7 +62,7 @@ def clipped_field(value: str | None) -> bool:
     return value is not None and ("..." in value or "…" in value)
 
 
-async def capture(db, job, reading, now):
+async def capture(db, job, reading, now, *, owner_funded_pilot=False):
     if not reading.schedule or not {"schedule", "schedule_change"}.intersection(
         reading.semantic_types
     ):
@@ -80,18 +80,21 @@ async def capture(db, job, reading, now):
         )
     )
     rows = suggest_review_rows(reading, group.first_week_anchor if group else None, horizon)
-    db.add(
-        ImageScheduleSuggestion(
-            group_id=job.group_id,
-            image_job_id=job.id,
-            schedule_version=context["schedule_version"],
-            rows_json=json.dumps(rows, ensure_ascii=False),
-            state="pending",
-            revision=1,
-            created_at=now,
-            delete_at=job.delete_at,
-        )
+    suggestion = ImageScheduleSuggestion(
+        group_id=job.group_id,
+        image_job_id=job.id,
+        schedule_version=context["schedule_version"],
+        rows_json=json.dumps(rows, ensure_ascii=False),
+        state="pending",
+        revision=1,
+        created_at=now,
+        delete_at=job.delete_at,
     )
+    db.add(suggestion)
+    if owner_funded_pilot:
+        from studgroup.analysis.first_schedule import publish_image_first
+
+        await publish_image_first(db, job, suggestion, reading, now)
 
 
 async def current_source(db, job_id, group_id, now):
