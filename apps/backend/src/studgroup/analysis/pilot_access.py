@@ -28,7 +28,7 @@ async def ensure_route(db, group, now=None):
         engine_version=ANALYSIS_ENGINE_VERSION,
         # Retained for schema compatibility; owner-funded requests are accounted
         # without a separately funded release or per-group monetary ceiling.
-        shadow_daily_budget_usd=Decimal("0"),
+        shadow_daily_budget_usd=Decimal(0),
         shadow_sample_percent=0,
         updated_at=now or datetime.now(UTC),
     )
