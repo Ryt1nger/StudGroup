@@ -77,6 +77,8 @@ PHOTO_MEMORY = timedelta(days=14)  # how far back a repeated photo is still reco
 
 
 def _gate(settings, now):
+    if getattr(settings, "owner_funded_pilot", False):
+        return True
     if not settings.new_engine_enabled:
         return False
     until = settings.new_engine_enabled_until
@@ -226,7 +228,7 @@ async def _waiting_image_context(db, group, route, settings, now):
     album or replies. Unrelated chat messages are still eligible for packages.
     The source/reply links stay in RawMessage, ready to be used by pass B and C+.
     """
-    from studgroup.analysis.image_jobs import enabled, supported
+    from studgroup.analysis.image_jobs import enabled, live_mode, supported
     from studgroup.models import ImageAnalysisJob
 
     independent = enabled(settings, group.id)
@@ -262,7 +264,7 @@ async def _waiting_image_context(db, group, route, settings, now):
     ).all()
     by_id = {row.id: row for row in sources}
     ready = set()
-    if independent and settings.image_analysis_mode == "live":
+    if independent and live_mode(settings):
         finished = (
             await db.execute(
                 select(ImageAnalysisJob.attachment_id, ImageAnalysisJob.source_revision).where(
@@ -283,7 +285,7 @@ async def _waiting_image_context(db, group, route, settings, now):
             continue
         if independent:
             unresolved = (
-                settings.image_analysis_mode != "live"
+                not live_mode(settings)
                 or (attachment.id, source.revision) not in ready
             )
         else:
@@ -481,9 +483,9 @@ async def _plan_next(db, group, route, settings, now, provider=None, transport=N
         await db.commit()  # keep the cost and the photos already read
         return "photo_retry"
     from studgroup.analysis.image_evidence import add_image_facts, load_image_evidence
-    from studgroup.analysis.image_jobs import enabled
+    from studgroup.analysis.image_jobs import enabled, live_mode
 
-    structured = enabled(settings, group.id) and settings.image_analysis_mode == "live"
+    structured = enabled(settings, group.id) and live_mode(settings)
     messages = await _source_messages(db, group, list(rows.values()), structured_images=structured)
     images = (
         await load_image_evidence(db, group.id, messages, now, settings.image_analysis_since)
