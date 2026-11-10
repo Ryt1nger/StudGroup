@@ -236,20 +236,30 @@ def test_editor_subgroup_mapping_is_group_and_subject_scoped(client, monkeypatch
 
 
 def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(client, monkeypatch):
+    from datetime import date, timedelta
+
+    # A one-off lesson must be in the future. Fixed 2026-11-09 dates expire.
+    lesson_date = date.today() + timedelta(days=7 - date.today().weekday())
+    lesson_day = lesson_date.isoformat()
+
     async def teacher():
         async with AsyncSession(client.app.state.engine) as db:
             pattern = await db.scalar(
                 select(SchedulePattern).where(SchedulePattern.subject == "Математика")
             )
             pattern.teacher = "Иванов"
+            pattern.valid_from = lesson_date - timedelta(days=7)
+            pattern.valid_until = lesson_date + timedelta(days=30)
             await db.commit()
 
     asyncio.run(teacher())
-    suggestion = prepare(client, monkeypatch)
+    suggestion = prepare(
+        client, monkeypatch, weekday=0, valid_from=lesson_day, valid_until=lesson_day
+    )
     make(client, "headman")
-    lesson = client.get("/v1/staff/schedule?start=2026-11-09&end=2026-11-09", headers=AUTH).json()[
-        "lesson_edits"
-    ][0]
+    lesson = client.get(
+        f"/v1/staff/schedule?start={lesson_day}&end={lesson_day}", headers=AUTH
+    ).json()["lesson_edits"][0]
     corrected = {
         "weekday": 0,
         "starts": "11:00",
@@ -257,8 +267,8 @@ def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(clie
         "subject": "Информатика",
         "teacher": None,
         "room": "303",
-        "valid_from": "2026-11-09",
-        "valid_until": "2026-11-09",
+        "valid_from": lesson_day,
+        "valid_until": lesson_day,
     }
     response = client.post(
         f"/v1/staff/image-findings/schedule/{suggestion.id}/confirm",
@@ -279,7 +289,7 @@ def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(clie
         },
     )
     assert response.status_code == 200, response.text
-    result = client.get("/v1/schedule?start=2026-11-09&end=2026-11-09", headers=AUTH)
+    result = client.get(f"/v1/schedule?start={lesson_day}&end={lesson_day}", headers=AUTH)
     assert result.status_code == 200, result.text
     changed = next(row for row in result.json()["lessons"] if row["subject"] == "Информатика")
     assert changed["teacher"] is None
@@ -299,9 +309,9 @@ def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(clie
             await db.commit()
 
     asyncio.run(undo())
-    restored = client.get("/v1/schedule?start=2026-11-09&end=2026-11-09", headers=AUTH).json()[
-        "lessons"
-    ]
+    restored = client.get(
+        f"/v1/schedule?start={lesson_day}&end={lesson_day}", headers=AUTH
+    ).json()["lessons"]
     assert all(row["subject"] != "Информатика" for row in restored)
     assert next(row for row in restored if row["subject"] == "Математика")["teacher"] == "Иванов"
 
