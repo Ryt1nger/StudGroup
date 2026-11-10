@@ -832,9 +832,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                 db,
                 group,
                 now,
-                settings.image_analysis_since
-                or group.bot_added_at
-                or now - timedelta(days=10),
+                settings.image_analysis_since or group.bot_added_at or now - timedelta(days=10),
                 model_identity(settings),
                 provider_identity(settings),
                 quiet_window=production_enabled(settings, group.id),
