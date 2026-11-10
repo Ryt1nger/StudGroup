@@ -1,4 +1,4 @@
-"""Draft timetable proposals; an explicit authorized confirmation is the only write path."""
+"""Review suggestions, with a one-time guarded auto-import for an empty pilot timetable."""
 
 import hashlib
 import json
