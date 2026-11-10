@@ -6,7 +6,7 @@ import { queryKeys } from '../../api/keys';
 import { ru } from '../../i18n/ru';
 import { dayKey, formatLongDay, formatTime } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
-import { safeLessonUrl, safeRanepaCourseUrl, useLessonLinkClick } from '../../lib/lessonLink';
+import { copyLessonUrl, safeLessonUrl, safeRanepaCourseUrl, useLessonLinkClick } from '../../lib/lessonLink';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
 import { subjectStyle } from '../../lib/subjectColor';
 import { SubjectMark } from '../../ui/SubjectMark';
@@ -16,6 +16,8 @@ import { BackTop } from '../../shell/TopBar';
 import { Float } from '../../shell/AppRoot';
 import { Empty } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
+import { useFeedback } from '../../ui/Feedback';
+import { useTelegram } from '../../telegram/TelegramProvider';
 import { HwCard } from '../shared/Cards';
 import { Sec } from '../shared/Sec';
 import { useToggleDone } from '../shared/useToggleDone';
@@ -68,13 +70,29 @@ function relative(startMs: number, endMs: number, nowMs: number): { text: string
 
 function JoinBar({ url }: { url: string }) {
   const open = useLessonLinkClick(url);
+  const { toast } = useFeedback();
+  const { adapter } = useTelegram();
+  const copy = async () => {
+    const copied = await copyLessonUrl(url);
+    toast(copied ? 'Ссылка скопирована' : 'Не удалось скопировать ссылку');
+    adapter?.haptic(copied ? 'success' : 'error');
+  };
   return (
     <Float>
-      <div className="cta-bar">
-        <a className="btn" href={url} target="_blank" rel="noopener noreferrer" onClick={open}>
+      <div className="cta-bar lesson-join-bar">
+        <a className="btn lesson-join-main" href={url} target="_blank" rel="noopener noreferrer" onClick={open}>
           <Ic name="video" size={18} />
           Подключиться к паре
         </a>
+        <button
+          className="btn lesson-join-copy"
+          type="button"
+          aria-label="Скопировать ссылку на пару"
+          title="Скопировать ссылку"
+          onClick={() => void copy()}
+        >
+          <Ic name="copy" size={22} />
+        </button>
       </div>
     </Float>
   );
