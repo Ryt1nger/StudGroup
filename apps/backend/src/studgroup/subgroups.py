@@ -392,7 +392,6 @@ async def create_split(db, group, subject, entries, now=None):
     return split
 
 
-
 async def append_subgroup(db, group_id, split_id, signals):
     """Append one subgroup without replacing the split or losing students' saved selections."""
     split = await db.scalar(
@@ -407,18 +406,12 @@ async def append_subgroup(db, group_id, split_id, signals):
         raise ValueError("subgroup_signals")
     existing = (
         await db.scalars(
-            select(Subgroup)
-            .where(Subgroup.split_id == split.id)
-            .order_by(Subgroup.position)
+            select(Subgroup).where(Subgroup.split_id == split.id).order_by(Subgroup.position)
         )
     ).all()
     if len(existing) >= MAX_SUBGROUPS:
         raise ValueError("subgroup_limit")
-    previous_signals = {
-        match_key(item)
-        for subgroup in existing
-        for item in signals_of(subgroup)
-    }
+    previous_signals = {match_key(item) for subgroup in existing for item in signals_of(subgroup)}
     if any(match_key(item) in previous_signals for item in clean):
         raise ValueError("duplicate_subgroup_signals")
     position = max((subgroup.position for subgroup in existing), default=0) + 1
