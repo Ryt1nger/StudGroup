@@ -148,6 +148,7 @@ def test_latest_callback_controls_where_text_input_goes(transport):
     assert "Название задания" in current(client, "st")[1]["text"]
     assert current(client, "admin")[0] == admin_mid
 
+
 def test_restart_supersedes_queued_old_frames(transport):
     client, calls = transport
     input_message(client, 300, "/st")
