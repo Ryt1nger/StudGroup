@@ -385,9 +385,7 @@ async def save_registration_profile(db, session, settings, telegram_id, value, *
         next_step = "profile_last"
     elif stage == "profile_last":
         profile.last_name = entered
-        user.display_name = (
-            f"{profile.first_name} {entered}" if entered else profile.first_name
-        )
+        user.display_name = f"{profile.first_name} {entered}" if entered else profile.first_name
         next_step = "profile_email"
     else:
         if entered and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", entered):
@@ -1829,9 +1827,7 @@ async def handle(db, update, settings, topic=None):
         "legal_service",
         "legal_not_ready",
     }:
-        await registration_entry_back(
-            db, session, settings, sender.id, json.loads(session.payload)
-        )
+        await registration_entry_back(db, session, settings, sender.id, json.loads(session.payload))
     elif action == "connect":
         await role_screen(db, session)
     elif action == "legal_accept_terms" and session.step == "legal_terms":
