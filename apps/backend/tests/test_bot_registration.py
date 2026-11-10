@@ -320,9 +320,7 @@ def test_existing_member_never_sees_registration_again(foreman):
     assert "Принимаю условия использования" not in labels(foreman)
 
 
-def test_profile_back_navigation_preserves_invite_and_corrected_personal_data(
-    foreman, monkeypatch
-):
+def test_profile_back_navigation_preserves_invite_and_corrected_personal_data(foreman, monkeypatch):
     allow_telegram(monkeypatch)
     code = issue(foreman)
     foreman.app.state.settings.registration_legal_required = False
