@@ -30,6 +30,12 @@ def active(client):
     return run(client, read)
 
 
+def open_invitation_from_home(client):
+    """Invites are staff-only and opened through the cabinet, not start home."""
+    tap(client, "Кабинет старосты", uid=1)
+    tap(client, "Пригласить участников", uid=1)
+
+
 def link_from_panel(client):
     return next(
         line
@@ -41,7 +47,7 @@ def link_from_panel(client):
 def test_invitation_screen_create_share_reopen_without_rotation(foreman):
     settings = configure(foreman)
     deliver(foreman, "/start")
-    tap(foreman, "Пригласить участников", uid=1)
+    open_invitation_from_home(foreman)
     assert "Активной пригласительной ссылки пока нет" in last(foreman)["text"]
     assert "Создать ссылку" in labels(foreman)
     assert active(foreman) is None
@@ -72,7 +78,7 @@ def test_invitation_screen_create_share_reopen_without_rotation(foreman):
     assert copied["copy_text"]["text"] == url
 
     deliver(foreman, "/start")
-    tap(foreman, "Пригласить участников", uid=1)
+    open_invitation_from_home(foreman)
     assert link_from_panel(foreman) == url
     same = active(foreman)
     assert same.token_hash == invitation.token_hash
@@ -89,7 +95,7 @@ def test_legacy_hash_only_link_requires_explicit_confirmed_replacement(foreman):
 
     old = run(foreman, create_legacy)
     deliver(foreman, "/start")
-    tap(foreman, "Пригласить участников", uid=1)
+    open_invitation_from_home(foreman)
     assert "Исходный токен восстановить невозможно" in last(foreman)["text"]
     assert "Заменить ссылку" in labels(foreman)
     assert "Переслать приглашение" not in labels(foreman)
@@ -119,7 +125,7 @@ def test_legacy_hash_only_link_requires_explicit_confirmed_replacement(foreman):
 def test_expired_shared_link_is_not_shown_as_active(foreman):
     configure(foreman)
     deliver(foreman, "/start")
-    tap(foreman, "Пригласить участников", uid=1)
+    open_invitation_from_home(foreman)
     tap(foreman, "Создать ссылку", uid=1)
     old_url = link_from_panel(foreman)
 
@@ -129,7 +135,7 @@ def test_expired_shared_link_is_not_shown_as_active(foreman):
 
     run(foreman, expire)
     deliver(foreman, "/start")
-    tap(foreman, "Пригласить участников", uid=1)
+    open_invitation_from_home(foreman)
     assert "Создать ссылку" in labels(foreman)
     assert "Переслать приглашение" not in labels(foreman)
     tap(foreman, "Создать ссылку", uid=1)
