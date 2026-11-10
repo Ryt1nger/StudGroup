@@ -1,5 +1,38 @@
 import type { LessonOccurrence } from '@studgroup/shared-types';
 
+/**
+ * A timetable is positioned by clock time, but a short lesson or a long teacher/location
+ * label can need more height than its nominal slot. Extend the time axis *after* each
+ * overflowing lesson so subsequent cards and hour markers never cover its text.
+ */
+export interface ScheduleCardSize {
+  startMinute: number;
+  endMinute: number;
+  height: number;
+}
+
+export interface ScheduleExpansion {
+  endMinute: number;
+  extra: number;
+}
+
+export function scheduleExpansions(cards: readonly ScheduleCardSize[], pxPerHour: number): ScheduleExpansion[] {
+  return cards
+    .filter((card) => card.endMinute > card.startMinute)
+    .map((card) => ({
+      endMinute: card.endMinute,
+      // Reserve a small gap before the next lesson even for a very short slot.
+      extra: Math.max(0, card.height + 4 - ((card.endMinute - card.startMinute) * pxPerHour) / 60),
+    }))
+    .filter((item) => item.extra > 0.5)
+    .sort((a, b) => a.endMinute - b.endMinute);
+}
+
+export function scheduleY(minute: number, pxPerHour: number, expansions: readonly ScheduleExpansion[]): number {
+  return (minute * pxPerHour) / 60 +
+    expansions.reduce((offset, item) => offset + (item.endMinute <= minute ? item.extra : 0), 0);
+}
+
 /** True while the current-time line geometrically crosses a lesson card. */
 export function lessonAt(lessons: readonly LessonOccurrence[], nowMs: number): boolean {
   return lessons.some((lesson) => {

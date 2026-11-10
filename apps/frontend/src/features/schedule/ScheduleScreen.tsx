@@ -19,7 +19,7 @@ import { useEventCapabilities, useGroupEvents } from '../events/api';
 import { groupEventOnDay } from '../events/calendar';
 import { Sec } from '../shared/Sec';
 import { lessonsOfDay } from '../today/DayView';
-import { lessonAt, positionSchedule } from './schedulePosition';
+import { lessonAt, positionSchedule, scheduleExpansions, scheduleY } from './schedulePosition';
 
 const NO_EVENTS: readonly PublishedEvent[] = [];
 const HR0 = 8;
@@ -61,15 +61,14 @@ function JoinBadge({ url }: { url: string }) {
   );
 }
 
-function Event({ lesson, timeZone, nowMs, isToday }: { lesson: LessonOccurrence; timeZone: string; nowMs: number; isToday: boolean }) {
+function Event({ lesson, timeZone, nowMs, isToday, timelineY }: { lesson: LessonOccurrence; timeZone: string; nowMs: number; isToday: boolean; timelineY: (minute: number) => number }) {
   const start = Date.parse(lesson.starts_at);
   const end = Date.parse(lesson.ends_at);
   const now = isToday && start <= nowMs && nowMs < end;
   const past = end <= nowMs;
   const from = formatTime(lesson.starts_at, timeZone);
   const to = formatTime(lesson.ends_at, timeZone);
-  const top = (minutesOf(from) * PX) / 60;
-  const height = Math.max(54, ((minutesOf(to) - minutesOf(from)) * PX) / 60 - 4);
+  const minHeight = Math.max(54, ((minutesOf(to) - minutesOf(from)) * PX) / 60 - 4);
   const online = safeLessonUrl(lesson.online_url);
   const joinNow = now && online !== null;
   return (
@@ -77,7 +76,9 @@ function Event({ lesson, timeZone, nowMs, isToday }: { lesson: LessonOccurrence;
       className={`ev${now ? ' now' : ''}${joinNow ? ' hasbadge' : ''}${past ? ' past' : ''}`}
       data-start={start}
       data-end={end}
-      style={{ ...subjectStyle(lesson.subject), top, height }}
+      data-start-minute={minutesOf(from)}
+      data-end-minute={minutesOf(to)}
+      style={{ ...subjectStyle(lesson.subject), top: timelineY(minutesOf(from)), minHeight }}
       to={`/schedule/lesson/${encodeURIComponent(lesson.id)}`}
       state={{ lesson, timeZone }}
     >
@@ -113,8 +114,39 @@ export function ScheduleScreen() {
   const ref = useRef<HTMLDivElement>(null);
   const eventsRef = useRef<HTMLDivElement>(null);
   const anchored = useRef('');
+  const [layout, setLayout] = useState<{ key: string; expansions: ReturnType<typeof scheduleExpansions> }>({ key: '', expansions: [] });
   const key = selected >= 0 ? selectedKey : days[0]!;
   const lessons = data ? lessonsOfDay(data.lessons, key, timeZone) : [];
+  const lessonSignature = lessons.map((lesson) =>
+    [lesson.id, lesson.starts_at, lesson.ends_at, lesson.subject, lesson.location, lesson.teacher, lesson.online_url].join(':'),
+  ).join('|');
+  const expansions = layout.key === key ? layout.expansions : [];
+  const timelineY = (minute: number) => scheduleY(minute, PX, expansions);
+
+  useLayoutEffect(() => {
+    const cards = [...(ref.current?.querySelectorAll<HTMLElement>('.ev') ?? [])];
+    if (!cards.length) return;
+    const measure = () => {
+      const expanded = scheduleExpansions(cards.map((card) => ({
+        startMinute: Number(card.dataset.startMinute),
+        endMinute: Number(card.dataset.endMinute),
+        height: card.getBoundingClientRect().height,
+      })), PX);
+      setLayout((previous) => {
+        if (previous.key === key && previous.expansions.length === expanded.length &&
+            previous.expansions.every((item, i) => item.endMinute === expanded[i]?.endMinute && Math.abs(item.extra - (expanded[i]?.extra ?? 0)) < 0.5)) return previous;
+        return { key, expansions: expanded };
+      });
+    };
+    measure();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    cards.forEach((card) => observer?.observe(card));
+    window.addEventListener('resize', measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [key, lessonSignature]);
   const marked = new Set(days.filter((d) => lessonsOfDay(data?.lessons ?? [], d, timeZone).length > 0 || eventItems.some((item) => groupEventOnDay(item, d, timeZone))));
 
   useLayoutEffect(() => {
@@ -158,10 +190,10 @@ export function ScheduleScreen() {
   const clock = formatTime(new Date(nowMs).toISOString(), timeZone);
   const nowM = minutesOf(clock);
   const nowOn = key === today && nowM > 0 && nowM < (HR1 - HR0) * 60;
-  const nowY = (nowM * PX) / 60;
+  const nowY = timelineY(nowM);
   const lineBehindLesson = nowOn && lessonAt(lessons, nowMs);
   const hours = Array.from({ length: HR1 - HR0 + 1 }, (_, i) => {
-    const top = i * PX;
+    const top = timelineY(i * 60);
     const covered = nowOn && Math.abs(nowY - top) < 19;
     return (
       <div key={i} className="hr" style={{ top }}>
@@ -209,10 +241,10 @@ export function ScheduleScreen() {
       {data && lessons.length === 0 && data.week_state === 'ready' ? <Empty title="Пар нет" body="В этот день занятий не запланировано." /> : null}
       {data && lessons.length === 0 && data.week_state !== 'ready' ? <Empty title="Расписание ещё не подтверждено" body="Для этого дня пока нет проверенных данных." /> : null}
       {data && lessons.length > 0 ? (
-        <div ref={ref} className="tline" style={{ height: (HR1 - HR0) * PX + 20 }}>
+        <div ref={ref} className="tline" style={{ height: timelineY((HR1 - HR0) * 60) + 20 }}>
           {hours}
           {nowOn ? <div className={`nowline${lineBehindLesson ? ' behind-event' : ''}`} style={{ top: nowY }}><span>{clock}</span></div> : null}
-          {lessons.map((lesson) => <Event key={lesson.id} lesson={lesson} timeZone={data.group_timezone} nowMs={nowMs} isToday={key === today} />)}
+          {lessons.map((lesson) => <Event key={lesson.id} lesson={lesson} timeZone={data.group_timezone} nowMs={nowMs} isToday={key === today} timelineY={timelineY} />)}
         </div>
       ) : null}
     </>
