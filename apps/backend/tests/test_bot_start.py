@@ -620,7 +620,7 @@ def test_no_screen_of_the_cabinet_menu_tells_people_to_type_a_command(foreman):
     deliver(foreman, "/start", uid=1)
     tap(foreman, "Кабинет старосты", uid=1)
     seen = [last(foreman)["text"]]
-    for label in ["Участники", "Настройки", "Журнал", "Сводка"]:
+    for label in ["Участники", "Настройки", "Назначить старосту", "Сводка"]:
         tap(foreman, label, uid=1)
         seen.append(last(foreman)["text"])
         tap(foreman, "Главное меню", uid=1)
