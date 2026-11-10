@@ -326,7 +326,28 @@ async def registration_profile_screen(db, session, step, context, notice=None):
         raise ValueError("invalid registration profile step")
     if notice:
         message = f"{notice}\n\n{message}"
+    buttons.append([("‹ Назад", "registration_back")])
     await screen(db, session, message, buttons, step, context)
+
+
+async def registration_entry_back(db, session, settings, telegram_id, context):
+    """Return to the verified role/group step without discarding saved profile fields."""
+    digest = context.get("pending_invite_hash")
+    if digest:
+        await role_screen(db, session, pending_invite_hash=digest)
+        return
+    group_id = context.get("pending_group_id")
+    if group_id:
+        try:
+            group = await db.get(Group, uuid.UUID(group_id))
+        except (TypeError, ValueError):
+            group = None
+        if group is not None and group.status == "active":
+            await confirm_group_screen(db, session, group)
+        else:
+            await headman_entry(db, session, settings, telegram_id)
+        return
+    await role_screen(db, session)
 
 
 async def save_registration_profile(db, session, settings, telegram_id, value, *, skipped=False):
@@ -364,8 +385,9 @@ async def save_registration_profile(db, session, settings, telegram_id, value, *
         next_step = "profile_last"
     elif stage == "profile_last":
         profile.last_name = entered
-        if entered:
-            user.display_name = f"{profile.first_name} {entered}"
+        user.display_name = (
+            f"{profile.first_name} {entered}" if entered else profile.first_name
+        )
         next_step = "profile_email"
     else:
         if entered and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", entered):
@@ -406,7 +428,7 @@ async def legal_role_gate(
             session,
             "Подключение новых участников временно недоступно: сведения об операторе "
             "и правовые документы ещё не утверждены. Доступ действующих участников сохраняется.",
-            [[("Документы", "legal_docs")]],
+            [[("Документы", "legal_docs")], [("‹ Назад", "legal_back")]],
             "legal_not_ready",
             pending,
         )
@@ -433,6 +455,7 @@ async def legal_role_gate(
                 [legal_link(settings, "terms")],
                 [("Принимаю условия использования", "legal_accept_terms")],
                 [("Не принимаю", "home")],
+                [("‹ Назад", "legal_back")],
             ],
             "legal_terms",
             pending,
@@ -451,6 +474,7 @@ async def legal_role_gate(
                 [legal_link(settings, "service")],
                 [("Даю отдельное согласие", "legal_accept_service")],
                 [("Не согласен", "home")],
+                [("‹ Назад", "legal_back")],
             ],
             "legal_service",
             pending,
@@ -1306,17 +1330,24 @@ async def redeem(db, session, settings, telegram_id, code, *, typed, pending_inv
         await subgroup_choice(db, session, settings, found[0], group, joined=True)
 
 
-async def subgroup_choice(db, session, settings, member, group, *, joined=False):
+async def subgroup_choice(db, session, settings, member, group, *, joined=False, focus=None):
     """Show the next unanswered split, or the member's complete editable list."""
     all_splits = await subgroups.splits(db, group.id)
     picked = await subgroups.choices(db, member.id)
     unanswered = [pair for pair in all_splits if pair[0].id not in picked]
-    if not unanswered and joined:
+    if not unanswered and joined and focus is None:
         student = await db.get(User, member.user_id)
         await registration_complete(db, session, settings, student.telegram_user_id)
         return
-    if unanswered:
-        split, choices = unanswered[0]
+    if unanswered or focus is not None:
+        split, choices = (
+            next((pair for pair in all_splits if str(pair[0].id) == focus), None)
+            if focus is not None
+            else unanswered[0]
+        )
+        if split is None:
+            raise ValueError("invalid subgroup step")
+        index = next(n for n, pair in enumerate(all_splits) if pair[0].id == split.id)
         prefix = f"Готово! Вы подключены к «{group.name}».\n\n" if joined else ""
         await screen(
             db,
@@ -1324,13 +1355,18 @@ async def subgroup_choice(db, session, settings, member, group, *, joined=False)
             prefix + f"К какой подгруппе по предмету «{split.subject_name}» вы относитесь?\n\n"
             "Выбор можно изменить позже.",
             [[(row.name, f"subgroup_pick_{n}")] for n, row in enumerate(choices)]
-            + ([] if joined else [[("‹ Назад", "home")]]),
+            + (
+                [[("‹ Назад", "subgroup_previous")]]
+                if joined and index > 0
+                else [[("‹ Назад", "home")]]
+            ),
             "subgroups",
             {
                 "member_id": str(member.id),
                 "split_id": str(split.id),
                 "subgroups": [str(row.id) for row in choices],
                 "onboarding": joined,
+                "split_index": index,
             },
         )
         return
@@ -1774,6 +1810,26 @@ async def handle(db, update, settings, topic=None):
         )
     elif action == "registration_skip" and session.step in {"profile_last", "profile_email"}:
         await save_registration_profile(db, session, settings, sender.id, "", skipped=True)
+    elif action == "registration_back" and session.step in {
+        "profile_first",
+        "profile_last",
+        "profile_email",
+    }:
+        data = json.loads(session.payload)
+        if session.step == "profile_email":
+            await registration_profile_screen(db, session, "profile_last", data)
+        elif session.step == "profile_last":
+            await registration_profile_screen(db, session, "profile_first", data)
+        else:
+            await registration_entry_back(db, session, settings, sender.id, data)
+    elif action == "legal_back" and session.step in {
+        "legal_terms",
+        "legal_service",
+        "legal_not_ready",
+    }:
+        await registration_entry_back(
+            db, session, settings, sender.id, json.loads(session.payload)
+        )
     elif action == "connect":
         await role_screen(db, session)
     elif action == "legal_accept_terms" and session.step == "legal_terms":
@@ -2021,6 +2077,32 @@ async def handle(db, update, settings, topic=None):
             await subgroup_choice(db, session, settings, found[0], found[1])
         else:
             await home(db, session, settings, sender.id)
+    elif session.step == "subgroups" and action == "subgroup_previous":
+        data = json.loads(session.payload)
+        found = await current_membership(db, sender.id)
+        index = data.get("split_index")
+        if (
+            not found
+            or str(found[0].id) != data.get("member_id")
+            or not data.get("onboarding")
+            or not isinstance(index, int)
+            or index <= 0
+        ):
+            await home(db, session, settings, sender.id)
+        else:
+            all_splits = await subgroups.splits(db, found[1].id)
+            if index >= len(all_splits):
+                await home(db, session, settings, sender.id)
+            else:
+                await subgroup_choice(
+                    db,
+                    session,
+                    settings,
+                    found[0],
+                    found[1],
+                    joined=True,
+                    focus=str(all_splits[index - 1][0].id),
+                )
     elif session.step == "subgroups" and action.startswith("subgroup_pick_"):
         data = json.loads(session.payload)
         found = await current_membership(db, sender.id)
