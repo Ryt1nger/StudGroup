@@ -1363,10 +1363,16 @@ def test_owner_funded_pilot_runs_at_most_one_new_package_per_group_per_hour(clie
     second = PackageProvider(cited=(34,), propose=False)
     # The durable gate is consulted again with the same database and new settings
     # instance, so a restart cannot accelerate chargeable text analysis.
-    assert step(client, second, settings(owner_funded_pilot=True), now + timedelta(minutes=59)) == "idle"
+    assert (
+        step(client, second, settings(owner_funded_pilot=True), now + timedelta(minutes=59))
+        == "idle"
+    )
     assert second.requests == []
     assert count(client, ShadowEvaluationRun) == 1
-    assert step(client, second, settings(owner_funded_pilot=True), now + timedelta(hours=1, minutes=1)) == "completed"
+    assert (
+        step(client, second, settings(owner_funded_pilot=True), now + timedelta(hours=1, minutes=1))
+        == "completed"
+    )
     assert len(second.requests) == 2
     assert count(client, ShadowEvaluationRun) == 2
     assert set(states(client).values()) == {"completed"}
