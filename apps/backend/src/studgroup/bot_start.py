@@ -1340,13 +1340,15 @@ async def subgroup_choice(db, session, settings, member, group, *, joined=False,
         await registration_complete(db, session, settings, student.telegram_user_id)
         return
     if unanswered or focus is not None:
-        split, choices = (
+        focused_pair = (
             next((pair for pair in all_splits if str(pair[0].id) == focus), None)
             if focus is not None
             else unanswered[0]
         )
-        if split is None:
-            raise ValueError("invalid subgroup step")
+        if focused_pair is None:
+            await home(db, session, settings, session.telegram_user_id)
+            return
+        split, choices = focused_pair
         index = next(n for n, pair in enumerate(all_splits) if pair[0].id == split.id)
         prefix = f"Готово! Вы подключены к «{group.name}».\n\n" if joined else ""
         await screen(
