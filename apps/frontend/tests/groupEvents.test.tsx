@@ -62,7 +62,7 @@ describe('separate persisted group events', () => {
     expect(await screen.findByText('Пока нет событий')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('link', { name: 'Проверить черновики и изменения' }));
     await userEvent.click(await screen.findByRole('link', { name: /Открытая лекция о космосе/ }));
-    expect(await screen.findByLabelText('Название')).toHaveValue('Открытая лекция о космосе');
+    expect(await screen.findByLabelText('Название события')).toHaveValue('Открытая лекция о космосе');
     await userEvent.click(screen.getByRole('button', { name: 'Подтвердить публикацию' }));
     expect(
       await screen.findByRole('heading', { name: 'Открытая лекция о космосе', level: 1 }),
@@ -73,7 +73,7 @@ describe('separate persisted group events', () => {
     await go(app.router, '/today?day=1');
     expect(await screen.findByRole('heading', { name: 'Открытая лекция о космосе' })).toBeInTheDocument();
     await go(app.router, `/events/review/${ID}`);
-    const date = await screen.findByLabelText('Дата начала');
+    const date = await screen.findByLabelText('Дата события');
     await userEvent.clear(date);
     await userEvent.type(date, '2026-10-08');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }));
@@ -156,7 +156,7 @@ describe('separate persisted group events', () => {
       }),
     );
     renderApp({ route: `/events/review/${ID}` });
-    const title = await screen.findByLabelText('Название');
+    const title = await screen.findByLabelText('Название события');
     await userEvent.type(title, ' — мои правки');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }));
     await screen.findByText(/Событие или источник изменились/);
@@ -164,7 +164,7 @@ describe('separate persisted group events', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }));
     expect(revisions).toEqual([1, 1]);
     await userEvent.click(screen.getByRole('button', { name: 'Загрузить актуальную версию' }));
-    await waitFor(() => expect(screen.getByLabelText('Название')).toHaveValue('Новое название'));
+    await waitFor(() => expect(screen.getByLabelText('Название события')).toHaveValue('Новое название'));
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }));
     await waitFor(() => expect(revisions).toEqual([1, 1, 2]));
   });
