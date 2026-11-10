@@ -150,7 +150,9 @@ def test_owner_role_controls_work_before_pilot_approval(client):
     group_button = messages[-1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
     private(client, "", update=401, callback=group_button)
     _, messages = session(client)
-    choices = [button["text"] for row in messages[-1]["reply_markup"]["inline_keyboard"] for button in row]
+    choices = [
+        button["text"] for row in messages[-1]["reply_markup"]["inline_keyboard"] for button in row
+    ]
     assert choices == ["Назначить старосту", "Назначить заместителя"]
     assign_staff_by_id(client, "deputy", 123456789, 410)
     assert member_role(client, 123456789) == "deputy"
