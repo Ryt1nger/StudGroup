@@ -12,11 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from test_staff_api import AUTH, make
 
 from studgroup.ai import ProviderFailure
-from studgroup.api import group_features
 from studgroup.analysis.image_jobs import enabled, live_mode
 from studgroup.analysis.package_worker import _gate
 from studgroup.analysis.pilot_access import enroll_existing, ensure_route
 from studgroup.analysis.release_budget import RequestAccounting, release_window_blocker
+from studgroup.api import group_features
 from studgroup.models import AnalysisBudgetCall, Group, GroupAnalysisSettings
 
 pytest_plugins = ["test_schedule_api"]
