@@ -125,6 +125,110 @@ def test_students_cannot_open_st_or_impersonate_callback(client):
     run(client, read_ack)
 
 
+def seed_role_candidates(client, count=6):
+    async def seed(db):
+        group = await db.scalar(select(Group))
+        for index in range(count):
+            telegram_id = 910010 + index
+            user = User(
+                id=uuid.uuid4(),
+                telegram_user_id=telegram_id,
+                display_name=f"Участник {index + 1}",
+            )
+            db.add(user)
+            db.add(
+                Membership(
+                    id=uuid.uuid4(),
+                    user_id=user.id,
+                    group_id=group.id,
+                    role="student",
+                    status="active",
+                )
+            )
+
+    run(client, seed)
+
+
+def role_for(client, telegram_id):
+    async def lookup(db):
+        return await db.scalar(
+            select(Membership.role)
+            .join(User, Membership.user_id == User.id)
+            .where(User.telegram_user_id == telegram_id)
+        )
+
+    return run(client, lookup)
+
+
+def test_headman_cabinet_role_controls_and_limits(foreman):
+    seed_role_candidates(foreman)
+    enter(foreman)
+    captions = [
+        button["text"] for row in last(foreman)["reply_markup"]["inline_keyboard"] for button in row
+    ]
+    assert "Назначить старосту" in captions
+    assert "Назначить заместителя" in captions
+    assert "Журнал правок / откат" not in captions
+    assert "Выбрать другую группу" not in captions
+
+    click(foreman, "Назначить старосту")
+    click(foreman, "910010")
+    assert role_for(foreman, 910010) == "student"
+    click(foreman, "Подтвердить изменение")
+    assert role_for(foreman, 910010) == "headman"
+
+    # The initial headman and their appointed colleague fill both headman slots.
+    click(foreman, "Главное меню")
+    click(foreman, "Назначить старосту")
+    click(foreman, "910011")
+    click(foreman, "Подтвердить изменение")
+    assert "Лимит роли уже достигнут" in last(foreman)["text"]
+    assert role_for(foreman, 910011) == "student"
+
+    enter(foreman)
+    for telegram_id in (910011, 910012, 910013):
+        click(foreman, "Назначить заместителя")
+        click(foreman, str(telegram_id))
+        click(foreman, "Подтвердить изменение")
+        assert role_for(foreman, telegram_id) == "deputy"
+        click(foreman, "Главное меню")
+    click(foreman, "Назначить заместителя")
+    click(foreman, "910014")
+    click(foreman, "Подтвердить изменение")
+    assert "Лимит роли уже достигнут" in last(foreman)["text"]
+    assert role_for(foreman, 910014) == "student"
+
+
+def test_deputy_cannot_assign_roles_in_cabinet(foreman):
+    seed_role_candidates(foreman)
+
+    async def demote(db):
+        acting = await db.scalar(
+            select(Membership)
+            .join(User, User.id == Membership.user_id)
+            .where(User.telegram_user_id == 1)
+        )
+        acting.role = "deputy"
+
+    run(foreman, demote)
+    enter(foreman)
+    captions = [
+        button["text"] for row in last(foreman)["reply_markup"]["inline_keyboard"] for button in row
+    ]
+    assert "Назначить старосту" not in captions
+    assert "Назначить заместителя" not in captions
+    from studgroup.models import HeadmanSession
+
+    async def callback(db):
+        session = await db.get(HeadmanSession, 1)
+        return session.nonce
+
+    nonce = run(foreman, callback)
+    deliver(foreman, callback=f"s:{nonce}:assign_headman")
+    assert "управляет староста" in last(foreman)["text"]
+    assert role_for(foreman, 910010) == "student"
+
+
 def test_create_is_private_until_confirm_and_replay_cannot_duplicate(foreman):
     enter(foreman)
     click(foreman, "Домашние задания")
@@ -482,10 +586,12 @@ def test_owner_role_assignment_is_explicit(client):
     )
     s, _ = session(client)
     private(client, "", update=102, callback=f"a:{s.nonce}:headman")
-    private(client, "1", update=103)
+    s, _ = session(client)
+    private(client, "", update=103, callback=f"a:{s.nonce}:id")
+    private(client, "1", update=104)
     assert run(client, lambda db: db.scalar(select(Membership.role))) == "student"
     s, _ = session(client)
-    private(client, "", update=104, callback=f"a:{s.nonce}:yes")
+    private(client, "", update=105, callback=f"a:{s.nonce}:yes")
     assert run(client, lambda db: db.scalar(select(Membership.role))) == "headman"
 
 

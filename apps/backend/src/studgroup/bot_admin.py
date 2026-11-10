@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import httpx
-from sqlalchemy import and_, case, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -129,6 +129,22 @@ def buttons(session, rows):
             for row in rows
         ]
     }
+
+
+async def active_staff_count(db, group_id, role, excluding_telegram_id=None):
+    """Count active assignments; an idempotent reassignment does not use another slot."""
+    query = (
+        select(func.count(Membership.id))
+        .join(User, User.id == Membership.user_id)
+        .where(
+            Membership.group_id == group_id,
+            Membership.role == role,
+            Membership.status == "active",
+        )
+    )
+    if excluding_telegram_id is not None:
+        query = query.where(User.telegram_user_id != excluding_telegram_id)
+    return (await db.scalar(query)) or 0
 
 
 async def handle(db, update, settings):
@@ -581,28 +597,44 @@ async def handle(db, update, settings):
                 group = await db.get(Group, uuid.UUID(hex=action[1:]))
             except ValueError:
                 group = None
-            if not group or not group.pilot_authorized or group.status != "active":
+            if not group or group.status != "active":
                 return True
             session.group_id = group.id
             session.step = "method"
+            headmen = await active_staff_count(db, group.id, "headman")
+            deputies = await active_staff_count(db, group.id, "deputy")
             await say(
                 db,
                 chat,
-                f"{group.name}\nКак выбрать участника?",
+                f"{group.name}\nСтарост: {headmen}/2 · Заместителей: {deputies}/3\n"
+                "Выбери роль для назначения:",
                 buttons(
                     session,
                     [
-                        [("Выбрать пользователя", "pick")],
-                        [("Добавить по ID", "id")],
-                        [("Назначить старосту по ID", "headman")],
-                        [("Назначить помощника по ID", "deputy")],
+                        [("Назначить старосту", "headman")],
+                        [("Назначить заместителя", "deputy")],
                     ],
                 ),
             )
-        elif action in ["pick", "id", "headman", "deputy"] and session.step == "method":
-            session.candidate_role = action if action in {"headman", "deputy"} else "student"
-            session.step = "id" if action in {"headman", "deputy"} else action
-            if action != "pick":
+        elif action in {"headman", "deputy"} and session.step == "method":
+            session.candidate_role = action
+            session.step = "choose"
+            role_name = "старосту" if action == "headman" else "заместителя"
+            await say(
+                db,
+                chat,
+                f"Назначить {role_name}: выбери пользователя Telegram или введи его ID.",
+                buttons(
+                    session,
+                    [
+                        [("Выбрать в Telegram", "pick")],
+                        [("Ввести Telegram ID", "id")],
+                    ],
+                ),
+            )
+        elif action in {"pick", "id"} and session.step == "choose":
+            session.step = action
+            if action == "id":
                 await say(db, chat, "Отправь числовой Telegram ID участника. Для отмены — /cancel.")
             else:
                 session.request_id = secrets.randbelow(2**31 - 1) + 1
@@ -631,25 +663,28 @@ async def handle(db, update, settings):
                     },
                 )
         elif action == "yes" and session.step == "confirm" and session.candidate_id:
-            group = await db.get(Group, session.group_id)
-            if not group or not group.pilot_authorized or group.status != "active":
+            group = await db.scalar(
+                select(Group)
+                .where(Group.id == session.group_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if not group or group.status != "active":
                 return True
             target = session.candidate_id
-            if session.candidate_role == "headman" and await db.scalar(
-                select(Membership.id)
-                .join(User, User.id == Membership.user_id)
-                .where(
-                    Membership.group_id == group.id,
-                    Membership.role == "headman",
-                    Membership.status == "active",
-                    User.telegram_user_id != target,
-                )
-            ):
+            limits = {"headman": 2, "deputy": 3}
+            role = session.candidate_role
+            if role not in limits:
+                await say(db, chat, "Выбери роль заново через /admin.")
+                return True
+            assigned = await active_staff_count(db, group.id, role, excluding_telegram_id=target)
+            if assigned >= limits[role]:
+                label = "старост" if role == "headman" else "заместителей"
                 await say(
                     db,
                     chat,
-                    f"В «{group.name}» уже есть староста: он может быть только один. "
-                    "Сначала смените роль действующему старосте.",
+                    f"В «{group.name}» уже назначено максимально допустимое число {label}: "
+                    f"{limits[role]}. Сначала освободи место, изменив роль одного из них.",
                     {"remove_keyboard": True},
                 )
                 return True

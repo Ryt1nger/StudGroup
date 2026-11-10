@@ -19,6 +19,7 @@ from studgroup.models import (
     AcademicDeadline,
     AICandidate,
     AIJob,
+    Group,
     GroupInvitation,
     HeadmanAudit,
     HeadmanDecision,
@@ -63,6 +64,8 @@ def back():
 async def menu(db, session, group):
     questions = await domain.cards(db, group, "review")
     questions += await candidates(db, group)
+    allowed = await domain.memberships(db, session.telegram_user_id)
+    can_assign = any(m.role == "headman" and g.id == group.id for _, m, g in allowed)
     await screen(
         db,
         session,
@@ -76,11 +79,17 @@ async def menu(db, session, group):
             [("Расписание", "schedule")],
             [("Подгруппы по предметам", "subgroup_settings")],
             [("Участники", "members")],
+            *(
+                [
+                    [("Назначить старосту", "assign_headman")],
+                    [("Назначить заместителя", "assign_deputy")],
+                ]
+                if can_assign
+                else []
+            ),
             [("Пригласить участников", "group_invites")],
             [("Сводка группы", "summary")],
             [("Настройки", "settings")],
-            [("Журнал правок / откат", "journal")],
-            [("Выбрать другую группу", "groups")],
             [("‹ В начало", "to_start")],
         ],
     )
@@ -509,6 +518,65 @@ async def members_screen(db, session, group, member, page=0):
         buttons,
         "members",
         {"members": [str(m.id) for m, _ in entries], "page": page},
+    )
+
+
+ROLE_LIMITS = {"headman": 2, "deputy": 3}
+
+
+async def role_candidates_screen(db, session, group, member, role, page=0):
+    """A headman can promote an existing active group member, not create a new registration."""
+    domain.headman_only(member)
+    if role not in ROLE_LIMITS:
+        raise domain.StError("Неизвестная роль.")
+    people = (
+        await db.execute(
+            select(Membership, User)
+            .join(User, User.id == Membership.user_id)
+            .where(
+                Membership.group_id == group.id,
+                Membership.status == "active",
+                Membership.role != role,
+                Membership.id != member.id,
+            )
+            .order_by(User.display_name, Membership.id)
+        )
+    ).all()
+    current = await db.scalar(
+        select(func.count(Membership.id)).where(
+            Membership.group_id == group.id,
+            Membership.role == role,
+            Membership.status == "active",
+        )
+    )
+    label = "старосту" if role == "headman" else "заместителя"
+    page = max(0, page)
+    entries = people[page * 8 : (page + 1) * 8]
+    rows = [
+        [(f"{u.display_name} · {u.telegram_user_id} · {m.role}"[:60], f"assign_member{n}")]
+        for n, (m, u) in enumerate(entries)
+    ]
+    navigation = []
+    if page:
+        navigation.append(("‹", "assign_prev"))
+    if len(people) > (page + 1) * 8:
+        navigation.append(("›", "assign_next"))
+    if navigation:
+        rows.append(navigation)
+    rows.append(back())
+    await screen(
+        db,
+        session,
+        f"Назначить {label}. Сейчас назначено {current}/{ROLE_LIMITS[role]}.\n"
+        "Выбери зарегистрированного участника своей группы. "
+        "Новая роль появится после подтверждения. "
+        "Не зарегистрированные участники сначала должны подключиться к StudGroup."
+        if people
+        else f"Назначить {label}. Сейчас назначено {current}/{ROLE_LIMITS[role]}.\n"
+        "Нет подходящих зарегистрированных участников.",
+        rows,
+        "role_assign",
+        {"role": role, "page": page, "members": [str(m.id) for m, _ in entries]},
     )
 
 
@@ -1176,6 +1244,41 @@ async def handle(db, update, settings):
                 {},
                 "schedule_add",
             )
+        elif action in {"assign_headman", "assign_deputy"}:
+            domain.headman_only(member)
+            await role_candidates_screen(db, session, group, member, action.removeprefix("assign_"))
+        elif session.step == "role_assign" and action in {"assign_prev", "assign_next"}:
+            domain.headman_only(member)
+            await role_candidates_screen(
+                db,
+                session,
+                group,
+                member,
+                data["role"],
+                max(0, data["page"] + (-1 if action == "assign_prev" else 1)),
+            )
+        elif session.step == "role_assign" and action.startswith("assign_member"):
+            domain.headman_only(member)
+            ident = uuid.UUID(data["members"][int(action.removeprefix("assign_member"))])
+            target = await db.scalar(
+                select(Membership).where(Membership.id == ident, Membership.group_id == group.id)
+            )
+            if target is None or target.status != "active" or target.role == data["role"]:
+                raise domain.StError("Участник или его роль изменились. Открой список заново.")
+            target_user = await db.get(User, target.user_id)
+            label = "старостой" if data["role"] == "headman" else "заместителем"
+            await preview(
+                db,
+                session,
+                f"Назначить {target_user.display_name} ({target_user.telegram_user_id}) "
+                f"{label} группы «{group.name}»?",
+                {
+                    "action": "assign_role",
+                    "member_id": str(target.id),
+                    "expected": target.role,
+                    "role": data["role"],
+                },
+            )
         elif (
             action == "members"
             or session.step == "members"
@@ -1763,6 +1866,40 @@ async def apply(db, session, group, user, member, data, settings):
         ).all()
         for invitation in rows:
             invitation.revoked = True
+    elif action == "assign_role":
+        domain.headman_only(member)
+        role = data["role"]
+        if role not in ROLE_LIMITS:
+            raise domain.StError("Неизвестная роль.")
+        # Serialize promotions in the group; count again after locking, not only in the UI.
+        locked_group = await db.scalar(select(Group).where(Group.id == group.id).with_for_update())
+        if locked_group is None or locked_group.status != "active":
+            raise domain.StError("Группа недоступна.")
+        target = await db.scalar(
+            select(Membership)
+            .where(Membership.id == uuid.UUID(data["member_id"]), Membership.group_id == group.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if (
+            target is None
+            or target.status != "active"
+            or target.role != data["expected"]
+            or target.id == member.id
+        ):
+            raise domain.StError("Участник или права изменились. Открой список заново.")
+        count = await db.scalar(
+            select(func.count(Membership.id)).where(
+                Membership.group_id == group.id,
+                Membership.status == "active",
+                Membership.role == role,
+            )
+        )
+        if count >= ROLE_LIMITS[role]:
+            raise domain.StError(
+                f"Лимит роли уже достигнут: {ROLE_LIMITS[role]}. Сначала освободите место."
+            )
+        target.role = role
     elif action == "member_change":
         domain.headman_only(member)
         target = await db.scalar(
