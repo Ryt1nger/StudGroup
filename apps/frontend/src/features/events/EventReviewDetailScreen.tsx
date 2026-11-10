@@ -5,6 +5,7 @@ import { isApiRequestError } from '../../api/errors';
 import { zonedParts, zonedToIso } from '../../lib/zoned';
 import { useGroupTimeZone } from '../../session/useGroupTimeZone';
 import { BackTop } from '../../shell/TopBar';
+import { Float } from '../../shell/AppRoot';
 import { Banner, ConfirmModal, Skeleton, StateView } from '../../ui/Blocks';
 import { RequestError } from '../../ui/RequestError';
 import { EventSource, EventStatus } from './EventCard';
@@ -273,24 +274,36 @@ function ReviewForm({ item, reload }: { item: EventReview; reload: () => Promise
           ) : null}
           {mutation.isError && !conflict ? <RequestError error={mutation.error} /> : null}
           <div className="event-actions">
-            {initial.state !== 'cancelled' ? (
-              <button className="btn on" type="submit">
-                {initial.state === 'active' ? 'Сохранить изменения' : 'Сохранить черновик'}
-              </button>
-            ) : null}
             {features.events && initial.state !== 'active' ? (
-              <button className="btn" type="button" onClick={() => save('active')}>
+              <button className="pillb" type="button" onClick={() => save('active')}>
                 Подтвердить публикацию
               </button>
             ) : null}
             {initial.state !== 'cancelled' ? (
-              <button className="btn" type="button" onClick={() => setCancel(true)}>
+              <button className="pillb" type="button" onClick={() => setCancel(true)}>
                 Отменить событие
               </button>
             ) : null}
           </div>
         </fieldset>
       </form>
+      {initial.state !== 'cancelled' ? (
+        <>
+          <div className="cta-space" />
+          <Float>
+            <div className="cta-bar">
+              <button
+                type="button"
+                className="btn"
+                disabled={mutation.isPending}
+                onClick={() => save(initial.state === 'active' ? 'active' : 'draft')}
+              >
+                {mutation.isPending ? 'Сохраняем…' : initial.state === 'active' ? 'Сохранить изменения' : 'Сохранить черновик'}
+              </button>
+            </div>
+          </Float>
+        </>
+      ) : null}
       {cancel ? (
         <ConfirmModal
           icon="alert"
