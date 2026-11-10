@@ -13,7 +13,7 @@ describe('schedule positioning', () => {
   it('makes room for a two-line title and teacher without shifting preceding hours', () => {
     const expanded = scheduleExpansions([
       { startMinute: 260, endMinute: 340, height: 116 }, // 12:20–13:40, screenshot
-      { startMinute: 360, endMinute: 440, height: 87 }, // 14:00–15:20
+      { startMinute: 360, endMinute: 440, height: 70 }, // 14:00–15:20 fits its slot
     ], 64);
     expect(expanded).toEqual([{ endMinute: 340, extra: 116 + 4 - (80 * 64) / 60 }]);
     expect(scheduleY(260, 64, expanded)).toBeCloseTo((260 * 64) / 60);
