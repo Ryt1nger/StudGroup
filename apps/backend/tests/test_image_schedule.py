@@ -545,6 +545,14 @@ def test_clipped_timetable_fragments_can_be_confirmed_without_guessing(client, m
     assert confirmed["room"] == "Ауд. 12…"
 
 
+def schedule_patterns(client):
+    async def read():
+        async with AsyncSession(client.app.state.engine) as db:
+            return (await db.scalars(select(SchedulePattern).order_by(SchedulePattern.id))).all()
+
+    return asyncio.run(read())
+
+
 def empty_primary_schedule(client):
     """Only the target group has no timetable; the other group stays isolated."""
 
@@ -563,7 +571,7 @@ def test_first_pilot_photo_timetable_is_published_without_headman_confirmation(c
     current = stored(client, ImageScheduleSuggestion)[0]
     assert current.id == suggestion.id
     assert current.state == "confirmed"
-    assert len(stored(client, SchedulePattern)) == 2  # own first + other group's fixture
+    assert len(schedule_patterns(client)) == 2  # own first + other group's fixture
     changes = stored(client, ScheduleChange)
     assert len(changes) == 1
     assert changes[0].input_method == "image_auto"
@@ -588,7 +596,7 @@ def test_first_pilot_photo_with_unknown_dates_is_bounded_to_source_week(client, 
         client, monkeypatch, owner_funded_pilot=True, valid_from=None, valid_until=None
     )
     assert suggestion.state == "confirmed"
-    row = next(p for p in stored(client, SchedulePattern) if p.subject == "Алгебра")
+    row = next(p for p in schedule_patterns(client) if p.subject == "Алгебра")
     local = BASE.astimezone(ZoneInfo("Europe/Moscow")).date()
     monday = local - timedelta(days=local.weekday())
     assert row.valid_from == monday
@@ -599,7 +607,7 @@ def test_existing_timetable_still_requires_explicit_review_in_owner_pilot(client
     # The shared fixture already contains a real timetable for the current group.
     suggestion = prepare(client, monkeypatch, owner_funded_pilot=True)
     assert suggestion.state == "pending"
-    assert not any(p.subject == "Алгебра" for p in stored(client, SchedulePattern))
+    assert not any(p.subject == "Алгебра" for p in schedule_patterns(client))
     assert stored(client, ScheduleChange) == []
 
 
@@ -607,7 +615,7 @@ def test_first_schedule_subgroups_need_mapping_before_publication(client, monkey
     empty_primary_schedule(client)
     suggestion = prepare(client, monkeypatch, owner_funded_pilot=True, subgroup="Первая")
     assert suggestion.state == "pending"
-    assert not any(p.subject == "Алгебра" for p in stored(client, SchedulePattern))
+    assert not any(p.subject == "Алгебра" for p in schedule_patterns(client))
 
 
 def test_pending_first_schedule_recovers_after_restart_without_more_vision(client, monkeypatch):
@@ -619,4 +627,4 @@ def test_pending_first_schedule_recovers_after_restart_without_more_vision(clien
     assert asyncio.run(recover_pending_first(client.app.state.engine)) == 1
     assert asyncio.run(recover_pending_first(client.app.state.engine)) == 0
     assert stored(client, ImageScheduleSuggestion)[0].state == "confirmed"
-    assert len(stored(client, SchedulePattern)) == 2
+    assert len(schedule_patterns(client)) == 2
