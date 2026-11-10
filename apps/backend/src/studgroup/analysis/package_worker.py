@@ -272,9 +272,7 @@ async def _waiting_image_context(db, group, route, settings, now):
     # Photos outside the owner-funded one-week backfill are intentionally not
     # purchased; they must never block the text package that references them.
     pilot_cutoff = (
-        pilot_backfill_since(group, now)
-        if getattr(settings, "owner_funded_pilot", False)
-        else None
+        pilot_backfill_since(group, now) if getattr(settings, "owner_funded_pilot", False) else None
     )
     if independent and live_mode(settings):
         finished = (
