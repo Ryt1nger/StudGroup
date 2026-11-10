@@ -44,6 +44,11 @@ def labels(client):
     return [button["text"] for row in markup for button in row]
 
 
+def button(client, label):
+    markup = last(client)["reply_markup"]["inline_keyboard"]
+    return next(b for row in markup for b in row if b["text"] == label)
+
+
 def tap(client, label, uid=33):
     markup = last(client)["reply_markup"]["inline_keyboard"]
     button = next(b for row in markup for b in row if label in b["text"])
@@ -467,9 +472,16 @@ def test_a_connected_person_sees_the_app_and_staff_a_pointer_to_the_cabinet(fore
     deliver(foreman, "/start", uid=1)  # uid 1 is the pilot group's headman
     text = last(foreman)["text"]
     assert text.startswith("Вы подключены к «Группа»") and "/" not in text
-    assert {"Кабинет старосты", "Пригласить участников", "Открыть StudGroup"} <= set(
+    assert {"Кабинет старосты", "Открыть StudGroup", "СДО / ЛК"} <= set(
         labels(foreman)
     )
+    assert not {
+        "Пригласить участников",
+        "Проверить подключение",
+        "Изменить ID РАНХиГС",
+        "Указать ID группы РАНХиГС",
+        "Документы и согласия",
+    }.intersection(labels(foreman))
 
 
 def test_plain_text_outside_the_code_step_still_reaches_the_headman_flow(foreman):
@@ -522,6 +534,8 @@ def test_connection_status_checks_live_telegram_without_changing_membership(fore
 
     monkeypatch.setattr(bot_connect, "chat_status", status)
     deliver(foreman, "/start", uid=1)
+    tap(foreman, "Кабинет старосты", uid=1)
+    tap(foreman, "Настройки", uid=1)
     tap(foreman, "Проверить подключение", uid=1)
     assert "Участие в Telegram подтверждено" in last(foreman)["text"]
     assert "Бот — администратор группы" in last(foreman)["text"]
@@ -529,7 +543,8 @@ def test_connection_status_checks_live_telegram_without_changing_membership(fore
     tap(foreman, "Проверить ещё раз", uid=1)
     assert len(calls) == 4
     tap(foreman, "Главное меню", uid=1)
-    assert "Пригласить участников" in labels(foreman)
+    assert "Кабинет старосты" in labels(foreman)
+    assert "Пригласить участников" not in labels(foreman)
 
 
 def test_connection_status_does_not_revoke_access_on_telegram_failure(foreman, monkeypatch):
@@ -542,11 +557,12 @@ def test_connection_status_does_not_revoke_access_on_telegram_failure(foreman, m
 
     monkeypatch.setattr(bot_connect, "chat_status", unavailable)
     deliver(foreman, "/start", uid=1)
+    tap(foreman, "Кабинет старосты", uid=1)
+    tap(foreman, "Настройки", uid=1)
     tap(foreman, "Проверить подключение", uid=1)
     assert "Это не изменило ваш доступ" in last(foreman)["text"]
     assert "Доступ в StudGroup: активен" in last(foreman)["text"]
-    tap(foreman, "Поддержка", uid=1)
-    assert "Поддержка" in last(foreman)["text"]
+    assert button(foreman, "Поддержка")["url"] == "https://t.me/studgroup_admin"
 
 
 def test_notification_preferences_can_be_changed_with_bot_buttons(foreman):
@@ -636,9 +652,9 @@ def test_the_welcome_screen_reaches_every_info_topic_by_buttons(foreman):
     assert "₽" not in last(foreman)["text"]
     tap(foreman, "Назад")
 
-    tap(foreman, "Поддержка")
-    assert "Поддержка" in last(foreman)["text"]
-    tap(foreman, "Назад")
+    assert button(foreman, "Поддержка") == {
+        "text": "Поддержка", "url": "https://t.me/studgroup_admin"
+    }
     assert "Подключить группу" in labels(foreman)
 
 
@@ -701,3 +717,30 @@ def test_rotating_shared_link_revokes_previous_link(foreman, monkeypatch):
     deliver(foreman, f"/start invite_{new_code}", uid=33)
     finish_legal(foreman)
     assert "Готово! Вы подключены" in last(foreman)["text"]
+
+
+def test_ranepa_external_browser_choice_and_direct_support_links(foreman):
+    deliver(foreman, "/start", uid=1)
+    assert button(foreman, "Поддержка") == {
+        "text": "Поддержка", "url": "https://t.me/studgroup_admin"
+    }
+    tap(foreman, "СДО / ЛК", uid=1)
+    assert "Куда перейти?" in last(foreman)["text"]
+    assert button(foreman, "Открыть СДО") == {
+        "text": "Открыть СДО", "url": "https://lms.ranepa.ru/"
+    }
+    assert button(foreman, "Открыть ЛК РАНХиГС") == {
+        "text": "Открыть ЛК РАНХиГС", "url": "https://my.ranepa.ru/"
+    }
+    assert all("web_app" not in b for row in last(foreman)["reply_markup"]["inline_keyboard"] for b in row)
+    tap(foreman, "‹ Назад", uid=1)
+    assert "СДО / ЛК" in labels(foreman)
+
+
+def test_connected_headman_invites_students_from_cabinet_only(foreman):
+    deliver(foreman, "/start", uid=1)
+    assert "Пригласить участников" not in labels(foreman)
+    tap(foreman, "Кабинет старосты", uid=1)
+    assert "Пригласить участников" in labels(foreman)
+    tap(foreman, "Пригласить участников", uid=1)
+    assert "Создать ссылку" in labels(foreman)
