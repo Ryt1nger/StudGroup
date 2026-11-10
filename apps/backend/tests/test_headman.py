@@ -561,3 +561,44 @@ def test_visible_frame_ignores_superseded_outbox_even_if_its_timestamp_is_later(
 
     run(foreman, old_frame)
     assert last(foreman) == expected
+
+
+def test_subgroup_wizard_backtracks_without_losing_subject_or_prior_signals(foreman):
+    enter(foreman)
+    click(foreman, "Подгруппы по предметам")
+    click(foreman, "Добавить предмет")
+    assert "‹ Назад" in [b["text"] for row in last(foreman)["reply_markup"]["inline_keyboard"] for b in row]
+    click(foreman, "‹ Назад")
+    assert "Добавить предмет" in last(foreman)["text"] or "Добавить предмет" in str(last(foreman))
+
+    click(foreman, "Добавить предмет")
+    deliver(foreman, "Английский")
+    click(foreman, "‹ Назад")
+    assert "Ранее: Английский" in last(foreman)["text"]
+    deliver(foreman, "Информатика")
+    deliver(foreman, "2")
+    click(foreman, "‹ Назад")
+    assert "Ранее: 2" in last(foreman)["text"]
+    deliver(foreman, "2")
+    deliver(foreman, "Иванова")
+    click(foreman, "‹ Назад")
+    assert "Ранее: Иванова" in last(foreman)["text"]
+    deliver(foreman, "Петрова")
+    deliver(foreman, "Сидоров")
+    assert "Информатика — проверьте названия" in last(foreman)["text"]
+    click(foreman, "‹ Назад")
+    assert "Ранее: Сидоров" in last(foreman)["text"]
+    deliver(foreman, "Петров")
+    click(foreman, "Изменить")
+    assert "Новое короткое название" in last(foreman)["text"]
+    click(foreman, "‹ Назад")
+    assert "Информатика — проверьте названия" in last(foreman)["text"]
+    click(foreman, "Сохранить")
+    click(foreman, "К предметам")
+    assert "Информатика" in str(last(foreman))
+    click(foreman, "Информатика")
+    click(foreman, "Переименовать")
+    click(foreman, "‹ Назад")
+    assert "Информатика" in last(foreman)["text"]
+    click(foreman, "‹ К предметам")
+    assert "Информатика" in str(last(foreman))
