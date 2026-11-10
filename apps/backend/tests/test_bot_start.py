@@ -472,9 +472,7 @@ def test_a_connected_person_sees_the_app_and_staff_a_pointer_to_the_cabinet(fore
     deliver(foreman, "/start", uid=1)  # uid 1 is the pilot group's headman
     text = last(foreman)["text"]
     assert text.startswith("Вы подключены к «Группа»") and "/" not in text
-    assert {"Кабинет старосты", "Открыть StudGroup", "СДО / ЛК"} <= set(
-        labels(foreman)
-    )
+    assert {"Кабинет старосты", "Открыть StudGroup", "СДО / ЛК"} <= set(labels(foreman))
     assert not {
         "Пригласить участников",
         "Проверить подключение",
@@ -653,7 +651,8 @@ def test_the_welcome_screen_reaches_every_info_topic_by_buttons(foreman):
     tap(foreman, "Назад")
 
     assert button(foreman, "Поддержка") == {
-        "text": "Поддержка", "url": "https://t.me/studgroup_admin"
+        "text": "Поддержка",
+        "url": "https://t.me/studgroup_admin",
     }
     assert "Подключить группу" in labels(foreman)
 
@@ -722,17 +721,22 @@ def test_rotating_shared_link_revokes_previous_link(foreman, monkeypatch):
 def test_ranepa_external_browser_choice_and_direct_support_links(foreman):
     deliver(foreman, "/start", uid=1)
     assert button(foreman, "Поддержка") == {
-        "text": "Поддержка", "url": "https://t.me/studgroup_admin"
+        "text": "Поддержка",
+        "url": "https://t.me/studgroup_admin",
     }
     tap(foreman, "СДО / ЛК", uid=1)
     assert "Куда перейти?" in last(foreman)["text"]
     assert button(foreman, "Открыть СДО") == {
-        "text": "Открыть СДО", "url": "https://lms.ranepa.ru/"
+        "text": "Открыть СДО",
+        "url": "https://lms.ranepa.ru/",
     }
     assert button(foreman, "Открыть ЛК РАНХиГС") == {
-        "text": "Открыть ЛК РАНХиГС", "url": "https://my.ranepa.ru/"
+        "text": "Открыть ЛК РАНХиГС",
+        "url": "https://my.ranepa.ru/",
     }
-    assert all("web_app" not in b for row in last(foreman)["reply_markup"]["inline_keyboard"] for b in row)
+    assert all(
+        "web_app" not in b for row in last(foreman)["reply_markup"]["inline_keyboard"] for b in row
+    )
     tap(foreman, "‹ Назад", uid=1)
     assert "СДО / ЛК" in labels(foreman)
 
