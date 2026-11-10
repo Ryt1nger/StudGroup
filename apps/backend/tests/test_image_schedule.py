@@ -310,9 +310,9 @@ def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(clie
             await db.commit()
 
     asyncio.run(undo())
-    restored = client.get(
-        f"/v1/schedule?start={lesson_day}&end={lesson_day}", headers=AUTH
-    ).json()["lessons"]
+    restored = client.get(f"/v1/schedule?start={lesson_day}&end={lesson_day}", headers=AUTH).json()[
+        "lessons"
+    ]
     assert all(row["subject"] != "Информатика" for row in restored)
     assert next(row for row in restored if row["subject"] == "Математика")["teacher"] == "Иванов"
 
