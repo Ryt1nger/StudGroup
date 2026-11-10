@@ -85,7 +85,7 @@ export function EventCalendarAction({ item }: { item: PublishedEvent }) {
       </button>
       {open ? (
         <div
-          className="modal-back"
+          className="modal-back event-date-overlay"
           onClick={(event) => event.target === event.currentTarget && !mutation.isPending && setOpen(false)}
         >
           <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="modal event-date-modal">
