@@ -302,7 +302,9 @@ async def detail(db, session, group, key):
 
 
 async def ask(db, session, prompt, data, field):
-    await screen(db, session, prompt, [back()], "text", {**data, "field": field})
+    subgroup_field = field.startswith("subgroup_")
+    buttons = [[("‹ Назад", "subgroup_back")], back()] if subgroup_field else [back()]
+    await screen(db, session, prompt, buttons, "text", {**data, "field": field})
 
 
 async def preview(db, session, text, draft):
@@ -521,7 +523,7 @@ async def subgroup_settings_screen(db, session, group, *, onboarding=False):
     )
 
 
-async def subgroup_detail(db, session, group, split_id):
+async def subgroup_detail(db, session, group, split_id, *, onboarding=False):
     found = next(
         (
             (split, rows)
@@ -545,7 +547,11 @@ async def subgroup_detail(db, session, group, split_id):
         ]
         + [[("Удалить разделение", "subgroup_delete")], [("‹ К предметам", "subgroup_settings")]],
         "subgroup_detail",
-        {"split_id": str(split.id), "subgroups": [str(row.id) for row in rows]},
+        {
+            "split_id": str(split.id),
+            "subgroups": [str(row.id) for row in rows],
+            "onboarding": onboarding,
+        },
     )
 
 
@@ -560,10 +566,76 @@ async def subgroup_draft_screen(db, session, data):
             [(f"Изменить · {name}"[:55], f"subgroup_draft_name_{n}")]
             for n, name in enumerate(data["names"])
         ]
-        + [[("Сохранить", "subgroup_save")], [("‹ Отмена", "subgroup_settings")]],
+        + [
+            [("Сохранить", "subgroup_save")],
+            [("‹ Назад", "subgroup_back")],
+            [("Отменить настройку", "subgroup_settings")],
+        ],
         "subgroup_draft",
         data,
     )
+
+
+async def subgroup_back(db, session, group, member, data):
+    """Rewind one unsaved subgroup step, preserving the previous answers and entry context."""
+    domain.headman_only(member)
+    field = data.get("field") if session.step == "text" else "subgroup_draft"
+    if field == "subgroup_subject":
+        await subgroup_settings_screen(db, session, group, onboarding=data.get("onboarding", False))
+    elif field == "subgroup_count":
+        await ask(
+            db,
+            session,
+            f"Как называется предмет с разделением на подгруппы?\n"
+            f"Ранее: {data['subject']}. Отправьте исправленное название.",
+            data,
+            "subgroup_subject",
+        )
+    elif field == "subgroup_signals":
+        signals = list(data["signals"])
+        if signals:
+            previous = signals.pop()
+            await ask(
+                db,
+                session,
+                f"Укажите фамилию преподавателя или номер группы для подгруппы "
+                f"{len(signals) + 1}.\nРанее: {', '.join(previous)}.",
+                {**data, "signals": signals},
+                "subgroup_signals",
+            )
+        else:
+            await ask(
+                db,
+                session,
+                f"На сколько подгрупп делится предмет? От 2 до 6.\nРанее: {data['count']}.",
+                data,
+                "subgroup_count",
+            )
+    elif field == "subgroup_draft":
+        signals = list(data["signals"])
+        if not signals:
+            raise domain.StError("Список подгрупп уже изменился. Откройте настройку заново.")
+        previous = signals.pop()
+        await ask(
+            db,
+            session,
+            f"Укажите фамилию преподавателя или номер группы для подгруппы "
+            f"{len(signals) + 1}.\nРанее: {', '.join(previous)}.",
+            {**data, "signals": signals},
+            "subgroup_signals",
+        )
+    elif field == "subgroup_draft_name":
+        await subgroup_draft_screen(db, session, data)
+    elif field == "subgroup_existing_name":
+        await subgroup_detail(
+            db,
+            session,
+            group,
+            uuid.UUID(data["split_id"]),
+            onboarding=data.get("onboarding", False),
+        )
+    else:
+        raise domain.StError("Этот шаг уже изменился. Откройте список предметов заново.")
 
 
 async def handle(db, update, settings):
@@ -711,7 +783,13 @@ async def handle(db, update, settings):
         if session.step == "subgroup_list" and action.startswith("subgroup_open_"):
             domain.headman_only(member)
             index = int(action.removeprefix("subgroup_open_"))
-            await subgroup_detail(db, session, group, uuid.UUID(data["splits"][index]))
+            await subgroup_detail(
+                db,
+                session,
+                group,
+                uuid.UUID(data["splits"][index]),
+                onboarding=data.get("onboarding", False),
+            )
             return True
         if session.step == "subgroup_detail" and action.startswith("subgroup_rename_"):
             domain.headman_only(member)
@@ -738,7 +816,9 @@ async def handle(db, update, settings):
         if session.step == "subgroup_delete" and action == "subgroup_delete_yes":
             domain.headman_only(member)
             await subgroups.delete_split(db, group.id, uuid.UUID(data["split_id"]))
-            await subgroup_settings_screen(db, session, group)
+            await subgroup_settings_screen(
+                db, session, group, onboarding=data.get("onboarding", False)
+            )
             return True
         if session.step == "subgroup_draft" and action.startswith("subgroup_draft_name_"):
             domain.headman_only(member)
@@ -780,7 +860,9 @@ async def handle(db, update, settings):
                 await menu(db, session, group)
             return True
         user, member, group = await domain.access(db, sender.id, session.group_id)
-        if action == "menu":
+        if action == "subgroup_back" and session.step in {"text", "subgroup_draft"}:
+            await subgroup_back(db, session, group, member, data)
+        elif action == "menu":
             await menu(db, session, group)
         elif action in {"tasks", "cards", "control_points"}:
             await listing(
@@ -1370,7 +1452,9 @@ async def typed(db, session, group, user, member, data, text, message, settings)
         if not name or len(name) > subgroups.MAX_NAME:
             raise domain.StError("Название подгруппы — от 1 до 40 символов.")
         subgroup.name = name
-        await subgroup_detail(db, session, group, split.id)
+        await subgroup_detail(
+            db, session, group, split.id, onboarding=data.get("onboarding", False)
+        )
     elif field == "search":
         await listing(
             db,

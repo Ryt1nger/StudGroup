@@ -237,6 +237,10 @@ def test_two_real_subgroups_persist_and_survive_repeated_start(foreman, monkeypa
     assert "Английский" in last(foreman)["text"]
     tap(foreman, "Английский 2")
     assert "Информатика" in last(foreman)["text"]
+    tap(foreman, "‹ Назад")
+    assert "Английский" in last(foreman)["text"]
+    tap(foreman, "Английский 2")
+    assert "Информатика" in last(foreman)["text"]
     deliver(foreman, "/start", uid=33)
     assert "Информатика" in last(foreman)["text"]
     tap(foreman, "Информатика 2")
@@ -314,3 +318,53 @@ def test_existing_member_never_sees_registration_again(foreman):
     deliver(foreman, "/start", uid=1)
     assert "Открыть StudGroup" in labels(foreman)
     assert "Принимаю условия использования" not in labels(foreman)
+
+
+def test_profile_back_navigation_preserves_invite_and_corrected_personal_data(foreman, monkeypatch):
+    allow_telegram(monkeypatch)
+    code = issue(foreman)
+    foreman.app.state.settings.registration_legal_required = False
+    deliver(foreman, f"/start invite_{code}", uid=33)
+    tap(foreman, "Я студент")
+    assert "‹ Назад" in labels(foreman)
+    tap(foreman, "‹ Назад")
+    assert "Я студент" in labels(foreman)
+    tap(foreman, "Я студент")
+    deliver(foreman, "Анна", uid=33)
+    assert "Регистрация · шаг 2" in last(foreman)["text"]
+    tap(foreman, "‹ Назад")
+    assert "Регистрация · шаг 1" in last(foreman)["text"]
+    deliver(foreman, "Мария", uid=33)
+    deliver(foreman, "Иванова", uid=33)
+    tap(foreman, "‹ Назад")
+    assert "Регистрация · шаг 2" in last(foreman)["text"]
+    deliver(foreman, "Петрова", uid=33)
+    tap(foreman, "Пропустить")
+    assert "Открыть StudGroup" in labels(foreman)
+
+    async def saved(db):
+        user = await db.scalar(select(User).where(User.telegram_user_id == 33))
+        profile = await db.get(UserProfile, user.id)
+        member = await db.scalar(select(Membership).where(Membership.user_id == user.id))
+        return user.display_name, profile.first_name, profile.last_name, profile.email, member.role
+
+    assert run(foreman, saved) == ("Мария Петрова", "Мария", "Петрова", None, "student")
+
+
+def test_legal_back_returns_to_verified_invite_role_without_reaccepting_consent(
+    foreman, monkeypatch
+):
+    publish_legal(foreman)
+    allow_telegram(monkeypatch)
+    deliver(foreman, f"/start invite_{issue(foreman)}", uid=33)
+    tap(foreman, "Я студент")
+    assert "Принимаю условия использования" in labels(foreman)
+    tap(foreman, "‹ Назад")
+    assert "Я студент" in labels(foreman)
+    tap(foreman, "Я студент")
+    tap(foreman, "Принимаю условия использования")
+    assert "Даю отдельное согласие" in labels(foreman)
+    tap(foreman, "‹ Назад")
+    assert "Я студент" in labels(foreman)
+    tap(foreman, "Я студент")
+    assert "Даю отдельное согласие" in labels(foreman)
