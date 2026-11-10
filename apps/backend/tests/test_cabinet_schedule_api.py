@@ -661,3 +661,26 @@ def test_failed_second_pass_records_safe_reason_without_hidden_provider_text(cli
     # First successful, charged visual pass stays checkpointed: retry B only.
     assert advance(client, monkeypatch, Vision()) == "ready"
     assert get_draft(client, submitted["id"])["state"] == "pending"
+
+
+def test_first_pilot_cabinet_schedule_autopublishes_without_second_confirmation(
+    client, monkeypatch
+):
+    from studgroup.models import SchedulePattern
+
+    make(client, "headman")
+    authorize_analysis(client)
+    client.app.state.settings.owner_funded_pilot = True
+    vision = Vision()
+    submitted = upload(client, week(), picture()).json()
+    assert advance(client, monkeypatch, vision) == "pass_a_ready"
+    assert advance(client, monkeypatch, vision) == "ready"
+    current = get_draft(client, submitted["id"])
+    assert current["state"] == "confirmed"
+    assert current["confirmation"]["automatic"] is True
+
+    async def count_rows(db):
+        return len((await db.scalars(select(SchedulePattern))).all())
+
+    assert db_run(client, count_rows) == 1
+    assert len(vision.calls) == 2
