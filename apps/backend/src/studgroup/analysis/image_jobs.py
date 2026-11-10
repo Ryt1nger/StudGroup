@@ -51,6 +51,12 @@ def live_mode(settings):
     return getattr(settings, "owner_funded_pilot", False) or settings.image_analysis_mode == "live"
 
 
+def pilot_backfill_since(group, now):
+    """Only catch up one week of photos, never photos before the bot joined."""
+    week_ago = utc(now) - timedelta(days=7)
+    return max(week_ago, utc(group.bot_added_at)) if group.bot_added_at else week_ago
+
+
 def supported(attachment):
     return attachment.kind == "photo" or (
         attachment.kind == "document"
@@ -832,10 +838,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             # historical BI 1.2 photo archive after a deploy or cold restart.
             # Only retained photos from the previous week are eligible for catch-up.
             since = (
-                max(
-                    now - timedelta(days=7),
-                    utc(group.bot_added_at) if group.bot_added_at else now - timedelta(days=7),
-                )
+                pilot_backfill_since(group, now)
                 if getattr(settings, "owner_funded_pilot", False)
                 else settings.image_analysis_since
             )
