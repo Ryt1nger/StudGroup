@@ -13,7 +13,7 @@ from studgroup.models import ImageScheduleSuggestion, ScheduleChange, SchedulePa
 pytest_plugins = ["test_schedule_api"]
 
 
-def prepare(client, monkeypatch, schedule_interpretation=None, **row_patch):
+def prepare(client, monkeypatch, schedule_interpretation=None, *, owner_funded_pilot=False, **row_patch):
     download_ok(monkeypatch)
     photo_message(client)
     make_new(client)
@@ -31,7 +31,7 @@ def prepare(client, monkeypatch, schedule_interpretation=None, **row_patch):
     payload = json.loads(reading()) | {"semantic_types": ["schedule"], "schedule": [row]}
     if schedule_interpretation is not None:
         payload["schedule_interpretation"] = schedule_interpretation
-    config = cfg(client)
+    config = cfg(client, owner_funded_pilot=True) if owner_funded_pilot else cfg(client)
     provider = VisionProvider(json.dumps(payload))
     assert tick(client, provider, config) == "ready"
     assert tick(client, provider, config) == "ready"
@@ -568,19 +568,21 @@ def test_first_pilot_photo_with_unknown_dates_is_bounded_to_source_week(client, 
     from datetime import timedelta
     from zoneinfo import ZoneInfo
 
+    from test_package_worker import BASE
+
     suggestion = prepare(
         client, monkeypatch, owner_funded_pilot=True, valid_from=None, valid_until=None
     )
     assert suggestion.state == "confirmed"
     row = stored(client, SchedulePattern)[0]
-    local = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    local = BASE.astimezone(ZoneInfo("Europe/Moscow")).date()
     monday = local - timedelta(days=local.weekday())
     assert row.valid_from == monday
     assert row.valid_until == monday + timedelta(days=6)
 
 
 def test_existing_timetable_still_requires_explicit_review_in_owner_pilot(client, monkeypatch):
-    from datetime import UTC, date, time, datetime
+    from datetime import date, time
 
     from studgroup.models import Group
 
