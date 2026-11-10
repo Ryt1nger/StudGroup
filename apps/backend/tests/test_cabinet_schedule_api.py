@@ -668,8 +668,16 @@ def test_first_pilot_cabinet_schedule_autopublishes_without_second_confirmation(
 ):
     from studgroup.models import SchedulePattern
 
+    from sqlalchemy import delete
+
     make(client, "headman")
     authorize_analysis(client)
+
+    async def clear(db):
+        group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+        await db.execute(delete(SchedulePattern).where(SchedulePattern.group_id == group.id))
+
+    db_run(client, clear)
     client.app.state.settings.owner_funded_pilot = True
     vision = Vision()
     submitted = upload(client, week(), picture()).json()
@@ -680,7 +688,12 @@ def test_first_pilot_cabinet_schedule_autopublishes_without_second_confirmation(
     assert current["confirmation"]["automatic"] is True
 
     async def count_rows(db):
-        return len((await db.scalars(select(SchedulePattern))).all())
+        group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+        return len(
+            (
+                await db.scalars(select(SchedulePattern).where(SchedulePattern.group_id == group.id))
+            ).all()
+        )
 
     assert db_run(client, count_rows) == 1
     assert len(vision.calls) == 2
