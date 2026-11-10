@@ -38,11 +38,17 @@ def utc(stamp):
 
 
 def enabled(settings, group_id):
+    if getattr(settings, "owner_funded_pilot", False) and group_id is not None:
+        return True
     return (
         settings.image_analysis_enabled
         and settings.image_analysis_since is not None
         and str(group_id) in settings.image_analysis_groups
     )
+
+
+def live_mode(settings):
+    return getattr(settings, "owner_funded_pilot", False) or settings.image_analysis_mode == "live"
 
 
 def supported(attachment):
@@ -788,7 +794,7 @@ async def perform(provider, image, mime, job, raw, first=None):
 async def process_images_next(engine, settings, provider=None, now=None, transport=None):
     from studgroup.analysis.release_budget import production_enabled
 
-    if (
+    if not getattr(settings, "owner_funded_pilot", False) and (
         not settings.image_analysis_enabled
         or not settings.image_analysis_groups
         or settings.image_analysis_since is None
@@ -826,7 +832,9 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                 db,
                 group,
                 now,
-                settings.image_analysis_since,
+                settings.image_analysis_since
+                or group.bot_added_at
+                or now - timedelta(days=10),
                 model_identity(settings),
                 provider_identity(settings),
                 quiet_window=production_enabled(settings, group.id),
@@ -991,7 +999,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             await capture_image(db, job, result, raw, now)
         job.lease_until = None
         if (
-            settings.image_analysis_mode == "live"
+            live_mode(settings)
             and job.state in {"ready", "failed"}
             and (job.pass_number == 2 or job.state == "failed")
             and raw is not None
