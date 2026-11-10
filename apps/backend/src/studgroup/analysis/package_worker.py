@@ -284,10 +284,7 @@ async def _waiting_image_context(db, group, route, settings, now):
         if source is None or attachment.source_revision != source.revision:
             continue
         if independent:
-            unresolved = (
-                not live_mode(settings)
-                or (attachment.id, source.revision) not in ready
-            )
+            unresolved = not live_mode(settings) or (attachment.id, source.revision) not in ready
         else:
             unresolved = attachment.processing_state == "metadata_only"
         if unresolved:
