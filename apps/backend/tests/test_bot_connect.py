@@ -607,9 +607,16 @@ def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeyp
     assert "Далее" in labels(foreman)
 
     tap(foreman, "Добавить предмет", uid=ADDER)
+    assert "‹ Назад" in labels(foreman)
+    tap(foreman, "‹ Назад", uid=ADDER)
+    assert "Далее" in labels(foreman)  # back to onboarding list, not cabinet home
+    tap(foreman, "Добавить предмет", uid=ADDER)
     deliver(foreman, "Английский", uid=ADDER)
     deliver(foreman, "2", uid=ADDER)
     deliver(foreman, "Иванова", uid=ADDER)
+    deliver(foreman, "2 группа", uid=ADDER)
+    tap(foreman, "‹ Назад", uid=ADDER)
+    assert "Ранее: 2 группа" in last(foreman)["text"]
     deliver(foreman, "2 группа", uid=ADDER)
     tap(foreman, "Сохранить", uid=ADDER)
     assert labels(foreman) == ["Добавить ещё", "К предметам", "Далее"]
@@ -617,6 +624,9 @@ def test_headman_finishes_after_optional_first_subgroup_subject(foreman, monkeyp
     tap(foreman, "К предметам", uid=ADDER)
     assert any("Английский" in label for label in labels(foreman))
     assert "Далее" in labels(foreman)
+    tap(foreman, "Английский", uid=ADDER)
+    tap(foreman, "‹ К предметам", uid=ADDER)
+    assert "Далее" in labels(foreman)  # reopening the subject preserves onboarding
     tap(foreman, "Далее", uid=ADDER)
     assert "Профиль можно заполнить в приложении" in last(foreman)["text"]
     assert {"Открыть StudGroup", "Кабинет старосты"} <= set(labels(foreman))
