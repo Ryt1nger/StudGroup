@@ -5,6 +5,7 @@ is write-only: it is encrypted before it is stored and no endpoint ever returns 
 is set.
 """
 
+import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 from urllib.parse import urlparse
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, database
 from studgroup.models import User, UserProfile, WebSession
+from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.security import token_hash
 
 router = APIRouter(prefix="/v1")
@@ -122,7 +124,7 @@ def representation(user: User, row: UserProfile | None):
             "url": row.sdu_url,
             "login": row.sdu_login,
             "calendar_url": row.sdu_calendar_url,
-            "password_set": bool(row.sdu_password_encrypted),
+            "password_set": bool(row.sdu_credential_id or row.sdu_password_encrypted),
         },
         "settings": settings.model_dump(),
     }
@@ -144,10 +146,22 @@ async def current(db, authorization):
 
 @router.get("/profile")
 async def read_profile(
+    request: Request,
     db: Annotated[AsyncSession, Depends(database)], authorization: str | None = Header(None)
 ):
     user, row = await current(db, authorization)
-    return representation(user, row)
+    result = representation(user, row)
+    if row and row.sdu_credential_id:
+        store = configured_store(request.app.state.settings)
+        if store is None:
+            raise ApiError("service_unavailable", "Хранение реквизитов недоступно", 503)
+        try:
+            credential = await store.get(row.sdu_credential_id)
+        except CredentialStoreUnavailable:
+            raise ApiError("service_unavailable", "Хранение реквизитов недоступно", 503) from None
+        if credential:
+            result["sdu"]["login"] = credential[0]
+    return result
 
 
 @router.patch("/profile")
@@ -178,29 +192,77 @@ async def update_profile(
     if row is None:
         row = UserProfile(user_id=user.id, updated_at=datetime.now(UTC))
         db.add(row)
+    store = configured_store(request.app.state.settings)
+    ydb_record = None
+    if store and row.sdu_credential_id:
+        try:
+            ydb_record = await store.get(row.sdu_credential_id)
+        except CredentialStoreUnavailable:
+            raise ApiError("service_unavailable", "Хранение реквизитов недоступно", 503) from None
     for name in (
         "first_name",
         "last_name",
         "email",
         "sdu_platform",
         "sdu_url",
-        "sdu_login",
         "sdu_calendar_url",
     ):
         if name in fields:
             setattr(row, name, getattr(body, name))
     if "settings" in fields and body.settings is not None:
         row.settings = body.settings.model_dump()
-    if body.clear_sdu_password:
-        row.sdu_password_encrypted = None
-    elif body.sdu_password is not None:
-        secret = body.sdu_password.get_secret_value()
-        if not secret:
-            raise ApiError("invalid_request", "Пароль не может быть пустым", 422)
-        fernet = cipher(request)
-        if fernet is None:
-            raise ApiError("service_unavailable", "Хранение пароля сейчас недоступно", 503)
-        row.sdu_password_encrypted = fernet.encrypt(secret.encode()).decode()
+    if store and ("sdu_login" in fields or body.sdu_password is not None or body.clear_sdu_password):
+        if body.clear_sdu_password:
+            if row.sdu_credential_id:
+                try:
+                    await store.delete(row.sdu_credential_id)
+                except CredentialStoreUnavailable:
+                    raise ApiError("service_unavailable", "Удаление реквизитов не подтверждено", 503) from None
+            row.sdu_credential_id = None
+            row.sdu_login = None
+            row.sdu_password_encrypted = None
+        else:
+            login = body.sdu_login if "sdu_login" in fields else (ydb_record[0] if ydb_record else row.sdu_login)
+            if body.sdu_password is not None:
+                secret = body.sdu_password.get_secret_value()
+                if not secret:
+                    raise ApiError("invalid_request", "Пароль не может быть пустым", 422)
+                fernet = cipher(request)
+                if fernet is None:
+                    raise ApiError("service_unavailable", "Хранение пароля сейчас недоступно", 503)
+                ciphertext = fernet.encrypt(secret.encode()).decode()
+            else:
+                ciphertext = ydb_record[1] if ydb_record else row.sdu_password_encrypted
+            if login and ciphertext:
+                record_id = row.sdu_credential_id or uuid.uuid4()
+                try:
+                    await store.put(record_id, login, ciphertext, "v1")
+                except CredentialStoreUnavailable:
+                    raise ApiError("service_unavailable", "Сохранение реквизитов не подтверждено", 503) from None
+                row.sdu_credential_id = record_id
+                row.sdu_login = None
+                row.sdu_password_encrypted = None
+                ydb_record = (login, ciphertext, "v1")
+            elif body.sdu_password is not None or "sdu_login" in fields:
+                raise ApiError("invalid_request", "Введите логин вместе с паролем", 422)
+    elif not store:
+        if supplied_sdo and not request.app.state.settings.ranepa_legacy_credentials_allowed:
+            raise ApiError("service_unavailable", "Хранение реквизитов недоступно", 503)
+        if "sdu_login" in fields:
+            row.sdu_login = body.sdu_login
+        if body.clear_sdu_password:
+            row.sdu_password_encrypted = None
+        elif body.sdu_password is not None:
+            secret = body.sdu_password.get_secret_value()
+            if not secret:
+                raise ApiError("invalid_request", "Пароль не может быть пустым", 422)
+            fernet = cipher(request)
+            if fernet is None:
+                raise ApiError("service_unavailable", "Хранение пароля сейчас недоступно", 503)
+            row.sdu_password_encrypted = fernet.encrypt(secret.encode()).decode()
     row.updated_at = datetime.now(UTC)
     await db.commit()
-    return representation(user, row)
+    result = representation(user, row)
+    if ydb_record and row.sdu_credential_id:
+        result["sdu"]["login"] = ydb_record[0]
+    return result

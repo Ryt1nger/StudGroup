@@ -1,0 +1,34 @@
+name: Prepare RANEPA credential table
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      YDB_DOCUMENT_ENDPOINT: ${{ secrets.RANEPA_YDB_DOCUMENT_ENDPOINT }}
+      YDB_ACCESS_KEY_ID: ${{ secrets.RANEPA_YDB_ACCESS_KEY_ID }}
+      YDB_SECRET_ACCESS_KEY: ${{ secrets.RANEPA_YDB_SECRET_ACCESS_KEY }}
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.13'
+      - name: Check YDB connection settings
+        run: |
+          test -n "$YDB_DOCUMENT_ENDPOINT"
+          test -n "$YDB_ACCESS_KEY_ID"
+          test -n "$YDB_SECRET_ACCESS_KEY"
+      - name: Create or verify document table
+        run: |
+          uv sync --frozen --no-dev
+          uv run --no-sync python -m studgroup.ranepa_credential_store

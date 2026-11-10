@@ -19,6 +19,7 @@ from studgroup.models import Group, Membership, MemberSubgroup, UserProfile
 from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
+from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_personal import remember_personal
 
 
@@ -42,7 +43,7 @@ async def prepare_week(engine, today: date, settings: Settings) -> int:
         candidates = []
         for member, group in members:
             profile = await db.get(UserProfile, member.user_id)
-            if not profile or not profile.sdu_login or not profile.sdu_password_encrypted:
+            if not profile or not profile.sdu_credential_id:
                 continue
             if not await has_consent(db, member.user_id, "sdo", settings):
                 continue
@@ -72,8 +73,7 @@ async def process_one(engine, settings: Settings, today: date) -> str:
             group is None
             or profile is None
             or not group.academic_group_code
-            or not profile.sdu_login
-            or not profile.sdu_password_encrypted
+            or not profile.sdu_credential_id
             or not legal_ready(settings)
             or not settings.ranepa_access_approved
             or not await has_consent(db, user_id, "sdo", settings)
@@ -82,15 +82,25 @@ async def process_one(engine, settings: Settings, today: date) -> str:
             await db.commit()
             return "failed"
         code = group.academic_group_code
-        login = profile.sdu_login
-        encrypted_password = profile.sdu_password_encrypted
+        credential_id = profile.sdu_credential_id
         await db.commit()
+    store = configured_store(settings)
+    if store is None:
+        failure = "internal"
+        credential = None
+    else:
+        try:
+            credential = await store.get(credential_id)
+        except CredentialStoreUnavailable:
+            credential = None
+        failure = "internal" if credential is None else None
     secret = settings.profile_encryption_key.get_secret_value()
-    if not secret:
+    if failure is not None or not secret:
         failure = "internal"
     else:
         try:
             cipher = Fernet(secret.encode())
+            login, encrypted_password, _ = credential
             password = cipher.decrypt(encrypted_password.encode()).decode()
         except (ValueError, InvalidToken, UnicodeDecodeError):
             failure = "login_failed"
@@ -205,6 +215,8 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
         raise RuntimeError("Approved legal settings and university access are required")
     if not settings.profile_encryption_key.get_secret_value():
         raise RuntimeError("PROFILE_ENCRYPTION_KEY is required")
+    if configured_store(settings) is None:
+        raise RuntimeError("YDB credential store is required")
     if not settings.database_url.startswith("postgresql+asyncpg://"):
         raise RuntimeError("PostgreSQL DATABASE_URL is required")
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)

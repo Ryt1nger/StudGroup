@@ -30,6 +30,15 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
         path = tmp_path / "worker.db"
         engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
         key = Fernet.generate_key()
+        credential_id = uuid4()
+        encrypted = Fernet(key).encrypt(b"password").decode()
+
+        class FakeStore:
+            async def get(self, item_id):
+                assert item_id == credential_id
+                return ("login", encrypted, "v1")
+
+        monkeypatch.setattr("studgroup.ranepa_worker.configured_store", lambda _: FakeStore())
         settings = Settings(
             database_url=f"sqlite+aiosqlite:///{path}",
             profile_encryption_key=SecretStr(key.decode()),
@@ -65,8 +74,7 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
                         ),
                         UserProfile(
                             user_id=user.id,
-                            sdu_login="login",
-                            sdu_password_encrypted=Fernet(key).encrypt(b"password").decode(),
+                            sdu_credential_id=credential_id,
                             updated_at=datetime.now(UTC),
                         ),
                         LegalConsentEvent(
