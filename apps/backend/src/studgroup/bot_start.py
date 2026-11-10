@@ -785,9 +785,10 @@ async def promo_input(db, session, role, notice=None):
 
 
 async def single_verified_pilot_invite(db, settings, telegram_id):
-    """Recover admission when exactly one live shared pilot invite matches this Telegram user.
+    """Select the one group whose active invitation AND Telegram membership both verify.
 
-    Never guess between multiple groups, grant membership, or bypass Telegram checks.
+    Multiple live groups are normal. Never guess which group to join if Telegram confirms
+    membership in two groups; do not grant membership or bypass invite validation.
     """
     invites = (
         await db.scalars(
@@ -800,16 +801,24 @@ async def single_verified_pilot_invite(db, settings, telegram_id):
                 Group.status == "active",
                 Group.pilot_authorized.is_(True),
             )
-            .limit(2)
+            .order_by(GroupInvitation.expires_at.desc())
+            .limit(101)
         )
     ).all()
-    if len(invites) != 1:
-        return None
-    try:
-        await domain.validate_invite_by_hash(db, settings, telegram_id, invites[0].token_hash)
-    except domain.StError:
-        return None
-    return invites[0].token_hash
+    if len(invites) > 100:
+        return None  # Avoid an incomplete, ambiguous scan.
+    matching_groups = {}
+    for invitation in invites:
+        if invitation.group_id in matching_groups:
+            continue
+        try:
+            await domain.validate_invite_by_hash(db, settings, telegram_id, invitation.token_hash)
+        except domain.StError:
+            continue
+        matching_groups[invitation.group_id] = invitation.token_hash
+        if len(matching_groups) > 1:
+            return None
+    return next(iter(matching_groups.values()), None)
 
 
 async def next_after_promo(db, session, settings, telegram_id, role):
