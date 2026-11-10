@@ -812,9 +812,7 @@ async def single_verified_pilot_invite(db, settings, telegram_id):
         if invitation.group_id in matching_groups:
             continue
         try:
-            await domain.validate_invite_by_hash(
-                db, settings, telegram_id, invitation.token_hash
-            )
+            await domain.validate_invite_by_hash(db, settings, telegram_id, invitation.token_hash)
         except domain.StError:
             continue
         matching_groups[invitation.group_id] = invitation.token_hash
