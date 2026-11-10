@@ -541,3 +541,86 @@ def test_clipped_timetable_fragments_can_be_confirmed_without_guessing(client, m
     assert confirmed["subject"] == "Курс по..."
     assert confirmed["teacher"] == "Иванова..."
     assert confirmed["room"] == "Ауд. 12…"
+
+
+def test_first_pilot_photo_timetable_is_published_without_headman_confirmation(client, monkeypatch):
+    from studgroup.models import Group
+
+    suggestion = prepare(client, monkeypatch, owner_funded_pilot=True)
+    current = stored(client, ImageScheduleSuggestion)[0]
+    assert current.id == suggestion.id
+    assert current.state == "confirmed"
+    assert len(stored(client, SchedulePattern)) == 1
+    changes = stored(client, ScheduleChange)
+    assert len(changes) == 1
+    assert changes[0].input_method == "image_auto"
+    assert json.loads(current.confirmation_json)["automatic"] is True
+
+    async def version():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            return group.schedule_version
+
+    assert asyncio.run(version()) == 1
+
+
+def test_first_pilot_photo_with_unknown_dates_is_bounded_to_source_week(client, monkeypatch):
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+
+    suggestion = prepare(
+        client, monkeypatch, owner_funded_pilot=True, valid_from=None, valid_until=None
+    )
+    assert suggestion.state == "confirmed"
+    row = stored(client, SchedulePattern)[0]
+    local = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    monday = local - timedelta(days=local.weekday())
+    assert row.valid_from == monday
+    assert row.valid_until == monday + timedelta(days=6)
+
+
+def test_existing_timetable_still_requires_explicit_review_in_owner_pilot(client, monkeypatch):
+    from datetime import UTC, date, time, datetime
+
+    from studgroup.models import Group
+
+    async def existing():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            db.add(
+                SchedulePattern(
+                    group_id=group.id,
+                    subject="Существующая пара",
+                    weekday=0,
+                    starts=time(9, 0),
+                    ends=time(10, 20),
+                    valid_from=date(2026, 1, 1),
+                    valid_until=date(2026, 12, 31),
+                    week="all",
+                    revision=1,
+                )
+            )
+            await db.commit()
+
+    asyncio.run(existing())
+    suggestion = prepare(client, monkeypatch, owner_funded_pilot=True)
+    assert suggestion.state == "pending"
+    assert len(stored(client, SchedulePattern)) == 1
+    assert stored(client, ScheduleChange) == []
+
+
+def test_first_schedule_subgroups_need_mapping_before_publication(client, monkeypatch):
+    suggestion = prepare(client, monkeypatch, owner_funded_pilot=True, subgroup="Первая")
+    assert suggestion.state == "pending"
+    assert stored(client, SchedulePattern) == []
+
+
+def test_pending_first_schedule_recovers_after_restart_without_more_vision(client, monkeypatch):
+    from studgroup.analysis.first_schedule import recover_pending_first
+
+    suggestion = prepare(client, monkeypatch)
+    assert suggestion.state == "pending"
+    assert asyncio.run(recover_pending_first(client.app.state.engine)) == 1
+    assert asyncio.run(recover_pending_first(client.app.state.engine)) == 0
+    assert stored(client, ImageScheduleSuggestion)[0].state == "confirmed"
+    assert len(stored(client, SchedulePattern)) == 1
