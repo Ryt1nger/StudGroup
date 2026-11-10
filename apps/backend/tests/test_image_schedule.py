@@ -236,10 +236,11 @@ def test_editor_subgroup_mapping_is_group_and_subject_scoped(client, monkeypatch
 
 
 def test_editor_replacement_clears_previous_subject_teacher_and_keeps_audit(client, monkeypatch):
-    from datetime import date, timedelta
+    from datetime import UTC, datetime, timedelta
 
     # A one-off lesson must be in the future. Fixed 2026-11-09 dates expire.
-    lesson_date = date.today() + timedelta(days=7 - date.today().weekday())
+    today = datetime.now(UTC).date()
+    lesson_date = today + timedelta(days=7 - today.weekday())
     lesson_day = lesson_date.isoformat()
 
     async def teacher():
