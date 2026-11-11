@@ -184,9 +184,9 @@ export function TodayScreen() {
       {query.isPending ? <Skeleton label={ru.states.loading} /> : null}
       {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
 
+      {data && selectedKey && all.data ? <Stats items={allItems} /> : null}
       {data && selectedKey === today ? (
         <>
-          {all.data ? <Stats items={allItems} /> : null}
           {data.day_lessons_state === 'unknown' ? <Banner tone="warning" icon="clock">Расписание на сегодня ещё не подтверждено.</Banner> : null}
           {data.next_lesson ? <Hero next={data.next_lesson} nowMs={nowMs} timeZone={data.group_timezone} /> : null}
           <Plan data={data} nowMs={nowMs} busy={busy} onToggle={(item) => void toggle(item)} />
