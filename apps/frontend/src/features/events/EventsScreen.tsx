@@ -28,11 +28,6 @@ export function EventsScreen() {
   return (
     <>
       <SectionTop title="События" />
-      {features.event_review ? (
-        <Link className="pillb" to="/events/review">
-          Проверить черновики и изменения
-        </Link>
-      ) : null}
       {!features.events ? (
         unavailable
       ) : (
