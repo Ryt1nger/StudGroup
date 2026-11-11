@@ -5,6 +5,15 @@ on:
   schedule:
     - cron: "13,43 * * * *"
   workflow_dispatch:
+    inputs:
+      pilot_group_id:
+        description: "UUID of the single approved pilot group"
+        required: true
+        type: string
+      pilot_user_id:
+        description: "UUID of the single consented pilot user"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -15,7 +24,10 @@ concurrency:
 
 jobs:
   crawl:
-    if: github.ref == 'refs/heads/main' && vars.RANEPA_CRAWL_PILOT_ENABLED == 'true'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'schedule' && vars.RANEPA_CRAWL_PILOT_ENABLED == 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.pilot_group_id != '' && inputs.pilot_user_id != ''))
     runs-on: ubuntu-latest
     timeout-minutes: 29
     env:
@@ -57,5 +69,12 @@ jobs:
         run: |
           uv sync --frozen
           uv run python -m playwright install chromium --with-deps
+      - name: Run exactly one approved pilot account
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          PILOT_GROUP_ID: ${{ inputs.pilot_group_id }}
+          PILOT_USER_ID: ${{ inputs.pilot_user_id }}
+        run: uv run python -m studgroup.ranepa_worker --pilot-group-id "$PILOT_GROUP_ID" --pilot-user-id "$PILOT_USER_ID"
       - name: Process one bounded queue shift
+        if: github.event_name == 'schedule'
         run: uv run python -m studgroup.ranepa_worker --batch-minutes 24
