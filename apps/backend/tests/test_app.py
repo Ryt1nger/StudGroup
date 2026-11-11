@@ -4,7 +4,12 @@ from unittest.mock import AsyncMock, Mock
 
 from fastapi.testclient import TestClient
 
-from studgroup.main import Settings, create_app, database_engine_options
+from studgroup.main import (
+    Settings,
+    background_database_engine_options,
+    create_app,
+    database_engine_options,
+)
 
 
 def test_health_and_readiness_failure():
@@ -191,6 +196,34 @@ def test_web_api_pool_respects_explicit_five_connections():
         "max_overflow": 0,
         "pool_timeout": 10,
     }
+
+
+def test_supabase_background_pool_isolated_and_bounded():
+    settings = Settings(
+        _env_file=None,
+        database_url=(
+            "postgresql+asyncpg://postgres.project:placeholder@"
+            "aws-0-us-west-1.pooler.supabase.com:5432/postgres"
+        ),
+        database_pool_size=5,
+        database_max_overflow=0,
+        database_pool_timeout=10,
+    )
+    assert background_database_engine_options(settings) == {
+        "pool_size": 1,
+        "max_overflow": 0,
+        "pool_timeout": 30,
+    }
+    assert database_engine_options(settings, for_web_service=True)["pool_size"] == 5
+
+
+def test_background_pool_reuses_web_engine_for_other_database_drivers():
+    assert (
+        background_database_engine_options(
+            Settings(_env_file=None, database_url="sqlite+aiosqlite:///:memory:")
+        )
+        is None
+    )
 
 
 def test_database_tls_requires_postgres_and_existing_ca(tmp_path):
