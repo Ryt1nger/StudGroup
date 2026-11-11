@@ -11,7 +11,8 @@ for (const theme of ['light', 'dark']) {
     await expect(page.getByText('Пока нет событий')).toBeVisible();
     await expect(page.getByRole('navigation')).toHaveCSS('display', 'grid');
     await expect(page.getByRole('navigation')).toHaveCSS('position', 'absolute');
-    await page.getByRole('link', { name: 'Проверить черновики и изменения' }).click();
+    await expect(page.getByRole('link', { name: 'Проверить черновики и изменения' })).toHaveCount(0);
+    await page.goto('/events/review?scenario=events');
     await page.getByRole('link', { name: /Открытая лекция о космосе/ }).click();
     await expect(page.getByLabel('Название')).toHaveValue('Открытая лекция о космосе');
     const original = await page.getByLabel('Дата начала', { exact: true }).inputValue();
