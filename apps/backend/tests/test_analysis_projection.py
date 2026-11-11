@@ -78,7 +78,9 @@ async def seed_source(db, group):
             message_date=NOW,
             version_date=NOW,
             revision=1,
-            delete_at=NOW + timedelta(days=30),
+            # This fixture validates projection visibility, not retention expiry.
+            # Keep it stable instead of letting wall-clock time archive the source.
+            delete_at=datetime(2099, 1, 1, tzinfo=UTC),
         )
     )
     await db.flush()
