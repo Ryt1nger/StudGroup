@@ -218,9 +218,12 @@ def test_supabase_background_pool_isolated_and_bounded():
 
 
 def test_background_pool_reuses_web_engine_for_other_database_drivers():
-    assert background_database_engine_options(
-        Settings(_env_file=None, database_url="sqlite+aiosqlite:///:memory:")
-    ) is None
+    assert (
+        background_database_engine_options(
+            Settings(_env_file=None, database_url="sqlite+aiosqlite:///:memory:")
+        )
+        is None
+    )
 
 
 def test_database_tls_requires_postgres_and_existing_ca(tmp_path):
