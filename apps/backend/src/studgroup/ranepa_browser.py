@@ -60,8 +60,12 @@ async def _sign_in(page, login: str, password: str) -> str:
 
 
 async def _open(page, login: str, password: str) -> str:
-    await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
-    state = await _wait_visible_state(page)
+    current = urlsplit(page.url)
+    if current.hostname == HOST and current.path == urlsplit(SCHEDULE).path:
+        state = await _wait_visible_state(page)
+    else:
+        await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
+        state = await _wait_visible_state(page)
     if state == "login_required":
         state = await _sign_in(page, login, password)
         if state == "rendered":

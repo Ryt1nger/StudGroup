@@ -20,7 +20,46 @@ from studgroup.models import (
     User,
     UserProfile,
 )
-from studgroup.ranepa_worker import prepare_week, process_one
+from studgroup.ranepa_worker import (
+    collect_bounded,
+    create_worker_engine,
+    prepare_week,
+    process_one,
+)
+
+
+def test_worker_engine_uses_bounded_supabase_pool(monkeypatch):
+    captured = {}
+
+    def fake_engine(url, **kwargs):
+        captured.update(url=url, **kwargs)
+        return object()
+
+    monkeypatch.setattr("studgroup.ranepa_worker.create_async_engine", fake_engine)
+    settings = Settings(
+        _env_file=None,
+        database_url=(
+            "postgresql+asyncpg://postgres.project:placeholder@"
+            "aws-0-us-west-1.pooler.supabase.com:5432/postgres"
+        ),
+    )
+    create_worker_engine(settings)
+    assert captured["pool_size"] == 1
+    assert captured["max_overflow"] == 0
+    assert captured["pool_timeout"] == 10
+    assert captured["hide_parameters"] is True
+
+
+def test_account_collection_has_a_hard_runtime_limit(monkeypatch):
+    async def never_finishes(*_args):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr("studgroup.ranepa_worker._collect", never_finishes)
+    monkeypatch.setattr("studgroup.ranepa_worker.ACCOUNT_TIMEOUT_SECONDS", 0.001)
+    result = asyncio.run(
+        collect_bounded(None, uuid4(), uuid4(), "A-001", "login", "password", date(2026, 11, 11))
+    )
+    assert result == "source_unavailable"
 
 
 def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue(

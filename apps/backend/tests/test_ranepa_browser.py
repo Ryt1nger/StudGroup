@@ -9,6 +9,23 @@ from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot
 
 
+def test_open_reuses_rendered_schedule_page(monkeypatch):
+    calls = []
+
+    class Page:
+        url = "https://my.ranepa.ru/lk/student/schedule"
+
+        async def goto(self, *_args, **_kwargs):
+            calls.append("goto")
+
+    async def rendered(_page):
+        return "rendered"
+
+    monkeypatch.setattr(ranepa_browser, "_wait_visible_state", rendered)
+    assert asyncio.run(ranepa_browser._open(Page(), "login", "password")) == "rendered"
+    assert calls == []
+
+
 def test_month_relogs_in_after_session_expires_mid_navigation(monkeypatch):
     calls = {"open": 0, "state": 0}
 

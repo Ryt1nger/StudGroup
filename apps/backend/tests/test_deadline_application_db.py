@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -64,7 +64,8 @@ async def seed(db, text, lesson_weekday=2, week="second"):
             message_date=SENT.astimezone(UTC),
             version_date=SENT.astimezone(UTC),
             revision=1,
-            delete_at=SENT.astimezone(UTC) + timedelta(days=30),
+            # Deadline-policy tests must not expire as the real calendar advances.
+            delete_at=datetime(2099, 1, 1, tzinfo=UTC),
         )
     )
     await db.execute(SchedulePattern.__table__.delete().where(SchedulePattern.group_id == group.id))

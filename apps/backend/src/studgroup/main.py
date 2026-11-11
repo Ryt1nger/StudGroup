@@ -276,6 +276,13 @@ class Settings(BaseSettings):
 
 def database_engine_options(settings: Settings) -> dict:
     options = {}
+    database_url = make_url(settings.database_url)
+    supabase_session_pooler = (
+        database_url.drivername == "postgresql+asyncpg"
+        and bool(database_url.host)
+        and database_url.host.endswith(".pooler.supabase.com")
+        and database_url.port == 5432
+    )
     if settings.database_ca_file:
         if not settings.database_url.startswith("postgresql+asyncpg://"):
             raise ValueError("database CA requires PostgreSQL with asyncpg")
@@ -290,6 +297,14 @@ def database_engine_options(settings: Settings) -> dict:
     ):
         if (value := getattr(settings, setting)) is not None:
             options[option] = value
+    # Supavisor session mode pins one database connection per client. SQLAlchemy's
+    # defaults (5 persistent + 10 overflow) can therefore consume the complete
+    # free-project pool in one process. Keep a single client unless the operator
+    # explicitly configures otherwise.
+    if supabase_session_pooler:
+        options.setdefault("pool_size", 1)
+        options.setdefault("max_overflow", 0)
+        options.setdefault("pool_timeout", 10)
     return options
 
 

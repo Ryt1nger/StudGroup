@@ -14,13 +14,32 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.legal import has_consent, legal_ready
-from studgroup.main import Settings
+from studgroup.main import Settings, database_engine_options
 from studgroup.models import Group, Membership, MemberSubgroup, UserProfile
 from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_personal import remember_personal
+
+ACCOUNT_TIMEOUT_SECONDS = 600
+
+
+def create_worker_engine(settings: Settings):
+    return create_async_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        hide_parameters=True,
+        **database_engine_options(settings),
+    )
+
+
+async def collect_bounded(engine, group_id, user_id, code, login, password, today):
+    try:
+        async with asyncio.timeout(ACCOUNT_TIMEOUT_SECONDS):
+            return await _collect(engine, group_id, user_id, code, login, password, today)
+    except TimeoutError:
+        return "source_unavailable"
 
 
 async def prepare_week(engine, today: date, settings: Settings) -> int:
@@ -105,7 +124,7 @@ async def process_one(engine, settings: Settings, today: date) -> str:
         except (ValueError, InvalidToken, UnicodeDecodeError):
             failure = "login_failed"
         else:
-            failure = await _collect(engine, group_id, user_id, code, login, password, today)
+            failure = await collect_bounded(engine, group_id, user_id, code, login, password, today)
     async with AsyncSession(engine) as db:
         await finish(db, job_id, group_id, user_id, failure_code=failure)
         await db.commit()
@@ -183,7 +202,7 @@ async def run_forever(settings: Settings):
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(signum, stop.set)
-    engine = create_async_engine(settings.database_url)
+    engine = create_worker_engine(settings)
     try:
         next_prepare_at = 0.0
         while not stop.is_set():
@@ -219,7 +238,7 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
         raise RuntimeError("YDB credential store is required")
     if not settings.database_url.startswith("postgresql+asyncpg://"):
         raise RuntimeError("PostgreSQL DATABASE_URL is required")
-    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    engine = create_worker_engine(settings)
     completed = 0
     try:
         await prepare_week(engine, datetime.now(ZoneInfo("Europe/Moscow")).date(), settings)
