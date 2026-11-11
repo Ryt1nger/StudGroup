@@ -274,15 +274,19 @@ class Settings(BaseSettings):
         return value
 
 
-def database_engine_options(settings: Settings, *, for_web_service: bool = False) -> dict:
-    options = {}
+def is_supabase_session_pooler(settings: Settings) -> bool:
     database_url = make_url(settings.database_url)
-    supabase_session_pooler = (
+    return (
         database_url.drivername == "postgresql+asyncpg"
         and bool(database_url.host)
         and database_url.host.endswith(".pooler.supabase.com")
         and database_url.port == 5432
     )
+
+
+def database_engine_options(settings: Settings, *, for_web_service: bool = False) -> dict:
+    options = {}
+    supabase_session_pooler = is_supabase_session_pooler(settings)
     if settings.database_ca_file:
         if not settings.database_url.startswith("postgresql+asyncpg://"):
             raise ValueError("database CA requires PostgreSQL with asyncpg")
@@ -305,6 +309,20 @@ def database_engine_options(settings: Settings, *, for_web_service: bool = False
         options.setdefault("pool_size", 3 if for_web_service else 1)
         options.setdefault("max_overflow", 0)
         options.setdefault("pool_timeout", 10)
+    return options
+
+
+def background_database_engine_options(settings: Settings) -> dict | None:
+    """Keep slow Telegram/AI jobs from checking out web API DB connections.
+
+    A single separate Supavisor session slot leaves the five web slots for
+    students, while capping the extra DB cost during Render rolling deploys.
+    Other drivers retain the existing shared engine behavior.
+    """
+    if not is_supabase_session_pooler(settings):
+        return None
+    options = database_engine_options(settings)
+    options.update(pool_size=1, max_overflow=0, pool_timeout=30)
     return options
 
 
@@ -438,31 +456,53 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             except Exception as error:  # noqa: BLE001 -- read-only diagnostic, never blocks startup
                 print("SHADOW_WAVE_PREFLIGHT_FAILED " + type(error).__name__, flush=True)
+        # Background tasks can hold a SQL transaction while Telegram/AI awaits
+        # external HTTP calls. On Supavisor session mode give these tasks one
+        # separate connection instead of letting them exhaust the web API pool.
+        app.state.background_engine = app.state.engine
+        background_needed = (
+            settings.owner_update_notifications_enabled
+            or settings.bot_admin_user_id is not None
+            or settings.cabinet_schedule_background_enabled
+            or settings.processing_mode == "embedded"
+        )
+        background_options = (
+            background_database_engine_options(settings) if background_needed else None
+        )
+        if background_options is not None:
+            app.state.background_engine = create_async_engine(
+                settings.database_url, pool_pre_ping=True, **background_options
+            )
+            print(
+                "DATABASE_POOL_CONFIG role=background "
+                "pool_size=1 max_overflow=0 pool_timeout=30",
+                flush=True,
+            )
         # Read-only owner diagnostics are optional: a slow Supabase query must not
         # delay serving the first Mini App request after a Render cold start.
         diagnostics_task = None
         if settings.owner_update_notifications_enabled:
             from studgroup.processing_diagnostics import startup
 
-            diagnostics_task = asyncio.create_task(startup(app.state.engine, settings))
+            diagnostics_task = asyncio.create_task(startup(app.state.background_engine, settings))
         app.state.diagnostics_task = diagnostics_task
         processor = None
         if settings.processing_mode == "embedded":
             from studgroup.runtime import processing_loop
 
-            processor = asyncio.create_task(processing_loop(app.state.engine, settings))
+            processor = asyncio.create_task(processing_loop(app.state.background_engine, settings))
         app.state.processor = processor
         cabinet_processor = None
         if settings.cabinet_schedule_background_enabled:
             from studgroup.cabinet_schedule_worker import processing_loop as cabinet_loop
 
-            cabinet_processor = asyncio.create_task(cabinet_loop(app.state.engine, settings))
+            cabinet_processor = asyncio.create_task(cabinet_loop(app.state.background_engine, settings))
         app.state.cabinet_processor = cabinet_processor
         delivery = None
         if settings.bot_admin_user_id is not None or settings.owner_update_notifications_enabled:
             from studgroup.bot_admin import delivery_loop
 
-            delivery = asyncio.create_task(delivery_loop(app.state.engine, settings))
+            delivery = asyncio.create_task(delivery_loop(app.state.background_engine, settings))
         try:
             yield
         finally:
@@ -482,6 +522,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 processor.cancel()
                 with suppress(asyncio.CancelledError):
                     await processor
+            if app.state.background_engine is not app.state.engine:
+                await app.state.background_engine.dispose()
             await app.state.engine.dispose()
             await app.state.redis.aclose()
 
