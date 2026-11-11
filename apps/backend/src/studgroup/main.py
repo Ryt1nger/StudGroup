@@ -474,8 +474,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 settings.database_url, pool_pre_ping=True, **background_options
             )
             print(
-                "DATABASE_POOL_CONFIG role=background "
-                "pool_size=1 max_overflow=0 pool_timeout=30",
+                "DATABASE_POOL_CONFIG role=background pool_size=1 max_overflow=0 pool_timeout=30",
                 flush=True,
             )
         # Read-only owner diagnostics are optional: a slow Supabase query must not
@@ -496,7 +495,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.cabinet_schedule_background_enabled:
             from studgroup.cabinet_schedule_worker import processing_loop as cabinet_loop
 
-            cabinet_processor = asyncio.create_task(cabinet_loop(app.state.background_engine, settings))
+            cabinet_processor = asyncio.create_task(
+                cabinet_loop(app.state.background_engine, settings)
+            )
         app.state.cabinet_processor = cabinet_processor
         delivery = None
         if settings.bot_admin_user_id is not None or settings.owner_update_notifications_enabled:
