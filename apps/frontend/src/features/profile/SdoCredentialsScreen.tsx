@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 import { useProfileQuery, useUpdateProfile } from '../../api/queries';
 import { acceptLegal, legalDocument, legalStatus, revokeSdoConsent, type LegalStatus } from '../../api/legal';
+import { BackTop } from '../../shell/TopBar';
+import { Spinner } from '../../ui/Blocks';
+import { Ic } from '../../ui/Ic';
 
 const LEGAL_LINKS = [
   ['privacy', 'Политика обработки персональных данных'],
@@ -10,6 +13,12 @@ const LEGAL_LINKS = [
   ['sdo', 'Отдельное согласие на СДО/ЛК'],
   ['cookies', 'Уведомление о технических данных'],
 ] as const;
+
+const CONSENT_LABELS = {
+  terms: 'Принимаю условия использования',
+  service: 'Согласен на обработку данных в StudGroup',
+  sdo: 'Разрешаю хранить реквизиты СДО/ЛК',
+} as const;
 
 /** Public documents can be read without Telegram login or an app session. */
 export function LegalDocumentScreen() {
@@ -25,29 +34,30 @@ export function LegalDocumentScreen() {
   }, [document]);
 
   return (
-    <main style={{ maxWidth: 740, margin: '0 auto', padding: '24px 18px 80px', lineHeight: 1.65 }}>
-      <h1 style={{ fontSize: 22 }}>Правовые документы StudGroup</h1>
-      <p>Документы доступны для прочтения без регистрации.</p>
-      <nav aria-label="Правовые документы" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+    <main className="sdo-legal">
+      <h1 className="ptitle">Документы StudGroup</h1>
+      <p className="sdo-subtitle">Правила и согласия доступны без регистрации.</p>
+      <nav className="sdo-legal-links" aria-label="Правовые документы">
         {LEGAL_LINKS.map(([slug, title]) => <Link key={slug} to={`/legal/${slug}`}>{title}</Link>)}
       </nav>
-      {error ? <p role="alert">{error}</p> : null}
-      {!error && !text ? <p>Загрузка…</p> : null}
-      {text ? <article style={{ whiteSpace: 'pre-wrap', marginTop: 24 }}>{text}</article> : null}
-      <p><Link to="/profile/sdo">Вернуться к настройкам СДО/ЛК</Link></p>
+      {error ? <p role="alert" className="sdo-feedback error">{error}</p> : null}
+      {!error && !text ? <p className="sdo-feedback">Загрузка…</p> : null}
+      {text ? <article className="sdo-legal-text">{text}</article> : null}
+      <Link className="sdo-secondary-link" to="/profile/sdo">Вернуться к подключению СДО/ЛК</Link>
     </main>
   );
 }
 
 export function SdoCredentialsScreen() {
-  const navigate = useNavigate();
   const profileQuery = useProfileQuery();
   const update = useUpdateProfile();
   const [status, setStatus] = useState<LegalStatus | null>(null);
   const [login, setLogin] = useState<string | null>(null);
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [accepted, setAccepted] = useState({ terms: false, service: false, sdo: false });
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const profile = profileQuery.data;
@@ -60,18 +70,31 @@ export function SdoCredentialsScreen() {
     return () => { active = false; };
   }, []);
 
+  async function refresh() {
+    setRefreshing(true);
+    setError('');
+    try {
+      setStatus(await legalStatus());
+    } catch {
+      setError('Не удалось проверить состояние подключения. Попробуйте ещё раз.');
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const missing = (['terms', 'service', 'sdo'] as const).filter((purpose) => !status?.[purpose]);
+  const consentsConfirmed = missing.every((purpose) => accepted[purpose]);
+  const ready = status?.credentials_ready === true;
+  const loading = !status || profileQuery.isPending;
+
   async function submit() {
-    if (!status?.credentials_ready || busy) return;
+    if (!ready || busy || !consentsConfirmed) return;
     const actualLogin = ((login ?? profile?.sdu.login ?? '').trim().split('@', 1)[0] ?? '').trim();
     if (!actualLogin) { setError('Введите логин СДО/ЛК'); return; }
     if (!password && !profile?.sdu.password_set) { setError('Введите пароль СДО/ЛК'); return; }
-    if ((!status.terms && !accepted.terms) ||
-        (!status.service && !accepted.service) ||
-        (!status.sdo && !accepted.sdo)) {
-      setError('Подтвердите каждый документ отдельной отметкой'); return;
-    }
     setBusy(true);
     setError('');
+    setSuccess('');
     try {
       if (!status.terms) await acceptLegal('terms', status.version);
       if (!status.service) await acceptLegal('service', status.version);
@@ -85,9 +108,9 @@ export function SdoCredentialsScreen() {
       setLogin(actualLogin);
       setAccepted({ terms: false, service: false, sdo: false });
       setStatus(await legalStatus());
-      setSuccess('Данные сохранены. Пароль хранится зашифрованным. Подключение к системам вуза ещё не подтверждено.');
+      setSuccess('Реквизиты сохранены. Подключение будет проверено при первом обходе.');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить учётные данные');
+      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить реквизиты');
     } finally {
       setBusy(false);
     }
@@ -97,82 +120,118 @@ export function SdoCredentialsScreen() {
     if (busy) return;
     setBusy(true);
     setError('');
+    setSuccess('');
     try {
       await revokeSdoConsent();
       setLogin('');
       setPassword('');
       setStatus(await legalStatus());
       await profileQuery.refetch();
-      setSuccess('Согласие отозвано, сохранённые логин и пароль удалены.');
+      setSuccess('Согласие отозвано, логин и пароль удалены.');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Не удалось отозвать согласие');
+      setError(cause instanceof Error ? cause.message : 'Не удалось удалить реквизиты');
     } finally {
       setBusy(false);
     }
   }
 
-  const missing = [
-    !status?.terms && 'terms',
-    !status?.service && 'service',
-    !status?.sdo && 'sdo',
-  ].filter(Boolean) as ('terms' | 'service' | 'sdo')[];
-
   return (
-    <main style={{ maxWidth: 600, margin: '0 auto', padding: '24px 18px 88px' }}>
-      <button type="button" onClick={() => void navigate('/profile')}>‹ Назад в профиль</button>
-      <h1>Подключение СДО и ЛК</h1>
-      <p>В РАНХиГС для СДО и личного кабинета используется одна пара логин/пароль. Заполните их один раз. Этот шаг добровольный — без него доступны обычные функции StudGroup.</p>
-      <p>Пароль вводится только здесь, не в Telegram-переписке. StudGroup не сообщает, что вход в СДО уже выполнен.</p>
-      {profileQuery.isPending || !status ? <p>Загрузка настроек…</p> : null}
-      {status && !status.ready ? <p role="alert">Сохранение пока недоступно: оператор ещё не утвердил документы и реквизиты в настройках сервера.</p> : null}
-      {status?.ready && !status.credentials_ready ? <p role="alert">Сохранение пока недоступно: на сервере не настроен ключ шифрования паролей.</p> : null}
-      <form onSubmit={(event) => { event.preventDefault(); void submit(); }} autoComplete="off">
-        <label htmlFor="study-login">Логин СДО / ЛК</label>
-        <input id="study-login" name="study-login" type="text" autoComplete="off" maxLength={80}
-          value={login ?? profile?.sdu.login ?? ''} onChange={(event) => setLogin(event.target.value)}
-          onBlur={() => setLogin((current) => current === null ? null : (current.trim().split('@', 1)[0] ?? '').trim())}
-          disabled={!status?.credentials_ready || profileQuery.isPending}
-          placeholder="Ваш логин" style={{ display: 'block', width: '100%', margin: '8px 0 8px' }} />
-        <p>Если укажете адрес почты, сохраним только часть логина до символа @.</p>
-        <label htmlFor="study-password">Пароль СДО / ЛК</label>
-        <input id="study-password" name="study-password" type="password" autoComplete="new-password" maxLength={200}
-          value={password} onChange={(event) => setPassword(event.target.value)}
-          disabled={!status?.credentials_ready || profileQuery.isPending}
-          placeholder={profile?.sdu.password_set ? 'Пароль уже сохранён. Введите новый для замены' : 'Ваш пароль'}
-          style={{ display: 'block', width: '100%', margin: '8px 0 22px' }} />
-        <p>Ознакомьтесь с документами. Для каждого ещё не подтверждённого документа нужна отдельная отметка.</p>
-        {missing.map((purpose) => {
-          const label = purpose === 'terms' ? 'Принимаю условия использования' :
-            purpose === 'service' ? 'Даю согласие на обработку моих данных для работы StudGroup' :
-            'Добровольно разрешаю хранить мой логин и пароль СДО/ЛК';
-          return (
-            <div key={purpose} style={{ marginBottom: 16 }}>
-              <label>
-                <input type="checkbox" checked={accepted[purpose]} disabled={!status?.credentials_ready} onChange={(e) =>
-                  setAccepted((old) => ({ ...old, [purpose]: e.target.checked }))} />
-                {' '}{label}
-              </label>
-              {' · '}<Link to={`/legal/${purpose}`}>Прочитать полный текст</Link>
-            </div>
-          );
-        })}
-        <p><Link to="/legal/privacy">Политика обработки данных</Link> · <Link to="/legal/cookies">Технические данные</Link></p>
-        {error ? <p role="alert">{error}</p> : null}
-        {success ? <p role="status">{success}</p> : null}
-        <button type="submit" className="btn" disabled={busy || !status?.credentials_ready || profileQuery.isPending}>
-          {busy ? 'Сохраняем…' : 'Сохранить данные СДО / ЛК'}
-        </button>
-      </form>
-      {profile?.sdu.password_set || status?.sdo ? (
-        <p style={{ marginTop: 20 }}>
-          <button type="button" disabled={busy} onClick={() => void revoke()}>
-            Отозвать согласие и удалить логин и пароль
+    <main className="sdo-screen">
+      <BackTop fallback="/profile" />
+      <div className="sdo-heading">
+        <div className="sdo-heading-icon" aria-hidden="true"><Ic name="shield" size={23} /></div>
+        <h1 className="ptitle">Подключить СДО</h1>
+        <p className="sdo-subtitle">Расписание и ссылки из личного кабинета РАНХиГС.</p>
+      </div>
+
+      {loading ? <div className="sdo-card sdo-loading" role="status"><Spinner /> Проверяем доступность подключения…</div> : null}
+
+      {!loading && !ready ? (
+        <section className="sdo-card sdo-unavailable" aria-label="Статус подключения">
+          <div className="sdo-status-icon"><Ic name="lock" size={22} /></div>
+          <h2>Подключение пока недоступно</h2>
+          <p role="alert">
+            {!status.ready
+              ? 'Сохранение пока недоступно: оператор ещё не утвердил документы и реквизиты.'
+              : 'Сохранение пока недоступно: не настроен ключ шифрования или хранилище YDB.'}
+          </p>
+          <button type="button" className="pillb" onClick={() => void refresh()} disabled={refreshing}>
+            {refreshing ? 'Проверяем…' : 'Проверить снова'}
           </button>
-        </p>
+          <Link to="/legal/sdo" className="sdo-secondary-link">Условия подключения</Link>
+        </section>
       ) : null}
-      <p style={{ marginTop: 24 }}>
-        <button type="button" onClick={() => void navigate('/profile')}>Пропустить — продолжить без СДО/ЛК</button>
-      </p>
+
+      {!loading && ready ? (
+        <form onSubmit={(event) => { event.preventDefault(); void submit(); }} autoComplete="off">
+          {profile?.sdu.password_set ? (
+            <div className="sdo-saved" role="status"><Ic name="shield" size={18} /> Реквизиты уже сохранены. Можно обновить их ниже.</div>
+          ) : null}
+
+          <section className="sdo-card sdo-form-card" aria-label="Реквизиты СДО">
+            <div className="sdo-card-title">Данные для входа</div>
+            <div className="field">
+              <label htmlFor="study-login">Логин СДО / ЛК</label>
+              <input id="study-login" name="study-login" type="text" autoComplete="off" maxLength={80}
+                value={login ?? profile?.sdu.login ?? ''} onChange={(event) => setLogin(event.target.value)}
+                onBlur={() => setLogin((current) => current === null ? null : (current.trim().split('@', 1)[0] ?? '').trim())}
+                placeholder="Логин или почта" />
+              <p className="sdo-field-hint">Если введёте почту, сохраним только логин до @.</p>
+            </div>
+            <div className="field">
+              <label htmlFor="study-password">Пароль СДО / ЛК</label>
+              <div className="sdo-password-wrap">
+                <input id="study-password" name="study-password" type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password" maxLength={200}
+                  value={password} onChange={(event) => setPassword(event.target.value)}
+                  placeholder={profile?.sdu.password_set ? 'Оставьте пустым, если не меняете' : 'Пароль'} />
+                <button type="button" aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                  onClick={() => setShowPassword((current) => !current)}>
+                  {showPassword ? 'Скрыть' : 'Показать'}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="sdo-card sdo-consents" aria-label="Согласия">
+            <div className="sdo-card-title">Согласия</div>
+            {missing.length ? (
+              <div className="sdo-consent-list">
+                {missing.map((purpose) => (
+                  <div key={purpose} className="sdo-consent-item">
+                    <input type="checkbox" id={`sdo-consent-${purpose}`} checked={accepted[purpose]}
+                      onChange={(event) => setAccepted((old) => ({ ...old, [purpose]: event.target.checked }))} />
+                    <div>
+                      <label htmlFor={`sdo-consent-${purpose}`}>{CONSENT_LABELS[purpose]}</label>
+                      <Link to={`/legal/${purpose}`}>Читать документ</Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="sdo-consents-ready"><Ic name="shield" size={18} /> Все необходимые согласия подтверждены.</p>
+            )}
+            <Link to="/legal/privacy" className="sdo-policy-link">Политика обработки данных</Link>
+          </section>
+
+          {error ? <p role="alert" className="sdo-feedback error">{error}</p> : null}
+          {success ? <p role="status" className="sdo-feedback success">{success}</p> : null}
+
+          <button type="submit" className="btn sdo-submit" disabled={busy || !consentsConfirmed}>
+            {busy ? <><Spinner /> Сохраняем…</> : 'Сохранить данные СДО / ЛК'}
+          </button>
+          <p className="sdo-privacy-note"><Ic name="lock" size={14} /> Пароль зашифрован. Подключение добровольное.</p>
+        </form>
+      ) : null}
+
+      {!ready && error ? <p role="alert" className="sdo-feedback error">{error}</p> : null}
+      {(profile?.sdu.password_set || status?.sdo) && !loading ? (
+        <button type="button" className="sdo-revoke" disabled={busy} onClick={() => void revoke()}>
+          Отозвать согласие и удалить реквизиты
+        </button>
+      ) : null}
+      {!ready && success ? <p role="status" className="sdo-feedback success">{success}</p> : null}
+      <Link to="/profile" className="sdo-secondary-link sdo-skip">Вернуться в профиль</Link>
     </main>
   );
 }
