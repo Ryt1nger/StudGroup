@@ -62,7 +62,7 @@ export function SdoCredentialsScreen() {
 
   async function submit() {
     if (!status?.credentials_ready || busy) return;
-    const actualLogin = (login ?? profile?.sdu.login ?? '').trim().split('@', 1)[0].trim();
+    const actualLogin = ((login ?? profile?.sdu.login ?? '').trim().split('@', 1)[0] ?? '').trim();
     if (!actualLogin) { setError('Введите логин СДО/ЛК'); return; }
     if (!password && !profile?.sdu.password_set) { setError('Введите пароль СДО/ЛК'); return; }
     if ((!status.terms && !accepted.terms) ||
@@ -130,7 +130,7 @@ export function SdoCredentialsScreen() {
         <label htmlFor="study-login">Логин СДО / ЛК</label>
         <input id="study-login" name="study-login" type="text" autoComplete="off" maxLength={80}
           value={login ?? profile?.sdu.login ?? ''} onChange={(event) => setLogin(event.target.value)}
-          onBlur={() => setLogin((current) => current === null ? null : current.trim().split('@', 1)[0].trim())}
+          onBlur={() => setLogin((current) => current === null ? null : (current.trim().split('@', 1)[0] ?? '').trim())}
           disabled={!status?.credentials_ready || profileQuery.isPending}
           placeholder="Ваш логин" style={{ display: 'block', width: '100%', margin: '8px 0 8px' }} />
         <p>Если укажете адрес почты, сохраним только часть логина до символа @.</p>
