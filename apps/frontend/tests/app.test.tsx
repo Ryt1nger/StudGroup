@@ -179,10 +179,17 @@ describe('Today', () => {
     const days = within(strip).getAllByRole('button');
     expect(days).toHaveLength(7);
     expect(days[0]).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(document.querySelector('.stats')).toBeInTheDocument());
     await userEvent.click(days[2]!);
     expect(days[2]).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('heading', { name: 'Сегодня', level: 1 })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText('ДЗ №12–140')).not.toBeInTheDocument());
+    const stats = document.querySelector('.stats');
+    expect(stats).toBeInTheDocument();
+    expect(within(stats as HTMLElement).getByText('Всего')).toBeInTheDocument();
+    expect(within(stats as HTMLElement).getByText('Готово')).toBeInTheDocument();
+    expect(within(stats as HTMLElement).getByText('Впереди')).toBeInTheDocument();
+    expect(within(stats as HTMLElement).getByText('Срочно')).toBeInTheDocument();
     await userEvent.click(days[0]!);
     expect(await screen.findByText('ДЗ №12–140')).toBeInTheDocument();
   });
