@@ -124,6 +124,39 @@ def test_database_tls_and_pool_are_opt_in():
     assert options["connect_args"]["ssl"].check_hostname
 
 
+def test_supabase_session_pooler_defaults_to_one_bounded_connection():
+    settings = Settings(
+        _env_file=None,
+        database_url=(
+            "postgresql+asyncpg://postgres.project:placeholder@"
+            "aws-0-us-west-1.pooler.supabase.com:5432/postgres"
+        ),
+    )
+    assert database_engine_options(settings) == {
+        "pool_size": 1,
+        "max_overflow": 0,
+        "pool_timeout": 10,
+    }
+
+
+def test_explicit_supabase_pool_settings_override_safe_defaults():
+    settings = Settings(
+        _env_file=None,
+        database_url=(
+            "postgresql+asyncpg://postgres.project:placeholder@"
+            "aws-0-us-west-1.pooler.supabase.com:5432/postgres"
+        ),
+        database_pool_size=2,
+        database_max_overflow=1,
+        database_pool_timeout=20,
+    )
+    assert database_engine_options(settings) == {
+        "pool_size": 2,
+        "max_overflow": 1,
+        "pool_timeout": 20,
+    }
+
+
 def test_database_tls_requires_postgres_and_existing_ca(tmp_path):
     import pytest
 
