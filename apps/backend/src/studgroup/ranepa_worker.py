@@ -296,9 +296,7 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
     engine = create_worker_engine(settings)
     try:
         today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-        await prepare_week(
-            engine, today, settings, pilot_group_id=group_id, pilot_user_id=user_id
-        )
+        await prepare_week(engine, today, settings, pilot_group_id=group_id, pilot_user_id=user_id)
         return await process_one(
             engine, settings, today, pilot_group_id=group_id, pilot_user_id=user_id
         )
@@ -319,9 +317,7 @@ def main():
     settings = Settings()
     if args.pilot_group_id is not None:
         result = asyncio.run(
-            run_single_pilot(
-                settings, group_id=args.pilot_group_id, user_id=args.pilot_user_id
-            )
+            run_single_pilot(settings, group_id=args.pilot_group_id, user_id=args.pilot_user_id)
         )
         print("RANEPA_PILOT_RESULT " + result, flush=True)
         if result != "succeeded":
