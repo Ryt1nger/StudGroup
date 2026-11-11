@@ -17,7 +17,7 @@ const LEGAL_LINKS = [
 const CONSENT_LABELS = {
   terms: 'Принимаю условия использования',
   service: 'Согласен на обработку данных в StudGroup',
-  sdo: 'Разрешаю хранить реквизиты СДО/ЛК',
+  sdo: 'Добровольно разрешаю хранить логин и пароль СДО/ЛК',
 } as const;
 
 /** Public documents can be read without Telegram login or an app session. */
@@ -88,7 +88,7 @@ export function SdoCredentialsScreen() {
   const loading = !status || profileQuery.isPending;
 
   async function submit() {
-    if (!ready || busy || !consentsConfirmed) return;
+    if (!status?.credentials_ready || busy || !consentsConfirmed) return;
     const actualLogin = ((login ?? profile?.sdu.login ?? '').trim().split('@', 1)[0] ?? '').trim();
     if (!actualLogin) { setError('Введите логин СДО/ЛК'); return; }
     if (!password && !profile?.sdu.password_set) { setError('Введите пароль СДО/ЛК'); return; }
