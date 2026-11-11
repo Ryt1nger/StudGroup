@@ -192,7 +192,6 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
 
         async def fake_collect(_engine, group_id, user_id, code, login, password, _today):
             seen.append((group_id, user_id, code, login, password))
-            return None
 
         monkeypatch.setattr("studgroup.ranepa_worker._collect", fake_collect)
         try:
