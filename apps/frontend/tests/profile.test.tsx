@@ -76,6 +76,7 @@ describe('profile', () => {
     );
     renderApp({ route: '/profile/sdo' });
     const login = await screen.findByLabelText('Логин СДО / ЛК');
+    await waitFor(() => expect(login).toBeEnabled());
     await userEvent.clear(login);
     await userEvent.type(login, 'ivan@ranepa.ru');
     await userEvent.type(screen.getByLabelText('Пароль СДО / ЛК'), 'test-password');
