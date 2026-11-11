@@ -164,3 +164,79 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypatch):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/targeted.db")
+        key = Fernet.generate_key()
+        encrypted = Fernet(key).encrypt(b"test-password").decode()
+        settings = Settings(
+            _env_file=None,
+            database_url=f"sqlite+aiosqlite:///{tmp_path}/targeted.db",
+            profile_encryption_key=SecretStr(key.decode()),
+            legal_operator_name="Test operator",
+            legal_operator_address="Test address",
+            legal_operator_contact="test@example.test",
+            legal_data_region="Moscow",
+            legal_documents_approved=True,
+            ranepa_access_approved=True,
+        )
+
+        class FakeStore:
+            async def get(self, _key):
+                return ("student@example.edu", encrypted, "v1")
+
+        monkeypatch.setattr("studgroup.ranepa_worker.configured_store", lambda _: FakeStore())
+        seen = []
+
+        async def fake_collect(_engine, group_id, user_id, code, login, password, _today):
+            seen.append((group_id, user_id, code, login, password))
+            return None
+
+        monkeypatch.setattr("studgroup.ranepa_worker._collect", fake_collect)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            group = Group(
+                id=uuid4(), telegram_chat_id=-97401, name="Pilot",
+                academic_group_code="P-001", timezone="Europe/Moscow",
+            )
+            users = [
+                User(id=uuid4(), telegram_user_id=97401 + i, display_name=f"U{i}")
+                for i in range(2)
+            ]
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                db.add_all([group, *users])
+                await db.flush()
+                for user in users:
+                    db.add(Membership(group_id=group.id, user_id=user.id, role="student", status="active"))
+                    db.add(UserProfile(
+                        user_id=user.id, sdu_credential_id=uuid4(),
+                        updated_at=datetime.now(UTC),
+                    ))
+                    db.add(LegalConsentEvent(
+                        user_id=user.id, purpose="sdo", action="accept",
+                        document_version=VERSION,
+                        document_sha256=document_hash("sdo", settings),
+                        source="web", created_at=datetime.now(UTC),
+                    ))
+                await db.commit()
+            today = date(2026, 11, 11)
+            assert await prepare_week(
+                engine, today, settings,
+                pilot_group_id=group.id, pilot_user_id=users[1].id,
+            ) == 1
+            assert await process_one(
+                engine, settings, today,
+                pilot_group_id=group.id, pilot_user_id=users[1].id,
+            ) == "succeeded"
+            assert seen == [(group.id, users[1].id, "P-001", "student", "test-password")]
+            async with AsyncSession(engine) as db:
+                jobs = (await db.scalars(select(RanepaCrawlJob))).all()
+                assert len(jobs) == 1
+                assert jobs[0].user_id == users[1].id and jobs[0].state == "succeeded"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
