@@ -20,6 +20,7 @@ from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
+from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_personal import remember_personal
 
 ACCOUNT_TIMEOUT_SECONDS = 600
@@ -120,6 +121,9 @@ async def process_one(engine, settings: Settings, today: date) -> str:
         try:
             cipher = Fernet(secret.encode())
             login, encrypted_password, _ = credential
+            login = normalize_sdo_login(login)
+            if not login:
+                raise ValueError("empty_sdo_login")
             password = cipher.decrypt(encrypted_password.encode()).decode()
         except (ValueError, InvalidToken, UnicodeDecodeError):
             failure = "login_failed"

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from studgroup.api import ApiError, database
 from studgroup.models import User, UserProfile, WebSession
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
+from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.security import token_hash
 
 router = APIRouter(prefix="/v1")
@@ -76,10 +77,15 @@ class UpdateProfile(BaseModel):
     def names(cls, value):
         return text(value, 60)
 
-    @field_validator("sdu_platform", "sdu_login", mode="before")
+    @field_validator("sdu_platform", mode="before")
     @classmethod
     def short(cls, value):
         return text(value, 80)
+
+    @field_validator("sdu_login", mode="before")
+    @classmethod
+    def login(cls, value):
+        return normalize_sdo_login(value)
 
     @field_validator("email", mode="before")
     @classmethod
@@ -161,7 +167,7 @@ async def read_profile(
         except CredentialStoreUnavailable:
             raise ApiError("service_unavailable", "Хранение реквизитов недоступно", 503) from None
         if credential:
-            result["sdu"]["login"] = credential[0]
+            result["sdu"]["login"] = normalize_sdo_login(credential[0])
     return result
 
 
@@ -232,6 +238,7 @@ async def update_profile(
                 if "sdu_login" in fields
                 else (ydb_record[0] if ydb_record else row.sdu_login)
             )
+            login = normalize_sdo_login(login)
             if body.sdu_password is not None:
                 secret = body.sdu_password.get_secret_value()
                 if not secret:

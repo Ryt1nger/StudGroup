@@ -58,6 +58,34 @@ describe('profile', () => {
     expect(sent[0]).not.toHaveProperty('sdu_login');
   });
 
+  it('sends only username before @ when SDO login is entered as email', async () => {
+    useScenario();
+    const sent: Array<Record<string, unknown>> = [];
+    server.use(
+      http.get(`${API}/profile`, () => HttpResponse.json(demoProfile())),
+      http.get(`${API}/legal/status`, () => HttpResponse.json({
+        version: '2026-11-09-v2', ready: true, credentials_ready: true,
+        terms: true, service: true, sdo: true,
+      })),
+      http.patch(`${API}/profile`, async ({ request }) => {
+        sent.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({
+          ...demoProfile(), sdu: { ...demoProfile().sdu, login: 'ivan', password_set: true },
+        });
+      }),
+    );
+    renderApp({ route: '/profile/sdo' });
+    const login = await screen.findByLabelText('Логин СДО / ЛК');
+    await waitFor(() => expect(login).toBeEnabled());
+    await userEvent.clear(login);
+    await userEvent.type(login, 'ivan@ranepa.ru');
+    await userEvent.type(screen.getByLabelText('Пароль СДО / ЛК'), 'test-password');
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить данные СДО / ЛК' }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ sdu_login: 'ivan', sdu_password: 'test-password' });
+    expect(login).toHaveValue('ivan');
+  });
+
   it('writes a notification preference straight to the server', async () => {
     useScenario();
     let sent: { settings?: { enabled?: boolean } } = {};

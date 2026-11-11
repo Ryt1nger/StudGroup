@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.main import create_app
 from studgroup.models import Membership, User, UserProfile, WebSession
+from studgroup.profile import UpdateProfile
 from studgroup.security import token_hash
 
 pytest_plugins = ["test_schedule_api"]
@@ -51,6 +52,13 @@ def test_an_empty_profile_has_calm_defaults_and_needs_a_session(client):
     data = client.get("/v1/profile", headers=HEADERS).json()
     assert data["first_name"] is None and data["sdu"]["password_set"] is False
     assert data["settings"]["enabled"] is True and data["settings"]["lessons"] is False
+
+
+def test_sdo_login_accepts_email_shaped_input_without_storing_domain():
+    assert UpdateProfile(sdu_login="  ivan.petrov@ranepa.ru  ").sdu_login == "ivan.petrov"
+    assert UpdateProfile(sdu_login="student").sdu_login == "student"
+    assert UpdateProfile(sdu_login="student@" + "a" * 120).sdu_login == "student"
+    assert UpdateProfile(sdu_login="@ranepa.ru").sdu_login is None
 
 
 def test_contact_data_and_study_platform_are_saved_and_validated(client):
@@ -317,7 +325,7 @@ def test_ydb_credential_path_keeps_main_database_empty_and_confirms_revocation(c
     monkeypatch.setattr("studgroup.legal.configured_store", lambda _: store)
     saved = client.patch(
         "/v1/profile",
-        json={"sdu_login": "pilot-user", "sdu_password": "synthetic-password"},
+        json={"sdu_login": "pilot-user@ranepa.ru", "sdu_password": "synthetic-password"},
         headers=HEADERS,
     )
     assert saved.status_code == 200, saved.text
@@ -331,6 +339,7 @@ def test_ydb_credential_path_keeps_main_database_empty_and_confirms_revocation(c
 
     login, encrypted, pointer = asyncio.run(stored())
     assert login is None and encrypted is None and pointer in records
+    assert records[pointer][0] == "pilot-user"
     assert client.get("/v1/profile", headers=HEADERS).json()["sdu"]["login"] == "pilot-user"
     revoked = client.delete("/v1/legal/consents/sdo", headers=HEADERS)
     assert revoked.status_code == 200 and revoked.json()["credentials_deleted"]

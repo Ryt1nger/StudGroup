@@ -75,7 +75,7 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
         class FakeStore:
             async def get(self, item_id):
                 assert item_id == credential_id
-                return ("login", encrypted, "v1")
+                return ("login@ranepa.ru", encrypted, "v1")
 
         monkeypatch.setattr("studgroup.ranepa_worker.configured_store", lambda _: FakeStore())
         settings = Settings(
