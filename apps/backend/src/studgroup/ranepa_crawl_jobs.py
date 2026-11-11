@@ -80,14 +80,23 @@ async def enqueue_week(db, week_start: date, candidates: list[CrawlCandidate], n
     return created
 
 
-async def claim_next(db, now=None):
-    """Claim one job under a short DB lock; caller commits before opening a browser."""
+async def claim_next(db, now=None, *, group_id=None, user_id=None):
+    """Claim one job under a short DB lock; optionally restrict a single-account pilot."""
+    if (group_id is None) != (user_id is None):
+        raise ValueError("pilot_scope_requires_both_ids")
+    scope = []
+    if group_id is not None:
+        scope = [
+            RanepaCrawlJob.group_id == group_id,
+            RanepaCrawlJob.user_id == user_id,
+        ]
     now = now or datetime.now(UTC)
     stale = await db.scalar(
         select(RanepaCrawlJob)
         .where(
             RanepaCrawlJob.state == "running",
             RanepaCrawlJob.claimed_at < now - LEASE,
+            *scope,
         )
         .order_by(RanepaCrawlJob.priority)
         .with_for_update(skip_locked=True)
@@ -100,6 +109,7 @@ async def claim_next(db, now=None):
         select(RanepaCrawlJob)
         .where(
             RanepaCrawlJob.state == "queued",
+            *scope,
         )
         .order_by(
             RanepaCrawlJob.week_start.desc(),
