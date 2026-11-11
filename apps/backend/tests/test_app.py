@@ -157,6 +157,42 @@ def test_explicit_supabase_pool_settings_override_safe_defaults():
     }
 
 
+def test_web_api_pool_keeps_three_slots_if_render_config_disappears():
+    # Session-pool default for standalone worker remains one, but public API
+    # must not silently regress to the one-slot outage configuration.
+    settings = Settings(
+        _env_file=None,
+        database_url=(
+            "postgresql+asyncpg://postgres.project:placeholder@"
+            "aws-0-us-west-1.pooler.supabase.com:5432/postgres"
+        ),
+    )
+    assert database_engine_options(settings, for_web_service=True) == {
+        "pool_size": 3,
+        "max_overflow": 0,
+        "pool_timeout": 10,
+    }
+    assert database_engine_options(settings)["pool_size"] == 1
+
+
+def test_web_api_pool_respects_explicit_five_connections():
+    settings = Settings(
+        _env_file=None,
+        database_url=(
+            "postgresql+asyncpg://postgres.project:placeholder@"
+            "aws-0-us-west-1.pooler.supabase.com:5432/postgres"
+        ),
+        database_pool_size=5,
+        database_max_overflow=0,
+        database_pool_timeout=10,
+    )
+    assert database_engine_options(settings, for_web_service=True) == {
+        "pool_size": 5,
+        "max_overflow": 0,
+        "pool_timeout": 10,
+    }
+
+
 def test_database_tls_requires_postgres_and_existing_ca(tmp_path):
     import pytest
 

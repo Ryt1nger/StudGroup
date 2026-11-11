@@ -274,7 +274,7 @@ class Settings(BaseSettings):
         return value
 
 
-def database_engine_options(settings: Settings) -> dict:
+def database_engine_options(settings: Settings, *, for_web_service: bool = False) -> dict:
     options = {}
     database_url = make_url(settings.database_url)
     supabase_session_pooler = (
@@ -297,12 +297,12 @@ def database_engine_options(settings: Settings) -> dict:
     ):
         if (value := getattr(settings, setting)) is not None:
             options[option] = value
-    # Supavisor session mode pins one database connection per client. SQLAlchemy's
-    # defaults (5 persistent + 10 overflow) can therefore consume the complete
-    # free-project pool in one process. Keep a single client unless the operator
-    # explicitly configures otherwise.
+    # Session-mode Supavisor pins one DB connection per client. Bound the pool
+    # well below the free project's session limit; never use SQLAlchemy's
+    # unbounded 5+10 default. The public web API needs enough concurrency to
+    # survive a lost Render env var; standalone crawlers keep just one slot.
     if supabase_session_pooler:
-        options.setdefault("pool_size", 1)
+        options.setdefault("pool_size", 3 if for_web_service else 1)
         options.setdefault("max_overflow", 0)
         options.setdefault("pool_timeout", 10)
     return options
@@ -313,8 +313,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        engine_options = database_engine_options(settings, for_web_service=True)
+        # Log only non-secret pool parameters so a subsequent deployment cannot
+        # silently fall back to a single SQL connection without being noticed.
+        print(
+            "DATABASE_POOL_CONFIG role=web "
+            f"pool_size={engine_options.get('pool_size', 'driver_default')} "
+            f"max_overflow={engine_options.get('max_overflow', 'driver_default')} "
+            f"pool_timeout={engine_options.get('pool_timeout', 'driver_default')}",
+            flush=True,
+        )
         app.state.engine = create_async_engine(
-            settings.database_url, pool_pre_ping=True, **database_engine_options(settings)
+            settings.database_url, pool_pre_ping=True, **engine_options
         )
         if settings.cutover_read_only:
             app.state.redis = None
