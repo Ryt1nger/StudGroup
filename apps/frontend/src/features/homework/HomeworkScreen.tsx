@@ -109,7 +109,8 @@ function Body({ detail, nowMs, gaveUp, restart, refreshing }: { detail: Homework
       {completionMessage ? <Banner tone="danger" icon="alert">{completionMessage}</Banner> : null}
       <div className="block" aria-labelledby="todo-title">
         <h3 id="todo-title">{ru.detail.whatToDo}</h3>
-        {photos.length ? <Photos items={photos} alt={detail.title} /> : <p>{description ?? ru.detail.noDescription}</p>}
+        {description ? <p>{description}</p> : !photos.length ? <p>{ru.detail.noDescription}</p> : null}
+        {photos.length ? <Photos items={photos} alt={detail.title} /> : null}
       </div>
       {hasVisibleMaterials(materials) ? <div className="block">
         <h3 id="homework-materials">Материалы</h3>
