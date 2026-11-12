@@ -389,17 +389,11 @@ async def projected_materials(db, group_id, entity_key, now, sources):
         required_images,
     )
     kept.update(item["attachment_id"] for item in selected)
-    if uses_structured:
-        # A partially legible photo is still a genuine, retrievable source.
-        # The student must be able to open the original image even when
-        # exact OCR facts were withheld. No AI facts are promoted here.
-        kept.update(
-            item.id
-            for item in attachments
-            if item.kind == "photo"
-            and item.id in structured_ids
-            and metadata[item.id]["image_analysis_state"] == "failed"
-        )
+    # A photo on a cited message is a material even if the model classified
+    # it as an organizational poster, an unknown page, or could only partially
+    # read it. Never make visibility conditional on complete OCR or a precise
+    # image-fact path. Students can inspect the actual source image.
+    kept.update(item.id for item in attachments if item.kind == "photo")
     attachments = [item for item in attachments if item.id in kept]
     captions = {
         raw_id: text or ""
@@ -417,11 +411,12 @@ async def projected_materials(db, group_id, entity_key, now, sources):
             continue
         result.append(
             {
-                # A photo the vision pass read as study material, posted with at most a short
-                # caption, IS the task: the card shows it instead of a text description.
+                # Compatibility flag for legacy ready photos. New clients show
+                # every cited photo inline while preserving the description.
                 "replaces_description": (
-                    attachment.kind == "photo"
-                    and (attachment.processing_state == "ready" or attachment.id in structured_ids)
+                    attachment.id not in structured_ids
+                    and attachment.kind == "photo"
+                    and attachment.processing_state == "ready"
                     and len(captions.get(attachment.raw_message_id, "").strip())
                     <= PHOTO_CARD_MAX_CAPTION
                 ),
