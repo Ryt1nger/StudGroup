@@ -655,6 +655,23 @@ async def reopen_unread_photo_messages(db, group, since, now):
     return result.rowcount or 0
 
 
+def oldest_package_first(groups, last_runs):
+    """Give each pilot group a fair next turn using durable package history.
+
+    Without this order, a constantly backlogged low-UUID group can monopolize
+    every long processing-loop iteration and starve later groups despite the
+    per-group cooldown. Never alter the normal hourly slot offsets.
+    """
+    floor = datetime.min.replace(tzinfo=UTC)
+    return sorted(
+        groups,
+        key=lambda pair: (
+            _utc(last_runs[pair[0].id]) if pair[0].id in last_runs else floor,
+            str(pair[0].id),
+        ),
+    )
+
+
 async def enqueue_next_package(engine, settings, now=None, provider=None, transport=None):
     """Create the next package run of one ``new`` group; at most one open run per group."""
     now = _utc(now or datetime.now(UTC))
@@ -672,6 +689,26 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
             )
         ).all()
         offsets = staggered_offsets(group.id for group, _route in groups)
+        if groups:
+            last_runs = dict(
+                (
+                    await db.execute(
+                        select(
+                            ShadowEvaluationRun.group_id,
+                            func.max(ShadowEvaluationRun.created_at),
+                        )
+                        .where(
+                            ShadowEvaluationRun.group_id.in_(
+                                [group.id for group, _route in groups]
+                            ),
+                            ShadowEvaluationRun.raw_message_id.is_(None),
+                            ShadowEvaluationRun.delete_at > now,
+                        )
+                        .group_by(ShadowEvaluationRun.group_id)
+                    )
+                ).all()
+            )
+            groups = oldest_package_first(groups, last_runs)
         for group, _route in groups:
             from studgroup.analysis.release_budget import production_enabled
 
