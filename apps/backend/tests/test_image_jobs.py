@@ -623,6 +623,7 @@ def test_owner_week_start_excludes_old_photo_jobs_and_pays_only_for_new_sources(
     tick(client, provider, config, now=BASE + timedelta(minutes=15))
     jobs = stored(client, ImageAnalysisJob)
     assert jobs
+
     # There must never be a paid or even a newly scheduled first-pass job
     # for the ten-day-old source, regardless of retention.
     async def read_raw_ids():
