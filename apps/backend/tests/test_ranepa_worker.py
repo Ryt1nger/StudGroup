@@ -87,7 +87,9 @@ def test_collection_passes_proxy_to_browser_context(monkeypatch, proxy_url, expe
     monkeypatch.setattr(ranepa_worker, "read_month", captcha)
 
     status = asyncio.run(
-        ranepa_worker._collect(None, uuid4(), uuid4(), "A-001", "student", "secret", date(2026, 11, 12))
+        ranepa_worker._collect(
+            None, uuid4(), uuid4(), "A-001", "student", "secret", date(2026, 11, 12)
+        )
     )
     assert status == "captcha"
     assert captured["launch"] == {"headless": True}
