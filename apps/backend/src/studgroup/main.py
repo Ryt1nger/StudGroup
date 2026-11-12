@@ -157,6 +157,9 @@ class Settings(BaseSettings):
     ai_schedule_timezone: str = "Europe/Moscow"
     # Explicit one-time bound on pilot catch-up. Never auto-apply to future messages.
     pilot_catchup_before: AwareDatetime | None = None
+    # Inclusive Moscow-local start of the approved pilot catch-up. No text or
+    # image target before this date may incur a paid call.
+    pilot_catchup_since: AwareDatetime | None = None
     # The production Render web service has no Celery worker. Manual screenshot
     # drafts need their own durable embedded consumer, irrespective of text AI mode.
     cabinet_schedule_background_enabled: bool = True
@@ -196,6 +199,7 @@ class Settings(BaseSettings):
         "new_engine_enabled_until",
         "photo_backfill_since",
         "pilot_catchup_before",
+        "pilot_catchup_since",
         mode="before",
     )
     @classmethod
