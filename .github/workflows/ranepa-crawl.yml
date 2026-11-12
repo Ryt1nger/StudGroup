@@ -25,9 +25,10 @@ concurrency:
 jobs:
   crawl:
     if: >-
-      github.ref == 'refs/heads/main' &&
-      ((github.event_name == 'schedule' && vars.RANEPA_CRAWL_PILOT_ENABLED == 'true') ||
-      (github.event_name == 'workflow_dispatch' && inputs.pilot_group_id != '' && inputs.pilot_user_id != ''))
+      (github.ref == 'refs/heads/main' && github.event_name == 'schedule' &&
+      vars.RANEPA_CRAWL_PILOT_ENABLED == 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.pilot_group_id != '' &&
+      inputs.pilot_user_id != '')
     runs-on: ubuntu-latest
     timeout-minutes: 29
     env:
