@@ -248,7 +248,7 @@ def test_worker_retries_after_captcha_at_most_once(
             return self
 
         async def new_page(self):
-            return object()
+            return SimpleNamespace(url="https://my.ranepa.ru/lk/student/schedule")
 
         async def close(self):
             observed["close"] = True
