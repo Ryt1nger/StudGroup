@@ -402,9 +402,7 @@ async def run_forever(settings: Settings):
                 # Pick up new accounts during the week without rescanning every
                 # member before each browser job.
                 next_prepare_at = monotonic() + 3600
-            status = await process_one(
-                engine, settings, today, captcha_budget=captcha_budget
-            )
+            status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
             try:
                 await asyncio.wait_for(
                     stop.wait(),
@@ -439,9 +437,7 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
         deadline = monotonic() + max_minutes * 60
         while monotonic() < deadline:
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-            status = await process_one(
-                engine, settings, today, captcha_budget=captcha_budget
-            )
+            status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
             if status == "idle":
                 break
             completed += 1
