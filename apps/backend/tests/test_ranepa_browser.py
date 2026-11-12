@@ -77,6 +77,12 @@ def test_captcha_during_calendar_navigation_is_not_a_parse_failure(monkeypatch):
             def get_by_role(self, *args, **kwargs):
                 return Clicker()
 
+            def locator(self, *args, **kwargs):
+                return self
+
+            def nth(self, index):
+                return Clicker()
+
             async def content(self):
                 raise AssertionError("CAPTCHA must not be parsed as a calendar")
 
