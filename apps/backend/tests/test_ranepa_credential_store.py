@@ -74,9 +74,11 @@ async def _store_roundtrips_serialized_browser_state():
     store = CredentialStore.__new__(CredentialStore)
     store.client = FakeClient()
     key = uuid.uuid4()
-    state = Fernet(Fernet.generate_key()).encrypt(
-        json.dumps({"cookies": [], "origins": []}).encode()
-    ).decode()
+    state = (
+        Fernet(Fernet.generate_key())
+        .encrypt(json.dumps({"cookies": [], "origins": []}).encode())
+        .decode()
+    )
     await store.put(key, "student", "encrypted-value", "v1", session_state=state)
     assert store.client.item["session_state"] == {"S": state}
     # Existing consumers continue receiving the original three fields.
@@ -123,7 +125,6 @@ async def _store_rejects_unconfirmed_session_state_write():
     with pytest.raises(CredentialStoreUnavailable) as error:
         await store.put(uuid.uuid4(), "student", "encrypted-value", "v1", session_state=state)
     assert state not in str(error.value)
-
 
 
 def test_session_only_update_preserves_credentials_and_is_redacted():
