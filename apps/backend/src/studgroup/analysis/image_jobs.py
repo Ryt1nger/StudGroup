@@ -1018,10 +1018,8 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             current["pass_version"] = PASS_B_VERSION
             current["model_key"] = job.model_key
             current["provider_identity"] = json.loads(job.context_json).get("provider_identity", {})
-            context_changed = (
-                context_digest(current) != job.context_sha256
-                and context_relevance_digest(current)
-                != context_relevance_digest(json.loads(job.context_json))
+            context_changed = context_relevance_digest(current) != context_relevance_digest(
+                json.loads(job.context_json)
             )
         if (
             raw is None
