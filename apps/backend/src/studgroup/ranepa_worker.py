@@ -288,9 +288,9 @@ async def _collect(
                         if fresh_state != restored_state:
                             await persist_session(fresh_state)
                     except Exception:  # noqa: BLE001
-                        # Failed cache updates never fail a verified timetable crawl.
-                        # Playwright/YDB errors may contain secrets; do not log them.
-                        pass
+                        # A cache failure must not invalidate verified timetable data.
+                        # Playwright/YDB error messages may contain secrets; do not log them.
+                        return None
                 return None
             finally:
                 await browser.close()
