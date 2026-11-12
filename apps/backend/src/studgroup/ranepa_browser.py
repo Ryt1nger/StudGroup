@@ -32,8 +32,23 @@ async def _state(page) -> str:
     if urlsplit(page.url).hostname != HOST:
         return "unexpected_redirect"
     body = await page.locator("body").inner_text(timeout=8000)
+    password_input = await page.locator('input[type="password"]').count() > 0
+    # A short spinner page may contain StormWall's get_jhash JavaScript but
+    # no visible CAPTCHA. Give its redirect time to run; do not attempt login.
+    js_challenge = False
+    title = ""
+    if not password_input and len(body) < 500:
+        html = await page.content()
+        js_challenge = "get_jhash" in html and (
+            "__js_p_" in html or "__jua_" in html
+        )
+        title = await page.title()
     return page_status(
-        page.url, body, password_input=await page.locator('input[type="password"]').count() > 0
+        page.url,
+        body,
+        password_input=password_input,
+        title=title,
+        js_challenge=js_challenge,
     )
 
 
@@ -41,7 +56,7 @@ async def _wait_visible_state(page) -> str:
     state = "empty_page"
     for _ in range(100):
         state = await _state(page)
-        if state != "empty_page":
+        if state not in {"empty_page", "challenge_pending"}:
             break
         await page.wait_for_timeout(250)
     return state
@@ -53,7 +68,7 @@ async def _sign_in(page, login: str, password: str) -> str:
     await page.get_by_role("button", name="Войти", exact=True).click(timeout=8000)
     for _ in range(100):
         state = await _state(page)
-        if state not in {"login_required", "empty_page"}:
+        if state not in {"login_required", "empty_page", "challenge_pending"}:
             return state
         await page.wait_for_timeout(250)
     return "login_failed"
@@ -183,8 +198,14 @@ async def read_week(
             for _ in range(abs(distance)):
                 await arrow.click()
             for _ in range(40):
-                if await _state(page) == "login_required":
+                state = await _state(page)
+                if state == "captcha_required":
+                    return BrowserResult("captcha_required")
+                if state == "login_required":
                     break
+                if state == "challenge_pending":
+                    await page.wait_for_timeout(250)
+                    continue
                 try:
                     snapshot = extract_cabinet_week(
                         await page.content(), code, monday, allow_empty=allow_empty
@@ -201,7 +222,12 @@ async def read_week(
                     }:
                         return BrowserResult(str(error))
                 await page.wait_for_timeout(250)
-            if await _state(page) != "login_required":
+            final_state = await _state(page)
+            if final_state == "captcha_required":
+                return BrowserResult("captcha_required")
+            if final_state == "challenge_pending":
+                return BrowserResult("source_unavailable")
+            if final_state != "login_required":
                 return BrowserResult("cabinet_week_incomplete")
         except Exception:  # noqa: BLE001
             # Playwright can raise rich network exceptions containing URLs or
@@ -236,8 +262,14 @@ async def read_month(
             for _ in range(abs(distance)):
                 await arrow.click()
             for _ in range(60):
-                if await _state(page) == "login_required":
+                state = await _state(page)
+                if state == "captcha_required":
+                    return BrowserMonthResult("captcha_required")
+                if state == "login_required":
                     break
+                if state == "challenge_pending":
+                    await page.wait_for_timeout(250)
+                    continue
                 try:
                     return BrowserMonthResult(
                         "preview_only", extract_cabinet_month(await page.content(), year, month)
@@ -251,7 +283,12 @@ async def read_month(
                     }:
                         return BrowserMonthResult(str(error))
                 await page.wait_for_timeout(250)
-            if await _state(page) != "login_required":
+            final_state = await _state(page)
+            if final_state == "captcha_required":
+                return BrowserMonthResult("captcha_required")
+            if final_state == "challenge_pending":
+                return BrowserMonthResult("source_unavailable")
+            if final_state != "login_required":
                 return BrowserMonthResult("cabinet_month_incomplete")
         except Exception:  # noqa: BLE001
             return BrowserMonthResult("source_unavailable")
