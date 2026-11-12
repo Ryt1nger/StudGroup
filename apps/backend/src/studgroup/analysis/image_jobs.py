@@ -37,6 +37,23 @@ def utc(stamp):
     return stamp.replace(tzinfo=UTC) if stamp.tzinfo is None else stamp.astimezone(UTC)
 
 
+def image_route_order(routes, last_attempts):
+    """Give pilot groups fair turns instead of always draining the first UUID.
+
+    Last actual image-call time is durable across worker restarts. Groups without
+    any prior call get first chance. A group with no due image is skipped by the
+    caller, so it does not block other groups.
+    """
+    floor = datetime.min.replace(tzinfo=UTC)
+    return sorted(
+        routes,
+        key=lambda route: (
+            utc(last_attempts[route.group_id]) if route.group_id in last_attempts else floor,
+            str(route.group_id),
+        ),
+    )
+
+
 def enabled(settings, group_id):
     if getattr(settings, "owner_funded_pilot", False) and group_id is not None:
         return True
@@ -716,7 +733,14 @@ async def claim(db, group, route, settings, now):
                 (ImageAnalysisJob.state == "running") & (ImageAnalysisJob.lease_until <= now),
             ),
         )
-        .order_by(ImageAnalysisJob.created_at, ImageAnalysisJob.pass_number, ImageAnalysisJob.id)
+        # Finish contextual pass B for an already-read image before buying
+        # pass A of the next image in the archive. Pass B is only scheduled
+        # after its matching A is ready or partial.
+        .order_by(
+            ImageAnalysisJob.pass_number.desc(),
+            ImageAnalysisJob.created_at,
+            ImageAnalysisJob.id,
+        )
         .with_for_update(skip_locked=True)
         .limit(1)
     )
@@ -902,6 +926,19 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                 .order_by(GroupAnalysisSettings.group_id)
             )
         ).all()
+        # Round-robin among active pilot groups based on the most recent paid
+        # image attempt. Otherwise the first UUID can monopolize the worker for
+        # hours while other groups have completed A awaiting contextual B.
+        last_attempts = dict(
+            (
+                await db.execute(
+                    select(ImageAnalysisCall.group_id, func.max(ImageAnalysisCall.created_at))
+                    .where(ImageAnalysisCall.group_id.in_([route.group_id for route in routes]))
+                    .group_by(ImageAnalysisCall.group_id)
+                )
+            ).all()
+        )
+        routes = image_route_order(routes, last_attempts)
         picked = None
         for candidate in routes:
             if not enabled(settings, candidate.group_id):
