@@ -1,5 +1,6 @@
 """Read-only personal-cabinet browser port with one automatic re-login."""
 
+import os
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from urllib.parse import parse_qs, urljoin, urlsplit
@@ -32,9 +33,23 @@ async def _state(page) -> str:
     if urlsplit(page.url).hostname != HOST:
         return "unexpected_redirect"
     body = await page.locator("body").inner_text(timeout=8000)
-    return page_status(
+    status = page_status(
         page.url, body, password_input=await page.locator('input[type="password"]').count() > 0
     )
+    diagnostic_path = os.environ.get("RANEPA_CAPTCHA_SCREENSHOT_PATH", "").strip()
+    challenge = (
+        "вы точно не робот" in body.casefold() and await page.locator("#myRange").count() >= 2
+    )
+    if diagnostic_path and challenge:
+        # The challenge replaces the application page. Mask every form field as
+        # a second line of defence so credentials can never enter the artifact.
+        await page.screenshot(
+            path=diagnostic_path,
+            full_page=True,
+            mask=[page.locator("input"), page.locator("textarea")],
+        )
+        return "captcha_required"
+    return status
 
 
 async def _wait_visible_state(page) -> str:

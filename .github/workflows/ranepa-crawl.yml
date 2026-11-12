@@ -44,6 +44,7 @@ jobs:
       RANEPA_ACCESS_APPROVED: ${{ secrets.RANEPA_ACCESS_APPROVED }}
       RANEPA_CRAWL_ENABLED: "true"
       RANEPA_CRAWL_PAUSE_SECONDS: "20"
+      RANEPA_CAPTCHA_SCREENSHOT_PATH: ${{ runner.temp }}/ranepa-captcha.png
     defaults:
       run:
         working-directory: apps/backend
@@ -75,6 +76,14 @@ jobs:
           PILOT_GROUP_ID: ${{ inputs.pilot_group_id }}
           PILOT_USER_ID: ${{ inputs.pilot_user_id }}
         run: uv run python -m studgroup.ranepa_worker --pilot-group-id "$PILOT_GROUP_ID" --pilot-user-id "$PILOT_USER_ID"
+      - name: Upload redacted CAPTCHA screenshot
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ranepa-captcha-screenshot
+          path: ${{ runner.temp }}/ranepa-captcha.png
+          if-no-files-found: ignore
+          retention-days: 1
       - name: Process one bounded queue shift
         if: github.event_name == 'schedule'
         run: uv run python -m studgroup.ranepa_worker --batch-minutes 24

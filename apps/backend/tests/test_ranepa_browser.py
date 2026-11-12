@@ -5,6 +5,41 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 from studgroup import ranepa_browser
+
+
+def test_captcha_diagnostic_masks_all_form_fields(monkeypatch, tmp_path):
+    class Locator:
+        def __init__(self, count=0):
+            self._count = count
+
+        async def count(self):
+            return self._count
+
+        async def inner_text(self, timeout=None):
+            return "Вы точно не робот? Используйте ползунки"
+
+    class Page:
+        url = "https://my.ranepa.ru/lk/student/schedule"
+
+        def __init__(self):
+            self.saved = None
+
+        def locator(self, selector):
+            return Locator(2 if selector == "#myRange" else 0)
+
+        async def screenshot(self, **kwargs):
+            self.saved = kwargs
+
+    target = tmp_path / "captcha.png"
+    monkeypatch.setenv("RANEPA_CAPTCHA_SCREENSHOT_PATH", str(target))
+    page = Page()
+
+    assert asyncio.run(ranepa_browser._state(page)) == "captcha_required"
+    assert page.saved["path"] == str(target)
+    assert page.saved["full_page"] is True
+    assert len(page.saved["mask"]) == 2
+
+
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot
 
