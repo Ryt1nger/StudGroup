@@ -18,6 +18,7 @@ import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -465,6 +466,24 @@ def plan_sized_package(
     raise ValueError("package_single_target_exceeds_limits")
 
 
+def newest_day_candidates(pending, timezone):
+    """Keep the newest local date so a split batch never jumps to yesterday.
+
+    The size-aware package planner emits chronological *first* batches. Without
+    this cohort, selecting 24 recent messages can still send the oldest day in
+    that window to the paid model before any of today's messages.
+    """
+    if not pending:
+        return []
+    zone = ZoneInfo(timezone)
+    day = _utc(pending[0].message_date).astimezone(zone).date()
+    return [
+        row
+        for row in pending
+        if _utc(row.message_date).astimezone(zone).date() == day
+    ]
+
+
 async def _plan_next(
     db,
     group,
@@ -501,6 +520,8 @@ async def _plan_next(
     ).all()
     if not pending:
         return None
+    if catchup_cutoff is not None:
+        pending = newest_day_candidates(pending, settings.ai_schedule_timezone)
     revision = pending[0].revision
     targets = [row for row in pending if row.revision == revision][:DEFAULT_MAX_TARGETS]
     # Catch-up prioritizes today's newest messages, but the resulting package
