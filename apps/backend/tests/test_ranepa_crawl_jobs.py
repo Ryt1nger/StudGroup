@@ -164,3 +164,57 @@ def test_daily_round_requeues_only_finished_jobs_without_crossing_groups(tmp_pat
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_manual_pilot_claim_never_touches_another_account(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/pilot_scope.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                groups = [
+                    Group(
+                        id=uuid4(),
+                        telegram_chat_id=-9601 - i,
+                        name=f"Pilot{i}",
+                        academic_group_code=f"P{i}",
+                        timezone="Europe/Moscow",
+                    )
+                    for i in range(2)
+                ]
+                users = [
+                    User(id=uuid4(), telegram_user_id=9601 + i, display_name=f"U{i}")
+                    for i in range(2)
+                ]
+                db.add_all(groups + users)
+                await db.flush()
+                for group, user in zip(groups, users):
+                    db.add(
+                        Membership(
+                            user_id=user.id, group_id=group.id, role="student", status="active"
+                        )
+                    )
+                await db.flush()
+                await enqueue_week(
+                    db,
+                    date(2026, 11, 9),
+                    [CrawlCandidate(group.id, user.id) for group, user in zip(groups, users)],
+                )
+                await db.commit()
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                assert await claim_next(db, group_id=groups[0].id, user_id=users[1].id) is None
+                selected = await claim_next(db, group_id=groups[1].id, user_id=users[1].id)
+                assert selected is not None
+                assert (selected.group_id, selected.user_id) == (groups[1].id, users[1].id)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                all_jobs = (await db.scalars(select(RanepaCrawlJob))).all()
+                other = next(job for job in all_jobs if job.user_id == users[0].id)
+                assert other.state == "queued" and other.attempts == 0
+                targeted = next(job for job in all_jobs if job.user_id == users[1].id)
+                assert targeted.state == "running" and targeted.attempts == 1
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

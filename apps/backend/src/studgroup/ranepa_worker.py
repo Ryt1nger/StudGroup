@@ -6,6 +6,7 @@ import signal
 from collections import Counter
 from datetime import date, datetime, timedelta
 from time import monotonic
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -43,23 +44,36 @@ async def collect_bounded(engine, group_id, user_id, code, login, password, toda
         return "source_unavailable"
 
 
-async def prepare_week(engine, today: date, settings: Settings) -> int:
+async def prepare_week(
+    engine,
+    today: date,
+    settings: Settings,
+    *,
+    pilot_group_id: UUID | None = None,
+    pilot_user_id: UUID | None = None,
+) -> int:
+    if (pilot_group_id is None) != (pilot_user_id is None):
+        raise ValueError("pilot_scope_requires_both_ids")
     if not legal_ready(settings) or not settings.ranepa_access_approved:
         return 0
     monday = today - timedelta(days=today.weekday())
     async with AsyncSession(engine, expire_on_commit=False) as db:
-        members = (
-            await db.execute(
-                select(Membership, Group)
-                .join(Group, Group.id == Membership.group_id)
-                .join(UserProfile, UserProfile.user_id == Membership.user_id)
-                .where(
-                    Membership.status == "active",
-                    Group.status == "active",
-                    Group.academic_group_code.is_not(None),
-                )
+        query = (
+            select(Membership, Group)
+            .join(Group, Group.id == Membership.group_id)
+            .join(UserProfile, UserProfile.user_id == Membership.user_id)
+            .where(
+                Membership.status == "active",
+                Group.status == "active",
+                Group.academic_group_code.is_not(None),
             )
-        ).all()
+        )
+        if pilot_group_id is not None:
+            query = query.where(
+                Membership.group_id == pilot_group_id,
+                Membership.user_id == pilot_user_id,
+            )
+        members = (await db.execute(query)).all()
         candidates = []
         for member, group in members:
             profile = await db.get(UserProfile, member.user_id)
@@ -80,9 +94,16 @@ async def prepare_week(engine, today: date, settings: Settings) -> int:
         return count
 
 
-async def process_one(engine, settings: Settings, today: date) -> str:
+async def process_one(
+    engine,
+    settings: Settings,
+    today: date,
+    *,
+    pilot_group_id: UUID | None = None,
+    pilot_user_id: UUID | None = None,
+) -> str:
     async with AsyncSession(engine, expire_on_commit=False) as db:
-        job = await claim_next(db)
+        job = await claim_next(db, group_id=pilot_group_id, user_id=pilot_user_id)
         if job is None:
             await db.commit()
             return "idle"
@@ -260,12 +281,48 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
         await engine.dispose()
 
 
+async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID) -> str:
+    """Process exactly one consented account without touching other queued jobs."""
+    if not settings.ranepa_crawl_enabled:
+        raise RuntimeError("RANEPA_CRAWL_ENABLED is required for manual pilot")
+    if not legal_ready(settings) or not settings.ranepa_access_approved:
+        raise RuntimeError("Approved legal settings and university access are required")
+    if not settings.profile_encryption_key.get_secret_value():
+        raise RuntimeError("PROFILE_ENCRYPTION_KEY is required")
+    if configured_store(settings) is None:
+        raise RuntimeError("YDB credential store is required")
+    if not settings.database_url.startswith("postgresql+asyncpg://"):
+        raise RuntimeError("PostgreSQL DATABASE_URL is required")
+    engine = create_worker_engine(settings)
+    try:
+        today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+        await prepare_week(engine, today, settings, pilot_group_id=group_id, pilot_user_id=user_id)
+        return await process_one(
+            engine, settings, today, pilot_group_id=group_id, pilot_user_id=user_id
+        )
+    finally:
+        await engine.dispose()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-minutes", type=int, choices=range(1, 25))
+    parser.add_argument("--pilot-group-id", type=UUID)
+    parser.add_argument("--pilot-user-id", type=UUID)
     args = parser.parse_args()
+    if (args.pilot_group_id is None) != (args.pilot_user_id is None):
+        parser.error("both pilot IDs are required")
+    if args.pilot_group_id is not None and args.batch_minutes is not None:
+        parser.error("--batch-minutes cannot be used with a single-account pilot")
     settings = Settings()
-    if args.batch_minutes:
+    if args.pilot_group_id is not None:
+        result = asyncio.run(
+            run_single_pilot(settings, group_id=args.pilot_group_id, user_id=args.pilot_user_id)
+        )
+        print("RANEPA_PILOT_RESULT " + result, flush=True)
+        if result != "succeeded":
+            raise SystemExit(1)
+    elif args.batch_minutes:
         asyncio.run(run_batch(settings, max_minutes=args.batch_minutes))
     else:
         asyncio.run(run_forever(settings))
