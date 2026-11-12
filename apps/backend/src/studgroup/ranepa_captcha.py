@@ -8,13 +8,15 @@ import asyncio
 import base64
 import logging
 import re
+from urllib.parse import urlsplit
 
 from twocaptcha import AsyncTwoCaptcha
 
 LOGGER = logging.getLogger(__name__)
 
-# RuCaptcha API v1 returns "coordinates:x=123,y=456;x=234,y=567".
-_COORDINATES = re.compile(r"coordinates:x=(\d+),y=(\d+);x=(\d+),y=(\d+)")
+# The legacy 2captcha-python SDK returns the provider's "coordinate:x=..." string.
+# Accept the historic plural spelling as well, but always require exactly two points.
+_COORDINATES = re.compile(r"coordinates?:x=(\d+),y=(\d+);x=(\d+),y=(\d+)")
 HINT = (
     "Совместите половинки круга. Отметьте 2 точки: нужную позицию "
     "ВЕРХНЕГО ползунка, затем НИЖНЕГО ползунка. По одной точке на дорожке."
@@ -60,9 +62,14 @@ async def _slider_boxes(page) -> list[dict] | None:
     """Fail closed unless exactly two visible, wide horizontal range inputs exist."""
     if not await page.get_by_text("Используйте ползунки", exact=False).is_visible():
         return None
+    # StormWall has been observed using duplicate id="myRange" controls.
+    # Prefer genuine range inputs; accept two named controls if the live widget
+    # exposes them differently, but never guess when the count is ambiguous.
     inputs = page.locator('input[type="range"]')
     if await inputs.count() != 2:
-        return None
+        inputs = page.locator('[id="myRange"]')
+        if await inputs.count() != 2:
+            return None
     boxes = [await inputs.nth(index).bounding_box() for index in range(2)]
     if any(box is None or box["width"] < 150 or box["height"] > 85 for box in boxes):
         return None
@@ -112,11 +119,19 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
     caller MUST recheck page state and verified student identity afterwards.
     """
     try:
+        # The confirmed StormWall challenge is in front of the LK host, not Moodle.
+        # Never ship a screenshot from any other origin to a paid third party.
+        if urlsplit(page.url).hostname != "my.ranepa.ru":
+            return False
         boxes = await _slider_boxes(page)
         if boxes is None:
             return False
         clip = _challenge_clip(boxes)
+        if clip["width"] > 1000 or clip["height"] > 1000:
+            return False
         image = await page.screenshot(type="png", clip=clip, animations="disabled")
+        if len(image) > 600 * 1024:
+            return False
         encoded = base64.b64encode(image).decode("ascii")
         async with asyncio.timeout(timeout_seconds):
             result = await client.coordinates(encoded, hintText=HINT, min_clicks=2, max_clicks=2)
