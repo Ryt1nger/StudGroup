@@ -5,9 +5,9 @@ from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
-import pytest
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
@@ -29,7 +29,6 @@ from studgroup.ranepa_worker import (
     prepare_week,
     process_one,
 )
-
 
 
 @pytest.mark.parametrize(
