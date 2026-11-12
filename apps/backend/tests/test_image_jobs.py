@@ -89,7 +89,6 @@ def test_all_images_receive_attempts_independent_of_package_limit(
     assert all(j.state == "ready" for j in stored(client, ImageAnalysisJob))
 
 
-
 def test_incomplete_pass_a_is_reviewed_by_pass_b_without_retrying_pass_a(client, monkeypatch):
     download_ok(monkeypatch)
     photo_message(client)
