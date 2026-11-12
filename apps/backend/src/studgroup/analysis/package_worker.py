@@ -646,9 +646,11 @@ async def reopen_unread_photo_messages(db, group, since, now, settings=None):
     lower = _utc(since)
     if group.bot_added_at is not None:
         lower = max(lower, _utc(group.bot_added_at))
-    if settings is not None and getattr(settings, "owner_funded_pilot", False) and getattr(
-        settings, "pilot_catchup_since", None
-    ) is not None:
+    if (
+        settings is not None
+        and getattr(settings, "owner_funded_pilot", False)
+        and getattr(settings, "pilot_catchup_since", None) is not None
+    ):
         lower = max(lower, _utc(settings.pilot_catchup_since))
     unread = (
         select(MessageAttachment.raw_message_id)
