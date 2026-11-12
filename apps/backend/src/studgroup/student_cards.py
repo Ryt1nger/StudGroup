@@ -370,24 +370,36 @@ async def projected_materials(db, group_id, entity_key, now, sources):
     if not uses_structured:
         metadata, structured_ids = {}, set()
         kept = {item.id for item in distinct_photos(attachments)}
-    selected = (
-        select_evidence_images(
-            [
-                {
-                    "attachment_id": item.id,
-                    "width": item.width,
-                    "height": item.height,
-                    **metadata[item.id],
-                }
-                for item in attachments
-                if item.id in structured_ids
-            ],
-            required_images,
-        )
-        if required_images
-        else []
+    # A canonical card may cite its source photo without citing an individual
+    # OCR fact (for example "ДЗ по фото" or a later chat clarification).
+    # The old "if required_images" gate silently hid every independently read
+    # photo from these cards. Choose eligible visual sources even when the
+    # proposal has no exact image:<id>:<fact> reference.
+    selected = select_evidence_images(
+        [
+            {
+                "attachment_id": item.id,
+                "width": item.width,
+                "height": item.height,
+                **metadata[item.id],
+            }
+            for item in attachments
+            if item.id in structured_ids
+        ],
+        required_images,
     )
     kept.update(item["attachment_id"] for item in selected)
+    if uses_structured:
+        # A partially legible photo is still a genuine, retrievable source.
+        # The student must be able to open the original image even when
+        # exact OCR facts were withheld. No AI facts are promoted here.
+        kept.update(
+            item.id
+            for item in attachments
+            if item.kind == "photo"
+            and item.id in structured_ids
+            and metadata[item.id]["image_analysis_state"] == "failed"
+        )
     attachments = [item for item in attachments if item.id in kept]
     captions = {
         raw_id: text or ""
@@ -408,9 +420,11 @@ async def projected_materials(db, group_id, entity_key, now, sources):
                 # A photo the vision pass read as study material, posted with at most a short
                 # caption, IS the task: the card shows it instead of a text description.
                 "replaces_description": (
-                    attachment.id not in structured_ids
-                    and attachment.kind == "photo"
-                    and attachment.processing_state == "ready"
+                    attachment.kind == "photo"
+                    and (
+                        attachment.processing_state == "ready"
+                        or attachment.id in structured_ids
+                    )
                     and len(captions.get(attachment.raw_message_id, "").strip())
                     <= PHOTO_CARD_MAX_CAPTION
                 ),
