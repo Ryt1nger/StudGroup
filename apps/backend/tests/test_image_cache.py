@@ -214,8 +214,9 @@ def test_existing_legacy_wide_context_is_not_rebought_on_upgrade(client, monkeyp
             )
             job.context_json = json.dumps(saved, ensure_ascii=False)
             job.context_sha256 = context_digest(saved)
+            ident, group_id = job.id, job.group_id
             await db.commit()
-            return job.id, job.group_id
+            return ident, group_id
 
     ident, group_id = asyncio.run(emulate_old_snapshot())
     assert tick(client, provider, config) == "idle"
