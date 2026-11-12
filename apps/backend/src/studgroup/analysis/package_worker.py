@@ -225,6 +225,12 @@ def _eligible(group, settings, now, *, scheduled_slot=None, catchup_cutoff=None)
         ]
     if group.bot_added_at is not None:
         filters.append(RawMessage.message_date >= group.bot_added_at)
+    # A fixed lower bound applies to BOTH catch-up and regular hourly pilot
+    # package targets, so a scheduling fallback cannot purchase older messages.
+    if getattr(settings, "pilot_catchup_since", None) is not None and getattr(
+        settings, "owner_funded_pilot", False
+    ):
+        filters.append(RawMessage.message_date >= _utc(settings.pilot_catchup_since))
     return filters
 
 
@@ -483,7 +489,13 @@ async def _plan_next(
         await db.scalars(
             select(RawMessage)
             .where(*filters)
-            .order_by(RawMessage.message_date, RawMessage.telegram_message_id)
+            .order_by(
+                *(
+                    (RawMessage.message_date.desc(), RawMessage.telegram_message_id.desc())
+                    if catchup_cutoff is not None
+                    else (RawMessage.message_date, RawMessage.telegram_message_id)
+                )
+            )
             .limit(DEFAULT_MAX_TARGETS * 2)
         )
     ).all()
@@ -491,6 +503,9 @@ async def _plan_next(
         return None
     revision = pending[0].revision
     targets = [row for row in pending if row.revision == revision][:DEFAULT_MAX_TARGETS]
+    # Catch-up prioritizes today's newest messages, but the resulting package
+    # must always contain chronological targets and context.
+    targets.sort(key=lambda row: (row.message_date, row.telegram_message_id))
     first, last = targets[0].message_date, targets[-1].message_date
     live = [RawMessage.group_id == group.id, RawMessage.delete_at > now]
     if group.bot_added_at is not None:
@@ -620,7 +635,7 @@ async def _plan_next(
     return package, memory, revision, run_key, generation, photo_cost
 
 
-async def reopen_unread_photo_messages(db, group, since, now):
+async def reopen_unread_photo_messages(db, group, since, now, settings=None):
     """Queue stored messages whose photos were never read for one more package analysis.
 
     Only RawMessage state and generation change (the same effect as the owner's ``reopen``), and
@@ -631,6 +646,12 @@ async def reopen_unread_photo_messages(db, group, since, now):
     lower = _utc(since)
     if group.bot_added_at is not None:
         lower = max(lower, _utc(group.bot_added_at))
+    if (
+        settings is not None
+        and getattr(settings, "owner_funded_pilot", False)
+        and getattr(settings, "pilot_catchup_since", None) is not None
+    ):
+        lower = max(lower, _utc(settings.pilot_catchup_since))
     unread = (
         select(MessageAttachment.raw_message_id)
         .where(
@@ -767,6 +788,11 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                             RawMessage.live_received_at.is_not(None),
                             RawMessage.live_received_at <= catchup_cutoff,
                             *(
+                                [RawMessage.message_date >= _utc(settings.pilot_catchup_since)]
+                                if settings.pilot_catchup_since is not None
+                                else []
+                            ),
+                            *(
                                 [RawMessage.message_date >= group.bot_added_at]
                                 if group.bot_added_at is not None
                                 else []
@@ -817,7 +843,9 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                 if last_run_at is not None and _utc(last_run_at) >= hour_start:
                     continue
             if settings.photo_reading_enabled and settings.photo_backfill_since is not None:
-                await reopen_unread_photo_messages(db, group, settings.photo_backfill_since, now)
+                await reopen_unread_photo_messages(
+                    db, group, settings.photo_backfill_since, now, settings=settings
+                )
             planned = await _plan_next(
                 db,
                 group,

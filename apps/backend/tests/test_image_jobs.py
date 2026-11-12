@@ -598,3 +598,38 @@ def test_pass_b_debounces_fresh_reply_context_without_delaying_old_images():
     assert image_jobs.pass_b_available_at(old, now) == now
     future = {"messages": [{"sent_at": (now + timedelta(days=1)).isoformat()}]}
     assert image_jobs.pass_b_available_at(future, now) == now + timedelta(seconds=60)
+
+
+def test_owner_week_start_excludes_old_photo_jobs_and_pays_only_for_new_sources(
+    client, monkeypatch
+):
+    download_ok(monkeypatch)
+    photo_message(client, mid=31)
+    photo_message(client, mid=32)
+    make_new(client)
+
+    async def date_sources():
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (await db.scalars(select(RawMessage))).all()
+            for row in rows:
+                if row.telegram_message_id == 31:
+                    row.message_date = BASE - timedelta(days=10)
+            await db.commit()
+
+    asyncio.run(date_sources())
+    start = BASE - timedelta(days=1)
+    config = cfg(client, owner_funded_pilot=True, pilot_catchup_since=start)
+    provider = VisionProvider(reading(), propose=False)
+    tick(client, provider, config, now=BASE + timedelta(minutes=15))
+    jobs = stored(client, ImageAnalysisJob)
+    assert jobs
+
+    # There must never be a paid or even a newly scheduled first-pass job
+    # for the ten-day-old source, regardless of retention.
+    async def read_raw_ids():
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (await db.scalars(select(RawMessage))).all()
+            return {row.id: row.telegram_message_id for row in rows}
+
+    raw_by_id = asyncio.run(read_raw_ids())
+    assert all(raw_by_id[job.raw_message_id] == 32 for job in jobs)
