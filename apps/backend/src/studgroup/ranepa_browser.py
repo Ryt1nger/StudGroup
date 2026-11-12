@@ -39,9 +39,7 @@ async def _state(page) -> str:
     title = ""
     if not password_input and len(body) < 500:
         html = await page.content()
-        js_challenge = "get_jhash" in html and (
-            "__js_p_" in html or "__jua_" in html
-        )
+        js_challenge = "get_jhash" in html and ("__js_p_" in html or "__jua_" in html)
         title = await page.title()
     return page_status(
         page.url,
