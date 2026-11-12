@@ -65,7 +65,10 @@ def test_partial_image_cannot_claim_specific_unverified_exercises():
         messages=[message(101, ""), message(102, "ДЗ по фото", minute=1)],
         image_evidence=[partial()],
     )
-    assert proposal_image_problem(proposed(title="Решить задачи №5 и №6"), data) == "image_evidence_unavailable"
+    assert (
+        proposal_image_problem(proposed(title="Решить задачи №5 и №6"), data)
+        == "image_evidence_unavailable"
+    )
 
 
 def test_partial_image_requires_actual_partial_vision_output():
@@ -89,12 +92,17 @@ def test_temporary_download_failure_does_not_authorize_generic_homework():
         messages=[message(101, "ДЗ по фото")],
         image_evidence=[partial(error="telegram_unavailable")],
     )
-    assert proposal_image_problem(
-        SimpleNamespace(
-            semantic_kind="homework",
-            destination="task",
-            title="ДЗ по фото",
-            evidence=[SimpleNamespace(telegram_message_id=101, revision=1, fact_paths=["description"])],
-        ),
-        data,
-    ) == "image_evidence_unavailable"
+    assert (
+        proposal_image_problem(
+            SimpleNamespace(
+                semantic_kind="homework",
+                destination="task",
+                title="ДЗ по фото",
+                evidence=[
+                    SimpleNamespace(telegram_message_id=101, revision=1, fact_paths=["description"])
+                ],
+            ),
+            data,
+        )
+        == "image_evidence_unavailable"
+    )
