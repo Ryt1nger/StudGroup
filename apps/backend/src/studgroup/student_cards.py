@@ -421,10 +421,7 @@ async def projected_materials(db, group_id, entity_key, now, sources):
                 # caption, IS the task: the card shows it instead of a text description.
                 "replaces_description": (
                     attachment.kind == "photo"
-                    and (
-                        attachment.processing_state == "ready"
-                        or attachment.id in structured_ids
-                    )
+                    and (attachment.processing_state == "ready" or attachment.id in structured_ids)
                     and len(captions.get(attachment.raw_message_id, "").strip())
                     <= PHOTO_CARD_MAX_CAPTION
                 ),
