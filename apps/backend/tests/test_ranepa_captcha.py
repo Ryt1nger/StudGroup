@@ -53,10 +53,12 @@ def test_configured_solver_uses_rucaptcha_not_2captcha(monkeypatch):
 
 def test_coordinates_reject_untrusted_or_ambiguous_answers():
     decode = ranepa_captcha.decode_slider_coordinates
-    assert decode({"code": "coordinates:x=141,y=315;x=220,y=371"}) == (
-        (141, 315),
-        (220, 371),
-    )
+    # The real RuCaptcha legacy API uses the singular "coordinate:" prefix.
+    for code in (
+        "coordinate:x=141,y=315;x=220,y=371",
+        "coordinates:x=141,y=315;x=220,y=371",
+    ):
+        assert decode({"code": code}) == ((141, 315), (220, 371))
     for bad in (
         "coordinates:x=50,y=10;x=100,y=20",
         {"code": "coordinates:x=30,y=20"},
@@ -106,6 +108,7 @@ def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
 
         class FakePage:
             mouse = FakeMouse()
+            url = "https://my.ranepa.ru/lk/student/schedule"
 
             def get_by_text(self, text, exact=False):
                 assert text == "Используйте ползунки" and not exact
@@ -180,6 +183,7 @@ def test_invalid_positions_never_touch_one_shot_sliders():
 
         class FakePage:
             mouse = FakeMouse()
+            url = "https://my.ranepa.ru/lk/student/schedule"
 
             def get_by_text(self, *_args, **_kwargs):
                 return FakeTitle()
@@ -254,5 +258,65 @@ def test_sdo_transition_attempts_a_captcha_only_with_explicit_callback(solved):
         assert list(states.values()) == [expected]
         assert links == {} and courses == {}
         assert events == ["solve", "closed"]
+
+    asyncio.run(scenario())
+
+
+def test_slider_coordinates_never_leak_other_host_images():
+    async def scenario():
+        class ExternalPage:
+            url = "https://lms.ranepa.ru/login/index.php"
+
+            def get_by_text(self, *args, **kwargs):
+                raise AssertionError("must not inspect an external page")
+
+            async def screenshot(self, **kwargs):
+                raise AssertionError("must not screenshot the user's profile")
+
+        class Provider:
+            async def coordinates(self, *args, **kwargs):
+                raise AssertionError("must not send any external image")
+
+        assert not await ranepa_captcha.solve_slider_captcha(ExternalPage(), Provider())
+
+    asyncio.run(scenario())
+
+
+def test_slider_selector_accepts_legacy_duplicate_myrange_ids():
+    async def scenario():
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, offset):
+                self.offset = offset
+
+            async def bounding_box(self):
+                return {"x": 100, "y": 360 + self.offset, "width": 300, "height": 30}
+
+        class List:
+            def __init__(self, size):
+                self.size = size
+
+            async def count(self):
+                return self.size
+
+            def nth(self, index):
+                return Slider(index * 56)
+
+        class Page:
+            def get_by_text(self, *args, **kwargs):
+                return Title()
+
+            def locator(self, selector):
+                if selector == 'input[type="range"]':
+                    return List(0)
+                assert selector == '[id="myRange"]'
+                return List(2)
+
+        boxes = await ranepa_captcha._slider_boxes(Page())
+        assert len(boxes) == 2
+        assert boxes[1]["y"] > boxes[0]["y"]
 
     asyncio.run(scenario())
