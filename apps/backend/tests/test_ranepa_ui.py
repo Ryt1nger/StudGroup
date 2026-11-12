@@ -9,6 +9,16 @@ def test_challenge_is_not_calendar():
     assert page_status("https://my.ranepa.ru/lk/student/schedule", "CAPTCHA") == "captcha_required"
 
 
+def test_observed_dual_slider_phrases_are_captcha():
+    for phrase in (
+        "Вы точно не робот?",
+        "Используйте ползунки, чтобы выровнять картинку по горизонтали",
+    ):
+        assert page_status("https://my.ranepa.ru/lk/student/schedule", phrase) == (
+            "captcha_required"
+        )
+
+
 def test_login_redirect_and_password_input_are_not_calendar():
     assert page_status("https://lms.ranepa.ru/login/index.php", "Календарь") == "login_required"
     assert (
