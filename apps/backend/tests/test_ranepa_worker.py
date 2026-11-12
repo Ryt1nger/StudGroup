@@ -198,38 +198,64 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             group = Group(
-                id=uuid4(), telegram_chat_id=-97401, name="Pilot",
-                academic_group_code="P-001", timezone="Europe/Moscow",
+                id=uuid4(),
+                telegram_chat_id=-97401,
+                name="Pilot",
+                academic_group_code="P-001",
+                timezone="Europe/Moscow",
             )
             users = [
-                User(id=uuid4(), telegram_user_id=97401 + i, display_name=f"U{i}")
-                for i in range(2)
+                User(id=uuid4(), telegram_user_id=97401 + i, display_name=f"U{i}") for i in range(2)
             ]
             async with AsyncSession(engine, expire_on_commit=False) as db:
                 db.add_all([group, *users])
                 await db.flush()
                 for user in users:
-                    db.add(Membership(group_id=group.id, user_id=user.id, role="student", status="active"))
-                    db.add(UserProfile(
-                        user_id=user.id, sdu_credential_id=uuid4(),
-                        updated_at=datetime.now(UTC),
-                    ))
-                    db.add(LegalConsentEvent(
-                        user_id=user.id, purpose="sdo", action="accept",
-                        document_version=VERSION,
-                        document_sha256=document_hash("sdo", settings),
-                        source="web", created_at=datetime.now(UTC),
-                    ))
+                    db.add(
+                        Membership(
+                            group_id=group.id, user_id=user.id, role="student", status="active"
+                        )
+                    )
+                    db.add(
+                        UserProfile(
+                            user_id=user.id,
+                            sdu_credential_id=uuid4(),
+                            updated_at=datetime.now(UTC),
+                        )
+                    )
+                    db.add(
+                        LegalConsentEvent(
+                            user_id=user.id,
+                            purpose="sdo",
+                            action="accept",
+                            document_version=VERSION,
+                            document_sha256=document_hash("sdo", settings),
+                            source="web",
+                            created_at=datetime.now(UTC),
+                        )
+                    )
                 await db.commit()
             today = date(2026, 11, 11)
-            assert await prepare_week(
-                engine, today, settings,
-                pilot_group_id=group.id, pilot_user_id=users[1].id,
-            ) == 1
-            assert await process_one(
-                engine, settings, today,
-                pilot_group_id=group.id, pilot_user_id=users[1].id,
-            ) == "succeeded"
+            assert (
+                await prepare_week(
+                    engine,
+                    today,
+                    settings,
+                    pilot_group_id=group.id,
+                    pilot_user_id=users[1].id,
+                )
+                == 1
+            )
+            assert (
+                await process_one(
+                    engine,
+                    settings,
+                    today,
+                    pilot_group_id=group.id,
+                    pilot_user_id=users[1].id,
+                )
+                == "succeeded"
+            )
             assert seen == [(group.id, users[1].id, "P-001", "student", "test-password")]
             async with AsyncSession(engine) as db:
                 jobs = (await db.scalars(select(RanepaCrawlJob))).all()
