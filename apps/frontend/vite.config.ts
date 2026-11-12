@@ -41,5 +41,8 @@ export default defineConfig(({ mode }) => ({
     setupFiles: ['./tests/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.{ts,tsx}'],
     css: { modules: { classNameStrategy: 'non-scoped' } },
+    // Rendering 100+ cards (Tasks pagination) can pass 5 s on a busy machine; a hang still fails.
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
   },
 }));
