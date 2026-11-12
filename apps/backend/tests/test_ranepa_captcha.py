@@ -130,7 +130,14 @@ def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
         assert await ranepa_captcha.solve_slider_captcha(page, FakeClient())
         assert page.clip == {"x": 80, "y": 60, "width": 340, "height": 431}
         assert [entry[0] for entry in events] == [
-            "move", "down", "move", "up", "move", "down", "move", "up"
+            "move",
+            "down",
+            "move",
+            "up",
+            "move",
+            "down",
+            "move",
+            "up",
         ]
         assert events[2][:3] == ("move", 220, 375)
         assert events[6][:3] == ("move", 300, 431)
