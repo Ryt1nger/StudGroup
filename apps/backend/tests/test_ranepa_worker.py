@@ -114,9 +114,9 @@ def test_restored_session_decrypts_and_corrupt_state_is_ignored():
     assert ranepa_worker.restored_storage_state("broken", cipher) is None
     assert ranepa_worker.restored_storage_state(encrypted, Fernet(Fernet.generate_key())) is None
     for payload in (b"not json", b"[]", b'{"cookies":{}}'):
-        assert ranepa_worker.restored_storage_state(
-            cipher.encrypt(payload).decode(), cipher
-        ) is None
+        assert (
+            ranepa_worker.restored_storage_state(cipher.encrypt(payload).decode(), cipher) is None
+        )
 
 
 @pytest.mark.parametrize("expired", [False, True])
@@ -409,9 +409,7 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
         monkeypatch.setattr("studgroup.ranepa_worker.configured_store", lambda _: FakeStore())
         seen = []
 
-        async def fake_collect(
-            _engine, group_id, user_id, code, login, password, _today, **kwargs
-        ):
+        async def fake_collect(_engine, group_id, user_id, code, login, password, _today, **kwargs):
             seen.append((group_id, user_id, code, login, password))
             assert kwargs["storage_state"] == saved_state
             await kwargs["persist_session"](new_state)
