@@ -189,8 +189,6 @@ def test_unrelated_late_chatter_does_not_rebuy_old_image_context(client, monkeyp
     assert len(stored(client, ImageAnalysisCall)) == 3
 
 
-
-
 def test_existing_legacy_wide_context_is_not_rebought_on_upgrade(client, monkeypatch):
     from studgroup.analysis.image_jobs import context_digest
     from studgroup.analysis.image_schedule import current_source
@@ -232,6 +230,7 @@ def test_existing_legacy_wide_context_is_not_rebought_on_upgrade(client, monkeyp
             return result.state
 
     assert asyncio.run(review()) == "ready"
+
 
 
 def test_manual_schedule_changes_do_not_buy_another_visual_pass(client, monkeypatch):
