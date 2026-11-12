@@ -20,6 +20,7 @@ def test_challenge_is_not_calendar():
 def test_slider_challenge_is_not_calendar(body):
     assert page_status("https://my.ranepa.ru/lk/student/schedule", body) == "captcha_required"
 
+
 def test_login_redirect_and_password_input_are_not_calendar():
     assert page_status("https://lms.ranepa.ru/login/index.php", "Календарь") == "login_required"
     assert (
