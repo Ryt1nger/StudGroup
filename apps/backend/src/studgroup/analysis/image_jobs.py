@@ -27,7 +27,7 @@ from studgroup.models import (
     ShadowEvaluationRun,
 )
 
-TERMINAL = {"ready", "failed", "stale"}
+TERMINAL = {"ready", "partial", "failed", "stale"}
 MAX_ATTEMPTS = 3
 LEASE = timedelta(minutes=3)
 SUPPORTED = {"image/jpeg", "image/png", "image/webp"}
@@ -423,7 +423,10 @@ async def schedule_group(
             if utc(first.delete_at) <= now:
                 continue  # purge removes the expired cache row before a fresh reading is queued
             restore_successful_snapshot(first, now)
-            if first.state != "ready":
+            # Pass A can correctly report unreadable regions. Preserve that
+            # response and let pass B inspect the original pixels once more;
+            # partial pass A is NOT trusted contextual evidence.
+            if first.state not in {"ready", "partial"}:
                 continue
             context = await context_snapshot(db, raw)
             context["pass_a_sha256"] = digest(first.result_json)
@@ -875,7 +878,7 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                     ImageAnalysisJob.attachment_id == job.attachment_id,
                     ImageAnalysisJob.source_revision == job.source_revision,
                     ImageAnalysisJob.pass_number == 1,
-                    ImageAnalysisJob.state == "ready",
+                    ImageAnalysisJob.state.in_(("ready", "partial")),
                     ImageAnalysisJob.delete_at > now,
                     ImageAnalysisJob.version == f"{IMAGE_VERSION}/{PASS_A_VERSION}",
                     ImageAnalysisJob.model_key == job.model_key,
@@ -969,7 +972,12 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             call.state = "reused"
         elif result is not None:
             job.result_json = result.model_dump_json()
-            job.state = "ready" if result.complete else "failed"
+            # Incomplete pixel transcription is not a provider/transport error.
+            # Pass A remains a durable partial snapshot for pass B; only a final
+            # incomplete pass B is a terminal unreadable-photo failure.
+            job.state = (
+                "ready" if result.complete else "partial" if job.pass_number == 1 else "failed"
+            )
             job.error = None if result.complete else "image_reading_incomplete"
             job.pixel_sha256 = hashlib.sha256(image).hexdigest()
             from studgroup.photo_dedupe import visual_fingerprint
