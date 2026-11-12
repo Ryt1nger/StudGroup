@@ -198,9 +198,7 @@ def test_existing_legacy_wide_context_is_not_rebought_on_upgrade(client, monkeyp
 
     async def emulate_old_snapshot():
         async with AsyncSession(client.app.state.engine) as db:
-            job = await db.scalar(
-                select(ImageAnalysisJob).where(ImageAnalysisJob.pass_number == 2)
-            )
+            job = await db.scalar(select(ImageAnalysisJob).where(ImageAnalysisJob.pass_number == 2))
             saved = json.loads(job.context_json)
             saved["messages"].append(
                 {
@@ -230,7 +228,6 @@ def test_existing_legacy_wide_context_is_not_rebought_on_upgrade(client, monkeyp
             return result.state
 
     assert asyncio.run(review()) == "ready"
-
 
 
 def test_manual_schedule_changes_do_not_buy_another_visual_pass(client, monkeypatch):
