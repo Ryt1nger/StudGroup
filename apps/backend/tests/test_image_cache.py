@@ -1,6 +1,7 @@
 """Measured transport-call counts; local provider only, no claimed dollar savings."""
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -186,6 +187,51 @@ def test_unrelated_late_chatter_does_not_rebuy_old_image_context(client, monkeyp
     assert tick(client, provider, config) == "ready"
     assert len(provider.vision) == 3
     assert len(stored(client, ImageAnalysisCall)) == 3
+
+
+
+
+def test_existing_legacy_wide_context_is_not_rebought_on_upgrade(client, monkeypatch):
+    from studgroup.analysis.image_jobs import context_digest
+    from studgroup.analysis.image_schedule import current_source
+
+    provider, config = prepare(client, monkeypatch)
+    now = datetime.now(UTC)
+
+    async def emulate_old_snapshot():
+        async with AsyncSession(client.app.state.engine) as db:
+            job = await db.scalar(
+                select(ImageAnalysisJob).where(ImageAnalysisJob.pass_number == 2)
+            )
+            saved = json.loads(job.context_json)
+            saved["messages"].append(
+                {
+                    "id": 9999,
+                    "revision": 1,
+                    "text": "Совершенно посторонний разговор",
+                    "reply_to": None,
+                    "topic": None,
+                    "sent_at": (BASE + timedelta(hours=2)).isoformat(),
+                    "media_group_ids": [],
+                    "author_role": None,
+                }
+            )
+            job.context_json = json.dumps(saved, ensure_ascii=False)
+            job.context_sha256 = context_digest(saved)
+            await db.commit()
+            return job.id, job.group_id
+
+    ident, group_id = asyncio.run(emulate_old_snapshot())
+    assert tick(client, provider, config) == "idle"
+    assert len(provider.vision) == 2
+    assert len(stored(client, ImageAnalysisCall)) == 2
+
+    async def review():
+        async with AsyncSession(client.app.state.engine) as db:
+            result = await current_source(db, ident, group_id, now)
+            return result.state
+
+    assert asyncio.run(review()) == "ready"
 
 
 def test_manual_schedule_changes_do_not_buy_another_visual_pass(client, monkeypatch):
