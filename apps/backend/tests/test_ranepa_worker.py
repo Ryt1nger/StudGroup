@@ -234,6 +234,71 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
     assert captured["closed"] is True
 
 
+@pytest.mark.parametrize(
+    ("solver_succeeds", "expected_month_reads", "expected_status"),
+    [(False, 1, "captcha"), (True, 2, "identity_unverified")],
+)
+def test_worker_retries_after_captcha_at_most_once(
+    monkeypatch, solver_succeeds, expected_month_reads, expected_status
+):
+    observed = {"month": 0, "solve": 0, "close": False}
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            return self
+
+        async def new_page(self):
+            return object()
+
+        async def close(self):
+            observed["close"] = True
+
+    class FakePlaywright:
+        async def __aenter__(self):
+            self.chromium = self
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def launch(self, **kwargs):
+            return FakeBrowser()
+
+    async def read_captcha(*args):
+        observed["month"] += 1
+        status = "captcha_required" if observed["month"] == 1 else "identity_unverified"
+        return SimpleNamespace(status=status)
+
+    async def solve(page, client, **kwargs):
+        observed["solve"] += 1
+        assert client is sentinel
+        assert kwargs["timeout_seconds"] == 65
+        return solver_succeeds
+
+    sentinel = object()
+    monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
+    monkeypatch.setattr(ranepa_worker, "read_month", read_captcha)
+    monkeypatch.setattr(ranepa_worker, "solve_slider_captcha", solve)
+    monkeypatch.delenv("RANEPA_PROXY_URL", raising=False)
+    status = asyncio.run(
+        ranepa_worker._collect(
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "student",
+            "password",
+            date(2026, 11, 12),
+            captcha_client=sentinel,
+            captcha_timeout_seconds=65,
+        )
+    )
+    assert status == expected_status
+    assert observed["solve"] == 1
+    assert observed["month"] == expected_month_reads
+    assert observed["close"] is True
+
+
 def test_worker_engine_uses_bounded_supabase_pool(monkeypatch):
     captured = {}
 
