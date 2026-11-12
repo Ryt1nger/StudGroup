@@ -49,7 +49,6 @@ async def _store_confirms_write_read_and_delete():
     assert await store.get(key) is None
 
 
-
 def test_store_roundtrips_serialized_browser_state():
     asyncio.run(_store_roundtrips_serialized_browser_state())
 
