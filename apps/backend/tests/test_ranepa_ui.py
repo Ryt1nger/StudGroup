@@ -24,10 +24,7 @@ def test_stormwall_js_spinner_and_captcha_title_are_distinct():
     assert page_status(url, "Проверяем ваш браузер", js_challenge=True) == "challenge_pending"
     assert page_status(url, " ", title="Captcha") == "captcha_required"
     # Interactive instructions take priority even if a gate script is present.
-    assert (
-        page_status(url, "Используйте ползунки", js_challenge=True)
-        == "captcha_required"
-    )
+    assert page_status(url, "Используйте ползунки", js_challenge=True) == "captcha_required"
 
 
 def test_login_redirect_and_password_input_are_not_calendar():
