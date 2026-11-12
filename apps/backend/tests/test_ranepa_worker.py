@@ -2,13 +2,16 @@
 
 import asyncio
 from datetime import UTC, date, datetime
+from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from studgroup import ranepa_worker
 from studgroup.legal import VERSION, document_hash
 from studgroup.main import Settings
 from studgroup.models import (
@@ -26,6 +29,75 @@ from studgroup.ranepa_worker import (
     prepare_week,
     process_one,
 )
+
+
+
+@pytest.mark.parametrize(
+    ("proxy_url", "expected_proxy"),
+    [
+        (None, None),
+        ("http://proxy.example.org:3128", {"server": "http://proxy.example.org:3128"}),
+        (
+            "http://service-user:private-password@proxy.example.org:3128",
+            {
+                "server": "http://proxy.example.org:3128",
+                "username": "service-user",
+                "password": "private-password",
+            },
+        ),
+    ],
+)
+def test_collection_passes_proxy_to_browser_context(monkeypatch, proxy_url, expected_proxy):
+    if proxy_url is None:
+        monkeypatch.delenv("RANEPA_PROXY_URL", raising=False)
+    else:
+        monkeypatch.setenv("RANEPA_PROXY_URL", proxy_url)
+
+    captured = {}
+
+    class FakeContext:
+        async def new_page(self):
+            return object()
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            captured["context"] = kwargs
+            return FakeContext()
+
+        async def close(self):
+            captured["closed"] = True
+
+    class FakePlaywright:
+        chromium = None
+
+        async def __aenter__(self):
+            self.chromium = self
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def launch(self, **kwargs):
+            captured["launch"] = kwargs
+            return FakeBrowser()
+
+    async def captcha(*args):
+        return SimpleNamespace(status="captcha_required")
+
+    monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
+    monkeypatch.setattr(ranepa_worker, "read_month", captcha)
+
+    status = asyncio.run(
+        ranepa_worker._collect(None, uuid4(), uuid4(), "A-001", "student", "secret", date(2026, 11, 12))
+    )
+    assert status == "captcha"
+    assert captured["launch"] == {"headless": True}
+    assert captured["context"] == {
+        "proxy": expected_proxy,
+        "locale": "ru-RU",
+        "timezone_id": "Europe/Moscow",
+    }
+    assert captured["closed"] is True
 
 
 def test_worker_engine_uses_bounded_supabase_pool(monkeypatch):
