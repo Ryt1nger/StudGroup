@@ -61,11 +61,7 @@ def pilot_backfill_since(group, now):
     a completed pass A merely because the backend restarted.
     """
     retention_start = utc(now) - timedelta(days=30)
-    return (
-        max(retention_start, utc(group.bot_added_at))
-        if group.bot_added_at
-        else retention_start
-    )
+    return max(retention_start, utc(group.bot_added_at)) if group.bot_added_at else retention_start
 
 
 def supported(attachment):
