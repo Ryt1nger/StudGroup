@@ -499,6 +499,16 @@ async def schedule_group(
             if prior_success is not None:
                 restore_successful_snapshot(prior_success, now)
                 if prior_success.state == "ready":
+                    # Restore exactly one current snapshot. A context that
+                    # temporarily changed may have a newer ready B reading;
+                    # keeping both ready would expose contradictory evidence.
+                    for job in jobs:
+                        if (
+                            job.id != prior_success.id
+                            and job.pass_number == 2
+                            and job.state != "stale"
+                        ):
+                            job.state, job.error = "stale", "context_revision_changed"
                     continue
             for job in jobs:
                 if (
