@@ -1,8 +1,8 @@
 import type { MaterialLink } from '@studgroup/shared-types';
 
-/** Photos that are the task itself: the card shows them instead of a text description. */
+/** Show every cited source photo inline. A photo complements the card description. */
 export function photoMaterials(items?: MaterialLink[]): MaterialLink[] {
-  return (items ?? []).filter((item) => item.kind === 'photo' && item.replaces_description === true);
+  return (items ?? []).filter((item) => item.kind === 'photo');
 }
 
 /** Everything the materials list still shows when photos are rendered as the card body. */
