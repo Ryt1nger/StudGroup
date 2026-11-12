@@ -89,6 +89,41 @@ def test_all_images_receive_attempts_independent_of_package_limit(
     assert all(j.state == "ready" for j in stored(client, ImageAnalysisJob))
 
 
+def test_second_pass_is_not_starved_by_older_first_pass_backlog(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client, mid=31)
+    photo_message(client, mid=32)
+    make_new(client)
+    config = cfg(client)
+    provider = VisionProvider(reading(), propose=False)
+    now = datetime.now(UTC)
+
+    assert tick(client, provider, config, now) == "ready"
+    jobs = stored(client, ImageAnalysisJob)
+    assert sum(j.state == "pending" and j.pass_number == 1 for j in jobs) == 1
+
+    # Finish the first photo's contextual B before reading a different A.
+    assert tick(client, provider, config, now) == "ready"
+    jobs = stored(client, ImageAnalysisJob)
+    assert sum(j.state == "ready" and j.pass_number == 2 for j in jobs) == 1
+    assert sum(j.state == "pending" and j.pass_number == 1 for j in jobs) == 1
+    assert len(provider.vision) == 2
+
+
+def test_image_groups_rotate_by_last_attempt_instead_of_uuid():
+    from types import SimpleNamespace
+
+    routes = [SimpleNamespace(group_id="a"), SimpleNamespace(group_id="b"), SimpleNamespace(group_id="c")]
+    last = {
+        "a": datetime(2026, 11, 12, 7, tzinfo=UTC),
+        "b": datetime(2026, 11, 12, 6, tzinfo=UTC),
+    }
+    assert [r.group_id for r in image_jobs.image_route_order(routes, last)] == ["c", "b", "a"]
+    # Once the new group gets a turn, the least-recently served group is next.
+    last["c"] = datetime(2026, 11, 12, 8, tzinfo=UTC)
+    assert [r.group_id for r in image_jobs.image_route_order(routes, last)] == ["b", "a", "c"]
+
+
 def test_incomplete_pass_a_is_reviewed_by_pass_b_without_retrying_pass_a(client, monkeypatch):
     download_ok(monkeypatch)
     photo_message(client)
