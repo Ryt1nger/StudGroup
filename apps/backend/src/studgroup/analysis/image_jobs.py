@@ -52,9 +52,16 @@ def live_mode(settings):
 
 
 def pilot_backfill_since(group, now):
-    """Only catch up one week of photos, never photos before the bot joined."""
-    week_ago = utc(now) - timedelta(days=7)
-    return max(week_ago, utc(group.bot_added_at)) if group.bot_added_at else week_ago
+    """Read every retained pilot photo, but never anything before the bot joined.
+
+    The owner explicitly approved a complete catch-up for all active pilot
+    groups. Keep the 30-day privacy/retention bound, original sources, the
+    two-pass evidence gate and the existing paid-call idempotency controls.
+    Successful prior image jobs are reused; historical photos never repurchase
+    a completed pass A merely because the backend restarted.
+    """
+    retention_start = utc(now) - timedelta(days=30)
+    return max(retention_start, utc(group.bot_added_at)) if group.bot_added_at else retention_start
 
 
 def supported(attachment):
