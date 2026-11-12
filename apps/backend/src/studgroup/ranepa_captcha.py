@@ -64,10 +64,7 @@ async def _slider_boxes(page) -> list[dict] | None:
     if await inputs.count() != 2:
         return None
     boxes = [await inputs.nth(index).bounding_box() for index in range(2)]
-    if any(
-        box is None or box["width"] < 150 or box["height"] > 85
-        for box in boxes
-    ):
+    if any(box is None or box["width"] < 150 or box["height"] > 85 for box in boxes):
         return None
     if boxes[0]["y"] >= boxes[1]["y"] or boxes[1]["y"] - boxes[0]["y"] > 140:
         return None
@@ -100,11 +97,7 @@ def _slider_targets(
         y = clip["y"] + py
         cy = box["y"] + box["height"] / 2
         # A click outside the matching slider row probably means an unusable answer.
-        if (
-            x < box["x"] + 15
-            or x > box["x"] + box["width"] - 15
-            or abs(y - cy) > 22
-        ):
+        if x < box["x"] + 15 or x > box["x"] + box["width"] - 15 or abs(y - cy) > 22:
             return None
         start_x = box["x"] + 25
         targets.append((start_x, x, cy))
@@ -126,9 +119,7 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
         image = await page.screenshot(type="png", clip=clip, animations="disabled")
         encoded = base64.b64encode(image).decode("ascii")
         async with asyncio.timeout(timeout_seconds):
-            result = await client.coordinates(
-                encoded, hintText=HINT, min_clicks=2, max_clicks=2
-            )
+            result = await client.coordinates(encoded, hintText=HINT, min_clicks=2, max_clicks=2)
         points = decode_slider_coordinates(result)
         if points is None:
             return False
