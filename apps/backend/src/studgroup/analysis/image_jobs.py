@@ -71,6 +71,42 @@ def digest(data):
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def context_relevance_digest(context):
+    """Stable identity for a photo's own and genuinely related chat evidence.
+
+    Legacy snapshots may include many unrelated messages posted hours later.
+    Ignore those for invalidation while retaining the source, album, close
+    discussion and explicit replies regardless of age. This permits existing
+    completed B snapshots to remain valid across the narrower context window
+    without repurchasing model calls on deployment.
+    """
+    source_id = context.get("image_source_message_id")
+    messages = context.get("messages", [])
+    source = next((item for item in messages if item.get("id") == source_id), None)
+    if source is None or not source.get("sent_at"):
+        return context_digest(context)
+    try:
+        stamp = utc(datetime.fromisoformat(source["sent_at"]))
+    except (TypeError, ValueError):
+        return context_digest(context)
+    album_ids = set(source.get("media_group_ids") or [])
+
+    def relevant(item):
+        if (
+            item.get("id") == source_id
+            or item.get("reply_to") == source_id
+            or item.get("id") == source.get("reply_to")
+            or album_ids.intersection(item.get("media_group_ids") or [])
+        ):
+            return True
+        try:
+            return utc(datetime.fromisoformat(item["sent_at"])) <= stamp + timedelta(minutes=5)
+        except (KeyError, TypeError, ValueError):
+            return True  # fail closed: unknown metadata can still invalidate
+
+    return context_digest({**context, "messages": [row for row in messages if relevant(row)]})
+
+
 def context_digest(context):
     """Only source facts invalidate a paid reading; manual projections never buy another pass.
 
@@ -440,6 +476,30 @@ async def schedule_group(
             context["provider_identity"] = provider_identity or {}
             # Published-card revisions must not make image analysis feed back into itself.
             second_key = context_digest(context)
+            stable_key = context_relevance_digest(context)
+            # A completed B reading from before the narrowed discussion window
+            # must not be invalidated (and repurchased) merely by deployment or
+            # by unrelated later chat. Reuse it only when genuine evidence
+            # including linked replies is still identical.
+            prior_success = next(
+                (
+                    job
+                    for job in jobs
+                    if job.pass_number == 2
+                    and job.source_revision == raw.revision
+                    and job.version == f"{IMAGE_VERSION}/{PASS_B_VERSION}"
+                    and job.model_key == model_key
+                    and job.result_json is not None
+                    and job.state in {"ready", "stale"}
+                    and VisualReading.model_validate_json(job.result_json).complete
+                    and context_relevance_digest(json.loads(job.context_json)) == stable_key
+                ),
+                None,
+            )
+            if prior_success is not None:
+                restore_successful_snapshot(prior_success, now)
+                if prior_success.state == "ready":
+                    continue
             for job in jobs:
                 if (
                     job.pass_number == 2
@@ -958,7 +1018,11 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
             current["pass_version"] = PASS_B_VERSION
             current["model_key"] = job.model_key
             current["provider_identity"] = json.loads(job.context_json).get("provider_identity", {})
-            context_changed = context_digest(current) != job.context_sha256
+            context_changed = (
+                context_digest(current) != job.context_sha256
+                and context_relevance_digest(current)
+                != context_relevance_digest(json.loads(job.context_json))
+            )
         if (
             raw is None
             or attachment is None
