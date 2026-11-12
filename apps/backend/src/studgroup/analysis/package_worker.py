@@ -477,11 +477,7 @@ def newest_day_candidates(pending, timezone):
         return []
     zone = ZoneInfo(timezone)
     day = _utc(pending[0].message_date).astimezone(zone).date()
-    return [
-        row
-        for row in pending
-        if _utc(row.message_date).astimezone(zone).date() == day
-    ]
+    return [row for row in pending if _utc(row.message_date).astimezone(zone).date() == day]
 
 
 async def _plan_next(
