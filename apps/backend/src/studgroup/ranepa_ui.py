@@ -18,9 +18,22 @@ LOGIN_PATHS = ("/login", "/auth", "/signin")
 TIME_RE = re.compile(r"\b\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2}\b")
 
 
-def page_status(url: str, body: str, *, password_input: bool = False) -> str:
+def page_status(
+    url: str,
+    body: str,
+    *,
+    password_input: bool = False,
+    title: str = "",
+    js_challenge: bool = False,
+) -> str:
     text = normalized(body)
     if any(marker in text for marker in CAPTCHA_MARKERS):
+        return "captcha_required"
+    # StormWall's dedicated gateway uses the title "Captcha"; the JS spinner
+    # is a different stage and must be allowed to finish in the same context.
+    if js_challenge:
+        return "challenge_pending"
+    if title.casefold().strip() == "captcha":
         return "captcha_required"
     path = urlparse(url).path.casefold()
     if any(part in path for part in LOGIN_PATHS) or password_input:
