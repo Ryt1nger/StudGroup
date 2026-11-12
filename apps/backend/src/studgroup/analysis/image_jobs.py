@@ -107,6 +107,11 @@ async def context_snapshot(db, raw):
             .where(
                 RawMessage.group_id == raw.group_id,
                 RawMessage.message_date > raw.message_date,
+                # Only immediate discussion may be inferred as belonging to
+                # the photo. Later messages must explicitly reply to it;
+                # otherwise every new chat message can invalidate and repurchase
+                # pass B for old photos, even days after their first reading.
+                RawMessage.message_date <= raw.message_date + timedelta(minutes=5),
                 RawMessage.delete_at > datetime.now(UTC),
             )
             .order_by(RawMessage.message_date, RawMessage.telegram_message_id)
