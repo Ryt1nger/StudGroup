@@ -194,7 +194,7 @@ async def _source_messages(db, group, rows, *, structured_images=False):
     return messages
 
 
-def _eligible(group, settings, now, *, scheduled_slot=None):
+def _eligible(group, settings, now, *, scheduled_slot=None, catchup_cutoff=None):
     """Filters for pending targets; with the hourly schedule only messages before the slot."""
     filters = [
         RawMessage.group_id == group.id,
@@ -204,7 +204,14 @@ def _eligible(group, settings, now, *, scheduled_slot=None):
     ]
     from studgroup.analysis.release_budget import production_enabled
 
-    if settings.ai_schedule_enabled:
+    if catchup_cutoff is not None:
+        # One-time pilot catch-up: never include messages received after the
+        # owner's explicit cutoff, nor bypass the bot-join/retention gates.
+        filters += [
+            RawMessage.live_received_at.is_not(None),
+            RawMessage.live_received_at <= catchup_cutoff,
+        ]
+    elif settings.ai_schedule_enabled:
         timing = window(
             now,
             settings.ai_schedule_timezone,
@@ -408,10 +415,65 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
     return cost, False
 
 
-async def _plan_next(
-    db, group, route, settings, now, provider=None, transport=None, *, scheduled_slot=None
+def plan_sized_package(
+    messages,
+    images,
+    *,
+    group_id,
+    timezone,
+    target_ids,
+    source_revision,
+    subject_catalog,
+    max_bytes=48000,
 ):
-    filters = _eligible(group, settings, now, scheduled_slot=scheduled_slot)
+    """Fit complete photo evidence without discarding target or reply ancestors.
+
+    First shrink the target batch; if it still does not fit, drop optional
+    chronological neighbours. The package planner keeps explicit reply
+    ancestors even with zero overlap. A genuinely oversized single source
+    stays held for review rather than silently truncating visual facts.
+    """
+    options = {
+        "group_id": group_id,
+        "timezone": timezone,
+        "target_ids": target_ids,
+        "source_revision": source_revision,
+        "subject_catalog": subject_catalog,
+    }
+    for overlap in (8, 0):
+        for target_cap in (DEFAULT_MAX_TARGETS, 12, 6, 4, 3, 2, 1):
+            try:
+                package = plan_packages(
+                    messages, overlap=overlap, max_targets=target_cap, **options
+                )[0]
+            except ValueError as error:
+                if str(error) == "package_single_target_exceeds_limits":
+                    break
+                raise
+            selected = {row.telegram_message_id for row in package.analysis_input.messages}
+            package.analysis_input.image_evidence = [
+                item for item in images if item.telegram_message_id in selected
+            ]
+            if len(package.analysis_input.model_dump_json().encode()) <= max_bytes:
+                return package
+    raise ValueError("package_single_target_exceeds_limits")
+
+
+async def _plan_next(
+    db,
+    group,
+    route,
+    settings,
+    now,
+    provider=None,
+    transport=None,
+    *,
+    scheduled_slot=None,
+    catchup_cutoff=None,
+):
+    filters = _eligible(
+        group, settings, now, scheduled_slot=scheduled_slot, catchup_cutoff=catchup_cutoff
+    )
     if filters is None:
         return None
     blocked = await _waiting_image_context(db, group, route, settings, now)
@@ -524,21 +586,15 @@ async def _plan_next(
     ).all()
     catalog = await load_subject_catalog(db, group.id, facts)
     try:
-        packages = plan_packages(
+        package = plan_sized_package(
             messages,
+            images,
             group_id=group.id,
             timezone=group.timezone,
             target_ids=[row.telegram_message_id for row in targets],
             source_revision=revision,
             subject_catalog=catalog,
         )
-        package = packages[0]
-        selected = {row.telegram_message_id for row in package.analysis_input.messages}
-        package.analysis_input.image_evidence = [
-            item for item in images if item.telegram_message_id in selected
-        ]
-        if len(package.analysis_input.model_dump_json().encode()) > 48000:
-            raise ValueError("package_single_target_exceeds_limits")
     except ValueError as error:
         if not structured or str(error) != "package_single_target_exceeds_limits":
             raise
@@ -653,8 +709,50 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
             )
             if open_run is not None:
                 continue
+            # An explicitly owner-configured, fixed cutoff allows a bounded
+            # one-time backlog drain between regular hourly slots. Fresh live
+            # messages still use the staggered hourly schedule.
+            catchup_cutoff = (
+                _utc(settings.pilot_catchup_before)
+                if settings.owner_funded_pilot and settings.pilot_catchup_before is not None
+                else None
+            )
+            catchup_due = False
+            if catchup_cutoff is not None:
+                catchup_due = (
+                    await db.scalar(
+                        select(RawMessage.id)
+                        .where(
+                            RawMessage.group_id == group.id,
+                            RawMessage.processing_state == "pending",
+                            RawMessage.imported.is_(False),
+                            RawMessage.delete_at > now,
+                            RawMessage.live_received_at.is_not(None),
+                            RawMessage.live_received_at <= catchup_cutoff,
+                            *(
+                                [RawMessage.message_date >= group.bot_added_at]
+                                if group.bot_added_at is not None
+                                else []
+                            ),
+                        )
+                        .limit(1)
+                    )
+                    is not None
+                )
             scheduled_slot = None
-            if settings.owner_funded_pilot or settings.ai_schedule_enabled:
+            if catchup_due:
+                # Each group gets a bounded turn and the normal one-open-run
+                # rule remains active; no parallel or duplicate model calls.
+                last_run_at = await db.scalar(
+                    select(func.max(ShadowEvaluationRun.created_at)).where(
+                        ShadowEvaluationRun.group_id == group.id,
+                        ShadowEvaluationRun.raw_message_id.is_(None),
+                        ShadowEvaluationRun.delete_at > now,
+                    )
+                )
+                if last_run_at is not None and _utc(last_run_at) > now - timedelta(seconds=60):
+                    continue
+            elif settings.owner_funded_pilot or settings.ai_schedule_enabled:
                 # One fixed wall-clock slot per group, per hour. Use the run's
                 # creation time, not the completed_at timestamp: a slow model
                 # response cannot suppress the next hourly slot.
@@ -692,6 +790,7 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                 provider,
                 transport,
                 scheduled_slot=scheduled_slot,
+                catchup_cutoff=catchup_cutoff if catchup_due else None,
             )
             if planned is None:
                 continue

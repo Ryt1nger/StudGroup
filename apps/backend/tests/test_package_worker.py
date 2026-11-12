@@ -1386,3 +1386,124 @@ def test_owner_funded_pilot_runs_at_most_one_new_package_per_group_per_hour(clie
     assert len(second.requests) == 2
     assert count(client, ShadowEvaluationRun) == 2
     assert set(states(client).values()) == {"completed"}
+
+
+def test_sized_photo_package_keeps_all_target_image_facts_without_truncation():
+    from uuid import uuid4
+
+    from studgroup.analysis.contracts import SourceMessage
+    from studgroup.analysis.image_contracts import ImageEvidence, ImageFact, VisualReading
+    from studgroup.analysis.package_worker import plan_sized_package
+
+    when = datetime(2026, 11, 12, tzinfo=UTC)
+    messages = [
+        SourceMessage(
+            telegram_message_id=mid,
+            revision=1,
+            message_date=when + timedelta(minutes=mid),
+            text=f"Фото задания {mid}",
+        )
+        for mid in (1, 2, 3)
+    ]
+    images = [
+        ImageEvidence(
+            attachment_id=uuid4(),
+            telegram_message_id=mid,
+            source_revision=1,
+            context_sha256="a" * 64,
+            state="ready",
+            reading=VisualReading(
+                summary="Снимок задания",
+                extracted_text=f"Весь текст фото {mid}: " + "x" * 21000,
+                complete=True,
+                facts=[ImageFact(text=f"Важный факт из фото {mid}", certainty="confirmed")],
+            ),
+        )
+        for mid in (1, 2, 3)
+    ]
+    package = plan_sized_package(
+        messages,
+        images,
+        group_id=uuid4(),
+        timezone="Europe/Moscow",
+        target_ids=[1, 2, 3],
+        source_revision=1,
+        subject_catalog=None,
+    )
+    assert package.target_ids == (1, 2)
+    assert [x.telegram_message_id for x in package.analysis_input.image_evidence] == [1, 2]
+    assert all(
+        item.reading == source.reading
+        for item, source in zip(package.analysis_input.image_evidence, images, strict=False)
+    )
+    assert len(package.analysis_input.model_dump_json().encode()) <= 48000
+
+
+def test_sized_photo_package_keeps_explicit_reply_ancestor_when_neighbours_are_huge():
+    from uuid import uuid4
+
+    from studgroup.analysis.contracts import SourceMessage
+    from studgroup.analysis.package_worker import plan_sized_package
+
+    when = datetime(2026, 11, 12, tzinfo=UTC)
+    messages = [
+        SourceMessage(
+            telegram_message_id=1,
+            revision=1,
+            message_date=when,
+            text="Исходное сообщение с указанием предмета",
+        ),
+        *[
+            SourceMessage(
+                telegram_message_id=mid,
+                revision=1,
+                message_date=when + timedelta(minutes=mid),
+                text="Не относящийся к ответу длинный текст " + "х" * 8500,
+            )
+            for mid in range(2, 10)
+        ],
+        SourceMessage(
+            telegram_message_id=10,
+            revision=1,
+            message_date=when + timedelta(minutes=10),
+            text="Сделать упражнения к этому сообщению",
+            reply_to_message_id=1,
+        ),
+    ]
+    package = plan_sized_package(
+        messages,
+        [],
+        group_id=uuid4(),
+        timezone="Europe/Moscow",
+        target_ids=[10],
+        source_revision=1,
+        subject_catalog=None,
+    )
+    assert package.target_ids == (10,)
+    assert [x.telegram_message_id for x in package.analysis_input.messages] == [1, 10]
+
+
+def test_owner_catchup_filter_is_opt_in_and_excludes_future_telegram_messages():
+    from uuid import uuid4
+
+    from sqlalchemy import select
+
+    from studgroup.analysis.package_worker import _eligible
+
+    when = datetime(2026, 11, 12, 12, 0, tzinfo=UTC)
+    cutoff = when - timedelta(minutes=10)
+    group = Group(id=uuid4(), bot_added_at=when - timedelta(days=2))
+    cfg = settings(
+        owner_funded_pilot=True,
+        ai_schedule_enabled=True,
+        pilot_catchup_before=cutoff,
+    )
+    assert cfg.pilot_catchup_before == cutoff
+    # Catch-up uses the explicit stored-source cutoff rather than the current
+    # hourly wall-clock window; the bot-join and retention guards remain.
+    sql = select(RawMessage).where(*_eligible(group, cfg, when, catchup_cutoff=cutoff))
+    rendered = str(sql.compile(compile_kwargs={"literal_binds": True}))
+    assert "raw_messages.live_received_at <=" in rendered
+    assert "raw_messages.delete_at >" in rendered
+    assert "raw_messages.message_date >=" in rendered
+    assert str(cutoff.date()) in rendered
