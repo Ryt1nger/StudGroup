@@ -35,8 +35,8 @@ def staggered_offsets(group_ids):
 def staggered_slot(now, timezone, minute_offset, *, allow_overnight=False):
     """Return this hour's assigned group slot, or None until its minute arrives.
 
-    Unstarted slots are deliberately not caught up mid-hour after a restart:
-    this prevents a restart from launching every waiting group at once.
+    The due slot stays eligible for a delayed worker, but the following hour
+    cannot start before the group's assigned minute.
     """
     if not 0 <= minute_offset < 60:
         raise ValueError("minute_offset_must_be_between_0_and_59")
