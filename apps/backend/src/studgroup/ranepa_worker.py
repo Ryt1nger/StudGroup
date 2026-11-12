@@ -20,6 +20,7 @@ from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
 from studgroup.models import Group, Membership, MemberSubgroup, UserProfile
 from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
+from studgroup.ranepa_captcha import configured_solver, solve_slider_captcha, warn_if_unconfigured
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
@@ -65,6 +66,8 @@ async def collect_bounded(
     *,
     storage_state=None,
     persist_session=None,
+    captcha_client=None,
+    captcha_timeout_seconds=110,
 ):
     try:
         async with asyncio.timeout(ACCOUNT_TIMEOUT_SECONDS):
@@ -78,6 +81,8 @@ async def collect_bounded(
                 today,
                 storage_state=storage_state,
                 persist_session=persist_session,
+                captcha_client=captcha_client,
+                captcha_timeout_seconds=captcha_timeout_seconds,
             )
     except TimeoutError:
         return "source_unavailable"
@@ -222,6 +227,8 @@ async def process_one(
                 today,
                 storage_state=storage_state,
                 persist_session=persist_session if session_cipher is not None else None,
+                captcha_client=configured_solver(settings),
+                captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,
             )
     async with AsyncSession(engine) as db:
         await finish(db, job_id, group_id, user_id, failure_code=failure)
@@ -240,6 +247,8 @@ async def _collect(
     *,
     storage_state=None,
     persist_session=None,
+    captcha_client=None,
+    captcha_timeout_seconds=110,
 ):
     try:
         async with async_playwright() as playwright:
@@ -264,7 +273,18 @@ async def _collect(
                     restored_state = None
                     context = await browser.new_context(storage_state=None, **context_options)
                 page = await context.new_page()
+                captcha_attempted = False
                 month = await read_month(page, login, password, code, today.year, today.month)
+                if month.status == "captcha_required" and captcha_client is not None:
+                    captcha_attempted = True
+                    if await solve_slider_captcha(
+                        page, captcha_client, timeout_seconds=captcha_timeout_seconds
+                    ):
+                        # Re-run the original login and identity verification;
+                        # a provider coordinate answer is not proof of success.
+                        month = await read_month(
+                            page, login, password, code, today.year, today.month
+                        )
                 if month.status != "preview_only":
                     if month.status == "captcha_required":
                         return "captcha"
@@ -283,6 +303,18 @@ async def _collect(
                     result = await read_week(
                         page, login, password, code, week_start, allow_empty=not expected
                     )
+                    if (
+                        result.status == "captcha_required"
+                        and captcha_client is not None
+                        and not captcha_attempted
+                    ):
+                        captcha_attempted = True
+                        if await solve_slider_captcha(
+                            page, captcha_client, timeout_seconds=captcha_timeout_seconds
+                        ):
+                            result = await read_week(
+                                page, login, password, code, week_start, allow_empty=not expected
+                            )
                     if result.snapshot is None:
                         if result.status == "captcha_required":
                             return "captcha"
@@ -333,6 +365,7 @@ async def _collect(
 async def run_forever(settings: Settings):
     if not settings.ranepa_crawl_enabled:
         return
+    warn_if_unconfigured(settings)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGTERM, signal.SIGINT):
@@ -373,6 +406,7 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
         raise RuntimeError("YDB credential store is required")
     if not settings.database_url.startswith("postgresql+asyncpg://"):
         raise RuntimeError("PostgreSQL DATABASE_URL is required")
+    warn_if_unconfigured(settings)
     engine = create_worker_engine(settings)
     completed = 0
     try:
@@ -403,6 +437,7 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
         raise RuntimeError("YDB credential store is required")
     if not settings.database_url.startswith("postgresql+asyncpg://"):
         raise RuntimeError("PostgreSQL DATABASE_URL is required")
+    warn_if_unconfigured(settings)
     engine = create_worker_engine(settings)
     try:
         today = datetime.now(ZoneInfo("Europe/Moscow")).date()
