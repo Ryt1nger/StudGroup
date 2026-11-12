@@ -676,7 +676,11 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                         ShadowEvaluationRun.delete_at > now,
                     )
                 )
-                if last_run_at is not None and _utc(last_run_at) >= scheduled_slot:
+                # Compare the whole local hour, not just the assigned minute.
+                # If the roster changes and offsets rebalance, a group that ran
+                # earlier this hour cannot buy a second package in its new slot.
+                hour_start = scheduled_slot - timedelta(minutes=offsets[group.id])
+                if last_run_at is not None and _utc(last_run_at) >= hour_start:
                     continue
             if settings.photo_reading_enabled and settings.photo_backfill_since is not None:
                 await reopen_unread_photo_messages(db, group, settings.photo_backfill_since, now)
