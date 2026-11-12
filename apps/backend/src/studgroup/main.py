@@ -492,8 +492,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Give its durable outbox a dedicated bounded pool for concurrent deliveries.
         app.state.delivery_engine = app.state.background_engine
         if background_options is not None and (
-            settings.bot_admin_user_id is not None
-            or settings.owner_update_notifications_enabled
+            settings.bot_admin_user_id is not None or settings.owner_update_notifications_enabled
         ):
             app.state.delivery_engine = create_async_engine(
                 settings.database_url,
@@ -526,7 +525,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 delivery_loop(
                     app.state.delivery_engine,
                     settings,
-                    workers=3 if app.state.delivery_engine is not app.state.background_engine else 1,
+                    workers=3
+                    if app.state.delivery_engine is not app.state.background_engine
+                    else 1,
                 )
             )
         try:
