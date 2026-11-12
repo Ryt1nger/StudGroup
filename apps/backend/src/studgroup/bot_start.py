@@ -695,7 +695,7 @@ async def notification_menu(db, session, settings, telegram_id):
         return
     user = await db.scalar(select(User).where(User.telegram_user_id == telegram_id))
     profile = await db.get(UserProfile, user.id)
-    preferences = NotificationSettings.model_validate(profile.settings if profile else {})
+    preferences = NotificationSettings.model_validate(profile.settings or {} if profile else {})
     rows = [
         [(f"{'✅' if getattr(preferences, key) else '❌'} {label}", f"notify_{key}")]
         for key, label in NOTIFICATION_FIELDS.items()
