@@ -113,7 +113,11 @@ def test_second_pass_is_not_starved_by_older_first_pass_backlog(client, monkeypa
 def test_image_groups_rotate_by_last_attempt_instead_of_uuid():
     from types import SimpleNamespace
 
-    routes = [SimpleNamespace(group_id="a"), SimpleNamespace(group_id="b"), SimpleNamespace(group_id="c")]
+    routes = [
+        SimpleNamespace(group_id="a"),
+        SimpleNamespace(group_id="b"),
+        SimpleNamespace(group_id="c"),
+    ]
     last = {
         "a": datetime(2026, 11, 12, 7, tzinfo=UTC),
         "b": datetime(2026, 11, 12, 6, tzinfo=UTC),
