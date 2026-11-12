@@ -274,17 +274,21 @@ async def _collect(
                     context = await browser.new_context(storage_state=None, **context_options)
                 page = await context.new_page()
                 captcha_attempted = False
-                month = await read_month(page, login, password, code, today.year, today.month)
-                if month.status == "captcha_required" and captcha_client is not None:
+
+                async def solve_once(challenge_page):
+                    nonlocal captcha_attempted
+                    if captcha_attempted or captcha_client is None:
+                        return False
                     captcha_attempted = True
-                    if await solve_slider_captcha(
-                        page, captcha_client, timeout_seconds=captcha_timeout_seconds
-                    ):
-                        # Re-run the original login and identity verification;
-                        # a provider coordinate answer is not proof of success.
-                        month = await read_month(
-                            page, login, password, code, today.year, today.month
-                        )
+                    return await solve_slider_captcha(
+                        challenge_page, captcha_client, timeout_seconds=captcha_timeout_seconds
+                    )
+
+                month = await read_month(page, login, password, code, today.year, today.month)
+                if month.status == "captcha_required" and await solve_once(page):
+                    # Re-run the original login and identity verification;
+                    # a coordinate answer is not proof of a successful challenge.
+                    month = await read_month(page, login, password, code, today.year, today.month)
                 if month.status != "preview_only":
                     if month.status == "captcha_required":
                         return "captcha"
@@ -303,18 +307,10 @@ async def _collect(
                     result = await read_week(
                         page, login, password, code, week_start, allow_empty=not expected
                     )
-                    if (
-                        result.status == "captcha_required"
-                        and captcha_client is not None
-                        and not captcha_attempted
-                    ):
-                        captcha_attempted = True
-                        if await solve_slider_captcha(
-                            page, captcha_client, timeout_seconds=captcha_timeout_seconds
-                        ):
-                            result = await read_week(
-                                page, login, password, code, week_start, allow_empty=not expected
-                            )
+                    if result.status == "captcha_required" and await solve_once(page):
+                        result = await read_week(
+                            page, login, password, code, week_start, allow_empty=not expected
+                        )
                     if result.snapshot is None:
                         if result.status == "captcha_required":
                             return "captcha"
@@ -330,9 +326,14 @@ async def _collect(
                         (r.day, r.starts, r.subject) for r in expected
                     ):
                         return "parse_failed"
-                    links, link_states, courses = await resolve_sdo_exits(
-                        context, result, login, password
-                    )
+                    if captcha_client is not None and not captcha_attempted:
+                        links, link_states, courses = await resolve_sdo_exits(
+                            context, result, login, password, solve_captcha=solve_once
+                        )
+                    else:
+                        links, link_states, courses = await resolve_sdo_exits(
+                            context, result, login, password
+                        )
                     async with AsyncSession(engine) as db:
                         await remember_personal(
                             db,
