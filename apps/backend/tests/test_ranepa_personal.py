@@ -284,6 +284,7 @@ def test_group_fallback_never_gives_another_subgroups_lesson(tmp_path):
 
 def test_one_verified_peer_shares_common_lessons_but_respects_dynamic_subject_subgroups(tmp_path):
     """A single representative is enough for common classes, never another split."""
+
     async def scenario():
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/one-peer.db")
         try:
