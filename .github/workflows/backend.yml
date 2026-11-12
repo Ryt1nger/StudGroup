@@ -30,6 +30,11 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.13'
+      # Temporary lock generation diagnostic; removed before final merge.
+      - name: Generate RuCaptcha uv.lock update
+        run: |
+          uv lock
+          git diff -- uv.lock
       - run: uv sync --dev --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --diff . || true
