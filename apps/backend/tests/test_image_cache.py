@@ -166,7 +166,6 @@ def test_return_to_successful_exact_context_reuses_snapshot(client, monkeypatch)
     assert len(originals) == 1
 
 
-
 def test_unrelated_late_chatter_does_not_rebuy_old_image_context(client, monkeypatch):
     provider, config = prepare(client, monkeypatch)
     # Unlike an explicit reply, an unrelated message hours after this photo
@@ -187,6 +186,7 @@ def test_unrelated_late_chatter_does_not_rebuy_old_image_context(client, monkeyp
     assert tick(client, provider, config) == "ready"
     assert len(provider.vision) == 3
     assert len(stored(client, ImageAnalysisCall)) == 3
+
 
 def test_manual_schedule_changes_do_not_buy_another_visual_pass(client, monkeypatch):
     from studgroup.models import Group, SchedulePattern
