@@ -78,7 +78,16 @@ class CredentialStore:
         if table.get("KeySchema") != [{"AttributeName": "id", "KeyType": "HASH"}]:
             raise CredentialStoreUnavailable()
 
-    async def put(self, record_id: uuid.UUID, login: str, ciphertext: str, key_version: str):
+    async def put(
+        self,
+        record_id: uuid.UUID,
+        login: str,
+        ciphertext: str,
+        key_version: str,
+        *,
+        session_state: str | None = None,
+    ):
+        """Store serialized browser state when supplied; callers must encrypt session secrets."""
         item = {
             "id": {"S": str(record_id)},
             "login": {"S": login},
@@ -86,17 +95,21 @@ class CredentialStore:
             "key_version": {"S": key_version},
             "updated_at": {"S": datetime.now(UTC).isoformat()},
         }
+        # YDB Document API attributes are schemaless; legacy records omit this field.
+        if session_state is not None:
+            item["session_state"] = {"S": session_state}
         try:
             await asyncio.to_thread(self.client.put_item, TableName=TABLE, Item=item)
-            saved = await self.get(record_id)
-            if saved != (login, ciphertext, key_version):
+            saved = await self.get(record_id, include_session_state=True)
+            if saved != (login, ciphertext, key_version, session_state):
                 raise CredentialStoreUnavailable()
         except CredentialStoreUnavailable:
             raise
         except Exception as exc:
             raise CredentialStoreUnavailable() from exc
 
-    async def get(self, record_id: uuid.UUID):
+    async def get(self, record_id: uuid.UUID, *, include_session_state: bool = False):
+        """Return the legacy three fields, or four when session state is requested."""
         try:
             response = await asyncio.to_thread(
                 self.client.get_item,
@@ -107,7 +120,16 @@ class CredentialStore:
             item = response.get("Item")
             if item is None:
                 return None
-            return (item["login"]["S"], item["ciphertext"]["S"], item["key_version"]["S"])
+            credentials = (
+                item["login"]["S"],
+                item["ciphertext"]["S"],
+                item["key_version"]["S"],
+            )
+            if not include_session_state:
+                return credentials
+            attribute = item.get("session_state")
+            state = None if attribute is None or attribute.get("NULL") else attribute["S"]
+            return (*credentials, state)
         except Exception as exc:
             raise CredentialStoreUnavailable() from exc
 
