@@ -721,9 +721,17 @@ async def total(db, model, column, *filters):
 
 
 async def claim(db, group, route, settings, now):
+    scoped_since = (
+        utc(settings.pilot_catchup_since)
+        if getattr(settings, "owner_funded_pilot", False)
+        and getattr(settings, "pilot_catchup_since", None) is not None
+        else None
+    )
     job = await db.scalar(
         select(ImageAnalysisJob)
+        .join(RawMessage, RawMessage.id == ImageAnalysisJob.raw_message_id)
         .where(
+            *([RawMessage.message_date >= scoped_since] if scoped_since is not None else []),
             ImageAnalysisJob.group_id == group.id,
             ImageAnalysisJob.delete_at > now,
             *([ImageAnalysisJob.state == "running"] if route.paid_outcome_hold else []),
@@ -964,6 +972,11 @@ async def process_images_next(engine, settings, provider=None, now=None, transpo
                 if getattr(settings, "owner_funded_pilot", False)
                 else settings.image_analysis_since
             )
+            if (
+                getattr(settings, "owner_funded_pilot", False)
+                and getattr(settings, "pilot_catchup_since", None) is not None
+            ):
+                since = max(utc(since), utc(settings.pilot_catchup_since))
             await schedule_group(
                 db,
                 group,
