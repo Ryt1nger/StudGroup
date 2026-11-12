@@ -1430,9 +1430,12 @@ def test_sized_photo_package_keeps_all_target_image_facts_without_truncation():
         source_revision=1,
         subject_catalog=None,
     )
-    assert package.target_ids == (1,)
-    assert [x.telegram_message_id for x in package.analysis_input.image_evidence] == [1]
-    assert package.analysis_input.image_evidence[0].reading == images[0].reading
+    assert package.target_ids == (1, 2)
+    assert [x.telegram_message_id for x in package.analysis_input.image_evidence] == [1, 2]
+    assert all(
+        item.reading == source.reading
+        for item, source in zip(package.analysis_input.image_evidence, images, strict=False)
+    )
     assert len(package.analysis_input.model_dump_json().encode()) <= 48000
 
 
