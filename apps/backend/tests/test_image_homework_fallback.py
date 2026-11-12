@@ -89,7 +89,7 @@ def test_unrelated_chat_instruction_cannot_authorize_other_photo():
 
 def test_temporary_download_failure_does_not_authorize_generic_homework():
     data = SimpleNamespace(
-        messages=[message(101, "ДЗ по фото")],
+        messages=[message(101, ""), message(102, "ДЗ по фото", minute=1)],
         image_evidence=[partial(error="telegram_unavailable")],
     )
     assert (
