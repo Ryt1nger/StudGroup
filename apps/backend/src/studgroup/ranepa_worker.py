@@ -55,13 +55,29 @@ def create_worker_engine(settings: Settings):
 
 
 async def collect_bounded(
-    engine, group_id, user_id, code, login, password, today, *, storage_state=None, persist_session=None
+    engine,
+    group_id,
+    user_id,
+    code,
+    login,
+    password,
+    today,
+    *,
+    storage_state=None,
+    persist_session=None,
 ):
     try:
         async with asyncio.timeout(ACCOUNT_TIMEOUT_SECONDS):
             return await _collect(
-                engine, group_id, user_id, code, login, password, today,
-                storage_state=storage_state, persist_session=persist_session,
+                engine,
+                group_id,
+                user_id,
+                code,
+                login,
+                password,
+                today,
+                storage_state=storage_state,
+                persist_session=persist_session,
             )
     except TimeoutError:
         return "source_unavailable"
@@ -197,7 +213,13 @@ async def process_one(
                     return
 
             failure = await collect_bounded(
-                engine, group_id, user_id, code, login, password, today,
+                engine,
+                group_id,
+                user_id,
+                code,
+                login,
+                password,
+                today,
                 storage_state=storage_state,
                 persist_session=persist_session if session_cipher is not None else None,
             )
@@ -208,7 +230,16 @@ async def process_one(
 
 
 async def _collect(
-    engine, group_id, user_id, code, login, password, today, *, storage_state=None, persist_session=None
+    engine,
+    group_id,
+    user_id,
+    code,
+    login,
+    password,
+    today,
+    *,
+    storage_state=None,
+    persist_session=None,
 ):
     try:
         async with async_playwright() as playwright:
