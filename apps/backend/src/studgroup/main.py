@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     ranepa_captcha_enabled: bool = False
     captcha_api_key: SecretStr = SecretStr("")
     ranepa_captcha_timeout_seconds: int = Field(default=110, ge=30, le=150)
+    # Hard cap on billable challenges per batch/worker process (not per student).
+    ranepa_captcha_max_tasks_per_run: int = Field(default=1, ge=0, le=10)
     legal_operator_name: str = ""
     legal_operator_address: str = ""
     legal_operator_contact: str = ""
