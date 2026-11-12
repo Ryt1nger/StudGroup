@@ -1551,3 +1551,16 @@ def test_owner_week_start_excludes_old_targets_in_catchup_and_hourly_windows():
         assert "raw_messages.delete_at >" in rendered
         if cutoff is not None:
             assert "raw_messages.live_received_at <=" in rendered
+
+
+def test_catchup_batch_is_restricted_to_newest_moscow_day_before_package_split():
+    from studgroup.analysis.package_worker import newest_day_candidates
+
+    # 21:10 UTC belongs to Nov 12 Moscow, 20:59 UTC to Nov 11.
+    rows = [
+        RawMessage(message_date=datetime(2026, 11, 12, 9, 43, tzinfo=UTC)),
+        RawMessage(message_date=datetime(2026, 11, 11, 21, 10, tzinfo=UTC)),
+        RawMessage(message_date=datetime(2026, 11, 11, 20, 59, tzinfo=UTC)),
+    ]
+    assert newest_day_candidates(rows, "Europe/Moscow") == rows[:2]
+    assert newest_day_candidates([], "Europe/Moscow") == []
