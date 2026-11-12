@@ -119,8 +119,8 @@ def add_image_facts(messages, evidence):
 
 
 _HOMEWORK_INSTRUCTION = re.compile(
-    r"(?i)(?<!\\w)дз(?!\\w)|домашн|домашк|задан(?:ие|ия)|"
-    r"к\\s+следующ(?:ей|ую)\\s+пар|сдать|выполнить|решить|подготовить"
+    r"(?i)(?<!\w)дз(?!\w)|домашн|домашк|задан(?:ие|ия)|"
+    r"к\s+следующ(?:ей|ую)\s+пар|сдать|выполнить|решить|подготовить"
 )
 
 
@@ -134,7 +134,7 @@ def _partial_photo_homework_supported(proposal, data, dependent, cited):
     if proposal.semantic_kind != "homework" or proposal.destination != "task":
         return False
     title = proposal.title or ""
-    if not re.search(r"(?i)(?:дз|домашн\\w*\\s+задан\\w*)\\s+по\\s+фото", title):
+    if not re.search(r"(?i)(?:дз|домашн\w*\s+задан\w*)\s+по\s+фото", title):
         return False
     incomplete = [item for item in dependent if item.state != "ready"]
     if not incomplete or any(
