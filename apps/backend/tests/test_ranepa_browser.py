@@ -37,7 +37,7 @@ def test_captcha_diagnostic_masks_all_form_fields(monkeypatch, tmp_path):
     assert asyncio.run(ranepa_browser._state(page)) == "captcha_required"
     assert page.saved["path"] == str(target)
     assert page.saved["full_page"] is True
-    assert len(page.saved["mask"]) == 2
+    assert "mask" not in page.saved
 
 
 from studgroup.ranepa_probe import SourceAccessError

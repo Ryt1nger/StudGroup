@@ -41,16 +41,9 @@ async def _state(page) -> str:
         "вы точно не робот" in body.casefold() and await page.locator("#myRange").count() >= 2
     )
     if diagnostic_path and challenge:
-        # The challenge replaces the application page. Mask every form field as
-        # a second line of defence so credentials can never enter the artifact.
-        await page.screenshot(
-            path=diagnostic_path,
-            full_page=True,
-            mask=[
-                page.locator('input:not([type="range"]):not([type="hidden"])'),
-                page.locator("textarea"),
-            ],
-        )
+        # The challenge replaces the application page, so the resulting image
+        # contains only the CAPTCHA and no cabinet or login form.
+        await page.screenshot(path=diagnostic_path, full_page=True)
         return "captcha_required"
     return status
 
