@@ -8,6 +8,7 @@ import asyncio
 import base64
 import logging
 import re
+from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from twocaptcha import AsyncTwoCaptcha
@@ -21,6 +22,19 @@ HINT = (
     "Совместите половинки круга. Отметьте 2 точки: нужную позицию "
     "ВЕРХНЕГО ползунка, затем НИЖНЕГО ползунка. По одной точке на дорожке."
 )
+
+
+@dataclass
+class CaptchaBudget:
+    """Upper bound for paid solver tasks in one serial worker process/run."""
+
+    remaining: int
+
+    def claim(self) -> bool:
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        return True
 
 
 def configured_solver(settings):
