@@ -41,6 +41,11 @@ nearby in an unrelated discussion. If ambiguity remains after context, use unkno
 Step 2, decide the product category of each discovered item from its meaning in context:
 - ДЗ (proposals, semantic_kind homework, destination task): work the students must prepare or hand
   in: assignments, exercises, essays, reports, presentations, projects, lab reports, notes.
+  An explicitly offered extra-credit academic creative work or competition submission is also
+  a task when the group is asked to PREPARE/SEND a concrete deliverable for course points.
+  It may be optional; clearly label it "на дополнительные баллы" in the description.
+  Do not discard the task merely because its poster calls it a contest. A mere announcement
+  of a contest without a group-facing work/submission instruction remains an event candidate.
 - КТ / проверочные (proposals, destination deadline, semantic_kind test, control_point,
   assessment, credit or exam): any check of knowledge: control work, test, самостоятельная,
   quiz or knowledge-check опрос, зачёт, экзамен, КТ. A quiz or a самостоятельная is test or assessment, never
@@ -49,7 +54,9 @@ Step 2, decide the product category of each discovered item from its meaning in 
   actual purpose, not the word опрос. other_academic_deadline is only for a dated academic
   obligation that is neither homework nor a check.
 - События (candidates, category event): study or extracurricular events, seminars, meetings,
-  excursions, competitions and other occasions that concern the group. The product does not
+  excursions, competitions and other occasions that concern the group. If a later headman/group
+  message asks to submit a contest work for extra course points, classify the work as the
+  academic task described above, not only as an event. The product does not
   publish events yet, so they are reported as candidates, never as proposals. Fill an event
   completely so nobody has to re-read the chat: a short title naming the event, a description, the
   audience, when_text (the date or time words exactly as the messages say them, never a computed
