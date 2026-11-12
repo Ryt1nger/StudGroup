@@ -235,11 +235,15 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
 
 
 @pytest.mark.parametrize(
-    ("solver_succeeds", "expected_month_reads", "expected_status"),
-    [(False, 1, "captcha"), (True, 2, "identity_unverified")],
+    ("solver_succeeds", "expected_month_reads", "expected_status", "budget"),
+    [
+        (False, 1, "captcha", 1),
+        (True, 2, "identity_unverified", 1),
+        (True, 1, "captcha", 0),
+    ],
 )
 def test_worker_retries_after_captcha_at_most_once(
-    monkeypatch, solver_succeeds, expected_month_reads, expected_status
+    monkeypatch, solver_succeeds, expected_month_reads, expected_status, budget
 ):
     observed = {"month": 0, "solve": 0, "close": False}
 
@@ -291,10 +295,11 @@ def test_worker_retries_after_captcha_at_most_once(
             date(2026, 11, 12),
             captcha_client=sentinel,
             captcha_timeout_seconds=65,
+            captcha_budget=ranepa_worker.CaptchaBudget(budget),
         )
     )
     assert status == expected_status
-    assert observed["solve"] == 1
+    assert observed["solve"] == (1 if budget else 0)
     assert observed["month"] == expected_month_reads
     assert observed["close"] is True
 
