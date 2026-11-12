@@ -151,9 +151,8 @@ def _partial_photo_homework_supported(proposal, data, dependent, cited):
             return False
         linked = False
         for row in data.messages:
-            if (
-                row.telegram_message_id not in cited
-                or not _HOMEWORK_INSTRUCTION.search(row.text or "")
+            if row.telegram_message_id not in cited or not _HOMEWORK_INSTRUCTION.search(
+                row.text or ""
             ):
                 continue
             same_message = row.telegram_message_id == image.telegram_message_id
