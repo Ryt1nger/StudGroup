@@ -370,24 +370,30 @@ async def projected_materials(db, group_id, entity_key, now, sources):
     if not uses_structured:
         metadata, structured_ids = {}, set()
         kept = {item.id for item in distinct_photos(attachments)}
-    selected = (
-        select_evidence_images(
-            [
-                {
-                    "attachment_id": item.id,
-                    "width": item.width,
-                    "height": item.height,
-                    **metadata[item.id],
-                }
-                for item in attachments
-                if item.id in structured_ids
-            ],
-            required_images,
-        )
-        if required_images
-        else []
+    # A canonical card may cite its source photo without citing an individual
+    # OCR fact (for example "ДЗ по фото" or a later chat clarification).
+    # The old "if required_images" gate silently hid every independently read
+    # photo from these cards. Choose eligible visual sources even when the
+    # proposal has no exact image:<id>:<fact> reference.
+    selected = select_evidence_images(
+        [
+            {
+                "attachment_id": item.id,
+                "width": item.width,
+                "height": item.height,
+                **metadata[item.id],
+            }
+            for item in attachments
+            if item.id in structured_ids
+        ],
+        required_images,
     )
     kept.update(item["attachment_id"] for item in selected)
+    # A photo on a cited message is a material even if the model classified
+    # it as an organizational poster, an unknown page, or could only partially
+    # read it. Never make visibility conditional on complete OCR or a precise
+    # image-fact path. Students can inspect the actual source image.
+    kept.update(item.id for item in attachments if item.kind == "photo")
     attachments = [item for item in attachments if item.id in kept]
     captions = {
         raw_id: text or ""
@@ -405,8 +411,8 @@ async def projected_materials(db, group_id, entity_key, now, sources):
             continue
         result.append(
             {
-                # A photo the vision pass read as study material, posted with at most a short
-                # caption, IS the task: the card shows it instead of a text description.
+                # Compatibility flag for legacy ready photos. New clients show
+                # every cited photo inline while preserving the description.
                 "replaces_description": (
                     attachment.id not in structured_ids
                     and attachment.kind == "photo"

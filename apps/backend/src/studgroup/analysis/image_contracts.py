@@ -147,6 +147,11 @@ class ImageEvidence(ImageDTO):
     state: ImageState
     reading: VisualReading | None = None
     error: str | None = Field(default=None, max_length=100)
+    # A final incomplete reading can still say what the photo is about.
+    # This is a NON-FACTUAL preview for a conservative "ДЗ по фото" fallback:
+    # no pixel facts, numbers or deadlines from it may be published.
+    partial_summary: str | None = Field(default=None, max_length=500)
+    partial_semantic_types: list[SemanticType] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="after")
     def ready_requires_complete_reading(self):

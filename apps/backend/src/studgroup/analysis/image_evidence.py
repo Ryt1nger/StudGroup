@@ -1,6 +1,7 @@
 """One group-scoped image input shared by live packages and shadow snapshots."""
 
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -75,6 +76,18 @@ async def load_image_evidence(db, group_id, messages, now=None, since=None):
         reading = (
             VisualReading.model_validate_json(job.result_json) if job and state == "ready" else None
         )
+        partial = None
+        if (
+            job
+            and state == "failed"
+            and error == "image_reading_incomplete"
+            and job.pass_number == 2
+            and job.result_json
+        ):
+            try:
+                partial = VisualReading.model_validate_json(job.result_json)
+            except (ValueError, TypeError):
+                pass  # an invalid partial answer cannot become evidence
         result.append(
             ImageEvidence(
                 attachment_id=attachment.id,
@@ -84,6 +97,8 @@ async def load_image_evidence(db, group_id, messages, now=None, since=None):
                 state=state,
                 reading=reading,
                 error=error,
+                partial_summary=partial.summary[:500] if partial else None,
+                partial_semantic_types=partial.semantic_types if partial else [],
             )
         )
     return result
@@ -101,6 +116,57 @@ def add_image_facts(messages, evidence):
         ]
         result.append(message.model_copy(update={"image_facts": list(dict.fromkeys(facts))}))
     return result
+
+
+_HOMEWORK_INSTRUCTION = re.compile(
+    r"(?i)(?<!\w)дз(?!\w)|домашн|домашк|задан(?:ие|ия)|"
+    r"к\s+следующ(?:ей|ую)\s+пар|сдать|выполнить|решить|подготовить"
+)
+
+
+def _partial_photo_homework_supported(proposal, data, dependent, cited):
+    """Allow ONLY a generic, chat-confirmed assignment, never incomplete OCR facts.
+
+    A photo need not be fully transcribed to be attached to a card. But an image
+    of exercises alone is not proof of homework, and a failed provider/download
+    is not equivalent to a partly legible image.
+    """
+    if proposal.semantic_kind != "homework" or proposal.destination != "task":
+        return False
+    title = proposal.title or ""
+    if not re.search(r"(?i)(?:дз|домашн\w*\s+задан\w*)\s+по\s+фото", title):
+        return False
+    incomplete = [item for item in dependent if item.state != "ready"]
+    if not incomplete or any(
+        item.state != "failed"
+        or item.error != "image_reading_incomplete"
+        or not item.partial_summary
+        for item in incomplete
+    ):
+        return False
+    by_mid = {row.telegram_message_id: row for row in data.messages}
+    for image in incomplete:
+        original = by_mid.get(image.telegram_message_id)
+        if original is None:
+            return False
+        linked = False
+        for row in data.messages:
+            if row.telegram_message_id not in cited or not _HOMEWORK_INSTRUCTION.search(
+                row.text or ""
+            ):
+                continue
+            same_message = row.telegram_message_id == image.telegram_message_id
+            direct_reply = row.reply_to_message_id == image.telegram_message_id
+            near_same_topic = (
+                row.topic_id == original.topic_id
+                and abs((row.message_date - original.message_date).total_seconds()) <= 300
+            )
+            if same_message or direct_reply or near_same_topic:
+                linked = True
+                break
+        if not linked:
+            return False
+    return True
 
 
 def proposal_image_problem(proposal, data):
@@ -148,8 +214,18 @@ def proposal_image_problem(proposal, data):
         dependent.extend(classwork)
     if dependent:
         needed = "homework" if proposal.semantic_kind == "homework" else "assessment"
-        if any(item.state != "ready" or item.reading is None for item in dependent):
-            return "image_evidence_unavailable"
+        incomplete = [item for item in dependent if item.state != "ready" or item.reading is None]
+        if incomplete:
+            if not _partial_photo_homework_supported(proposal, data, dependent, cited):
+                return "image_evidence_unavailable"
+            complete_bare = {
+                item.telegram_message_id
+                for item in dependent
+                if item.state == "ready" and item.telegram_message_id in empty_sources
+            }
+            if not complete_bare.issubset(precisely_cited):
+                return "image_fact_reference_required"
+            return None
         if not any(needed in item.reading.semantic_types for item in dependent):
             return "image_purpose_unconfirmed"
         required = cited & empty_sources & {item.telegram_message_id for item in dependent}

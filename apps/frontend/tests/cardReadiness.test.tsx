@@ -63,7 +63,8 @@ describe('published learning card readiness', () => {
     expect(screen.getByText('Добавлены страницы 12–14.')).toBeInTheDocument();
 
     const materials = screen.getByRole('heading', { name: 'Материалы' }).parentElement!;
-    expect(within(materials).getByText('Фотография')).toBeInTheDocument();
+    expect(document.querySelector('.photos')).toBeInTheDocument();
+    expect(within(materials).queryByText('Фотография')).not.toBeInTheDocument();
     expect(within(materials).getByText('Документ')).toBeInTheDocument();
 
     expect(screen.getByRole('heading', { name: /^Источники/ })).toBeInTheDocument();
