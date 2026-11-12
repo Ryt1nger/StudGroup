@@ -23,6 +23,7 @@ from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_personal import remember_personal
+from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 
 ACCOUNT_TIMEOUT_SECONDS = 600
 
@@ -161,7 +162,11 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
             try:
-                context = await browser.new_context(locale="ru-RU", timezone_id="Europe/Moscow")
+                proxy_url = current_proxy_url()
+                proxy_config = playwright_proxy_settings(proxy_url) if proxy_url else None
+                context = await browser.new_context(
+                    proxy=proxy_config, locale="ru-RU", timezone_id="Europe/Moscow"
+                )
                 page = await context.new_page()
                 month = await read_month(page, login, password, code, today.year, today.month)
                 if month.status != "preview_only":
