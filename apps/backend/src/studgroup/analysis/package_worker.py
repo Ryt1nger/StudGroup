@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import photo_dedupe
 from studgroup.ai import ProviderFailure
-from studgroup.ai_schedule import window
+from studgroup.ai_schedule import staggered_offsets, staggered_slot, window
 from studgroup.analysis import duplicate_guard, photo_reading
 from studgroup.analysis.backfill import promote_run
 from studgroup.analysis.context import assemble_memory_context
@@ -194,7 +194,7 @@ async def _source_messages(db, group, rows, *, structured_images=False):
     return messages
 
 
-def _eligible(group, settings, now):
+def _eligible(group, settings, now, *, scheduled_slot=None):
     """Filters for pending targets; with the hourly schedule only messages before the slot."""
     filters = [
         RawMessage.group_id == group.id,
@@ -214,7 +214,7 @@ def _eligible(group, settings, now):
             return None
         filters += [
             RawMessage.live_received_at.is_not(None),
-            RawMessage.live_received_at <= timing[0],
+            RawMessage.live_received_at <= (scheduled_slot or timing[0]),
         ]
     if group.bot_added_at is not None:
         filters.append(RawMessage.message_date >= group.bot_added_at)
@@ -408,8 +408,10 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
     return cost, False
 
 
-async def _plan_next(db, group, route, settings, now, provider=None, transport=None):
-    filters = _eligible(group, settings, now)
+async def _plan_next(
+    db, group, route, settings, now, provider=None, transport=None, *, scheduled_slot=None
+):
+    filters = _eligible(group, settings, now, scheduled_slot=scheduled_slot)
     if filters is None:
         return None
     blocked = await _waiting_image_context(db, group, route, settings, now)
@@ -613,6 +615,7 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                 .order_by(Group.id)
             )
         ).all()
+        offsets = staggered_offsets(group.id for group, _route in groups)
         for group, _route in groups:
             from studgroup.analysis.release_budget import production_enabled
 
@@ -650,30 +653,46 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
             )
             if open_run is not None:
                 continue
-            if settings.owner_funded_pilot:
-                # A group may have more than one 24-message package waiting, but
-                # the pilot must buy at most ONE new text analysis per hour.
-                # This durable SQL gate survives restarts and runs under the
-                # group route lock; image jobs and retries of the same run are
-                # independent of it.
+            scheduled_slot = None
+            if settings.owner_funded_pilot or settings.ai_schedule_enabled:
+                # One fixed wall-clock slot per group, per hour. Use the run's
+                # creation time, not the completed_at timestamp: a slow model
+                # response cannot suppress the next hourly slot.
+                scheduled_slot = staggered_slot(
+                    now,
+                    settings.ai_schedule_timezone,
+                    offsets[group.id],
+                    allow_overnight=(
+                        not settings.ai_schedule_enabled or production_enabled(settings, group.id)
+                    ),
+                )
+                if scheduled_slot is None:
+                    continue
                 last_run_at = await db.scalar(
-                    select(
-                        func.max(
-                            func.coalesce(
-                                ShadowEvaluationRun.completed_at, ShadowEvaluationRun.created_at
-                            )
-                        )
-                    ).where(
+                    select(func.max(ShadowEvaluationRun.created_at)).where(
                         ShadowEvaluationRun.group_id == group.id,
                         ShadowEvaluationRun.raw_message_id.is_(None),
                         ShadowEvaluationRun.delete_at > now,
                     )
                 )
-                if last_run_at is not None and now < _utc(last_run_at) + timedelta(hours=1):
+                # Compare the whole local hour, not just the assigned minute.
+                # If the roster changes and offsets rebalance, a group that ran
+                # earlier this hour cannot buy a second package in its new slot.
+                hour_start = scheduled_slot - timedelta(minutes=offsets[group.id])
+                if last_run_at is not None and _utc(last_run_at) >= hour_start:
                     continue
             if settings.photo_reading_enabled and settings.photo_backfill_since is not None:
                 await reopen_unread_photo_messages(db, group, settings.photo_backfill_since, now)
-            planned = await _plan_next(db, group, route, settings, now, provider, transport)
+            planned = await _plan_next(
+                db,
+                group,
+                route,
+                settings,
+                now,
+                provider,
+                transport,
+                scheduled_slot=scheduled_slot,
+            )
             if planned is None:
                 continue
             if isinstance(planned, str):
@@ -727,6 +746,10 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                                 "targets": list(package.target_ids),
                                 "revision": revision,
                                 "generation": generation,
+                                "scheduled_slot": (
+                                    scheduled_slot.isoformat() if scheduled_slot else None
+                                ),
+                                "minute_offset": offsets[group.id] if scheduled_slot else None,
                             }
                         },
                         sort_keys=True,

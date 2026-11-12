@@ -89,6 +89,85 @@ def test_all_images_receive_attempts_independent_of_package_limit(
     assert all(j.state == "ready" for j in stored(client, ImageAnalysisJob))
 
 
+def test_incomplete_pass_a_is_reviewed_by_pass_b_without_retrying_pass_a(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+    config = cfg(client)
+    partial = (
+        '{"summary":"Разворот тетради","extracted_text":"Векторы, пункт 1",'
+        '"facts":[{"text":"Векторы","certainty":"confirmed","region":"top"}],'
+        '"uncertain_fragments":["строка 2 неразборчива"],"complete":false}'
+    )
+    provider = VisionProvider(partial, propose=False)
+    now = datetime.now(UTC)
+
+    assert tick(client, provider, config, now) == "partial"
+    first = stored(client, ImageAnalysisJob)[0]
+    assert first.pass_number == 1 and first.state == "partial"
+    assert first.error == "image_reading_incomplete"
+    assert first.result_json is not None
+    assert first.attempts == 1
+
+    # The second paid reading checks pixels again instead of discarding the first.
+    provider.answer = reading()
+    assert tick(client, provider, config, now) == "ready"
+    jobs = stored(client, ImageAnalysisJob)
+    assert len(jobs) == 2
+    assert {job.pass_number: job.state for job in jobs} == {1: "partial", 2: "ready"}
+    assert all(job.attempts == 1 for job in jobs)
+    assert tick(client, provider, config, now) == "idle"
+    assert len(provider.vision) == 2
+    assert len(stored(client, ImageAnalysisCall)) == 2
+    # The second pass inherits confirmed pixel facts instead of losing them.
+    final = next(job for job in jobs if job.pass_number == 2)
+    assert "Векторы" in final.result_json
+
+
+def test_still_unreadable_after_pass_b_is_held_not_published(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+    config = cfg(client)
+    partial = (
+        '{"summary":"Нечёткое фото","extracted_text":"Задачи",'
+        '"uncertain_fragments":["невидимый номер задачи"],"complete":false}'
+    )
+    provider = VisionProvider(partial, propose=False)
+    now = datetime.now(UTC)
+
+    assert tick(client, provider, config, now) == "partial"
+    assert tick(client, provider, config, now) == "failed"
+    jobs = stored(client, ImageAnalysisJob)
+    assert {job.pass_number: job.state for job in jobs} == {1: "partial", 2: "failed"}
+    assert next(job for job in jobs if job.pass_number == 2).error == "image_reading_incomplete"
+    assert tick(client, provider, config, now) == "idle"
+    assert len(provider.vision) == 2
+    assert len(stored(client, ImageAnalysisCall)) == 2
+
+
+def test_legacy_failed_pass_a_does_not_trigger_unapproved_paid_backfill(client, monkeypatch):
+    download_ok(monkeypatch)
+    photo_message(client)
+    make_new(client)
+    config = cfg(client)
+    partial = '{"summary":"Нечёткое фото","extracted_text":"","complete":false}'
+    provider = VisionProvider(partial, propose=False)
+    now = datetime.now(UTC)
+    assert tick(client, provider, config, now) == "partial"
+
+    async def mark_preexisting_failure():
+        async with AsyncSession(client.app.state.engine) as db:
+            job = await db.scalar(select(ImageAnalysisJob))
+            job.state = "failed"
+            await db.commit()
+
+    asyncio.run(mark_preexisting_failure())
+    assert tick(client, provider, config, now) == "idle"
+    assert len(provider.vision) == 1
+    assert len(stored(client, ImageAnalysisCall)) == 1
+
+
 def test_zero_budget_never_calls_vision(client, monkeypatch):
     download_ok(monkeypatch)
     photo_message(client)

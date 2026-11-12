@@ -118,7 +118,7 @@ async def current_source(db, job_id, group_id, now):
         or utc(attachment.delete_at) <= now
     ):
         raise ApiError("stale_source", "Источник уже изменился или недоступен", 409)
-    from studgroup.analysis.image_jobs import context_digest, context_snapshot
+    from studgroup.analysis.image_jobs import context_relevance_digest, context_snapshot
 
     current = await context_snapshot(db, raw)
     saved = json.loads(job.context_json)
@@ -132,7 +132,7 @@ async def current_source(db, job_id, group_id, now):
         current["model_key"] = job.model_key
     if "provider_identity" in saved:
         current["provider_identity"] = saved["provider_identity"]
-    if context_digest(current) != job.context_sha256:
+    if context_relevance_digest(current) != context_relevance_digest(saved):
         raise ApiError("stale_context", "Обсуждение изменилось; требуется новое чтение", 409)
     return job
 

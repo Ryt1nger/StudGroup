@@ -1,6 +1,7 @@
 """Measured transport-call counts; local provider only, no claimed dollar savings."""
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -164,6 +165,70 @@ def test_return_to_successful_exact_context_reuses_snapshot(client, monkeypatch)
     jobs = stored(client, ImageAnalysisJob)
     originals = [job for job in jobs if job.pass_number == 2 and job.state == "ready"]
     assert len(originals) == 1
+
+
+def test_unrelated_late_chatter_does_not_rebuy_old_image_context(client, monkeypatch):
+    provider, config = prepare(client, monkeypatch)
+    # Unlike an explicit reply, an unrelated message hours after this photo
+    # cannot change what it depicted or force another paid contextual reading.
+    source(client, mid=32, text="Другая тема", when=BASE + timedelta(hours=2))
+    source(client, mid=33, text="Ещё сообщение", when=BASE + timedelta(hours=2, minutes=2))
+    assert tick(client, provider, config) == "idle"
+    assert len(provider.vision) == 2
+
+    # A real explicit reply still changes evidence, however late it arrives.
+    source(
+        client,
+        mid=34,
+        text="Сделать задания 3 и 4",
+        reply=31,
+        when=BASE + timedelta(hours=2, minutes=3),
+    )
+    assert tick(client, provider, config) == "ready"
+    assert len(provider.vision) == 3
+    assert len(stored(client, ImageAnalysisCall)) == 3
+
+
+def test_existing_legacy_wide_context_is_not_rebought_on_upgrade(client, monkeypatch):
+    from studgroup.analysis.image_jobs import context_digest
+    from studgroup.analysis.image_schedule import current_source
+
+    provider, config = prepare(client, monkeypatch)
+    now = datetime.now(UTC)
+
+    async def emulate_old_snapshot():
+        async with AsyncSession(client.app.state.engine) as db:
+            job = await db.scalar(select(ImageAnalysisJob).where(ImageAnalysisJob.pass_number == 2))
+            saved = json.loads(job.context_json)
+            saved["messages"].append(
+                {
+                    "id": 9999,
+                    "revision": 1,
+                    "text": "Совершенно посторонний разговор",
+                    "reply_to": None,
+                    "topic": None,
+                    "sent_at": (BASE + timedelta(hours=2)).isoformat(),
+                    "media_group_ids": [],
+                    "author_role": None,
+                }
+            )
+            job.context_json = json.dumps(saved, ensure_ascii=False)
+            job.context_sha256 = context_digest(saved)
+            ident, group_id = job.id, job.group_id
+            await db.commit()
+            return ident, group_id
+
+    ident, group_id = asyncio.run(emulate_old_snapshot())
+    assert tick(client, provider, config) == "idle"
+    assert len(provider.vision) == 2
+    assert len(stored(client, ImageAnalysisCall)) == 2
+
+    async def review():
+        async with AsyncSession(client.app.state.engine) as db:
+            result = await current_source(db, ident, group_id, now)
+            return result.state
+
+    assert asyncio.run(review()) == "ready"
 
 
 def test_manual_schedule_changes_do_not_buy_another_visual_pass(client, monkeypatch):

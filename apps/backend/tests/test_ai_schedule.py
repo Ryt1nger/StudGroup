@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from test_ingestion import delivery, send
 from test_processing import Provider
 
-from studgroup.ai_schedule import signal, window
+from studgroup.ai_schedule import signal, staggered_offsets, staggered_slot, window
 from studgroup.main import Settings
 from studgroup.models import AIJob, Group, GroupAIActivity, RawMessage
 from studgroup.processing import process_next
@@ -74,6 +74,29 @@ def test_daily_windows(time, allowed, extended):
     if result:
         assert result[2] is extended
         assert result[0].astimezone(stamp(time).tzinfo).minute == 0
+
+
+def test_five_group_ai_slots_are_evenly_spaced_and_deterministic():
+    groups = ["z", "a", "c", "b", "e"]
+    offsets = staggered_offsets(groups)
+    assert offsets == {"a": 0, "b": 12, "c": 24, "e": 36, "z": 48}
+    assert staggered_offsets(reversed(groups)) == offsets
+    assert staggered_offsets([]) == {}
+
+
+def test_group_ai_slot_opens_only_at_its_assigned_minute_each_hour():
+    tz = "Europe/Moscow"
+    at = stamp("08:11:59")
+    assert staggered_slot(at, tz, 12) is None
+    opened = staggered_slot(stamp("08:12:00"), tz, 12)
+    assert opened == stamp("08:12:00").astimezone(UTC)
+    assert staggered_slot(stamp("08:59:00"), tz, 12) == opened
+    assert staggered_slot(stamp("09:00:00"), tz, 12) is None
+    assert staggered_slot(stamp("09:12:00"), tz, 12) == opened + timedelta(hours=1)
+    assert staggered_slot(stamp("06:48:00"), tz, 48) is None
+    assert staggered_slot(stamp("06:48:00"), tz, 48, allow_overnight=True) is not None
+    with pytest.raises(ValueError, match="minute_offset"):
+        staggered_slot(at, tz, 60)
 
 
 def test_silence_never_calls_provider_and_import_does_not_wake_schedule(client):
