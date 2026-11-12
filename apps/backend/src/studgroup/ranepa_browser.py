@@ -261,7 +261,7 @@ async def read_month(
 
 
 async def resolve_sdo_exits(
-    context, result: BrowserResult, login: str = "", password: str = ""
+    context, result: BrowserResult, login: str = "", password: str = "", *, solve_captcha=None
 ) -> tuple[dict, dict, dict]:
     """Follow LK SDO exits; retain verified course and unique meeting URLs."""
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
@@ -290,7 +290,16 @@ async def resolve_sdo_exits(
             lms_login_attempted = False
             retried_exit_after_login = False
             empty_course_reads = 0
+            captcha_seen = False
             for _ in range(80):
+                if solve_captcha is not None and await page.get_by_text(
+                    "Используйте ползунки", exact=False
+                ).is_visible():
+                    captcha_seen = True
+                    if await solve_captcha(page):
+                        captcha_seen = False
+                        continue
+                    break
                 parsed = urlsplit(page.url)
                 if (
                     parsed.hostname == "lms.ranepa.ru"
@@ -348,7 +357,9 @@ async def resolve_sdo_exits(
                 await page.wait_for_timeout(250)
             if choice is None:
                 final = urlsplit(page.url)
-                if final.hostname == "lms.ranepa.ru" and final.path == "/login/index.php":
+                if captcha_seen:
+                    states[key] = "captcha_required"
+                elif final.hostname == "lms.ranepa.ru" and final.path == "/login/index.php":
                     states[key] = "lms_login_required"
                 elif final.hostname == "lms.ranepa.ru" and final.path == "/course/view.php":
                     states[key] = (
