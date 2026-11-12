@@ -618,7 +618,7 @@ def test_owner_week_start_excludes_old_photo_jobs_and_pays_only_for_new_sources(
 
     asyncio.run(date_sources())
     start = BASE - timedelta(days=1)
-    config = cfg(client, pilot_catchup_since=start)
+    config = cfg(client, owner_funded_pilot=True, pilot_catchup_since=start)
     provider = VisionProvider(reading(), propose=False)
     tick(client, provider, config, now=BASE + timedelta(minutes=15))
     jobs = stored(client, ImageAnalysisJob)
