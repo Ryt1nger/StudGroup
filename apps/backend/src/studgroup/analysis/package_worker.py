@@ -729,7 +729,11 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                             RawMessage.delete_at > now,
                             RawMessage.live_received_at.is_not(None),
                             RawMessage.live_received_at <= catchup_cutoff,
-                            RawMessage.message_date >= group.bot_added_at,
+                            *(
+                                [RawMessage.message_date >= group.bot_added_at]
+                                if group.bot_added_at is not None
+                                else []
+                            ),
                         )
                         .limit(1)
                     )
