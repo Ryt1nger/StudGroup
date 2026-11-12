@@ -1355,20 +1355,30 @@ def test_owner_funded_pilot_runs_at_most_one_new_package_per_group_per_hour(clie
     seed(client)
     make_new(client)
     cfg = settings(owner_funded_pilot=True)
-    now = datetime.now(UTC)
+    # The sole group's offset is 00; subsequent windows stay aligned even
+    # when inference finishes many minutes after the slot started.
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     first = PackageProvider()
     assert step(client, first, cfg, now) == "completed"
     assert len(first.requests) == 2
+
+    async def slow_completion():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(ShadowEvaluationRun))
+            row.completed_at = now + timedelta(minutes=8)
+            await db.commit()
+
+    asyncio.run(slow_completion())
     source(client, mid=34, text="по математике добавили задачу 4", when=BASE + timedelta(minutes=5))
     second = PackageProvider(cited=(34,), propose=False)
-    # The durable gate is consulted again with the same database and new settings
-    # instance, so a restart cannot accelerate chargeable text analysis.
+    # Restarting at minute 59 cannot create another run in the same slot.
     assert (
         step(client, second, settings(owner_funded_pilot=True), now + timedelta(minutes=59))
         == "idle"
     )
     assert second.requests == []
     assert count(client, ShadowEvaluationRun) == 1
+    # The old completed_at + 1h gate would skip this next hourly slot.
     assert (
         step(client, second, settings(owner_funded_pilot=True), now + timedelta(hours=1, minutes=1))
         == "completed"
