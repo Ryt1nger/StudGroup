@@ -408,6 +408,50 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
     return cost, False
 
 
+def plan_sized_package(
+    messages,
+    images,
+    *,
+    group_id,
+    timezone,
+    target_ids,
+    source_revision,
+    subject_catalog,
+    max_bytes=48000,
+):
+    """Fit complete photo evidence without discarding target or reply ancestors.
+
+    First shrink the target batch; if it still does not fit, drop optional
+    chronological neighbours. The package planner keeps explicit reply
+    ancestors even with zero overlap. A genuinely oversized single source
+    stays held for review rather than silently truncating visual facts.
+    """
+    options = {
+        "group_id": group_id,
+        "timezone": timezone,
+        "target_ids": target_ids,
+        "source_revision": source_revision,
+        "subject_catalog": subject_catalog,
+    }
+    for overlap in (8, 0):
+        for target_cap in (DEFAULT_MAX_TARGETS, 12, 6, 3, 1):
+            try:
+                package = plan_packages(
+                    messages, overlap=overlap, max_targets=target_cap, **options
+                )[0]
+            except ValueError as error:
+                if str(error) == "package_single_target_exceeds_limits":
+                    break
+                raise
+            selected = {row.telegram_message_id for row in package.analysis_input.messages}
+            package.analysis_input.image_evidence = [
+                item for item in images if item.telegram_message_id in selected
+            ]
+            if len(package.analysis_input.model_dump_json().encode()) <= max_bytes:
+                return package
+    raise ValueError("package_single_target_exceeds_limits")
+
+
 async def _plan_next(
     db, group, route, settings, now, provider=None, transport=None, *, scheduled_slot=None
 ):
@@ -524,21 +568,15 @@ async def _plan_next(
     ).all()
     catalog = await load_subject_catalog(db, group.id, facts)
     try:
-        packages = plan_packages(
+        package = plan_sized_package(
             messages,
+            images,
             group_id=group.id,
             timezone=group.timezone,
             target_ids=[row.telegram_message_id for row in targets],
             source_revision=revision,
             subject_catalog=catalog,
         )
-        package = packages[0]
-        selected = {row.telegram_message_id for row in package.analysis_input.messages}
-        package.analysis_input.image_evidence = [
-            item for item in images if item.telegram_message_id in selected
-        ]
-        if len(package.analysis_input.model_dump_json().encode()) > 48000:
-            raise ValueError("package_single_target_exceeds_limits")
     except ValueError as error:
         if not structured or str(error) != "package_single_target_exceeds_limits":
             raise
