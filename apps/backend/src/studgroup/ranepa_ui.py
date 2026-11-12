@@ -6,7 +6,14 @@ from urllib.parse import urlparse
 
 from studgroup.ranepa_schedule import normalized
 
-CAPTCHA_MARKERS = ("captcha", "капча", "recaptcha", "проверка, что вы не робот")
+CAPTCHA_MARKERS = (
+    "captcha",
+    "капча",
+    "recaptcha",
+    "проверка, что вы не робот",
+    "вы точно не робот",
+    "используйте ползунки",
+)
 LOGIN_PATHS = ("/login", "/auth", "/signin")
 TIME_RE = re.compile(r"\b\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2}\b")
 
