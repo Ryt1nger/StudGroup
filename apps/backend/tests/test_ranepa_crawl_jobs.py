@@ -190,7 +190,11 @@ def test_manual_pilot_claim_never_touches_another_account(tmp_path):
                 db.add_all(groups + users)
                 await db.flush()
                 for group, user in zip(groups, users):
-                    db.add(Membership(user_id=user.id, group_id=group.id, role="student", status="active"))
+                    db.add(
+                        Membership(
+                            user_id=user.id, group_id=group.id, role="student", status="active"
+                        )
+                    )
                 await db.flush()
                 await enqueue_week(
                     db,
