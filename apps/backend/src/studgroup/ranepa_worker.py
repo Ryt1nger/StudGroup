@@ -7,6 +7,7 @@ import signal
 from collections import Counter
 from datetime import date, datetime, timedelta
 from time import monotonic
+from urllib.parse import urlsplit
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -277,7 +278,11 @@ async def _collect(
 
                 async def solve_once(challenge_page):
                     nonlocal captcha_attempted
-                    if captcha_attempted or captcha_client is None:
+                    if (
+                        captcha_attempted
+                        or captcha_client is None
+                        or urlsplit(getattr(challenge_page, "url", "")).hostname != "my.ranepa.ru"
+                    ):
                         return False
                     captcha_attempted = True
                     return await solve_slider_captcha(
