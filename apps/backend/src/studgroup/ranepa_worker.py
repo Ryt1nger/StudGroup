@@ -21,7 +21,12 @@ from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
 from studgroup.models import Group, Membership, MemberSubgroup, UserProfile
 from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
-from studgroup.ranepa_captcha import configured_solver, solve_slider_captcha, warn_if_unconfigured
+from studgroup.ranepa_captcha import (
+    CaptchaBudget,
+    configured_solver,
+    solve_slider_captcha,
+    warn_if_unconfigured,
+)
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
@@ -69,6 +74,7 @@ async def collect_bounded(
     persist_session=None,
     captcha_client=None,
     captcha_timeout_seconds=110,
+    captcha_budget: CaptchaBudget | None = None,
 ):
     try:
         async with asyncio.timeout(ACCOUNT_TIMEOUT_SECONDS):
@@ -84,6 +90,7 @@ async def collect_bounded(
                 persist_session=persist_session,
                 captcha_client=captcha_client,
                 captcha_timeout_seconds=captcha_timeout_seconds,
+                captcha_budget=captcha_budget,
             )
     except TimeoutError:
         return "source_unavailable"
@@ -146,7 +153,9 @@ async def process_one(
     *,
     pilot_group_id: UUID | None = None,
     pilot_user_id: UUID | None = None,
+    captcha_budget: CaptchaBudget | None = None,
 ) -> str:
+    available_budget = captcha_budget or CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     async with AsyncSession(engine, expire_on_commit=False) as db:
         job = await claim_next(db, group_id=pilot_group_id, user_id=pilot_user_id)
         if job is None:
@@ -228,8 +237,11 @@ async def process_one(
                 today,
                 storage_state=storage_state,
                 persist_session=persist_session if session_cipher is not None else None,
-                captcha_client=configured_solver(settings),
+                captcha_client=(
+                    configured_solver(settings) if available_budget.remaining > 0 else None
+                ),
                 captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,
+                captcha_budget=available_budget,
             )
     async with AsyncSession(engine) as db:
         await finish(db, job_id, group_id, user_id, failure_code=failure)
@@ -250,6 +262,7 @@ async def _collect(
     persist_session=None,
     captcha_client=None,
     captcha_timeout_seconds=110,
+    captcha_budget: CaptchaBudget | None = None,
 ):
     try:
         async with async_playwright() as playwright:
@@ -283,6 +296,8 @@ async def _collect(
                         or captcha_client is None
                         or urlsplit(getattr(challenge_page, "url", "")).hostname != "my.ranepa.ru"
                     ):
+                        return False
+                    if captcha_budget is not None and not captcha_budget.claim():
                         return False
                     captcha_attempted = True
                     return await solve_slider_captcha(
@@ -372,6 +387,7 @@ async def run_forever(settings: Settings):
     if not settings.ranepa_crawl_enabled:
         return
     warn_if_unconfigured(settings)
+    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGTERM, signal.SIGINT):
@@ -386,7 +402,9 @@ async def run_forever(settings: Settings):
                 # Pick up new accounts during the week without rescanning every
                 # member before each browser job.
                 next_prepare_at = monotonic() + 3600
-            status = await process_one(engine, settings, today)
+            status = await process_one(
+                engine, settings, today, captcha_budget=captcha_budget
+            )
             try:
                 await asyncio.wait_for(
                     stop.wait(),
@@ -414,13 +432,16 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
         raise RuntimeError("PostgreSQL DATABASE_URL is required")
     warn_if_unconfigured(settings)
     engine = create_worker_engine(settings)
+    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     completed = 0
     try:
         await prepare_week(engine, datetime.now(ZoneInfo("Europe/Moscow")).date(), settings)
         deadline = monotonic() + max_minutes * 60
         while monotonic() < deadline:
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-            status = await process_one(engine, settings, today)
+            status = await process_one(
+                engine, settings, today, captcha_budget=captcha_budget
+            )
             if status == "idle":
                 break
             completed += 1
@@ -445,11 +466,17 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
         raise RuntimeError("PostgreSQL DATABASE_URL is required")
     warn_if_unconfigured(settings)
     engine = create_worker_engine(settings)
+    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     try:
         today = datetime.now(ZoneInfo("Europe/Moscow")).date()
         await prepare_week(engine, today, settings, pilot_group_id=group_id, pilot_user_id=user_id)
         return await process_one(
-            engine, settings, today, pilot_group_id=group_id, pilot_user_id=user_id
+            engine,
+            settings,
+            today,
+            pilot_group_id=group_id,
+            pilot_user_id=user_id,
+            captcha_budget=captcha_budget,
         )
     finally:
         await engine.dispose()
