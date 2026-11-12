@@ -46,7 +46,10 @@ async def _state(page) -> str:
         await page.screenshot(
             path=diagnostic_path,
             full_page=True,
-            mask=[page.locator("input"), page.locator("textarea")],
+            mask=[
+                page.locator('input:not([type="range"]):not([type="hidden"])'),
+                page.locator("textarea"),
+            ],
         )
         return "captcha_required"
     return status
