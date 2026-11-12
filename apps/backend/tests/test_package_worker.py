@@ -1501,9 +1501,7 @@ def test_owner_catchup_filter_is_opt_in_and_excludes_future_telegram_messages():
     assert cfg.pilot_catchup_before == cutoff
     # Catch-up uses the explicit stored-source cutoff rather than the current
     # hourly wall-clock window; the bot-join and retention guards remain.
-    sql = select(RawMessage).where(
-        *_eligible(group, cfg, when, catchup_cutoff=cutoff)
-    )
+    sql = select(RawMessage).where(*_eligible(group, cfg, when, catchup_cutoff=cutoff))
     rendered = str(sql.compile(compile_kwargs={"literal_binds": True}))
     assert "raw_messages.live_received_at <=" in rendered
     assert "raw_messages.delete_at >" in rendered
