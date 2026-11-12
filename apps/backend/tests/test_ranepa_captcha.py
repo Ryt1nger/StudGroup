@@ -3,10 +3,13 @@
 import asyncio
 import base64
 import logging
+from datetime import date, time
+from types import SimpleNamespace
 
+import pytest
 from pydantic import SecretStr
 
-from studgroup import ranepa_captcha
+from studgroup import ranepa_browser, ranepa_captcha
 from studgroup.main import Settings
 
 
@@ -193,5 +196,63 @@ def test_invalid_positions_never_touch_one_shot_sliders():
                 return {"code": "coordinates:x=140,y=315;x=210,y=315"}
 
         assert not await ranepa_captcha.solve_slider_captcha(FakePage(), FakeClient())
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("solved", [False, True])
+def test_sdo_transition_attempts_a_captcha_only_with_explicit_callback(solved):
+    async def scenario():
+        events = []
+
+        class FakeText:
+            def __init__(self, page):
+                self.page = page
+
+            async def is_visible(self):
+                return self.page.url.endswith("/captcha")
+
+        class FakePage:
+            url = ""
+
+            async def goto(self, *_args, **_kwargs):
+                self.url = "https://lms.ranepa.ru/captcha"
+
+            def get_by_text(self, text, exact=False):
+                assert text == "Используйте ползунки"
+                return FakeText(self)
+
+            async def close(self):
+                events.append("closed")
+
+        class FakeContext:
+            async def new_page(self):
+                return FakePage()
+
+        async def solver(page):
+            events.append("solve")
+            if solved:
+                page.url = "https://lms.ranepa.ru/login/index.php"
+            return solved
+
+        lesson = SimpleNamespace(
+            room="СДО",
+            day=date(2026, 11, 12),
+            starts=time(10, 0),
+            ends=time(11, 30),
+            subject="Math",
+            teacher="Teacher",
+        )
+        result = SimpleNamespace(
+            snapshot=SimpleNamespace(lessons=(lesson,)),
+            sdo_exits=("https://my.ranepa.ru/sdo",),
+        )
+        links, states, courses = await ranepa_browser.resolve_sdo_exits(
+            FakeContext(), result, solve_captcha=solver
+        )
+        expected = "lms_login_required" if solved else "captcha_required"
+        assert list(states.values()) == [expected]
+        assert links == {} and courses == {}
+        assert events == ["solve", "closed"]
 
     asyncio.run(scenario())
