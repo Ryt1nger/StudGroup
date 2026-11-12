@@ -1481,3 +1481,31 @@ def test_sized_photo_package_keeps_explicit_reply_ancestor_when_neighbours_are_h
     )
     assert package.target_ids == (10,)
     assert [x.telegram_message_id for x in package.analysis_input.messages] == [1, 10]
+
+
+def test_owner_catchup_filter_is_opt_in_and_excludes_future_telegram_messages():
+    from uuid import uuid4
+
+    from sqlalchemy import select
+
+    from studgroup.analysis.package_worker import _eligible
+
+    when = datetime(2026, 11, 12, 12, 0, tzinfo=UTC)
+    cutoff = when - timedelta(minutes=10)
+    group = Group(id=uuid4(), bot_added_at=when - timedelta(days=2))
+    cfg = settings(
+        owner_funded_pilot=True,
+        ai_schedule_enabled=True,
+        pilot_catchup_before=cutoff,
+    )
+    assert cfg.pilot_catchup_before == cutoff
+    # Catch-up uses the explicit stored-source cutoff rather than the current
+    # hourly wall-clock window; the bot-join and retention guards remain.
+    sql = select(RawMessage).where(
+        *_eligible(group, cfg, when, catchup_cutoff=cutoff)
+    )
+    rendered = str(sql.compile(compile_kwargs={"literal_binds": True}))
+    assert "raw_messages.live_received_at <=" in rendered
+    assert "raw_messages.delete_at >" in rendered
+    assert "raw_messages.message_date >=" in rendered
+    assert str(cutoff.date()) in rendered
