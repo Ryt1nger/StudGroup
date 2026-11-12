@@ -303,10 +303,9 @@ async def personal_with_group_fallback(db, group_id, user_id, start: date, end: 
                 (source.user_id, signature, split is not None, source.checked_at)
             )
     for key, contributors in candidates.items():
-        subgroup_match = contributors[0][2]
-        distinct_signatures = {signature for _, signature, _, _ in contributors if signature}
-        if not subgroup_match and len(distinct_signatures) < 2:
-            continue
+        # A single identity-verified peer can confirm an ordinary group lesson.
+        # Only subjects explicitly split by the headman require an exact matching
+        # subgroup choice. The number of splits/subgroups is fully data-driven.
         day, starts, ends, subject, teacher, room, kind, stream = key
         result["lessons"].append(
             {
