@@ -1526,3 +1526,28 @@ def test_oldest_package_first_prevents_low_uuid_group_from_starving_other_pilots
     last_runs[c.id] = now
     ordered = oldest_package_first(groups, last_runs)
     assert [group.id for group, _route in ordered] == [b.id, a.id, c.id]
+
+
+def test_owner_week_start_excludes_old_targets_in_catchup_and_hourly_windows():
+    from uuid import uuid4
+
+    from studgroup.analysis.package_worker import _eligible
+
+    start = datetime(2026, 11, 6, 21, tzinfo=UTC)  # Nov 7 at 00:00 Moscow
+    now = datetime(2026, 11, 12, 13, tzinfo=UTC)
+    cfg = settings(
+        owner_funded_pilot=True,
+        pilot_catchup_since=start,
+        pilot_catchup_before=now,
+    )
+    group = Group(id=uuid4(), bot_added_at=start - timedelta(days=1))
+
+    for cutoff in (None, now):
+        filters = _eligible(group, cfg, now, catchup_cutoff=cutoff)
+        statement = select(RawMessage).where(*filters)
+        rendered = str(statement.compile(compile_kwargs={"literal_binds": True}))
+        assert "raw_messages.message_date >=" in rendered
+        assert "2026-11-06 21:00:00" in rendered
+        assert "raw_messages.delete_at >" in rendered
+        if cutoff is not None:
+            assert "raw_messages.live_received_at <=" in rendered
