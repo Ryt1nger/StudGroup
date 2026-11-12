@@ -434,7 +434,7 @@ def plan_sized_package(
         "subject_catalog": subject_catalog,
     }
     for overlap in (8, 0):
-        for target_cap in (DEFAULT_MAX_TARGETS, 12, 6, 3, 1):
+        for target_cap in (DEFAULT_MAX_TARGETS, 12, 6, 4, 3, 2, 1):
             try:
                 package = plan_packages(
                     messages, overlap=overlap, max_targets=target_cap, **options
