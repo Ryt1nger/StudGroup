@@ -12,6 +12,11 @@ on:
   schedule:
     - cron: "7,17,27,37,47,57 * * * *"
   workflow_dispatch:
+  # A one-time commit of this workflow starts a longer wake window for the
+  # owner-approved full pilot backlog. Normal deployments do not trigger it.
+  push:
+    branches: [main]
+    paths: ['.github/workflows/keepalive.yml']
 
 permissions: {}
 
@@ -22,3 +27,23 @@ jobs:
     steps:
       - name: Ping /ready
         run: curl --fail --silent --show-error --retry 3 --retry-delay 15 --max-time 60 https://studgroup.onrender.com/ready
+
+  pilot-backfill-wake:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Keep the embedded worker awake for the retained pilot backlog
+        shell: bash
+        run: |
+          successes=0
+          for tick in $(seq 1 200); do
+            if curl --fail --silent --show-error --retry 3 --retry-delay 10 --max-time 60 \
+              https://studgroup.onrender.com/ready > /dev/null; then
+              successes=$((successes + 1))
+            else
+              echo "Health check $tick failed; worker wakeup will be retried."
+            fi
+            sleep 90
+          done
+          test "$successes" -gt 0
