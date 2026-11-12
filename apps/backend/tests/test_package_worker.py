@@ -1507,3 +1507,22 @@ def test_owner_catchup_filter_is_opt_in_and_excludes_future_telegram_messages():
     assert "raw_messages.delete_at >" in rendered
     assert "raw_messages.message_date >=" in rendered
     assert str(cutoff.date()) in rendered
+
+
+def test_oldest_package_first_prevents_low_uuid_group_from_starving_other_pilots():
+    from uuid import UUID
+
+    from studgroup.analysis.package_worker import oldest_package_first
+
+    a = Group(id=UUID("00000000-0000-0000-0000-000000000001"))
+    b = Group(id=UUID("00000000-0000-0000-0000-000000000002"))
+    c = Group(id=UUID("00000000-0000-0000-0000-000000000003"))
+    now = datetime(2026, 11, 12, 13, 0, tzinfo=UTC)
+    groups = [(a, None), (b, None), (c, None)]
+    last_runs = {a.id: now - timedelta(minutes=1), b.id: now - timedelta(hours=3)}
+    ordered = oldest_package_first(groups, last_runs)
+    assert [group.id for group, _route in ordered] == [c.id, b.id, a.id]
+    # After c takes a turn, b is still the next group rather than a again.
+    last_runs[c.id] = now
+    ordered = oldest_package_first(groups, last_runs)
+    assert [group.id for group, _route in ordered] == [b.id, a.id, c.id]
