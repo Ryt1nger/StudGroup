@@ -1046,25 +1046,31 @@ async def _periodic_delivery_job(engine, interval, task):
         await asyncio.sleep(interval)
 
 
-async def delivery_loop(engine, settings):
+async def delivery_loop(engine, settings, *, workers=1):
     from studgroup.headman_digest import tick as digest_tick
     from studgroup.owner_updates import tick as owner_tick
 
     async def send_owner_updates(db_engine):
         await owner_tick(db_engine, settings)
 
-    # One keep-alive HTTP pool per worker: avoid a fresh TLS handshake per button.
+    # Reuse Telegram HTTP connections across a bounded number of concurrent senders.
+    # The SQL row lease and SKIP LOCKED selection prevent claiming the same job twice;
+    # per-panel locks preserve the correct screen revision under concurrent requests.
     async with httpx.AsyncClient(timeout=10, trust_env=False, follow_redirects=False) as client:
 
         async def request(config, method, payload):
             return await telegram_request(config, method, payload, client=client)
 
-        async with asyncio.TaskGroup() as tasks:
-            tasks.create_task(_periodic_delivery_job(engine, 5, send_owner_updates))
-            tasks.create_task(_periodic_delivery_job(engine, 30, digest_tick))
+        async def drain():
             while True:
                 try:
                     await deliver(engine, settings, request=request)
                 except Exception as error:  # noqa: BLE001 -- durable retry; never log private data
                     LOGGER.warning("bot_delivery_iteration_failed: %s", type(error).__name__)
                 await asyncio.sleep(0.1)
+
+        async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(_periodic_delivery_job(engine, 5, send_owner_updates))
+            tasks.create_task(_periodic_delivery_job(engine, 30, digest_tick))
+            for _ in range(max(1, min(3, workers))):
+                tasks.create_task(drain())
