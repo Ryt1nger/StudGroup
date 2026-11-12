@@ -183,7 +183,10 @@ async def read_week(
             for _ in range(abs(distance)):
                 await arrow.click()
             for _ in range(40):
-                if await _state(page) == "login_required":
+                state = await _state(page)
+                if state == "captcha_required":
+                    return BrowserResult(state)
+                if state == "login_required":
                     break
                 try:
                     snapshot = extract_cabinet_week(
@@ -236,7 +239,10 @@ async def read_month(
             for _ in range(abs(distance)):
                 await arrow.click()
             for _ in range(60):
-                if await _state(page) == "login_required":
+                state = await _state(page)
+                if state == "captcha_required":
+                    return BrowserMonthResult(state)
+                if state == "login_required":
                     break
                 try:
                     return BrowserMonthResult(

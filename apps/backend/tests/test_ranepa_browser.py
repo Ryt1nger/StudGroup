@@ -1,7 +1,7 @@
 """The month browser renews a session that expires during navigation."""
 
 import asyncio
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from studgroup import ranepa_browser
@@ -24,6 +24,38 @@ def test_open_reuses_rendered_schedule_page(monkeypatch):
     monkeypatch.setattr(ranepa_browser, "_wait_visible_state", rendered)
     assert asyncio.run(ranepa_browser._open(Page(), "login", "password")) == "rendered"
     assert calls == []
+
+
+def test_captcha_after_navigation_is_reported_for_week_and_month(monkeypatch):
+    class Clicker:
+        async def click(self):
+            return None
+
+    class Page:
+        def get_by_role(self, *args, **kwargs):
+            return Clicker()
+
+    async def opened(*args):
+        return "rendered"
+
+    async def verified(*args):
+        return True
+
+    async def challenged(*args):
+        return "captcha_required"
+
+    monkeypatch.setattr(ranepa_browser, "_open", opened)
+    monkeypatch.setattr(ranepa_browser, "_verify_group", verified)
+    monkeypatch.setattr(ranepa_browser, "_state", challenged)
+    today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    monday = today - timedelta(days=today.weekday())
+    page = Page()
+    week = asyncio.run(ranepa_browser.read_week(page, "login", "password", "A-001", monday))
+    month = asyncio.run(
+        ranepa_browser.read_month(page, "login", "password", "A-001", today.year, today.month)
+    )
+    assert week.status == "captcha_required"
+    assert month.status == "captcha_required"
 
 
 def test_month_relogs_in_after_session_expires_mid_navigation(monkeypatch):
