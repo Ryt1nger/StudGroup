@@ -168,8 +168,6 @@ def test_legacy_failed_pass_a_does_not_trigger_unapproved_paid_backfill(client, 
     assert len(stored(client, ImageAnalysisCall)) == 1
 
 
-
-
 def test_owner_pilot_catches_up_every_retained_photo_without_crossing_join_date():
     now = datetime(2026, 11, 12, 6, tzinfo=UTC)
     retention = now - timedelta(days=30)
@@ -181,6 +179,7 @@ def test_owner_pilot_catches_up_every_retained_photo_without_crossing_join_date(
     assert retention < now - timedelta(days=20)
     # Even explicit full catch-up must never read before the bot was added.
     assert image_jobs.pilot_backfill_since(newer_group, now) == newer_group.bot_added_at
+
 
 def test_zero_budget_never_calls_vision(client, monkeypatch):
     download_ok(monkeypatch)
