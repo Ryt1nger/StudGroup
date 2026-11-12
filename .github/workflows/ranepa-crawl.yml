@@ -44,7 +44,7 @@ jobs:
       RANEPA_ACCESS_APPROVED: ${{ secrets.RANEPA_ACCESS_APPROVED }}
       RANEPA_CRAWL_ENABLED: "true"
       RANEPA_CRAWL_PAUSE_SECONDS: "20"
-      RANEPA_CAPTCHA_SCREENSHOT_PATH: ${{ runner.temp }}/ranepa-captcha.png
+      RANEPA_CAPTCHA_SCREENSHOT_PATH: /tmp/ranepa-captcha.png
     defaults:
       run:
         working-directory: apps/backend
@@ -81,7 +81,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ranepa-captcha-screenshot
-          path: ${{ runner.temp }}/ranepa-captcha.png
+          path: /tmp/ranepa-captcha.png
           if-no-files-found: ignore
           retention-days: 1
       - name: Process one bounded queue shift
