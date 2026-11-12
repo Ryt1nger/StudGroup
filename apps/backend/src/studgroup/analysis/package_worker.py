@@ -663,8 +663,7 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                     settings.ai_schedule_timezone,
                     offsets[group.id],
                     allow_overnight=(
-                        not settings.ai_schedule_enabled
-                        or production_enabled(settings, group.id)
+                        not settings.ai_schedule_enabled or production_enabled(settings, group.id)
                     ),
                 )
                 if scheduled_slot is None:
@@ -685,7 +684,13 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
             if settings.photo_reading_enabled and settings.photo_backfill_since is not None:
                 await reopen_unread_photo_messages(db, group, settings.photo_backfill_since, now)
             planned = await _plan_next(
-                db, group, route, settings, now, provider, transport,
+                db,
+                group,
+                route,
+                settings,
+                now,
+                provider,
+                transport,
                 scheduled_slot=scheduled_slot,
             )
             if planned is None:
