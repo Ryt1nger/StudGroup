@@ -813,3 +813,101 @@ a.pcard:active { transform: scale(.98); }
 .review-upload-week { margin: 18px 0 20px; }
 .review-upload-week input { margin-top: 8px; }
 .review-upload-week small { display: block; margin: 7px 4px 0; font-size: 12px; line-height: 1.5; color: var(--label-2); }
+
+
+/* SDO/LK: compact mobile form using the same tokens as profile settings. */
+.sdo-screen { padding-bottom: 26px; }
+.sdo-screen .top { margin-bottom: 10px; }
+.sdo-heading { margin: 4px 2px 20px; }
+.sdo-heading-icon, .sdo-status-icon {
+  display: grid; place-items: center; width: 43px; height: 43px;
+  border-radius: 15px; color: var(--accent-text); background: hsl(var(--hsl) / .12);
+  margin-bottom: 12px;
+}
+.sdo-screen .ptitle, .sdo-legal .ptitle {
+  font-size: 28px; line-height: 1.13; font-weight: 750;
+  letter-spacing: -.035em; margin: 0;
+}
+.sdo-subtitle { color: var(--label-2); line-height: 1.45; font-size: 14px; margin: 7px 0 0; }
+.sdo-card {
+  background: var(--card); border: 1px solid var(--card-edge);
+  border-radius: 24px; padding: 17px 16px; margin: 0 0 12px;
+}
+.sdo-card-title { font-size: 15px; font-weight: 700; letter-spacing: -.015em; }
+.sdo-form-card .field { margin-top: 14px; }
+.sdo-form-card .field label { margin: 0 0 7px; font-size: 13px; }
+.sdo-form-card .field input {
+  width: 100%; min-width: 0; min-height: 50px; padding: 12px 14px;
+  font-size: 16px; border-radius: 15px; background: var(--fill-2);
+  border: 1px solid var(--card-edge); color: var(--label); outline: 0;
+}
+.sdo-form-card .field input:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 1px; }
+.sdo-field-hint { margin: 7px 2px 0; color: var(--label-3); font-size: 12px; line-height: 1.35; }
+.sdo-password-wrap { position: relative; }
+.sdo-password-wrap input { padding-right: 92px !important; }
+.sdo-password-wrap button {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  padding: 10px; min-height: 42px; font-size: 12px; font-weight: 650;
+  color: var(--accent-text); border-radius: 10px;
+}
+.sdo-consent-list { margin-top: 9px; }
+.sdo-consent-item {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 11px;
+  padding: 11px 0; align-items: start;
+}
+.sdo-consent-item + .sdo-consent-item { border-top: 1px solid var(--sep); }
+.sdo-consent-item input {
+  width: 20px; height: 20px; margin-top: 1px; accent-color: var(--accent);
+}
+.sdo-consent-item label {
+  display: block; font-size: 14px; line-height: 1.38; font-weight: 560;
+  cursor: pointer;
+}
+.sdo-consent-item a, .sdo-policy-link, .sdo-secondary-link {
+  display: inline-block; color: var(--accent-text); font-size: 12px;
+  font-weight: 600; margin-top: 5px;
+}
+.sdo-consents-ready, .sdo-saved {
+  display: flex; align-items: center; gap: 9px; color: var(--label-2);
+  font-size: 13px; line-height: 1.35;
+}
+.sdo-consents-ready { margin: 12px 0; }
+.sdo-saved {
+  padding: 12px 14px; border-radius: 16px; margin: 0 0 12px;
+  background: hsl(var(--hsl) / .09); color: var(--accent-text);
+}
+.sdo-policy-link { border-top: 1px solid var(--sep); padding-top: 11px; width: 100%; }
+.sdo-submit { width: 100%; min-height: 53px; margin-top: 16px; font-size: 15px; }
+.sdo-submit:disabled { box-shadow: none; cursor: not-allowed; }
+.sdo-privacy-note {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin: 10px 0 0; color: var(--label-3); font-size: 12px;
+}
+.sdo-feedback { margin: 12px 3px; font-size: 13px; line-height: 1.45; }
+.sdo-feedback.error { color: var(--red); }
+.sdo-feedback.success { color: var(--accent-text); }
+.sdo-unavailable { padding: 21px 18px; }
+.sdo-unavailable h2 { font-size: 18px; font-weight: 700; line-height: 1.25; }
+.sdo-unavailable p { margin: 9px 0 16px; color: var(--label-2); font-size: 14px; line-height: 1.45; }
+.sdo-unavailable .pillb { min-height: 44px; width: 100%; justify-content: center; }
+.sdo-unavailable .sdo-secondary-link { display: block; text-align: center; margin-top: 13px; }
+.sdo-loading { display: flex; gap: 10px; align-items: center; color: var(--label-2); font-size: 14px; }
+.sdo-revoke {
+  display: block; margin: 18px auto 0; padding: 11px 8px; text-align: center;
+  color: var(--red); font-size: 13px; font-weight: 600;
+}
+.sdo-skip { display: block; text-align: center; margin: 18px 0 2px; }
+.sdo-legal { padding: 4px 0 30px; }
+.sdo-legal-links {
+  display: flex; flex-direction: column; margin: 16px 0;
+  border-radius: 20px; background: var(--card); border: 1px solid var(--card-edge);
+  overflow: hidden;
+}
+.sdo-legal-links a { padding: 13px 15px; font-size: 14px; line-height: 1.35; }
+.sdo-legal-links a + a { border-top: 1px solid var(--sep); }
+.sdo-legal-text {
+  padding: 17px; border-radius: 22px; background: var(--card);
+  border: 1px solid var(--card-edge); white-space: pre-wrap;
+  font-size: 13px; line-height: 1.65; overflow-wrap: anywhere;
+}
+.sdo-legal > .sdo-secondary-link { margin: 16px 0 0; }

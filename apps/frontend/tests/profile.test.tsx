@@ -16,9 +16,10 @@ describe('profile', () => {
     );
     renderApp({ route: '/profile/sdo' });
     expect(await screen.findByText(/Сохранение пока недоступно/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Логин СДО / ЛК')).toBeDisabled();
-    expect(screen.getByLabelText('Пароль СДО / ЛК')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Сохранить данные СДО / ЛК' })).toBeDisabled();
+    expect(screen.queryByLabelText('Логин СДО / ЛК')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Пароль СДО / ЛК')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Сохранить данные СДО / ЛК' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Подключение пока недоступно' })).toBeInTheDocument();
   });
 
   it('blocks credential entry when documents are approved but encryption is unavailable', async () => {
@@ -32,8 +33,30 @@ describe('profile', () => {
     );
     renderApp({ route: '/profile/sdo' });
     expect(await screen.findByText(/не настроен ключ шифрования/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Логин СДО / ЛК')).toBeDisabled();
-    expect(screen.getByLabelText('Пароль СДО / ЛК')).toBeDisabled();
+    expect(screen.queryByLabelText('Логин СДО / ЛК')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Пароль СДО / ЛК')).not.toBeInTheDocument();
+  });
+
+  it('requires three separate legal consents before enabling SDO save', async () => {
+    useScenario();
+    const pending = { version: '2026-11-09-v2', ready: true, credentials_ready: true, terms: false, service: false, sdo: false };
+    server.use(
+      http.get(`${API}/profile`, () => HttpResponse.json(demoProfile())),
+      http.get(`${API}/legal/status`, () => HttpResponse.json(pending)),
+    );
+    renderApp({ route: '/profile/sdo' });
+    const login = await screen.findByLabelText('Логин СДО / ЛК');
+    await waitFor(() => expect(login).toBeEnabled());
+    expect(screen.getByRole('heading', { name: 'Подключить СДО' })).toBeInTheDocument();
+    const save = screen.getByRole('button', { name: 'Сохранить данные СДО / ЛК' });
+    expect(save).toBeDisabled();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+    await userEvent.click(screen.getByLabelText('Принимаю условия использования'));
+    expect(save).toBeDisabled();
+    await userEvent.click(screen.getByLabelText('Согласен на обработку данных в StudGroup'));
+    expect(save).toBeDisabled();
+    await userEvent.click(screen.getByLabelText('Добровольно разрешаю хранить логин и пароль СДО/ЛК'));
+    expect(save).toBeEnabled();
   });
 
   it('saves personal data and opens the separate, consent-gated SDO/LK form', async () => {
