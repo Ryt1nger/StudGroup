@@ -155,6 +155,8 @@ class Settings(BaseSettings):
     # Paid structural repair of rejected C+ proposals; off until separately approved.
     ai_output_repair_enabled: bool = False
     ai_schedule_timezone: str = "Europe/Moscow"
+    # Explicit one-time bound on pilot catch-up. Never auto-apply to future messages.
+    pilot_catchup_before: AwareDatetime | None = None
     # The production Render web service has no Celery worker. Manual screenshot
     # drafts need their own durable embedded consumer, irrespective of text AI mode.
     cabinet_schedule_background_enabled: bool = True
@@ -193,6 +195,7 @@ class Settings(BaseSettings):
         "ai_shadow_enabled_until",
         "new_engine_enabled_until",
         "photo_backfill_since",
+        "pilot_catchup_before",
         mode="before",
     )
     @classmethod
@@ -486,16 +489,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             diagnostics_task = asyncio.create_task(startup(app.state.background_engine, settings))
         app.state.diagnostics_task = diagnostics_task
         # Telegram onboarding must not wait for the embedded AI and schedule jobs.
-        # Give its durable outbox a dedicated Supavisor session slot.
+        # Give its durable outbox a dedicated bounded pool for concurrent deliveries.
         app.state.delivery_engine = app.state.background_engine
         if background_options is not None and (
-            settings.bot_admin_user_id is not None or settings.owner_update_notifications_enabled
+            settings.bot_admin_user_id is not None
+            or settings.owner_update_notifications_enabled
         ):
             app.state.delivery_engine = create_async_engine(
-                settings.database_url, pool_pre_ping=True, **background_options
+                settings.database_url,
+                pool_pre_ping=True,
+                **{**background_options, "pool_size": 3},
             )
             print(
-                "DATABASE_POOL_CONFIG role=telegram_delivery pool_size=1 max_overflow=0 pool_timeout=30",
+                "DATABASE_POOL_CONFIG role=telegram_delivery pool_size=3 max_overflow=0 pool_timeout=30",
                 flush=True,
             )
         processor = None
@@ -516,7 +522,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.bot_admin_user_id is not None or settings.owner_update_notifications_enabled:
             from studgroup.bot_admin import delivery_loop
 
-            delivery = asyncio.create_task(delivery_loop(app.state.delivery_engine, settings))
+            delivery = asyncio.create_task(
+                delivery_loop(
+                    app.state.delivery_engine,
+                    settings,
+                    workers=3 if app.state.delivery_engine is not app.state.background_engine else 1,
+                )
+            )
         try:
             yield
         finally:
