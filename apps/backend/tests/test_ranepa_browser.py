@@ -57,6 +57,7 @@ def test_captcha_after_navigation_is_reported_for_week_and_month(monkeypatch):
     assert week.status == "captcha_required"
     assert month.status == "captcha_required"
 
+
 def test_month_relogs_in_after_session_expires_mid_navigation(monkeypatch):
     calls = {"open": 0, "state": 0}
 
