@@ -1,14 +1,18 @@
 """Worker selects encrypted accounts by active group without moving secrets into jobs."""
 
 import asyncio
-from datetime import UTC, date, datetime
+import json
+from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from studgroup import ranepa_browser, ranepa_worker
 from studgroup.legal import VERSION, document_hash
 from studgroup.main import Settings
 from studgroup.models import (
@@ -20,12 +24,214 @@ from studgroup.models import (
     User,
     UserProfile,
 )
+from studgroup.ranepa_schedule import WeekSnapshot
 from studgroup.ranepa_worker import (
     collect_bounded,
     create_worker_engine,
     prepare_week,
     process_one,
 )
+
+
+@pytest.mark.parametrize(
+    ("proxy_url", "expected_proxy"),
+    [
+        (None, None),
+        ("http://proxy.example.org:3128", {"server": "http://proxy.example.org:3128"}),
+        (
+            "http://service-user:private-password@proxy.example.org:3128",
+            {
+                "server": "http://proxy.example.org:3128",
+                "username": "service-user",
+                "password": "private-password",
+            },
+        ),
+    ],
+)
+def test_collection_passes_proxy_to_browser_context(monkeypatch, proxy_url, expected_proxy):
+    if proxy_url is None:
+        monkeypatch.delenv("RANEPA_PROXY_URL", raising=False)
+    else:
+        monkeypatch.setenv("RANEPA_PROXY_URL", proxy_url)
+
+    captured = {}
+
+    class FakeContext:
+        async def new_page(self):
+            return object()
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            captured["context"] = kwargs
+            return FakeContext()
+
+        async def close(self):
+            captured["closed"] = True
+
+    class FakePlaywright:
+        chromium = None
+
+        async def __aenter__(self):
+            self.chromium = self
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def launch(self, **kwargs):
+            captured["launch"] = kwargs
+            return FakeBrowser()
+
+    async def captcha(*args):
+        return SimpleNamespace(status="captcha_required")
+
+    monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
+    monkeypatch.setattr(ranepa_worker, "read_month", captcha)
+
+    status = asyncio.run(
+        ranepa_worker._collect(
+            None, uuid4(), uuid4(), "A-001", "student", "secret", date(2026, 11, 12)
+        )
+    )
+    assert status == "captcha"
+    assert captured["launch"] == {"headless": True}
+    assert captured["context"] == {
+        "storage_state": None,
+        "proxy": expected_proxy,
+        "locale": "ru-RU",
+        "timezone_id": "Europe/Moscow",
+    }
+    assert captured["closed"] is True
+
+
+def test_restored_session_decrypts_and_corrupt_state_is_ignored():
+    cipher = Fernet(Fernet.generate_key())
+    state = {"cookies": [], "origins": []}
+    encrypted = cipher.encrypt(json.dumps(state).encode()).decode()
+    assert ranepa_worker.restored_storage_state(encrypted, cipher) == state
+    assert ranepa_worker.restored_storage_state(None, cipher) is None
+    assert ranepa_worker.restored_storage_state(encrypted, None) is None
+    assert ranepa_worker.restored_storage_state("broken", cipher) is None
+    assert ranepa_worker.restored_storage_state(encrypted, Fernet(Fernet.generate_key())) is None
+    for payload in (b"not json", b"[]", b'{"cookies":{}}'):
+        assert (
+            ranepa_worker.restored_storage_state(cipher.encrypt(payload).decode(), cipher) is None
+        )
+
+
+@pytest.mark.parametrize("expired", [False, True])
+def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired):
+    previous_state = {"cookies": [{"name": "lk", "value": "old"}], "origins": []}
+    refreshed_state = {"cookies": [{"name": "lk", "value": "new"}], "origins": []}
+    captured = {"contexts": [], "logins": [], "saved": [], "closed": False}
+
+    class FakePage:
+        url = "about:blank"
+
+        def __init__(self):
+            self.logged_in = not expired
+
+        async def goto(self, url, **kwargs):
+            self.url = url
+
+    class FakeContext:
+        def __init__(self):
+            self.page = FakePage()
+
+        async def new_page(self):
+            return self.page
+
+        async def storage_state(self):
+            return refreshed_state if expired else previous_state
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            captured["contexts"].append(kwargs)
+            return FakeContext()
+
+        async def close(self):
+            captured["closed"] = True
+
+    class FakePlaywright:
+        async def __aenter__(self):
+            self.chromium = self
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def launch(self, **kwargs):
+            return FakeBrowser()
+
+    async def visible_state(page):
+        return "rendered" if page.logged_in else "login_required"
+
+    async def sign_in(page, login, password):
+        captured["logins"].append((login, password))
+        page.logged_in = True
+        return "rendered"
+
+    async def month(page, login, password, code, year, month):
+        status = await ranepa_browser._open(page, login, password)
+        return SimpleNamespace(
+            status="preview_only" if status == "rendered" else status,
+            cards=(),
+        )
+
+    async def week(page, login, password, code, monday, *, allow_empty=False):
+        assert allow_empty
+        return SimpleNamespace(
+            status="preview_only",
+            snapshot=WeekSnapshot(code, monday, monday + timedelta(days=6), ()),
+        )
+
+    async def sdo(*args):
+        return {}, {}, {}
+
+    async def remember(*args, **kwargs):
+        return None
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def commit(self):
+            pass
+
+    async def persist(state):
+        captured["saved"].append(state)
+
+    monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
+    monkeypatch.setattr(ranepa_browser, "_wait_visible_state", visible_state)
+    monkeypatch.setattr(ranepa_browser, "_sign_in", sign_in)
+    monkeypatch.setattr(ranepa_worker, "read_month", month)
+    monkeypatch.setattr(ranepa_worker, "read_week", week)
+    monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", sdo)
+    monkeypatch.setattr(ranepa_worker, "remember_personal", remember)
+    monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
+    monkeypatch.delenv("RANEPA_PROXY_URL", raising=False)
+
+    result = asyncio.run(
+        ranepa_worker._collect(
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "student",
+            "password",
+            date(2026, 11, 12),
+            storage_state=previous_state,
+            persist_session=persist,
+        )
+    )
+    assert result is None
+    assert captured["contexts"][0]["storage_state"] == previous_state
+    assert captured["logins"] == ([("student", "password")] if expired else [])
+    assert captured["saved"] == ([refreshed_state] if expired else [])
+    assert captured["closed"] is True
 
 
 def test_worker_engine_uses_bounded_supabase_pool(monkeypatch):
@@ -51,7 +257,7 @@ def test_worker_engine_uses_bounded_supabase_pool(monkeypatch):
 
 
 def test_account_collection_has_a_hard_runtime_limit(monkeypatch):
-    async def never_finishes(*_args):
+    async def never_finishes(*_args, **_kwargs):
         await asyncio.Event().wait()
 
     monkeypatch.setattr("studgroup.ranepa_worker._collect", never_finishes)
@@ -73,9 +279,9 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
         encrypted = Fernet(key).encrypt(b"password").decode()
 
         class FakeStore:
-            async def get(self, item_id):
-                assert item_id == credential_id
-                return ("login@ranepa.ru", encrypted, "v1")
+            async def get(self, item_id, *, include_session_state=False):
+                assert item_id == credential_id and include_session_state
+                return ("login@ranepa.ru", encrypted, "v1", None)
 
         monkeypatch.setattr("studgroup.ranepa_worker.configured_store", lambda _: FakeStore())
         settings = Settings(
@@ -139,7 +345,11 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
                 assert "password" not in str(jobs[0].__dict__)
             seen = []
 
-            async def fake_collect(engine_, group_id, user_id, code, login, password, today):
+            async def fake_collect(
+                engine_, group_id, user_id, code, login, password, today, **kwargs
+            ):
+                assert kwargs["storage_state"] is None
+                assert callable(kwargs["persist_session"])
                 seen.append((group_id, user_id, code, login, password))
 
             monkeypatch.setattr("studgroup.ranepa_worker._collect", fake_collect)
@@ -183,15 +393,26 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
             ranepa_access_approved=True,
         )
 
+        saved_state = {"cookies": [], "origins": []}
+        new_state = {"cookies": [{"name": "test", "value": "fresh"}], "origins": []}
+        encrypted_state = Fernet(key).encrypt(json.dumps(saved_state).encode()).decode()
+        saved_updates = []
+
         class FakeStore:
-            async def get(self, _key):
-                return ("student@example.edu", encrypted, "v1")
+            async def get(self, _key, *, include_session_state=False):
+                assert include_session_state
+                return ("student@example.edu", encrypted, "v1", encrypted_state)
+
+            async def update_session_state(self, _key, value, **kwargs):
+                saved_updates.append((value, kwargs))
 
         monkeypatch.setattr("studgroup.ranepa_worker.configured_store", lambda _: FakeStore())
         seen = []
 
-        async def fake_collect(_engine, group_id, user_id, code, login, password, _today):
+        async def fake_collect(_engine, group_id, user_id, code, login, password, _today, **kwargs):
             seen.append((group_id, user_id, code, login, password))
+            assert kwargs["storage_state"] == saved_state
+            await kwargs["persist_session"](new_state)
 
         monkeypatch.setattr("studgroup.ranepa_worker._collect", fake_collect)
         try:
@@ -257,6 +478,15 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
                 == "succeeded"
             )
             assert seen == [(group.id, users[1].id, "P-001", "student", "test-password")]
+            assert len(saved_updates) == 1
+            encrypted_payload, conditions = saved_updates[0]
+            assert json.loads(Fernet(key).decrypt(encrypted_payload.encode())) == new_state
+            assert "fresh" not in encrypted_payload
+            assert conditions == {
+                "login": "student@example.edu",
+                "ciphertext": encrypted,
+                "key_version": "v1",
+            }
             async with AsyncSession(engine) as db:
                 jobs = (await db.scalars(select(RanepaCrawlJob))).all()
                 assert len(jobs) == 1
