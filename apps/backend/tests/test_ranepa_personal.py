@@ -280,3 +280,113 @@ def test_group_fallback_never_gives_another_subgroups_lesson(tmp_path):
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_one_verified_peer_shares_common_lessons_but_respects_dynamic_subject_subgroups(tmp_path):
+    """A single representative is enough for common classes, never another split."""
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/one-peer.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                group = Group(
+                    id=uuid4(),
+                    telegram_chat_id=-99011,
+                    name="Group",
+                    academic_group_code=CODE,
+                    timezone="Europe/Moscow",
+                )
+                users = [
+                    User(id=uuid4(), telegram_user_id=800 + i, display_name=f"U{i}")
+                    for i in range(4)
+                ]
+                db.add_all([group, *users])
+                await db.flush()
+                members = [
+                    Membership(
+                        id=uuid4(),
+                        group_id=group.id,
+                        user_id=user.id,
+                        role="student",
+                        status="active",
+                    )
+                    for user in users
+                ]
+                split_name = "Лабораторный практикум"
+                split = SubjectSplit(
+                    id=uuid4(),
+                    group_id=group.id,
+                    subject_id=subject_uuid(group.id, split_name),
+                    subject_name=split_name,
+                    created_at=datetime.now(UTC),
+                )
+                db.add_all([*members, split])
+                await db.flush()
+                options = [
+                    Subgroup(
+                        id=uuid4(),
+                        split_id=split.id,
+                        position=i + 1,
+                        name=f"Поток {i + 1}",
+                        signals="[]",
+                    )
+                    for i in range(3)
+                ]
+                db.add_all(options)
+                await db.flush()
+                for member, subgroup in zip(
+                    members, [options[0], options[0], options[1], options[2]], strict=True
+                ):
+                    db.add(
+                        MemberSubgroup(
+                            membership_id=member.id,
+                            split_id=split.id,
+                            subgroup_id=subgroup.id,
+                            updated_at=datetime.now(UTC),
+                        )
+                    )
+                snapshot = WeekSnapshot(
+                    CODE,
+                    date(2026, 11, 2),
+                    date(2026, 11, 8),
+                    (
+                        ExternalLesson(
+                            date(2026, 11, 2),
+                            time(9),
+                            time(10, 20),
+                            split_name,
+                            teacher="Преподаватель первого потока",
+                            subgroup_hint="Поток 1",
+                        ),
+                        ExternalLesson(
+                            date(2026, 11, 2),
+                            time(10, 40),
+                            time(12),
+                            "Общий предмет",
+                            teacher="Преподаватель",
+                            room="СДО",
+                        ),
+                    ),
+                )
+                await remember_personal(
+                    db, group.id, users[0].id, snapshot, group_identity_verified=True
+                )
+                await db.commit()
+                expectations = (
+                    (users[1], {"Лабораторный практикум", "Общий предмет"}),
+                    (users[2], {"Общий предмет"}),
+                    (users[3], {"Общий предмет"}),
+                )
+                for target, subjects in expectations:
+                    result = await personal_with_group_fallback(
+                        db, group.id, target.id, date(2026, 11, 2), date(2026, 11, 8)
+                    )
+                    assert result["fallback_used"] is True
+                    assert {item["subject"] for item in result["lessons"]} == subjects
+                    assert all(item["online_url"] is None for item in result["lessons"])
+                    assert all(item["course_url"] is None for item in result["lessons"])
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
