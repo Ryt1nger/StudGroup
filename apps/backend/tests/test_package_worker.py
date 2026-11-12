@@ -1388,7 +1388,6 @@ def test_owner_funded_pilot_runs_at_most_one_new_package_per_group_per_hour(clie
     assert set(states(client).values()) == {"completed"}
 
 
-
 def test_sized_photo_package_keeps_all_target_image_facts_without_truncation():
     from uuid import uuid4
 
