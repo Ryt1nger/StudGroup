@@ -76,7 +76,6 @@ def test_daily_windows(time, allowed, extended):
         assert result[0].astimezone(stamp(time).tzinfo).minute == 0
 
 
-
 def test_five_group_ai_slots_are_evenly_spaced_and_deterministic():
     groups = ["z", "a", "c", "b", "e"]
     offsets = staggered_offsets(groups)
