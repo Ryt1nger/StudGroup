@@ -625,5 +625,10 @@ def test_owner_week_start_excludes_old_photo_jobs_and_pays_only_for_new_sources(
     assert jobs
     # There must never be a paid or even a newly scheduled first-pass job
     # for the ten-day-old source, regardless of retention.
-    raw_by_id = {row.id: row.telegram_message_id for row in stored(client, RawMessage)}
+    async def read_raw_ids():
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (await db.scalars(select(RawMessage))).all()
+            return {row.id: row.telegram_message_id for row in rows}
+
+    raw_by_id = asyncio.run(read_raw_ids())
     assert all(raw_by_id[job.raw_message_id] == 32 for job in jobs)
