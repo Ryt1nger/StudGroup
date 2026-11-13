@@ -363,8 +363,8 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
             legal_data_region="Moscow",
             legal_documents_approved=True,
             ranepa_access_approved=True,
-            ranepa_session_reuse_enabled=True,
         )
+        assert settings.ranepa_session_reuse_enabled is False
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
@@ -420,7 +420,7 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
                 engine_, group_id, user_id, code, login, password, today, **kwargs
             ):
                 assert kwargs["storage_state"] is None
-                assert callable(kwargs["persist_session"])
+                assert kwargs["persist_session"] is None
                 seen.append((group_id, user_id, code, login, password))
 
             monkeypatch.setattr("studgroup.ranepa_worker._collect", fake_collect)
