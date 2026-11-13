@@ -273,8 +273,10 @@ async def process_one(
             "parse_failed",
             "internal",
         }
-        category = "succeeded" if failure is None else (
-            failure if failure in known_failures else "unknown"
+        category = (
+            "succeeded"
+            if failure is None
+            else (failure if failure in known_failures else "unknown")
         )
         log_captcha_stage(f"pilot_finished_{category}")
     return "succeeded" if failure is None else "failed"
