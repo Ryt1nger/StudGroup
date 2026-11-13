@@ -130,6 +130,8 @@ def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
             async def coordinates(self, encoded, **kwargs):
                 assert base64.b64decode(encoded) == b"CHALLENGE_ONLY_NOT_STUDENT_PROFILE"
                 assert kwargs["min_clicks"] == kwargs["max_clicks"] == 2
+                assert kwargs["hintText"] == ranepa_captcha.HINT
+                assert len(kwargs["hintText"]) <= 140
                 return {"code": "coordinates:x=140,y=315;x=220,y=371"}
 
         page = FakePage()
@@ -151,7 +153,15 @@ def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
     asyncio.run(scenario())
 
 
-def test_invalid_positions_never_touch_one_shot_sliders():
+@pytest.mark.parametrize(
+    ("code", "stage"),
+    [
+        ("coordinates:x=140,y=315;x=210,y=315", "target_2_above_track"),
+        ("coordinates:x=1,y=315;x=210,y=371", "target_1_x_outside_track"),
+        ("coordinates:x=140,y=490;x=210,y=371", "target_1_below_track"),
+    ],
+)
+def test_invalid_positions_never_touch_one_shot_sliders(code, stage, caplog):
     async def scenario():
         class FakeTitle:
             async def is_visible(self):
@@ -196,10 +206,13 @@ def test_invalid_positions_never_touch_one_shot_sliders():
 
         class FakeClient:
             async def coordinates(self, *_args, **_kwargs):
-                # Second coordinate is in the upper slider row.
-                return {"code": "coordinates:x=140,y=315;x=210,y=315"}
+                return {"code": code}
 
-        assert not await ranepa_captcha.solve_slider_captcha(FakePage(), FakeClient())
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(FakePage(), FakeClient())
+        assert f"RANEPA_CAPTCHA_STAGE {stage}" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE coordinates_outside_controls" in caplog.text
+        assert code not in caplog.text
 
     asyncio.run(scenario())
 

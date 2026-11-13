@@ -111,11 +111,25 @@ Selected stage codes and what they mean:
 | `provider_answer_received` | RuCaptcha returned a response (acceptance not proven) |
 | `provider_answer_invalid` | Answer did not contain exactly two expected coordinates |
 | `coordinates_outside_controls` | Coordinates do not map to both slider rows |
+| `target_1_x_outside_track` / `target_2_x_outside_track` | Provider click falls horizontally outside the corresponding slider track |
+| `target_1_above_track` / `target_2_above_track` | Provider click falls above the corresponding slider track, possibly on the circle |
+| `target_1_below_track` / `target_2_below_track` | Provider click falls below the corresponding slider track |
 | `drag_submitted` | Slider motions were performed; **not** proof that the gate passed |
 | `challenge_still_present_month` | The subsequent LK check still reported CAPTCHA |
 | `month_verified_after_challenge` | The normal timetable/identity checks succeeded |
 | `pilot_finished_captcha` | The final worker status is still CAPTCHA |
 | `provider_timeout` / `provider_error` | Upstream provider failed; exception details are not logged |
+
+For the 2026-11-13 paid run #43419540993, the provider returned two
+well-formed points, but at least one was not on the expected slider track.
+The old response was deliberately not logged, so the exact mismatch cannot be
+reconstructed. The instruction sent to RuCaptcha now explicitly requests two
+clicks on the **tracks**, not on the circular puzzle. The diagnostic also
+distinguishes off-track X, above-track Y and below-track Y without exposing
+coordinates or image data. **Do not automatically clamp or ignore Y:** the
+challenge permits only one movement and the worker's answer may refer to
+another part of the image. Stop after a rejected response instead of retrying
+paid tasks blindly.
 
 When a stage is absent, **do not infer that its action happened**.
 An unchanged account and a `captcha` result do not prove an API request.
