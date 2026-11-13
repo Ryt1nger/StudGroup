@@ -467,6 +467,9 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
             legal_documents_approved=True,
             ranepa_access_approved=True,
             ranepa_session_reuse_enabled=True,
+            ranepa_captcha_enabled=True,
+            captcha_api_key=SecretStr("test-provider-key"),
+            ranepa_captcha_diagnostic_only=True,
         )
 
         saved_state = {"cookies": [], "origins": []}
@@ -488,6 +491,8 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
         async def fake_collect(_engine, group_id, user_id, code, login, password, _today, **kwargs):
             seen.append((group_id, user_id, code, login, password))
             assert kwargs["storage_state"] == saved_state
+            assert kwargs["captcha_client"] is None
+            assert kwargs["captcha_diagnostic_only"] is True
             await kwargs["persist_session"](new_state)
 
         monkeypatch.setattr("studgroup.ranepa_worker._collect", fake_collect)
