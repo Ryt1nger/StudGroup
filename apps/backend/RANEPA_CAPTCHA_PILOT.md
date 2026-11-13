@@ -31,6 +31,17 @@ should align; do not assume a high solve rate from synthetic tests.
   `RANEPA_SESSION_REUSE_ENABLED=true`. Scheduled jobs leave this feature off.
   Do not copy those cookies between accounts or server IPs.
 
+## Manual pilot retry versus scheduled refresh
+
+The scheduled multi-account queue retains the normal 24-hour refresh interval.
+When an operator manually dispatches `ranepa-crawl.yml` with both
+`pilot_group_id` and `pilot_user_id`, that one approved account can requeue
+its previously completed (succeeded or failed) current-week job immediately.
+This is specifically for repeatable single-account tests without a 24-hour wait:
+other users, queued work and actively running jobs are not reset. It does not
+automatically retry CAPTCHAs: each manually dispatched run still has at most
+one paid task under the existing budget. Do not repeatedly dispatch on errors.
+
 ## Opt-in setup for one account (only after code review)
 
 1. Add GitHub Actions **secret** `RUCAPTCHA_API_KEY` to the StudGroup repository.
