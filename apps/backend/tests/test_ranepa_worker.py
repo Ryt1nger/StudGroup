@@ -363,6 +363,7 @@ def test_worker_claims_only_connected_members_and_keeps_credentials_out_of_queue
             legal_data_region="Moscow",
             legal_documents_approved=True,
             ranepa_access_approved=True,
+            ranepa_session_reuse_enabled=True,
         )
         try:
             async with engine.begin() as conn:
@@ -461,6 +462,7 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
             legal_data_region="Moscow",
             legal_documents_approved=True,
             ranepa_access_approved=True,
+            ranepa_session_reuse_enabled=True,
         )
 
         saved_state = {"cookies": [], "origins": []}
