@@ -220,7 +220,11 @@ def _range_state_stage(snapshots: list[dict]) -> str:
         return unavailable
     at_min = []
     for row in snapshots:
-        if not isinstance(row, dict) or row.get("type") != "range" or row.get("disabled") is not False:
+        if (
+            not isinstance(row, dict)
+            or row.get("type") != "range"
+            or row.get("disabled") is not False
+        ):
             return unavailable
         try:
             minimum = float(row["min"])
