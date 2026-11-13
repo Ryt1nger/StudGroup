@@ -593,3 +593,190 @@ def test_geometry_mapping_handles_offset_and_different_slider_widths():
     ]
     # Swapping the two rows must be rejected, not silently reordered.
     assert ranepa_captcha._slider_targets(((100, 375), (180, 313)), boxes, clip) is None
+
+
+@pytest.mark.parametrize(
+    ("snapshots", "expected"),
+    [
+        (
+            [
+                {"type": "range", "min": "0", "max": "100", "value": "0", "disabled": False},
+                {"type": "range", "min": "5", "max": "15", "value": "5", "disabled": False},
+            ],
+            "diagnostic_range_state_at_min",
+        ),
+        (
+            [
+                {"type": "range", "min": "0", "max": "100", "value": "50", "disabled": False},
+                {"type": "range", "min": "0", "max": "100", "value": "0", "disabled": False},
+            ],
+            "diagnostic_range_state_not_at_min",
+        ),
+        (
+            [
+                {"type": "range", "min": "0", "max": "100", "value": "0", "disabled": True},
+                {"type": "range", "min": "0", "max": "100", "value": "0", "disabled": False},
+            ],
+            "diagnostic_range_state_unavailable",
+        ),
+        (
+            [
+                {"type": "range", "min": "0", "max": "100", "value": "NaN", "disabled": False},
+                {"type": "range", "min": "0", "max": "100", "value": "0", "disabled": False},
+            ],
+            "diagnostic_range_state_unavailable",
+        ),
+        (
+            [
+                {"type": "range", "min": "10", "max": "10", "value": "10", "disabled": False},
+                {"type": "range", "min": "0", "max": "100", "value": "0", "disabled": False},
+            ],
+            "diagnostic_range_state_unavailable",
+        ),
+        (
+            [
+                {"type": "range", "min": "0", "max": "100", "value": "101", "disabled": False},
+                {"type": "range", "min": "0", "max": "100", "value": "0", "disabled": False},
+            ],
+            "diagnostic_range_state_unavailable",
+        ),
+        (
+            [{"type": "range", "min": "0", "max": "100", "value": "0", "disabled": False}],
+            "diagnostic_range_state_unavailable",
+        ),
+        (
+            [
+                {"type": "text", "min": "0", "max": "100", "value": "0", "disabled": False},
+                {"type": "range", "min": "0", "max": "100", "value": "0", "disabled": False},
+            ],
+            "diagnostic_range_state_unavailable",
+        ),
+    ],
+)
+def test_read_only_range_state_semantics(snapshots, expected):
+    assert ranepa_captcha._range_state_stage(snapshots) == expected
+
+
+def test_free_diagnostic_observes_range_values_without_mouse_or_provider(caplog):
+    async def scenario():
+        values = [
+            {"type": "range", "min": "0", "max": "100", "value": "50", "disabled": False},
+            {"type": "range", "min": "0", "max": "100", "value": "0", "disabled": False},
+        ]
+        evaluated = []
+
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return {
+                    "x": 100,
+                    "y": 360 + self.index * 56,
+                    "width": 300,
+                    "height": 30,
+                }
+
+            async def evaluate(self, expression, **kwargs):
+                assert expression.startswith("(el) =>")
+                assert kwargs == {"timeout": 1500}
+                evaluated.append(self.index)
+                return values[self.index]
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class NoMouse:
+            async def move(self, *_args, **_kwargs):
+                raise AssertionError("must not move")
+
+            async def down(self):
+                raise AssertionError("must not press")
+
+            async def up(self):
+                raise AssertionError("must not release")
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = NoMouse()
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Title()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), None)
+        assert evaluated == [0, 1]
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_capture_grid_verified" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_range_state_not_at_min" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_complete_no_provider_call" in caplog.text
+        assert "provider_request_started" not in caplog.text
+        assert "drag_submitted" not in caplog.text
+        assert "50" not in caplog.text  # Never log raw range values.
+
+    asyncio.run(scenario())
+
+
+def test_offline_range_diagnostic_is_unavailable_without_real_range_inputs():
+    async def scenario():
+        class FakeInputs:
+            async def count(self):
+                return 0
+
+        class Page:
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return FakeInputs()
+
+        assert (
+            await ranepa_captcha._inspect_range_state_offline(Page())
+            == "diagnostic_range_state_unavailable"
+        )
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        ({"code": "coordinate:x=0,y=0;x=100,y=200"}, ((0, 0), (100, 200))),
+        ({"code": "coordinate:x=10,y=20"}, None),
+        ({"code": "coordinate:x=10,y=20;x=30,y=40;x=50,y=60"}, None),
+        ({"code": "coordinate:x=10.5,y=20;x=30,y=40"}, None),
+        ({"code": "coordinate:x=-10,y=20;x=30,y=40"}, None),
+        ({"code": "coordinate:x=10,y=20;x=30,y=40\\n"}, None),
+        ({"code": [10, 20, 30, 40]}, None),
+    ],
+)
+def test_two_point_coordinate_response_contract_is_strict(answer, expected):
+    assert ranepa_captcha.decode_slider_coordinates(answer) == expected
+
+
+def test_legacy_motion_start_is_not_a_verified_thumb_position():
+    """The legacy adapter's starting x is a fixed offset, not the DOM thumb center."""
+    boxes = [
+        {"x": 100, "y": 360, "width": 300, "height": 30},
+        {"x": 116, "y": 416, "width": 280, "height": 30},
+    ]
+    clip = {"x": 80, "y": 60, "width": 340, "height": 431}
+    targets = ranepa_captcha._slider_targets(((140, 315), (220, 371)), boxes, clip)
+    assert targets is not None
+    assert targets[0][0] == boxes[0]["x"] + 25
+    assert targets[1][0] == boxes[1]["x"] + 25
+    # This does not prove where either CSS thumb is rendered. No browser
+    # interaction is attempted in this test.

@@ -110,6 +110,9 @@ Selected stage codes and what they mean:
 | `capture_ready` | Local crop was captured; this does **not** mean a paid task occurred |
 | `diagnostic_capture_grid_verified` | Offline PNG pixel dimensions match the expected Playwright clip dimensions; **not** proof of a valid solution |
 | `diagnostic_capture_grid_mismatch` | Offline PNG pixel grid does not match the expected clip, or bytes cannot be decoded; do not infer a coordinate transform |
+| `diagnostic_range_state_at_min` | Both live HTML range values were at their declared minimum; this is **not** a measurement of thumb pixel locations |
+| `diagnostic_range_state_not_at_min` | At least one live HTML range value was above minimum; hard-coded left-start assumptions are unverified |
+| `diagnostic_range_state_unavailable` | Exactly two supported inputs could not be read or validated; do not guess their initial positions |
 | `tracks_marked_for_provider` | Both slider tracks were outlined on the in-memory copy for RuCaptcha |
 | `capture_annotation_failed` | The PNG dimensions or encoding could not be safely matched; no provider task was sent |
 | `diagnostic_complete_no_provider_call` | Offline inspection finished with **zero RuCaptcha calls** |
@@ -174,6 +177,64 @@ When a stage is absent, **do not infer that its action happened**.
 An unchanged account and a `captcha` result do not prove an API request.
 Keep sensitive diagnostics in the private operator workflow; do not enable
 verbose browser/network tracing or upload HAR/cookies to artifacts.
+
+## Offline audit: coordinate contract and initial slider state
+
+**Scope:** only the manually approved pilot's `diagnostic_only=true` path.
+The paid path and its accepted-coordinate/movement logic are unchanged.
+
+1. **Provider contract.** RuCaptcha's Coordinates method returns ordered
+   points in the submitted image, not mouse-drags or verified slider values.
+   The legacy SDK parser requires exactly two unsigned integer coordinate
+   pairs. The adapter translates from clipped-image to viewport coordinates,
+   validates each point against its matching input's bounds, and rejects
+   out-of-track answers before any mouse action. The provider's `code` is not
+   recorded. See https://rucaptcha.com/api-docs/coordinates.
+2. **Screenshot grid.** Run #43456938782 on 2026-11-13 reported
+   `diagnostic_capture_grid_verified`; this rules out a simple mismatch of
+   PNG dimensions versus the screenshot clip in that run. It does not prove
+   that workers clicked the intended control or that a real range thumb
+   starts where the adapter expects.
+3. **Initial values.** A new offline-only read of two HTML
+   `input[type="range"]` elements inspects `type`, `min`, `max`, live
+   `value`, and `disabled`. It emits **only one fixed stage**:
+   `diagnostic_range_state_at_min`,
+   `diagnostic_range_state_not_at_min`, or
+   `diagnostic_range_state_unavailable`. No raw values, DOM snippets,
+   screenshots or session data are logged or exported.
+4. **Starting pixel coordinates remain unverified.** Paid-path motion still
+   starts at `box["x"] + 25` for each slider without verifying actual CSS
+   thumb center. Even `diagnostic_range_state_at_min` cannot validate that
+   pixel location: CSS/native input appearance, styling, thumb dimensions,
+   browser and rendering details can change the visual handle position.
+5. **Sufficiency of a single static image remains unknown.** The provider
+   receives one frozen screenshot; the repository has no approved sample
+   showing that the required two end positions can be inferred from that
+   frame without interactive feedback. No challenge screenshots or raw
+   provider responses were retained from the paid attempts, so those
+   attempts cannot establish why the first point fell above the upper
+   control. Do not claim compatibility or infer target locations from
+   incomplete evidence.
+
+### Decision and safe next steps
+
+- Do not launch another paid RuCaptcha attempt merely because the PNG
+  dimensions match, and do not automatically clamp coordinates or increase
+  retries. Keep the manual pilot limits and production defaults.
+- Treat read-only range semantics as an **audit signal**, not a replacement
+  for measuring visual thumb geometry or a solution for a CAPTCHA.
+- Prefer an explicitly approved institutional schedule feed/export or
+  access method. RANEPA's student information page points to the personal
+  account and `https://my.ranepa.ru/schedule/`; this is a schedule page,
+  **not proof of a documented third-party API**:
+  https://www.ranep.online/mfc/
+- Alternatively, use a human-authorized verification and manual
+  import/review process, subject to the institution's site terms. Never
+  expose authentication tokens or captured challenges to public artifacts.
+- Revisit live CAPTCHA automation only with explicit institutional
+  authorization, appropriate security review, and a verified interface
+  contract. Offline synthetic tests do not demonstrate successful passage
+  of StormWall.
 
 ## Validation checklist
 

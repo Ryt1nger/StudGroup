@@ -7,6 +7,7 @@ This is a best-effort pilot adapter, not a guarantee of passing any given challe
 import asyncio
 import base64
 import logging
+import math
 import re
 from dataclasses import dataclass
 from io import BytesIO
@@ -207,6 +208,58 @@ def _slider_targets(
     return targets
 
 
+def _range_state_stage(snapshots: list[dict]) -> str:
+    """Classify *live DOM range values*, never infer thumb pixel locations.
+
+    The result intentionally has no numeric payload. Even when both values
+    are at their minimum, CSS styling may place thumbs somewhere other than
+    the adapter's currently hard-coded start coordinate.
+    """
+    unavailable = "diagnostic_range_state_unavailable"
+    if len(snapshots) != 2:
+        return unavailable
+    at_min = []
+    for row in snapshots:
+        if (
+            not isinstance(row, dict)
+            or row.get("type") != "range"
+            or row.get("disabled") is not False
+        ):
+            return unavailable
+        try:
+            minimum = float(row["min"])
+            maximum = float(row["max"])
+            current = float(row["value"])
+        except (KeyError, TypeError, ValueError):
+            return unavailable
+        if not all(math.isfinite(number) for number in (minimum, maximum, current)):
+            return unavailable
+        if maximum <= minimum or not minimum <= current <= maximum:
+            return unavailable
+        at_min.append(math.isclose(current, minimum, rel_tol=0, abs_tol=1e-9))
+    return "diagnostic_range_state_at_min" if all(at_min) else "diagnostic_range_state_not_at_min"
+
+
+async def _inspect_range_state_offline(page) -> str:
+    """Read only two range-input properties, with no input events or mouse use."""
+    try:
+        inputs = page.locator('input[type="range"]')
+        if await inputs.count() != 2:
+            return "diagnostic_range_state_unavailable"
+        snapshots = [
+            await inputs.nth(index).evaluate(
+                "(el) => ({type: el.type, min: el.min, max: el.max, "
+                "value: el.value, disabled: el.disabled})",
+                timeout=1500,
+            )
+            for index in range(2)
+        ]
+        return _range_state_stage(snapshots)
+    except Exception:  # noqa: BLE001
+        # Challenge may disappear during diagnostics; never echo DOM/exception.
+        return "diagnostic_range_state_unavailable"
+
+
 async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> bool:
     """Attempt exactly one drag per slider after a single coordinate task.
 
@@ -242,6 +295,7 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
                 log_captcha_stage("diagnostic_capture_grid_verified")
             else:
                 log_captcha_stage("diagnostic_capture_grid_mismatch")
+            log_captcha_stage(await _inspect_range_state_offline(page))
             log_captcha_stage("diagnostic_complete_no_provider_call")
             return False
         try:
