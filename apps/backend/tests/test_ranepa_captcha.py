@@ -401,7 +401,7 @@ def test_offline_diagnostic_inspects_challenge_without_clicks_or_provider(caplog
                     "width": 340,
                     "height": 431,
                 }
-                return b"test-only-local-image"
+                return _fake_png()
 
         with caplog.at_level(logging.WARNING):
             assert not await ranepa_captcha.solve_slider_captcha(Page(), None)
@@ -410,6 +410,7 @@ def test_offline_diagnostic_inspects_challenge_without_clicks_or_provider(caplog
         ]
         assert "RANEPA_CAPTCHA_STAGE controls_confirmed" in stages
         assert "RANEPA_CAPTCHA_STAGE capture_ready" in stages
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_capture_grid_verified" in stages
         assert "RANEPA_CAPTCHA_STAGE diagnostic_complete_no_provider_call" in stages
         assert "provider_request_started" not in caplog.text
         assert "test-only-local-image" not in caplog.text
@@ -513,3 +514,84 @@ def test_annotated_image_preserves_pixel_coordinate_system():
         (125, 220, 375),
         (125, 300, 431),
     ]
+
+
+@pytest.mark.parametrize("capture_kind", ["device_pixels_2x", "wrong_png_size", "invalid_bytes"])
+def test_free_diagnostic_flags_pixel_grid_mismatch_without_motion(
+    capture_kind, monkeypatch, caplog
+):
+    """No paid call, annotation or mouse motion on unsupported screenshot geometry."""
+
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+
+        async def slider_boxes(_page):
+            return boxes
+
+        monkeypatch.setattr(ranepa_captcha, "_slider_boxes", slider_boxes)
+
+        class NoMotion:
+            async def move(self, *_args, **_kwargs):
+                raise AssertionError("diagnostic must never move")
+
+            async def down(self):
+                raise AssertionError("diagnostic must never press")
+
+            async def up(self):
+                raise AssertionError("diagnostic must never release")
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = NoMotion()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["clip"] == {
+                    "x": 80, "y": 60, "width": 340, "height": 431
+                }
+                if capture_kind == "invalid_bytes":
+                    return b"intentionally-not-a-png"
+                size = (680, 862) if capture_kind == "device_pixels_2x" else (40, 40)
+                output = BytesIO()
+                Image.new("RGB", size, "white").save(output, "PNG")
+                return output.getvalue()
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), None)
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_capture_grid_mismatch" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_complete_no_provider_call" in caplog.text
+        assert "provider_request_started" not in caplog.text
+        assert "drag_submitted" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_geometry_mapping_handles_offset_and_different_slider_widths():
+    """Offline mapping covers both independent track boxes and clip offsets."""
+    boxes = [
+        {"x": 100, "y": 350, "width": 300, "height": 26},
+        {"x": 116, "y": 410, "width": 280, "height": 30},
+    ]
+    clip = ranepa_captcha._challenge_clip(boxes)
+    assert clip == {"x": 80, "y": 50, "width": 340, "height": 435}
+
+    output = BytesIO()
+    Image.new("RGB", (340, 435), (245, 245, 245)).save(output, "PNG")
+    png = output.getvalue()
+    assert ranepa_captcha._capture_grid_matches_clip(png, clip)
+
+    marked = ranepa_captcha._annotate_slider_tracks(png, boxes, clip)
+    with Image.open(BytesIO(marked)) as image:
+        assert image.size == (340, 435)
+        assert image.getpixel((50, 298)) == (0, 165, 85)
+        assert image.getpixel((50, 358)) == (0, 105, 235)
+
+    # Coordinates are in cropped image pixels, then translated by clip x/y.
+    assert ranepa_captcha._slider_targets(((100, 313), (180, 375)), boxes, clip) == [
+        (125, 180, 363),
+        (141, 260, 425),
+    ]
+    # Swapping the two rows must be rejected, not silently reordered.
+    assert ranepa_captcha._slider_targets(((100, 375), (180, 313)), boxes, clip) is None
