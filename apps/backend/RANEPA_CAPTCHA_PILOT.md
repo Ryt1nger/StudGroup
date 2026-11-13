@@ -27,15 +27,19 @@ should align; do not assume a high solve rate from synthetic tests.
 - Invalid coordinates, different HTML, provider error, timeout or no API key
   preserve the existing safe `captcha` failure. No aggressive retry loop.
 - Fernet-encrypted YDB `storage_state` from the parent session-reuse PR
-  persists browser cookies after a verified crawl. Do not copy those cookies
-  between accounts or server IPs.
+  persists browser cookies after a verified crawl, **only when**
+  `RANEPA_SESSION_REUSE_ENABLED=true`. Scheduled jobs leave this feature off.
+  Do not copy those cookies between accounts or server IPs.
 
 ## Opt-in setup for one account (only after code review)
 
 1. Add GitHub Actions **secret** `RUCAPTCHA_API_KEY` to the StudGroup repository.
    This secret is mapped to the Pydantic setting `CAPTCHA_API_KEY` inside the
    workflow. Never post its value to an issue, chat or logs.
-2. Add GitHub Actions **variable** `RANEPA_CAPTCHA_PILOT_ENABLED=true`.
+2. Add GitHub Actions **variables** `RANEPA_CAPTCHA_PILOT_ENABLED=true` and
+   `RANEPA_SESSION_REUSE_PILOT_ENABLED=true`. The first enables the paid
+   solver; the second enables encrypted cookie-state restoration and updates.
+   Both features stay **off by default** and are gated independently.
    The workflow enables paid CAPTCHA solving **only for a manual**
    `workflow_dispatch` with explicit `pilot_group_id` and `pilot_user_id`.
    Scheduled multi-account runs never enable it.
@@ -50,6 +54,7 @@ should align; do not assume a high solve rate from synthetic tests.
    changing any production settings.
 
 The Pydantic defaults are
+`RANEPA_SESSION_REUSE_ENABLED=false`,
 `RANEPA_CAPTCHA_ENABLED=false`,
 `RANEPA_CAPTCHA_TIMEOUT_SECONDS=110` and
 `RANEPA_CAPTCHA_MAX_TASKS_PER_RUN=1`. A missing key produces a warning,
