@@ -2,8 +2,10 @@
 
 ## Status
 
-Optional adapter in PR #147; **disabled by default, not proven against a live StormWall
-challenge and not deployed**. The current server screenshot shows a two-slider
+Optional adapter introduced in PR #147; **present on `main`, disabled by
+default, and not proven to pass a live StormWall challenge**. Manual one-account
+pilots have received provider answers but have not passed the CAPTCHA.
+The current server screenshot shows a two-slider
 picture challenge on `my.ranepa.ru`, not Moodle. The legacy RuCaptcha Coordinates
 API is a possible fit, but it returns *image coordinates*, not a guaranteed StormWall
 solution. A static screenshot may be insufficient to infer how the moving halves
@@ -106,6 +108,8 @@ Selected stage codes and what they mean:
 | `control_bounds_invalid` / `control_order_invalid` | The observed geometry is unsafe or unsupported |
 | `controls_confirmed` | The expected two visible controls passed geometry checks |
 | `capture_ready` | Local crop was captured; this does **not** mean a paid task occurred |
+| `diagnostic_capture_grid_verified` | Offline PNG pixel dimensions match the expected Playwright clip dimensions; **not** proof of a valid solution |
+| `diagnostic_capture_grid_mismatch` | Offline PNG pixel grid does not match the expected clip, or bytes cannot be decoded; do not infer a coordinate transform |
 | `tracks_marked_for_provider` | Both slider tracks were outlined on the in-memory copy for RuCaptcha |
 | `capture_annotation_failed` | The PNG dimensions or encoding could not be safely matched; no provider task was sent |
 | `diagnostic_complete_no_provider_call` | Offline inspection finished with **zero RuCaptcha calls** |
@@ -137,6 +141,35 @@ challenge permits only one movement and the worker's answer may refer to
 another part of the image. Stop after a rejected response instead of retrying
 paid tasks blindly.
 
+## Offline geometry audit following run #43443988974
+
+The 2026-11-13 manually dispatched `main` run
+[#43443988974](https://github.com/Ryt1nger/StudGroup/actions/runs/43443988974)
+confirmed `tracks_marked_for_provider`, `provider_answer_received`, then
+`target_1_above_track`, `coordinates_outside_controls`, and
+`motion_not_submitted`. The local validator prevented both drags. Neither a
+successful CAPTCHA submission nor a server-side rejection was observed.
+
+The free `diagnostic_only` path now checks whether the locally captured PNG
+pixel dimensions match the Playwright CSS clip. It logs **only** a fixed
+`diagnostic_capture_grid_verified` or `diagnostic_capture_grid_mismatch` stage,
+without image contents, coordinates, API requests, annotations or mouse motion.
+A matching grid rules out a simple image-size discrepancy, but does **not**
+establish that RuCaptcha's two selected points correspond to valid slider
+positions. Earlier paid runs discarded the raw positions intentionally; the
+precise source of `target_1_above_track` cannot be reconstructed from logs.
+
+The current implementation still assumes a drag starting point of
+`box["x"] + 25` without observing the actual slider-thumb position. This
+assumption is **not validated by the offline tests** and may be wrong for
+different CSS/range configurations. Do not relax coordinate checks, infer
+targets from clicks on the circle, increase paid attempts, or enable a
+production rollout on the basis of these diagnostics.
+
+If the protected site supports a documented integration path or an
+administrator-assisted/manual verification flow, prefer that over further
+automated CAPTCHA-solving experiments.
+
 When a stage is absent, **do not infer that its action happened**.
 An unchanged account and a `captcha` result do not prove an API request.
 Keep sensitive diagnostics in the private operator workflow; do not enable
@@ -148,7 +181,7 @@ verbose browser/network tracing or upload HAR/cookies to artifacts.
 - [x] Offline test doubles for provider responses, Playwright drags, origin and
   bounds validation, malformed data, missing key and worker retry limits.
 - [x] Separate JS challenge, CAPTCHA, login and verified timetable statuses.
-- [ ] Real provider credentials and paid API interaction.
+- [x] A paid provider interaction and response in an explicitly authorized one-account manual pilot; CAPTCHA success **not** established.
 - [ ] Verification of StormWall's exact control geometry and successful
   navigation with an authorized **single-account** pilot.
 - [ ] Measured reliability and costs before increasing batch quotas or enabling
