@@ -447,7 +447,6 @@ def test_missing_slider_controls_report_precise_stage_without_sending_image(capl
     asyncio.run(scenario())
 
 
-
 def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact(caplog):
     async def scenario():
         class Title:
