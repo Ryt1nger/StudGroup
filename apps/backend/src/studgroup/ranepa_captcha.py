@@ -130,10 +130,7 @@ def _annotate_slider_tracks(image: bytes, boxes: list[dict], clip: dict) -> byte
     with Image.open(BytesIO(image)) as original:
         if original.format != "PNG":
             raise ValueError("unsupported_capture_format")
-        if (
-            abs(original.width - clip["width"]) > 2
-            or abs(original.height - clip["height"]) > 2
-        ):
+        if abs(original.width - clip["width"]) > 2 or abs(original.height - clip["height"]) > 2:
             raise ValueError("capture_clip_size_mismatch")
         marked = original.convert("RGB")
     draw = ImageDraw.Draw(marked)
