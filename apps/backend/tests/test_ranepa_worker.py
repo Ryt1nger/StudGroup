@@ -567,3 +567,62 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_cooldown_bypass_requires_explicit_group_and_user_ids():
+    async def scenario():
+        with pytest.raises(ValueError, match="cooldown_bypass_requires_targeted_pilot"):
+            await prepare_week(
+                None,
+                date(2026, 11, 13),
+                Settings(_env_file=None),
+                bypass_cooldown=True,
+            )
+
+    asyncio.run(scenario())
+
+
+def test_single_pilot_explicitly_requests_only_its_own_cooldown_bypass(monkeypatch):
+    async def scenario():
+        target_group, target_user = uuid4(), uuid4()
+        calls = []
+
+        class FakeEngine:
+            async def dispose(self):
+                calls.append("disposed")
+
+        async def prepare(engine, today, settings, **kwargs):
+            calls.append(("prepare", kwargs))
+
+        async def process(engine, settings, today, **kwargs):
+            calls.append(("process", kwargs))
+            return "succeeded"
+
+        monkeypatch.setattr(ranepa_worker, "legal_ready", lambda settings: True)
+        monkeypatch.setattr(ranepa_worker, "configured_store", lambda settings: object())
+        monkeypatch.setattr(ranepa_worker, "create_worker_engine", lambda settings: FakeEngine())
+        monkeypatch.setattr(ranepa_worker, "prepare_week", prepare)
+        monkeypatch.setattr(ranepa_worker, "process_one", process)
+        settings = Settings(
+            _env_file=None,
+            ranepa_crawl_enabled=True,
+            ranepa_access_approved=True,
+            profile_encryption_key=SecretStr("placeholder-key"),
+            database_url="postgresql+asyncpg://localhost/test",
+        )
+
+        assert await ranepa_worker.run_single_pilot(
+            settings, group_id=target_group, user_id=target_user
+        ) == "succeeded"
+        assert calls[0][0] == "prepare"
+        assert calls[0][1] == {
+            "pilot_group_id": target_group,
+            "pilot_user_id": target_user,
+            "bypass_cooldown": True,
+        }
+        assert calls[1][0] == "process"
+        assert calls[1][1]["pilot_group_id"] == target_group
+        assert calls[1][1]["pilot_user_id"] == target_user
+        assert calls[2] == "disposed"
+
+    asyncio.run(scenario())
