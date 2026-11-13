@@ -24,6 +24,7 @@ from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
 from studgroup.ranepa_captcha import (
     CaptchaBudget,
     configured_solver,
+    log_captcha_stage,
     solve_slider_captcha,
     warn_if_unconfigured,
 )
@@ -75,6 +76,7 @@ async def collect_bounded(
     captcha_client=None,
     captcha_timeout_seconds=110,
     captcha_budget: CaptchaBudget | None = None,
+    captcha_diagnostic_only: bool = False,
 ):
     try:
         async with asyncio.timeout(ACCOUNT_TIMEOUT_SECONDS):
@@ -91,8 +93,10 @@ async def collect_bounded(
                 captcha_client=captcha_client,
                 captcha_timeout_seconds=captcha_timeout_seconds,
                 captcha_budget=captcha_budget,
+                captcha_diagnostic_only=captcha_diagnostic_only,
             )
     except TimeoutError:
+        log_captcha_stage("crawl_timeout")
         return "source_unavailable"
 
 
@@ -163,6 +167,8 @@ async def process_one(
         job = await claim_next(db, group_id=pilot_group_id, user_id=pilot_user_id)
         if job is None:
             await db.commit()
+            if pilot_group_id is not None:
+                log_captcha_stage("pilot_queue_idle")
             return "idle"
         job_id, group_id, user_id = job.id, job.group_id, job.user_id
         group = await db.get(Group, group_id)
@@ -243,14 +249,34 @@ async def process_one(
                 storage_state=storage_state,
                 persist_session=persist_session if session_cipher is not None else None,
                 captcha_client=(
-                    configured_solver(settings) if available_budget.remaining > 0 else None
+                    configured_solver(settings)
+                    if available_budget.remaining > 0
+                    and not settings.ranepa_captcha_diagnostic_only
+                    else None
                 ),
                 captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,
                 captcha_budget=available_budget,
+                captcha_diagnostic_only=(
+                    settings.ranepa_captcha_diagnostic_only and pilot_group_id is not None
+                ),
             )
     async with AsyncSession(engine) as db:
         await finish(db, job_id, group_id, user_id, failure_code=failure)
         await db.commit()
+    if pilot_group_id is not None:
+        # The value is chosen exclusively from known crawl failure categories.
+        known_failures = {
+            "login_failed",
+            "captcha",
+            "source_unavailable",
+            "identity_unverified",
+            "parse_failed",
+            "internal",
+        }
+        category = "succeeded" if failure is None else (
+            failure if failure in known_failures else "unknown"
+        )
+        log_captcha_stage(f"pilot_finished_{category}")
     return "succeeded" if failure is None else "failed"
 
 
@@ -268,6 +294,7 @@ async def _collect(
     captcha_client=None,
     captcha_timeout_seconds=110,
     captcha_budget: CaptchaBudget | None = None,
+    captcha_diagnostic_only: bool = False,
 ):
     try:
         async with async_playwright() as playwright:
@@ -296,24 +323,51 @@ async def _collect(
 
                 async def solve_once(challenge_page):
                     nonlocal captcha_attempted
-                    if (
-                        captcha_attempted
-                        or captcha_client is None
-                        or urlsplit(getattr(challenge_page, "url", "")).hostname != "my.ranepa.ru"
-                    ):
+                    if captcha_attempted:
+                        log_captcha_stage("attempt_already_used")
                         return False
-                    if captcha_budget is not None and not captcha_budget.claim():
+                    if urlsplit(getattr(challenge_page, "url", "")).hostname != "my.ranepa.ru":
+                        log_captcha_stage("unsupported_origin")
+                        return False
+                    if captcha_client is None and not captcha_diagnostic_only:
+                        log_captcha_stage("provider_not_configured")
+                        return False
+                    if (
+                        not captcha_diagnostic_only
+                        and captcha_budget is not None
+                        and not captcha_budget.claim()
+                    ):
+                        log_captcha_stage("paid_budget_exhausted")
                         return False
                     captcha_attempted = True
-                    return await solve_slider_captcha(
-                        challenge_page, captcha_client, timeout_seconds=captcha_timeout_seconds
+                    log_captcha_stage(
+                        "diagnostic_started" if captcha_diagnostic_only else "paid_attempt_started"
                     )
+                    submitted = await solve_slider_captcha(
+                        challenge_page,
+                        None if captcha_diagnostic_only else captcha_client,
+                        timeout_seconds=captcha_timeout_seconds,
+                    )
+                    if submitted:
+                        log_captcha_stage("motion_submitted_verification_pending")
+                    elif not captcha_diagnostic_only:
+                        log_captcha_stage("motion_not_submitted")
+                    return submitted
 
                 month = await read_month(page, login, password, code, today.year, today.month)
-                if month.status == "captcha_required" and await solve_once(page):
-                    # Re-run the original login and identity verification;
-                    # a coordinate answer is not proof of a successful challenge.
-                    month = await read_month(page, login, password, code, today.year, today.month)
+                if month.status == "captcha_required":
+                    log_captcha_stage("challenge_detected_month")
+                    if await solve_once(page):
+                        # A provider coordinate answer is not proof of success.
+                        month = await read_month(
+                            page, login, password, code, today.year, today.month
+                        )
+                        if month.status == "captcha_required":
+                            log_captcha_stage("challenge_still_present_month")
+                        elif month.status == "preview_only":
+                            log_captcha_stage("month_verified_after_challenge")
+                        else:
+                            log_captcha_stage("month_not_verified_after_challenge")
                 if month.status != "preview_only":
                     if month.status == "captcha_required":
                         return "captcha"
@@ -332,10 +386,18 @@ async def _collect(
                     result = await read_week(
                         page, login, password, code, week_start, allow_empty=not expected
                     )
-                    if result.status == "captcha_required" and await solve_once(page):
-                        result = await read_week(
-                            page, login, password, code, week_start, allow_empty=not expected
-                        )
+                    if result.status == "captcha_required":
+                        log_captcha_stage("challenge_detected_week")
+                        if await solve_once(page):
+                            result = await read_week(
+                                page, login, password, code, week_start, allow_empty=not expected
+                            )
+                            if result.status == "captcha_required":
+                                log_captcha_stage("challenge_still_present_week")
+                            elif result.snapshot is not None:
+                                log_captcha_stage("week_received_after_challenge")
+                            else:
+                                log_captcha_stage("week_not_verified_after_challenge")
                     if result.snapshot is None:
                         if result.status == "captcha_required":
                             return "captcha"
@@ -385,6 +447,7 @@ async def _collect(
                 await browser.close()
     except Exception:  # noqa: BLE001
         # Never include provider exception text, HTML, URLs or credentials in SQL/logs.
+        log_captcha_stage("crawl_internal_error")
         return "internal"
 
 
