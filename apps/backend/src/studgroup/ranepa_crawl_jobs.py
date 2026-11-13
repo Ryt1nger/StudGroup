@@ -61,15 +61,9 @@ async def enqueue_week(
             # The explicit manual pilot can retry its *selected* completed job
             # immediately. Queue workers retain the 24-hour cooldown. Never
             # reset an already queued or currently running job.
-            if (
-                existing.state in {"succeeded", "failed"}
-                and (
-                    force_refresh
-                    or (
-                        existing.finished_at is not None
-                        and existing.finished_at <= now - REFRESH
-                    )
-                )
+            if existing.state in {"succeeded", "failed"} and (
+                force_refresh
+                or (existing.finished_at is not None and existing.finished_at <= now - REFRESH)
             ):
                 existing.state = "queued"
                 existing.priority = priority
