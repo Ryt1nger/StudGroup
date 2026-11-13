@@ -1,0 +1,120 @@
+name: RANEPA YDB linkage audit (read-only)
+
+# One-shot audit on a non-production branch. Never runs on main.
+on:
+  push:
+    branches:
+      - audit/ranepa-ydb-links-20261113
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.RANEPA_DATABASE_URL }}
+      YDB_DOCUMENT_ENDPOINT: ${{ secrets.RANEPA_YDB_DOCUMENT_ENDPOINT }}
+      YDB_ACCESS_KEY_ID: ${{ secrets.RANEPA_YDB_ACCESS_KEY_ID }}
+      YDB_SECRET_ACCESS_KEY: ${{ secrets.RANEPA_YDB_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Check stored references and requested pilot username (no secret output)
+        working-directory: apps/backend
+        run: |
+          uv sync --frozen --no-dev
+          uv run --no-sync python - <<'PY'
+          import asyncio
+          import hashlib
+          import os
+
+          from sqlalchemy import text
+          from sqlalchemy.ext.asyncio import create_async_engine
+
+          from studgroup.ranepa_credential_store import CredentialStore, TABLE
+          from studgroup.ranepa_login import normalize_sdo_login
+
+          # Hashes prevent publishing the user's login or UUID in repository code.
+          EXPECTED_LOGIN_SHA256 = "e334daa3dc78b4435779cbe342fef284e76fe90d279fcbd8f9199343b75c2a4c"
+          EXPECTED_PROFILE_SHA256 = "beca4ceaee931b89302fb4df7d3a8ffd99aaa0e44d3303264c410f3e39724655"
+
+          def sha(value):
+              return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+          async def find_references():
+              engine = create_async_engine(os.environ["DATABASE_URL"])
+              try:
+                  async with engine.connect() as connection:
+                      result = await connection.execute(text(
+                          "SELECT user_id::text AS user_id, sdu_credential_id::text AS credential_id "
+                          "FROM public.user_profiles WHERE sdu_credential_id IS NOT NULL"
+                      ))
+                      return result.fetchall()
+              finally:
+                  await engine.dispose()
+
+          async def audit():
+              required = (
+                  "DATABASE_URL", "YDB_DOCUMENT_ENDPOINT",
+                  "YDB_ACCESS_KEY_ID", "YDB_SECRET_ACCESS_KEY",
+              )
+              if any(not os.environ.get(key) for key in required):
+                  print("AUDIT_ERROR=required_connection_secret_unavailable")
+                  return 2
+
+              records = await find_references()
+              if len(records) > 100:
+                  print("AUDIT_ERROR=unexpectedly_many_references")
+                  return 2
+
+              store = CredentialStore(
+                  os.environ["YDB_DOCUMENT_ENDPOINT"],
+                  os.environ["YDB_ACCESS_KEY_ID"],
+                  os.environ["YDB_SECRET_ACCESS_KEY"],
+              )
+              present = 0
+              matches = 0
+              target_linked = False
+              target_version_ok = False
+              for user_id, credential_id in records:
+                  response = store.client.get_item(
+                      TableName=TABLE,
+                      Key={"id": {"S": credential_id}},
+                      ConsistentRead=True,
+                      ProjectionExpression="#login, #version",
+                      ExpressionAttributeNames={
+                          "#login": "login", "#version": "key_version"
+                      },
+                  )
+                  item = response.get("Item")
+                  if item is None:
+                      continue
+                  present += 1
+                  raw_login = item.get("login", {}).get("S", "")
+                  normalized = normalize_sdo_login(raw_login)
+                  if normalized is None or sha(normalized.casefold()) != EXPECTED_LOGIN_SHA256:
+                      continue
+                  matches += 1
+                  if sha(user_id) == EXPECTED_PROFILE_SHA256:
+                      target_linked = True
+                      target_version_ok = item.get("key_version", {}).get("S") == "v1"
+
+              print(f"POSTGRES_LINKED_ACCOUNTS={len(records)}")
+              print(f"YDB_RECORDS_PRESENT_FOR_LINKS={present}")
+              print(f"YDB_RECORDS_MISSING_FOR_LINKS={len(records) - present}")
+              print(f"REQUESTED_LOGIN_MATCHES={matches}")
+              print(f"REQUESTED_LOGIN_BELONGS_TO_CANDIDATE_PROFILE={str(target_linked).lower()}")
+              print(f"REQUESTED_LOGIN_KEY_VERSION_SUPPORTED={str(target_version_ok).lower()}")
+              return 0 if matches == 1 and target_linked and target_version_ok else 1
+
+          try:
+              raise SystemExit(asyncio.run(audit()))
+          except Exception as error:
+              # Do not echo library exceptions: they may embed URLs, headers or keys.
+              print("AUDIT_ERROR=" + type(error).__name__)
+              raise SystemExit(2)
+          PY
