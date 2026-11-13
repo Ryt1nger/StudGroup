@@ -281,8 +281,7 @@ def _range_geometry_stage(samples: list[dict], boxes: list[dict]) -> str:
             ):
                 return "diagnostic_geometry_rect_mismatch"
             if not all(
-                math.isfinite(float(sample["rect"][key]))
-                and math.isfinite(float(box[key]))
+                math.isfinite(float(sample["rect"][key])) and math.isfinite(float(box[key]))
                 for key in ("x", "y", "width", "height")
             ):
                 return unavailable
