@@ -305,9 +305,7 @@ def test_worker_retries_after_captcha_at_most_once(
     assert observed["solve"] == (1 if budget else 0)
     assert observed["month"] == expected_month_reads
     assert observed["close"] is True
-    assert budget_tracker.remaining == (
-        budget if dry_run or budget == 0 else budget - 1
-    )
+    assert budget_tracker.remaining == (budget if dry_run or budget == 0 else budget - 1)
 
 
 def test_worker_engine_uses_bounded_supabase_pool(monkeypatch):
