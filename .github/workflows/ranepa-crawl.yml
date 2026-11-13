@@ -44,6 +44,14 @@ jobs:
       RANEPA_ACCESS_APPROVED: ${{ secrets.RANEPA_ACCESS_APPROVED }}
       RANEPA_CRAWL_ENABLED: "true"
       RANEPA_CRAWL_PAUSE_SECONDS: "20"
+      # Paid CAPTCHA solving is available only for a manually selected pilot.
+      # Never enable it for scheduled multi-account queue shifts.
+      CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
+      RANEPA_CAPTCHA_ENABLED: ${{ github.event_name == 'workflow_dispatch' && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
+      RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "1"
+      # Encrypted Cookie Reuse must be approved independently for a manual pilot.
+      # Scheduled multi-account jobs retain the existing non-persistent flow.
+      RANEPA_SESSION_REUSE_ENABLED: ${{ github.event_name == 'workflow_dispatch' && vars.RANEPA_SESSION_REUSE_PILOT_ENABLED == 'true' }}
     defaults:
       run:
         working-directory: apps/backend

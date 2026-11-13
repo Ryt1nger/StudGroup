@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     ranepa_access_approved: bool = False
     ranepa_schedule_view_enabled: bool = False
     ranepa_crawl_pause_seconds: int = Field(default=20, ge=5, le=300)
+    # Stage encrypted browser-state reuse separately from the legacy crawler.
+    ranepa_session_reuse_enabled: bool = False
+    # Explicitly opt-in to paid RuCaptcha challenges; disabled by default.
+    ranepa_captcha_enabled: bool = False
+    captcha_api_key: SecretStr = SecretStr("")
+    ranepa_captcha_timeout_seconds: int = Field(default=110, ge=30, le=150)
+    # Hard cap on billable challenges per batch/worker process (not per student).
+    ranepa_captcha_max_tasks_per_run: int = Field(default=1, ge=0, le=10)
     legal_operator_name: str = ""
     legal_operator_address: str = ""
     legal_operator_contact: str = ""

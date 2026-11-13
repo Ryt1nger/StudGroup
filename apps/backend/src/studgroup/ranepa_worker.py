@@ -2,14 +2,17 @@
 
 import argparse
 import asyncio
+import json
 import signal
 from collections import Counter
 from datetime import date, datetime, timedelta
 from time import monotonic
+from urllib.parse import urlsplit
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet, InvalidToken
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -18,13 +21,35 @@ from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
 from studgroup.models import Group, Membership, MemberSubgroup, UserProfile
 from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
+from studgroup.ranepa_captcha import (
+    CaptchaBudget,
+    configured_solver,
+    solve_slider_captcha,
+    warn_if_unconfigured,
+)
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_personal import remember_personal
+from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 
 ACCOUNT_TIMEOUT_SECONDS = 600
+
+
+def restored_storage_state(encrypted_state: str | None, cipher: Fernet | None) -> dict | None:
+    """Unusable or unrecognised session tokens never prevent password-based login."""
+    if not encrypted_state or cipher is None:
+        return None
+    try:
+        state = json.loads(cipher.decrypt(encrypted_state.encode("utf-8")).decode("utf-8"))
+    except (InvalidToken, ValueError, TypeError, UnicodeError):
+        return None
+    if not isinstance(state, dict):
+        return None
+    if not isinstance(state.get("cookies"), list) or not isinstance(state.get("origins"), list):
+        return None
+    return state
 
 
 def create_worker_engine(settings: Settings):
@@ -36,10 +61,37 @@ def create_worker_engine(settings: Settings):
     )
 
 
-async def collect_bounded(engine, group_id, user_id, code, login, password, today):
+async def collect_bounded(
+    engine,
+    group_id,
+    user_id,
+    code,
+    login,
+    password,
+    today,
+    *,
+    storage_state=None,
+    persist_session=None,
+    captcha_client=None,
+    captcha_timeout_seconds=110,
+    captcha_budget: CaptchaBudget | None = None,
+):
     try:
         async with asyncio.timeout(ACCOUNT_TIMEOUT_SECONDS):
-            return await _collect(engine, group_id, user_id, code, login, password, today)
+            return await _collect(
+                engine,
+                group_id,
+                user_id,
+                code,
+                login,
+                password,
+                today,
+                storage_state=storage_state,
+                persist_session=persist_session,
+                captcha_client=captcha_client,
+                captcha_timeout_seconds=captcha_timeout_seconds,
+                captcha_budget=captcha_budget,
+            )
     except TimeoutError:
         return "source_unavailable"
 
@@ -101,7 +153,9 @@ async def process_one(
     *,
     pilot_group_id: UUID | None = None,
     pilot_user_id: UUID | None = None,
+    captcha_budget: CaptchaBudget | None = None,
 ) -> str:
+    available_budget = captcha_budget or CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     async with AsyncSession(engine, expire_on_commit=False) as db:
         job = await claim_next(db, group_id=pilot_group_id, user_id=pilot_user_id)
         if job is None:
@@ -131,7 +185,7 @@ async def process_one(
         credential = None
     else:
         try:
-            credential = await store.get(credential_id)
+            credential = await store.get(credential_id, include_session_state=True)
         except CredentialStoreUnavailable:
             credential = None
         failure = "internal" if credential is None else None
@@ -141,29 +195,122 @@ async def process_one(
     else:
         try:
             cipher = Fernet(secret.encode())
-            login, encrypted_password, _ = credential
-            login = normalize_sdo_login(login)
+            stored_login, encrypted_password, key_version, encrypted_session = credential
+            login = normalize_sdo_login(stored_login)
             if not login:
                 raise ValueError("empty_sdo_login")
             password = cipher.decrypt(encrypted_password.encode()).decode()
         except (ValueError, InvalidToken, UnicodeDecodeError):
             failure = "login_failed"
         else:
-            failure = await collect_bounded(engine, group_id, user_id, code, login, password, today)
+            # The project currently has exactly one configured Fernet key, labelled v1.
+            # Other versions must not be decoded or overwritten with the wrong key.
+            session_cipher = (
+                cipher if key_version == "v1" and settings.ranepa_session_reuse_enabled else None
+            )
+            storage_state = restored_storage_state(encrypted_session, session_cipher)
+
+            async def persist_session(state: dict):
+                # Browser state can include both LK and Moodle bearer cookies.
+                # Only Fernet ciphertext ever reaches the YDB Document API.
+                if session_cipher is None:
+                    return
+                payload = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
+                encrypted_state = session_cipher.encrypt(payload.encode("utf-8")).decode("utf-8")
+                try:
+                    await store.update_session_state(
+                        credential_id,
+                        encrypted_state,
+                        login=stored_login,
+                        ciphertext=encrypted_password,
+                        key_version=key_version,
+                    )
+                except CredentialStoreUnavailable:
+                    # An updated/revoked account must not be recreated by a late crawl.
+                    return
+
+            failure = await collect_bounded(
+                engine,
+                group_id,
+                user_id,
+                code,
+                login,
+                password,
+                today,
+                storage_state=storage_state,
+                persist_session=persist_session if session_cipher is not None else None,
+                captcha_client=(
+                    configured_solver(settings) if available_budget.remaining > 0 else None
+                ),
+                captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,
+                captcha_budget=available_budget,
+            )
     async with AsyncSession(engine) as db:
         await finish(db, job_id, group_id, user_id, failure_code=failure)
         await db.commit()
     return "succeeded" if failure is None else "failed"
 
 
-async def _collect(engine, group_id, user_id, code, login, password, today):
+async def _collect(
+    engine,
+    group_id,
+    user_id,
+    code,
+    login,
+    password,
+    today,
+    *,
+    storage_state=None,
+    persist_session=None,
+    captcha_client=None,
+    captcha_timeout_seconds=110,
+    captcha_budget: CaptchaBudget | None = None,
+):
     try:
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
             try:
-                context = await browser.new_context(locale="ru-RU", timezone_id="Europe/Moscow")
+                proxy_url = current_proxy_url()
+                proxy_config = playwright_proxy_settings(proxy_url) if proxy_url else None
+                context_options = {
+                    "proxy": proxy_config,
+                    "locale": "ru-RU",
+                    "timezone_id": "Europe/Moscow",
+                }
+                restored_state = storage_state
+                try:
+                    context = await browser.new_context(
+                        storage_state=restored_state, **context_options
+                    )
+                except (PlaywrightError, ValueError, TypeError):
+                    if restored_state is None:
+                        raise
+                    # Structurally valid JSON may still be rejected by Playwright.
+                    restored_state = None
+                    context = await browser.new_context(storage_state=None, **context_options)
                 page = await context.new_page()
+                captcha_attempted = False
+
+                async def solve_once(challenge_page):
+                    nonlocal captcha_attempted
+                    if (
+                        captcha_attempted
+                        or captcha_client is None
+                        or urlsplit(getattr(challenge_page, "url", "")).hostname != "my.ranepa.ru"
+                    ):
+                        return False
+                    if captcha_budget is not None and not captcha_budget.claim():
+                        return False
+                    captcha_attempted = True
+                    return await solve_slider_captcha(
+                        challenge_page, captcha_client, timeout_seconds=captcha_timeout_seconds
+                    )
+
                 month = await read_month(page, login, password, code, today.year, today.month)
+                if month.status == "captcha_required" and await solve_once(page):
+                    # Re-run the original login and identity verification;
+                    # a coordinate answer is not proof of a successful challenge.
+                    month = await read_month(page, login, password, code, today.year, today.month)
                 if month.status != "preview_only":
                     if month.status == "captcha_required":
                         return "captcha"
@@ -182,6 +329,10 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
                     result = await read_week(
                         page, login, password, code, week_start, allow_empty=not expected
                     )
+                    if result.status == "captcha_required" and await solve_once(page):
+                        result = await read_week(
+                            page, login, password, code, week_start, allow_empty=not expected
+                        )
                     if result.snapshot is None:
                         if result.status == "captcha_required":
                             return "captcha"
@@ -197,9 +348,14 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
                         (r.day, r.starts, r.subject) for r in expected
                     ):
                         return "parse_failed"
-                    links, link_states, courses = await resolve_sdo_exits(
-                        context, result, login, password
-                    )
+                    if captcha_client is not None and not captcha_attempted:
+                        links, link_states, courses = await resolve_sdo_exits(
+                            context, result, login, password, solve_captcha=solve_once
+                        )
+                    else:
+                        links, link_states, courses = await resolve_sdo_exits(
+                            context, result, login, password
+                        )
                     async with AsyncSession(engine) as db:
                         await remember_personal(
                             db,
@@ -212,6 +368,15 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
                             group_identity_verified=True,
                         )
                         await db.commit()  # Each validated week is visible immediately.
+                if persist_session is not None:
+                    try:
+                        fresh_state = await context.storage_state()
+                        if fresh_state != restored_state:
+                            await persist_session(fresh_state)
+                    except Exception:  # noqa: BLE001
+                        # A cache failure must not invalidate verified timetable data.
+                        # Playwright/YDB error messages may contain secrets; do not log them.
+                        return None
                 return None
             finally:
                 await browser.close()
@@ -223,6 +388,8 @@ async def _collect(engine, group_id, user_id, code, login, password, today):
 async def run_forever(settings: Settings):
     if not settings.ranepa_crawl_enabled:
         return
+    warn_if_unconfigured(settings)
+    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGTERM, signal.SIGINT):
@@ -237,7 +404,7 @@ async def run_forever(settings: Settings):
                 # Pick up new accounts during the week without rescanning every
                 # member before each browser job.
                 next_prepare_at = monotonic() + 3600
-            status = await process_one(engine, settings, today)
+            status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
             try:
                 await asyncio.wait_for(
                     stop.wait(),
@@ -263,14 +430,16 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
         raise RuntimeError("YDB credential store is required")
     if not settings.database_url.startswith("postgresql+asyncpg://"):
         raise RuntimeError("PostgreSQL DATABASE_URL is required")
+    warn_if_unconfigured(settings)
     engine = create_worker_engine(settings)
+    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     completed = 0
     try:
         await prepare_week(engine, datetime.now(ZoneInfo("Europe/Moscow")).date(), settings)
         deadline = monotonic() + max_minutes * 60
         while monotonic() < deadline:
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-            status = await process_one(engine, settings, today)
+            status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
             if status == "idle":
                 break
             completed += 1
@@ -293,12 +462,19 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
         raise RuntimeError("YDB credential store is required")
     if not settings.database_url.startswith("postgresql+asyncpg://"):
         raise RuntimeError("PostgreSQL DATABASE_URL is required")
+    warn_if_unconfigured(settings)
     engine = create_worker_engine(settings)
+    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     try:
         today = datetime.now(ZoneInfo("Europe/Moscow")).date()
         await prepare_week(engine, today, settings, pilot_group_id=group_id, pilot_user_id=user_id)
         return await process_one(
-            engine, settings, today, pilot_group_id=group_id, pilot_user_id=user_id
+            engine,
+            settings,
+            today,
+            pilot_group_id=group_id,
+            pilot_user_id=user_id,
+            captcha_budget=captcha_budget,
         )
     finally:
         await engine.dispose()

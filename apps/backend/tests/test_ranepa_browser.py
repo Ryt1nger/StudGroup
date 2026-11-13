@@ -1,7 +1,7 @@
 """The month browser renews a session that expires during navigation."""
 
 import asyncio
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from studgroup import ranepa_browser
@@ -24,6 +24,91 @@ def test_open_reuses_rendered_schedule_page(monkeypatch):
     monkeypatch.setattr(ranepa_browser, "_wait_visible_state", rendered)
     assert asyncio.run(ranepa_browser._open(Page(), "login", "password")) == "rendered"
     assert calls == []
+
+
+def test_stormwall_js_redirect_waits_until_real_page_is_rendered():
+    async def scenario():
+        class Locator:
+            def __init__(self, page, selector):
+                self.page, self.selector = page, selector
+
+            async def inner_text(self, **kwargs):
+                return "Проверка браузера" if self.page.spinner else "Расписание"
+
+            async def count(self):
+                return 0
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            spinner = True
+            waited = 0
+
+            def locator(self, selector):
+                return Locator(self, selector)
+
+            async def content(self):
+                if self.spinner:
+                    return "<script>get_jhash('__js_p_')</script>"
+                return "<main>Расписание</main>"
+
+            async def title(self):
+                return "Проверяем браузер" if self.spinner else "Расписание"
+
+            async def wait_for_timeout(self, milliseconds):
+                assert milliseconds == 250
+                self.waited += 1
+                self.spinner = False
+
+        page = Page()
+        assert await ranepa_browser._state(page) == "challenge_pending"
+        assert await ranepa_browser._wait_visible_state(page) == "rendered"
+        assert page.waited == 1
+
+    asyncio.run(scenario())
+
+
+def test_captcha_during_calendar_navigation_is_not_a_parse_failure(monkeypatch):
+    async def scenario():
+        class Clicker:
+            async def click(self, **kwargs):
+                return None
+
+        class Page:
+            def get_by_role(self, *args, **kwargs):
+                return Clicker()
+
+            def locator(self, *args, **kwargs):
+                return self
+
+            def nth(self, index):
+                return Clicker()
+
+            async def content(self):
+                raise AssertionError("CAPTCHA must not be parsed as a calendar")
+
+        async def open_(*args):
+            return "rendered"
+
+        async def verified(*args):
+            return True
+
+        async def captcha(*args):
+            return "captcha_required"
+
+        monkeypatch.setattr(ranepa_browser, "_open", open_)
+        monkeypatch.setattr(ranepa_browser, "_verify_group", verified)
+        monkeypatch.setattr(ranepa_browser, "_state", captcha)
+        today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+        page = Page()
+        month = await ranepa_browser.read_month(
+            page, "student", "secret", "A-001", today.year, today.month
+        )
+        assert month.status == "captcha_required"
+        monday = today - timedelta(days=today.weekday())
+        week = await ranepa_browser.read_week(page, "student", "secret", "A-001", monday)
+        assert week.status == "captcha_required"
+
+    asyncio.run(scenario())
 
 
 def test_month_relogs_in_after_session_expires_mid_navigation(monkeypatch):
