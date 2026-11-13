@@ -9,8 +9,10 @@ import base64
 import logging
 import re
 from dataclasses import dataclass
+from io import BytesIO
 from urllib.parse import urlsplit
 
+from PIL import Image, ImageDraw
 from twocaptcha import AsyncTwoCaptcha
 
 LOGGER = logging.getLogger(__name__)
@@ -27,8 +29,8 @@ _COORDINATES = re.compile(r"coordinates?:x=(\d+),y=(\d+);x=(\d+),y=(\d+)")
 # Coordinates workers click on a screenshot. They do not return drag commands.
 # Keep the prompt short enough for the provider's instruction limit.
 HINT = (
-    "Кликните 2 точки ТОЛЬКО НА ПОЛОСАХ: сначала на ВЕРХНЕЙ, затем на НИЖНЕЙ. "
-    "По X выберите конечную позицию ручки. Не нажимайте на круг."
+    "Совместите половинки круга. Кликните 2 точки внутри ВЫДЕЛЕННЫХ рамками полос: "
+    "сначала верхней, потом нижней. Не нажимайте на круг."
 )
 
 
@@ -118,6 +120,51 @@ def _challenge_clip(boxes: list[dict]) -> dict:
     }
 
 
+def _annotate_slider_tracks(image: bytes, boxes: list[dict], clip: dict) -> bytes:
+    """Outline only the two slider tracks in the provider image, without resizing.
+
+    Coordinates from RuCaptcha must refer to exactly the same pixel positions as
+    Playwright's screenshot clip. This only changes the copied PNG in memory;
+    the browser DOM and one-shot slider state are never touched.
+    """
+    with Image.open(BytesIO(image)) as original:
+        if original.format != "PNG":
+            raise ValueError("unsupported_capture_format")
+        if (
+            abs(original.width - clip["width"]) > 2
+            or abs(original.height - clip["height"]) > 2
+        ):
+            raise ValueError("capture_clip_size_mismatch")
+        marked = original.convert("RGB")
+    draw = ImageDraw.Draw(marked)
+    for index, box in enumerate(boxes):
+        x0 = round(box["x"] - clip["x"])
+        x1 = round(x0 + box["width"])
+        y0 = round(box["y"] - clip["y"])
+        y1 = round(y0 + box["height"])
+        if x0 < 3 or x1 >= marked.width - 3 or y0 < 3 or y1 >= marked.height - 3:
+            raise ValueError("track_outside_capture")
+        color = (0, 165, 85) if index == 0 else (0, 105, 235)
+        # Outline the track from the outside. Do not cover the current handle.
+        draw.rounded_rectangle(
+            (x0 - 2, y0 - 2, x1 + 2, y1 + 2),
+            radius=6,
+            outline=color,
+            width=3,
+        )
+        label_x = x0 - 12
+        center_y = round((y0 + y1) / 2)
+        if label_x >= 8:
+            draw.ellipse(
+                (label_x - 7, center_y - 7, label_x + 7, center_y + 7),
+                fill=color,
+            )
+            draw.text((label_x - 3, center_y - 5), str(index + 1), fill=(255, 255, 255))
+    output = BytesIO()
+    marked.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+
 def _slider_targets(
     points: tuple[tuple[int, int], tuple[int, int]],
     boxes: list[dict],
@@ -177,7 +224,16 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
         if client is None:
             log_captcha_stage("diagnostic_complete_no_provider_call")
             return False
-        encoded = base64.b64encode(image).decode("ascii")
+        try:
+            marked_image = _annotate_slider_tracks(image, boxes, clip)
+        except (OSError, ValueError):
+            log_captcha_stage("capture_annotation_failed")
+            return False
+        if len(marked_image) > 600 * 1024:
+            log_captcha_stage("annotated_capture_size_exceeded")
+            return False
+        log_captcha_stage("tracks_marked_for_provider")
+        encoded = base64.b64encode(marked_image).decode("ascii")
         phase = "provider"
         log_captcha_stage("provider_request_started")
         async with asyncio.timeout(timeout_seconds):
