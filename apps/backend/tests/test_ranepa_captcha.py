@@ -380,9 +380,7 @@ def test_offline_diagnostic_inspects_challenge_without_clicks_or_provider(caplog
         with caplog.at_level(logging.WARNING):
             assert not await ranepa_captcha.solve_slider_captcha(Page(), None)
         stages = [
-            record.message
-            for record in caplog.records
-            if "RANEPA_CAPTCHA_STAGE" in record.message
+            record.message for record in caplog.records if "RANEPA_CAPTCHA_STAGE" in record.message
         ]
         assert "RANEPA_CAPTCHA_STAGE controls_confirmed" in stages
         assert "RANEPA_CAPTCHA_STAGE capture_ready" in stages
