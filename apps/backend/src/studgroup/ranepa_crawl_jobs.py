@@ -20,8 +20,15 @@ FAILURES = {
 }
 
 
-async def enqueue_week(db, week_start: date, candidates: list[CrawlCandidate], now=None) -> int:
-    """Add one ordered job per active group member, preserving earlier progress."""
+async def enqueue_week(
+    db,
+    week_start: date,
+    candidates: list[CrawlCandidate],
+    now=None,
+    *,
+    force_refresh: bool = False,
+) -> int:
+    """Add jobs or refresh completed jobs; manual pilot may override its cooldown."""
     if week_start.weekday() != 0:
         raise ValueError("week_start_must_be_monday")
     now = now or datetime.now(UTC)
@@ -51,12 +58,12 @@ async def enqueue_week(db, week_start: date, candidates: list[CrawlCandidate], n
             )
         )
         if existing is not None:
-            # A completed account becomes eligible for another round after a day.
-            # Never disturb queued or running work: the first fair pass must finish.
-            if (
-                existing.state in {"succeeded", "failed"}
-                and existing.finished_at is not None
-                and existing.finished_at <= now - REFRESH
+            # The explicit manual pilot can retry its *selected* completed job
+            # immediately. Queue workers retain the 24-hour cooldown. Never
+            # reset an already queued or currently running job.
+            if existing.state in {"succeeded", "failed"} and (
+                force_refresh
+                or (existing.finished_at is not None and existing.finished_at <= now - REFRESH)
             ):
                 existing.state = "queued"
                 existing.priority = priority

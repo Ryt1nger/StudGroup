@@ -218,3 +218,97 @@ def test_manual_pilot_claim_never_touches_another_account(tmp_path):
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_manual_pilot_can_retry_one_finished_job_without_affecting_other_members(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/pilot_refresh.db")
+        now = datetime(2026, 11, 13, 11, tzinfo=UTC)
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                group = Group(
+                    id=uuid4(),
+                    telegram_chat_id=-99011,
+                    name="Pilot",
+                    academic_group_code="P-001",
+                    timezone="Europe/Moscow",
+                )
+                users = [
+                    User(id=uuid4(), telegram_user_id=99011 + i, display_name=f"U{i}")
+                    for i in range(2)
+                ]
+                db.add_all([group, *users])
+                await db.flush()
+                for user in users:
+                    db.add(
+                        Membership(
+                            user_id=user.id,
+                            group_id=group.id,
+                            role="student",
+                            status="active",
+                        )
+                    )
+                await db.flush()
+                week = date(2026, 11, 9)
+                candidates = [CrawlCandidate(group.id, user.id) for user in users]
+                assert await enqueue_week(db, week, candidates, now=now) == 2
+
+                first = await claim_next(db, now=now, group_id=group.id, user_id=users[0].id)
+                assert first is not None
+                assert await finish(
+                    db, first.id, group.id, users[0].id, failure_code="captcha", now=now
+                )
+                second = await claim_next(db, now=now, group_id=group.id, user_id=users[1].id)
+                assert second is not None
+                assert await finish(db, second.id, group.id, users[1].id, now=now)
+
+                # Normal queue remains subject to its 24-hour cooldown.
+                soon = now + timedelta(minutes=5)
+                assert await enqueue_week(db, week, candidates, now=soon) == 0
+                assert first.state == "failed" and first.failure_code == "captcha"
+                assert second.state == "succeeded"
+
+                # Manual retry only reopens the explicitly selected account.
+                assert (
+                    await enqueue_week(
+                        db,
+                        week,
+                        [candidates[0]],
+                        now=soon,
+                        force_refresh=True,
+                    )
+                    == 0
+                )
+                assert first.state == "queued"
+                assert first.failure_code is None
+                assert first.finished_at is None
+                assert first.attempts == 1
+                assert second.state == "succeeded"
+                assert second.attempts == 1
+
+                refreshed = await claim_next(db, now=soon, group_id=group.id, user_id=users[0].id)
+                assert refreshed is not None
+                assert refreshed.id == first.id
+                assert refreshed.attempts == 2
+                assert (
+                    await enqueue_week(
+                        db,
+                        week,
+                        [candidates[0]],
+                        now=soon,
+                        force_refresh=True,
+                    )
+                    == 0
+                )
+                # A manual retry must not take over an in-progress account.
+                assert refreshed.state == "running"
+                assert (
+                    await claim_next(db, now=soon, group_id=group.id, user_id=users[1].id) is None
+                )
+                await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

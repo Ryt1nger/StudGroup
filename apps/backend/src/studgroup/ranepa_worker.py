@@ -103,9 +103,12 @@ async def prepare_week(
     *,
     pilot_group_id: UUID | None = None,
     pilot_user_id: UUID | None = None,
+    bypass_cooldown: bool = False,
 ) -> int:
     if (pilot_group_id is None) != (pilot_user_id is None):
         raise ValueError("pilot_scope_requires_both_ids")
+    if bypass_cooldown and (pilot_group_id is None or pilot_user_id is None):
+        raise ValueError("cooldown_bypass_requires_targeted_pilot")
     if not legal_ready(settings) or not settings.ranepa_access_approved:
         return 0
     monday = today - timedelta(days=today.weekday())
@@ -141,7 +144,7 @@ async def prepare_week(
                 )
             ).all()
             candidates.append(CrawlCandidate(group.id, member.user_id, frozenset(subgroups)))
-        count = await enqueue_week(db, monday, candidates)
+        count = await enqueue_week(db, monday, candidates, force_refresh=bypass_cooldown)
         await db.commit()
         return count
 
@@ -467,7 +470,14 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
     captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     try:
         today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-        await prepare_week(engine, today, settings, pilot_group_id=group_id, pilot_user_id=user_id)
+        await prepare_week(
+            engine,
+            today,
+            settings,
+            pilot_group_id=group_id,
+            pilot_user_id=user_id,
+            bypass_cooldown=True,
+        )
         return await process_one(
             engine,
             settings,
