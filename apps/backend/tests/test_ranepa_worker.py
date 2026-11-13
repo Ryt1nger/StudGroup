@@ -611,9 +611,12 @@ def test_single_pilot_explicitly_requests_only_its_own_cooldown_bypass(monkeypat
             database_url="postgresql+asyncpg://localhost/test",
         )
 
-        assert await ranepa_worker.run_single_pilot(
-            settings, group_id=target_group, user_id=target_user
-        ) == "succeeded"
+        assert (
+            await ranepa_worker.run_single_pilot(
+                settings, group_id=target_group, user_id=target_user
+            )
+            == "succeeded"
+        )
         assert calls[0][0] == "prepare"
         assert calls[0][1] == {
             "pilot_group_id": target_group,
