@@ -113,6 +113,10 @@ jobs:
 
           try:
               raise SystemExit(asyncio.run(audit()))
+          except ModuleNotFoundError as error:
+              # A module name alone is safe; never print connection exceptions.
+              print("AUDIT_MISSING_MODULE=" + str(error.name))
+              raise SystemExit(2)
           except Exception as error:
               # Do not echo library exceptions: they may embed URLs, headers or keys.
               print("AUDIT_ERROR=" + type(error).__name__)
