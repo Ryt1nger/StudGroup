@@ -235,15 +235,16 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
 
 
 @pytest.mark.parametrize(
-    ("solver_succeeds", "expected_month_reads", "expected_status", "budget"),
+    ("solver_succeeds", "expected_month_reads", "expected_status", "budget", "dry_run"),
     [
-        (False, 1, "captcha", 1),
-        (True, 2, "identity_unverified", 1),
-        (True, 1, "captcha", 0),
+        (False, 1, "captcha", 1, False),
+        (True, 2, "identity_unverified", 1, False),
+        (True, 1, "captcha", 0, False),
+        (False, 1, "captcha", 1, True),
     ],
 )
 def test_worker_retries_after_captcha_at_most_once(
-    monkeypatch, solver_succeeds, expected_month_reads, expected_status, budget
+    monkeypatch, solver_succeeds, expected_month_reads, expected_status, budget, dry_run
 ):
     observed = {"month": 0, "solve": 0, "close": False}
 
@@ -275,7 +276,7 @@ def test_worker_retries_after_captcha_at_most_once(
 
     async def solve(page, client, **kwargs):
         observed["solve"] += 1
-        assert client is sentinel
+        assert client is (None if dry_run else sentinel)
         assert kwargs["timeout_seconds"] == 65
         return solver_succeeds
 
@@ -284,6 +285,7 @@ def test_worker_retries_after_captcha_at_most_once(
     monkeypatch.setattr(ranepa_worker, "read_month", read_captcha)
     monkeypatch.setattr(ranepa_worker, "solve_slider_captcha", solve)
     monkeypatch.delenv("RANEPA_PROXY_URL", raising=False)
+    budget_tracker = ranepa_worker.CaptchaBudget(budget)
     status = asyncio.run(
         ranepa_worker._collect(
             None,
@@ -295,13 +297,15 @@ def test_worker_retries_after_captcha_at_most_once(
             date(2026, 11, 12),
             captcha_client=sentinel,
             captcha_timeout_seconds=65,
-            captcha_budget=ranepa_worker.CaptchaBudget(budget),
+            captcha_budget=budget_tracker,
+            captcha_diagnostic_only=dry_run,
         )
     )
     assert status == expected_status
     assert observed["solve"] == (1 if budget else 0)
     assert observed["month"] == expected_month_reads
     assert observed["close"] is True
+    assert budget_tracker.remaining == (budget if dry_run or budget == 0 else budget - 1)
 
 
 def test_worker_engine_uses_bounded_supabase_pool(monkeypatch):
@@ -463,6 +467,9 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
             legal_documents_approved=True,
             ranepa_access_approved=True,
             ranepa_session_reuse_enabled=True,
+            ranepa_captcha_enabled=True,
+            captcha_api_key=SecretStr("test-provider-key"),
+            ranepa_captcha_diagnostic_only=True,
         )
 
         saved_state = {"cookies": [], "origins": []}
@@ -484,6 +491,8 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
         async def fake_collect(_engine, group_id, user_id, code, login, password, _today, **kwargs):
             seen.append((group_id, user_id, code, login, password))
             assert kwargs["storage_state"] == saved_state
+            assert kwargs["captcha_client"] is None
+            assert kwargs["captcha_diagnostic_only"] is True
             await kwargs["persist_session"](new_state)
 
         monkeypatch.setattr("studgroup.ranepa_worker._collect", fake_collect)

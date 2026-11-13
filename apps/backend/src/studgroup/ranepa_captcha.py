@@ -15,6 +15,12 @@ from twocaptcha import AsyncTwoCaptcha
 
 LOGGER = logging.getLogger(__name__)
 
+
+def log_captcha_stage(stage: str) -> None:
+    """Emit only a fixed diagnostic stage, never the challenge or provider payload."""
+    LOGGER.warning("RANEPA_CAPTCHA_STAGE %s", stage)
+
+
 # The legacy 2captcha-python SDK returns the provider's "coordinate:x=..." string.
 # Accept the historic plural spelling as well, but always require exactly two points.
 _COORDINATES = re.compile(r"coordinates?:x=(\d+),y=(\d+);x=(\d+),y=(\d+)")
@@ -75,6 +81,7 @@ def decode_slider_coordinates(answer) -> tuple[tuple[int, int], tuple[int, int]]
 async def _slider_boxes(page) -> list[dict] | None:
     """Fail closed unless exactly two visible, wide horizontal range inputs exist."""
     if not await page.get_by_text("Используйте ползунки", exact=False).is_visible():
+        log_captcha_stage("instruction_not_visible")
         return None
     # StormWall has been observed using duplicate id="myRange" controls.
     # Prefer genuine range inputs; accept two named controls if the live widget
@@ -83,11 +90,14 @@ async def _slider_boxes(page) -> list[dict] | None:
     if await inputs.count() != 2:
         inputs = page.locator('[id="myRange"]')
         if await inputs.count() != 2:
+            log_captcha_stage("control_count_mismatch")
             return None
     boxes = [await inputs.nth(index).bounding_box() for index in range(2)]
     if any(box is None or box["width"] < 150 or box["height"] > 85 for box in boxes):
+        log_captcha_stage("control_bounds_invalid")
         return None
     if boxes[0]["y"] >= boxes[1]["y"] or boxes[1]["y"] - boxes[0]["y"] > 140:
+        log_captcha_stage("control_order_invalid")
         return None
     return boxes
 
@@ -128,33 +138,51 @@ def _slider_targets(
 async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> bool:
     """Attempt exactly one drag per slider after a single coordinate task.
 
-    False means the challenge is unknown, the provider failed or returned an
-    ambiguous solution. A True result only means the motions were submitted;
-    caller MUST recheck page state and verified student identity afterwards.
+    A None client is a strictly offline diagnostic: inspect controls and
+    capture only the cropped challenge, but never contact a paid provider or
+    move either slider. False means no motions were submitted. A True result
+    only means motions were submitted; caller must recheck page identity.
     """
+    phase = "inspect"
     try:
         # The confirmed StormWall challenge is in front of the LK host, not Moodle.
         # Never ship a screenshot from any other origin to a paid third party.
         if urlsplit(page.url).hostname != "my.ranepa.ru":
+            log_captcha_stage("unsupported_origin")
             return False
         boxes = await _slider_boxes(page)
         if boxes is None:
+            log_captcha_stage("controls_unavailable")
             return False
+        log_captcha_stage("controls_confirmed")
         clip = _challenge_clip(boxes)
         if clip["width"] > 1000 or clip["height"] > 1000:
+            log_captcha_stage("capture_dimensions_invalid")
             return False
         image = await page.screenshot(type="png", clip=clip, animations="disabled")
         if len(image) > 600 * 1024:
+            log_captcha_stage("capture_size_exceeded")
+            return False
+        log_captcha_stage("capture_ready")
+        if client is None:
+            log_captcha_stage("diagnostic_complete_no_provider_call")
             return False
         encoded = base64.b64encode(image).decode("ascii")
+        phase = "provider"
+        log_captcha_stage("provider_request_started")
         async with asyncio.timeout(timeout_seconds):
             result = await client.coordinates(encoded, hintText=HINT, min_clicks=2, max_clicks=2)
+        log_captcha_stage("provider_answer_received")
         points = decode_slider_coordinates(result)
         if points is None:
+            log_captcha_stage("provider_answer_invalid")
             return False
         targets = _slider_targets(points, boxes, clip)
         if targets is None:
+            log_captcha_stage("coordinates_outside_controls")
             return False
+        log_captcha_stage("coordinates_validated")
+        phase = "drag"
         for start_x, end_x, y in targets:
             await page.mouse.move(start_x, y)
             await page.mouse.down()
@@ -163,8 +191,13 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
             finally:
                 await page.mouse.up()
         await page.wait_for_timeout(800)
+        log_captcha_stage("drag_submitted")
         return True
+    except TimeoutError:
+        # Do not report provider errors verbatim: SDK exceptions may embed keys.
+        log_captcha_stage("provider_timeout")
+        return False
     except Exception:  # noqa: BLE001
-        # Provider, Playwright and page exceptions can contain sensitive URLs.
-        LOGGER.warning("RANEPA CAPTCHA attempt unavailable or unsuccessful")
+        # Only the bounded stage label is logged, never provider exception text.
+        log_captcha_stage(f"{phase}_error")
         return False
