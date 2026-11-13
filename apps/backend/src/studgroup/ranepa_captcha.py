@@ -24,9 +24,11 @@ def log_captcha_stage(stage: str) -> None:
 # The legacy 2captcha-python SDK returns the provider's "coordinate:x=..." string.
 # Accept the historic plural spelling as well, but always require exactly two points.
 _COORDINATES = re.compile(r"coordinates?:x=(\d+),y=(\d+);x=(\d+),y=(\d+)")
+# Coordinates workers click on a screenshot. They do not return drag commands.
+# Keep the prompt short enough for the provider's instruction limit.
 HINT = (
-    "Совместите половинки круга. Отметьте 2 точки: нужную позицию "
-    "ВЕРХНЕГО ползунка, затем НИЖНЕГО ползунка. По одной точке на дорожке."
+    "Кликните 2 точки ТОЛЬКО НА ПОЛОСАХ: сначала на ВЕРХНЕЙ, затем на НИЖНЕЙ. "
+    "По X выберите конечную позицию ручки. Не нажимайте на круг."
 )
 
 
@@ -123,12 +125,20 @@ def _slider_targets(
 ) -> list[tuple[float, float, float]] | None:
     """Validate both positions and their row order before the first mouse action."""
     targets = []
-    for (px, py), box in zip(points, boxes, strict=True):
+    for index, ((px, py), box) in enumerate(zip(points, boxes, strict=True), start=1):
         x = clip["x"] + px
         y = clip["y"] + py
         cy = box["y"] + box["height"] / 2
-        # A click outside the matching slider row probably means an unusable answer.
-        if x < box["x"] + 15 or x > box["x"] + box["width"] - 15 or abs(y - cy) > 22:
+        # Reject rather than treating any coordinate on the puzzle image as
+        # a slider position. Only fixed reason codes are logged: never values.
+        if x < box["x"] + 15 or x > box["x"] + box["width"] - 15:
+            log_captcha_stage(f"target_{index}_x_outside_track")
+            return None
+        if y < cy - 22:
+            log_captcha_stage(f"target_{index}_above_track")
+            return None
+        if y > cy + 22:
+            log_captcha_stage(f"target_{index}_below_track")
             return None
         start_x = box["x"] + 25
         targets.append((start_x, x, cy))
