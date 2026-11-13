@@ -255,16 +255,12 @@ def test_manual_pilot_can_retry_one_finished_job_without_affecting_other_members
                 candidates = [CrawlCandidate(group.id, user.id) for user in users]
                 assert await enqueue_week(db, week, candidates, now=now) == 2
 
-                first = await claim_next(
-                    db, now=now, group_id=group.id, user_id=users[0].id
-                )
+                first = await claim_next(db, now=now, group_id=group.id, user_id=users[0].id)
                 assert first is not None
                 assert await finish(
                     db, first.id, group.id, users[0].id, failure_code="captcha", now=now
                 )
-                second = await claim_next(
-                    db, now=now, group_id=group.id, user_id=users[1].id
-                )
+                second = await claim_next(db, now=now, group_id=group.id, user_id=users[1].id)
                 assert second is not None
                 assert await finish(db, second.id, group.id, users[1].id, now=now)
 
@@ -292,9 +288,7 @@ def test_manual_pilot_can_retry_one_finished_job_without_affecting_other_members
                 assert second.state == "succeeded"
                 assert second.attempts == 1
 
-                refreshed = await claim_next(
-                    db, now=soon, group_id=group.id, user_id=users[0].id
-                )
+                refreshed = await claim_next(db, now=soon, group_id=group.id, user_id=users[0].id)
                 assert refreshed is not None
                 assert refreshed.id == first.id
                 assert refreshed.attempts == 2
@@ -310,9 +304,9 @@ def test_manual_pilot_can_retry_one_finished_job_without_affecting_other_members
                 )
                 # A manual retry must not take over an in-progress account.
                 assert refreshed.state == "running"
-                assert await claim_next(
-                    db, now=soon, group_id=group.id, user_id=users[1].id
-                ) is None
+                assert (
+                    await claim_next(db, now=soon, group_id=group.id, user_id=users[1].id) is None
+                )
                 await db.commit()
         finally:
             await engine.dispose()
