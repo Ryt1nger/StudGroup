@@ -205,7 +205,9 @@ async def process_one(
         else:
             # The project currently has exactly one configured Fernet key, labelled v1.
             # Other versions must not be decoded or overwritten with the wrong key.
-            session_cipher = cipher if key_version == "v1" else None
+            session_cipher = (
+                cipher if key_version == "v1" and settings.ranepa_session_reuse_enabled else None
+            )
             storage_state = restored_storage_state(encrypted_session, session_cipher)
 
             async def persist_session(state: dict):
