@@ -120,6 +120,24 @@ def _challenge_clip(boxes: list[dict]) -> dict:
     }
 
 
+def _capture_grid_matches_clip(image: bytes, clip: dict) -> bool:
+    """Check the screenshot pixel grid against Playwright CSS clip dimensions.
+
+    The free diagnostic uses this without marking the image or contacting the
+    provider. A mismatch can indicate device-pixel scaling; never infer the
+    correct coordinate transform from an unchecked screenshot.
+    """
+    try:
+        with Image.open(BytesIO(image)) as screenshot:
+            return (
+                screenshot.format == "PNG"
+                and abs(screenshot.width - clip["width"]) <= 2
+                and abs(screenshot.height - clip["height"]) <= 2
+            )
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
 def _annotate_slider_tracks(image: bytes, boxes: list[dict], clip: dict) -> bytes:
     """Outline only the two slider tracks in the provider image, without resizing.
 
@@ -219,6 +237,11 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
             return False
         log_captcha_stage("capture_ready")
         if client is None:
+            # Validate the pixel grid offline without annotating the PNG.
+            if _capture_grid_matches_clip(image, clip):
+                log_captcha_stage("diagnostic_capture_grid_verified")
+            else:
+                log_captcha_stage("diagnostic_capture_grid_mismatch")
             log_captcha_stage("diagnostic_complete_no_provider_call")
             return False
         try:
