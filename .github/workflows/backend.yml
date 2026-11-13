@@ -30,12 +30,6 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.13'
-      - name: Resolve httpx2 lockfile temporarily
-        run: |
-          uv lock
-          git diff -- uv.lock
-          # End this diagnostic run after printing the lockfile delta.
-          exit 1
       - run: uv sync --dev --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --diff . || true
