@@ -106,6 +106,8 @@ Selected stage codes and what they mean:
 | `control_bounds_invalid` / `control_order_invalid` | The observed geometry is unsafe or unsupported |
 | `controls_confirmed` | The expected two visible controls passed geometry checks |
 | `capture_ready` | Local crop was captured; this does **not** mean a paid task occurred |
+| `tracks_marked_for_provider` | Both slider tracks were outlined on the in-memory copy for RuCaptcha |
+| `capture_annotation_failed` | The PNG dimensions or encoding could not be safely matched; no provider task was sent |
 | `diagnostic_complete_no_provider_call` | Offline inspection finished with **zero RuCaptcha calls** |
 | `provider_request_started` | A paid task call was attempted; billing must be checked in RuCaptcha |
 | `provider_answer_received` | RuCaptcha returned a response (acceptance not proven) |
@@ -123,10 +125,14 @@ Selected stage codes and what they mean:
 For the 2026-11-13 paid run #43419540993, the provider returned two
 well-formed points, but at least one was not on the expected slider track.
 The old response was deliberately not logged, so the exact mismatch cannot be
-reconstructed. The instruction sent to RuCaptcha now explicitly requests two
-clicks on the **tracks**, not on the circular puzzle. The diagnostic also
-distinguishes off-track X, above-track Y and below-track Y without exposing
-coordinates or image data. **Do not automatically clamp or ignore Y:** the
+reconstructed. The instruction sent to RuCaptcha explicitly requests two
+clicks on the **tracks**, not on the circular puzzle. As the 2026-11-13
+follow-up #43422527111 still returned `target_1_above_track`, the provider
+image is now marked **in memory** with a green frame for the top track and
+blue frame for the lower track, without rescaling or changing the DOM.
+Only this cropped, marked image is sent to RuCaptcha; the original circle,
+coordinates and slider geometry remain unchanged. The diagnostic distinguishes
+off-track X, above-track Y and below-track Y without exposing any raw values. **Do not automatically clamp or ignore Y:** the
 challenge permits only one movement and the worker's answer may refer to
 another part of the image. Stop after a rejected response instead of retrying
 paid tasks blindly.
