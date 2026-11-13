@@ -320,3 +320,105 @@ def test_slider_selector_accepts_legacy_duplicate_myrange_ids():
         assert boxes[1]["y"] > boxes[0]["y"]
 
     asyncio.run(scenario())
+
+
+
+def test_offline_diagnostic_inspects_challenge_without_clicks_or_provider(caplog):
+    async def scenario():
+        class VisibleLabel:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return {
+                    "x": 100,
+                    "y": 360 + self.index * 56,
+                    "width": 300,
+                    "height": 30,
+                }
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class NoMotion:
+            async def move(self, *_args, **_kwargs):
+                raise AssertionError("diagnostic must not move the slider")
+
+            async def down(self):
+                raise AssertionError("diagnostic must not press the slider")
+
+            async def up(self):
+                raise AssertionError("diagnostic must not release the slider")
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = NoMotion()
+
+            def get_by_text(self, *_args, **_kwargs):
+                return VisibleLabel()
+
+            def locator(self, *_args):
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                assert kwargs["clip"] == {
+                    "x": 80,
+                    "y": 60,
+                    "width": 340,
+                    "height": 431,
+                }
+                return b"test-only-local-image"
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), None)
+        stages = [
+            record.message
+            for record in caplog.records
+            if "RANEPA_CAPTCHA_STAGE" in record.message
+        ]
+        assert "RANEPA_CAPTCHA_STAGE controls_confirmed" in stages
+        assert "RANEPA_CAPTCHA_STAGE capture_ready" in stages
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_complete_no_provider_call" in stages
+        assert "provider_request_started" not in caplog.text
+        assert "test-only-local-image" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_missing_slider_controls_report_precise_stage_without_sending_image(caplog):
+    async def scenario():
+        class VisibleLabel:
+            async def is_visible(self):
+                return True
+
+        class Empty:
+            async def count(self):
+                return 0
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+
+            def get_by_text(self, *_args, **_kwargs):
+                return VisibleLabel()
+
+            def locator(self, *_args):
+                return Empty()
+
+            async def screenshot(self, **_kwargs):
+                raise AssertionError("no challenge screenshot without valid controls")
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), None)
+        assert "RANEPA_CAPTCHA_STAGE control_count_mismatch" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE controls_unavailable" in caplog.text
+
+    asyncio.run(scenario())
