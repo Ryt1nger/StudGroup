@@ -548,9 +548,7 @@ def test_free_diagnostic_flags_pixel_grid_mismatch_without_motion(
             mouse = NoMotion()
 
             async def screenshot(self, **kwargs):
-                assert kwargs["clip"] == {
-                    "x": 80, "y": 60, "width": 340, "height": 431
-                }
+                assert kwargs["clip"] == {"x": 80, "y": 60, "width": 340, "height": 431}
                 if capture_kind == "invalid_bytes":
                     return b"intentionally-not-a-png"
                 size = (680, 862) if capture_kind == "device_pixels_2x" else (40, 40)
