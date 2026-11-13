@@ -322,7 +322,6 @@ def test_slider_selector_accepts_legacy_duplicate_myrange_ids():
     asyncio.run(scenario())
 
 
-
 def test_offline_diagnostic_inspects_challenge_without_clicks_or_provider(caplog):
     async def scenario():
         class VisibleLabel:
