@@ -113,6 +113,11 @@ Selected stage codes and what they mean:
 | `diagnostic_range_state_at_min` | Both live HTML range values were at their declared minimum; this is **not** a measurement of thumb pixel locations |
 | `diagnostic_range_state_not_at_min` | At least one live HTML range value was above minimum; hard-coded left-start assumptions are unverified |
 | `diagnostic_range_state_unavailable` | Exactly two supported inputs could not be read or validated; do not guess their initial positions |
+| `diagnostic_geometry_rect_consistent` | Read-only DOM rectangles match Playwright boxes, with standard horizontal orientation; **thumb location still unknown** |
+| `diagnostic_geometry_custom_range` | DOM rectangles match, but at least one range input uses custom appearance; thumb location still unknown |
+| `diagnostic_geometry_nonstandard` | CSS direction, writing mode, transform or pointer events are not compatible with the simple horizontal assumptions |
+| `diagnostic_geometry_rect_mismatch` | Browser DOM rectangle and Playwright bounding box differ; do not rely on hard-coded geometry |
+| `diagnostic_geometry_unavailable` | DOM or style information could not be read safely; no geometric conclusion |
 | `tracks_marked_for_provider` | Both slider tracks were outlined on the in-memory copy for RuCaptcha |
 | `capture_annotation_failed` | The PNG dimensions or encoding could not be safely matched; no provider task was sent |
 | `diagnostic_complete_no_provider_call` | Offline inspection finished with **zero RuCaptcha calls** |
@@ -169,9 +174,9 @@ different CSS/range configurations. Do not relax coordinate checks, infer
 targets from clicks on the circle, increase paid attempts, or enable a
 production rollout on the basis of these diagnostics.
 
-If the protected site supports a documented integration path or an
-administrator-assisted/manual verification flow, prefer that over further
-automated CAPTCHA-solving experiments.
+Only the existing authorized LK and SDO workflow is in scope;
+investigate unsupported slider geometry before considering further paid
+attempts.
 
 When a stage is absent, **do not infer that its action happened**.
 An unchanged account and a `captcha` result do not prove an API request.
@@ -223,18 +228,38 @@ The paid path and its accepted-coordinate/movement logic are unchanged.
   retries. Keep the manual pilot limits and production defaults.
 - Treat read-only range semantics as an **audit signal**, not a replacement
   for measuring visual thumb geometry or a solution for a CAPTCHA.
-- Prefer an explicitly approved institutional schedule feed/export or
-  access method. RANEPA's student information page points to the personal
-  account and `https://my.ranepa.ru/schedule/`; this is a schedule page,
-  **not proof of a documented third-party API**:
-  https://www.ranep.online/mfc/
-- Alternatively, use a human-authorized verification and manual
-  import/review process, subject to the institution's site terms. Never
-  expose authentication tokens or captured challenges to public artifacts.
-- Revisit live CAPTCHA automation only with explicit institutional
-  authorization, appropriate security review, and a verified interface
-  contract. Offline synthetic tests do not demonstrate successful passage
-  of StormWall.
+- Keep the existing LK and SDO integration as the **only** collection path.
+  Respect the approved account scope, and never expose authentication
+  tokens or captured challenges to public artifacts.
+- Revisit live CAPTCHA automation only after a verified interface contract
+  and successful security review. Offline synthetic tests do not demonstrate
+  successful passage of StormWall.
+
+## Read-only DOM geometry audit (LK/SDO only)
+
+The next free manual pilot `diagnostic_only=true` inspects the two
+`input[type="range"]` elements on the already encountered LK StormWall
+challenge. It reads each input's `getBoundingClientRect()` and limited
+computed CSS properties (`direction`, `writingMode`, `transform`,
+`pointerEvents`, `appearance`) and compares rectangles with Playwright's
+previous bounding boxes. **This does not dispatch mouse/keyboard events,
+perform any drag, call RuCaptcha, write screenshots to artifacts, or reveal
+styles/coordinates in logs.** Exactly one constant stage is logged; the
+challenge is not treated as a timetable.
+
+A consistent rectangle and horizontal CSS orientation establish only
+the **input element's box**, not the browser-rendered slider thumb. The
+existing paid-path assumption `box["x"] + 25` remains unverified.
+Browsers do not expose a robust, universal DOM rectangle for native or
+CSS-styled range thumbs. We deliberately do not derive a start point,
+modify paid-path motion, relax bounds, or claim that a single still image
+can solve this particular challenge. Any nonstandard style, rectangle
+mismatch or unreadable DOM should block assumptions, not trigger another
+paid try.
+
+This audit supports **only the existing RANEPA LK and SDO integration**.
+No alternate schedule sources, external timetable feeds, or substitute
+collection paths are proposed.
 
 ## Validation checklist
 
