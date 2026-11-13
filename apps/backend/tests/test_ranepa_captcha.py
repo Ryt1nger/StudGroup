@@ -4,13 +4,21 @@ import asyncio
 import base64
 import logging
 from datetime import date, time
+from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 from pydantic import SecretStr
 
 from studgroup import ranepa_browser, ranepa_captcha
 from studgroup.main import Settings
+
+
+def _fake_png():
+    output = BytesIO()
+    Image.new("RGB", (340, 431), color=(245, 245, 245)).save(output, "PNG")
+    return output.getvalue()
 
 
 def test_rucaptcha_is_opt_in_and_missing_key_is_only_a_warning(caplog, monkeypatch):
@@ -121,14 +129,19 @@ def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
             async def screenshot(self, **kwargs):
                 self.clip = kwargs["clip"]
                 assert kwargs["type"] == "png"
-                return b"CHALLENGE_ONLY_NOT_STUDENT_PROFILE"
+                return _fake_png()
 
             async def wait_for_timeout(self, ms):
                 assert ms == 800
 
         class FakeClient:
             async def coordinates(self, encoded, **kwargs):
-                assert base64.b64decode(encoded) == b"CHALLENGE_ONLY_NOT_STUDENT_PROFILE"
+                with Image.open(BytesIO(base64.b64decode(encoded))) as annotated:
+                    assert annotated.size == (340, 431)
+                    assert annotated.getpixel((50, 298)) == (0, 165, 85)
+                    assert annotated.getpixel((50, 354)) == (0, 105, 235)
+                    # The circle remains unchanged, and the original clip is not scaled.
+                    assert annotated.getpixel((170, 150)) == (245, 245, 245)
                 assert kwargs["min_clicks"] == kwargs["max_clicks"] == 2
                 assert kwargs["hintText"] == ranepa_captcha.HINT
                 assert len(kwargs["hintText"]) <= 140
@@ -202,7 +215,7 @@ def test_invalid_positions_never_touch_one_shot_sliders(code, stage, caplog):
                 return FakeSliders()
 
             async def screenshot(self, **_kwargs):
-                return b"fake image"
+                return _fake_png()
 
         class FakeClient:
             async def coordinates(self, *_args, **_kwargs):
@@ -432,3 +445,71 @@ def test_missing_slider_controls_report_precise_stage_without_sending_image(capl
         assert "RANEPA_CAPTCHA_STAGE controls_unavailable" in caplog.text
 
     asyncio.run(scenario())
+
+
+def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact(caplog):
+    async def scenario():
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return {
+                    "x": 100,
+                    "y": 360 + self.index * 56,
+                    "width": 300,
+                    "height": 30,
+                }
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Title()
+
+            def locator(self, *_args):
+                return Sliders()
+
+            async def screenshot(self, **_kwargs):
+                output = BytesIO()
+                Image.new("RGB", (40, 40), "white").save(output, "PNG")
+                return output.getvalue()
+
+        class Provider:
+            async def coordinates(self, *_args, **_kwargs):
+                raise AssertionError("must not send unmatched capture")
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), Provider())
+        assert "RANEPA_CAPTCHA_STAGE capture_annotation_failed" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE provider_request_started" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_annotated_image_preserves_pixel_coordinate_system():
+    clip = {"x": 80, "y": 60, "width": 340, "height": 431}
+    boxes = [
+        {"x": 100, "y": 360, "width": 300, "height": 30},
+        {"x": 100, "y": 416, "width": 300, "height": 30},
+    ]
+    original = _fake_png()
+    annotated = ranepa_captcha._annotate_slider_tracks(original, boxes, clip)
+    assert original != annotated
+    with Image.open(BytesIO(annotated)) as marked:
+        assert marked.size == (340, 431)
+    assert ranepa_captcha._slider_targets(((140, 315), (220, 371)), boxes, clip) == [
+        (125, 220, 375),
+        (125, 300, 431),
+    ]
