@@ -14,6 +14,11 @@ on:
         description: "UUID of the single consented pilot user"
         required: true
         type: string
+      diagnostic_only:
+        description: "Inspect the CAPTCHA without contacting RuCaptcha or moving sliders"
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -47,7 +52,8 @@ jobs:
       # Paid CAPTCHA solving is available only for a manually selected pilot.
       # Never enable it for scheduled multi-account queue shifts.
       CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
-      RANEPA_CAPTCHA_ENABLED: ${{ github.event_name == 'workflow_dispatch' && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
+      RANEPA_CAPTCHA_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
+      RANEPA_CAPTCHA_DIAGNOSTIC_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only == true }}
       RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "1"
       # Encrypted Cookie Reuse must be approved independently for a manual pilot.
       # Scheduled multi-account jobs retain the existing non-persistent flow.
