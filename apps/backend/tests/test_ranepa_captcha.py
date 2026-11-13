@@ -780,3 +780,165 @@ def test_legacy_motion_start_is_not_a_verified_thumb_position():
     assert targets[1][0] == boxes[1]["x"] + 25
     # This does not prove where either CSS thumb is rendered. No browser
     # interaction is attempted in this test.
+
+
+def test_dom_geometry_classification_is_fail_closed():
+    boxes = [
+        {"x": 100, "y": 360, "width": 300, "height": 30},
+        {"x": 100, "y": 416, "width": 300, "height": 30},
+    ]
+
+    def sample(box):
+        return {
+            "rect": dict(box),
+            "direction": "ltr",
+            "writingMode": "horizontal-tb",
+            "transform": "none",
+            "pointerEvents": "auto",
+            "appearance": "auto",
+        }
+
+    classify = ranepa_captcha._range_geometry_stage
+    clean = [sample(box) for box in boxes]
+    assert classify(clean, boxes) == "diagnostic_geometry_rect_consistent"
+    assert classify(clean[:1], boxes) == "diagnostic_geometry_unavailable"
+
+    mismatch = [sample(box) for box in boxes]
+    mismatch[1]["rect"]["x"] += 12
+    assert classify(mismatch, boxes) == "diagnostic_geometry_rect_mismatch"
+
+    transformed = [sample(box) for box in boxes]
+    transformed[0]["transform"] = "matrix(1, 0, 0, 1, 12, 0)"
+    assert classify(transformed, boxes) == "diagnostic_geometry_nonstandard"
+
+    rtl = [sample(box) for box in boxes]
+    rtl[0]["direction"] = "rtl"
+    assert classify(rtl, boxes) == "diagnostic_geometry_nonstandard"
+
+    vertical = [sample(box) for box in boxes]
+    vertical[1]["writingMode"] = "vertical-rl"
+    assert classify(vertical, boxes) == "diagnostic_geometry_nonstandard"
+
+    blocked = [sample(box) for box in boxes]
+    blocked[1]["pointerEvents"] = "none"
+    assert classify(blocked, boxes) == "diagnostic_geometry_nonstandard"
+
+    custom = [sample(box) for box in boxes]
+    custom[1]["appearance"] = "none"
+    assert classify(custom, boxes) == "diagnostic_geometry_custom_range"
+
+    missing = [sample(box) for box in boxes]
+    del missing[1]["appearance"]
+    assert classify(missing, boxes) == "diagnostic_geometry_unavailable"
+
+    invalid = [sample(box) for box in boxes]
+    invalid[0]["rect"]["x"] = float("nan")
+    assert classify(invalid, boxes) == "diagnostic_geometry_unavailable"
+
+    bad_value = [sample(box) for box in boxes]
+    bad_value[0]["rect"]["width"] = "wrong"
+    assert classify(bad_value, boxes) == "diagnostic_geometry_unavailable"
+
+
+def test_read_only_dom_geometry_cannot_trigger_motion_or_provider(caplog):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+        seen = []
+
+        class Label:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return boxes[self.index]
+
+            async def evaluate(self, expression, **kwargs):
+                assert kwargs == {"timeout": 1500}
+                seen.append((self.index, "getBoundingClientRect" in expression))
+                if "getBoundingClientRect" in expression:
+                    return {
+                        "rect": dict(boxes[self.index]),
+                        "direction": "ltr",
+                        "writingMode": "horizontal-tb",
+                        "transform": "none",
+                        "pointerEvents": "auto",
+                        "appearance": "none",
+                    }
+                return {
+                    "type": "range",
+                    "min": "0",
+                    "max": "100",
+                    "value": "0",
+                    "disabled": False,
+                }
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class NoMotion:
+            async def move(self, *_args, **_kwargs):
+                raise AssertionError("read-only diagnostic cannot move")
+
+            async def down(self):
+                raise AssertionError("read-only diagnostic cannot press")
+
+            async def up(self):
+                raise AssertionError("read-only diagnostic cannot release")
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = NoMotion()
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Label()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), None)
+
+        assert seen == [(0, False), (1, False), (0, True), (1, True)]
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_range_state_at_min" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_geometry_custom_range" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_complete_no_provider_call" in caplog.text
+        assert "provider_request_started" not in caplog.text
+        assert "drag_submitted" not in caplog.text
+        assert "matrix(" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_range_geometry_returns_unavailable_when_dom_changes():
+    async def scenario():
+        class Sliders:
+            async def count(self):
+                return 0
+
+        class Page:
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+        assert (
+            await ranepa_captcha._inspect_range_geometry_offline(Page(), [])
+            == "diagnostic_geometry_unavailable"
+        )
+
+    asyncio.run(scenario())
