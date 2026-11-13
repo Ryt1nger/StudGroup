@@ -260,6 +260,80 @@ async def _inspect_range_state_offline(page) -> str:
         return "diagnostic_range_state_unavailable"
 
 
+def _range_geometry_stage(samples: list[dict], boxes: list[dict]) -> str:
+    """Classify read-only DOM geometry; never claim to locate a slider thumb.
+
+    Browser-reported input rectangles and CSS indicate whether the legacy
+    bounding boxes are consistent, but cannot expose a reliable pixel
+    position for a native or custom range thumb.
+    """
+    unavailable = "diagnostic_geometry_unavailable"
+    if len(samples) != 2 or len(boxes) != 2:
+        return unavailable
+    custom = False
+    for sample, box in zip(samples, boxes, strict=True):
+        if not isinstance(sample, dict) or not isinstance(sample.get("rect"), dict):
+            return unavailable
+        try:
+            if any(
+                abs(float(sample["rect"][key]) - float(box[key])) > 2
+                for key in ("x", "y", "width", "height")
+            ):
+                return "diagnostic_geometry_rect_mismatch"
+            if not all(
+                math.isfinite(float(sample["rect"][key]))
+                and math.isfinite(float(box[key]))
+                for key in ("x", "y", "width", "height")
+            ):
+                return unavailable
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return unavailable
+        if not all(
+            isinstance(sample.get(key), str)
+            for key in ("direction", "writingMode", "transform", "pointerEvents", "appearance")
+        ):
+            return unavailable
+        if (
+            sample["direction"] != "ltr"
+            or sample["writingMode"] != "horizontal-tb"
+            or sample["transform"] != "none"
+            or sample["pointerEvents"] == "none"
+        ):
+            return "diagnostic_geometry_nonstandard"
+        custom = custom or sample["appearance"] == "none"
+    return "diagnostic_geometry_custom_range" if custom else "diagnostic_geometry_rect_consistent"
+
+
+async def _inspect_range_geometry_offline(page, boxes: list[dict]) -> str:
+    """Read input rectangles/CSS only; do not emit underlying values or styles."""
+    try:
+        inputs = page.locator('input[type="range"]')
+        if await inputs.count() != 2:
+            return "diagnostic_geometry_unavailable"
+        samples = [
+            await inputs.nth(index).evaluate(
+                """(el) => {
+                    const rect = el.getBoundingClientRect();
+                    const style = getComputedStyle(el);
+                    return {
+                        rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
+                        direction: style.direction,
+                        writingMode: style.writingMode,
+                        transform: style.transform,
+                        pointerEvents: style.pointerEvents,
+                        appearance: style.appearance
+                    };
+                }""",
+                timeout=1500,
+            )
+            for index in range(2)
+        ]
+        return _range_geometry_stage(samples, boxes)
+    except Exception:  # noqa: BLE001
+        # A challenge may change while we inspect; log only a constant stage.
+        return "diagnostic_geometry_unavailable"
+
+
 async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> bool:
     """Attempt exactly one drag per slider after a single coordinate task.
 
@@ -296,6 +370,7 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
             else:
                 log_captcha_stage("diagnostic_capture_grid_mismatch")
             log_captcha_stage(await _inspect_range_state_offline(page))
+            log_captcha_stage(await _inspect_range_geometry_offline(page, boxes))
             log_captcha_stage("diagnostic_complete_no_provider_call")
             return False
         try:
