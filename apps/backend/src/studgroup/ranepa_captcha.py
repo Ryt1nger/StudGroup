@@ -595,6 +595,15 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
                 log_captcha_stage("thumb_changed_before_press_no_click")
                 return False
             await page.mouse.move(start_x, y)
+            # Hovering can change a one-shot control. Recheck without pressing.
+            hovered = await _read_verified_handle_centers(page, boxes)
+            if (
+                hovered is None
+                or abs(hovered[index][0] - start_x) > 2
+                or abs(hovered[index][1] - y) > 2
+            ):
+                log_captcha_stage("thumb_changed_on_hover_no_click")
+                return False
             await page.mouse.down()
             try:
                 await page.mouse.move(end_x, y, steps=10)
