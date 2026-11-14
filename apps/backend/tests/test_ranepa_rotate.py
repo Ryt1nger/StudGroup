@@ -329,7 +329,10 @@ def test_actual_sdk_builds_two_image_rotate_request_without_network(tmp_path, mo
             ClientApiException("cannot recognize response ERROR_BAD_PARAMETERS"),
             "rotate_provider_api_bad_parameters",
         ),
-        (ClientApiException("ERROR_UPLOAD_ROTATECAPTCHA"), "rotate_provider_api_upload_rotate_failed"),
+        (
+            ClientApiException("ERROR_UPLOAD_ROTATECAPTCHA"),
+            "rotate_provider_api_upload_rotate_failed",
+        ),
         (ClientApiException("ERROR_ZERO_BALANCE"), "rotate_provider_api_zero_balance"),
         (ClientApiException("ERROR_WRONG_USER_KEY"), "rotate_provider_api_key_format"),
         (ClientApiException("secret=never-log-me"), "rotate_provider_api_other"),
