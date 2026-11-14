@@ -1593,3 +1593,25 @@ def test_one_shot_read_only_state_observes_disabled_or_locked_class_without_clic
         }
 
     asyncio.run(scenario())
+
+
+def test_css_thumb_travel_boundaries_reject_unreachable_targets(caplog):
+    boxes = [
+        {"x": 100, "y": 360, "width": 300, "height": 30},
+        {"x": 100, "y": 416, "width": 300, "height": 30},
+    ]
+    clip = {"x": 80, "y": 60, "width": 340, "height": 431}
+    # Explicit CSS gave a 60px thumb: its rightmost center is x + 270,
+    # not the final 15px track margin accepted by the old rectangle check.
+    starts = [(130.0, 375.0), (130.0, 431.0)]
+    with caplog.at_level(logging.WARNING):
+        assert (
+            ranepa_captcha._slider_targets(
+                ((298, 315), (200, 371)), boxes, clip, starts
+            )
+            is None
+        )
+    assert "target_1_outside_thumb_travel" in caplog.text
+    assert ranepa_captcha._slider_targets(
+        ((200, 315), (200, 371)), boxes, clip, starts
+    ) == [(130.0, 280, 375.0), (130.0, 280, 431.0)]
