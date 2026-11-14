@@ -20,9 +20,18 @@ def _data_uri(color: str) -> str:
 def test_rotate_provider_answer_contract_and_direction():
     assert ranepa_rotate.decode_rotation_angles({"code": "40|-120"}) == (40, -120)
     assert ranepa_rotate.decode_rotation_angles({"code": "0|360"}) == (0, 360)
-    for bad in (None, {}, {"code": "40"}, {"code": "40|200|120"}, {"code": "x=40|200"},
-                {"code": "361|10"}, {"code": "40.5|200"}, {"code": "40,200"},
-                {"code": "OK|40|200"}, {"code": "-361|120"}):
+    for bad in (
+        None,
+        {},
+        {"code": "40"},
+        {"code": "40|200|120"},
+        {"code": "x=40|200"},
+        {"code": "361|10"},
+        {"code": "40.5|200"},
+        {"code": "40,200"},
+        {"code": "OK|40|200"},
+        {"code": "-361|120"},
+    ):
         assert ranepa_rotate.decode_rotation_angles(bad) is None
 
 
@@ -62,9 +71,7 @@ def test_challenge_image_capture_fails_closed(result):
     asyncio.run(scenario())
 
 
-def test_rotation_pilot_one_provider_task_two_one_shot_drags_and_no_files_left(
-    monkeypatch, caplog
-):
+def test_rotation_pilot_one_provider_task_two_one_shot_drags_and_no_files_left(monkeypatch, caplog):
     async def scenario():
         boxes = [
             {"x": 100, "y": 360, "width": 300, "height": 30},
@@ -133,7 +140,10 @@ def test_rotation_pilot_one_provider_task_two_one_shot_drags_and_no_files_left(
                 self.calls += 1
                 assert list(files) == ["left", "right"]
                 assert kwargs["angle"] == 5
-                assert "половин" in kwargs["hintText"].lower() or "фрагмент" in kwargs["hintText"].lower()
+                assert (
+                    "половин" in kwargs["hintText"].lower()
+                    or "фрагмент" in kwargs["hintText"].lower()
+                )
                 for path in files.values():
                     file = Path(path)
                     assert file.exists()
