@@ -181,14 +181,98 @@ def _annotate_slider_tracks(image: bytes, boxes: list[dict], clip: dict) -> byte
     return output.getvalue()
 
 
+async def _read_verified_handle_centers(page, boxes: list[dict]) -> list[tuple[float, float]] | None:
+    """Find exactly two visible, unoccluded explicit handle elements, without clicking.
+
+    A native `input[type=range]` thumb is a browser pseudo-element, not a DOM
+    element. We cannot claim to measure its center, so native-only controls
+    fail closed instead of substituting a guessed offset.
+    """
+    try:
+        inputs = page.locator('input[type="range"]')
+        if len(boxes) != 2 or await inputs.count() != 2:
+            return None
+        centers = []
+        for index, box in enumerate(boxes):
+            sample = await inputs.nth(index).evaluate(
+                """(el) => {
+                    if (!el.isConnected || el.type !== 'range' || el.disabled) return null;
+                    const parent = el.parentElement;
+                    if (!parent) return null;
+                    const selector = [
+                        '[data-slider-thumb]',
+                        '[data-testid="slider-thumb"]',
+                        '.slider-thumb',
+                        '.range-thumb',
+                        '.slider__thumb',
+                        '.slider__handle',
+                        '.noUi-handle',
+                        '.ui-slider-handle'
+                    ].join(',');
+                    const candidates = Array.from(parent.querySelectorAll(selector));
+                    if (candidates.length !== 1) return null;
+                    const thumb = candidates[0];
+                    const thumbStyle = getComputedStyle(thumb);
+                    const inputRect = el.getBoundingClientRect();
+                    const thumbRect = thumb.getBoundingClientRect();
+                    const cx = thumbRect.x + thumbRect.width / 2;
+                    const cy = thumbRect.y + thumbRect.height / 2;
+                    if (
+                        !thumb.isConnected || thumbStyle.visibility !== 'visible'
+                        || thumbStyle.display === 'none'
+                        || thumbStyle.pointerEvents === 'none'
+                        || thumbRect.width < 8 || thumbRect.width > 85
+                        || thumbRect.height < 8 || thumbRect.height > 85
+                        || cx < inputRect.left || cx > inputRect.right
+                        || Math.abs(cy - (inputRect.top + inputRect.height / 2)) > 20
+                    ) return null;
+                    const hit = el.ownerDocument.elementFromPoint(cx, cy);
+                    if (!hit || (hit !== thumb && !thumb.contains(hit))) return null;
+                    return {
+                        x: cx, y: cy,
+                        box: {
+                            x: inputRect.x, y: inputRect.y,
+                            width: inputRect.width, height: inputRect.height
+                        }
+                    };
+                }""",
+                timeout=1500,
+            )
+            if not isinstance(sample, dict) or not isinstance(sample.get("box"), dict):
+                return None
+            if any(
+                not math.isfinite(float(sample["box"][key]))
+                or abs(float(sample["box"][key]) - float(box[key])) > 2
+                for key in ("x", "y", "width", "height")
+            ):
+                return None
+            x, y = float(sample["x"]), float(sample["y"])
+            if (
+                not (math.isfinite(x) and math.isfinite(y))
+                or not box["x"] <= x <= box["x"] + box["width"]
+                or abs(y - (box["y"] + box["height"] / 2)) > 20
+            ):
+                return None
+            centers.append((x, y))
+        return centers
+    except Exception:  # noqa: BLE001
+        # On unknown DOM/layout or navigation, never guess or touch the slider.
+        return None
+
+
 def _slider_targets(
     points: tuple[tuple[int, int], tuple[int, int]],
     boxes: list[dict],
     clip: dict,
+    start_centers: list[tuple[float, float]],
 ) -> list[tuple[float, float, float]] | None:
     """Validate both positions and their row order before the first mouse action."""
+    if len(start_centers) != 2:
+        return None
     targets = []
-    for index, ((px, py), box) in enumerate(zip(points, boxes, strict=True), start=1):
+    for index, ((px, py), box, start) in enumerate(
+        zip(points, boxes, start_centers, strict=True), start=1
+    ):
         x = clip["x"] + px
         y = clip["y"] + py
         cy = box["y"] + box["height"] / 2
@@ -203,8 +287,18 @@ def _slider_targets(
         if y > cy + 22:
             log_captcha_stage(f"target_{index}_below_track")
             return None
-        start_x = box["x"] + 25
-        targets.append((start_x, x, cy))
+        start_x, start_y = start
+        if (
+            not (math.isfinite(start_x) and math.isfinite(start_y))
+            or not box["x"] <= start_x <= box["x"] + box["width"]
+            or abs(start_y - cy) > 20
+        ):
+            log_captcha_stage(f"start_{index}_unverified")
+            return None
+        if abs(x - start_x) < 8:
+            log_captcha_stage(f"target_{index}_zero_distance")
+            return None
+        targets.append((start_x, x, start_y))
     return targets
 
 
@@ -436,8 +530,21 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
                 log_captcha_stage("diagnostic_capture_grid_mismatch")
             log_captcha_stage(await _inspect_range_state_offline(page))
             log_captcha_stage(await _inspect_range_geometry_offline(page, boxes))
+            handle_centers = await _read_verified_handle_centers(page, boxes)
+            log_captcha_stage(
+                "diagnostic_explicit_handles_verified"
+                if handle_centers is not None
+                else "diagnostic_explicit_handles_unavailable"
+            )
             log_captcha_stage("diagnostic_complete_no_provider_call")
             return False
+        # A single click on a wrong track position can lock this challenge.
+        # Never spend on a provider or press a button without two verified handles.
+        start_centers = await _read_verified_handle_centers(page, boxes)
+        if start_centers is None:
+            log_captcha_stage("thumb_unverified_no_provider_no_motion")
+            return False
+        log_captcha_stage("thumb_centers_verified_read_only")
         try:
             marked_image = _annotate_slider_tracks(image, boxes, clip)
         except (OSError, ValueError):
@@ -457,14 +564,36 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
         if points is None:
             log_captcha_stage("provider_answer_invalid")
             return False
-        targets = _slider_targets(points, boxes, clip)
+        # Provider latency can invalidate earlier geometry. Re-read without
+        # any interaction and reject a changed handle before the first click.
+        fresh_centers = await _read_verified_handle_centers(page, boxes)
+        if (
+            fresh_centers is None
+            or any(
+                abs(a - c) > 2 or abs(b - d) > 2
+                for (a, b), (c, d) in zip(start_centers, fresh_centers, strict=True)
+            )
+        ):
+            log_captcha_stage("thumb_changed_before_motion_no_click")
+            return False
+        targets = _slider_targets(points, boxes, clip, fresh_centers)
         if targets is None:
             log_captcha_stage("coordinates_outside_controls")
             return False
         log_captcha_stage("coordinates_validated")
         before_values = await _read_live_range_values(page)
         phase = "drag"
-        for start_x, end_x, y in targets:
+        for index, (start_x, end_x, y) in enumerate(targets):
+            # Guard the second one-shot press as well; the first drag may cause
+            # the challenge to reset or change before it is safe to continue.
+            current = await _read_verified_handle_centers(page, boxes)
+            if (
+                current is None
+                or abs(current[index][0] - start_x) > 2
+                or abs(current[index][1] - y) > 2
+            ):
+                log_captcha_stage("thumb_changed_before_press_no_click")
+                return False
             await page.mouse.move(start_x, y)
             await page.mouse.down()
             try:
