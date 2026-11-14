@@ -199,7 +199,7 @@ async def _read_verified_handle_centers(
         if only_index is not None and only_index not in (0, 1):
             return None
         centers = []
-        for index in ((0, 1) if only_index is None else (only_index,)):
+        for index in (0, 1) if only_index is None else (only_index,):
             box = boxes[index]
             sample = await inputs.nth(index).evaluate(
                 """(el) => {
@@ -552,9 +552,7 @@ async def _read_one_shot_range_state(page, index: int) -> dict | None:
         return None
 
 
-def _one_shot_motion_stage(
-    index: int, before: dict | None, during: dict | None
-) -> str:
+def _one_shot_motion_stage(index: int, before: dict | None, during: dict | None) -> str:
     """Report evidence of motion *before mouse-up*; never expose angles."""
     prefix = f"drag_{index + 1}_live"
     if before is None or during is None:
@@ -688,21 +686,13 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
             # Guard the second one-shot press as well; the first drag may cause
             # the challenge to reset or change before it is safe to continue.
             current = await _read_verified_handle_centers(page, boxes, only_index=index)
-            if (
-                current is None
-                or abs(current[0][0] - start_x) > 2
-                or abs(current[0][1] - y) > 2
-            ):
+            if current is None or abs(current[0][0] - start_x) > 2 or abs(current[0][1] - y) > 2:
                 log_captcha_stage("thumb_changed_before_press_no_click")
                 return False
             await page.mouse.move(start_x, y)
             # Hovering can change a one-shot control. Recheck without pressing.
             hovered = await _read_verified_handle_centers(page, boxes, only_index=index)
-            if (
-                hovered is None
-                or abs(hovered[0][0] - start_x) > 2
-                or abs(hovered[0][1] - y) > 2
-            ):
+            if hovered is None or abs(hovered[0][0] - start_x) > 2 or abs(hovered[0][1] - y) > 2:
                 log_captcha_stage("thumb_changed_on_hover_no_click")
                 return False
             before_drag = await _read_one_shot_range_state(page, index)
