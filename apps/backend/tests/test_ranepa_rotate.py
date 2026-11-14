@@ -401,6 +401,7 @@ def test_provider_exception_logs_only_safe_fixed_stages_before_any_click(monkeyp
 
     asyncio.run(scenario())
 
+
 def test_v2_pair_rejects_changed_challenge_without_any_mouse_action(monkeypatch, caplog):
     async def scenario():
         boxes = [
@@ -517,4 +518,3 @@ def test_v2_pair_valid_angles_reuse_two_guarded_one_shot_drags(monkeypatch, capl
         assert "rotate_drags_submitted_verification_pending" in caplog.text
 
     asyncio.run(scenario())
-
