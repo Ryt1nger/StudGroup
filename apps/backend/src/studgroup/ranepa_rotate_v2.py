@@ -216,9 +216,7 @@ class RuCaptchaV2Pair:
         log_captcha_stage("rotate_v2_shared_context_verified")
         try:
             async with asyncio.timeout(timeout_seconds):
-                async with self._client_factory(
-                    timeout=20, follow_redirects=False
-                ) as http:
+                async with self._client_factory(timeout=20, follow_redirects=False) as http:
                     first = await self._solve_one(http, halves[0], context, 0)
                     second = await self._solve_one(http, halves[1], context, 1)
                     return first, second
