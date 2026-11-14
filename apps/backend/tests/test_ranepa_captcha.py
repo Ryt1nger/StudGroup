@@ -78,7 +78,7 @@ def test_coordinates_reject_untrusted_or_ambiguous_answers():
         assert decode(bad) is None
 
 
-def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
+def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once(monkeypatch):
     async def scenario():
         class FakeTitle:
             async def is_visible(self):
@@ -147,6 +147,10 @@ def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
                 assert len(kwargs["hintText"]) <= 140
                 return {"code": "coordinates:x=140,y=315;x=220,y=371"}
 
+        async def known_handles(_page, _boxes):
+            return [(125.0, 375.0), (125.0, 431.0)]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         page = FakePage()
         assert await ranepa_captcha.solve_slider_captcha(page, FakeClient())
         assert page.clip == {"x": 80, "y": 60, "width": 340, "height": 431}
@@ -174,7 +178,7 @@ def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
         ("coordinates:x=140,y=490;x=210,y=371", "target_1_below_track"),
     ],
 )
-def test_invalid_positions_never_touch_one_shot_sliders(code, stage, caplog):
+def test_invalid_positions_never_touch_one_shot_sliders(code, stage, caplog, monkeypatch):
     async def scenario():
         class FakeTitle:
             async def is_visible(self):
@@ -221,6 +225,10 @@ def test_invalid_positions_never_touch_one_shot_sliders(code, stage, caplog):
             async def coordinates(self, *_args, **_kwargs):
                 return {"code": code}
 
+        async def known_handles(_page, _boxes):
+            return [(125.0, 375.0), (125.0, 431.0)]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         with caplog.at_level(logging.WARNING):
             assert not await ranepa_captcha.solve_slider_captcha(FakePage(), FakeClient())
         assert f"RANEPA_CAPTCHA_STAGE {stage}" in caplog.text
@@ -448,7 +456,7 @@ def test_missing_slider_controls_report_precise_stage_without_sending_image(capl
     asyncio.run(scenario())
 
 
-def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact(caplog):
+def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact(caplog, monkeypatch):
     async def scenario():
         class Title:
             async def is_visible(self):
@@ -491,6 +499,10 @@ def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact
             async def coordinates(self, *_args, **_kwargs):
                 raise AssertionError("must not send unmatched capture")
 
+        async def known_handles(_page, _boxes):
+            return [(125.0, 375.0), (125.0, 431.0)]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         with caplog.at_level(logging.WARNING):
             assert not await ranepa_captcha.solve_slider_captcha(Page(), Provider())
         assert "RANEPA_CAPTCHA_STAGE capture_annotation_failed" in caplog.text
@@ -510,9 +522,11 @@ def test_annotated_image_preserves_pixel_coordinate_system():
     assert original != annotated
     with Image.open(BytesIO(annotated)) as marked:
         assert marked.size == (340, 431)
-    assert ranepa_captcha._slider_targets(((140, 315), (220, 371)), boxes, clip) == [
-        (125, 220, 375),
-        (125, 300, 431),
+    assert ranepa_captcha._slider_targets(
+        ((140, 315), (220, 371)), boxes, clip, [(118.0, 375.0), (132.0, 431.0)]
+    ) == [
+        (118.0, 220, 375.0),
+        (132.0, 300, 431.0),
     ]
 
 
@@ -587,12 +601,13 @@ def test_geometry_mapping_handles_offset_and_different_slider_widths():
         assert image.getpixel((50, 358)) == (0, 105, 235)
 
     # Coordinates are in cropped image pixels, then translated by clip x/y.
-    assert ranepa_captcha._slider_targets(((100, 313), (180, 375)), boxes, clip) == [
-        (125, 180, 363),
-        (141, 260, 425),
+    centers = [(118.0, 363.0), (130.0, 425.0)]
+    assert ranepa_captcha._slider_targets(((100, 313), (180, 375)), boxes, clip, centers) == [
+        (118.0, 180, 363.0),
+        (130.0, 260, 425.0),
     ]
     # Swapping the two rows must be rejected, not silently reordered.
-    assert ranepa_captcha._slider_targets(((100, 375), (180, 313)), boxes, clip) is None
+    assert ranepa_captcha._slider_targets(((100, 375), (180, 313)), boxes, clip, centers) is None
 
 
 @pytest.mark.parametrize(
@@ -768,19 +783,25 @@ def test_two_point_coordinate_response_contract_is_strict(answer, expected):
     assert ranepa_captcha.decode_slider_coordinates(answer) == expected
 
 
-def test_legacy_motion_start_is_not_a_verified_thumb_position():
-    """The legacy adapter's starting x is a fixed offset, not the DOM thumb center."""
+def test_motion_requires_verified_handle_centers_and_rejects_zero_distance(caplog):
+    """Never fall back to box.x + 25 or perform a zero-distance press."""
     boxes = [
         {"x": 100, "y": 360, "width": 300, "height": 30},
         {"x": 116, "y": 416, "width": 280, "height": 30},
     ]
     clip = {"x": 80, "y": 60, "width": 340, "height": 431}
-    targets = ranepa_captcha._slider_targets(((140, 315), (220, 371)), boxes, clip)
-    assert targets is not None
-    assert targets[0][0] == boxes[0]["x"] + 25
-    assert targets[1][0] == boxes[1]["x"] + 25
-    # This does not prove where either CSS thumb is rendered. No browser
-    # interaction is attempted in this test.
+    points = ((140, 315), (220, 371))
+    assert ranepa_captcha._slider_targets(points, boxes, clip, []) is None
+    starts = [(118.0, 375.0), (133.0, 431.0)]
+    targets = ranepa_captcha._slider_targets(points, boxes, clip, starts)
+    assert targets == [(118.0, 220, 375.0), (133.0, 300, 431.0)]
+    assert targets[0][0] != boxes[0]["x"] + 25
+    assert targets[1][0] != boxes[1]["x"] + 25
+    with caplog.at_level(logging.WARNING):
+        assert ranepa_captcha._slider_targets(
+            points, boxes, clip, [(220.0, 375.0), (133.0, 431.0)]
+        ) is None
+    assert "target_1_zero_distance" in caplog.text
 
 
 def test_dom_geometry_classification_is_fail_closed():
@@ -977,7 +998,9 @@ def test_post_drag_value_stages_are_safe_and_precise(before, after, stage):
 
 
 @pytest.mark.parametrize("on_drag", ["both", "one", "none"])
-def test_paid_adapter_distinguishes_dom_value_changes_without_extra_provider_calls(on_drag, caplog):
+def test_paid_adapter_distinguishes_dom_value_changes_without_extra_provider_calls(
+    on_drag, caplog, monkeypatch
+):
     async def scenario():
         boxes = [
             {"x": 100, "y": 360, "width": 300, "height": 30},
@@ -1054,6 +1077,10 @@ def test_paid_adapter_distinguishes_dom_value_changes_without_extra_provider_cal
                 calls.append("provider")
                 return {"code": "coordinates:x=140,y=315;x=220,y=371"}
 
+        async def known_handles(_page, _boxes):
+            return [(125.0, 375.0), (125.0, 431.0)]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         with caplog.at_level(logging.WARNING):
             assert await ranepa_captcha.solve_slider_captcha(Page(), Provider())
         assert len(calls) == 1
