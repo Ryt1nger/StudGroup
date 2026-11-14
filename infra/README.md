@@ -37,7 +37,7 @@ The external Celery deployment is unchanged for a later always-on worker topolog
 The API accepts standard `postgres://`/`postgresql://` connection URLs and
 normalizes them to its asyncpg driver internally. Use the configured Supabase US
 connection. Do not publish credentials. The frontend uses only the public API base
-URL (`https://studgroup.onrender.com/v1`), never bot or AI keys. The native build
+URL (`https://studgroup-tyjh.onrender.com/v1`), never bot or AI keys. The native build
 runs `uv sync --frozen --no-dev`. The current Render start command does not run
 Alembic; apply and verify migrations against the US project before deploying API
 code that requires them.
