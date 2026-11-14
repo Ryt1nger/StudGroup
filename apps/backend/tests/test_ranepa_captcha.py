@@ -1200,7 +1200,7 @@ def test_verified_explicit_handles_are_read_only_and_not_guessed():
         {"x": float("nan"), "y": 375.0, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
         {"x": 30, "y": 375, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
         {"x": 125, "y": 300, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
-        {"x": 125, "y": 375, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
+        {"x": 125, "y": 375, "box": {"x": 100, "y": 360, "width": 280, "height": 30}},
     ],
 )
 def test_unverified_handle_never_contacts_rucaptcha_or_clicks(handle_sample, caplog):
