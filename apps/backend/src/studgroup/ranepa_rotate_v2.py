@@ -187,9 +187,7 @@ class RuCaptchaV2Pair:
 
     max_tasks = 2
 
-    def __init__(
-        self, api_key: str, *, client_factory=None, progressive_context: bool = False
-    ):
+    def __init__(self, api_key: str, *, client_factory=None, progressive_context: bool = False):
         self._api_key = api_key
         self._client_factory = client_factory or httpx.AsyncClient
         self.progressive_context = progressive_context
@@ -210,9 +208,7 @@ class RuCaptchaV2Pair:
                 "type": "RotateTask",
                 "body": base64.b64encode(body).decode("ascii"),
                 "imgInstructions": base64.b64encode(context).decode("ascii"),
-                "comment": (
-                    _PROGRESSIVE_RIGHT_COMMENT if progressive_right else _COMMENTS[side]
-                ),
+                "comment": (_PROGRESSIVE_RIGHT_COMMENT if progressive_right else _COMMENTS[side]),
                 "angle": 5,
             },
             "languagePool": "en",
