@@ -36,8 +36,6 @@ from twocaptcha.exceptions.solver import (
     ValidationException,
 )
 
-from studgroup.ranepa_rotate_v2 import RotateV2Error
-
 from studgroup.ranepa_captcha import (
     _one_shot_motion_stage,
     _one_shot_release_stage,
@@ -46,6 +44,7 @@ from studgroup.ranepa_captcha import (
     _slider_boxes,
     log_captcha_stage,
 )
+from studgroup.ranepa_rotate_v2 import RotateV2Error
 
 # The v1 RuCaptcha API returns OK|angle1|angle2 (the SDK strips OK|).
 # Angle signs are meaningful: negative means counterclockwise.
