@@ -46,13 +46,28 @@ _ERRORS = {
     "ERROR_IP_BLOCKED": "ip_blocked",
 }
 
+_SAFE_STAGES = frozenset(
+    {
+        "image_invalid",
+        "context_invalid",
+        "context_too_large",
+        "http_failed",
+        "invalid_response",
+        "invalid_task_id",
+        "invalid_answer",
+        "network_failed",
+        "api_rejected",
+        *(f"api_{label}" for label in _ERRORS.values()),
+    }
+)
+
 
 class RotateV2Error(Exception):
     """A fixed safe diagnostic stage, never an untrusted API message."""
 
     def __init__(self, stage: str):
-        self.stage = stage
-        super().__init__(stage)
+        self.stage = stage if stage in _SAFE_STAGES else "invalid_response"
+        super().__init__(self.stage)
 
 
 def _image(png: bytes) -> Image.Image:
@@ -131,7 +146,8 @@ def _safe_json(response: httpx.Response) -> dict:
         raise RotateV2Error("invalid_response")
     if value["errorId"] != 0:
         code = value.get("errorCode")
-        raise RotateV2Error(f"api_{_ERRORS.get(code, 'rejected')}")
+        reason = _ERRORS.get(code, "rejected") if isinstance(code, str) else "rejected"
+        raise RotateV2Error(f"api_{reason}")
     return value
 
 
