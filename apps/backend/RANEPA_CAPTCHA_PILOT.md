@@ -2,9 +2,9 @@
 
 ## Status
 
-Optional adapter introduced in PR #147; **present on `main`, disabled by
-default, and not proven to pass a live StormWall challenge**. Manual one-account
-pilots have received provider answers but have not passed the CAPTCHA.
+Optional adapter introduced in PR #147; **disabled by default, and not
+proven to pass a live StormWall challenge**. Manual one-account pilots have
+received provider answers but have not passed the CAPTCHA. The native-thumb CSS preflight fails closed when a safe first click cannot be verified.
 The current server screenshot shows a two-slider
 picture challenge on `my.ranepa.ru`, not Moodle. The legacy RuCaptcha Coordinates
 API is a possible fit, but it returns *image coordinates*, not a guaranteed StormWall
@@ -321,6 +321,73 @@ the previous one could not answer. This PR alone does not establish
 StormWall acceptance or justify further paid tests. Scope stays restricted
 to the existing RANEPA LK and SDO workflow; no alternative timetable
 sources.
+
+## One-shot StormWall slider: observed DOM and measured preflight (2026-11-14)
+
+The **authorized user's Chrome DevTools screenshots** establish that StormWall
+uses two **native CSS-styled** `input[type="range"]` elements with
+classes `slider-top` and `slider-bottom`, duplicate id `myRange`,
+`min="0"`, `max="360"`, `step="0.5"`, initial `value="0"`, and
+input rectangles of **300 × 30 CSS pixels**. The visual white pill-shaped
+thumb is NOT a separate `div` or `span`. The earlier PR code requiring an
+explicit handle element was incompatible with this observed markup.
+
+The screenshots also demonstrate **one-shot lockout**: after an attempted
+movement, a control may gain `disabled` and the `disable-sl` class
+**while its range value is back at zero**. The image element can retain a
+`transform: rotate(...)` when this occurs. Therefore an unchanged post-release
+input value is not reliable proof that no movement occurred; it may have
+changed during the drag and reset after release.
+
+### What the guarded adapter now does
+
+1. **Before RuCaptcha is billed**, inspect the browser's same-origin,
+   accessible CSSOM for a matching `::-webkit-slider-thumb` rule with
+   explicit, unambiguous numeric `width` and `height` in CSS pixels.
+   `getComputedStyle(input, "::-webkit-slider-thumb")` is *not* used:
+   Chromium can return the entire input's 300 × 30 size for that query.
+2. Verify each input's enabled, initial/minimum state, horizontal CSS
+   orientation, pointer hit target, input rectangle and plausible thumb
+   dimensions (16–85 px width). Calculate each first-click point from the
+   **measured input rectangle and CSS thumb width**. No fixed `x + 25`,
+   fallback guess, probe click or synthetic `value` modification.
+3. Recheck both geometry and active state after provider latency, then only
+   the *pending* handle before its sole press and after a hover. Do not
+   require the first handle to remain enabled after its own release.
+   Reject zero-distance targets.
+4. During each **single continuous drag**, inspect input value and image
+   rotation **before mouse-up**, without any additional click. After the
+   sole release inspect `disabled`/`disable-sl`. Emit fixed stages such as
+   `drag_2_live_value_changed`, `drag_2_live_image_changed`,
+   `drag_2_live_unchanged`, `drag_2_release_locked` or
+   `drag_2_release_enabled`. Never log values, angles, coordinates or
+   session data. Original read-only post-drag and bounded LK verification
+   remain unchanged.
+5. If native thumb CSS is inaccessible or ambiguous, report
+   `thumb_css_unverified_no_provider_no_motion` **before the paid call**.
+   The **free** `diagnostic_only=true` path emits
+   `diagnostic_native_thumb_css_verified` or
+   `diagnostic_native_thumb_css_unavailable` without mouse input,
+   third-party requests or screenshot artifacts.
+
+### Anti-loop decision
+
+- **First**, full CI must pass. Then run one **free**, single-account
+  diagnostic on `main` to validate that the authorized LK challenge really
+  exposes readable native thumb CSS. A simulated CSSOM test is not evidence
+  of the production widget.
+- If CSS verification is unavailable, **do not spend any RuCaptcha balance**.
+  Inspect the minimal CSS selector and width/height from the normal Chrome
+  Styles view. Never hard-code a screen coordinate.
+- If CSS verification succeeds, exactly one manually authorized pilot may
+  check live motion, lockout, challenge state, LK group identity, and
+  month/week schedule. Avoid repeated attempts on a single-use control.
+- A `drag_*_release_locked` stage means the one-shot interaction was
+  consumed. **It does not mean the CAPTCHA was accepted**. Only the original
+  LK month/week verification (then SDO links) can establish useful success.
+
+No alternate timetable sources, cookies, authentication tokens or extra
+provider tasks are introduced.
 
 ## Validation checklist
 

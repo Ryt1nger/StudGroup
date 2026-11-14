@@ -181,14 +181,131 @@ def _annotate_slider_tracks(image: bytes, boxes: list[dict], clip: dict) -> byte
     return output.getvalue()
 
 
+async def _read_verified_handle_centers(
+    page, boxes: list[dict], *, only_index: int | None = None
+) -> list[tuple[float, float]] | None:
+    """Read the starting centers of CSS-styled *native* range thumbs.
+
+    The observed StormWall widget has two native inputs, not separate
+    handle elements. Chromium's getComputedStyle(input, pseudo) does NOT
+    expose the thumb width reliably; read explicit CSSOM width/height
+    declarations instead. If the relevant thumb CSS is inaccessible or
+    ambiguous, return None before the provider is called or a mouse press.
+    """
+    try:
+        inputs = page.locator('input[type="range"]')
+        if len(boxes) != 2 or await inputs.count() != 2:
+            return None
+        if only_index is not None and only_index not in (0, 1):
+            return None
+        centers = []
+        for index in (0, 1) if only_index is None else (only_index,):
+            box = boxes[index]
+            sample = await inputs.nth(index).evaluate(
+                """(el) => {
+                    if (!el.isConnected || el.type !== 'range'
+                        || el.disabled || el.classList.contains('disable-sl')) return null;
+                    const rect = el.getBoundingClientRect();
+                    const style = getComputedStyle(el);
+                    if (style.direction !== 'ltr'
+                        || style.writingMode !== 'horizontal-tb'
+                        || style.transform !== 'none'
+                        || style.pointerEvents === 'none'
+                        || style.appearance !== 'none'
+                        || style.visibility !== 'visible') return null;
+                    const minimum = Number(el.min);
+                    const maximum = Number(el.max);
+                    const value = el.valueAsNumber;
+                    if (![minimum, maximum, value].every(Number.isFinite)
+                        || maximum <= minimum || value !== minimum) return null;
+
+                    // Only explicit numeric pixel dimensions from matching,
+                    // accessible ::-webkit-slider-thumb CSS rules are valid.
+                    // getComputedStyle(el, '::-webkit-slider-thumb') can return
+                    // the *input's* width, so never use that as thumb geometry.
+                    const matches = [];
+                    const scan = (rules) => {
+                        for (const rule of rules) {
+                            if (rule.cssRules) scan(rule.cssRules);
+                            if (!rule.selectorText || !rule.style) continue;
+                            for (const selector of rule.selectorText.split(',')) {
+                                const m = selector.trim().match(/^(.*)::-webkit-slider-thumb$/);
+                                if (!m) continue;
+                                try {
+                                    if (el.matches(m[1].trim())) {
+                                        if (rule.style.width && rule.style.height) {
+                                            matches.push([rule.style.width, rule.style.height]);
+                                        }
+                                    }
+                                } catch (_) {
+                                    // Unsupported or compound pseudo selector.
+                                }
+                            }
+                        }
+                    };
+                    for (const sheet of el.ownerDocument.styleSheets) {
+                        try { scan(sheet.cssRules); } catch (_) {
+                            // Cross-origin or otherwise inaccessible CSS.
+                            return null;
+                        }
+                    }
+                    const unique = [...new Set(matches.map(pair => pair.join('|')))];
+                    if (unique.length !== 1) return null;
+                    const parsePx = (s) => /^\\d+(?:\\.\\d+)?px$/.test(s)
+                        ? Number(s.slice(0, -2)) : NaN;
+                    const [thumbWidth, thumbHeight] = unique[0].split('|').map(parsePx);
+                    if (!Number.isFinite(thumbWidth) || !Number.isFinite(thumbHeight)
+                        || thumbWidth < 16 || thumbWidth > 85
+                        || thumbHeight < 16 || thumbHeight > 70
+                        || thumbWidth >= rect.width / 2
+                        || Math.abs(rect.height - 30) > 5) return null;
+                    const x = rect.left + thumbWidth / 2;
+                    const y = rect.top + rect.height / 2;
+                    const hit = el.ownerDocument.elementFromPoint(x, y);
+                    if (hit !== el) return null;
+                    return {
+                        x, y,
+                        box: {x: rect.x, y: rect.y,
+                              width: rect.width, height: rect.height}
+                    };
+                }""",
+                timeout=1500,
+            )
+            if not isinstance(sample, dict) or not isinstance(sample.get("box"), dict):
+                return None
+            if any(
+                not math.isfinite(float(sample["box"][key]))
+                or abs(float(sample["box"][key]) - float(box[key])) > 2
+                for key in ("x", "y", "width", "height")
+            ):
+                return None
+            x, y = float(sample["x"]), float(sample["y"])
+            if (
+                not (math.isfinite(x) and math.isfinite(y))
+                or not box["x"] <= x <= box["x"] + box["width"]
+                or abs(y - (box["y"] + box["height"] / 2)) > 2
+            ):
+                return None
+            centers.append((x, y))
+        return centers
+    except Exception:  # noqa: BLE001
+        # The CAPTCHA may navigate while CSS is read. Never guess its thumb.
+        return None
+
+
 def _slider_targets(
     points: tuple[tuple[int, int], tuple[int, int]],
     boxes: list[dict],
     clip: dict,
+    start_centers: list[tuple[float, float]],
 ) -> list[tuple[float, float, float]] | None:
     """Validate both positions and their row order before the first mouse action."""
+    if len(start_centers) != 2:
+        return None
     targets = []
-    for index, ((px, py), box) in enumerate(zip(points, boxes, strict=True), start=1):
+    for index, ((px, py), box, start) in enumerate(
+        zip(points, boxes, start_centers, strict=True), start=1
+    ):
         x = clip["x"] + px
         y = clip["y"] + py
         cy = box["y"] + box["height"] / 2
@@ -203,8 +320,24 @@ def _slider_targets(
         if y > cy + 22:
             log_captcha_stage(f"target_{index}_below_track")
             return None
-        start_x = box["x"] + 25
-        targets.append((start_x, x, cy))
+        start_x, start_y = start
+        if (
+            not (math.isfinite(start_x) and math.isfinite(start_y))
+            or not box["x"] <= start_x <= box["x"] + box["width"]
+            or abs(start_y - cy) > 20
+        ):
+            log_captcha_stage(f"start_{index}_unverified")
+            return None
+        # A native thumb's center travels between half a thumb width from
+        # either track edge. Reject unreachable targets before the first press.
+        half_thumb = start_x - box["x"]
+        if x < start_x - 2 or x > box["x"] + box["width"] - half_thumb + 2:
+            log_captcha_stage(f"target_{index}_outside_thumb_travel")
+            return None
+        if abs(x - start_x) < 8:
+            log_captcha_stage(f"target_{index}_zero_distance")
+            return None
+        targets.append((start_x, x, start_y))
     return targets
 
 
@@ -376,6 +509,75 @@ async def _read_live_range_values(page) -> tuple[tuple[float, float, float], ...
         return None
 
 
+async def _read_one_shot_range_state(page, index: int) -> dict | None:
+    """Observe one range and its picture motion without any pointer events."""
+    if index not in (0, 1):
+        return None
+    try:
+        controls = page.locator('input[type="range"]')
+        if await controls.count() != 2:
+            return None
+        data = await controls.nth(index).evaluate(
+            """(el) => {
+                const images = ['.img-left', '.img-right'].map(selector => {
+                    const img = el.ownerDocument.querySelector(selector);
+                    return img ? img.style.transform : null;
+                });
+                return {
+                    type: el.type,
+                    value: el.value,
+                    disabled: el.disabled,
+                    lockedClass: el.classList.contains('disable-sl'),
+                    imageRotations: images
+                };
+            }""",
+            timeout=1500,
+        )
+        if not isinstance(data, dict) or data.get("type") != "range":
+            return None
+        value = float(data["value"])
+        if not math.isfinite(value):
+            return None
+        disabled = data.get("disabled")
+        locked_class = data.get("lockedClass")
+        if not isinstance(disabled, bool) or not isinstance(locked_class, bool):
+            return None
+        rotations = data.get("imageRotations")
+        if not (
+            isinstance(rotations, list)
+            and len(rotations) == 2
+            and all(v is None or isinstance(v, str) for v in rotations)
+        ):
+            rotations = [None, None]
+        return {
+            "value": value,
+            "locked": disabled or locked_class,
+            "rotations": tuple(rotations),
+        }
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _one_shot_motion_stage(index: int, before: dict | None, during: dict | None) -> str:
+    """Report evidence of motion *before mouse-up*; never expose angles."""
+    prefix = f"drag_{index + 1}_live"
+    if before is None or during is None:
+        return f"{prefix}_unavailable"
+    if not math.isclose(before["value"], during["value"], abs_tol=1e-9):
+        return f"{prefix}_value_changed"
+    if before["rotations"] != during["rotations"]:
+        return f"{prefix}_image_changed"
+    return f"{prefix}_unchanged"
+
+
+def _one_shot_release_stage(index: int, after: dict | None) -> str:
+    """Distinguish a consumed disabled control from one still enabled."""
+    prefix = f"drag_{index + 1}_release"
+    if after is None:
+        return f"{prefix}_unavailable"
+    return f"{prefix}_locked" if after["locked"] else f"{prefix}_enabled"
+
+
 def _post_drag_value_stage(
     before: tuple[tuple[float, float, float], ...] | None,
     after: tuple[tuple[float, float, float], ...] | None,
@@ -436,8 +638,21 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
                 log_captcha_stage("diagnostic_capture_grid_mismatch")
             log_captcha_stage(await _inspect_range_state_offline(page))
             log_captcha_stage(await _inspect_range_geometry_offline(page, boxes))
+            handle_centers = await _read_verified_handle_centers(page, boxes)
+            log_captcha_stage(
+                "diagnostic_native_thumb_css_verified"
+                if handle_centers is not None
+                else "diagnostic_native_thumb_css_unavailable"
+            )
             log_captcha_stage("diagnostic_complete_no_provider_call")
             return False
+        # A single click on a wrong track position can lock this challenge.
+        # Never spend on a provider or press a button without verified native thumb CSS.
+        start_centers = await _read_verified_handle_centers(page, boxes)
+        if start_centers is None:
+            log_captcha_stage("thumb_css_unverified_no_provider_no_motion")
+            return False
+        log_captcha_stage("thumb_css_centers_verified_read_only")
         try:
             marked_image = _annotate_slider_tracks(image, boxes, clip)
         except (OSError, ValueError):
@@ -457,20 +672,46 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
         if points is None:
             log_captcha_stage("provider_answer_invalid")
             return False
-        targets = _slider_targets(points, boxes, clip)
+        # Provider latency can invalidate earlier geometry. Re-read without
+        # any interaction and reject a changed handle before the first click.
+        fresh_centers = await _read_verified_handle_centers(page, boxes)
+        if fresh_centers is None or any(
+            abs(a - c) > 2 or abs(b - d) > 2
+            for (a, b), (c, d) in zip(start_centers, fresh_centers, strict=True)
+        ):
+            log_captcha_stage("thumb_changed_before_motion_no_click")
+            return False
+        targets = _slider_targets(points, boxes, clip, fresh_centers)
         if targets is None:
             log_captcha_stage("coordinates_outside_controls")
             return False
         log_captcha_stage("coordinates_validated")
         before_values = await _read_live_range_values(page)
         phase = "drag"
-        for start_x, end_x, y in targets:
+        for index, (start_x, end_x, y) in enumerate(targets):
+            # Guard the second one-shot press as well; the first drag may cause
+            # the challenge to reset or change before it is safe to continue.
+            current = await _read_verified_handle_centers(page, boxes, only_index=index)
+            if current is None or abs(current[0][0] - start_x) > 2 or abs(current[0][1] - y) > 2:
+                log_captcha_stage("thumb_changed_before_press_no_click")
+                return False
             await page.mouse.move(start_x, y)
+            # Hovering can change a one-shot control. Recheck without pressing.
+            hovered = await _read_verified_handle_centers(page, boxes, only_index=index)
+            if hovered is None or abs(hovered[0][0] - start_x) > 2 or abs(hovered[0][1] - y) > 2:
+                log_captcha_stage("thumb_changed_on_hover_no_click")
+                return False
+            before_drag = await _read_one_shot_range_state(page, index)
             await page.mouse.down()
             try:
                 await page.mouse.move(end_x, y, steps=10)
+                # Read while held: StormWall can reset the value on mouse-up.
+                during_drag = await _read_one_shot_range_state(page, index)
+                log_captcha_stage(_one_shot_motion_stage(index, before_drag, during_drag))
             finally:
                 await page.mouse.up()
+            released = await _read_one_shot_range_state(page, index)
+            log_captcha_stage(_one_shot_release_stage(index, released))
         await page.wait_for_timeout(800)
         log_captcha_stage("drag_submitted")
         log_captcha_stage(

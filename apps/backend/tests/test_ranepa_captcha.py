@@ -78,7 +78,7 @@ def test_coordinates_reject_untrusted_or_ambiguous_answers():
         assert decode(bad) is None
 
 
-def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
+def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once(monkeypatch):
     async def scenario():
         class FakeTitle:
             async def is_visible(self):
@@ -147,6 +147,11 @@ def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
                 assert len(kwargs["hintText"]) <= 140
                 return {"code": "coordinates:x=140,y=315;x=220,y=371"}
 
+        async def known_handles(_page, _boxes, *, only_index=None):
+            all_centers = [(125.0, 375.0), (125.0, 431.0)]
+            return all_centers if only_index is None else [all_centers[only_index]]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         page = FakePage()
         assert await ranepa_captcha.solve_slider_captcha(page, FakeClient())
         assert page.clip == {"x": 80, "y": 60, "width": 340, "height": 431}
@@ -174,7 +179,7 @@ def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once():
         ("coordinates:x=140,y=490;x=210,y=371", "target_1_below_track"),
     ],
 )
-def test_invalid_positions_never_touch_one_shot_sliders(code, stage, caplog):
+def test_invalid_positions_never_touch_one_shot_sliders(code, stage, caplog, monkeypatch):
     async def scenario():
         class FakeTitle:
             async def is_visible(self):
@@ -221,6 +226,11 @@ def test_invalid_positions_never_touch_one_shot_sliders(code, stage, caplog):
             async def coordinates(self, *_args, **_kwargs):
                 return {"code": code}
 
+        async def known_handles(_page, _boxes, *, only_index=None):
+            all_centers = [(125.0, 375.0), (125.0, 431.0)]
+            return all_centers if only_index is None else [all_centers[only_index]]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         with caplog.at_level(logging.WARNING):
             assert not await ranepa_captcha.solve_slider_captcha(FakePage(), FakeClient())
         assert f"RANEPA_CAPTCHA_STAGE {stage}" in caplog.text
@@ -448,7 +458,9 @@ def test_missing_slider_controls_report_precise_stage_without_sending_image(capl
     asyncio.run(scenario())
 
 
-def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact(caplog):
+def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact(
+    caplog, monkeypatch
+):
     async def scenario():
         class Title:
             async def is_visible(self):
@@ -491,6 +503,11 @@ def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact
             async def coordinates(self, *_args, **_kwargs):
                 raise AssertionError("must not send unmatched capture")
 
+        async def known_handles(_page, _boxes, *, only_index=None):
+            all_centers = [(125.0, 375.0), (125.0, 431.0)]
+            return all_centers if only_index is None else [all_centers[only_index]]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         with caplog.at_level(logging.WARNING):
             assert not await ranepa_captcha.solve_slider_captcha(Page(), Provider())
         assert "RANEPA_CAPTCHA_STAGE capture_annotation_failed" in caplog.text
@@ -510,9 +527,11 @@ def test_annotated_image_preserves_pixel_coordinate_system():
     assert original != annotated
     with Image.open(BytesIO(annotated)) as marked:
         assert marked.size == (340, 431)
-    assert ranepa_captcha._slider_targets(((140, 315), (220, 371)), boxes, clip) == [
-        (125, 220, 375),
-        (125, 300, 431),
+    assert ranepa_captcha._slider_targets(
+        ((140, 315), (220, 371)), boxes, clip, [(118.0, 375.0), (132.0, 431.0)]
+    ) == [
+        (118.0, 220, 375.0),
+        (132.0, 300, 431.0),
     ]
 
 
@@ -587,12 +606,13 @@ def test_geometry_mapping_handles_offset_and_different_slider_widths():
         assert image.getpixel((50, 358)) == (0, 105, 235)
 
     # Coordinates are in cropped image pixels, then translated by clip x/y.
-    assert ranepa_captcha._slider_targets(((100, 313), (180, 375)), boxes, clip) == [
-        (125, 180, 363),
-        (141, 260, 425),
+    centers = [(118.0, 363.0), (130.0, 425.0)]
+    assert ranepa_captcha._slider_targets(((100, 313), (180, 375)), boxes, clip, centers) == [
+        (118.0, 180, 363.0),
+        (130.0, 260, 425.0),
     ]
     # Swapping the two rows must be rejected, not silently reordered.
-    assert ranepa_captcha._slider_targets(((100, 375), (180, 313)), boxes, clip) is None
+    assert ranepa_captcha._slider_targets(((100, 375), (180, 313)), boxes, clip, centers) is None
 
 
 @pytest.mark.parametrize(
@@ -721,10 +741,11 @@ def test_free_diagnostic_observes_range_values_without_mouse_or_provider(caplog)
 
         with caplog.at_level(logging.WARNING):
             assert not await ranepa_captcha.solve_slider_captcha(Page(), None)
-        assert evaluated == [0, 1, 0, 1]  # Range values and geometry are inspected separately.
+        assert evaluated == [0, 1, 0, 1, 0]  # Includes native CSS thumb inspection.
         assert "RANEPA_CAPTCHA_STAGE diagnostic_capture_grid_verified" in caplog.text
         assert "RANEPA_CAPTCHA_STAGE diagnostic_range_state_not_at_min" in caplog.text
         assert "RANEPA_CAPTCHA_STAGE diagnostic_geometry_unavailable" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_native_thumb_css_unavailable" in caplog.text
         assert "RANEPA_CAPTCHA_STAGE diagnostic_complete_no_provider_call" in caplog.text
         assert "provider_request_started" not in caplog.text
         assert "drag_submitted" not in caplog.text
@@ -768,19 +789,26 @@ def test_two_point_coordinate_response_contract_is_strict(answer, expected):
     assert ranepa_captcha.decode_slider_coordinates(answer) == expected
 
 
-def test_legacy_motion_start_is_not_a_verified_thumb_position():
-    """The legacy adapter's starting x is a fixed offset, not the DOM thumb center."""
+def test_motion_requires_verified_handle_centers_and_rejects_zero_distance(caplog):
+    """Never fall back to box.x + 25 or perform a zero-distance press."""
     boxes = [
         {"x": 100, "y": 360, "width": 300, "height": 30},
         {"x": 116, "y": 416, "width": 280, "height": 30},
     ]
     clip = {"x": 80, "y": 60, "width": 340, "height": 431}
-    targets = ranepa_captcha._slider_targets(((140, 315), (220, 371)), boxes, clip)
-    assert targets is not None
-    assert targets[0][0] == boxes[0]["x"] + 25
-    assert targets[1][0] == boxes[1]["x"] + 25
-    # This does not prove where either CSS thumb is rendered. No browser
-    # interaction is attempted in this test.
+    points = ((140, 315), (220, 371))
+    assert ranepa_captcha._slider_targets(points, boxes, clip, []) is None
+    starts = [(118.0, 375.0), (133.0, 431.0)]
+    targets = ranepa_captcha._slider_targets(points, boxes, clip, starts)
+    assert targets == [(118.0, 220, 375.0), (133.0, 300, 431.0)]
+    assert targets[0][0] != boxes[0]["x"] + 25
+    assert targets[1][0] != boxes[1]["x"] + 25
+    with caplog.at_level(logging.WARNING):
+        assert (
+            ranepa_captcha._slider_targets(points, boxes, clip, [(220.0, 375.0), (133.0, 431.0)])
+            is None
+        )
+    assert "target_1_zero_distance" in caplog.text
 
 
 def test_dom_geometry_classification_is_fail_closed():
@@ -915,9 +943,10 @@ def test_read_only_dom_geometry_cannot_trigger_motion_or_provider(caplog):
         with caplog.at_level(logging.WARNING):
             assert not await ranepa_captcha.solve_slider_captcha(Page(), None)
 
-        assert seen == [(0, False), (1, False), (0, True), (1, True)]
+        assert seen == [(0, False), (1, False), (0, True), (1, True), (0, True)]
         assert "RANEPA_CAPTCHA_STAGE diagnostic_range_state_at_min" in caplog.text
         assert "RANEPA_CAPTCHA_STAGE diagnostic_geometry_custom_range" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_native_thumb_css_unavailable" in caplog.text
         assert "RANEPA_CAPTCHA_STAGE diagnostic_complete_no_provider_call" in caplog.text
         assert "provider_request_started" not in caplog.text
         assert "drag_submitted" not in caplog.text
@@ -977,7 +1006,9 @@ def test_post_drag_value_stages_are_safe_and_precise(before, after, stage):
 
 
 @pytest.mark.parametrize("on_drag", ["both", "one", "none"])
-def test_paid_adapter_distinguishes_dom_value_changes_without_extra_provider_calls(on_drag, caplog):
+def test_paid_adapter_distinguishes_dom_value_changes_without_extra_provider_calls(
+    on_drag, caplog, monkeypatch
+):
     async def scenario():
         boxes = [
             {"x": 100, "y": 360, "width": 300, "height": 30},
@@ -1054,6 +1085,11 @@ def test_paid_adapter_distinguishes_dom_value_changes_without_extra_provider_cal
                 calls.append("provider")
                 return {"code": "coordinates:x=140,y=315;x=220,y=371"}
 
+        async def known_handles(_page, _boxes, *, only_index=None):
+            all_centers = [(125.0, 375.0), (125.0, 431.0)]
+            return all_centers if only_index is None else [all_centers[only_index]]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         with caplog.at_level(logging.WARNING):
             assert await ranepa_captcha.solve_slider_captcha(Page(), Provider())
         assert len(calls) == 1
@@ -1109,3 +1145,471 @@ def test_live_range_read_fails_closed_for_invalid_or_missing_controls():
         assert await ranepa_captcha._read_live_range_values(InvalidPage()) is None
 
     asyncio.run(scenario())
+
+
+def test_verified_native_css_thumb_centers_are_read_only_and_not_guessed():
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 116, "y": 416, "width": 280, "height": 30},
+        ]
+        calls = []
+
+        class Slider:
+            def __init__(self, index, *, missing=False):
+                self.index = index
+                self.missing = missing
+
+            async def evaluate(self, expression, **kwargs):
+                assert "elementFromPoint" in expression
+                assert "::-webkit-slider-thumb" in expression
+                assert "styleSheets" in expression
+                assert "getBoundingClientRect" in expression
+                assert kwargs == {"timeout": 1500}
+                calls.append(self.index)
+                if self.missing:
+                    return None
+                return {
+                    "x": [118.0, 129.0][self.index],
+                    "y": [375.0, 431.0][self.index],
+                    "box": dict(boxes[self.index]),
+                }
+
+        class Sliders:
+            def __init__(self, *, missing=False):
+                self.missing = missing
+
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index, missing=self.missing and index == 1)
+
+        class Page:
+            def __init__(self, *, missing=False):
+                self.missing = missing
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders(missing=self.missing)
+
+        centers = await ranepa_captcha._read_verified_handle_centers(Page(), boxes)
+        assert centers == [(118.0, 375.0), (129.0, 431.0)]
+        assert calls == [0, 1]
+        assert await ranepa_captcha._read_verified_handle_centers(Page(missing=True), boxes) is None
+        # The first handle may lock after its one allowed movement. The
+        # second handle must still be independently measurable.
+        assert await ranepa_captcha._read_verified_handle_centers(
+            Page(missing=True), boxes, only_index=0
+        ) == [(118.0, 375.0)]
+        assert (
+            await ranepa_captcha._read_verified_handle_centers(
+                Page(missing=True), boxes, only_index=1
+            )
+            is None
+        )
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "handle_sample",
+    [
+        None,
+        {"x": float("nan"), "y": 375.0, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
+        {"x": 30, "y": 375, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
+        {"x": 125, "y": 300, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
+        {"x": 125, "y": 375, "box": {"x": 100, "y": 360, "width": 280, "height": 30}},
+    ],
+)
+def test_unverified_handle_never_contacts_rucaptcha_or_clicks(handle_sample, caplog):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return boxes[self.index]
+
+            async def evaluate(self, expression, **kwargs):
+                assert kwargs == {"timeout": 1500}
+                if self.index == 0:
+                    return handle_sample
+                return {
+                    "x": 125,
+                    "y": 431,
+                    "box": dict(boxes[1]),
+                }
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class NoMotion:
+            async def move(self, *_args, **_kwargs):
+                raise AssertionError("no mouse motion on unverified handle")
+
+            async def down(self):
+                raise AssertionError("no click on unverified handle")
+
+            async def up(self):
+                raise AssertionError("no mouse up on unverified handle")
+
+        class Page:
+            mouse = NoMotion()
+            url = "https://my.ranepa.ru/lk/student/schedule"
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Title()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+        class NoProvider:
+            async def coordinates(self, *_args, **_kwargs):
+                raise AssertionError("cannot spend money without verified handles")
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), NoProvider())
+        assert "thumb_css_unverified_no_provider_no_motion" in caplog.text
+        assert "provider_request_started" not in caplog.text
+        assert "drag_submitted" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_one_shot_preflight_rejects_changed_handle_after_provider_without_press(
+    monkeypatch, caplog
+):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+        center_calls = 0
+        provider_calls = 0
+
+        async def handle_centers(_page, _boxes):
+            nonlocal center_calls
+            center_calls += 1
+            if center_calls == 1:
+                return [(125.0, 375.0), (125.0, 431.0)]
+            return [(140.0, 375.0), (125.0, 431.0)]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", handle_centers)
+
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return boxes[self.index]
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class NoMouse:
+            async def move(self, *_args, **_kwargs):
+                raise AssertionError("never move if provider returned to changed DOM")
+
+            async def down(self):
+                raise AssertionError("never press if provider returned to changed DOM")
+
+            async def up(self):
+                raise AssertionError("never release if provider returned to changed DOM")
+
+        class Page:
+            mouse = NoMouse()
+            url = "https://my.ranepa.ru/lk/student/schedule"
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Title()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+        class Provider:
+            async def coordinates(self, *_args, **_kwargs):
+                nonlocal provider_calls
+                provider_calls += 1
+                return {"code": "coordinates:x=140,y=315;x=220,y=371"}
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), Provider())
+        assert provider_calls == 1
+        assert center_calls == 2
+        assert "thumb_changed_before_motion_no_click" in caplog.text
+        assert "drag_submitted" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_hover_geometry_change_aborts_before_first_press(monkeypatch, caplog):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+        calls = {"centers": 0, "provider": 0, "hover": 0}
+
+        async def centers(_page, _boxes, *, only_index=None):
+            calls["centers"] += 1
+            all_centers = (
+                [(140.0, 375.0), (125.0, 431.0)]
+                if calls["hover"]
+                else [(125.0, 375.0), (125.0, 431.0)]
+            )
+            return all_centers if only_index is None else [all_centers[only_index]]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", centers)
+
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return boxes[self.index]
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class Mouse:
+            async def move(self, *_args, **_kwargs):
+                calls["hover"] += 1
+
+            async def down(self):
+                raise AssertionError("must not press after a hover change")
+
+            async def up(self):
+                raise AssertionError("must not release after a hover change")
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = Mouse()
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Title()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+        class Provider:
+            async def coordinates(self, *_args, **_kwargs):
+                calls["provider"] += 1
+                return {"code": "coordinates:x=140,y=315;x=220,y=371"}
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), Provider())
+        assert calls["provider"] == 1
+        assert calls["hover"] == 1
+        assert calls["centers"] >= 4
+        assert "thumb_changed_on_hover_no_click" in caplog.text
+        assert "drag_submitted" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_first_handle_lock_does_not_block_second_verified_drag(monkeypatch):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+        state = {"locked_first": False, "presses": 0, "provider": 0}
+        observed = []
+
+        async def centers(_page, _boxes, *, only_index=None):
+            observed.append(only_index)
+            known = [(125.0, 375.0), (125.0, 431.0)]
+            if only_index is None:
+                assert not state["locked_first"]
+                return known
+            if only_index == 0 and state["locked_first"]:
+                raise AssertionError("must not inspect the first locked handle")
+            return [known[only_index]]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", centers)
+
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return boxes[self.index]
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class Mouse:
+            async def move(self, *_args, **_kwargs):
+                pass
+
+            async def down(self):
+                state["presses"] += 1
+                assert state["presses"] <= 2
+
+            async def up(self):
+                if state["presses"] == 1:
+                    state["locked_first"] = True
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = Mouse()
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Title()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+            async def wait_for_timeout(self, milliseconds):
+                assert milliseconds == 800
+
+        class Provider:
+            async def coordinates(self, *_args, **_kwargs):
+                state["provider"] += 1
+                return {"code": "coordinates:x=140,y=315;x=220,y=371"}
+
+        assert await ranepa_captcha.solve_slider_captcha(Page(), Provider())
+        assert state == {"locked_first": True, "presses": 2, "provider": 1}
+        assert observed == [None, None, 0, 0, 1, 1]
+
+    asyncio.run(scenario())
+
+
+def test_one_shot_telemetry_distinguishes_motion_from_lock_and_reset():
+    before = {"value": 0.0, "locked": False, "rotations": ("rotate(0deg)", "rotate(0deg)")}
+    during = {"value": 140.0, "locked": False, "rotations": ("rotate(0deg)", "rotate(140deg)")}
+    reset_and_locked = {
+        "value": 0.0,
+        "locked": True,
+        "rotations": ("rotate(0deg)", "rotate(140deg)"),
+    }
+    assert ranepa_captcha._one_shot_motion_stage(1, before, during) == "drag_2_live_value_changed"
+    assert ranepa_captcha._one_shot_release_stage(1, reset_and_locked) == "drag_2_release_locked"
+    assert ranepa_captcha._one_shot_release_stage(0, before) == "drag_1_release_enabled"
+    image_only = {"value": 0.0, "locked": False, "rotations": ("rotate(0deg)", "rotate(202deg)")}
+    assert (
+        ranepa_captcha._one_shot_motion_stage(1, before, image_only) == "drag_2_live_image_changed"
+    )
+    assert ranepa_captcha._one_shot_motion_stage(1, before, before) == "drag_2_live_unchanged"
+    assert ranepa_captcha._one_shot_motion_stage(1, None, during) == "drag_2_live_unavailable"
+    assert ranepa_captcha._one_shot_release_stage(1, None) == "drag_2_release_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("disabled", "locked_class", "expected_locked"),
+    [(False, False, False), (True, False, True), (False, True, True)],
+)
+def test_one_shot_read_only_state_observes_disabled_or_locked_class_without_clicking(
+    disabled, locked_class, expected_locked
+):
+    async def scenario():
+        class Slider:
+            async def evaluate(self, expression, **kwargs):
+                assert kwargs == {"timeout": 1500}
+                assert "classList.contains('disable-sl')" in expression
+                assert ".img-right" in expression
+                return {
+                    "type": "range",
+                    "value": "0",
+                    "disabled": disabled,
+                    "lockedClass": locked_class,
+                    "imageRotations": ["rotate(0deg)", "rotate(202deg)"],
+                }
+
+        class Inputs:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                assert index == 1
+                return Slider()
+
+        class Page:
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Inputs()
+
+        state = await ranepa_captcha._read_one_shot_range_state(Page(), 1)
+        assert state == {
+            "value": 0.0,
+            "locked": expected_locked,
+            "rotations": ("rotate(0deg)", "rotate(202deg)"),
+        }
+
+    asyncio.run(scenario())
+
+
+def test_css_thumb_travel_boundaries_reject_unreachable_targets(caplog):
+    boxes = [
+        {"x": 100, "y": 360, "width": 300, "height": 30},
+        {"x": 100, "y": 416, "width": 300, "height": 30},
+    ]
+    clip = {"x": 80, "y": 60, "width": 340, "height": 431}
+    # Explicit CSS gave a 60px thumb: its rightmost center is x + 270,
+    # not the final 15px track margin accepted by the old rectangle check.
+    starts = [(130.0, 375.0), (130.0, 431.0)]
+    with caplog.at_level(logging.WARNING):
+        assert ranepa_captcha._slider_targets(((298, 315), (200, 371)), boxes, clip, starts) is None
+    assert "target_1_outside_thumb_travel" in caplog.text
+    assert ranepa_captcha._slider_targets(((200, 315), (200, 371)), boxes, clip, starts) == [
+        (130.0, 280, 375.0),
+        (130.0, 280, 431.0),
+    ]
