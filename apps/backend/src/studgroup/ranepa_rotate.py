@@ -133,7 +133,9 @@ def _original_half_png(data_url: str) -> bytes | None:
             # original images before asking a worker for their orientation.
             original.convert("RGBA").save(output, format="PNG", optimize=True)
         png = output.getvalue()
-        return png if len(png) <= 600 * 1024 else None
+        # Provider rejects uploads smaller than 100 bytes. Check the
+        # converted PNG, not merely the original data-URI length.
+        return png if 100 <= len(png) <= 600 * 1024 else None
     except (OSError, ValueError, TypeError, binascii.Error):
         return None
 
