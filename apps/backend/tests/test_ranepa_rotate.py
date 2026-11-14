@@ -400,3 +400,121 @@ def test_provider_exception_logs_only_safe_fixed_stages_before_any_click(monkeyp
         assert "rotate_angles_mapped_without_click" not in caplog.text
 
     asyncio.run(scenario())
+
+
+def test_v2_pair_rejects_changed_challenge_without_any_mouse_action(monkeypatch, caplog):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+
+        async def slider_boxes(_page):
+            return boxes
+
+        async def centers(_page, _boxes, *, only_index=None):
+            assert only_index is None
+            return [(130.0, 375.0), (130.0, 431.0)]
+
+        images = [(b"left-initial", b"right-initial"), (b"left-new", b"right-new")]
+
+        async def halves(_page):
+            return images.pop(0)
+
+        monkeypatch.setattr(ranepa_rotate, "_slider_boxes", slider_boxes)
+        monkeypatch.setattr(ranepa_rotate, "_read_verified_handle_centers", centers)
+        monkeypatch.setattr(ranepa_rotate, "_read_original_halves", halves)
+
+        class NeverClick:
+            async def move(self, *args, **kwargs):
+                raise AssertionError("captcha changed: no movement permitted")
+
+            async def down(self):
+                raise AssertionError("captcha changed: no click permitted")
+
+            async def up(self):
+                raise AssertionError("captcha changed: no release permitted")
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = NeverClick()
+
+        class Pair:
+            max_tasks = 2
+
+            async def solve_pair(self, halves, *, timeout_seconds):
+                assert halves == (b"left-initial", b"right-initial")
+                assert timeout_seconds == 110
+                return (90, 180)
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_rotate.solve_rotating_halves(Page(), Pair())
+        assert "rotate_v2_challenge_changed_no_click" in caplog.text
+        assert "rotate_drags_submitted_verification_pending" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_v2_pair_valid_angles_reuse_two_guarded_one_shot_drags(monkeypatch, caplog):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+
+        class Mouse:
+            down_count = 0
+            up_count = 0
+            pressed = False
+
+            async def move(self, *_args, **_kwargs):
+                pass
+
+            async def down(self):
+                self.down_count += 1
+                self.pressed = True
+
+            async def up(self):
+                self.up_count += 1
+                self.pressed = False
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = Mouse()
+
+        async def slider_boxes(_page):
+            return boxes
+
+        async def centers(_page, _boxes, *, only_index=None):
+            all_centers = [(130.0, 375.0), (130.0, 431.0)]
+            return all_centers if only_index is None else [all_centers[only_index]]
+
+        async def halves(_page):
+            return (b"unchanged-left", b"unchanged-right")
+
+        async def state(_page, index):
+            return {
+                "value": float(90 * (index + 1)) if Page.mouse.pressed else 0.0,
+                "locked": Page.mouse.up_count > index,
+                "rotations": ("rotate(0deg)", "rotate(0deg)"),
+            }
+
+        monkeypatch.setattr(ranepa_rotate, "_slider_boxes", slider_boxes)
+        monkeypatch.setattr(ranepa_rotate, "_read_verified_handle_centers", centers)
+        monkeypatch.setattr(ranepa_rotate, "_read_original_halves", halves)
+        monkeypatch.setattr(ranepa_rotate, "_read_one_shot_range_state", state)
+
+        class Pair:
+            max_tasks = 2
+
+            async def solve_pair(self, images, *, timeout_seconds):
+                assert images == (b"unchanged-left", b"unchanged-right")
+                assert timeout_seconds == 110
+                return 90, 180
+
+        with caplog.at_level(logging.WARNING):
+            assert await ranepa_rotate.solve_rotating_halves(Page(), Pair())
+        assert Page.mouse.down_count == Page.mouse.up_count == 2
+        assert "rotate_drags_submitted_verification_pending" in caplog.text
+
+    asyncio.run(scenario())

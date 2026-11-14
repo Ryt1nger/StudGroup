@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     ranepa_captcha_enabled: bool = False
     # Manual one-account diagnostic: inspect the challenge without a provider call.
     ranepa_captcha_diagnostic_only: bool = False
+    # Paid two-task RotateTask v2 pilot: explicit manual opt-in only.
+    ranepa_captcha_v2_pair_enabled: bool = False
     captcha_api_key: SecretStr = SecretStr("")
     ranepa_captcha_timeout_seconds: int = Field(default=110, ge=30, le=150)
     # Hard cap on billable challenges per batch/worker process (not per student).

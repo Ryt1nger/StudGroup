@@ -44,6 +44,7 @@ from studgroup.ranepa_captcha import (
     _slider_boxes,
     log_captcha_stage,
 )
+from studgroup.ranepa_rotate_v2 import RotateV2Error
 
 # The v1 RuCaptcha API returns OK|angle1|angle2 (the SDK strips OK|).
 # Angle signs are meaningful: negative means counterclockwise.
@@ -79,6 +80,8 @@ _SAFE_API_ERRORS = {
 
 def _provider_failure_stage(exc: Exception) -> str:
     """Return a safe fixed stage for a provider failure; never expose its text."""
+    if isinstance(exc, RotateV2Error):
+        return f"rotate_v2_{exc.stage}"
     if isinstance(exc, (ClientApiException, SolverApiException)):
         # Check whole-word tokens only. A provider message is not trusted.
         message = str(exc)
@@ -202,7 +205,7 @@ def _angle_targets(
 
 
 async def solve_rotating_halves(page, client, *, timeout_seconds: int = 110) -> bool:
-    """Single paid multi-image RotateCaptcha, then at most one drag per input.
+    """Two task v2 (or legacy v1) RotateCaptcha, then one drag per input.
 
     A True result says only that both mouse drags were submitted. The caller
     must still confirm the LK schedule and group identity.
@@ -225,26 +228,43 @@ async def solve_rotating_halves(page, client, *, timeout_seconds: int = 110) -> 
             log_captcha_stage("rotate_half_images_unavailable_no_provider")
             return False
         log_captcha_stage("rotate_two_halves_validated_read_only")
-        # The Python SDK accepts a dict of two local image paths and sends
-        # file_1/file_2 in ONE rotatecaptcha task. Neither file is preserved.
         phase = "provider"
-        with TemporaryDirectory(prefix="ranepa-rotate-") as directory:
-            first = Path(directory) / "left.png"
-            second = Path(directory) / "right.png"
-            first.write_bytes(halves[0])
-            second.write_bytes(halves[1])
+        if getattr(client, "max_tasks", 1) == 2:
+            # Each v2 RotateTask receives one half and the SAME instruction
+            # image showing both halves. Nothing moves until both tasks finish.
             log_captcha_stage("rotate_provider_request_started")
-            async with asyncio.timeout(timeout_seconds):
-                response = await client.rotate(
-                    {"left": str(first), "right": str(second)},
-                    angle=5,
-                    hintText=_HINT,
-                )
+            angles = await client.solve_pair(halves, timeout_seconds=timeout_seconds)
+            if (
+                not isinstance(angles, tuple)
+                or len(angles) != 2
+                or any(type(angle) is not int or abs(angle) > 360 for angle in angles)
+            ):
+                log_captcha_stage("rotate_provider_answer_invalid")
+                return False
+            # A human solution takes time; a regenerated CAPTCHA would make
+            # the returned angles stale. Re-read the exact challenge pixels.
+            if await _read_original_halves(page) != halves:
+                log_captcha_stage("rotate_v2_challenge_changed_no_click")
+                return False
+        else:
+            # Legacy v1 kept for tests and explicitly configured deployments.
+            with TemporaryDirectory(prefix="ranepa-rotate-") as directory:
+                first = Path(directory) / "left.png"
+                second = Path(directory) / "right.png"
+                first.write_bytes(halves[0])
+                second.write_bytes(halves[1])
+                log_captcha_stage("rotate_provider_request_started")
+                async with asyncio.timeout(timeout_seconds):
+                    response = await client.rotate(
+                        {"left": str(first), "right": str(second)},
+                        angle=5,
+                        hintText=_HINT,
+                    )
+            angles = decode_rotation_angles(response)
+            if angles is None:
+                log_captcha_stage("rotate_provider_answer_invalid")
+                return False
         log_captcha_stage("rotate_provider_answer_received")
-        angles = decode_rotation_angles(response)
-        if angles is None:
-            log_captcha_stage("rotate_provider_answer_invalid")
-            return False
         fresh = await _read_verified_handle_centers(page, boxes)
         if fresh is None or any(
             abs(x1 - x2) > 2 or abs(y1 - y2) > 2

@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw
 from twocaptcha import AsyncTwoCaptcha
 
 from studgroup.ranepa_rotate_upload import TypedRotateApiClient
+from studgroup.ranepa_rotate_v2 import RuCaptchaV2Pair
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,9 +45,13 @@ class CaptchaBudget:
     remaining: int
 
     def claim(self) -> bool:
-        if self.remaining <= 0:
+        return self.claim_many(1)
+
+    def claim_many(self, count: int) -> bool:
+        """Atomically reserve all tasks for one CAPTCHA before contacting API."""
+        if count not in (1, 2) or self.remaining < count:
             return False
-        self.remaining -= 1
+        self.remaining -= count
         return True
 
 
@@ -57,6 +62,8 @@ def configured_solver(settings):
     api_key = settings.captcha_api_key.get_secret_value().strip()
     if not api_key:
         return None
+    if settings.ranepa_captcha_v2_pair_enabled:
+        return RuCaptchaV2Pair(api_key)
     solver = AsyncTwoCaptcha(
         apiKey=api_key,
         server="rucaptcha.com",

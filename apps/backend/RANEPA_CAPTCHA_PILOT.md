@@ -11,6 +11,55 @@ API is a possible fit, but it returns *image coordinates*, not a guaranteed Stor
 solution. A static screenshot may be insufficient to infer how the moving halves
 should align; do not assume a high solve rate from synthetic tests.
 
+## Experimental two-task RotateTask v2 pilot (2026-11-14)
+
+This is an **opt-in alternative** to the legacy v1 `rotatecaptcha` two-file
+upload. Multiple paid v1 attempts reached `ERROR_ZERO_CAPTCHA_FILESIZE`
+despite locally valid PNG bytes and correct multipart file headers. API v2
+provides a documented one-image-per-task `RotateTask`, including an optional
+`imgInstructions` image and `comment`:
+https://rucaptcha.com/api-docs/rotate
+The provider documents `createTask` and `getTaskResult` at
+`https://api.rucaptcha.com`.
+
+**Design.** Read two original challenge PNG assets, generate an annotated
+instruction image locally showing a *current unsolved* combined view plus
+both original halves, and reuse those **same context bytes** in two serial
+JSON `RotateTask` calls. First `body` is left PNG, second is right PNG.
+Each task's `comment` asks for its corresponding half only. The
+instruction image is a rough reconstructed preview from the two assets,
+**not a correct final reference** and not a full webpage screenshot.
+It includes no account details, DOM, cookies or credentials.
+
+**Hard limits.** Image body <=600 KiB and 600x600, instruction PNG
+<=100 KiB, strict PNG validation before the first API call, no retry.
+The second potentially billable task is sent **only after** a valid first
+answer. Each task is polled at 5-second intervals, within the 110-second
+total CAPTCHA budget. The run reserves two tasks atomically, so no account
+can consume a half-allocated budget. No actual cursor action occurs until
+both angles are validated and the **original challenge images still match**
+the images collected before sending either task. CSS geometry, one-shot
+drags, month/week identity verification and fail-closed handling remain
+unchanged.
+
+**Enable explicitly:** On a manual `RANEPA paced crawl` run for exactly
+one approved pilot user and group, keep `diagnostic_only=true` for a free
+read-only preflight. A later **separately approved paid pilot** requires
+`diagnostic_only=false` **and** the new checkbox
+`dual_rotate_v2=true`. The checkbox defaults to `false` to prevent
+surprise two-task charges. `RANEPA_CAPTCHA_V2_PAIR_ENABLED` and the
+two-task budget are set only for that opt-in workflow path. Scheduled
+multi-account runs remain disabled for paid CAPTCHA.
+
+**What tests can and cannot prove.** Network-free HTTPX transport tests
+verify that each JSON `body` contains the correct half, both
+`imgInstructions` fields contain identical annotated context PNG,
+`createTask/getTaskResult` parsing is strict, the second task is not
+created after failure of the first, and no mouse clicks occur if the
+challenge changes. Passing these tests **does not prove the human solver
+can infer both correct angles from an incomplete scrambled picture**.
+Do not repeat paid attempts on an unsupported, stale or failed challenge.
+
 ## Worker behaviour
 
 - Playwright performs the ordinary StormWall JavaScript redirect in the same
