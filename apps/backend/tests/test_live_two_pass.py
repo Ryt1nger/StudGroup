@@ -85,7 +85,9 @@ def test_deep_outage_keeps_screen_checkpoint_and_resumes_only_deep_stage(client)
     now = datetime.now(UTC)
     provider = CascadeProvider(failure="provider_unreachable")
     assert run(client, provider, now) == "screened"
-    assert run(client, provider, now + timedelta(seconds=1)) == "retry"
+    # The preceding screen can take several seconds under a loaded CI DB.
+    # Its checkpoint becomes available at completion, not at initial "now".
+    assert run(client, provider, now + timedelta(minutes=1)) == "retry"
     recovered = CascadeProvider()
     assert run(client, recovered, now + timedelta(minutes=6)) == "completed"
     assert recovered.screen_calls == 0
