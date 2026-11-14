@@ -1606,13 +1606,9 @@ def test_css_thumb_travel_boundaries_reject_unreachable_targets(caplog):
     # not the final 15px track margin accepted by the old rectangle check.
     starts = [(130.0, 375.0), (130.0, 431.0)]
     with caplog.at_level(logging.WARNING):
-        assert (
-            ranepa_captcha._slider_targets(
-                ((298, 315), (200, 371)), boxes, clip, starts
-            )
-            is None
-        )
+        assert ranepa_captcha._slider_targets(((298, 315), (200, 371)), boxes, clip, starts) is None
     assert "target_1_outside_thumb_travel" in caplog.text
-    assert ranepa_captcha._slider_targets(
-        ((200, 315), (200, 371)), boxes, clip, starts
-    ) == [(130.0, 280, 375.0), (130.0, 280, 431.0)]
+    assert ranepa_captcha._slider_targets(((200, 315), (200, 371)), boxes, clip, starts) == [
+        (130.0, 280, 375.0),
+        (130.0, 280, 431.0),
+    ]
