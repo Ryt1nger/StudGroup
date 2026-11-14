@@ -118,9 +118,7 @@ def test_v2_first_failure_never_creates_second_paid_task(monkeypatch, caplog):
 
         def respond(request):
             seen.append(request.url.path)
-            return httpx.Response(
-                200, json={"errorId": 10, "errorCode": "ERROR_ZERO_BALANCE"}
-            )
+            return httpx.Response(200, json={"errorId": 10, "errorCode": "ERROR_ZERO_BALANCE"})
 
         with caplog.at_level(logging.WARNING), pytest.raises(RotateV2Error) as caught:
             await _client(respond).solve_pair((_half("left"), _half("right")))
