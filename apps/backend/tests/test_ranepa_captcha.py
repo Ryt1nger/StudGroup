@@ -1200,9 +1200,12 @@ def test_verified_native_css_thumb_centers_are_read_only_and_not_guessed():
         assert await ranepa_captcha._read_verified_handle_centers(
             Page(missing=True), boxes, only_index=0
         ) == [(118.0, 375.0)]
-        assert await ranepa_captcha._read_verified_handle_centers(
-            Page(missing=True), boxes, only_index=1
-        ) is None
+        assert (
+            await ranepa_captcha._read_verified_handle_centers(
+                Page(missing=True), boxes, only_index=1
+            )
+            is None
+        )
 
     asyncio.run(scenario())
 
@@ -1531,12 +1534,18 @@ def test_first_handle_lock_does_not_block_second_verified_drag(monkeypatch):
 def test_one_shot_telemetry_distinguishes_motion_from_lock_and_reset():
     before = {"value": 0.0, "locked": False, "rotations": ("rotate(0deg)", "rotate(0deg)")}
     during = {"value": 140.0, "locked": False, "rotations": ("rotate(0deg)", "rotate(140deg)")}
-    reset_and_locked = {"value": 0.0, "locked": True, "rotations": ("rotate(0deg)", "rotate(140deg)")}
+    reset_and_locked = {
+        "value": 0.0,
+        "locked": True,
+        "rotations": ("rotate(0deg)", "rotate(140deg)"),
+    }
     assert ranepa_captcha._one_shot_motion_stage(1, before, during) == "drag_2_live_value_changed"
     assert ranepa_captcha._one_shot_release_stage(1, reset_and_locked) == "drag_2_release_locked"
     assert ranepa_captcha._one_shot_release_stage(0, before) == "drag_1_release_enabled"
     image_only = {"value": 0.0, "locked": False, "rotations": ("rotate(0deg)", "rotate(202deg)")}
-    assert ranepa_captcha._one_shot_motion_stage(1, before, image_only) == "drag_2_live_image_changed"
+    assert (
+        ranepa_captcha._one_shot_motion_stage(1, before, image_only) == "drag_2_live_image_changed"
+    )
     assert ranepa_captcha._one_shot_motion_stage(1, before, before) == "drag_2_live_unchanged"
     assert ranepa_captcha._one_shot_motion_stage(1, None, during) == "drag_2_live_unavailable"
     assert ranepa_captcha._one_shot_release_stage(1, None) == "drag_2_release_unavailable"
@@ -1556,9 +1565,11 @@ def test_one_shot_read_only_state_observes_disabled_or_locked_class_without_clic
                 assert "classList.contains('disable-sl')" in expression
                 assert ".img-right" in expression
                 return {
-                    "type": "range", "value": "0",
-                    "disabled": disabled, "lockedClass": locked_class,
-                    "imageRotations": ["rotate(0deg)", "rotate(202deg)"]
+                    "type": "range",
+                    "value": "0",
+                    "disabled": disabled,
+                    "lockedClass": locked_class,
+                    "imageRotations": ["rotate(0deg)", "rotate(202deg)"],
                 }
 
         class Inputs:
@@ -1576,8 +1587,9 @@ def test_one_shot_read_only_state_observes_disabled_or_locked_class_without_clic
 
         state = await ranepa_captcha._read_one_shot_range_state(Page(), 1)
         assert state == {
-            "value": 0.0, "locked": expected_locked,
-            "rotations": ("rotate(0deg)", "rotate(202deg)")
+            "value": 0.0,
+            "locked": expected_locked,
+            "rotations": ("rotate(0deg)", "rotate(202deg)"),
         }
 
     asyncio.run(scenario())
