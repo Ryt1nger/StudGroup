@@ -269,9 +269,9 @@ def test_missing_half_or_unverified_css_does_not_spend_provider_or_click(monkeyp
     asyncio.run(scenario())
 
 
-
 def test_actual_sdk_builds_two_image_rotate_request_without_network(tmp_path, monkeypatch):
     """Exercise real pinned SDK serialization, without any HTTP or billing."""
+
     async def scenario():
         left = tmp_path / "left.png"
         right = tmp_path / "right.png"
@@ -311,26 +311,19 @@ def test_actual_sdk_builds_two_image_rotate_request_without_network(tmp_path, mo
 @pytest.mark.parametrize(
     ("error", "expected"),
     [
-        (ApiException("cannot recognize response ERROR_BAD_PARAMETERS"),
-         "rotate_provider_api_bad_parameters"),
-        (ApiException("ERROR_UPLOAD_ROTATECAPTCHA"),
-         "rotate_provider_api_upload_rotate_failed"),
-        (ApiException("ERROR_ZERO_BALANCE"),
-         "rotate_provider_api_zero_balance"),
-        (ApiException("ERROR_WRONG_USER_KEY"),
-         "rotate_provider_api_key_format"),
-        (ApiException("secret=never-log-me"),
-         "rotate_provider_api_other"),
-        (ValidationException("secret=never-log-me"),
-         "rotate_provider_sdk_validation"),
-        (NetworkException("secret=never-log-me"),
-         "rotate_provider_network"),
-        (TypeError("secret=never-log-me"),
-         "rotate_provider_sdk_type_error"),
-        (OSError("secret=never-log-me"),
-         "rotate_provider_local_io"),
-        (RuntimeError("secret=never-log-me"),
-         "rotate_provider_unknown_error"),
+        (
+            ApiException("cannot recognize response ERROR_BAD_PARAMETERS"),
+            "rotate_provider_api_bad_parameters",
+        ),
+        (ApiException("ERROR_UPLOAD_ROTATECAPTCHA"), "rotate_provider_api_upload_rotate_failed"),
+        (ApiException("ERROR_ZERO_BALANCE"), "rotate_provider_api_zero_balance"),
+        (ApiException("ERROR_WRONG_USER_KEY"), "rotate_provider_api_key_format"),
+        (ApiException("secret=never-log-me"), "rotate_provider_api_other"),
+        (ValidationException("secret=never-log-me"), "rotate_provider_sdk_validation"),
+        (NetworkException("secret=never-log-me"), "rotate_provider_network"),
+        (TypeError("secret=never-log-me"), "rotate_provider_sdk_type_error"),
+        (OSError("secret=never-log-me"), "rotate_provider_local_io"),
+        (RuntimeError("secret=never-log-me"), "rotate_provider_unknown_error"),
     ],
 )
 def test_provider_error_stage_is_fixed_and_never_reveals_payload(error, expected):
