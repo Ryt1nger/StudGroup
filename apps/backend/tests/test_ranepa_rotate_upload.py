@@ -167,13 +167,12 @@ def test_known_provider_error_from_actual_http_transport_is_classified(tmp_path,
             return httpx.Response(200, text="ERROR_ZERO_CAPTCHA_FILESIZE")
 
         adapter = _transport(receive)
-        with caplog.at_level(logging.WARNING):
-            with pytest.raises(ApiException) as caught:
-                await adapter.in_(
-                    files={"file_1": str(image), "file_2": str(image)},
-                    method="rotatecaptcha",
-                    key="0" * 32,
-                )
+        with caplog.at_level(logging.WARNING), pytest.raises(ApiException) as caught:
+            await adapter.in_(
+                files={"file_1": str(image), "file_2": str(image)},
+                method="rotatecaptcha",
+                key="0" * 32,
+            )
         assert _provider_failure_stage(caught.value) == "rotate_provider_api_empty_image"
         assert len(calls) == 1
         assert "rotate_upload_png_parts_verified" in caplog.text
