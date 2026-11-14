@@ -977,9 +977,7 @@ def test_post_drag_value_stages_are_safe_and_precise(before, after, stage):
 
 
 @pytest.mark.parametrize("on_drag", ["both", "one", "none"])
-def test_paid_adapter_distinguishes_dom_value_changes_without_extra_provider_calls(
-    on_drag, caplog
-):
+def test_paid_adapter_distinguishes_dom_value_changes_without_extra_provider_calls(on_drag, caplog):
     async def scenario():
         boxes = [
             {"x": 100, "y": 360, "width": 300, "height": 30},
