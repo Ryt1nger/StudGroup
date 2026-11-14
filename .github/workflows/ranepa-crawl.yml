@@ -19,6 +19,11 @@ on:
         required: true
         type: boolean
         default: true
+      dual_rotate_v2:
+        description: "Explicitly authorize up to TWO paid RotateTask v2 jobs with shared context"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -52,9 +57,12 @@ jobs:
       # Paid CAPTCHA solving is available only for a manually selected pilot.
       # Never enable it for scheduled multi-account queue shifts.
       CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
-      RANEPA_CAPTCHA_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
+      # Paid mode requires an additional explicit v2 pair checkbox. An old
+      # manual dispatch without it cannot silently spend on two tasks.
+      RANEPA_CAPTCHA_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
+      RANEPA_CAPTCHA_V2_PAIR_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
       RANEPA_CAPTCHA_DIAGNOSTIC_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only == true }}
-      RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "1"
+      RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "2"
       # Encrypted Cookie Reuse must be approved independently for a manual pilot.
       # Scheduled multi-account jobs retain the existing non-persistent flow.
       RANEPA_SESSION_REUSE_ENABLED: ${{ github.event_name == 'workflow_dispatch' && vars.RANEPA_SESSION_REUSE_PILOT_ENABLED == 'true' }}
