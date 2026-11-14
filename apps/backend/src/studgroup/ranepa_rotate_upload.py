@@ -48,7 +48,7 @@ def _validated_png_part(path: str, filename: str) -> tuple[str, bytes, str]:
             if image.getbands()[-1] == "A" and image.getchannel("A").getextrema()[1] == 0:
                 raise ValueError("image is fully transparent")
         return filename, payload, "image/png"
-    except (OSError, ValueError, TypeError, Image.DecompressionBombError) as exc:
+    except (OSError, ValueError, TypeError, Image.DecompressionBombError):
         raise ValidationException("invalid rotate PNG image") from None
 
 
