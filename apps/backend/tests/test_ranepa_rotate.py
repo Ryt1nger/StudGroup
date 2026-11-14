@@ -17,6 +17,12 @@ def _data_uri(color: str) -> str:
     return "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")
 
 
+def test_rotate_hint_fits_provider_textinstructions_limit():
+    assert len(ranepa_rotate._HINT) <= 140
+    assert "лев" in ranepa_rotate._HINT
+    assert "прав" in ranepa_rotate._HINT
+
+
 def test_rotate_provider_answer_contract_and_direction():
     assert ranepa_rotate.decode_rotation_angles({"code": "40|-120"}) == (40, -120)
     assert ranepa_rotate.decode_rotation_angles({"code": "0|360"}) == (0, 360)
