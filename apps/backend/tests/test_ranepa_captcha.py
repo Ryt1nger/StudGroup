@@ -1353,3 +1353,78 @@ def test_one_shot_preflight_rejects_changed_handle_after_provider_without_press(
         assert "drag_submitted" not in caplog.text
 
     asyncio.run(scenario())
+
+
+def test_hover_geometry_change_aborts_before_first_press(monkeypatch, caplog):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+        calls = {"centers": 0, "provider": 0, "hover": 0}
+
+        async def centers(_page, _boxes):
+            calls["centers"] += 1
+            if calls["hover"]:
+                return [(140.0, 375.0), (125.0, 431.0)]
+            return [(125.0, 375.0), (125.0, 431.0)]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", centers)
+
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return boxes[self.index]
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class Mouse:
+            async def move(self, *_args, **_kwargs):
+                calls["hover"] += 1
+
+            async def down(self):
+                raise AssertionError("must not press after a hover change")
+
+            async def up(self):
+                raise AssertionError("must not release after a hover change")
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = Mouse()
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Title()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+        class Provider:
+            async def coordinates(self, *_args, **_kwargs):
+                calls["provider"] += 1
+                return {"code": "coordinates:x=140,y=315;x=220,y=371"}
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), Provider())
+        assert calls["provider"] == 1
+        assert calls["hover"] == 1
+        assert calls["centers"] >= 4
+        assert "thumb_changed_on_hover_no_click" in caplog.text
+        assert "drag_submitted" not in caplog.text
+
+    asyncio.run(scenario())
