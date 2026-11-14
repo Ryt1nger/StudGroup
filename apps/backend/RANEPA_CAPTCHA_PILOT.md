@@ -2,9 +2,10 @@
 
 ## Status
 
-Optional adapter introduced in PR #147; **present on `main`, disabled by
-default, and not proven to pass a live StormWall challenge**. Manual one-account
-pilots have received provider answers but have not passed the CAPTCHA.
+Optional adapter introduced in PR #147; **disabled by default, and not
+proven to pass a live StormWall challenge**. Manual one-account pilots have
+received provider answers but have not passed the CAPTCHA. The new one-shot
+safety gate is fail-closed when an explicit handle cannot be verified.
 The current server screenshot shows a two-slider
 picture challenge on `my.ranepa.ru`, not Moodle. The legacy RuCaptcha Coordinates
 API is a possible fit, but it returns *image coordinates*, not a guaranteed StormWall
@@ -321,6 +322,52 @@ the previous one could not answer. This PR alone does not establish
 StormWall acceptance or justify further paid tests. Scope stays restricted
 to the existing RANEPA LK and SDO workflow; no alternative timetable
 sources.
+
+## One-shot slider safety gate (2026-11-14)
+
+The approved pilot's interactive widget is a **single-use control**: pressing
+at the wrong location can register as a zero-distance attempt and lock a
+handle. The earlier paid run #43568835450 logged
+`drag_values_unchanged` after two mouse drags, followed by
+`challenge_still_visible_after_wait`. This is consistent with an incorrect
+start point or a reset, **not proof** of either. The old fixed
+`box["x"] + 25` guess is now **removed** from the motion path.
+
+Before sending any paid RuCaptcha task, the adapter uses read-only DOM checks
+to find **exactly one explicit, visible, unobstructed handle element per input**
+and verify its bounding rectangle against Playwright. The accepted explicit
+selectors are narrow: `data-slider-thumb`, `data-testid="slider-thumb"`,
+`slider-thumb`, `range-thumb`, `slider__thumb`,
+`slider__handle`, `noUi-handle`, or `ui-slider-handle`.
+It compares these centers again after provider latency and before each press,
+including a read-only hover check. It makes **one mouse-down and mouse-up at
+most per slider**, with no probe clicks, zero-distance drags, fallback starts,
+or retry clicks.
+
+A browser-native range thumb is generally a CSS pseudo-element, **not an
+explicit DOM element**. There is no universal safe way to obtain its visible
+center from an input's bounding box. If the page exposes only a native thumb
+or any of the checks is ambiguous, the pilot emits
+`thumb_unverified_no_provider_no_motion` and exits **before billing or
+clicking**. Subsequent changes yield
+`thumb_changed_before_motion_no_click`,
+`thumb_changed_before_press_no_click`, or
+`thumb_changed_on_hover_no_click` and abort the remaining presses.
+
+In `diagnostic_only=true`, a new read-only fixed stage is emitted:
+`diagnostic_explicit_handles_verified` or
+`diagnostic_explicit_handles_unavailable`. This stage does not log handle
+coordinates, screenshots or DOM contents and never moves a slider. Even
+`verified` is only a checked element center, **not evidence of a successful
+StormWall solution**.
+
+**Gate before the next paid pilot:** run the **free** manual diagnostic on
+`main`. If explicit handles are unavailable, do **not** repeat the paid
+attempt; the DOM contract is unresolved and the fix needs a real authorized
+read-only inspection of LK. Do not relax the check to a guessed offset or
+spend tasks based on synthetic fixtures. If handles are verified, review CI,
+the approved single-account scope and the one-task budget before any single
+controlled paid attempt. The endpoint stays the existing LK/SDO route.
 
 ## Validation checklist
 
