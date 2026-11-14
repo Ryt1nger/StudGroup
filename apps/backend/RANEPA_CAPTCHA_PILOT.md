@@ -261,6 +261,67 @@ This audit supports **only the existing RANEPA LK and SDO integration**.
 No alternate schedule sources, external timetable feeds, or substitute
 collection paths are proposed.
 
+## Current checkpoint: post-drag verification (2026-11-14)
+
+**Observed paid run:** [#43566210710](https://github.com/Ryt1nger/StudGroup/actions/runs/43566210710)
+used `diagnostic_only=false`, one provider task, and reported
+`provider_answer_received`, `coordinates_validated`,
+`drag_submitted`, and `challenge_still_present_month`.
+The page was checked ~23 ms after the already completed 800 ms post-drag
+pause. This does **not** prove that an AJAX request existed, that the
+slider thumbs moved, or that the server explicitly rejected an answer.
+
+**This checkpoint changes only observation and the bounded wait, not how the
+two drags or the single paid request are performed.** After both mouse drags,
+the adapter tries to read the two live native range values again, compares
+them with the values observed before the drags, and logs exactly one fixed
+stage:
+
+- `drag_values_both_changed`: both native input values changed;
+- `drag_values_one_changed`: exactly one changed;
+- `drag_values_unchanged`: both readable values stayed the same;
+- `drag_values_unavailable`: native inputs were absent, changed identity,
+  unreadable, or incompatible with the read-only check.
+
+**These values are not coordinates of the visual thumbs.** For a custom slider,
+DOM values might not change even if something moves visually. No numeric
+values, screenshots, DOM HTML, challenge payloads, or secrets are logged.
+
+The LK page is then observed for **up to six seconds**, without clicking,
+replaying a drag, calling the provider, or accepting CAPTCHA success. The
+wait emits one fixed state (examples):
+
+- `challenge_page_changed_unverified`: page looks rendered; normal LK
+  group-identity/month verification is still required;
+- `challenge_still_visible_after_wait`: the CAPTCHA remained visible for
+  the bounded wait;
+- `challenge_unresolved_after_wait`: only transient or empty states were
+  observed during the window;
+- `challenge_login_visible_after_drag`,
+  `challenge_redirect_after_drag`, or `challenge_state_unavailable`:
+  an intermediate state, not successful access.
+
+The normal `read_month` / `read_week` pipeline is still the **only**
+authority for accepting a schedule, after verifying the academic group.
+For a failed pilot:
+
+1. **Values unchanged:** inspect whether the current hard-coded
+   `box["x"] + 25` grabbed the intended control. Do not blindly alter
+   coordinates or spend more provider tasks.
+2. **Values changed, challenge persists:** confirm the challenge interface
+   and whether the provider's coordinate answer is actually compatible
+   with the two-slider task. No repeat paid attempts based only on this log.
+3. **Page changed but month verification fails:** investigate the
+   already-existing LK identity/session reader, not the CAPTCHA provider.
+4. **Month and week verified:** proceed to the existing SDO links/courses
+   path and validate persistence. This is the only end-to-end success.
+
+**Anti-loop gate:** the next meaningful pilot must answer a question that
+the previous one could not answer. This PR alone does not establish
+StormWall acceptance or justify further paid tests. Scope stays restricted
+to the existing RANEPA LK and SDO workflow; no alternative timetable
+sources.
+
 ## Validation checklist
 
 - [x] Official `2captcha-python` SDK configured for `rucaptcha.com`; uv lock updated.
