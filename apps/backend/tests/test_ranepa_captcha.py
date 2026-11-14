@@ -943,9 +943,10 @@ def test_read_only_dom_geometry_cannot_trigger_motion_or_provider(caplog):
         with caplog.at_level(logging.WARNING):
             assert not await ranepa_captcha.solve_slider_captcha(Page(), None)
 
-        assert seen == [(0, False), (1, False), (0, True), (1, True)]
+        assert seen == [(0, False), (1, False), (0, True), (1, True), (0, True)]
         assert "RANEPA_CAPTCHA_STAGE diagnostic_range_state_at_min" in caplog.text
         assert "RANEPA_CAPTCHA_STAGE diagnostic_geometry_custom_range" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE diagnostic_native_thumb_css_unavailable" in caplog.text
         assert "RANEPA_CAPTCHA_STAGE diagnostic_complete_no_provider_call" in caplog.text
         assert "provider_request_started" not in caplog.text
         assert "drag_submitted" not in caplog.text
