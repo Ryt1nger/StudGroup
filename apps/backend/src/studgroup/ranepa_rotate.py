@@ -230,8 +230,8 @@ async def solve_rotating_halves(page, client, *, timeout_seconds: int = 110) -> 
         log_captcha_stage("rotate_two_halves_validated_read_only")
         phase = "provider"
         if getattr(client, "max_tasks", 1) == 2:
-            # Each v2 RotateTask receives one half and the SAME instruction
-            # image showing both halves. Nothing moves until both tasks finish.
+            # Each v2 RotateTask receives an original half. Progressive mode
+            # updates only the second instruction; no thumb moves until both answers.
             log_captcha_stage("rotate_provider_request_started")
             if isinstance(client, RuCaptchaV2Pair):
 
