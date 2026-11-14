@@ -65,6 +65,26 @@ def test_configured_solver_uses_rucaptcha_not_2captcha(monkeypatch):
     }
 
 
+def test_pair_solver_is_opt_in_and_budget_reserves_two_tasks_atomically():
+    from studgroup.ranepa_rotate_v2 import RuCaptchaV2Pair
+
+    settings = Settings(
+        _env_file=None,
+        ranepa_captcha_enabled=True,
+        ranepa_captcha_v2_pair_enabled=True,
+        captcha_api_key=SecretStr("dummy-test-key"),
+    )
+    solver = ranepa_captcha.configured_solver(settings)
+    assert isinstance(solver, RuCaptchaV2Pair)
+    assert solver.max_tasks == 2
+    assert ranepa_captcha.CaptchaBudget(1).claim_many(2) is False
+    enough = ranepa_captcha.CaptchaBudget(2)
+    assert enough.claim_many(2)
+    assert enough.remaining == 0
+    assert not enough.claim()
+    assert not enough.claim_many(2)
+
+
 def test_coordinates_reject_untrusted_or_ambiguous_answers():
     decode = ranepa_captcha.decode_slider_coordinates
     # The real RuCaptcha legacy API uses the singular "coordinate:" prefix.
