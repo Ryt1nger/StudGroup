@@ -34,10 +34,10 @@ from studgroup.ranepa_captcha import (
 # Angle signs are meaningful: negative means counterclockwise.
 _ROTATE_PAIR = re.compile(r"(-?\d{1,3})\|(-?\d{1,3})")
 _IMAGE_DATA = re.compile(r"data:image/(?:webp|png|jpeg);base64,([A-Za-z0-9+/=]+)")
+# RuCaptcha's textinstructions/hintText is limited to 140 characters.
 _HINT = (
-    "Два фрагмента одного круга. Поверните каждый так, чтобы "
-    "получилась правильно ориентированная картинка. "
-    "Ответ: угол для левого фрагмента, затем для правого."
+    "Поверните обе половины круга до правильной ориентации. "
+    "Два угла: сначала левая, затем правая половина."
 )
 
 
