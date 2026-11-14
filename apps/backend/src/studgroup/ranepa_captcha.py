@@ -184,11 +184,13 @@ def _annotate_slider_tracks(image: bytes, boxes: list[dict], clip: dict) -> byte
 async def _read_verified_handle_centers(
     page, boxes: list[dict], *, only_index: int | None = None
 ) -> list[tuple[float, float]] | None:
-    """Find exactly two visible, unoccluded explicit handle elements, without clicking.
+    """Read the starting centers of CSS-styled *native* range thumbs.
 
-    A native `input[type=range]` thumb is a browser pseudo-element, not a DOM
-    element. We cannot claim to measure its center, so native-only controls
-    fail closed instead of substituting a guessed offset.
+    The observed StormWall widget has two native inputs, not separate
+    handle elements. Chromium's getComputedStyle(input, pseudo) does NOT
+    expose the thumb width reliably; read explicit CSSOM width/height
+    declarations instead. If the relevant thumb CSS is inaccessible or
+    ambiguous, return None before the provider is called or a mouse press.
     """
     try:
         inputs = page.locator('input[type="range"]')
@@ -197,49 +199,74 @@ async def _read_verified_handle_centers(
         if only_index is not None and only_index not in (0, 1):
             return None
         centers = []
-        selected = (0, 1) if only_index is None else (only_index,)
-        for index in selected:
+        for index in ((0, 1) if only_index is None else (only_index,)):
             box = boxes[index]
             sample = await inputs.nth(index).evaluate(
                 """(el) => {
-                    if (!el.isConnected || el.type !== 'range' || el.disabled) return null;
-                    const parent = el.parentElement;
-                    if (!parent) return null;
-                    const selector = [
-                        '[data-slider-thumb]',
-                        '[data-testid="slider-thumb"]',
-                        '.slider-thumb',
-                        '.range-thumb',
-                        '.slider__thumb',
-                        '.slider__handle',
-                        '.noUi-handle',
-                        '.ui-slider-handle'
-                    ].join(',');
-                    const candidates = Array.from(parent.querySelectorAll(selector));
-                    if (candidates.length !== 1) return null;
-                    const thumb = candidates[0];
-                    const thumbStyle = getComputedStyle(thumb);
-                    const inputRect = el.getBoundingClientRect();
-                    const thumbRect = thumb.getBoundingClientRect();
-                    const cx = thumbRect.x + thumbRect.width / 2;
-                    const cy = thumbRect.y + thumbRect.height / 2;
-                    if (
-                        !thumb.isConnected || thumbStyle.visibility !== 'visible'
-                        || thumbStyle.display === 'none'
-                        || thumbStyle.pointerEvents === 'none'
-                        || thumbRect.width < 8 || thumbRect.width > 85
-                        || thumbRect.height < 8 || thumbRect.height > 85
-                        || cx < inputRect.left || cx > inputRect.right
-                        || Math.abs(cy - (inputRect.top + inputRect.height / 2)) > 20
-                    ) return null;
-                    const hit = el.ownerDocument.elementFromPoint(cx, cy);
-                    if (!hit || (hit !== thumb && !thumb.contains(hit))) return null;
-                    return {
-                        x: cx, y: cy,
-                        box: {
-                            x: inputRect.x, y: inputRect.y,
-                            width: inputRect.width, height: inputRect.height
+                    if (!el.isConnected || el.type !== 'range'
+                        || el.disabled || el.classList.contains('disable-sl')) return null;
+                    const rect = el.getBoundingClientRect();
+                    const style = getComputedStyle(el);
+                    if (style.direction !== 'ltr'
+                        || style.writingMode !== 'horizontal-tb'
+                        || style.transform !== 'none'
+                        || style.pointerEvents === 'none'
+                        || style.appearance !== 'none'
+                        || style.visibility !== 'visible') return null;
+                    const minimum = Number(el.min);
+                    const maximum = Number(el.max);
+                    const value = el.valueAsNumber;
+                    if (![minimum, maximum, value].every(Number.isFinite)
+                        || maximum <= minimum || value !== minimum) return null;
+
+                    // Only explicit numeric pixel dimensions from matching,
+                    // accessible ::-webkit-slider-thumb CSS rules are valid.
+                    // getComputedStyle(el, '::-webkit-slider-thumb') can return
+                    // the *input's* width, so never use that as thumb geometry.
+                    const matches = [];
+                    const scan = (rules) => {
+                        for (const rule of rules) {
+                            if (rule.cssRules) scan(rule.cssRules);
+                            if (!rule.selectorText || !rule.style) continue;
+                            for (const selector of rule.selectorText.split(',')) {
+                                const m = selector.trim().match(/^(.*)::-webkit-slider-thumb$/);
+                                if (!m) continue;
+                                try {
+                                    if (el.matches(m[1].trim())) {
+                                        if (rule.style.width && rule.style.height) {
+                                            matches.push([rule.style.width, rule.style.height]);
+                                        }
+                                    }
+                                } catch (_) {
+                                    // Unsupported or compound pseudo selector.
+                                }
+                            }
                         }
+                    };
+                    for (const sheet of el.ownerDocument.styleSheets) {
+                        try { scan(sheet.cssRules); } catch (_) {
+                            // Cross-origin or otherwise inaccessible CSS.
+                            return null;
+                        }
+                    }
+                    const unique = [...new Set(matches.map(pair => pair.join('|')))];
+                    if (unique.length !== 1) return null;
+                    const parsePx = (s) => /^\\d+(?:\\.\\d+)?px$/.test(s)
+                        ? Number(s.slice(0, -2)) : NaN;
+                    const [thumbWidth, thumbHeight] = unique[0].split('|').map(parsePx);
+                    if (!Number.isFinite(thumbWidth) || !Number.isFinite(thumbHeight)
+                        || thumbWidth < 16 || thumbWidth > 85
+                        || thumbHeight < 16 || thumbHeight > 70
+                        || thumbWidth >= rect.width / 2
+                        || Math.abs(rect.height - 30) > 5) return null;
+                    const x = rect.left + thumbWidth / 2;
+                    const y = rect.top + rect.height / 2;
+                    const hit = el.ownerDocument.elementFromPoint(x, y);
+                    if (hit !== el) return null;
+                    return {
+                        x, y,
+                        box: {x: rect.x, y: rect.y,
+                              width: rect.width, height: rect.height}
                     };
                 }""",
                 timeout=1500,
@@ -256,13 +283,13 @@ async def _read_verified_handle_centers(
             if (
                 not (math.isfinite(x) and math.isfinite(y))
                 or not box["x"] <= x <= box["x"] + box["width"]
-                or abs(y - (box["y"] + box["height"] / 2)) > 20
+                or abs(y - (box["y"] + box["height"] / 2)) > 2
             ):
                 return None
             centers.append((x, y))
         return centers
     except Exception:  # noqa: BLE001
-        # On unknown DOM/layout or navigation, never guess or touch the slider.
+        # The CAPTCHA may navigate while CSS is read. Never guess its thumb.
         return None
 
 
@@ -538,19 +565,19 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
             log_captcha_stage(await _inspect_range_geometry_offline(page, boxes))
             handle_centers = await _read_verified_handle_centers(page, boxes)
             log_captcha_stage(
-                "diagnostic_explicit_handles_verified"
+                "diagnostic_native_thumb_css_verified"
                 if handle_centers is not None
-                else "diagnostic_explicit_handles_unavailable"
+                else "diagnostic_native_thumb_css_unavailable"
             )
             log_captcha_stage("diagnostic_complete_no_provider_call")
             return False
         # A single click on a wrong track position can lock this challenge.
-        # Never spend on a provider or press a button without two verified handles.
+        # Never spend on a provider or press a button without verified native thumb CSS.
         start_centers = await _read_verified_handle_centers(page, boxes)
         if start_centers is None:
-            log_captcha_stage("thumb_unverified_no_provider_no_motion")
+            log_captcha_stage("thumb_css_unverified_no_provider_no_motion")
             return False
-        log_captcha_stage("thumb_centers_verified_read_only")
+        log_captcha_stage("thumb_css_centers_verified_read_only")
         try:
             marked_image = _annotate_slider_tracks(image, boxes, clip)
         except (OSError, ValueError):
