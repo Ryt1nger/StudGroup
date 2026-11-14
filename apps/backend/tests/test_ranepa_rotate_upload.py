@@ -35,6 +35,7 @@ def test_actual_sdk_uploads_two_pngs_with_real_filenames_and_mime_offline(
     tmp_path, monkeypatch, caplog
 ):
     """Capture final HTTPX multipart body, not only SDK arguments."""
+
     async def scenario():
         left = tmp_path / "left.png"
         right = tmp_path / "right.png"
