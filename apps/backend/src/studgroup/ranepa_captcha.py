@@ -63,7 +63,10 @@ def configured_solver(settings):
     if not api_key:
         return None
     if settings.ranepa_captcha_v2_pair_enabled:
-        return RuCaptchaV2Pair(api_key)
+        return RuCaptchaV2Pair(
+            api_key,
+            progressive_context=settings.ranepa_captcha_v2_progressive_context_enabled,
+        )
     solver = AsyncTwoCaptcha(
         apiKey=api_key,
         server="rucaptcha.com",
