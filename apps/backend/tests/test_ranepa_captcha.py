@@ -456,7 +456,9 @@ def test_missing_slider_controls_report_precise_stage_without_sending_image(capl
     asyncio.run(scenario())
 
 
-def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact(caplog, monkeypatch):
+def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact(
+    caplog, monkeypatch
+):
     async def scenario():
         class Title:
             async def is_visible(self):
@@ -798,9 +800,10 @@ def test_motion_requires_verified_handle_centers_and_rejects_zero_distance(caplo
     assert targets[0][0] != boxes[0]["x"] + 25
     assert targets[1][0] != boxes[1]["x"] + 25
     with caplog.at_level(logging.WARNING):
-        assert ranepa_captcha._slider_targets(
-            points, boxes, clip, [(220.0, 375.0), (133.0, 431.0)]
-        ) is None
+        assert (
+            ranepa_captcha._slider_targets(points, boxes, clip, [(220.0, 375.0), (133.0, 431.0)])
+            is None
+        )
     assert "target_1_zero_distance" in caplog.text
 
 
@@ -1186,9 +1189,7 @@ def test_verified_explicit_handles_are_read_only_and_not_guessed():
         centers = await ranepa_captcha._read_verified_handle_centers(Page(), boxes)
         assert centers == [(118.0, 375.0), (129.0, 431.0)]
         assert calls == [0, 1]
-        assert await ranepa_captcha._read_verified_handle_centers(
-            Page(missing=True), boxes
-        ) is None
+        assert await ranepa_captcha._read_verified_handle_centers(Page(missing=True), boxes) is None
 
     asyncio.run(scenario())
 
