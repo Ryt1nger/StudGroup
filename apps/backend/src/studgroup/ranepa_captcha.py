@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 from PIL import Image, ImageDraw
 from twocaptcha import AsyncTwoCaptcha
 
+from studgroup.ranepa_rotate_upload import TypedRotateApiClient
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -55,12 +57,17 @@ def configured_solver(settings):
     api_key = settings.captcha_api_key.get_secret_value().strip()
     if not api_key:
         return None
-    return AsyncTwoCaptcha(
+    solver = AsyncTwoCaptcha(
         apiKey=api_key,
         server="rucaptcha.com",
         defaultTimeout=settings.ranepa_captcha_timeout_seconds,
         pollingInterval=10,
     )
+    # Only the approved two-image rotate pilot uses this solver. Replace the
+    # SDK's generic octet-stream filename="upload" parts with explicit PNG
+    # file_1/file_2 metadata; SDK handles task creation and result polling.
+    solver.api_client = TypedRotateApiClient(post_url="rucaptcha.com")
+    return solver
 
 
 def warn_if_unconfigured(settings):
