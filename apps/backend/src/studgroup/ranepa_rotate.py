@@ -22,11 +22,11 @@ from urllib.parse import urlsplit
 from PIL import Image
 
 from studgroup.ranepa_captcha import (
+    _one_shot_motion_stage,
+    _one_shot_release_stage,
     _read_one_shot_range_state,
     _read_verified_handle_centers,
     _slider_boxes,
-    _one_shot_motion_stage,
-    _one_shot_release_stage,
     log_captcha_stage,
 )
 
