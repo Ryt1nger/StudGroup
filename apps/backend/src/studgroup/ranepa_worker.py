@@ -33,13 +33,13 @@ from studgroup.ranepa_captcha import (
     solve_slider_captcha,
     warn_if_unconfigured,
 )
-from studgroup.ranepa_rotate import solve_rotating_halves
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_personal import remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
+from studgroup.ranepa_rotate import solve_rotating_halves
 
 ACCOUNT_TIMEOUT_SECONDS = 600
 
