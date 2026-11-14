@@ -20,7 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
 from studgroup.models import Group, Membership, MemberSubgroup, UserProfile
-from studgroup.ranepa_browser import read_month, read_week, resolve_sdo_exits
+from studgroup.ranepa_browser import (
+    read_month,
+    read_week,
+    resolve_sdo_exits,
+    wait_for_captcha_resolution,
+)
 from studgroup.ranepa_captcha import (
     CaptchaBudget,
     configured_solver,
@@ -360,7 +365,9 @@ async def _collect(
                 if month.status == "captcha_required":
                     log_captcha_stage("challenge_detected_month")
                     if await solve_once(page):
-                        # A provider coordinate answer is not proof of success.
+                        # Wait for a possible asynchronous redirect without
+                        # retrying the CAPTCHA or declaring the gate solved.
+                        log_captcha_stage(await wait_for_captcha_resolution(page))
                         month = await read_month(
                             page, login, password, code, today.year, today.month
                         )
@@ -391,6 +398,7 @@ async def _collect(
                     if result.status == "captcha_required":
                         log_captcha_stage("challenge_detected_week")
                         if await solve_once(page):
+                            log_captcha_stage(await wait_for_captcha_resolution(page))
                             result = await read_week(
                                 page, login, password, code, week_start, allow_empty=not expected
                             )
