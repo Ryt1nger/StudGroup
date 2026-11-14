@@ -39,6 +39,7 @@ from studgroup.ranepa_credential_store import CredentialStoreUnavailable, config
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_personal import remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
+from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
 
 ACCOUNT_TIMEOUT_SECONDS = 600
 
@@ -350,11 +351,27 @@ async def _collect(
                     log_captcha_stage(
                         "diagnostic_started" if captcha_diagnostic_only else "paid_attempt_started"
                     )
-                    submitted = await solve_slider_captcha(
-                        challenge_page,
-                        None if captcha_diagnostic_only else captcha_client,
-                        timeout_seconds=captcha_timeout_seconds,
-                    )
+                    # Free mode keeps the read-only native-thumb diagnostic.
+                    # Paid mode uses one multi-image RotateCaptcha task, NEVER
+                    # the old point-click Coordinates interpretation.
+                    if captcha_diagnostic_only:
+                        submitted = await solve_slider_captcha(
+                            challenge_page, None, timeout_seconds=captcha_timeout_seconds
+                        )
+                        # Also verify the two original assets for the upcoming
+                        # rotate pilot without sending them or touching a thumb.
+                        rotate_assets = await _read_original_halves(challenge_page)
+                        log_captcha_stage(
+                            "diagnostic_rotate_halves_available"
+                            if rotate_assets is not None
+                            else "diagnostic_rotate_halves_unavailable"
+                        )
+                    else:
+                        submitted = await solve_rotating_halves(
+                            challenge_page,
+                            captcha_client,
+                            timeout_seconds=captcha_timeout_seconds,
+                        )
                     if submitted:
                         log_captcha_stage("motion_submitted_verification_pending")
                     elif not captcha_diagnostic_only:
