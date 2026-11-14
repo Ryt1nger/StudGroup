@@ -46,7 +46,7 @@ def test_rotate_angles_map_to_measured_travel_without_guessing():
     assert ranepa_rotate._angle_targets((0, 90), boxes, starts) is None
     assert ranepa_rotate._angle_targets((360, 90), boxes, starts) is None
     assert ranepa_rotate._angle_targets((5, 90), boxes, starts) is None
-    assert ranepa_rotate._angle_targets((90, 90), boxes, [(110, 375), (130, 431)]) is None
+    assert ranepa_rotate._angle_targets((90, 90), boxes, [(107, 375), (130, 431)]) is None
 
 
 def test_only_supported_small_data_images_are_convertible():
