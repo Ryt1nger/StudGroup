@@ -44,7 +44,7 @@ from studgroup.ranepa_captcha import (
     _slider_boxes,
     log_captcha_stage,
 )
-from studgroup.ranepa_rotate_v2 import RotateV2Error
+from studgroup.ranepa_rotate_v2 import RotateV2Error, RuCaptchaV2Pair
 
 # The v1 RuCaptcha API returns OK|angle1|angle2 (the SDK strips OK|).
 # Angle signs are meaningful: negative means counterclockwise.
@@ -233,7 +233,24 @@ async def solve_rotating_halves(page, client, *, timeout_seconds: int = 110) -> 
             # Each v2 RotateTask receives one half and the SAME instruction
             # image showing both halves. Nothing moves until both tasks finish.
             log_captcha_stage("rotate_provider_request_started")
-            angles = await client.solve_pair(halves, timeout_seconds=timeout_seconds)
+            if isinstance(client, RuCaptchaV2Pair):
+
+                async def before_second():
+                    # Re-check source pixels and native thumb geometry after
+                    # the first paid answer but before the second paid request.
+                    if await _read_original_halves(page) != halves:
+                        return False
+                    current = await _read_verified_handle_centers(page, boxes)
+                    return current is not None and all(
+                        abs(x1 - x2) <= 2 and abs(y1 - y2) <= 2
+                        for (x1, y1), (x2, y2) in zip(centers, current, strict=True)
+                    )
+
+                angles = await client.solve_pair(
+                    halves, timeout_seconds=timeout_seconds, before_second=before_second
+                )
+            else:
+                angles = await client.solve_pair(halves, timeout_seconds=timeout_seconds)
             if (
                 not isinstance(angles, tuple)
                 or len(angles) != 2
