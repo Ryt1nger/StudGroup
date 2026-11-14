@@ -1136,3 +1136,220 @@ def test_live_range_read_fails_closed_for_invalid_or_missing_controls():
         assert await ranepa_captcha._read_live_range_values(InvalidPage()) is None
 
     asyncio.run(scenario())
+
+
+def test_verified_explicit_handles_are_read_only_and_not_guessed():
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 116, "y": 416, "width": 280, "height": 30},
+        ]
+        calls = []
+
+        class Slider:
+            def __init__(self, index, *, missing=False):
+                self.index = index
+                self.missing = missing
+
+            async def evaluate(self, expression, **kwargs):
+                assert "elementFromPoint" in expression
+                assert "data-slider-thumb" in expression
+                assert "inputRect" in expression
+                assert kwargs == {"timeout": 1500}
+                calls.append(self.index)
+                if self.missing:
+                    return None
+                return {
+                    "x": [118.0, 129.0][self.index],
+                    "y": [375.0, 431.0][self.index],
+                    "box": dict(boxes[self.index]),
+                }
+
+        class Sliders:
+            def __init__(self, *, missing=False):
+                self.missing = missing
+
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index, missing=self.missing and index == 1)
+
+        class Page:
+            def __init__(self, *, missing=False):
+                self.missing = missing
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders(missing=self.missing)
+
+        centers = await ranepa_captcha._read_verified_handle_centers(Page(), boxes)
+        assert centers == [(118.0, 375.0), (129.0, 431.0)]
+        assert calls == [0, 1]
+        assert await ranepa_captcha._read_verified_handle_centers(
+            Page(missing=True), boxes
+        ) is None
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "handle_sample",
+    [
+        None,
+        {"x": float("nan"), "y": 375.0, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
+        {"x": 30, "y": 375, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
+        {"x": 125, "y": 300, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
+        {"x": 125, "y": 375, "box": {"x": 100, "y": 360, "width": 300, "height": 30}},
+    ],
+)
+def test_unverified_handle_never_contacts_rucaptcha_or_clicks(handle_sample, caplog):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return boxes[self.index]
+
+            async def evaluate(self, expression, **kwargs):
+                assert kwargs == {"timeout": 1500}
+                if self.index == 0:
+                    return handle_sample
+                return {
+                    "x": 125,
+                    "y": 431,
+                    "box": dict(boxes[1]),
+                }
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class NoMotion:
+            async def move(self, *_args, **_kwargs):
+                raise AssertionError("no mouse motion on unverified handle")
+
+            async def down(self):
+                raise AssertionError("no click on unverified handle")
+
+            async def up(self):
+                raise AssertionError("no mouse up on unverified handle")
+
+        class Page:
+            mouse = NoMotion()
+            url = "https://my.ranepa.ru/lk/student/schedule"
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Title()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+        class NoProvider:
+            async def coordinates(self, *_args, **_kwargs):
+                raise AssertionError("cannot spend money without verified handles")
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), NoProvider())
+        assert "thumb_unverified_no_provider_no_motion" in caplog.text
+        assert "provider_request_started" not in caplog.text
+        assert "drag_submitted" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_one_shot_preflight_rejects_changed_handle_after_provider_without_press(
+    monkeypatch, caplog
+):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+        center_calls = 0
+        provider_calls = 0
+
+        async def handle_centers(_page, _boxes):
+            nonlocal center_calls
+            center_calls += 1
+            if center_calls == 1:
+                return [(125.0, 375.0), (125.0, 431.0)]
+            return [(140.0, 375.0), (125.0, 431.0)]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", handle_centers)
+
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return boxes[self.index]
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class NoMouse:
+            async def move(self, *_args, **_kwargs):
+                raise AssertionError("never move if provider returned to changed DOM")
+
+            async def down(self):
+                raise AssertionError("never press if provider returned to changed DOM")
+
+            async def up(self):
+                raise AssertionError("never release if provider returned to changed DOM")
+
+        class Page:
+            mouse = NoMouse()
+            url = "https://my.ranepa.ru/lk/student/schedule"
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Title()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+        class Provider:
+            async def coordinates(self, *_args, **_kwargs):
+                nonlocal provider_calls
+                provider_calls += 1
+                return {"code": "coordinates:x=140,y=315;x=220,y=371"}
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_captcha.solve_slider_captcha(Page(), Provider())
+        assert provider_calls == 1
+        assert center_calls == 2
+        assert "thumb_changed_before_motion_no_click" in caplog.text
+        assert "drag_submitted" not in caplog.text
+
+    asyncio.run(scenario())
