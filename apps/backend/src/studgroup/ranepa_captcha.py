@@ -333,6 +333,72 @@ async def _inspect_range_geometry_offline(page, boxes: list[dict]) -> str:
         return "diagnostic_geometry_unavailable"
 
 
+async def _read_live_range_values(page) -> tuple[tuple[float, float, float], ...] | None:
+    """Read only live HTML range values; never log or transmit these values.
+
+    Values are a proxy for DOM change, not proof of a physical thumb motion
+    or successful server-side verification. A custom handle may not update
+    native range values at all.
+    """
+    try:
+        inputs = page.locator('input[type="range"]')
+        if await inputs.count() != 2:
+            return None
+        result = []
+        for index in range(2):
+            row = await inputs.nth(index).evaluate(
+                "(el) => ({type: el.type, min: el.min, max: el.max, "
+                "value: el.value, disabled: el.disabled})",
+                timeout=1500,
+            )
+            if (
+                not isinstance(row, dict)
+                or row.get("type") != "range"
+                or row.get("disabled") is not False
+            ):
+                return None
+            minimum, maximum, value = (
+                float(row["min"]),
+                float(row["max"]),
+                float(row["value"]),
+            )
+            if (
+                not all(math.isfinite(v) for v in (minimum, maximum, value))
+                or maximum <= minimum
+                or not minimum <= value <= maximum
+            ):
+                return None
+            result.append((minimum, maximum, value))
+        return tuple(result)
+    except (Exception,):  # noqa: BLE001
+        # This may be a navigation or a disappearing challenge. Do not leak
+        # Playwright exception strings, DOM, values, URLs, or session state.
+        return None
+
+
+def _post_drag_value_stage(
+    before: tuple[tuple[float, float, float], ...] | None,
+    after: tuple[tuple[float, float, float], ...] | None,
+) -> str:
+    """Classify two range values without asserting CAPTCHA success."""
+    if before is None or after is None or len(before) != 2 or len(after) != 2:
+        return "drag_values_unavailable"
+    if any(
+        (a_min, a_max) != (b_min, b_max)
+        for (a_min, a_max, _), (b_min, b_max, _) in zip(before, after, strict=True)
+    ):
+        return "drag_values_unavailable"
+    changed = sum(
+        not math.isclose(previous[2], current[2], rel_tol=0, abs_tol=1e-9)
+        for previous, current in zip(before, after, strict=True)
+    )
+    if changed == 2:
+        return "drag_values_both_changed"
+    if changed == 1:
+        return "drag_values_one_changed"
+    return "drag_values_unchanged"
+
+
 async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> bool:
     """Attempt exactly one drag per slider after a single coordinate task.
 
@@ -396,6 +462,7 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
             log_captcha_stage("coordinates_outside_controls")
             return False
         log_captcha_stage("coordinates_validated")
+        before_values = await _read_live_range_values(page)
         phase = "drag"
         for start_x, end_x, y in targets:
             await page.mouse.move(start_x, y)
@@ -406,6 +473,7 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
                 await page.mouse.up()
         await page.wait_for_timeout(800)
         log_captcha_stage("drag_submitted")
+        log_captcha_stage(_post_drag_value_stage(before_values, await _read_live_range_values(page)))
         return True
     except TimeoutError:
         # Do not report provider errors verbatim: SDK exceptions may embed keys.
