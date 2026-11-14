@@ -109,8 +109,9 @@ When an operator manually dispatches `ranepa-crawl.yml` with both
 its previously completed (succeeded or failed) current-week job immediately.
 This is specifically for repeatable single-account tests without a 24-hour wait:
 other users, queued work and actively running jobs are not reset. It does not
-automatically retry CAPTCHAs: each manually dispatched run still has at most
-one paid task under the existing budget. Do not repeatedly dispatch on errors.
+automatically retry CAPTCHAs. A manually approved v2 pair reserves up to **two**
+paid tasks; older modes have a separate one-task limit. Do not repeatedly
+dispatch on errors.
 
 ## Opt-in setup for one account (only after code review)
 
