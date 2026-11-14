@@ -9,11 +9,17 @@ from PIL import Image
 from twocaptcha import AsyncTwoCaptcha
 from twocaptcha.exceptions.api import (
     ApiException as ClientApiException,
+)
+from twocaptcha.exceptions.api import (
     NetworkException as ClientNetworkException,
 )
 from twocaptcha.exceptions.solver import (
     ApiException as SolverApiException,
+)
+from twocaptcha.exceptions.solver import (
     NetworkException as SolverNetworkException,
+)
+from twocaptcha.exceptions.solver import (
     ValidationException,
 )
 
