@@ -29,12 +29,16 @@ _MAX_INSTRUCTIONS = 100 * 1024
 _POLL_SECONDS = 5
 
 _COMMENTS = (
-    "Rotate ONLY the LEFT half in the main image so the two halves make one upright "
-    "picture. The instruction image shows the current UNSOLVED combined view, "
-    "LEFT and RIGHT references. Return the clockwise angle for LEFT only.",
-    "Rotate ONLY the RIGHT half in the main image so the two halves make one upright "
-    "picture. The instruction image shows the same current UNSOLVED combined view, "
-    "LEFT and RIGHT references. Return the clockwise angle for RIGHT only.",
+    (
+        "Rotate ONLY the LEFT half in the main image so the two halves make one upright "
+        "picture. The instruction image shows the current UNSOLVED combined view, "
+        "LEFT and RIGHT references. Return the clockwise angle for LEFT only."
+    ),
+    (
+        "Rotate ONLY the RIGHT half in the main image so the two halves make one upright "
+        "picture. The instruction image shows the same current UNSOLVED combined view, "
+        "LEFT and RIGHT references. Return the clockwise angle for RIGHT only."
+    ),
 )
 _ERRORS = {
     "ERROR_ZERO_BALANCE": "zero_balance",
