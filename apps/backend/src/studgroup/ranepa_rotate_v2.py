@@ -1,8 +1,10 @@
 """Two single-image RuCaptcha v2 RotateTask jobs with shared visual context.
 
-One task rotates the left image, the next rotates the right. Both receive the
-same annotated, *unsolved* view assembled exclusively from the two challenge
-image assets. No page screenshot, DOM, login, cookies or credentials are sent.
+One task rotates the left image, the next rotates the right. The default uses
+the same unsolved context for both. The optional progressive mode virtually
+rotates the left source image by the first answer before constructing the
+second instruction image, without altering either task body or the browser.
+No page screenshot, DOM, login, cookies or credentials are sent.
 The second potentially billable task is created only after the first succeeds.
 No automatic retries, no recording images, no raw provider payload in logs.
 """
@@ -40,6 +42,11 @@ _COMMENTS = (
         "LEFT and RIGHT references. Return the clockwise angle for RIGHT only."
     ),
 )
+_PROGRESSIVE_RIGHT_COMMENT = (
+    "Rotate ONLY the RIGHT half in the main image. The instruction image shows "
+    "LEFT VIRTUALLY ALIGNED using the first answer; RIGHT is still unsolved. "
+    "Match the right half to the left and return the clockwise angle for RIGHT only."
+)
 _ERRORS = {
     "ERROR_ZERO_BALANCE": "zero_balance",
     "ERROR_CAPTCHA_UNSOLVABLE": "unsolvable",
@@ -55,6 +62,7 @@ _SAFE_STAGES = frozenset(
         "image_invalid",
         "context_invalid",
         "context_too_large",
+        "challenge_changed",
         "http_failed",
         "invalid_response",
         "invalid_task_id",
@@ -97,24 +105,38 @@ def _image(png: bytes) -> Image.Image:
         raise RotateV2Error("image_invalid") from None
 
 
-def _context_png(left: Image.Image, right: Image.Image) -> bytes:
-    """Produce an annotated full-circle current view plus both references.
+def _context_png(
+    left: Image.Image, right: Image.Image, *, left_rotation: int | None = None
+) -> bytes:
+    """Build a context image from original assets, optionally aligning LEFT.
 
-    The combined view uses the left half of the left asset and right half of
-    the right asset. References preserve both full original images, making the
-    requested side clear even when transparency or CSS clipping is involved.
+    CSS rotate(+degrees) is clockwise; Pillow rotate(-degrees) matches it.
+    Rotate the *uncropped* original image about its centre, then apply the
+    same left-half clipping as the page. Keep original references unchanged.
+    This is an estimate from the first answer, NOT a verified solved image.
     """
     if left.size != right.size:
         raise RotateV2Error("context_invalid")
+    if left_rotation is not None and (
+        type(left_rotation) is not int
+        or not -360 <= left_rotation <= 360
+        or left_rotation % 360 == 0
+    ):
+        raise RotateV2Error("context_invalid")
     size = left.width
+    rotated_left = (
+        left.rotate(-left_rotation, resample=Image.Resampling.BICUBIC, expand=False)
+        if left_rotation is not None
+        else left
+    )
     circle = Image.new("RGBA", (size, size), (255, 255, 255, 0))
-    circle.paste(left.crop((0, 0, size // 2, size)), (0, 0))
+    circle.paste(rotated_left.crop((0, 0, size // 2, size)), (0, 0))
     circle.paste(right.crop((size // 2, 0, size, size)), (size // 2, 0))
 
     canvas = Image.new("RGB", (456, 195), "white")
     draw = ImageDraw.Draw(canvas)
     slots = (
-        ("CURRENT UNSOLVED VIEW", circle),
+        ("LEFT ALIGNED (EST.)" if left_rotation is not None else "CURRENT UNSOLVED", circle),
         ("LEFT ORIGINAL", left),
         ("RIGHT ORIGINAL", right),
     )
@@ -124,7 +146,12 @@ def _context_png(left: Image.Image, right: Image.Image) -> bytes:
         bg = Image.new("RGBA", (135, 135), (238, 241, 245, 255))
         bg.alpha_composite(thumbnail)
         canvas.paste(bg.convert("RGB"), (x, 30))
-    draw.text((7, 173), "Reference only: both halves need separate rotation.", fill="black")
+    caption = (
+        "LEFT estimated from first answer; RIGHT unsolved."
+        if left_rotation is not None
+        else "Reference only: both halves need separate rotation."
+    )
+    draw.text((7, 173), caption, fill="black")
 
     # Paletted PNG provides legible instructions while respecting the
     # provider's stricter 100 KiB imgInstructions limit.
@@ -160,12 +187,19 @@ class RuCaptchaV2Pair:
 
     max_tasks = 2
 
-    def __init__(self, api_key: str, *, client_factory=None):
+    def __init__(self, api_key: str, *, client_factory=None, progressive_context: bool = False):
         self._api_key = api_key
         self._client_factory = client_factory or httpx.AsyncClient
+        self.progressive_context = progressive_context
 
     async def _solve_one(
-        self, http: httpx.AsyncClient, body: bytes, context: bytes, side: int
+        self,
+        http: httpx.AsyncClient,
+        body: bytes,
+        context: bytes,
+        side: int,
+        *,
+        progressive_right: bool = False,
     ) -> int:
         name = ("left", "right")[side]
         payload = {
@@ -174,7 +208,7 @@ class RuCaptchaV2Pair:
                 "type": "RotateTask",
                 "body": base64.b64encode(body).decode("ascii"),
                 "imgInstructions": base64.b64encode(context).decode("ascii"),
-                "comment": _COMMENTS[side],
+                "comment": (_PROGRESSIVE_RIGHT_COMMENT if progressive_right else _COMMENTS[side]),
                 "angle": 5,
             },
             "languagePool": "en",
@@ -201,13 +235,17 @@ class RuCaptchaV2Pair:
             if status != "ready" or not isinstance(answer.get("solution"), dict):
                 raise RotateV2Error("invalid_answer")
             angle = answer["solution"].get("rotate")
-            if type(angle) is not int or not -360 <= angle <= 360:
+            if type(angle) is not int or not -360 <= angle <= 360 or angle % 360 == 0:
                 raise RotateV2Error("invalid_answer")
             log_captcha_stage(f"rotate_v2_{name}_answer_received")
             return angle
 
     async def solve_pair(
-        self, halves: tuple[bytes, bytes], *, timeout_seconds: int = 110
+        self,
+        halves: tuple[bytes, bytes],
+        *,
+        timeout_seconds: int = 110,
+        before_second=None,
     ) -> tuple[int, int]:
         if not isinstance(halves, tuple) or len(halves) != 2:
             raise RotateV2Error("image_invalid")
@@ -218,7 +256,24 @@ class RuCaptchaV2Pair:
             async with asyncio.timeout(timeout_seconds):
                 async with self._client_factory(timeout=20, follow_redirects=False) as http:
                     first = await self._solve_one(http, halves[0], context, 0)
-                    second = await self._solve_one(http, halves[1], context, 1)
+                    # A CAPTCHA can expire while a human works. Re-check it
+                    # before another billable request, without moving sliders.
+                    if before_second is not None and not await before_second():
+                        raise RotateV2Error("challenge_changed")
+                    second_context = (
+                        _context_png(left, right, left_rotation=first)
+                        if self.progressive_context
+                        else context
+                    )
+                    if self.progressive_context:
+                        log_captcha_stage("rotate_v2_progressive_context_verified")
+                    second = await self._solve_one(
+                        http,
+                        halves[1],
+                        second_context,
+                        1,
+                        progressive_right=self.progressive_context,
+                    )
                     return first, second
         except httpx.RequestError:
             raise RotateV2Error("network_failed") from None

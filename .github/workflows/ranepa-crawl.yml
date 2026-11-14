@@ -24,6 +24,11 @@ on:
         required: true
         type: boolean
         default: false
+      progressive_context_v2:
+        description: "Use first answer to virtually align LEFT in second task instructions"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -61,6 +66,9 @@ jobs:
       # manual dispatch without it cannot silently spend on two tasks.
       RANEPA_CAPTCHA_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
       RANEPA_CAPTCHA_V2_PAIR_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
+      # Must additionally opt in to BOTH paid pair and virtual-left preview;
+      # never alter an existing paid pilot or a scheduled queue silently.
+      RANEPA_CAPTCHA_V2_PROGRESSIVE_CONTEXT_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && inputs.progressive_context_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
       RANEPA_CAPTCHA_DIAGNOSTIC_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only == true }}
       RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "2"
       # Encrypted Cookie Reuse must be approved independently for a manual pilot.

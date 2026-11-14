@@ -22,20 +22,32 @@ https://rucaptcha.com/api-docs/rotate
 The provider documents `createTask` and `getTaskResult` at
 `https://api.rucaptcha.com`.
 
-**Design.** Read two original challenge PNG assets, generate an annotated
-instruction image locally showing a *current unsolved* combined view plus
-both original halves, and reuse those **same context bytes** in two serial
-JSON `RotateTask` calls. First `body` is left PNG, second is right PNG.
-Each task's `comment` asks for its corresponding half only. The
-instruction image is a rough reconstructed preview from the two assets,
-**not a correct final reference** and not a full webpage screenshot.
-It includes no account details, DOM, cookies or credentials.
+**Design.** Read two original challenge PNG assets. In the existing baseline,
+both sequential `RotateTask` jobs receive the same *unsolved* composite
+context. First `body` is the original left PNG, second is the original right
+PNG. Each `comment` asks for one side only.
+
+**Optional progressive context (separate opt-in).** After the first valid
+clockwise angle, locally rotate the **uncropped left source image** by that
+angle around its centre, then clip its left half and combine it with the
+**unaltered right half**. Pillow's rotation sign is inverted to match CSS
+`rotate(+deg)` clockwise. The second `imgInstructions` now shows a clearly
+labelled **estimated aligned left half** and unsolved right half, with both
+original source images for reference. The first instruction image and BOTH
+`body` images remain unchanged. No browser slider is moved between tasks.
+The second paid job is skipped if the first answer is unusable or if a
+read-only recheck finds changed CAPTCHA pixels or native-thumb geometry.
+This preview is a *hypothesis* based on the first answer: it is not a
+verified correct reference. In particular, if the original source assets
+are already clipped or the first answer is wrong, virtual alignment may
+mislead the second worker. It does not reconstruct pixels absent from the
+source. Neither version sends page screenshots, DOM, credentials or cookies.
 
 **Hard limits.** Image body <=600 KiB and 600x600, instruction PNG
 <=100 KiB, strict PNG validation before the first API call, no retry.
-The second potentially billable task is sent **only after** a valid first
-answer. Each task is polled at 5-second intervals, within the 110-second
-total CAPTCHA budget. The run reserves two tasks atomically, so no account
+The second potentially billable task is sent **only after** a valid and
+non-zero first angle and a fresh challenge check. Each task is polled
+at 5-second intervals, within the 110-second total CAPTCHA budget. The run reserves two tasks atomically, so no account
 can consume a half-allocated budget. No actual cursor action occurs until
 both angles are validated and the **original challenge images still match**
 the images collected before sending either task. CSS geometry, one-shot
@@ -47,17 +59,24 @@ one approved pilot user and group, keep `diagnostic_only=true` for a free
 read-only preflight. A later **separately approved paid pilot** requires
 `diagnostic_only=false` **and** the new checkbox
 `dual_rotate_v2=true`. The checkbox defaults to `false` to prevent
-surprise two-task charges. `RANEPA_CAPTCHA_V2_PAIR_ENABLED` and the
-two-task budget are set only for that opt-in workflow path. Scheduled
-multi-account runs remain disabled for paid CAPTCHA.
+surprise two-task charges. To test the progressive variation, additionally
+set `progressive_context_v2=true` on this **same manual run**. It defaults
+to `false`, so older v2 pilots continue to send identical instruction
+images. The workflow enables `RANEPA_CAPTCHA_V2_PROGRESSIVE_CONTEXT_ENABLED`
+only if both checkboxes are true and the paid single-account pilot is
+approved. `RANEPA_CAPTCHA_V2_PAIR_ENABLED` and the two-task budget
+are set only for that opt-in workflow path. Scheduled multi-account runs
+remain disabled for paid CAPTCHA.
 
 **What tests can and cannot prove.** Network-free HTTPX transport tests
-verify that each JSON `body` contains the correct half, both
-`imgInstructions` fields contain identical annotated context PNG,
-`createTask/getTaskResult` parsing is strict, the second task is not
-created after failure of the first, and no mouse clicks occur if the
-challenge changes. Passing these tests **does not prove the human solver
-can infer both correct angles from an incomplete scrambled picture**.
+verify that each JSON `body` contains the correct unrotated half. Baseline
+mode sends identical instruction PNGs; progressive mode changes **only the
+second** `imgInstructions` using the first result. Offline tests verify
+the clockwise sign, clipping, unchanged source references, strict API
+parsing, one-shot budget, no second paid job after first failure/changed
+challenge, and no mouse clicks on stale inputs. Passing these tests
+**does not prove the RuCaptcha solver (AI or human) can infer both
+correct angles or that StormWall accepts the completed image**.
 Do not repeat paid attempts on an unsupported, stale or failed challenge.
 
 ## Worker behaviour
@@ -90,8 +109,9 @@ When an operator manually dispatches `ranepa-crawl.yml` with both
 its previously completed (succeeded or failed) current-week job immediately.
 This is specifically for repeatable single-account tests without a 24-hour wait:
 other users, queued work and actively running jobs are not reset. It does not
-automatically retry CAPTCHAs: each manually dispatched run still has at most
-one paid task under the existing budget. Do not repeatedly dispatch on errors.
+automatically retry CAPTCHAs. A manually approved v2 pair reserves up to **two**
+paid tasks; older modes have a separate one-task limit. Do not repeatedly
+dispatch on errors.
 
 ## Opt-in setup for one account (only after code review)
 
