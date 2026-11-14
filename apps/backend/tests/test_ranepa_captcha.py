@@ -1444,3 +1444,84 @@ def test_hover_geometry_change_aborts_before_first_press(monkeypatch, caplog):
         assert "drag_submitted" not in caplog.text
 
     asyncio.run(scenario())
+
+
+def test_first_handle_lock_does_not_block_second_verified_drag(monkeypatch):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+        state = {"locked_first": False, "presses": 0, "provider": 0}
+        observed = []
+
+        async def centers(_page, _boxes, *, only_index=None):
+            observed.append(only_index)
+            known = [(125.0, 375.0), (125.0, 431.0)]
+            if only_index is None:
+                assert not state["locked_first"]
+                return known
+            if only_index == 0 and state["locked_first"]:
+                raise AssertionError("must not inspect the first locked handle")
+            return [known[only_index]]
+
+        monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", centers)
+
+        class Title:
+            async def is_visible(self):
+                return True
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return boxes[self.index]
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class Mouse:
+            async def move(self, *_args, **_kwargs):
+                pass
+
+            async def down(self):
+                state["presses"] += 1
+                assert state["presses"] <= 2
+
+            async def up(self):
+                if state["presses"] == 1:
+                    state["locked_first"] = True
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = Mouse()
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Title()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+            async def wait_for_timeout(self, milliseconds):
+                assert milliseconds == 800
+
+        class Provider:
+            async def coordinates(self, *_args, **_kwargs):
+                state["provider"] += 1
+                return {"code": "coordinates:x=140,y=315;x=220,y=371"}
+
+        assert await ranepa_captcha.solve_slider_captcha(Page(), Provider())
+        assert state == {"locked_first": True, "presses": 2, "provider": 1}
+        assert observed == [None, None, 0, 0, 1, 1]
+
+    asyncio.run(scenario())
