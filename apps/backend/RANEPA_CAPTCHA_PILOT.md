@@ -389,6 +389,64 @@ changed during the drag and reset after release.
 No alternate timetable sources, cookies, authentication tokens or extra
 provider tasks are introduced.
 
+## Proposed change after the failed Coordinates pilot (2026-11-14)
+
+The authorized paid run [#43578254900](https://github.com/Ryt1nger/StudGroup/actions/runs/43578254900)
+verified both native-thumb starts but returned
+`target_1_above_track` / `coordinates_outside_controls` /
+`motion_not_submitted`. The legacy RuCaptcha `Coordinates` task asks a
+worker to **click image points**; the returned points do not express the
+rotation angles needed for the two-half-circle challenge. Re-running that
+format is not justified.
+
+RuCaptcha's **API v1** documents `method=rotatecaptcha` with one or
+several images and an angle for **each** image in one task (for example,
+`40|200|-120` for three images). The Python SDK exposes
+`AsyncTwoCaptcha.rotate(files_dict, angle=..., hintText=...)`; with two
+temporary PNG files it submits a **single task** containing `file_1`
+and `file_2`. RuCaptcha's newer `RotateTask` API v2, in contrast,
+documents one image and one `solution.rotate` per task.
+
+The paid RANEPA pilot now uses `solve_rotating_halves`, **not** the old
+`solve_slider_captcha` Coordinates method (which remains only for the
+read-only diagnostic path and legacy unit coverage). It:
+
+1. Confirms the exact LK host, two enabled native ranges and CSS-derived
+   starting thumb centers, plus two original `data:image/*;base64` assets
+   from the CAPTCHA's `img-left` and `img-right` elements.
+2. Converts only those isolated image assets to 200×200-ish PNG files in
+   an automatically removed temporary directory. It does **not** upload
+   the account page, credentials, network traffic, cookies or profile.
+3. Requests exactly **one** RuCaptcha v1 `rotatecaptcha` task with both
+   images. Uses `angle=5` rather than the default 40° step and
+   decodes exactly two signed whole-degree answers. Ambiguous,
+   out-of-range, zero-distance or unreadable cases abort before clicks.
+4. Maps clockwise angle `a % 360` to a target position across each
+   measured native thumb's usable travel. Rechecks initial geometry
+   after provider latency and on hover, then executes **at most one**
+   continuous press-drag-release per thumb.
+5. Reads value/image rotation before mouse-up and
+   `disabled`/`disable-sl` after mouse-up. If the first movement
+   produces no observable change, it aborts instead of consuming the
+   second one-shot input.
+6. Still requires the original LK month/week and academic-group checks,
+   then the existing SDO path. A `rotate_drags_submitted_verification_pending`
+   stage **does not** mean the challenge passed.
+
+**Limitations and go/no-go:** A provider's ability to return two angles
+does not establish that a human can correctly orient two **masked half
+images** or that the angles correspond exactly to the LK slider values.
+The association is a testable hypothesis supported by observed
+`max=360` inputs and the rotation style on `img-right`, not a
+confirmed live solution. Run full CI, then a **free** diagnostic on the
+deployed revision. The first paid pilot must be separately authorized
+and limited to one account and one provider task. Do not repeat it if
+angle results fail to solve StormWall; inspect only fixed stage codes.
+
+Official API documentation:
+- https://rucaptcha.com/api-rucaptcha (RotateCaptcha API v1)
+- https://rucaptcha.com/api-docs/rotate (RotateTask API v2)
+
 ## Validation checklist
 
 - [x] Official `2captcha-python` SDK configured for `rucaptcha.com`; uv lock updated.
