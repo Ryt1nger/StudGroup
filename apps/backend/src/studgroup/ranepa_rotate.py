@@ -229,7 +229,9 @@ async def solve_rotating_halves(page, client, *, timeout_seconds: int = 110) -> 
         log_captcha_stage("rotate_drags_submitted_verification_pending")
         return True
     except TimeoutError:
-        log_captcha_stage("rotate_provider_timeout" if phase == "provider" else "rotate_inspection_timeout")
+        log_captcha_stage(
+            "rotate_provider_timeout" if phase == "provider" else "rotate_inspection_timeout"
+        )
     except Exception:  # noqa: BLE001
         # Provider exceptions may contain API payloads or URLs; never log them.
         log_captcha_stage(f"rotate_{phase}_failed")
