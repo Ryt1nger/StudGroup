@@ -181,7 +181,9 @@ def _annotate_slider_tracks(image: bytes, boxes: list[dict], clip: dict) -> byte
     return output.getvalue()
 
 
-async def _read_verified_handle_centers(page, boxes: list[dict]) -> list[tuple[float, float]] | None:
+async def _read_verified_handle_centers(
+    page, boxes: list[dict]
+) -> list[tuple[float, float]] | None:
     """Find exactly two visible, unoccluded explicit handle elements, without clicking.
 
     A native `input[type=range]` thumb is a browser pseudo-element, not a DOM
@@ -567,12 +569,9 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
         # Provider latency can invalidate earlier geometry. Re-read without
         # any interaction and reject a changed handle before the first click.
         fresh_centers = await _read_verified_handle_centers(page, boxes)
-        if (
-            fresh_centers is None
-            or any(
-                abs(a - c) > 2 or abs(b - d) > 2
-                for (a, b), (c, d) in zip(start_centers, fresh_centers, strict=True)
-            )
+        if fresh_centers is None or any(
+            abs(a - c) > 2 or abs(b - d) > 2
+            for (a, b), (c, d) in zip(start_centers, fresh_centers, strict=True)
         ):
             log_captcha_stage("thumb_changed_before_motion_no_click")
             return False
