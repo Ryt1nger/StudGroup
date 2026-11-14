@@ -60,12 +60,8 @@ def test_progressive_image_turns_left_clockwise_before_clipping_but_keeps_refere
     assert _is_red(_context_pixel(after, 80, 30))
 
     # No changes to the unrotated references or the right half in the composite.
-    assert before.crop((160, 30, 448, 165)).tobytes() == after.crop(
-        (160, 30, 448, 165)
-    ).tobytes()
-    assert before.crop((75, 30, 142, 165)).tobytes() == after.crop(
-        (75, 30, 142, 165)
-    ).tobytes()
+    assert before.crop((160, 30, 448, 165)).tobytes() == after.crop((160, 30, 448, 165)).tobytes()
+    assert before.crop((75, 30, 142, 165)).tobytes() == after.crop((75, 30, 142, 165)).tobytes()
     assert left.tobytes() == ranepa_rotate_v2._image(left_bytes).tobytes()
     assert right.tobytes() == ranepa_rotate_v2._image(right_bytes).tobytes()
 
@@ -111,9 +107,7 @@ def test_progressive_second_request_has_updated_context_and_original_right_body(
                 task = payload["task"]
                 assert task["type"] == "RotateTask"
                 assert task["angle"] == 5
-                assert base64.b64decode(task["body"], validate=True) == (
-                    left if n == 1 else right
-                )
+                assert base64.b64decode(task["body"], validate=True) == (left if n == 1 else right)
                 contexts.append(base64.b64decode(task["imgInstructions"], validate=True))
                 comments.append(task["comment"])
                 return httpx.Response(200, json={"errorId": 0, "taskId": 900 + n})
@@ -135,9 +129,7 @@ def test_progressive_second_request_has_updated_context_and_original_right_body(
             return True
 
         with caplog.at_level(logging.WARNING):
-            result = await _client(handler).solve_pair(
-                (left, right), before_second=before_second
-            )
+            result = await _client(handler).solve_pair((left, right), before_second=before_second)
         assert result == (90, -120)
         assert events == [
             "create-1",
