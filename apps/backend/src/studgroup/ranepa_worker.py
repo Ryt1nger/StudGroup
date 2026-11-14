@@ -340,10 +340,14 @@ async def _collect(
                     if captcha_client is None and not captcha_diagnostic_only:
                         log_captcha_stage("provider_not_configured")
                         return False
+                    # Two v2 RotateTask jobs must be covered by the paid
+                    # budget before the first request. No partial reservation
+                    # and no billing in diagnostic-only mode.
+                    required_tasks = getattr(captcha_client, "max_tasks", 1)
                     if (
                         not captcha_diagnostic_only
                         and captcha_budget is not None
-                        and not captcha_budget.claim()
+                        and not captcha_budget.claim_many(required_tasks)
                     ):
                         log_captcha_stage("paid_budget_exhausted")
                         return False
@@ -352,8 +356,9 @@ async def _collect(
                         "diagnostic_started" if captcha_diagnostic_only else "paid_attempt_started"
                     )
                     # Free mode keeps the read-only native-thumb diagnostic.
-                    # Paid mode uses one multi-image RotateCaptcha task, NEVER
-                    # the old point-click Coordinates interpretation.
+                    # Paid v2 pilot solves one half per task with a shared
+                    # visual instruction. Never interpret click coordinates
+                    # as drag distances or move sliders before both answers.
                     if captcha_diagnostic_only:
                         submitted = await solve_slider_captcha(
                             challenge_page, None, timeout_seconds=captcha_timeout_seconds
