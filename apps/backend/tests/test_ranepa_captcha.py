@@ -943,3 +943,169 @@ def test_range_geometry_returns_unavailable_when_dom_changes():
         )
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "stage"),
+    [
+        (
+            ((0.0, 100.0, 0.0), (0.0, 100.0, 0.0)),
+            ((0.0, 100.0, 50.0), (0.0, 100.0, 20.0)),
+            "drag_values_both_changed",
+        ),
+        (
+            ((0.0, 100.0, 0.0), (0.0, 100.0, 0.0)),
+            ((0.0, 100.0, 50.0), (0.0, 100.0, 0.0)),
+            "drag_values_one_changed",
+        ),
+        (
+            ((0.0, 100.0, 0.0), (0.0, 100.0, 0.0)),
+            ((0.0, 100.0, 0.0), (0.0, 100.0, 0.0)),
+            "drag_values_unchanged",
+        ),
+        (None, ((0.0, 100.0, 50.0), (0.0, 100.0, 0.0)), "drag_values_unavailable"),
+        (((0.0, 100.0, 0.0),), ((0.0, 100.0, 60.0),), "drag_values_unavailable"),
+        (
+            ((0.0, 100.0, 0.0), (0.0, 100.0, 0.0)),
+            ((0.0, 200.0, 50.0), (0.0, 100.0, 0.0)),
+            "drag_values_unavailable",
+        ),
+    ],
+)
+def test_post_drag_value_stages_are_safe_and_precise(before, after, stage):
+    assert ranepa_captcha._post_drag_value_stage(before, after) == stage
+
+
+@pytest.mark.parametrize("on_drag", ["both", "one", "none"])
+def test_paid_adapter_distinguishes_dom_value_changes_without_extra_provider_calls(on_drag, caplog):
+    async def scenario():
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+        values = ["0", "0"]
+        events = []
+        calls = []
+
+        class Slider:
+            def __init__(self, index):
+                self.index = index
+
+            async def bounding_box(self):
+                return boxes[self.index]
+
+            async def evaluate(self, expression, **kwargs):
+                assert kwargs == {"timeout": 1500}
+                assert "el.value" in expression
+                return {
+                    "type": "range",
+                    "min": "0",
+                    "max": "100",
+                    "value": values[self.index],
+                    "disabled": False,
+                }
+
+        class Sliders:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return Slider(index)
+
+        class Visible:
+            async def is_visible(self):
+                return True
+
+        class Mouse:
+            index = 0
+
+            async def move(self, *_args, **_kwargs):
+                events.append("move")
+
+            async def down(self):
+                events.append("down")
+
+            async def up(self):
+                events.append("up")
+                if on_drag == "both" or (on_drag == "one" and self.index == 0):
+                    values[self.index] = "50"
+                self.index += 1
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = Mouse()
+
+            def get_by_text(self, *_args, **_kwargs):
+                return Visible()
+
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Sliders()
+
+            async def screenshot(self, **kwargs):
+                assert kwargs["type"] == "png"
+                return _fake_png()
+
+            async def wait_for_timeout(self, milliseconds):
+                assert milliseconds == 800
+
+        class Provider:
+            async def coordinates(self, *_args, **_kwargs):
+                calls.append("provider")
+                return {"code": "coordinates:x=140,y=315;x=220,y=371"}
+
+        with caplog.at_level(logging.WARNING):
+            assert await ranepa_captcha.solve_slider_captcha(Page(), Provider())
+        assert len(calls) == 1
+        assert events.count("down") == events.count("up") == 2
+        expected = {
+            "both": "drag_values_both_changed",
+            "one": "drag_values_one_changed",
+            "none": "drag_values_unchanged",
+        }[on_drag]
+        assert f"RANEPA_CAPTCHA_STAGE {expected}" in caplog.text
+        assert "RANEPA_CAPTCHA_STAGE drag_submitted" in caplog.text
+        assert "50.0" not in caplog.text
+        assert "coordinates:x=" not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_live_range_read_fails_closed_for_invalid_or_missing_controls():
+    async def scenario():
+        class Missing:
+            async def count(self):
+                return 1
+
+        class Page:
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Missing()
+
+        assert await ranepa_captcha._read_live_range_values(Page()) is None
+
+        class BrokenSlider:
+            async def evaluate(self, *_args, **_kwargs):
+                return {
+                    "type": "range",
+                    "min": "0",
+                    "max": "100",
+                    "value": "NaN",
+                    "disabled": False,
+                }
+
+        class Invalid:
+            async def count(self):
+                return 2
+
+            def nth(self, index):
+                return BrokenSlider()
+
+        class InvalidPage:
+            def locator(self, selector):
+                assert selector == 'input[type="range"]'
+                return Invalid()
+
+        assert await ranepa_captcha._read_live_range_values(InvalidPage()) is None
+
+    asyncio.run(scenario())

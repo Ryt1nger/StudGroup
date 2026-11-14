@@ -246,7 +246,7 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
 def test_worker_retries_after_captcha_at_most_once(
     monkeypatch, solver_succeeds, expected_month_reads, expected_status, budget, dry_run
 ):
-    observed = {"month": 0, "solve": 0, "close": False}
+    observed = {"month": 0, "solve": 0, "post_drag_wait": 0, "close": False}
 
     class FakeBrowser:
         async def new_context(self, **kwargs):
@@ -280,7 +280,12 @@ def test_worker_retries_after_captcha_at_most_once(
         assert kwargs["timeout_seconds"] == 65
         return solver_succeeds
 
+    async def wait_for_result(_page):
+        observed["post_drag_wait"] += 1
+        return "challenge_still_visible_after_wait"
+
     sentinel = object()
+    monkeypatch.setattr(ranepa_worker, "wait_for_captcha_resolution", wait_for_result)
     monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
     monkeypatch.setattr(ranepa_worker, "read_month", read_captcha)
     monkeypatch.setattr(ranepa_worker, "solve_slider_captcha", solve)
@@ -304,6 +309,7 @@ def test_worker_retries_after_captcha_at_most_once(
     assert status == expected_status
     assert observed["solve"] == (1 if budget else 0)
     assert observed["month"] == expected_month_reads
+    assert observed["post_drag_wait"] == expected_month_reads - 1
     assert observed["close"] is True
     assert budget_tracker.remaining == (budget if dry_run or budget == 0 else budget - 1)
 

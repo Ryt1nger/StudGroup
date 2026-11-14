@@ -1,5 +1,6 @@
 """Read-only personal-cabinet browser port with one automatic re-login."""
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from urllib.parse import parse_qs, urljoin, urlsplit
@@ -58,6 +59,38 @@ async def _wait_visible_state(page) -> str:
             break
         await page.wait_for_timeout(250)
     return state
+
+
+async def wait_for_captcha_resolution(page, *, timeout_seconds: float = 6.0) -> str:
+    """Observe the same LK page after a submitted drag; do not resubmit.
+
+    A disappearance is only a candidate state change. The normal month/week
+    reader must still verify the identity and schedule before data is trusted.
+    Emit fixed stages only; never log page content or authorization data.
+    """
+    state = "captcha_required"
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            while True:
+                state = await _state(page)
+                if state == "rendered":
+                    return "challenge_page_changed_unverified"
+                if state == "login_required":
+                    return "challenge_login_visible_after_drag"
+                if state == "unexpected_redirect":
+                    return "challenge_redirect_after_drag"
+                if state not in {"captcha_required", "empty_page", "challenge_pending"}:
+                    return "challenge_other_state_after_drag"
+                await page.wait_for_timeout(250)
+    except TimeoutError:
+        return (
+            "challenge_still_visible_after_wait"
+            if state == "captcha_required"
+            else "challenge_unresolved_after_wait"
+        )
+    except Exception:  # noqa: BLE001
+        # Navigation can invalidate locators; do not emit exception details.
+        return "challenge_state_unavailable"
 
 
 async def _sign_in(page, login: str, password: str) -> str:
