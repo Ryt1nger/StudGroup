@@ -289,6 +289,7 @@ def test_worker_retries_after_captcha_at_most_once(
     monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
     monkeypatch.setattr(ranepa_worker, "read_month", read_captcha)
     monkeypatch.setattr(ranepa_worker, "solve_slider_captcha", solve)
+    monkeypatch.setattr(ranepa_worker, "solve_rotating_halves", solve)
     monkeypatch.delenv("RANEPA_PROXY_URL", raising=False)
     budget_tracker = ranepa_worker.CaptchaBudget(budget)
     status = asyncio.run(
