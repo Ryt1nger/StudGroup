@@ -39,9 +39,13 @@ def test_rucaptcha_is_opt_in_and_missing_key_is_only_a_warning(caplog, monkeypat
 def test_configured_solver_uses_rucaptcha_not_2captcha(monkeypatch):
     captured = {}
 
+    class FakeSolver:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.api_client = None
+
     def fake_solver(**kwargs):
-        captured.update(kwargs)
-        return object()
+        return FakeSolver(**kwargs)
 
     monkeypatch.setattr(ranepa_captcha, "AsyncTwoCaptcha", fake_solver)
     settings = Settings(
@@ -50,7 +54,9 @@ def test_configured_solver_uses_rucaptcha_not_2captcha(monkeypatch):
         captcha_api_key=SecretStr("super-secret-test-key"),
         ranepa_captcha_timeout_seconds=90,
     )
-    assert ranepa_captcha.configured_solver(settings) is not None
+    solver = ranepa_captcha.configured_solver(settings)
+    assert isinstance(solver.api_client, ranepa_captcha.TypedRotateApiClient)
+    assert solver.api_client.post_url == "rucaptcha.com"
     assert captured == {
         "apiKey": "super-secret-test-key",
         "server": "rucaptcha.com",
