@@ -33,6 +33,7 @@ from studgroup.ranepa_captcha import (
     solve_slider_captcha,
     warn_if_unconfigured,
 )
+from studgroup.ranepa_rotate import solve_rotating_halves
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
@@ -350,11 +351,19 @@ async def _collect(
                     log_captcha_stage(
                         "diagnostic_started" if captcha_diagnostic_only else "paid_attempt_started"
                     )
-                    submitted = await solve_slider_captcha(
-                        challenge_page,
-                        None if captcha_diagnostic_only else captcha_client,
-                        timeout_seconds=captcha_timeout_seconds,
-                    )
+                    # Free mode keeps the read-only native-thumb diagnostic.
+                    # Paid mode uses one multi-image RotateCaptcha task, NEVER
+                    # the old point-click Coordinates interpretation.
+                    if captcha_diagnostic_only:
+                        submitted = await solve_slider_captcha(
+                            challenge_page, None, timeout_seconds=captcha_timeout_seconds
+                        )
+                    else:
+                        submitted = await solve_rotating_halves(
+                            challenge_page,
+                            captcha_client,
+                            timeout_seconds=captcha_timeout_seconds,
+                        )
                     if submitted:
                         log_captcha_stage("motion_submitted_verification_pending")
                     elif not captcha_diagnostic_only:
