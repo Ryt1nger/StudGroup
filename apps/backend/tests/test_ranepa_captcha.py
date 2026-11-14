@@ -147,8 +147,9 @@ def test_cropped_challenge_sends_no_profile_and_drags_each_slider_once(monkeypat
                 assert len(kwargs["hintText"]) <= 140
                 return {"code": "coordinates:x=140,y=315;x=220,y=371"}
 
-        async def known_handles(_page, _boxes):
-            return [(125.0, 375.0), (125.0, 431.0)]
+        async def known_handles(_page, _boxes, *, only_index=None):
+            all_centers = [(125.0, 375.0), (125.0, 431.0)]
+            return all_centers if only_index is None else [all_centers[only_index]]
 
         monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         page = FakePage()
@@ -225,8 +226,9 @@ def test_invalid_positions_never_touch_one_shot_sliders(code, stage, caplog, mon
             async def coordinates(self, *_args, **_kwargs):
                 return {"code": code}
 
-        async def known_handles(_page, _boxes):
-            return [(125.0, 375.0), (125.0, 431.0)]
+        async def known_handles(_page, _boxes, *, only_index=None):
+            all_centers = [(125.0, 375.0), (125.0, 431.0)]
+            return all_centers if only_index is None else [all_centers[only_index]]
 
         monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         with caplog.at_level(logging.WARNING):
@@ -501,8 +503,9 @@ def test_track_annotation_rejects_wrong_screenshot_size_without_provider_contact
             async def coordinates(self, *_args, **_kwargs):
                 raise AssertionError("must not send unmatched capture")
 
-        async def known_handles(_page, _boxes):
-            return [(125.0, 375.0), (125.0, 431.0)]
+        async def known_handles(_page, _boxes, *, only_index=None):
+            all_centers = [(125.0, 375.0), (125.0, 431.0)]
+            return all_centers if only_index is None else [all_centers[only_index]]
 
         monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         with caplog.at_level(logging.WARNING):
@@ -1080,8 +1083,9 @@ def test_paid_adapter_distinguishes_dom_value_changes_without_extra_provider_cal
                 calls.append("provider")
                 return {"code": "coordinates:x=140,y=315;x=220,y=371"}
 
-        async def known_handles(_page, _boxes):
-            return [(125.0, 375.0), (125.0, 431.0)]
+        async def known_handles(_page, _boxes, *, only_index=None):
+            all_centers = [(125.0, 375.0), (125.0, 431.0)]
+            return all_centers if only_index is None else [all_centers[only_index]]
 
         monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", known_handles)
         with caplog.at_level(logging.WARNING):
@@ -1190,6 +1194,14 @@ def test_verified_explicit_handles_are_read_only_and_not_guessed():
         assert centers == [(118.0, 375.0), (129.0, 431.0)]
         assert calls == [0, 1]
         assert await ranepa_captcha._read_verified_handle_centers(Page(missing=True), boxes) is None
+        # The first handle may lock after its one allowed movement. The
+        # second handle must still be independently measurable.
+        assert await ranepa_captcha._read_verified_handle_centers(
+            Page(missing=True), boxes, only_index=0
+        ) == [(118.0, 375.0)]
+        assert await ranepa_captcha._read_verified_handle_centers(
+            Page(missing=True), boxes, only_index=1
+        ) is None
 
     asyncio.run(scenario())
 
@@ -1364,11 +1376,14 @@ def test_hover_geometry_change_aborts_before_first_press(monkeypatch, caplog):
         ]
         calls = {"centers": 0, "provider": 0, "hover": 0}
 
-        async def centers(_page, _boxes):
+        async def centers(_page, _boxes, *, only_index=None):
             calls["centers"] += 1
-            if calls["hover"]:
-                return [(140.0, 375.0), (125.0, 431.0)]
-            return [(125.0, 375.0), (125.0, 431.0)]
+            all_centers = (
+                [(140.0, 375.0), (125.0, 431.0)]
+                if calls["hover"]
+                else [(125.0, 375.0), (125.0, 431.0)]
+            )
+            return all_centers if only_index is None else [all_centers[only_index]]
 
         monkeypatch.setattr(ranepa_captcha, "_read_verified_handle_centers", centers)
 
