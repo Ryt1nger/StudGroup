@@ -9,12 +9,19 @@ No automatic retries, no recording images, no raw provider payload in logs.
 
 import asyncio
 import base64
+import logging
 from io import BytesIO
 
 import httpx
 from PIL import Image, ImageDraw
 
-from studgroup.ranepa_captcha_stages import log_captcha_stage
+LOGGER = logging.getLogger(__name__)
+
+
+def log_captcha_stage(stage: str) -> None:
+    """Log only fixed stage names, never payloads or credentials."""
+    LOGGER.warning("RANEPA_CAPTCHA_STAGE %s", stage)
+
 
 _API_BASE = "https://api.rucaptcha.com"
 _MAX_BODY = 600 * 1024
