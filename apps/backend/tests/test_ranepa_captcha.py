@@ -77,6 +77,17 @@ def test_pair_solver_is_opt_in_and_budget_reserves_two_tasks_atomically():
     solver = ranepa_captcha.configured_solver(settings)
     assert isinstance(solver, RuCaptchaV2Pair)
     assert solver.max_tasks == 2
+    assert solver.progressive_context is False
+    progressive_settings = Settings(
+        _env_file=None,
+        ranepa_captcha_enabled=True,
+        ranepa_captcha_v2_pair_enabled=True,
+        ranepa_captcha_v2_progressive_context_enabled=True,
+        captcha_api_key=SecretStr("dummy-test-key"),
+    )
+    progressive_solver = ranepa_captcha.configured_solver(progressive_settings)
+    assert isinstance(progressive_solver, RuCaptchaV2Pair)
+    assert progressive_solver.progressive_context is True
     assert ranepa_captcha.CaptchaBudget(1).claim_many(2) is False
     enough = ranepa_captcha.CaptchaBudget(2)
     assert enough.claim_many(2)
