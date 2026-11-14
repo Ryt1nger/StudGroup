@@ -20,7 +20,19 @@ from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
 
 from PIL import Image
-from twocaptcha.exceptions.solver import ApiException, NetworkException, ValidationException
+from twocaptcha.exceptions.api import (
+    ApiException as ClientApiException,
+)
+from twocaptcha.exceptions.api import (
+    NetworkException as ClientNetworkException,
+)
+from twocaptcha.exceptions.solver import (
+    ApiException as SolverApiException,
+)
+from twocaptcha.exceptions.solver import (
+    NetworkException as SolverNetworkException,
+)
+from twocaptcha.exceptions.solver import ValidationException
 
 from studgroup.ranepa_captcha import (
     _one_shot_motion_stage,
@@ -65,7 +77,7 @@ _SAFE_API_ERRORS = {
 
 def _provider_failure_stage(exc: Exception) -> str:
     """Return a safe fixed stage for a provider failure; never expose its text."""
-    if isinstance(exc, ApiException):
+    if isinstance(exc, (ClientApiException, SolverApiException)):
         # Check whole-word tokens only. A provider message is not trusted.
         message = str(exc)
         for code, label in _SAFE_API_ERRORS.items():
@@ -74,7 +86,7 @@ def _provider_failure_stage(exc: Exception) -> str:
         return "rotate_provider_api_other"
     if isinstance(exc, ValidationException):
         return "rotate_provider_sdk_validation"
-    if isinstance(exc, NetworkException):
+    if isinstance(exc, (ClientNetworkException, SolverNetworkException)):
         return "rotate_provider_network"
     if isinstance(exc, TypeError):
         return "rotate_provider_sdk_type_error"
