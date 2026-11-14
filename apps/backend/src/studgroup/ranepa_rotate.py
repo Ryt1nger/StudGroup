@@ -22,17 +22,13 @@ from urllib.parse import urlsplit
 from PIL import Image
 from twocaptcha.exceptions.api import (
     ApiException as ClientApiException,
-)
-from twocaptcha.exceptions.api import (
     NetworkException as ClientNetworkException,
 )
 from twocaptcha.exceptions.solver import (
     ApiException as SolverApiException,
-)
-from twocaptcha.exceptions.solver import (
     NetworkException as SolverNetworkException,
+    ValidationException,
 )
-from twocaptcha.exceptions.solver import ValidationException
 
 from studgroup.ranepa_captcha import (
     _one_shot_motion_stage,
