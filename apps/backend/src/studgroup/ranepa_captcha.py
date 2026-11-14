@@ -503,6 +503,77 @@ async def _read_live_range_values(page) -> tuple[tuple[float, float, float], ...
         return None
 
 
+async def _read_one_shot_range_state(page, index: int) -> dict | None:
+    """Observe one range and its picture motion without any pointer events."""
+    if index not in (0, 1):
+        return None
+    try:
+        controls = page.locator('input[type="range"]')
+        if await controls.count() != 2:
+            return None
+        data = await controls.nth(index).evaluate(
+            """(el) => {
+                const images = ['.img-left', '.img-right'].map(selector => {
+                    const img = el.ownerDocument.querySelector(selector);
+                    return img ? img.style.transform : null;
+                });
+                return {
+                    type: el.type,
+                    value: el.value,
+                    disabled: el.disabled,
+                    lockedClass: el.classList.contains('disable-sl'),
+                    imageRotations: images
+                };
+            }""",
+            timeout=1500,
+        )
+        if not isinstance(data, dict) or data.get("type") != "range":
+            return None
+        value = float(data["value"])
+        if not math.isfinite(value):
+            return None
+        disabled = data.get("disabled")
+        locked_class = data.get("lockedClass")
+        if not isinstance(disabled, bool) or not isinstance(locked_class, bool):
+            return None
+        rotations = data.get("imageRotations")
+        if not (
+            isinstance(rotations, list)
+            and len(rotations) == 2
+            and all(v is None or isinstance(v, str) for v in rotations)
+        ):
+            rotations = [None, None]
+        return {
+            "value": value,
+            "locked": disabled or locked_class,
+            "rotations": tuple(rotations),
+        }
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _one_shot_motion_stage(
+    index: int, before: dict | None, during: dict | None
+) -> str:
+    """Report evidence of motion *before mouse-up*; never expose angles."""
+    prefix = f"drag_{index + 1}_live"
+    if before is None or during is None:
+        return f"{prefix}_unavailable"
+    if not math.isclose(before["value"], during["value"], abs_tol=1e-9):
+        return f"{prefix}_value_changed"
+    if before["rotations"] != during["rotations"]:
+        return f"{prefix}_image_changed"
+    return f"{prefix}_unchanged"
+
+
+def _one_shot_release_stage(index: int, after: dict | None) -> str:
+    """Distinguish a consumed disabled control from one still enabled."""
+    prefix = f"drag_{index + 1}_release"
+    if after is None:
+        return f"{prefix}_unavailable"
+    return f"{prefix}_locked" if after["locked"] else f"{prefix}_enabled"
+
+
 def _post_drag_value_stage(
     before: tuple[tuple[float, float, float], ...] | None,
     after: tuple[tuple[float, float, float], ...] | None,
@@ -634,11 +705,17 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
             ):
                 log_captcha_stage("thumb_changed_on_hover_no_click")
                 return False
+            before_drag = await _read_one_shot_range_state(page, index)
             await page.mouse.down()
             try:
                 await page.mouse.move(end_x, y, steps=10)
+                # Read while held: StormWall can reset the value on mouse-up.
+                during_drag = await _read_one_shot_range_state(page, index)
+                log_captcha_stage(_one_shot_motion_stage(index, before_drag, during_drag))
             finally:
                 await page.mouse.up()
+            released = await _read_one_shot_range_state(page, index)
+            log_captcha_stage(_one_shot_release_stage(index, released))
         await page.wait_for_timeout(800)
         log_captcha_stage("drag_submitted")
         log_captcha_stage(
