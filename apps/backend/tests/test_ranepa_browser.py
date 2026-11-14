@@ -295,3 +295,89 @@ def test_sdo_transition_logs_in_to_moodle_and_keeps_stable_url():
     links, states, courses = asyncio.run(ranepa_browser.resolve_sdo_exits(context, result))
     assert links == {} and list(states.values()) == ["no_course_links"]
     assert list(courses.values()) == ["https://lms.ranepa.ru/course/view.php?id=85813"]
+
+
+def test_wait_for_captcha_resolution_observes_delayed_change_without_new_actions(monkeypatch):
+    async def scenario():
+        states = iter(["captcha_required", "challenge_pending", "rendered"])
+        observed = []
+
+        async def page_state(_page):
+            observed.append("read")
+            return next(states)
+
+        class Page:
+            async def wait_for_timeout(self, milliseconds):
+                assert milliseconds == 250
+                observed.append("wait")
+
+        monkeypatch.setattr(ranepa_browser, "_state", page_state)
+        result = await ranepa_browser.wait_for_captcha_resolution(Page(), timeout_seconds=1)
+        assert result == "challenge_page_changed_unverified"
+        assert observed == ["read", "wait", "read", "wait", "read"]
+
+    asyncio.run(scenario())
+
+
+def test_wait_for_captcha_resolution_times_out_without_resubmission(monkeypatch):
+    async def scenario():
+        observed = []
+
+        async def always_captcha(_page):
+            observed.append("read")
+            return "captcha_required"
+
+        class Page:
+            async def wait_for_timeout(self, milliseconds):
+                assert milliseconds == 250
+                observed.append("wait")
+                await asyncio.sleep(0.02)
+
+        monkeypatch.setattr(ranepa_browser, "_state", always_captcha)
+        result = await ranepa_browser.wait_for_captcha_resolution(Page(), timeout_seconds=0.035)
+        assert result == "challenge_still_visible_after_wait"
+        assert observed.count("read") >= 1
+        assert observed.count("wait") >= 1
+
+    asyncio.run(scenario())
+
+
+def test_wait_for_captcha_resolution_distinguishes_redirect_and_login(monkeypatch):
+    async def scenario():
+        async def verify(_page):
+            return "login_required"
+
+        class Page:
+            async def wait_for_timeout(self, _milliseconds):
+                raise AssertionError("must return as soon as state changes")
+
+        monkeypatch.setattr(ranepa_browser, "_state", verify)
+        assert (
+            await ranepa_browser.wait_for_captcha_resolution(Page())
+            == "challenge_login_visible_after_drag"
+        )
+
+        async def redirected(_page):
+            return "unexpected_redirect"
+
+        monkeypatch.setattr(ranepa_browser, "_state", redirected)
+        assert (
+            await ranepa_browser.wait_for_captcha_resolution(Page())
+            == "challenge_redirect_after_drag"
+        )
+
+    asyncio.run(scenario())
+
+
+def test_wait_for_captcha_resolution_does_not_expose_page_errors(monkeypatch):
+    async def scenario():
+        async def broken(_page):
+            raise ValueError("private session token")
+
+        monkeypatch.setattr(ranepa_browser, "_state", broken)
+        assert (
+            await ranepa_browser.wait_for_captcha_resolution(object())
+            == "challenge_state_unavailable"
+        )
+
+    asyncio.run(scenario())
