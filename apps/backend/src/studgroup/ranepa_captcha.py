@@ -328,6 +328,12 @@ def _slider_targets(
         ):
             log_captcha_stage(f"start_{index}_unverified")
             return None
+        # A native thumb's center travels between half a thumb width from
+        # either track edge. Reject unreachable targets before the first press.
+        half_thumb = start_x - box["x"]
+        if x < start_x - 2 or x > box["x"] + box["width"] - half_thumb + 2:
+            log_captcha_stage(f"target_{index}_outside_thumb_travel")
+            return None
         if abs(x - start_x) < 8:
             log_captcha_stage(f"target_{index}_zero_distance")
             return None
