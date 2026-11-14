@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
+from twocaptcha import AsyncTwoCaptcha
+from twocaptcha.exceptions.solver import ApiException, NetworkException, ValidationException
 
 from studgroup import ranepa_rotate
 
@@ -19,8 +21,9 @@ def _data_uri(color: str) -> str:
 
 def test_rotate_hint_fits_provider_textinstructions_limit():
     assert len(ranepa_rotate._HINT) <= 140
-    assert "лев" in ranepa_rotate._HINT
-    assert "прав" in ranepa_rotate._HINT
+    assert len(ranepa_rotate._HINT.encode("utf-8")) <= 140
+    assert "left" in ranepa_rotate._HINT.lower()
+    assert "right" in ranepa_rotate._HINT.lower()
 
 
 def test_rotate_provider_answer_contract_and_direction():
@@ -146,10 +149,8 @@ def test_rotation_pilot_one_provider_task_two_one_shot_drags_and_no_files_left(m
                 self.calls += 1
                 assert list(files) == ["left", "right"]
                 assert kwargs["angle"] == 5
-                assert (
-                    "половин" in kwargs["hintText"].lower()
-                    or "фрагмент" in kwargs["hintText"].lower()
-                )
+                assert "half" in kwargs["hintText"].lower()
+                assert len(kwargs["hintText"].encode("utf-8")) <= 140
                 for path in files.values():
                     file = Path(path)
                     assert file.exists()
@@ -264,5 +265,124 @@ def test_missing_half_or_unverified_css_does_not_spend_provider_or_click(monkeyp
         assert not await ranepa_rotate.solve_rotating_halves(Page(), Provider())
         monkeypatch.setattr(ranepa_rotate, "_read_verified_handle_centers", available_css)
         assert not await ranepa_rotate.solve_rotating_halves(Page(), Provider())
+
+    asyncio.run(scenario())
+
+
+
+def test_actual_sdk_builds_two_image_rotate_request_without_network(tmp_path, monkeypatch):
+    """Exercise real pinned SDK serialization, without any HTTP or billing."""
+    async def scenario():
+        left = tmp_path / "left.png"
+        right = tmp_path / "right.png"
+        left.write_bytes(ranepa_rotate._original_half_png(_data_uri("red")))
+        right.write_bytes(ranepa_rotate._original_half_png(_data_uri("blue")))
+        solver = AsyncTwoCaptcha(apiKey="0" * 32, server="rucaptcha.com")
+        calls = []
+
+        async def receive_upload(*, files, **params):
+            calls.append(("upload", dict(files), dict(params)))
+            assert list(files) == ["file_1", "file_2"]
+            assert [Path(p) for p in files.values()] == [left, right]
+            assert params["method"] == "rotatecaptcha"
+            assert params["angle"] == 5
+            assert params["textinstructions"] == ranepa_rotate._HINT
+            assert params["key"] == "0" * 32
+            return "OK|123456"
+
+        async def receive_answer(task_id, timeout, interval):
+            calls.append(("answer", task_id, timeout, interval))
+            assert task_id == "123456"
+            return "40|-180"
+
+        monkeypatch.setattr(solver.api_client, "in_", receive_upload)
+        monkeypatch.setattr(solver, "wait_result", receive_answer)
+        response = await solver.rotate(
+            {"left": str(left), "right": str(right)},
+            angle=5,
+            hintText=ranepa_rotate._HINT,
+        )
+        assert response == {"captchaId": "123456", "code": "40|-180"}
+        assert [call[0] for call in calls] == ["upload", "answer"]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (ApiException("cannot recognize response ERROR_BAD_PARAMETERS"),
+         "rotate_provider_api_bad_parameters"),
+        (ApiException("ERROR_UPLOAD_ROTATECAPTCHA"),
+         "rotate_provider_api_upload_rotate_failed"),
+        (ApiException("ERROR_ZERO_BALANCE"),
+         "rotate_provider_api_zero_balance"),
+        (ApiException("ERROR_WRONG_USER_KEY"),
+         "rotate_provider_api_key_format"),
+        (ApiException("secret=never-log-me"),
+         "rotate_provider_api_other"),
+        (ValidationException("secret=never-log-me"),
+         "rotate_provider_sdk_validation"),
+        (NetworkException("secret=never-log-me"),
+         "rotate_provider_network"),
+        (TypeError("secret=never-log-me"),
+         "rotate_provider_sdk_type_error"),
+        (OSError("secret=never-log-me"),
+         "rotate_provider_local_io"),
+        (RuntimeError("secret=never-log-me"),
+         "rotate_provider_unknown_error"),
+    ],
+)
+def test_provider_error_stage_is_fixed_and_never_reveals_payload(error, expected):
+    stage = ranepa_rotate._provider_failure_stage(error)
+    assert stage == expected
+    assert "never-log-me" not in stage
+    assert "secret=" not in stage
+
+
+def test_provider_exception_logs_only_safe_fixed_stages_before_any_click(monkeypatch, caplog):
+    async def scenario():
+        async def boxes(_page):
+            return [
+                {"x": 100, "y": 360, "width": 300, "height": 30},
+                {"x": 100, "y": 416, "width": 300, "height": 30},
+            ]
+
+        async def centers(_page, _boxes):
+            return [(130.0, 375.0), (130.0, 431.0)]
+
+        async def halves(_page):
+            return (b"dummy-left", b"dummy-right")
+
+        monkeypatch.setattr(ranepa_rotate, "_slider_boxes", boxes)
+        monkeypatch.setattr(ranepa_rotate, "_read_verified_handle_centers", centers)
+        monkeypatch.setattr(ranepa_rotate, "_read_original_halves", halves)
+
+        class NeverTouchMouse:
+            async def move(self, *args, **kwargs):
+                raise AssertionError("no movement before provider answer")
+
+            async def down(self):
+                raise AssertionError("no click before provider answer")
+
+            async def up(self):
+                raise AssertionError("no release before provider answer")
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = NeverTouchMouse()
+
+        class Provider:
+            async def rotate(self, *args, **kwargs):
+                raise ApiException(
+                    "cannot recognize response ERROR_BAD_PARAMETERS; secret=never-log-me"
+                )
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_rotate.solve_rotating_halves(Page(), Provider())
+        assert "rotate_provider_api_bad_parameters" in caplog.text
+        assert "rotate_provider_failed" in caplog.text
+        assert "never-log-me" not in caplog.text
+        assert "rotate_angles_mapped_without_click" not in caplog.text
 
     asyncio.run(scenario())
