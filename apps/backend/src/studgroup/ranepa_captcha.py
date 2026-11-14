@@ -473,7 +473,9 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
                 await page.mouse.up()
         await page.wait_for_timeout(800)
         log_captcha_stage("drag_submitted")
-        log_captcha_stage(_post_drag_value_stage(before_values, await _read_live_range_values(page)))
+        log_captcha_stage(
+            _post_drag_value_stage(before_values, await _read_live_range_values(page))
+        )
         return True
     except TimeoutError:
         # Do not report provider errors verbatim: SDK exceptions may embed keys.
