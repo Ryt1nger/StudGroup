@@ -7,7 +7,21 @@ from pathlib import Path
 import pytest
 from PIL import Image
 from twocaptcha import AsyncTwoCaptcha
-from twocaptcha.exceptions.solver import ApiException, NetworkException, ValidationException
+from twocaptcha.exceptions.api import (
+    ApiException as ClientApiException,
+)
+from twocaptcha.exceptions.api import (
+    NetworkException as ClientNetworkException,
+)
+from twocaptcha.exceptions.solver import (
+    ApiException as SolverApiException,
+)
+from twocaptcha.exceptions.solver import (
+    NetworkException as SolverNetworkException,
+)
+from twocaptcha.exceptions.solver import (
+    ValidationException,
+)
 
 from studgroup import ranepa_rotate
 
@@ -312,15 +326,20 @@ def test_actual_sdk_builds_two_image_rotate_request_without_network(tmp_path, mo
     ("error", "expected"),
     [
         (
-            ApiException("cannot recognize response ERROR_BAD_PARAMETERS"),
+            ClientApiException("cannot recognize response ERROR_BAD_PARAMETERS"),
             "rotate_provider_api_bad_parameters",
         ),
-        (ApiException("ERROR_UPLOAD_ROTATECAPTCHA"), "rotate_provider_api_upload_rotate_failed"),
-        (ApiException("ERROR_ZERO_BALANCE"), "rotate_provider_api_zero_balance"),
-        (ApiException("ERROR_WRONG_USER_KEY"), "rotate_provider_api_key_format"),
-        (ApiException("secret=never-log-me"), "rotate_provider_api_other"),
+        (
+            ClientApiException("ERROR_UPLOAD_ROTATECAPTCHA"),
+            "rotate_provider_api_upload_rotate_failed",
+        ),
+        (ClientApiException("ERROR_ZERO_BALANCE"), "rotate_provider_api_zero_balance"),
+        (ClientApiException("ERROR_WRONG_USER_KEY"), "rotate_provider_api_key_format"),
+        (ClientApiException("secret=never-log-me"), "rotate_provider_api_other"),
+        (SolverApiException("ERROR_BAD_PARAMETERS"), "rotate_provider_api_bad_parameters"),
+        (SolverNetworkException("secret=never-log-me"), "rotate_provider_network"),
         (ValidationException("secret=never-log-me"), "rotate_provider_sdk_validation"),
-        (NetworkException("secret=never-log-me"), "rotate_provider_network"),
+        (ClientNetworkException("secret=never-log-me"), "rotate_provider_network"),
         (TypeError("secret=never-log-me"), "rotate_provider_sdk_type_error"),
         (OSError("secret=never-log-me"), "rotate_provider_local_io"),
         (RuntimeError("secret=never-log-me"), "rotate_provider_unknown_error"),
@@ -331,6 +350,8 @@ def test_provider_error_stage_is_fixed_and_never_reveals_payload(error, expected
     assert stage == expected
     assert "never-log-me" not in stage
     assert "secret=" not in stage
+    assert ClientApiException is not SolverApiException
+    assert ClientNetworkException is not SolverNetworkException
 
 
 def test_provider_exception_logs_only_safe_fixed_stages_before_any_click(monkeypatch, caplog):
@@ -367,7 +388,7 @@ def test_provider_exception_logs_only_safe_fixed_stages_before_any_click(monkeyp
 
         class Provider:
             async def rotate(self, *args, **kwargs):
-                raise ApiException(
+                raise ClientApiException(
                     "cannot recognize response ERROR_BAD_PARAMETERS; secret=never-log-me"
                 )
 

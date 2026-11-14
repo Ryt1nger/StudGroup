@@ -495,6 +495,34 @@ approved single-account test before any wider action. A failure in the
 new provider stage requires reviewing that specific cause, not an
 automatic retry. Keep `RANEPA_CAPTCHA_MAX_TASKS_PER_RUN=1`.
 
+## SDK exception namespace audit (2026-11-14)
+
+The earlier paid run [#43592478380](https://github.com/Ryt1nger/StudGroup/actions/runs/43592478380)
+reported `rotate_provider_unknown_error` immediately after
+`rotate_provider_request_started`. Auditing the pinned `2captcha-python
+2.1.2` shows two distinct exception namespaces: the HTTP client
+`twocaptcha.async_api.AsyncApiClient` raises
+`twocaptcha.exceptions.api.ApiException/NetworkException`, while
+`AsyncTwoCaptcha` may separately raise
+`twocaptcha.exceptions.solver.ApiException/NetworkException`.
+The previous classifier recognized only the latter, making a real
+HTTP-level provider refusal look like an unclassified exception.
+
+The classifier now recognizes **both** namespaces, with offline regression
+tests for actual SDK exception classes and redacted fixed-stage logging.
+This repairs **diagnostics**, not the as-yet-unknown cause of provider
+rejection. No raw exception text, provider payload, key, image, or
+session data is logged. Do not infer an API error code or billing outcome
+from earlier runs.
+
+A separate SDK-source review confirmed that
+`AsyncTwoCaptcha.rotate({"left": path1, "right": path2})` takes the
+values of this dict and calls `extract_files()`, which renames them
+to **`file_1` and `file_2`** before reaching the multipart HTTP client.
+Thus changing `left/right` to `file_1/file_2` in the high-level call
+would not change the actual upload. The existing real-SDK offline test
+checks those exact form fields.
+
 ## Validation checklist
 
 - [x] Official `2captcha-python` SDK configured for `rucaptcha.com`; uv lock updated.
