@@ -457,6 +457,44 @@ Official API documentation:
 - https://rucaptcha.com/api-rucaptcha (RotateCaptcha API v1)
 - https://rucaptcha.com/api-docs/rotate (RotateTask API v2)
 
+## Paid RotateCaptcha request failed before an answer (2026-11-14)
+
+Manual pilot [#43590610809](https://github.com/Ryt1nger/StudGroup/actions/runs/43590610809)
+on `main` SHA `7e36370` successfully verified the two original image
+halves (`rotate_two_halves_validated_read_only`), then emitted
+`rotate_provider_request_started`, `rotate_provider_failed`,
+and `motion_not_submitted` **within one second**. No angles were
+received, no slider was pressed, and there is no evidence of CAPTCHA
+acceptance. The old `target_1_above_track` error was not encountered.
+
+**Important:** the original exception was deliberately hidden from logs,
+so the server/API/SDK failure class and charging outcome are **unknown**.
+Never claim the provider rejected a particular parameter or that a task
+was billed without evidence. Do **not** repeat this exact paid run.
+
+Follow-up changes:
+- The two-image RuCaptcha `AsyncTwoCaptcha.rotate(files_dict)` behavior
+  is checked using the real pinned `2captcha-python 2.1.2` SDK with a
+  mocked API client; no network calls or billing. Assert single
+  `rotatecaptcha` submission, exactly two file fields, correctly renamed
+  `textinstructions`, and strict two-angle response.
+- Keep the worker hint short and ASCII-only, within **140 UTF-8 bytes**,
+  to avoid encoding/byte-limit ambiguity in the legacy multipart API.
+- Provider failures now produce only a fixed, safe category such as
+  `rotate_provider_api_bad_parameters`,
+  `rotate_provider_api_upload_rotate_failed`,
+  `rotate_provider_api_zero_balance`,
+  `rotate_provider_network`, `rotate_provider_sdk_validation`,
+  or `rotate_provider_api_other`. **Never** log raw API responses,
+  tokens, paths, upload data, credentials, or exception messages.
+  The existing `rotate_provider_failed` stage remains for compatibility.
+
+**Next gate:** full CI must pass and this change must be merged to
+`main`. Diagnose the provider failure category on the next separately
+approved single-account test before any wider action. A failure in the
+new provider stage requires reviewing that specific cause, not an
+automatic retry. Keep `RANEPA_CAPTCHA_MAX_TASKS_PER_RUN=1`.
+
 ## Validation checklist
 
 - [x] Official `2captcha-python` SDK configured for `rucaptcha.com`; uv lock updated.

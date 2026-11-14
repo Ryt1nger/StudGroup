@@ -20,6 +20,7 @@ from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
 
 from PIL import Image
+from twocaptcha.exceptions.solver import ApiException, NetworkException, ValidationException
 
 from studgroup.ranepa_captcha import (
     _one_shot_motion_stage,
@@ -34,11 +35,52 @@ from studgroup.ranepa_captcha import (
 # Angle signs are meaningful: negative means counterclockwise.
 _ROTATE_PAIR = re.compile(r"(-?\d{1,3})\|(-?\d{1,3})")
 _IMAGE_DATA = re.compile(r"data:image/(?:webp|png|jpeg);base64,([A-Za-z0-9+/=]+)")
-# RuCaptcha's textinstructions/hintText is limited to 140 characters.
-_HINT = (
-    "Поверните обе половины круга до правильной ориентации. "
-    "Два угла: сначала левая, затем правая половина."
-)
+# The provider limits textinstructions to 140 characters. Use short ASCII
+# text as a defensive choice against byte-length checks in older API routes.
+_HINT = "Rotate both half-images upright. Two angles: left half first, right half second."
+
+
+# Only map fixed, documented RuCaptcha status codes. Never log arbitrary
+# exception text: an API/HTTP exception may include headers or request data.
+_SAFE_API_ERRORS = {
+    "ERROR_BAD_PARAMETERS": "bad_parameters",
+    "ERROR_NO_SUCH_METHOD": "unsupported_method",
+    "ERROR_ROTATECAPTCHA": "missing_rotate_file",
+    "ERROR_UPLOAD_ROTATECAPTCHA": "upload_rotate_failed",
+    "ERROR_UPLOAD": "upload_failed",
+    "ERROR_WRONG_TEXTINSTRUCTIONS": "bad_instructions",
+    "ERROR_ZERO_CAPTCHA_FILESIZE": "empty_image",
+    "ERROR_TOO_BIG_CAPTCHA_FILESIZE": "image_too_large",
+    "ERROR_WRONG_FILE_EXTENSION": "bad_image_extension",
+    "ERROR_WRONG_ROTATECAPTCHA_EXTENSION": "bad_rotate_extension",
+    "ERROR_IMAGE_TYPE_NOT_SUPPORTED": "unsupported_image",
+    "ERROR_ZERO_BALANCE": "zero_balance",
+    "ERROR_NO_SLOT_AVAILABLE": "no_worker_slot",
+    "ERROR_KEY_DOES_NOT_EXIST": "key_not_found",
+    "ERROR_WRONG_USER_KEY": "key_format",
+    "ERROR_IP_NOT_ALLOWED": "ip_not_allowed",
+    "ERROR_CAPTCHA_UNSOLVABLE": "unsolvable",
+}
+
+
+def _provider_failure_stage(exc: Exception) -> str:
+    """Return a safe fixed stage for a provider failure; never expose its text."""
+    if isinstance(exc, ApiException):
+        # Check whole-word tokens only. A provider message is not trusted.
+        message = str(exc)
+        for code, label in _SAFE_API_ERRORS.items():
+            if re.search(rf"(?<![A-Z0-9_]){code}(?![A-Z0-9_])", message):
+                return f"rotate_provider_api_{label}"
+        return "rotate_provider_api_other"
+    if isinstance(exc, ValidationException):
+        return "rotate_provider_sdk_validation"
+    if isinstance(exc, NetworkException):
+        return "rotate_provider_network"
+    if isinstance(exc, TypeError):
+        return "rotate_provider_sdk_type_error"
+    if isinstance(exc, (OSError, ValueError)):
+        return "rotate_provider_local_io"
+    return "rotate_provider_unknown_error"
 
 
 def decode_rotation_angles(answer) -> tuple[int, int] | None:
@@ -232,7 +274,9 @@ async def solve_rotating_halves(page, client, *, timeout_seconds: int = 110) -> 
         log_captcha_stage(
             "rotate_provider_timeout" if phase == "provider" else "rotate_inspection_timeout"
         )
-    except Exception:  # noqa: BLE001
-        # Provider exceptions may contain API payloads or URLs; never log them.
+    except Exception as exc:  # noqa: BLE001
+        # Neither API exception messages nor provider payloads may enter logs.
+        if phase == "provider":
+            log_captcha_stage(_provider_failure_stage(exc))
         log_captcha_stage(f"rotate_{phase}_failed")
     return False
