@@ -13,7 +13,7 @@ import httpx
 import pytest
 from PIL import Image, ImageDraw
 
-from studgroup import ranepa_rotate_v2
+from studgroup import ranepa_rotate, ranepa_rotate_v2
 from studgroup.ranepa_rotate_v2 import RotateV2Error, RuCaptchaV2Pair
 
 
@@ -223,5 +223,62 @@ def test_legacy_shared_context_mode_is_unchanged(monkeypatch):
         assert result == (90, 90)
         assert len(contexts) == 2
         assert contexts[0] == contexts[1]
+
+    asyncio.run(scenario())
+
+
+def test_live_page_recheck_blocks_second_job_before_any_click(monkeypatch, caplog):
+    async def scenario():
+        monkeypatch.setattr(ranepa_rotate_v2, "_POLL_SECONDS", 0)
+        left, right = _asset("left"), _asset("right")
+        seen = []
+        boxes = [
+            {"x": 100, "y": 360, "width": 300, "height": 30},
+            {"x": 100, "y": 416, "width": 300, "height": 30},
+        ]
+
+        async def slider_boxes(_page):
+            return boxes
+
+        async def centers(_page, _boxes, *, only_index=None):
+            assert only_index is None  # No one-shot drag has started.
+            return [(130.0, 375.0), (130.0, 431.0)]
+
+        images = [(left, right), (left, _asset("left"))]
+
+        async def image_halves(_page):
+            return images.pop(0)
+
+        monkeypatch.setattr(ranepa_rotate, "_slider_boxes", slider_boxes)
+        monkeypatch.setattr(ranepa_rotate, "_read_verified_handle_centers", centers)
+        monkeypatch.setattr(ranepa_rotate, "_read_original_halves", image_halves)
+
+        class NoMouse:
+            async def move(self, *args, **kwargs):
+                raise AssertionError("no movement when CAPTCHA expires")
+
+            async def down(self):
+                raise AssertionError("no click when CAPTCHA expires")
+
+            async def up(self):
+                raise AssertionError("no release when CAPTCHA expires")
+
+        class Page:
+            url = "https://my.ranepa.ru/lk/student/schedule"
+            mouse = NoMouse()
+
+        def handler(request):
+            seen.append(request.url.path)
+            if request.url.path == "/createTask":
+                return httpx.Response(200, json={"errorId": 0, "taskId": 4242})
+            return httpx.Response(
+                200, json={"errorId": 0, "status": "ready", "solution": {"rotate": 90}}
+            )
+
+        with caplog.at_level(logging.WARNING):
+            assert not await ranepa_rotate.solve_rotating_halves(Page(), _client(handler))
+        assert seen == ["/createTask", "/getTaskResult"]
+        assert "rotate_v2_challenge_changed" in caplog.text
+        assert "rotate_drags_submitted_verification_pending" not in caplog.text
 
     asyncio.run(scenario())
