@@ -523,6 +523,52 @@ Thus changing `left/right` to `file_1/file_2` in the high-level call
 would not change the actual upload. The existing real-SDK offline test
 checks those exact form fields.
 
+## RuCaptcha returned ERROR_ZERO_CAPTCHA_FILESIZE (2026-11-14)
+
+The approved [run #43595657157](https://github.com/Ryt1nger/StudGroup/actions/runs/43595657157)
+on `main` `cf7582c` verified both challenge halves, reached
+`rotate_provider_request_started`, then received RuCaptcha's
+`ERROR_ZERO_CAPTCHA_FILESIZE` (`rotate_provider_api_empty_image`).
+No angles were returned and **no mouse presses were made**. RuCaptcha
+defines this error as an image shorter than 100 bytes; it does **not**
+prove which part of the HTTP request was interpreted as empty.
+
+A byte-level review of the pinned `2captcha-python 2.1.2` async API
+client showed that it reads the two PNG paths into bare byte strings and
+passes them to `httpx.post(files=...)`. HTTPX serializes such parts
+with the generic filename `upload` and type
+`application/octet-stream`, not the original `.png` filenames.
+The SDK does correctly rename the multipart field names to `file_1`
+and `file_2`. We verified the actual MIME headers offline; the
+incorrect file metadata is a **plausible**, not yet confirmed, cause
+of the provider's missing-image response.
+
+To remove that ambiguity without changing SDK polling, the approved
+solver now uses `TypedRotateApiClient`, a **rotate-only upload
+transport**. It:
+
+- Rejects any unexpected upload method, destination host, number/order
+  of file fields, file type or image data before making a request
+- Checks each actual converted PNG is at least **100 bytes** and no
+  larger than **600 KiB**, has a valid PNG signature and decode, is
+  square within the previously confirmed range, and is not wholly
+  transparent
+- Sends one `multipart/form-data` request to `rucaptcha.com/in.php`
+  with exactly `file_1` and `file_2` parts, explicit
+  `filename="left.png"/"right.png"` and `Content-Type: image/png`
+- Keeps standard `AsyncTwoCaptcha.send/solve/wait_result` for the
+  task ID, polling and signed-angle response; does not retry,
+  store files or log API payloads, image contents, session or secrets
+
+**No-network checks:** tests capture the **actual HTTPX multipart body**
+with `httpx.MockTransport` and assert the complete image bytes,
+filenames, MIME headers, one POST and unchanged signed-angle result.
+They also check all invalid image cases fail before the network.
+The initial live failure must not be declared fixed until the provider
+accepts a separately approved task; do not repeat blind paid runs.
+As before, a provider answer alone is not successful StormWall
+verification: LK month/week and group must still be read.
+
 ## Validation checklist
 
 - [x] Official `2captcha-python` SDK configured for `rucaptcha.com`; uv lock updated.
