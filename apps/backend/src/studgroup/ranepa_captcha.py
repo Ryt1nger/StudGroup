@@ -370,7 +370,7 @@ async def _read_live_range_values(page) -> tuple[tuple[float, float, float], ...
                 return None
             result.append((minimum, maximum, value))
         return tuple(result)
-    except (Exception,):  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         # This may be a navigation or a disappearing challenge. Do not leak
         # Playwright exception strings, DOM, values, URLs, or session state.
         return None
