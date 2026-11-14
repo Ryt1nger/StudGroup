@@ -182,7 +182,7 @@ def _annotate_slider_tracks(image: bytes, boxes: list[dict], clip: dict) -> byte
 
 
 async def _read_verified_handle_centers(
-    page, boxes: list[dict]
+    page, boxes: list[dict], *, only_index: int | None = None
 ) -> list[tuple[float, float]] | None:
     """Find exactly two visible, unoccluded explicit handle elements, without clicking.
 
@@ -194,8 +194,12 @@ async def _read_verified_handle_centers(
         inputs = page.locator('input[type="range"]')
         if len(boxes) != 2 or await inputs.count() != 2:
             return None
+        if only_index is not None and only_index not in (0, 1):
+            return None
         centers = []
-        for index, box in enumerate(boxes):
+        selected = (0, 1) if only_index is None else (only_index,)
+        for index in selected:
+            box = boxes[index]
             sample = await inputs.nth(index).evaluate(
                 """(el) => {
                     if (!el.isConnected || el.type !== 'range' || el.disabled) return null;
@@ -585,21 +589,21 @@ async def solve_slider_captcha(page, client, *, timeout_seconds: int = 110) -> b
         for index, (start_x, end_x, y) in enumerate(targets):
             # Guard the second one-shot press as well; the first drag may cause
             # the challenge to reset or change before it is safe to continue.
-            current = await _read_verified_handle_centers(page, boxes)
+            current = await _read_verified_handle_centers(page, boxes, only_index=index)
             if (
                 current is None
-                or abs(current[index][0] - start_x) > 2
-                or abs(current[index][1] - y) > 2
+                or abs(current[0][0] - start_x) > 2
+                or abs(current[0][1] - y) > 2
             ):
                 log_captcha_stage("thumb_changed_before_press_no_click")
                 return False
             await page.mouse.move(start_x, y)
             # Hovering can change a one-shot control. Recheck without pressing.
-            hovered = await _read_verified_handle_centers(page, boxes)
+            hovered = await _read_verified_handle_centers(page, boxes, only_index=index)
             if (
                 hovered is None
-                or abs(hovered[index][0] - start_x) > 2
-                or abs(hovered[index][1] - y) > 2
+                or abs(hovered[0][0] - start_x) > 2
+                or abs(hovered[0][1] - y) > 2
             ):
                 log_captcha_stage("thumb_changed_on_hover_no_click")
                 return False
