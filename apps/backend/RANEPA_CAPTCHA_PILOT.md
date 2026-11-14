@@ -433,6 +433,16 @@ read-only diagnostic path and legacy unit coverage). It:
    then the existing SDO path. A `rotate_drags_submitted_verification_pending`
    stage **does not** mean the challenge passed.
 
+**Free preflight:** In `diagnostic_only=true`, the worker now adds
+`diagnostic_rotate_halves_available` or
+`diagnostic_rotate_halves_unavailable` after the original free control/CSS
+diagnostics. This checks that both original data-URI images are readable,
+decode safely and can be converted to two PNGs **before** any paid run.
+It does not transmit those images, touch a slider, or create an artifact.
+Do not start a paid pilot unless **both**
+`diagnostic_native_thumb_css_verified` and
+`diagnostic_rotate_halves_available` appear on the current `main` SHA.
+
 **Limitations and go/no-go:** A provider's ability to return two angles
 does not establish that a human can correctly orient two **masked half
 images** or that the angles correspond exactly to the LK slider values.
