@@ -20,7 +20,12 @@ on:
           - mock
           - rucaptcha
       confirm_paid:
-        description: "I approve at most two paid RuCaptcha RotateTask jobs for this synthetic fixture"
+        description: "I approve 2 paid jobs, or up to 5 if retry_wrong_angles is also checked"
+        type: boolean
+        required: true
+        default: false
+      retry_wrong_angles:
+        description: "Allow at most THREE EXTRA paid RotateTask submissions for WRONG angles (5 total)"
         type: boolean
         required: true
         default: false
@@ -63,26 +68,32 @@ jobs:
         if: github.event_name == 'push' || inputs.provider == 'mock'
         env:
           PROGRESSIVE: ${{ github.event_name == 'push' || inputs.progressive_context }}
+          RETRY: ${{ inputs.retry_wrong_angles }}
         run: |
           mkdir -p fixture-output
-          if [ "$PROGRESSIVE" = "true" ]; then
-            uv run python -m studgroup.ranepa_captcha_fixture --provider mock --progressive-context --screenshot fixture-output/mock.png
-          else
-            uv run python -m studgroup.ranepa_captcha_fixture --provider mock --screenshot fixture-output/mock.png
+          args=(--provider mock --screenshot fixture-output/mock.png)
+          if [ "$PROGRESSIVE" = "true" ]; then args+=(--progressive-context); fi
+          if [ "$RETRY" = "true" ]; then
+            args+=(--max-resends 3 --mock-wrong-first-side right)
           fi
-      - name: Run RuCaptcha v2 on synthetic fixture (up to two paid jobs)
+          uv run python -m studgroup.ranepa_captcha_fixture "${args[@]}"
+      - name: Free browser smoke with one wrong worker answer and bounded retry
+        if: github.event_name == 'push'
+        run: |
+          uv run python -m studgroup.ranepa_captcha_fixture --provider mock --progressive-context --max-resends 3 --mock-wrong-first-side right --screenshot fixture-output/mock-retry.png
+      - name: Run RuCaptcha v2 on synthetic fixture (2 jobs, or up to 5 with explicit retry opt-in)
         if: inputs.provider == 'rucaptcha' && inputs.confirm_paid == true
         env:
           CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
           PROGRESSIVE: ${{ inputs.progressive_context }}
+          RETRY: ${{ inputs.retry_wrong_angles }}
         run: |
           test -n "$CAPTCHA_API_KEY" || { echo "RUCAPTCHA_API_KEY secret missing"; exit 1; }
           mkdir -p fixture-output
-          if [ "$PROGRESSIVE" = "true" ]; then
-            uv run python -m studgroup.ranepa_captcha_fixture --provider rucaptcha --allow-paid --progressive-context --screenshot fixture-output/rucaptcha.png
-          else
-            uv run python -m studgroup.ranepa_captcha_fixture --provider rucaptcha --allow-paid --screenshot fixture-output/rucaptcha.png
-          fi
+          args=(--provider rucaptcha --allow-paid --screenshot fixture-output/rucaptcha.png)
+          if [ "$PROGRESSIVE" = "true" ]; then args+=(--progressive-context); fi
+          if [ "$RETRY" = "true" ]; then args+=(--allow-extra-paid --max-resends 3); fi
+          uv run python -m studgroup.ranepa_captcha_fixture "${args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
