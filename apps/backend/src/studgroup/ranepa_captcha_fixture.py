@@ -178,7 +178,10 @@ def fixture_diagnosis(
 
     if not submitted or angles is None:
         return "solver_incomplete"
-    if any(not aligned(actual, expected) for actual, expected in zip(angles, _EXPECTED_ANGLES, strict=True)):
+    if any(
+        not aligned(actual, expected)
+        for actual, expected in zip(angles, _EXPECTED_ANGLES, strict=True)
+    ):
         return "provider_angle_mismatch"
     if len(values) != 2 or any(
         not aligned(value, angle) for value, angle in zip(values, angles, strict=True)
