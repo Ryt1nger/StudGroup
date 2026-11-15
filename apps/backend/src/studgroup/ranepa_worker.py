@@ -566,11 +566,11 @@ async def _collect(
                         links, link_states, courses = await resolve_sdo_exits(
                             context, result, login, password
                         )
-                    if trace is not None:
-                        trace.record("sdo_exits_finished")
                     sdo_captcha_unresolved = "captcha_required" in link_states.values()
-                    if sdo_captcha_unresolved and trace is not None and not trace.captcha_seen:
-                        trace.mark_captcha("sdo")
+                    if trace is not None:
+                        if sdo_captcha_unresolved and not trace.captcha_seen:
+                            trace.mark_captcha("sdo")
+                        trace.record("sdo_exits_finished")
                     async with AsyncSession(engine) as db:
                         await remember_personal(
                             db,
