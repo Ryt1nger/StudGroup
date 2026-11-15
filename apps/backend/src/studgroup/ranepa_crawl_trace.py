@@ -66,7 +66,7 @@ class CrawlTrace:
         if step not in STEPS:
             raise ValueError("unsafe_crawl_trace_step")
         if len(self.events) >= MAX_EVENTS:
-            return
+            self.events.pop(0)
         milliseconds = max(0, int((self._clock() - self._start) * 1000))
         self.events.append({"step": step, "elapsed_ms": milliseconds})
 
@@ -76,9 +76,7 @@ class CrawlTrace:
         if not self.captcha_seen:
             self.captcha_seen = True
             self.captcha_location = location
-            self.preceding_step = (
-                self.events[-1]["step"] if self.events else None
-            )
+            self.preceding_step = self.events[-1]["step"] if self.events else None
         self.record("captcha_" + location)
 
     def observation(self, *, job_id, attempt: int, failure_code: str | None):
