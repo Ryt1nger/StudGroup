@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
-from studgroup.models import Group, Membership, MemberSubgroup, UserProfile
+from studgroup.models import Group, Membership, MemberSubgroup, User, UserProfile
 from studgroup.ranepa_browser import (
     read_month,
     read_week,
@@ -41,6 +41,7 @@ from studgroup.ranepa_crawl_guard import (
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_notifications import (
     CrawlRunStats,
+    notify_account_crawl_result,
     notify_captcha_detected,
     notify_successful_crawl,
 )
@@ -210,7 +211,31 @@ async def process_one(
         if trace is not None:
             trace.record("job_claimed")
         group = await db.get(Group, group_id)
+        student = await db.get(User, user_id)
         profile = await db.get(UserProfile, user_id)
+
+        async def notify_finalized_attempt(failure_code: str | None) -> None:
+            if not settings.ranepa_crawl_notify_account_results_enabled:
+                return
+            try:
+                queued = await notify_account_crawl_result(
+                    engine,
+                    owner_id=settings.bot_admin_user_id,
+                    job_id=job_id,
+                    attempt=attempt,
+                    user_id=user_id,
+                    group_code=group.academic_group_code if group is not None else None,
+                    student_name=student.display_name if student is not None else None,
+                    failure_code=failure_code,
+                    stats=account_stats,
+                )
+            except Exception:  # noqa: BLE001
+                # Alerts must never change the committed account outcome.
+                log_captcha_stage("owner_account_notice_unavailable")
+            else:
+                if queued:
+                    log_captcha_stage("owner_account_notice_queued")
+
         if (
             group is None
             or profile is None
@@ -239,6 +264,8 @@ async def process_one(
             await db.commit()
             if finished and run_stats is not None:
                 run_stats.failed_accounts += 1
+            if finished:
+                await notify_finalized_attempt("login_failed")
             return "failed"
         code = group.academic_group_code
         credential_id = profile.sdu_credential_id
@@ -374,6 +401,7 @@ async def process_one(
             account_stats.failed_accounts = 1
         if run_stats is not None:
             run_stats.add(account_stats)
+        await notify_finalized_attempt(failure)
     if pilot_group_id is not None:
         # The value is chosen exclusively from known crawl failure categories.
         known_failures = {
