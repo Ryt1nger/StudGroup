@@ -175,9 +175,8 @@ def incident_text(row, event="opened", sent_at=None):
                 "объедините совпадающие задания вручную."
             )
         else:
-            header += (
-                "\nРанее обнаруженная проблема: "
-                + INCIDENT_LABELS.get(row.code, "Произошла ошибка обработки.")
+            header += "\nРанее обнаруженная проблема: " + INCIDENT_LABELS.get(
+                row.code, "Произошла ошибка обработки."
             )
     else:
         header += (
