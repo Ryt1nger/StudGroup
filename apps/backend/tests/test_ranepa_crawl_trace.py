@@ -70,9 +70,7 @@ def test_crawl_trace_is_persisted_per_job_attempt_without_credentials(tmp_path):
                 db.add_all([group, user])
                 await db.flush()
                 db.add(
-                    Membership(
-                        group_id=group.id, user_id=user.id, role="student", status="active"
-                    )
+                    Membership(group_id=group.id, user_id=user.id, role="student", status="active")
                 )
                 week = date(2026, 11, 9)
                 await enqueue_week(db, week, [CrawlCandidate(group.id, user.id)])
