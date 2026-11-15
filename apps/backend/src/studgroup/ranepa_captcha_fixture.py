@@ -183,14 +183,8 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
         self.resends_used = 0
         self.tasks_submitted = 0
 
-        if self.max_resends == 0:
-            # Preserve the original behaviour when retry spending is off.
-            result = await super().solve_pair(
-                halves, timeout_seconds=timeout_seconds, before_second=before_second
-            )
-            self.last_angles = result
-            self.tasks_submitted = 2
-            return result
+        # Even with zero retries, reject a known-wrong synthetic answer
+        # before consuming one-shot thumbs. This does not apply in production.
 
         if not isinstance(halves, tuple) or len(halves) != 2:
             raise RotateV2Error("image_invalid")
