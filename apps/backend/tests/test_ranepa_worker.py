@@ -759,7 +759,6 @@ def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
     assert trace.preceding_step == "sdo_exits_requested"
 
 
-
 def test_owner_discovery_is_private_unique_and_fail_closed(tmp_path):
     async def scenario():
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/owner-lookup.db")
