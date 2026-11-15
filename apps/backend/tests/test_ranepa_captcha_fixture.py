@@ -49,6 +49,7 @@ def test_fixture_exercises_actual_v2_client_without_api_cost(monkeypatch, progre
 
         angles = await solver.solve_pair(halves, before_second=before_second)
         assert angles == (90, 180)
+        assert solver.last_angles == (90, 180)
         assert calls == 1
 
     asyncio.run(scenario())
@@ -86,3 +87,25 @@ def test_fixture_mock_api_never_sees_private_data(monkeypatch):
     # Synthetic images only: a randomly generated real credential is not
     # needed and no external network transport is configured.
     assert not any(b"student" in png for png in halves)
+
+
+@pytest.mark.parametrize(
+    ("submitted", "angles", "values", "status", "expected"),
+    [
+        (True, (90, 180), [90.0, 180.0], "accepted", "accepted"),
+        (True, (90, 90), [90.0, 90.0], "rejected", "provider_angle_mismatch"),
+        (True, (90, 180), [90.0, 90.0], "rejected", "browser_drag_mismatch"),
+        (True, (90, 180), [90.0, 180.0], "rejected", "local_verifier_rejected"),
+        (False, None, [0.0, 0.0], "pending", "solver_incomplete"),
+        (True, (-270, -180), [90.0, 180.0], "accepted", "accepted"),
+    ],
+)
+def test_fixture_diagnosis_distinguishes_provider_and_drag(
+    submitted, angles, values, status, expected
+):
+    assert (
+        ranepa_captcha_fixture.fixture_diagnosis(
+            submitted=submitted, angles=angles, values=values, status=status
+        )
+        == expected
+    )
