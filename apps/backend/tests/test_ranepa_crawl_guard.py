@@ -246,6 +246,33 @@ def test_paused_guard_does_not_claim_existing_fair_queue_job(tmp_path):
                 assert jobs[0].state == "queued"
                 assert jobs[0].attempts == 0
                 assert jobs[0].priority == 0
+            # A manual pilot must not bypass the pause without owner approval.
+            assert (
+                await process_one(
+                    engine, settings, datetime.now(UTC).date(),
+                    pilot_group_id=group.id, pilot_user_id=user.id,
+                )
+                == "paused"
+            )
+            async with AsyncSession(engine) as db:
+                assert await request_recovery(db)
+                await db.commit()
+            # The one authorized pilot fails its account preflight; the
+            # circuit must stay paused and the authorization is consumed.
+            assert (
+                await process_one(
+                    engine, settings, datetime.now(UTC).date(),
+                    pilot_group_id=group.id, pilot_user_id=user.id,
+                )
+                == "failed"
+            )
+            async with AsyncSession(engine) as db:
+                guard = await load_guard(db)
+                assert guard.paused and not guard.recovery_requested
+                jobs = (await db.scalars(select(RanepaCrawlJob))).all()
+                assert jobs[0].attempts == 1
+                assert jobs[0].state == "failed"
+                await db.commit()
         finally:
             await engine.dispose()
 
