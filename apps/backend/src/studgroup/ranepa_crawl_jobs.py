@@ -3,7 +3,8 @@
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.orm import aliased
 
 from studgroup.models import Group, Membership, RanepaCrawlJob
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
@@ -50,6 +51,13 @@ async def enqueue_week(
             or not group.academic_group_code
         ):
             continue
+        # A student's 24-hour cooldown spans group memberships and week boundaries.
+        # finished_at remains on a refreshed job until its next completion.
+        last_completed_at = await db.scalar(
+            select(func.max(RanepaCrawlJob.finished_at)).where(
+                RanepaCrawlJob.user_id == candidate.user_id
+            )
+        )
         existing = await db.scalar(
             select(RanepaCrawlJob).where(
                 RanepaCrawlJob.group_id == candidate.group_id,
@@ -63,12 +71,13 @@ async def enqueue_week(
             # reset an already queued or currently running job.
             if existing.state in {"succeeded", "failed"} and (
                 force_refresh
-                or (existing.finished_at is not None and existing.finished_at <= now - REFRESH)
+                or (last_completed_at is not None and last_completed_at <= now - REFRESH)
             ):
                 existing.state = "queued"
                 existing.priority = priority
                 existing.failure_code = None
-                existing.finished_at = None
+                # Keep the completion timestamp as a durable not-before time.
+                # claim_next rechecks the latest finish across all weeks.
             continue
         db.add(
             RanepaCrawlJob(
@@ -80,6 +89,7 @@ async def enqueue_week(
                 state="queued",
                 attempts=0,
                 created_at=now,
+                finished_at=last_completed_at,
             )
         )
         created += 1
@@ -112,11 +122,37 @@ async def claim_next(db, now=None, *, group_id=None, user_id=None):
     if stale is not None:
         stale.state = "queued"
         stale.claimed_at = None
+    # Filter not-yet-due accounts IN the DB query, not after claiming the
+    # first row; one cooling down must never block another eligible account.
+    # A second membership or next week's job cannot bypass the 24-hour clock.
+    completed = aliased(RanepaCrawlJob)
+    running = aliased(RanepaCrawlJob)
+    due = []
+    if group_id is None:
+        due.append(
+            ~select(completed.id)
+            .where(
+                completed.user_id == RanepaCrawlJob.user_id,
+                completed.finished_at > now - REFRESH,
+            )
+            .exists()
+        )
+    due.append(
+        ~select(running.id)
+        .where(
+            running.user_id == RanepaCrawlJob.user_id,
+            running.id != RanepaCrawlJob.id,
+            running.state == "running",
+            running.claimed_at >= now - LEASE,
+        )
+        .exists()
+    )
     job = await db.scalar(
         select(RanepaCrawlJob)
         .where(
             RanepaCrawlJob.state == "queued",
             *scope,
+            *due,
         )
         .order_by(
             RanepaCrawlJob.week_start.desc(),
