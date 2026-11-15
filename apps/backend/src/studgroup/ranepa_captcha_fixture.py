@@ -230,11 +230,13 @@ async def run_fixture(*, provider: str, allow_paid: bool, progressive_context: b
                 screenshot.parent.mkdir(parents=True, exist_ok=True)
                 await page.screenshot(path=str(screenshot))
             accepted = submitted and state["status"] == "accepted"
-            if seen is not None:
-                if (seen["created"] != 2 or seen["answered"] != 2
-                    or len(seen["contexts"]) != 2
-                    or (seen["contexts"][0] != seen["contexts"][1]) != progressive_context):
-                    raise AssertionError("fixture_mock_two_task_contract_failed")
+            if seen is not None and (
+                seen["created"] != 2
+                or seen["answered"] != 2
+                or len(seen["contexts"]) != 2
+                or (seen["contexts"][0] != seen["contexts"][1]) != progressive_context
+            ):
+                raise AssertionError("fixture_mock_two_task_contract_failed")
             print("RANEPA_FIXTURE_PROVIDER " + provider)
             print("RANEPA_FIXTURE_RESULT " + ("accepted" if accepted else "rejected"))
             return accepted
@@ -255,7 +257,7 @@ def main() -> int:
             progressive_context=args.progressive_context,
             screenshot=args.screenshot,
         ))
-    except Exception as exc:
+    except Exception:  # noqa: BLE001
         # Never log HTTP errors or exceptions in paid mode: they may expose
         # provider metadata or secrets. A fixed error code is sufficient.
         print("RANEPA_FIXTURE_RESULT internal_failure")
