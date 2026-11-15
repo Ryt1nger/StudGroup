@@ -29,7 +29,8 @@ def upgrade():
     op.create_table(
         "ranepa_crawl_observations",
         sa.Column(
-            "job_id", sa.Uuid(),
+            "job_id",
+            sa.Uuid(),
             sa.ForeignKey("ranepa_crawl_jobs.id", ondelete="CASCADE"),
             primary_key=True,
         ),
