@@ -13,6 +13,7 @@ from studgroup.ranepa_crawl_guard import (
     load_guard,
     record_crawl_outcome,
     request_recovery,
+    reserve_daily_paid_tasks,
 )
 
 
@@ -152,6 +153,98 @@ def test_owner_recovery_cannot_clear_pause_without_successful_single_pilot(tmp_p
             async with AsyncSession(engine) as db:
                 state = await load_guard(db)
                 assert state.paused and state.recovery_requested
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+
+def test_paid_budget_is_shared_across_separate_runner_shifts(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/paid.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            assert await reserve_daily_paid_tasks(engine, count=2, daily_limit=6)
+            assert await reserve_daily_paid_tasks(engine, count=2, daily_limit=6)
+            assert await reserve_daily_paid_tasks(engine, count=2, daily_limit=6)
+            assert not await reserve_daily_paid_tasks(engine, count=2, daily_limit=6)
+            assert not await reserve_daily_paid_tasks(engine, count=1, daily_limit=6)
+            async with AsyncSession(engine) as db:
+                state = await load_guard(db)
+                assert state.paid_day == datetime.now(UTC).date()
+                assert state.paid_tasks_reserved == 6
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_paid_budget_invalid_reservations_never_charge(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/rejected.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            for bad_count in (0, -1, 3, True):
+                assert not await reserve_daily_paid_tasks(
+                    engine, count=bad_count, daily_limit=6
+                )
+            for bad_limit in (0, -1, True):
+                assert not await reserve_daily_paid_tasks(
+                    engine, count=2, daily_limit=bad_limit
+                )
+            async with AsyncSession(engine) as db:
+                assert (await db.scalars(select(RanepaCrawlGuard))).all() == []
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_paused_guard_does_not_claim_existing_fair_queue_job(tmp_path):
+    from studgroup.main import Settings
+    from studgroup.models import Group, Membership, RanepaCrawlJob, User
+    from studgroup.ranepa_crawl_jobs import enqueue_week
+    from studgroup.ranepa_crawl_plan import CrawlCandidate
+    from studgroup.ranepa_worker import process_one
+
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/queue.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            group = Group(
+                id=uuid4(), telegram_chat_id=-32001, name="Queued",
+                academic_group_code="Q-001", timezone="Europe/Moscow",
+            )
+            user = User(id=uuid4(), telegram_user_id=32001, display_name="Student")
+            async with AsyncSession(engine) as db:
+                db.add_all([group, user])
+                await db.flush()
+                db.add(
+                    Membership(
+                        group_id=group.id, user_id=user.id,
+                        role="student", status="active",
+                    )
+                )
+                await enqueue_week(
+                    db, datetime(2026, 11, 9, tzinfo=UTC).date(),
+                    [CrawlCandidate(group.id, user.id)],
+                )
+                guard = await load_guard(db)
+                guard.paused = True
+                guard.consecutive_captcha = 4
+                await db.commit()
+            settings = Settings(_env_file=None, ranepa_captcha_guard_enabled=True)
+            assert await process_one(engine, settings, datetime.now(UTC).date()) == "paused"
+            async with AsyncSession(engine) as db:
+                jobs = (await db.scalars(select(RanepaCrawlJob))).all()
+                assert len(jobs) == 1
+                assert jobs[0].state == "queued"
+                assert jobs[0].attempts == 0
+                assert jobs[0].priority == 0
         finally:
             await engine.dispose()
 
