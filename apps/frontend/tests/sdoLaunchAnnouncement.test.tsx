@@ -38,26 +38,33 @@ describe('one-time SDO launch announcement', () => {
     expect(await screen.findByRole('heading', { name: 'Подключить СДО' })).toBeInTheDocument();
   });
 
-  it('never claims or shows the announcement to an already connected user', async () => {
+  it('does not show for a connected non-admin when the server denies the claim', async () => {
     useScenario();
     const profile = demoProfile();
     profile.sdu.password_set = true;
     let claims = 0;
-    let profileReads = 0;
     server.use(
-      http.get(`${API}/profile`, () => {
-        profileReads += 1;
-        return HttpResponse.json(profile);
-      }),
+      http.get(`${API}/profile`, () => HttpResponse.json(profile)),
       http.post(`${API}/sdo-launch-prompt/claim`, () => {
         claims += 1;
-        return HttpResponse.json({ show: true });
+        return HttpResponse.json({ show: false });
       }),
     );
     renderApp();
-    await waitFor(() => expect(profileReads).toBeGreaterThan(0));
+    await waitFor(() => expect(claims).toBe(1));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(claims).toBe(0);
+  });
+
+  it('shows for a connected admin when the server grants the first-visit claim', async () => {
+    useScenario();
+    const profile = demoProfile();
+    profile.sdu.password_set = true;
+    server.use(
+      http.get(`${API}/profile`, () => HttpResponse.json(profile)),
+      http.post(`${API}/sdo-launch-prompt/claim`, () => HttpResponse.json({ show: true })),
+    );
+    renderApp();
+    expect(await screen.findByRole('dialog', { name: 'Расписание и СДО — в StudGroup' })).toBeInTheDocument();
   });
 
   it('does not show before rollout when server returns show=false', async () => {
