@@ -35,6 +35,19 @@ Run workflow on `main`. Choose:
 - `progressive_context=true` (default): use the first answer to
   virtually align the left half in the second task's `imgInstructions`.
 
+**After a paid run:** the isolated fixture now reports test-only
+`RANEPA_FIXTURE_PROVIDER_ANGLES`, `RANEPA_FIXTURE_SLIDER_VALUES`,
+`RANEPA_FIXTURE_EXPECTED_ANGLES` and `RANEPA_FIXTURE_DIAGNOSIS`.
+The result distinguishes `provider_angle_mismatch` (the two answers do
+not match the known synthetic orientation), `browser_drag_mismatch`
+(the returned angles were correct, but native inputs ended at different
+values), `local_verifier_rejected` and `solver_incomplete`.
+This instrumentation does NOT run on student accounts or real StormWall
+images. A prior paid run that ended in `rejected` without these fields
+cannot retrospectively reveal which angle was returned: the saved
+screenshot is useful but does not establish the exact provider response.
+Do not automatically repeat paid runs just to diagnose an earlier failure.
+
 The Python entry point is `python -m studgroup.ranepa_captcha_fixture`.
 It prints `RANEPA_FIXTURE_RESULT accepted` only when the production
 drag solver submitted both movements AND the local simulated verifier
