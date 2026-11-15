@@ -142,8 +142,7 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 rows = (await db.scalars(select(BotOutbox).order_by(BotOutbox.dedup_key))).all()
                 assert len(rows) == 3
                 notices = {
-                    int(row.dedup_key.rsplit(":", 1)[1]): json.loads(row.payload)
-                    for row in rows
+                    int(row.dedup_key.rsplit(":", 1)[1]): json.loads(row.payload) for row in rows
                 }
                 assert all(notice["chat_id"] == 915 for notice in notices.values())
                 assert "✅ StudGroup · данные СДО извлечены" in notices[1]["text"]
