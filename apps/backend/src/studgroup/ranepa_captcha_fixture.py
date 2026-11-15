@@ -149,6 +149,46 @@ def fixture_html(halves: tuple[bytes, bytes]) -> str:
     )
 
 
+class ObservedFixtureV2Pair(RuCaptchaV2Pair):
+    """Keep synthetic-only solver angles for fixture diagnosis.
+
+    This subclass is never used by the live RANEPA worker. It preserves
+    RuCaptchaV2Pair type checks and the production before_second guard.
+    """
+
+    last_angles: tuple[int, int] | None = None
+
+    async def solve_pair(
+        self, halves: tuple[bytes, bytes], *, timeout_seconds: int = 110, before_second=None
+    ) -> tuple[int, int]:
+        result = await super().solve_pair(
+            halves, timeout_seconds=timeout_seconds, before_second=before_second
+        )
+        self.last_angles = result
+        return result
+
+
+def fixture_diagnosis(
+    *, submitted: bool, angles: tuple[int, int] | None, values: list[float], status: str
+) -> str:
+    """Distinguish provider-answer error from incorrect browser movement."""
+
+    def aligned(value: float, reference: float) -> bool:
+        return abs((value - reference + 180) % 360 - 180) <= 8
+
+    if not submitted or angles is None:
+        return "solver_incomplete"
+    if any(not aligned(actual, expected) for actual, expected in zip(angles, _EXPECTED_ANGLES, strict=True)):
+        return "provider_angle_mismatch"
+    if len(values) != 2 or any(
+        not aligned(value, angle) for value, angle in zip(values, angles, strict=True)
+    ):
+        return "browser_drag_mismatch"
+    if status != "accepted":
+        return "local_verifier_rejected"
+    return "accepted"
+
+
 def mock_rucaptcha(halves: tuple[bytes, bytes], *, progressive_context: bool):
     """Actual RuCaptchaV2Pair client against a strictly local HTTPX fake API."""
     seen = {"created": 0, "answered": 0, "contexts": []}
@@ -187,7 +227,7 @@ def mock_rucaptcha(halves: tuple[bytes, bytes], *, progressive_context: bool):
     def factory(**kwargs):
         return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
 
-    return RuCaptchaV2Pair(
+    return ObservedFixtureV2Pair(
         "local-mock-only",
         client_factory=factory,
         progressive_context=progressive_context,
@@ -205,7 +245,7 @@ async def run_fixture(
         key = os.getenv("CAPTCHA_API_KEY", "").strip()
         if not key:
             raise ValueError("paid_fixture_requires_CAPTCHA_API_KEY")
-        solver = RuCaptchaV2Pair(key, progressive_context=progressive_context)
+        solver = ObservedFixtureV2Pair(key, progressive_context=progressive_context)
         seen = None
     else:
         halves = make_halves()
@@ -246,6 +286,28 @@ async def run_fixture(
                 or (seen["contexts"][0] != seen["contexts"][1]) != progressive_context
             ):
                 raise AssertionError("fixture_mock_two_task_contract_failed")
+            diagnosis = fixture_diagnosis(
+                submitted=submitted,
+                angles=solver.last_angles,
+                values=state["values"],
+                status=state["status"],
+            )
+            # These angles and values describe synthetic art ONLY. They are
+            # safe for fixture logs and never originate from student data.
+            if solver.last_angles is not None:
+                print(
+                    "RANEPA_FIXTURE_PROVIDER_ANGLES "
+                    f"left={solver.last_angles[0]} right={solver.last_angles[1]}"
+                )
+            print(
+                "RANEPA_FIXTURE_SLIDER_VALUES "
+                f"left={state['values'][0]} right={state['values'][1]}"
+            )
+            print(
+                "RANEPA_FIXTURE_EXPECTED_ANGLES "
+                f"left={_EXPECTED_ANGLES[0]} right={_EXPECTED_ANGLES[1]}"
+            )
+            print("RANEPA_FIXTURE_DIAGNOSIS " + diagnosis)
             print("RANEPA_FIXTURE_PROVIDER " + provider)
             print("RANEPA_FIXTURE_RESULT " + ("accepted" if accepted else "rejected"))
             return accepted
