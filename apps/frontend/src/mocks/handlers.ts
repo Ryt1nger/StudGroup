@@ -90,6 +90,8 @@ export function createHandlers(baseUrl: string, scenario: Scenario = 'populated'
       terms: false, service: false, sdo: false,
     })),
     http.get(url('/profile'), () => HttpResponse.json(profile)),
+    // The announcement defaults off until migration + operator launch.
+    http.post(url('/sdo-launch-prompt/claim'), () => HttpResponse.json({ show: false })),
     http.patch(url('/profile'), async ({ request }) => {
       profile = applyProfilePatch(profile, (await request.json()) as Record<string, unknown>);
       return HttpResponse.json(profile);
