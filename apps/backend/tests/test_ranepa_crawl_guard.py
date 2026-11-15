@@ -65,7 +65,7 @@ def test_four_consecutive_unresolved_captchas_pause_across_sessions(tmp_path):
                 await db.commit()
             async with AsyncSession(engine) as db:
                 assert len((await db.scalars(select(BotOutbox))).all()) == 4
-                assert not await request_recovery(db) is False
+                assert await request_recovery(db)
                 await db.commit()
             async with AsyncSession(engine) as db:
                 state = await load_guard(db)
