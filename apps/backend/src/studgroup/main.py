@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     ranepa_captcha_guard_enabled: bool = False
     # Privacy-safe event codes only: no URLs, HTML, credentials or cookies.
     ranepa_crawl_telemetry_enabled: bool = False
+    ranepa_crawl_notify_success_enabled: bool = False
+    ranepa_crawl_notify_captcha_seen_enabled: bool = False
     # Stage encrypted browser-state reuse separately from the legacy crawler.
     ranepa_session_reuse_enabled: bool = False
     # Explicitly opt-in to paid RuCaptcha challenges; disabled by default.
