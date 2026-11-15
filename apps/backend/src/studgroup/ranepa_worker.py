@@ -20,7 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
-from studgroup.models import BotPanel, Group, Membership, MemberSubgroup, RanepaCrawlJob, User, UserProfile
+from studgroup.models import (
+    BotPanel,
+    Group,
+    Membership,
+    MemberSubgroup,
+    RanepaCrawlJob,
+    User,
+    UserProfile,
+)
 from studgroup.ranepa_browser import (
     read_month,
     read_week,
