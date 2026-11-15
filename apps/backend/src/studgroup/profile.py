@@ -300,7 +300,18 @@ async def claim_sdo_launch_prompt(
     feature defaults OFF until migration 0062 and production launch.
     """
     user, _ = await current(db, authorization)
-    if not request.app.state.settings.sdo_launch_prompt_enabled:
+    settings = request.app.state.settings
+    # Only a server-configured owner/admin may preview the announcement or
+    # see it despite saved credentials. Never trust a client-supplied role flag.
+    admin_ids = (settings.bot_admin_user_id, settings.owner_telegram_user_id)
+    is_admin = (
+        type(user.telegram_user_id) is int
+        and user.telegram_user_id > 0
+        and user.telegram_user_id in admin_ids
+    )
+    if not settings.sdo_launch_prompt_enabled and not (
+        is_admin and settings.sdo_launch_prompt_admin_preview_enabled
+    ):
         return {"show": False}
     from studgroup.api import active_membership
 
@@ -310,9 +321,11 @@ async def claim_sdo_launch_prompt(
     await db.execute(select(User.id).where(User.id == user.id).with_for_update())
     row = await db.get(UserProfile, user.id, populate_existing=True)
     if row and (
-        row.sdu_credential_id is not None
-        or row.sdu_password_encrypted is not None
-        or row.sdo_launch_prompt_seen_at is not None
+        row.sdo_launch_prompt_seen_at is not None
+        or (
+            not is_admin
+            and (row.sdu_credential_id is not None or row.sdu_password_encrypted is not None)
+        )
     ):
         return {"show": False}
     now = datetime.now(UTC)
