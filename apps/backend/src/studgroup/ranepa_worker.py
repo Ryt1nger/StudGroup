@@ -274,6 +274,10 @@ async def process_one(
                     configured_solver(settings)
                     if available_budget.remaining > 0
                     and not settings.ranepa_captcha_diagnostic_only
+                    and (
+                        pilot_group_id is not None
+                        or settings.ranepa_captcha_daily_max_tasks > 0
+                    )
                     else None
                 ),
                 captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,
