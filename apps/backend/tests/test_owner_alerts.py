@@ -271,6 +271,8 @@ def test_error_alerts_stop_after_the_circuit_failure_threshold_then_recovery_is_
 
 
 def test_duplicate_card_incident_is_russian_and_recovery_does_not_claim_merge():
+    from datetime import UTC, datetime, timedelta
+
     from studgroup.worker import incident_text
 
     now = datetime(2026, 11, 15, 13, 0, tzinfo=UTC)
