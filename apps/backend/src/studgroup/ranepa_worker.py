@@ -749,7 +749,9 @@ async def _collect(
                         trace.record("week_verified")
                         trace.record("sdo_exits_requested")
                     exit_kwargs = {}
-                    if (captcha_client is not None and not captcha_attempted) or manual_captcha is not None:
+                    if (
+                        captcha_client is not None and not captcha_attempted
+                    ) or manual_captcha is not None:
 
                         async def solve_sdo_with_owner_fallback(challenge_page):
                             submitted = await solve_once(challenge_page)
