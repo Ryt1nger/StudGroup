@@ -17,9 +17,12 @@ def upgrade():
         sa.Column("paused", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("recovery_requested", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("last_job_id", sa.Uuid(), nullable=True),
+        sa.Column("paid_day", sa.Date(), nullable=True),
+        sa.Column("paid_tasks_reserved", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("id = 1", name="ck_ranepa_crawl_guard_singleton"),
         sa.CheckConstraint("consecutive_captcha >= 0", name="ck_ranepa_crawl_guard_nonnegative"),
+        sa.CheckConstraint("paid_tasks_reserved >= 0", name="ck_ranepa_crawl_guard_paid_nonnegative"),
     )
     if op.get_bind().dialect.name == "postgresql":
         op.execute("ALTER TABLE ranepa_crawl_guard ENABLE ROW LEVEL SECURITY")
