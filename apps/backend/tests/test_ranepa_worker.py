@@ -88,12 +88,25 @@ def test_collection_passes_proxy_to_browser_context(monkeypatch, proxy_url, expe
     monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
     monkeypatch.setattr(ranepa_worker, "read_month", captcha)
 
+    noticed = []
+
+    async def on_captcha(location):
+        noticed.append(location)
+
     status = asyncio.run(
         ranepa_worker._collect(
-            None, uuid4(), uuid4(), "A-001", "student", "secret", date(2026, 11, 12)
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "student",
+            "secret",
+            date(2026, 11, 12),
+            on_captcha=on_captcha,
         )
     )
     assert status == "captcha"
+    assert noticed == ["month"]
     assert captured["launch"] == {"headless": True}
     assert captured["context"] == {
         "storage_state": None,
@@ -214,6 +227,9 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
     monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
     monkeypatch.delenv("RANEPA_PROXY_URL", raising=False)
 
+    from studgroup.ranepa_crawl_notifications import CrawlRunStats
+
+    stats = CrawlRunStats()
     result = asyncio.run(
         ranepa_worker._collect(
             None,
@@ -225,9 +241,13 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
             date(2026, 11, 12),
             storage_state=previous_state,
             persist_session=persist,
+            stats=stats,
         )
     )
     assert result is None
+    assert stats.saved_weeks == 6
+    assert stats.saved_lessons == 0
+    assert stats.saved_sdo_links == 0
     assert captured["contexts"][0]["storage_state"] == previous_state
     assert captured["logins"] == ([("student", "password")] if expired else [])
     assert captured["saved"] == ([refreshed_state] if expired else [])
