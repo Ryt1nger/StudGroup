@@ -339,7 +339,15 @@ def test_sdo_exit_records_captcha_even_without_paid_solver():
         WeekSnapshot("A-001", date(2026, 11, 16), date(2026, 11, 22), (lesson,)),
         ("https://my.ranepa.ru/moodle_out.php?id=1",),
     )
-    links, states, courses = asyncio.run(ranepa_browser.resolve_sdo_exits(Context(), result))
+    noticed = []
+
+    async def on_captcha(location):
+        noticed.append(location)
+
+    links, states, courses = asyncio.run(
+        ranepa_browser.resolve_sdo_exits(Context(), result, on_captcha=on_captcha)
+    )
+    assert noticed == ["sdo"]
     assert links == {}
     assert courses == {}
     assert list(states.values()) == ["captcha_required"]
