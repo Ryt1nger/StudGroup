@@ -1,6 +1,8 @@
 name: RANEPA paced crawl
 
-# Scheduled runs use only the default branch. Never run this with PR code.
+# Owner-approved scheduled launch: default-branch only, serial, fail-closed
+# on legal/credential/Telegram preflight. No student is accessed without consent.
+# Scheduled paid RuCaptcha remains behind its separate explicit opt-in.
 on:
   schedule:
     - cron: "13,43 * * * *"
@@ -41,7 +43,7 @@ jobs:
   crawl:
     if: >-
       github.ref == 'refs/heads/main' &&
-      ((github.event_name == 'schedule' && vars.RANEPA_CRAWL_PILOT_ENABLED == 'true') ||
+      ((github.event_name == 'schedule') ||
       (github.event_name == 'workflow_dispatch' && inputs.pilot_group_id != '' && inputs.pilot_user_id != ''))
     runs-on: ubuntu-latest
     timeout-minutes: 29
@@ -64,11 +66,11 @@ jobs:
       BOT_ADMIN_USER_ID: ${{ secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID || secrets.BOT_ADMIN_USER_ID || vars.BOT_ADMIN_USER_ID }}
       # Requires migration 0061 and the same production PostgreSQL database.
       # Pilot tests cannot trigger a global scheduled queue pause.
-      RANEPA_CAPTCHA_GUARD_ENABLED: ${{ vars.RANEPA_CAPTCHA_GUARD_ENABLED == 'true' }}
-      RANEPA_CRAWL_TELEMETRY_ENABLED: ${{ vars.RANEPA_CRAWL_TELEMETRY_ENABLED == 'true' }}
+      RANEPA_CAPTCHA_GUARD_ENABLED: ${{ github.event_name == 'schedule' || vars.RANEPA_CAPTCHA_GUARD_ENABLED == 'true' }}
+      RANEPA_CRAWL_TELEMETRY_ENABLED: ${{ github.event_name == 'schedule' || vars.RANEPA_CRAWL_TELEMETRY_ENABLED == 'true' }}
       # Notifications are owner-only and sent through the backend BotOutbox.
-      RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED: ${{ secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
-      RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED: ${{ secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
+      RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED: ${{ github.event_name == 'schedule' || secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
+      RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED: ${{ github.event_name == 'schedule' || secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
       # Paid CAPTCHA solving is available only for a manually selected pilot.
       # Never enable it for scheduled multi-account queue shifts.
       CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
