@@ -211,9 +211,7 @@ async def process_one(
             or not settings.ranepa_access_approved
             or not await has_consent(db, user_id, "sdo", settings)
         ):
-            finished = await finish(
-                db, job_id, group_id, user_id, failure_code="login_failed"
-            )
+            finished = await finish(db, job_id, group_id, user_id, failure_code="login_failed")
             if finished and settings.ranepa_captcha_guard_enabled:
                 await record_crawl_outcome(
                     db,
@@ -300,10 +298,7 @@ async def process_one(
                     configured_solver(settings)
                     if available_budget.remaining > 0
                     and not settings.ranepa_captcha_diagnostic_only
-                    and (
-                        pilot_group_id is not None
-                        or settings.ranepa_captcha_daily_max_tasks > 0
-                    )
+                    and (pilot_group_id is not None or settings.ranepa_captcha_daily_max_tasks > 0)
                     else None
                 ),
                 captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,
@@ -312,8 +307,7 @@ async def process_one(
                     settings.ranepa_captcha_diagnostic_only and pilot_group_id is not None
                 ),
                 captcha_daily_limit=(
-                    settings.ranepa_captcha_daily_max_tasks
-                    if pilot_group_id is None else 0
+                    settings.ranepa_captcha_daily_max_tasks if pilot_group_id is None else 0
                 ),
                 trace=trace,
             )
@@ -638,7 +632,9 @@ async def run_forever(settings: Settings):
             try:
                 await asyncio.wait_for(
                     stop.wait(),
-                    timeout=300 if status in {"idle", "paused"} else settings.ranepa_crawl_pause_seconds,
+                    timeout=300
+                    if status in {"idle", "paused"}
+                    else settings.ranepa_crawl_pause_seconds,
                 )
             except TimeoutError:
                 pass
