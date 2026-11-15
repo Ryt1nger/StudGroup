@@ -128,6 +128,25 @@ class RanepaCrawlGuard(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+
+class RanepaCrawlObservation(Base):
+    """One bounded private-free source-activity trace for an account attempt."""
+
+    __tablename__ = "ranepa_crawl_observations"
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ranepa_crawl_jobs.id", ondelete="CASCADE"), primary_key=True
+    )
+    attempt: Mapped[int] = mapped_column(Integer, primary_key=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    result_code: Mapped[str] = mapped_column(String(48))
+    captcha_seen: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    captcha_location: Mapped[str | None] = mapped_column(String(16))
+    preceding_step: Mapped[str | None] = mapped_column(String(48))
+    session_available: Mapped[bool] = mapped_column(Boolean, default=False)
+    elapsed_ms: Mapped[int] = mapped_column(Integer)
+    events_json: Mapped[str] = mapped_column(Text)
+
+
 class RanepaPersonalSnapshot(Base):
     """Last complete personal week, owned by one active group member."""
 
