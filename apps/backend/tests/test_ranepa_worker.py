@@ -17,6 +17,7 @@ from studgroup.legal import VERSION, document_hash
 from studgroup.main import Settings
 from studgroup.models import (
     Base,
+    BotPanel,
     Group,
     LegalConsentEvent,
     Membership,
@@ -756,3 +757,49 @@ def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
     assert trace.captcha_seen
     assert trace.captcha_location == "sdo"
     assert trace.preceding_step == "sdo_exits_requested"
+
+
+
+def test_owner_discovery_is_private_unique_and_fail_closed(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/owner-lookup.db")
+        settings = Settings(
+            _env_file=None,
+            bot_admin_user_id=None,
+            ranepa_captcha_guard_enabled=True,
+            ranepa_crawl_notify_account_results_enabled=True,
+        )
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            with pytest.raises(RuntimeError, match="ranepa_unique_owner_recipient_required"):
+                await ranepa_worker.ensure_owner_for_crawl(engine, settings)
+
+            async with AsyncSession(engine) as db:
+                owner = User(id=uuid4(), telegram_user_id=95001, display_name="Owner")
+                db.add_all([owner, BotPanel(chat_id=95001, mode="admin")])
+                await db.commit()
+            await ranepa_worker.ensure_owner_for_crawl(engine, settings)
+            assert settings.bot_admin_user_id == 95001
+
+            settings.bot_admin_user_id = None
+            async with AsyncSession(engine) as db:
+                other = User(id=uuid4(), telegram_user_id=95002, display_name="Other")
+                db.add_all([other, BotPanel(chat_id=95002, mode="admin")])
+                await db.commit()
+            with pytest.raises(RuntimeError, match="ranepa_unique_owner_recipient_required"):
+                await ranepa_worker.ensure_owner_for_crawl(engine, settings)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_configured_owner_avoids_lookup_when_authorized():
+    settings = Settings(
+        _env_file=None,
+        bot_admin_user_id=95003,
+        ranepa_captcha_guard_enabled=True,
+    )
+    asyncio.run(ranepa_worker.ensure_owner_for_crawl(None, settings))
+    assert settings.bot_admin_user_id == 95003
