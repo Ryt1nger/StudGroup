@@ -1078,6 +1078,7 @@ async def _periodic_delivery_job(engine, interval, task):
 async def delivery_loop(engine, settings, *, workers=1):
     from studgroup.headman_digest import tick as digest_tick
     from studgroup.owner_updates import tick as owner_tick
+    from studgroup.ranepa_manual_captcha import cleanup_expired_captcha_artwork
 
     async def send_owner_updates(db_engine):
         await owner_tick(db_engine, settings)
@@ -1101,5 +1102,6 @@ async def delivery_loop(engine, settings, *, workers=1):
         async with asyncio.TaskGroup() as tasks:
             tasks.create_task(_periodic_delivery_job(engine, 5, send_owner_updates))
             tasks.create_task(_periodic_delivery_job(engine, 30, digest_tick))
+            tasks.create_task(_periodic_delivery_job(engine, 300, cleanup_expired_captcha_artwork))
             for _ in range(max(1, min(3, workers))):
                 tasks.create_task(drain())
