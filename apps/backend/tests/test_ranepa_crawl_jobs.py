@@ -385,6 +385,17 @@ def test_24_hour_cooldown_skips_account_at_week_boundary(tmp_path):
                     await claim_next(db, now=monday + timedelta(hours=24) - timedelta(seconds=1))
                     is None
                 )
+                # Every scheduled batch refreshes completed jobs before claiming.
+                # At exactly 24 h the second account is requeued without delay.
+                assert (
+                    await enqueue_week(
+                        db,
+                        date(2026, 11, 9),
+                        [early_candidate, new_candidate],
+                        now=monday + timedelta(hours=24),
+                    )
+                    == 0
+                )
                 next_due = await claim_next(db, now=monday + timedelta(hours=24))
                 assert next_due is not None and next_due.user_id == new.id
         finally:
