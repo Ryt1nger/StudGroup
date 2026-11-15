@@ -66,6 +66,9 @@ jobs:
       # Pilot tests cannot trigger a global scheduled queue pause.
       RANEPA_CAPTCHA_GUARD_ENABLED: ${{ vars.RANEPA_CAPTCHA_GUARD_ENABLED == 'true' }}
       RANEPA_CRAWL_TELEMETRY_ENABLED: ${{ vars.RANEPA_CRAWL_TELEMETRY_ENABLED == 'true' }}
+      # Notifications are owner-only and sent through the backend BotOutbox.
+      RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED: ${{ vars.RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED == 'true' }}
+      RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED: ${{ vars.RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED == 'true' }}
       # Paid CAPTCHA solving is available only for a manually selected pilot.
       # Never enable it for scheduled multi-account queue shifts.
       CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
