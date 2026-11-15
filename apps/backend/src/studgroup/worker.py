@@ -163,41 +163,41 @@ def incident_text(row, event="opened", sent_at=None):
     if row.code == "ai_request_uncertain" and event != "recovered":
         title = "один запрос AI требует проверки"
     opened_label = "Время старой записи" if row.legacy else "Возникла"
-    header = f"StudGroup: {title} №{row.id:06d}\\n{opened_label}: {stamp(row.opened_at)}"
+    header = f"StudGroup: {title} №{row.id:06d}\n{opened_label}: {stamp(row.opened_at)}"
     if event == "recovered":
-        header += f"\\nВосстановление: {stamp(row.recovered_at)}"
+        header += f"\nВосстановление: {stamp(row.recovered_at)}"
         if row.code == "possible_duplicate_cards":
             header += (
-                "\\nЧто произошло: новые подозрительные совпадения перестали появляться "
+                "\nЧто произошло: новые подозрительные совпадения перестали появляться "
                 "в течение контрольного периода. Это не означает, что ранее найденные "
                 "похожие карточки были автоматически исправлены или объединены."
-                "\\nЧто проверить: откройте активные карточки и при необходимости "
+                "\nЧто проверить: откройте активные карточки и при необходимости "
                 "объедините совпадающие задания вручную."
             )
         else:
             header += (
-                "\\nРанее обнаруженная проблема: "
+                "\nРанее обнаруженная проблема: "
                 + INCIDENT_LABELS.get(row.code, "Произошла ошибка обработки.")
             )
     else:
         header += (
-            "\\n" + paused_explanation(row.first_detail)
+            "\n" + paused_explanation(row.first_detail)
             if row.code == "ai_processing_paused"
-            else "\\n" + uncertain_explanation(row.first_detail)
+            else "\n" + uncertain_explanation(row.first_detail)
             if row.code == "ai_request_uncertain"
-            else "\\nЧто произошло: "
+            else "\nЧто произошло: "
             + INCIDENT_LABELS.get(row.code, "Произошла ошибка обработки. Подробности в журнале.")
         )
         if row.first_detail and row.code not in {"ai_processing_paused", "ai_request_uncertain"}:
             if row.code in budget_codes:
-                header += f"\\nПараметры лимита: {row.first_detail}"
+                header += f"\nПараметры лимита: {row.first_detail}"
             elif row.code == "possible_duplicate_cards":
                 header += (
-                    "\\nЧто делать: проверьте похожие активные карточки и при необходимости "
+                    "\nЧто делать: проверьте похожие активные карточки и при необходимости "
                     "объедините их вручную."
                 )
-            elif re.fullmatch(r"HTTP [45]\\d{2}", row.first_detail.strip()):
-                header += f"\\nОтвет внешнего сервиса: {row.first_detail.strip()}."
+            elif re.fullmatch(r"HTTP [45]\d{2}", row.first_detail.strip()):
+                header += f"\nОтвет внешнего сервиса: {row.first_detail.strip()}."
     last_seen = (
         "до обновления не сохранялось"
         if row.legacy and row.occurrences == 1
