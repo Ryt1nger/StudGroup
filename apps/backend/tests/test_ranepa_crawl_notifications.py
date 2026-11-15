@@ -148,13 +148,57 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 assert "✅ StudGroup · данные СДО извлечены" in notices[1]["text"]
                 assert "Ссылок СДО: 2" in notices[1]["text"]
                 assert "❌ StudGroup · ошибка" in notices[2]["text"]
-                assert "captcha" in notices[2]["text"]
+                assert "CAPTCHA" in notices[2]["text"]
+                assert "captcha" not in notices[2]["text"]
+                assert "Следующая плановая попытка" in notices[2]["text"]
                 assert "Сохранено недель: 1" in notices[2]["text"]
                 assert "⚠️ StudGroup · данные СДО не извлечены" in notices[3]["text"]
                 assert "Ссылок СДО: 0" in notices[3]["text"]
                 assert all("\\n" not in notice["text"] for notice in notices.values())
                 assert all("cookie" not in row.payload.lower() for row in rows)
                 assert all("http" not in row.payload.lower() for row in rows)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("failure_code", "expected"),
+    [
+        ("login_failed", "Не удалось выполнить вход"),
+        ("captcha", "Сайт запросил проверку CAPTCHA"),
+        ("source_unavailable", "временно недоступен"),
+        ("identity_unverified", "нужной учебной группе"),
+        ("parse_failed", "не прошли проверку"),
+        ("internal", "внутренняя ошибка StudGroup"),
+    ],
+)
+def test_every_account_failure_has_russian_explanation(tmp_path, failure_code, expected):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/russian-alert.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            assert await notify_account_crawl_result(
+                engine,
+                owner_id=915,
+                job_id=uuid4(),
+                attempt=1,
+                user_id=uuid4(),
+                group_code="А-001",
+                student_name="Тест",
+                failure_code=failure_code,
+                stats=CrawlRunStats(saved_weeks=1),
+            )
+            async with AsyncSession(engine) as db:
+                row = await db.scalar(select(BotOutbox))
+                message = json.loads(row.payload)["text"]
+                assert expected in message
+                assert failure_code not in message
+                assert "Причина:" in message
+                assert "Сохранено недель: 1" in message
+                assert "\\n" not in message
         finally:
             await engine.dispose()
 
