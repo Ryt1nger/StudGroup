@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import os
 import signal
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -884,6 +885,10 @@ def main():
         parser.error("both pilot IDs are required")
     if args.pilot_group_id is not None and args.batch_minutes is not None:
         parser.error("--batch-minutes cannot be used with a single-account pilot")
+    # An absent Actions variable is represented as an empty environment string,
+    # which is not a valid optional integer for Pydantic Settings.
+    if os.environ.get("BOT_ADMIN_USER_ID") == "":
+        os.environ.pop("BOT_ADMIN_USER_ID")
     settings = Settings()
     if args.pilot_group_id is not None:
         result = asyncio.run(
