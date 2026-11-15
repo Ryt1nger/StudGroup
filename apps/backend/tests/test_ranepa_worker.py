@@ -714,6 +714,7 @@ def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
     monkeypatch.setattr(ranepa_worker, "remember_personal", save)
     monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
     trace = CrawlTrace()
+    stats = CrawlRunStats()
 
     result = asyncio.run(
         ranepa_worker._collect(
