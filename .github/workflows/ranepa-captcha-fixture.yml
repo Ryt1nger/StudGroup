@@ -3,6 +3,12 @@ name: RANEPA isolated CAPTCHA fixture
 # Test-only: two synthetic images, locally intercepted page, no YDB/PG
 # access and no university traffic. Paid API calls require two opt-ins.
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ranepa-captcha-fixture.yml
+      - apps/backend/src/studgroup/ranepa_captcha_fixture.py
+      - apps/backend/tests/test_ranepa_captcha_fixture.py
   workflow_dispatch:
     inputs:
       provider:
@@ -54,9 +60,9 @@ jobs:
           uv sync --frozen
           uv run python -m playwright install chromium --with-deps
       - name: Run offline mock using real client code (no credentials)
-        if: inputs.provider == 'mock'
+        if: github.event_name == 'push' || inputs.provider == 'mock'
         env:
-          PROGRESSIVE: ${{ inputs.progressive_context }}
+          PROGRESSIVE: ${{ github.event_name == 'push' || inputs.progressive_context }}
         run: |
           mkdir -p fixture-output
           if [ "$PROGRESSIVE" = "true" ]; then
