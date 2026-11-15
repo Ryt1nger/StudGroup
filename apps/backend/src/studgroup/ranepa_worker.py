@@ -444,13 +444,15 @@ async def process_one(
                 and not settings.ranepa_manual_captcha_enabled
                 else None,
                 manual_captcha=(
-                    lambda page: offer_manual_captcha(
-                        engine,
-                        page=page,
-                        owner_id=settings.bot_admin_user_id,
-                        job_id=job_id,
-                        attempt=attempt,
-                        settings=settings,
+                    (
+                        lambda page: offer_manual_captcha(
+                            engine,
+                            page=page,
+                            owner_id=settings.bot_admin_user_id,
+                            job_id=job_id,
+                            attempt=attempt,
+                            settings=settings,
+                        )
                     )
                     if settings.ranepa_manual_captcha_enabled
                     else None
