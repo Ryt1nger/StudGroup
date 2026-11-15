@@ -35,6 +35,37 @@ Run workflow on `main`. Choose:
 - `progressive_context=true` (default): use the first answer to
   virtually align the left half in the second task's `imgInstructions`.
 
+### RuCaptcha fixture timeout and paid-retry time guard
+
+The fixture's solver now has a **single 360-second maximum** (previously
+110 seconds) covering both original RotateTask jobs and up to three
+additional submissions. GitHub Actions limits the entire fixture job
+to 12 minutes, including Chromium installation. The production RANEPA
+pilot retains its own original 110-second limit; this change does not
+increase paid calls against a real student account.
+
+A further retry will **not** be created if fewer than 70 seconds remain
+in the fixture's overall solver budget. This is a minimum time *reserve*,
+not a claim that any RuCaptcha task will complete within 70 seconds.
+Network errors, ambiguous API failures, changed challenge pixels/thumbs
+and exhausted retry allowances still stop without more charges.
+When the provider explicitly responds with `ERROR_CAPTCHA_UNSOLVABLE`,
+the fixture logs `fixture_worker_error_unsolvable`; when it sends an
+invalid final answer, `fixture_worker_error_invalid_answer`.
+These are fixed safe labels, never the provider's raw response.
+The fixture also logs `RANEPA_FIXTURE_LAST_PROVIDER_FAILURE` (safe label,
+if any), `RANEPA_FIXTURE_ERROR_REASON` on failure and
+`fixture_retry_skipped_insufficient_time` when the reserve rejects
+an additional paid submission.
+
+The earlier paid run #43697610399 timed out after two LEFT tasks. Its
+existing logs cannot retrospectively distinguish `unsolvable` from an
+invalid final response. The new safe labels and six-minute cap apply only
+to new runs. A new paid test is **never scheduled automatically**:
+select `provider=rucaptcha`, `confirm_paid=true`, and separately
+`retry_wrong_angles=true` to allow at most **five potential paid tasks**.
+The default mock workflow remains free.
+
 ### Bounded incorrect-answer retries on the synthetic fixture
 
 The isolated fixture **knows** its target rotations (left 90°, right 180°),
