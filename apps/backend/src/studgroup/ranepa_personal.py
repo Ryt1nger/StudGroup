@@ -390,7 +390,9 @@ def schedule_with_group_fallback(personal, published, group):
         if start.date().isoformat() in owned_dates:
             continue
         result.append(row)
-        group_keys.add((start.date().isoformat(), start.strftime("%H:%M"), normalized(row["subject"])))
+        group_keys.add(
+            (start.date().isoformat(), start.strftime("%H:%M"), normalized(row["subject"]))
+        )
     for row in personal_view["lessons"]:
         start = datetime.fromisoformat(row["starts_at"]).astimezone(zone)
         day = start.date().isoformat()
