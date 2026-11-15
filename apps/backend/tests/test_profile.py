@@ -502,6 +502,35 @@ def test_sdo_launch_prompt_does_not_treat_other_user_as_admin(client):
     assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {"show": False}
 
 
+def test_sdo_launch_prompt_preview_excludes_everyone_except_configured_admin(client):
+    settings = client.app.state.settings
+    telegram_id = client.get("/v1/profile", headers=HEADERS).json()["telegram_user_id"]
+    settings.sdo_launch_prompt_enabled = False
+    settings.sdo_launch_prompt_admin_preview_enabled = True
+    settings.bot_admin_user_id = telegram_id + 1
+    assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {"show": False}
+    settings.bot_admin_user_id = telegram_id
+    assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {"show": True}
+    assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {"show": False}
+
+
+def test_sdo_launch_prompt_preview_allows_connected_admin(client):
+    accept_study_credentials(client)
+    saved = client.patch(
+        "/v1/profile",
+        json={"sdu_login": "owner-preview", "sdu_password": "synthetic-secret"},
+        headers=HEADERS,
+    )
+    assert saved.status_code == 200 and saved.json()["sdu"]["password_set"]
+    settings = client.app.state.settings
+    settings.sdo_launch_prompt_enabled = False
+    settings.sdo_launch_prompt_admin_preview_enabled = True
+    settings.bot_admin_user_id = client.get("/v1/profile", headers=HEADERS).json()[
+        "telegram_user_id"
+    ]
+    assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {"show": True}
+
+
 def test_sdo_launch_prompt_does_not_grant_study_consent(client):
     client.app.state.settings.sdo_launch_prompt_enabled = True
     assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {"show": True}
