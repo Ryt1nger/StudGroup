@@ -97,11 +97,9 @@ _ACCOUNT_FAILURE_REASONS = {
 
 
 def _safe_label(value: str | None, *, fallback: str) -> str:
-    """Keep user-provided names on one bounded text line in the owner's private chat."""
-    import re
-
-    cleaned = re.sub(r"[\\x00-\\x1f\\x7f\\u202a-\\u202e\\u2066-\\u2069]+", " ", value or "").strip()
-    return cleaned[:72] or fallback
+    """One printable, bounded line; reject hidden formatting or control characters."""
+    cleaned = "".join(ch if ch.isprintable() else " " for ch in (value or ""))
+    return " ".join(cleaned.split())[:72] or fallback
 
 
 async def notify_account_crawl_result(
@@ -145,13 +143,15 @@ async def notify_account_crawl_result(
     else:
         heading = "⚠️ StudGroup · данные СДО не подтверждены"
         outcome = "Подтверждённые данные расписания или СДО не получены."
-    message = (
-        f"{heading}\\n"
-        f"Студент: {name}. Группа: {group}.\\n"
-        f"Учётка: {str(user_id)[:8]}. Попытка: {attempt}.\\n"
-        f"{outcome}\\n"
-        f"Сохранено недель: {stats.saved_weeks}; занятий: {stats.saved_lessons}.\\n"
-        f"Ссылок СДО: {stats.saved_sdo_links}; страниц курсов: {stats.saved_sdo_courses}."
+    message = "\n".join(
+        [
+            heading,
+            f"Студент: {name}. Группа: {group}.",
+            f"Учётка: {str(user_id)[:8]}. Попытка: {attempt}.",
+            outcome,
+            f"Сохранено недель: {stats.saved_weeks}; занятий: {stats.saved_lessons}.",
+            f"Ссылок СДО: {stats.saved_sdo_links}; страниц курсов: {stats.saved_sdo_courses}.",
+        ]
     )
     async with AsyncSession(engine) as db:
         queued = await enqueue_once(
