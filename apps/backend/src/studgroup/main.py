@@ -66,8 +66,9 @@ class Settings(BaseSettings):
     ranepa_crawl_enabled: bool = False
     ranepa_access_approved: bool = False
     ranepa_schedule_view_enabled: bool = False
-    # Enable only after the SDO launch modal is approved and migration 0062 is deployed.
-    sdo_launch_prompt_enabled: bool = False
+    # Approved for launch after production migration 0062; can be rolled back
+    # immediately through SDO_LAUNCH_PROMPT_ENABLED=false without data loss.
+    sdo_launch_prompt_enabled: bool = True
     ranepa_crawl_pause_seconds: int = Field(default=20, ge=5, le=300)
     # Opt-in durable pause after four consecutive unresolved CAPTCHA outcomes.
     ranepa_captcha_guard_enabled: bool = False
