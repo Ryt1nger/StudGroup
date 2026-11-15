@@ -237,6 +237,8 @@ async def process_one(
                     trace.observation(job_id=job_id, attempt=attempt, failure_code="login_failed")
                 )
             await db.commit()
+            if finished and run_stats is not None:
+                run_stats.failed_accounts += 1
             return "failed"
         code = group.academic_group_code
         credential_id = profile.sdu_credential_id
