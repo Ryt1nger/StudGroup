@@ -66,8 +66,9 @@ class Settings(BaseSettings):
     ranepa_crawl_enabled: bool = False
     ranepa_access_approved: bool = False
     ranepa_schedule_view_enabled: bool = False
-    # Enable only after the SDO launch modal is approved and migration 0062 is deployed.
-    sdo_launch_prompt_enabled: bool = False
+    # Approved production launch; can be disabled immediately with the
+    # SDO_LAUNCH_PROMPT_ENABLED=false environment override.
+    sdo_launch_prompt_enabled: bool = True
     # An owner-only preview while the student-facing launch remains disabled.
     sdo_launch_prompt_admin_preview_enabled: bool = False
     ranepa_crawl_pause_seconds: int = Field(default=20, ge=5, le=300)
