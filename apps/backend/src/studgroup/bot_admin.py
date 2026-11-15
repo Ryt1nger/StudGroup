@@ -161,6 +161,36 @@ async def handle(db, update, settings):
         if text.startswith("/admin") or text.strip().casefold() == "админ":
             await say(db, chat, "Админ-панель недоступна для этого аккаунта.")
         return True
+    # CAPTCHA queue controls are owner-only and never expose a browser session.
+    # /ranepa_resume authorizes ONE verification pilot; the scheduled queue
+    # stays paused until that pilot actually reads and verifies a timetable.
+    command = text.strip().split("@", 1)[0].split(" ", 1)[0].casefold()
+    if not callback and command in {"/ranepa_status", "/ranepa_resume"}:
+        from studgroup.ranepa_crawl_guard import load_guard, request_recovery
+
+        state = await load_guard(db, lock=command == "/ranepa_resume")
+        if command == "/ranepa_resume" and await request_recovery(db):
+            await say(
+                db, chat,
+                "StudGroup: разрешена ОДНА проверка восстановления СДО. "
+                "Очередь пока на паузе. После ручной проверки доступа "
+                "запусти одиночный разрешённый RANEPA pilot: очередь "
+                "возобновится только если расписание будет успешно прочитано.",
+            )
+        elif command == "/ranepa_resume":
+            await say(db, chat, "Обход СДО не приостановлен; возобновлять нечего.")
+        else:
+            await say(
+                db, chat,
+                "StudGroup · СДО: "
+                + ("пауза" if state.paused else "работает")
+                + f". Последовательных неразрешённых CAPTCHA: {state.consecutive_captcha}. "
+                + (
+                    "Разрешена одна проверка восстановления."
+                    if state.recovery_requested else ""
+                ),
+            )
+        return True
     if not callback and text.strip().casefold() == "админ":
         if settings.admin_page_url:
             await say(
