@@ -499,9 +499,7 @@ def test_sdo_launch_prompt_does_not_treat_other_user_as_admin(client):
     settings.sdo_launch_prompt_enabled = True
     settings.bot_admin_user_id = telegram_id + 1
     settings.owner_telegram_user_id = telegram_id + 2
-    assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {
-        "show": False
-    }
+    assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {"show": False}
 
 
 def test_sdo_launch_prompt_does_not_grant_study_consent(client):
