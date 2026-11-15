@@ -434,9 +434,9 @@ async def process_one(
                 captcha_diagnostic_only=(
                     settings.ranepa_captcha_diagnostic_only and pilot_group_id is not None
                 ),
-                captcha_daily_limit=(
-                    settings.ranepa_captcha_daily_max_tasks if pilot_group_id is None else 0
-                ),
+                # Owner-targeted retries also reserve the shared daily paid
+                # budget. Previously pilot tasks were not accounted for.
+                captcha_daily_limit=settings.ranepa_captcha_daily_max_tasks,
                 trace=trace,
                 stats=account_stats,
                 on_captcha=on_captcha
