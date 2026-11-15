@@ -9,6 +9,8 @@ No CAPTCHA pixels, login credentials, cookies or session URLs leave this module.
 
 from datetime import UTC, datetime
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -46,6 +48,35 @@ async def load_guard(db, *, lock=False):
 
 async def guard_is_paused(db) -> bool:
     return bool((await load_guard(db)).paused)
+
+
+async def reserve_daily_paid_tasks(engine, *, count: int, daily_limit: int) -> bool:
+    """Reserve a conservative paid-task ceiling before contacting RuCaptcha.
+
+    The reservation remains consumed if an API request fails before billing:
+    this intentionally favors preventing unbounded spend over reclaiming
+    unconfirmed charges. All GitHub runs share the same locked DB singleton.
+    """
+    if (
+        type(count) is not int
+        or type(daily_limit) is not int
+        or count not in (1, 2)
+        or daily_limit <= 0
+    ):
+        return False
+    async with AsyncSession(engine) as db:
+        state = await load_guard(db, lock=True)
+        today = datetime.now(UTC).date()
+        if state.paid_day != today:
+            state.paid_day = today
+            state.paid_tasks_reserved = 0
+        if state.paid_tasks_reserved + count > daily_limit:
+            await db.commit()
+            return False
+        state.paid_tasks_reserved += count
+        state.updated_at = datetime.now(UTC)
+        await db.commit()
+        return True
 
 
 async def request_recovery(db) -> bool:
