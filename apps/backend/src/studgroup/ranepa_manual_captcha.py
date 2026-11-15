@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.api import ApiError, database
+from studgroup.api import ApiError
 from studgroup.bot_admin import enqueue_once
 from studgroup.models import RanepaManualCaptcha
 from studgroup.ranepa_captcha import _challenge_clip, _slider_boxes
@@ -107,7 +107,7 @@ async def manual_captcha_page(challenge_id: uuid.UUID):
 
 @router.post("/v1/ranepa-captcha/{challenge_id}/state")
 async def manual_captcha_state(challenge_id: uuid.UUID, body: OwnerCaptchaAccess, request: Request):
-    async for db in database(request):
+    async with AsyncSession(request.app.state.engine) as db:
         row = await db.get(RanepaManualCaptcha, challenge_id)
         if row is None:
             raise ApiError("captcha_not_found", "Проверка не найдена", 404)
@@ -135,7 +135,7 @@ async def manual_captcha_state(challenge_id: uuid.UUID, body: OwnerCaptchaAccess
 async def manual_captcha_answer(
     challenge_id: uuid.UUID, body: OwnerCaptchaAnswer, request: Request
 ):
-    async for db in database(request):
+    async with AsyncSession(request.app.state.engine) as db:
         async with db.begin():
             row = await db.get(RanepaManualCaptcha, challenge_id, with_for_update=True)
             if row is None:
@@ -230,6 +230,7 @@ async def offer_manual_captcha(
 
     if not settings.ranepa_manual_captcha_enabled or type(owner_id) is not int or owner_id <= 0:
         return False
+    answer = None
     try:
         result = await _capture_challenge(page)
         if result is None:
