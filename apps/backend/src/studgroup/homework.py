@@ -681,17 +681,13 @@ async def today(
             schedule_with_group_fallback,
         )
 
-        personal = await personal_with_group_fallback(
-            db, group.id, user, selected_date, end_date
-        )
+        personal = await personal_with_group_fallback(db, group.id, user, selected_date, end_date)
         selected_personal = await personal_with_group_fallback(
             db, group.id, user, selected_date, selected_date
         )
         calendar = schedule_with_group_fallback(personal, published, group)
         covered = (
-            selected_personal["complete"]
-            or published_covered
-            or bool(selected_personal["lessons"])
+            selected_personal["complete"] or published_covered or bool(selected_personal["lessons"])
         )
         last_success = personal["last_success_at"] or (now if published_covered else None)
     else:
