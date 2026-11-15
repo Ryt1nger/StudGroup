@@ -65,7 +65,9 @@ async def main() -> int:
     return 0 if result == "succeeded" else 1
 
 
-async def choose_failed_captcha_accounts(engine, *, max_accounts: int = 3) -> list[tuple[UUID, UUID]]:
+async def choose_failed_captcha_accounts(
+    engine, *, max_accounts: int = 3
+) -> list[tuple[UUID, UUID]]:
     """Snapshot only the remaining CAPTCHA failures, never the queued students.
 
     A newly closed global breaker fails closed. The normal single-pilot path
