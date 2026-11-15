@@ -68,6 +68,7 @@ def test_owner_recovery_selects_exactly_one_prior_captcha_failure(tmp_path):
                 created_at=now,
                 finished_at=now,
             )
+            target = (active_group.id, selected_user.id)
             async with AsyncSession(engine) as db:
                 db.add_all(
                     [
@@ -120,10 +121,7 @@ def test_owner_recovery_selects_exactly_one_prior_captcha_failure(tmp_path):
                 state = await db.get(RanepaCrawlGuard, 1)
                 state.recovery_requested = True
                 await db.commit()
-            assert await choose_recovery_candidate(engine) == (
-                active_group.id,
-                selected_user.id,
-            )
+            assert await choose_recovery_candidate(engine) == target
         finally:
             await engine.dispose()
 
