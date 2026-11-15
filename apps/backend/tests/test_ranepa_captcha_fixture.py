@@ -17,18 +17,19 @@ def test_fixture_images_are_valid_and_html_has_native_one_shot_controls():
     for png in halves:
         with Image.open(BytesIO(png)) as image:
             assert image.format == "PNG" and image.size == (200, 200)
-        assert _original_half_png(
-            "data:image/png;base64," + base64.b64encode(png).decode()
-        ) is not None
+        assert (
+            _original_half_png("data:image/png;base64," + base64.b64encode(png).decode())
+            is not None
+        )
     html = ranepa_captcha_fixture.fixture_html(halves)
     assert 'input class="slider-top"' in html
     assert 'input class="slider-bottom"' in html
     assert 'type="range" min="0" max="360" step="0.5" value="0"' in html
     assert "::-webkit-slider-thumb" in html
-    assert 'width:60px; height:30px;' in html
+    assert "width:60px; height:30px;" in html
     assert 'src="data:image/png;base64,' in html
     assert "EXPECTED_LEFT" not in html and "EXPECTED_RIGHT" not in html
-    assert 'expected = [90, 180]' in html
+    assert "expected = [90, 180]" in html
     assert "window.fixtureState" in html
 
 
@@ -36,9 +37,7 @@ def test_fixture_images_are_valid_and_html_has_native_one_shot_controls():
 def test_fixture_exercises_actual_v2_client_without_api_cost(monkeypatch, progressive):
     monkeypatch.setattr(ranepa_rotate_v2, "_POLL_SECONDS", 0)
     halves = ranepa_captcha_fixture.make_halves()
-    solver, state = ranepa_captcha_fixture.mock_rucaptcha(
-        halves, progressive_context=progressive
-    )
+    solver, state = ranepa_captcha_fixture.mock_rucaptcha(halves, progressive_context=progressive)
 
     async def scenario():
         calls = 0
@@ -68,7 +67,9 @@ def test_fixture_explicitly_rejects_paid_mode_without_opt_in(monkeypatch):
     with pytest.raises(ValueError, match="explicit_allow_paid"):
         asyncio.run(
             ranepa_captcha_fixture.run_fixture(
-                provider="rucaptcha", allow_paid=False, progressive_context=True,
+                provider="rucaptcha",
+                allow_paid=False,
+                progressive_context=True,
             )
         )
 
