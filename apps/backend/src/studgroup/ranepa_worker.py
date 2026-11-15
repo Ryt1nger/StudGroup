@@ -34,7 +34,7 @@ from studgroup.ranepa_captcha import (
     warn_if_unconfigured,
 )
 from studgroup.ranepa_crawl_guard import (
-    guard_is_paused,
+    load_guard,
     record_crawl_outcome,
     reserve_daily_paid_tasks,
 )
@@ -182,14 +182,12 @@ async def process_one(
     async with AsyncSession(engine, expire_on_commit=False) as db:
         # The durable CAPTCHA breaker never changes fair queue priorities.
         # Owner-authorized targeted pilots may run while scheduled jobs are paused.
-        if (
-            settings.ranepa_captcha_guard_enabled
-            and pilot_group_id is None
-            and await guard_is_paused(db)
-        ):
-            await db.commit()
-            log_captcha_stage("crawl_paused_repeated_captcha")
-            return "paused"
+        if settings.ranepa_captcha_guard_enabled:
+            guard = await load_guard(db)
+            if guard.paused and (pilot_group_id is None or not guard.recovery_requested):
+                await db.commit()
+                log_captcha_stage("crawl_paused_repeated_captcha")
+                return "paused"
         job = await claim_next(db, group_id=pilot_group_id, user_id=pilot_user_id)
         if job is None:
             await db.commit()
@@ -570,6 +568,9 @@ async def _collect(
                         )
                     if trace is not None:
                         trace.record("sdo_exits_finished")
+                    sdo_captcha_unresolved = "captcha_required" in link_states.values()
+                    if sdo_captcha_unresolved and trace is not None and not trace.captcha_seen:
+                        trace.mark_captcha("sdo")
                     async with AsyncSession(engine) as db:
                         await remember_personal(
                             db,
@@ -582,6 +583,9 @@ async def _collect(
                             group_identity_verified=True,
                         )
                         await db.commit()  # Each validated week is visible immediately.
+                    if sdo_captcha_unresolved:
+                        log_captcha_stage("challenge_still_present_sdo")
+                        return "captcha"
                 if persist_session is not None:
                     try:
                         fresh_state = await context.storage_state()
