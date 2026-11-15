@@ -654,6 +654,7 @@ def test_single_pilot_explicitly_requests_only_its_own_cooldown_bypass(monkeypat
 
 
 def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
+    from studgroup.ranepa_crawl_notifications import CrawlRunStats
     from studgroup.ranepa_crawl_trace import CrawlTrace
 
     recorded = []
