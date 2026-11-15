@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       provider:
-        description: "Mock is FREE; RuCaptcha v2 creates up to two PAID RotateTask jobs"
+        description: "Mock FREE; RuCaptcha: 2 paid tasks, up to 5 with explicit retries"
         type: choice
         required: true
         default: mock
@@ -58,7 +58,7 @@ jobs:
       - name: Reject paid mode without explicit confirmation
         if: inputs.provider == 'rucaptcha' && inputs.confirm_paid != true
         run: |
-          echo "Choose confirm_paid=true to authorize up to two paid jobs."
+          echo "Choose confirm_paid=true to authorize 2 or up to 5 paid tasks with retries."
           exit 1
       - name: Install isolated test dependencies
         run: |
@@ -71,7 +71,7 @@ jobs:
           RETRY: ${{ inputs.retry_wrong_angles }}
         run: |
           mkdir -p fixture-output
-          args=(--provider mock --screenshot fixture-output/mock.png)
+          args=(--provider mock --timeout-seconds 360 --screenshot fixture-output/mock.png)
           if [ "$PROGRESSIVE" = "true" ]; then args+=(--progressive-context); fi
           if [ "$RETRY" = "true" ]; then
             args+=(--max-resends 3 --mock-wrong-first-side right)
@@ -80,7 +80,7 @@ jobs:
       - name: Free browser smoke with one wrong worker answer and bounded retry
         if: github.event_name == 'push'
         run: |
-          uv run python -m studgroup.ranepa_captcha_fixture --provider mock --progressive-context --max-resends 3 --mock-wrong-first-side right --screenshot fixture-output/mock-retry.png
+          uv run python -m studgroup.ranepa_captcha_fixture --provider mock --timeout-seconds 360 --progressive-context --max-resends 3 --mock-wrong-first-side right --screenshot fixture-output/mock-retry.png
       - name: Run RuCaptcha v2 on synthetic fixture (2 jobs, or up to 5 with explicit retry opt-in)
         if: inputs.provider == 'rucaptcha' && inputs.confirm_paid == true
         env:
@@ -90,7 +90,7 @@ jobs:
         run: |
           test -n "$CAPTCHA_API_KEY" || { echo "RUCAPTCHA_API_KEY secret missing"; exit 1; }
           mkdir -p fixture-output
-          args=(--provider rucaptcha --allow-paid --screenshot fixture-output/rucaptcha.png)
+          args=(--provider rucaptcha --allow-paid --timeout-seconds 360 --screenshot fixture-output/rucaptcha.png)
           if [ "$PROGRESSIVE" = "true" ]; then args+=(--progressive-context); fi
           if [ "$RETRY" = "true" ]; then args+=(--allow-extra-paid --max-resends 3); fi
           uv run python -m studgroup.ranepa_captcha_fixture "${args[@]}"
