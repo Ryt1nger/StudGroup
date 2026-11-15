@@ -174,9 +174,7 @@ async def notify_account_crawl_result(
     if failure_code is not None:
         heading = "❌ StudGroup · ошибка обработки учётки СДО"
         detailed = (
-            _WEEK_FAILURE_DETAILS.get(failure_detail)
-            if failure_code == "parse_failed"
-            else None
+            _WEEK_FAILURE_DETAILS.get(failure_detail) if failure_code == "parse_failed" else None
         )
         outcome = "Причина: " + (detailed or _ACCOUNT_FAILURE_REASONS[failure_code])
     elif stats.saved_sdo_links > 0 or stats.saved_sdo_courses > 0:
