@@ -287,7 +287,6 @@ async def update_profile(
     return result
 
 
-
 @router.post("/sdo-launch-prompt/claim")
 async def claim_sdo_launch_prompt(
     request: Request,
