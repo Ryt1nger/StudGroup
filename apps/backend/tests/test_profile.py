@@ -427,3 +427,54 @@ def test_no_v1_route_crashes_on_an_unknown_session_token(client):
             if response.status_code >= 500:
                 failures.append((method, path, response.status_code))
     assert failures == []
+
+
+
+def test_sdo_launch_prompt_is_once_per_authenticated_user(client):
+    settings = client.app.state.settings
+    endpoint = "/v1/sdo-launch-prompt/claim"
+    assert client.post(endpoint).status_code == 401
+    assert client.post(endpoint, headers=HEADERS).json() == {"show": False}
+    settings.sdo_launch_prompt_enabled = True
+    first = client.post(endpoint, headers=HEADERS)
+    assert first.status_code == 200, first.text
+    assert first.json() == {"show": True}
+    second = client.post(endpoint, headers=HEADERS)
+    assert second.status_code == 200
+    assert second.json() == {"show": False}
+    # Closing the app does not depend on browser localStorage: the receipt is
+    # owned by the authenticated user row in the database.
+    async def receipt():
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(UserProfile))
+            return row.sdo_launch_prompt_seen_at
+
+    assert asyncio.run(receipt()) is not None
+
+
+def test_sdo_launch_prompt_skips_existing_saved_credentials(client):
+    accept_study_credentials(client)
+    saved = client.patch(
+        "/v1/profile",
+        json={"sdu_login": "already-connected", "sdu_password": "synthetic-secret"},
+        headers=HEADERS,
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["sdu"]["password_set"] is True
+    client.app.state.settings.sdo_launch_prompt_enabled = True
+    response = client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json() == {"show": False}
+
+
+def test_sdo_launch_prompt_does_not_grant_study_consent(client):
+    client.app.state.settings.sdo_launch_prompt_enabled = True
+    assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {
+        "show": True
+    }
+    saved = client.patch(
+        "/v1/profile",
+        json={"sdu_login": "must-consent", "sdu_password": "synthetic-secret"},
+        headers=HEADERS,
+    )
+    assert saved.status_code in {403, 503}
