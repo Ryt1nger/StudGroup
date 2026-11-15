@@ -303,8 +303,7 @@ async def run_fixture(
                     f"left={solver.last_angles[0]} right={solver.last_angles[1]}"
                 )
             print(
-                "RANEPA_FIXTURE_SLIDER_VALUES "
-                f"left={state['values'][0]} right={state['values'][1]}"
+                f"RANEPA_FIXTURE_SLIDER_VALUES left={state['values'][0]} right={state['values'][1]}"
             )
             print(
                 "RANEPA_FIXTURE_EXPECTED_ANGLES "
