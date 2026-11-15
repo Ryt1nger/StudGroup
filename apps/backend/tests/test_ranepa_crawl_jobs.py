@@ -513,19 +513,24 @@ def test_explicit_full_rescan_preserves_history_and_claims_each_user_once(tmp_pa
                     )
                 await db.flush()
                 assert await enqueue_week(db, date(2026, 11, 9), candidates, now=base) == 3
-                first = await claim_next(db, now=base)
-                assert await finish(db, first.id, first.group_id, first.user_id, now=base)
-                second = await claim_next(db, now=base)
-                assert await finish(
-                    db,
-                    second.id,
-                    second.group_id,
-                    second.user_id,
-                    failure_code="parse_failed",
-                    now=base,
-                )
-                third = await claim_next(db, now=base)
-                assert await finish(db, third.id, third.group_id, third.user_id, now=base)
+                # Seed three historic completed jobs through isolated pilot scope;
+                # regular queue selection correctly forbids two scans of one user.
+                for index, candidate in enumerate(candidates):
+                    row = await claim_next(
+                        db,
+                        now=base,
+                        group_id=candidate.group_id,
+                        user_id=candidate.user_id,
+                    )
+                    assert row is not None
+                    assert await finish(
+                        db,
+                        row.id,
+                        row.group_id,
+                        row.user_id,
+                        failure_code="parse_failed" if index == 1 else None,
+                        now=base,
+                    )
                 await db.commit()
 
             shortly_after = base + timedelta(minutes=10)
