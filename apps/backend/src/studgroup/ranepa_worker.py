@@ -20,7 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
-from studgroup.models import BotPanel, Group, Membership, MemberSubgroup, User, UserProfile
+from studgroup.models import (
+    BotPanel,
+    Group,
+    Membership,
+    MemberSubgroup,
+    RanepaCrawlJob,
+    User,
+    UserProfile,
+)
 from studgroup.ranepa_browser import (
     read_month,
     read_week,
@@ -43,6 +51,7 @@ from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_notifications import (
     CrawlRunStats,
     notify_account_crawl_result,
+    notify_batch_report,
     notify_captcha_detected,
     notify_successful_crawl,
 )
@@ -170,11 +179,14 @@ async def prepare_week(
     pilot_group_id: UUID | None = None,
     pilot_user_id: UUID | None = None,
     bypass_cooldown: bool = False,
+    rescan_all: bool = False,
 ) -> int:
     if (pilot_group_id is None) != (pilot_user_id is None):
         raise ValueError("pilot_scope_requires_both_ids")
     if bypass_cooldown and (pilot_group_id is None or pilot_user_id is None):
         raise ValueError("cooldown_bypass_requires_targeted_pilot")
+    if rescan_all and (bypass_cooldown or pilot_group_id is not None):
+        raise ValueError("full_rescan_cannot_be_a_pilot")
     if not legal_ready(settings) or not settings.ranepa_access_approved:
         return 0
     monday = today - timedelta(days=today.weekday())
@@ -210,7 +222,9 @@ async def prepare_week(
                 )
             ).all()
             candidates.append(CrawlCandidate(group.id, member.user_id, frozenset(subgroups)))
-        count = await enqueue_week(db, monday, candidates, force_refresh=bypass_cooldown)
+        count = await enqueue_week(
+            db, monday, candidates, force_refresh=bypass_cooldown or rescan_all
+        )
         await db.commit()
         return count
 
@@ -224,6 +238,9 @@ async def process_one(
     pilot_user_id: UUID | None = None,
     captcha_budget: CaptchaBudget | None = None,
     run_stats: CrawlRunStats | None = None,
+    rescan_all: bool = False,
+    allowed_user_ids: set[UUID] | None = None,
+    processed_user_ids: set[UUID] | None = None,
 ) -> str:
     account_stats = CrawlRunStats()
     available_budget = captcha_budget or CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
@@ -236,13 +253,23 @@ async def process_one(
                 await db.commit()
                 log_captcha_stage("crawl_paused_repeated_captcha")
                 return "paused"
-        job = await claim_next(db, group_id=pilot_group_id, user_id=pilot_user_id)
+        job = await claim_next(
+            db,
+            group_id=pilot_group_id,
+            user_id=pilot_user_id,
+            rescan_all=rescan_all,
+            allowed_user_ids=allowed_user_ids,
+            processed_user_ids=processed_user_ids,
+        )
         if job is None:
             await db.commit()
             if pilot_group_id is not None:
                 log_captcha_stage("pilot_queue_idle")
             return "idle"
         job_id, group_id, user_id, attempt = (job.id, job.group_id, job.user_id, job.attempts)
+        if processed_user_ids is not None:
+            # One owner-authorized account per rescan, even with two memberships.
+            processed_user_ids.add(user_id)
         trace = CrawlTrace() if settings.ranepa_crawl_telemetry_enabled else None
         if trace is not None:
             trace.record("job_claimed")
@@ -300,6 +327,9 @@ async def process_one(
             await db.commit()
             if finished and run_stats is not None:
                 run_stats.failed_accounts += 1
+                run_stats.failure_reasons["login_failed"] = (
+                    run_stats.failure_reasons.get("login_failed", 0) + 1
+                )
             if finished:
                 await notify_finalized_attempt("login_failed")
             return "failed"
@@ -433,8 +463,13 @@ async def process_one(
     if finished:
         if failure is None:
             account_stats.successful_accounts = 1
+            if account_stats.saved_sdo_links or account_stats.saved_sdo_courses:
+                account_stats.verified_sdo_accounts = 1
+            elif account_stats.saved_weeks:
+                account_stats.timetable_only_accounts = 1
         else:
             account_stats.failed_accounts = 1
+            account_stats.failure_reasons[failure] = 1
         if run_stats is not None:
             run_stats.add(account_stats)
         await notify_finalized_attempt(failure)
@@ -772,8 +807,17 @@ async def run_forever(settings: Settings):
             loop.remove_signal_handler(signum)
 
 
-async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
-    """Run a bounded hosted-runner shift, finishing the current account before exit."""
+async def run_batch(
+    settings: Settings,
+    *,
+    max_minutes: int = 24,
+    rescan_all: bool = False,
+) -> int:
+    """Process a bounded shift or one owner-approved full rescan.
+
+    The full rescan targets a fixed snapshot of consented accounts, once each.
+    Normal shifts keep the durable 24-hour per-account cooldown.
+    """
     if not settings.ranepa_crawl_enabled:
         return 0
     if not legal_ready(settings) or not settings.ranepa_access_approved:
@@ -789,33 +833,78 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
     captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     completed = 0
     run_stats = CrawlRunStats()
+    processed_ids: set[UUID] = set()
+    eligible_ids: set[UUID] | None = None
+    stop_reason = "time_limit"
     try:
         await ensure_owner_for_crawl(engine, settings)
-        await prepare_week(engine, datetime.now(ZoneInfo("Europe/Moscow")).date(), settings)
+        today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+        await prepare_week(engine, today, settings, rescan_all=rescan_all)
+        if rescan_all:
+            monday = today - timedelta(days=today.weekday())
+            async with AsyncSession(engine) as db:
+                eligible_ids = set(
+                    (
+                        await db.scalars(
+                            select(RanepaCrawlJob.user_id).where(
+                                RanepaCrawlJob.week_start == monday,
+                                RanepaCrawlJob.state == "queued",
+                            )
+                        )
+                    ).all()
+                )
+            print(f"RANEPA_OWNER_RESCAN_PLANNED {len(eligible_ids)}", flush=True)
         deadline = monotonic() + max_minutes * 60
         while monotonic() < deadline:
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
             status = await process_one(
-                engine, settings, today, captcha_budget=captcha_budget, run_stats=run_stats
+                engine,
+                settings,
+                today,
+                captcha_budget=captcha_budget,
+                run_stats=run_stats,
+                rescan_all=rescan_all,
+                allowed_user_ids=eligible_ids,
+                processed_user_ids=processed_ids if rescan_all else None,
             )
             if status in {"idle", "paused"}:
+                stop_reason = status
                 break
             completed += 1
             if monotonic() < deadline:
                 await asyncio.sleep(settings.ranepa_crawl_pause_seconds)
-        if settings.ranepa_crawl_notify_success_enabled and run_stats.successful_accounts:
+        remaining = max(0, len(eligible_ids) - completed) if eligible_ids is not None else 0
+        if settings.ranepa_crawl_notify_success_enabled:
             try:
-                queued = await notify_successful_crawl(
+                queued = await notify_batch_report(
                     engine,
                     owner_id=settings.bot_admin_user_id,
                     stats=run_stats,
-                    scope="batch",
+                    full_rescan=rescan_all,
+                    planned=len(eligible_ids) if eligible_ids is not None else None,
+                    remaining=remaining,
+                    stop_reason=stop_reason,
                 )
             except Exception:  # noqa: BLE001
-                log_captcha_stage("owner_success_notice_unavailable")
+                log_captcha_stage("owner_batch_report_unavailable")
             else:
                 if queued:
-                    log_captcha_stage("owner_success_notice_queued")
+                    log_captcha_stage("owner_batch_report_queued")
+        print(
+            "RANEPA_OWNER_RESCAN_RESULT "
+            + json.dumps(
+                {
+                    "rescan_all": rescan_all,
+                    "processed": completed,
+                    "succeeded": run_stats.successful_accounts,
+                    "failed": run_stats.failed_accounts,
+                    "verified_sdo": run_stats.verified_sdo_accounts,
+                    "remaining": remaining,
+                    "stop_reason": stop_reason,
+                }
+            ),
+            flush=True,
+        )
         return completed
     finally:
         await engine.dispose()
@@ -877,7 +966,8 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch-minutes", type=int, choices=range(1, 25))
+    parser.add_argument("--batch-minutes", type=int, choices=range(1, 181))
+    parser.add_argument("--force-rescan-all", action="store_true")
     parser.add_argument("--pilot-group-id", type=UUID)
     parser.add_argument("--pilot-user-id", type=UUID)
     args = parser.parse_args()
@@ -885,6 +975,14 @@ def main():
         parser.error("both pilot IDs are required")
     if args.pilot_group_id is not None and args.batch_minutes is not None:
         parser.error("--batch-minutes cannot be used with a single-account pilot")
+    if args.force_rescan_all and (
+        args.batch_minutes is None
+        or args.pilot_group_id is not None
+        or os.environ.get("RANEPA_FORCE_RESCAN_ALL_APPROVED") != "true"
+    ):
+        parser.error("full rescan requires explicit owner-approved release workflow")
+    if not args.force_rescan_all and args.batch_minutes and args.batch_minutes > 24:
+        parser.error("scheduled batches cannot exceed 24 minutes")
     # An absent Actions variable is represented as an empty environment string,
     # which is not a valid optional integer for Pydantic Settings.
     if os.environ.get("BOT_ADMIN_USER_ID") == "":
@@ -898,7 +996,13 @@ def main():
         if result != "succeeded":
             raise SystemExit(1)
     elif args.batch_minutes:
-        asyncio.run(run_batch(settings, max_minutes=args.batch_minutes))
+        asyncio.run(
+            run_batch(
+                settings,
+                max_minutes=args.batch_minutes,
+                rescan_all=args.force_rescan_all,
+            )
+        )
     else:
         asyncio.run(run_forever(settings))
 

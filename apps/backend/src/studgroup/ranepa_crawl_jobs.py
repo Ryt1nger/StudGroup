@@ -100,16 +100,37 @@ async def enqueue_week(
     return created
 
 
-async def claim_next(db, now=None, *, group_id=None, user_id=None):
-    """Claim one job under a short DB lock; optionally restrict a single-account pilot."""
+async def claim_next(
+    db,
+    now=None,
+    *,
+    group_id=None,
+    user_id=None,
+    rescan_all: bool = False,
+    allowed_user_ids=None,
+    processed_user_ids=None,
+):
+    """Claim a due account, or one per user during the owner-approved rescan.
+
+    An explicit full rescan skips the usual 24-hour filter for this claim only.
+    The latest finished_at remains persisted, so regular runs stay throttled.
+    """
     if (group_id is None) != (user_id is None):
         raise ValueError("pilot_scope_requires_both_ids")
+    if rescan_all and group_id is not None:
+        raise ValueError("rescan_all_cannot_be_a_pilot")
     scope = []
     if group_id is not None:
         scope = [
             RanepaCrawlJob.group_id == group_id,
             RanepaCrawlJob.user_id == user_id,
         ]
+    if allowed_user_ids is not None:
+        if not allowed_user_ids:
+            return None
+        scope.append(RanepaCrawlJob.user_id.in_(allowed_user_ids))
+    if processed_user_ids:
+        scope.append(RanepaCrawlJob.user_id.not_in(processed_user_ids))
     now = now or datetime.now(UTC)
     stale = await db.scalar(
         select(RanepaCrawlJob)
@@ -131,7 +152,7 @@ async def claim_next(db, now=None, *, group_id=None, user_id=None):
     completed = aliased(RanepaCrawlJob)
     running = aliased(RanepaCrawlJob)
     due = []
-    if group_id is None:
+    if group_id is None and not rescan_all:
         due.append(
             ~select(completed.id)
             .where(

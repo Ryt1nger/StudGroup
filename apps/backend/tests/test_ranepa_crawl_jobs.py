@@ -470,3 +470,176 @@ def test_daily_limit_applies_across_memberships_and_requeued_jobs(tmp_path):
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_explicit_full_rescan_preserves_history_and_claims_each_user_once(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/full-rescan.db")
+        base = datetime(2026, 11, 15, 14, tzinfo=UTC)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                groups = [
+                    Group(
+                        id=uuid4(),
+                        telegram_chat_id=-99011 - i,
+                        name=f"Group{i}",
+                        academic_group_code=f"G-{i}",
+                        timezone="Europe/Moscow",
+                    )
+                    for i in range(2)
+                ]
+                users = [
+                    User(id=uuid4(), telegram_user_id=99011 + i, display_name=f"U{i}")
+                    for i in range(2)
+                ]
+                db.add_all([*groups, *users])
+                await db.flush()
+                # One user belongs to two groups, but must be scanned once.
+                candidates = [
+                    CrawlCandidate(groups[0].id, users[0].id),
+                    CrawlCandidate(groups[1].id, users[0].id),
+                    CrawlCandidate(groups[1].id, users[1].id),
+                ]
+                for candidate in candidates:
+                    db.add(
+                        Membership(
+                            group_id=candidate.group_id,
+                            user_id=candidate.user_id,
+                            role="student",
+                            status="active",
+                        )
+                    )
+                await db.flush()
+                assert await enqueue_week(db, date(2026, 11, 9), candidates, now=base) == 3
+                # Seed three historic completed jobs through isolated pilot scope;
+                # regular queue selection correctly forbids two scans of one user.
+                for index, candidate in enumerate(candidates):
+                    row = await claim_next(
+                        db,
+                        now=base,
+                        group_id=candidate.group_id,
+                        user_id=candidate.user_id,
+                    )
+                    assert row is not None
+                    assert await finish(
+                        db,
+                        row.id,
+                        row.group_id,
+                        row.user_id,
+                        failure_code="parse_failed" if index == 1 else None,
+                        now=base,
+                    )
+                await db.commit()
+
+            shortly_after = base + timedelta(minutes=10)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                assert (
+                    await enqueue_week(
+                        db,
+                        date(2026, 11, 9),
+                        candidates,
+                        now=shortly_after,
+                        force_refresh=True,
+                    )
+                    == 0
+                )
+                rows = (await db.scalars(select(RanepaCrawlJob))).all()
+                assert all(row.state == "queued" for row in rows)
+                assert all(
+                    row.finished_at is not None
+                    and (
+                        row.finished_at.replace(tzinfo=UTC)
+                        if row.finished_at.tzinfo is None
+                        else row.finished_at
+                    )
+                    == base
+                    for row in rows
+                )
+                assert await claim_next(db, now=shortly_after) is None
+                allowed = {user.id for user in users}
+                done = set()
+                for _ in users:
+                    row = await claim_next(
+                        db,
+                        now=shortly_after,
+                        rescan_all=True,
+                        allowed_user_ids=allowed,
+                        processed_user_ids=done,
+                    )
+                    assert row is not None
+                    assert row.user_id not in done
+                    done.add(row.user_id)
+                    assert await finish(
+                        db,
+                        row.id,
+                        row.group_id,
+                        row.user_id,
+                        now=shortly_after,
+                    )
+                assert done == allowed
+                assert (
+                    await claim_next(
+                        db,
+                        now=shortly_after,
+                        rescan_all=True,
+                        allowed_user_ids=allowed,
+                        processed_user_ids=done,
+                    )
+                    is None
+                )
+                # The ordinary scheduler still respects the new 24h clock.
+                assert await claim_next(db, now=shortly_after) is None
+                await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_full_rescan_never_overrides_unselected_account(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/scope.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                group = Group(
+                    id=uuid4(),
+                    telegram_chat_id=-99331,
+                    name="Two students",
+                    academic_group_code="TEST",
+                    timezone="Europe/Moscow",
+                )
+                a = User(id=uuid4(), telegram_user_id=99331, display_name="A")
+                b = User(id=uuid4(), telegram_user_id=99332, display_name="B")
+                db.add_all([group, a, b])
+                await db.flush()
+                db.add_all(
+                    [
+                        Membership(group_id=group.id, user_id=u.id, role="student", status="active")
+                        for u in (a, b)
+                    ]
+                )
+                await db.flush()
+                await enqueue_week(
+                    db, date(2026, 11, 9), [CrawlCandidate(group.id, u.id) for u in (a, b)]
+                )
+                selected = await claim_next(db, rescan_all=True, allowed_user_ids={a.id})
+                assert selected.user_id == a.id
+                assert (
+                    await claim_next(
+                        db,
+                        rescan_all=True,
+                        allowed_user_ids={a.id},
+                        processed_user_ids={a.id},
+                    )
+                    is None
+                )
+                assert await claim_next(db, rescan_all=True, allowed_user_ids=set()) is None
+                await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

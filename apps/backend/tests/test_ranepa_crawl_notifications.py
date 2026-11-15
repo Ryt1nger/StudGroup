@@ -16,6 +16,7 @@ from studgroup.models import Base, BotOutbox
 from studgroup.ranepa_crawl_notifications import (
     CrawlRunStats,
     notify_account_crawl_result,
+    notify_batch_report,
     notify_captcha_detected,
     notify_successful_crawl,
 )
@@ -268,3 +269,90 @@ def test_stats_aggregation_keeps_partial_data_separate_from_success():
     assert summary.failed_accounts == 1
     assert summary.saved_weeks == 4
     assert summary.saved_lessons == 16
+
+
+def test_owner_full_rescan_report_in_russian_even_if_every_account_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_RUN_ID", "202611151234")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/full-report.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            stats = CrawlRunStats(
+                failed_accounts=2,
+                saved_weeks=1,
+                failure_reasons={"parse_failed": 1, "captcha": 1},
+            )
+            assert await notify_batch_report(
+                engine,
+                owner_id=915,
+                stats=stats,
+                full_rescan=True,
+                planned=3,
+                remaining=1,
+                stop_reason="paused",
+            )
+            assert not await notify_batch_report(
+                engine,
+                owner_id=915,
+                stats=stats,
+                full_rescan=True,
+                planned=3,
+                remaining=1,
+                stop_reason="paused",
+            )
+            async with AsyncSession(engine) as db:
+                rows = (await db.scalars(select(BotOutbox))).all()
+                assert len(rows) == 1
+                notice = json.loads(rows[0].payload)
+                assert notice["chat_id"] == 915
+                assert "повторный обход СДО завершён частично" in notice["text"]
+                assert "Запланировано учёток: 3" in notice["text"]
+                assert "Неудачных попыток: 2" in notice["text"]
+                assert "Не завершено из запланированных: 1" in notice["text"]
+                assert "Данные источника не прошли проверку: 1" in notice["text"]
+                assert "защитой CAPTCHA" in notice["text"]
+                assert "parse_failed" not in notice["text"]
+                assert "http" not in rows[0].payload.lower()
+                assert "cookie" not in rows[0].payload.lower()
+                assert rows[0].dedup_key == "ranepa-crawl-report:202611151234:1"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_regular_reports_only_when_work_was_performed(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_RUN_ID", "202611151235")
+
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/regular-report.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            assert not await notify_batch_report(engine, owner_id=915, stats=CrawlRunStats())
+            assert await notify_batch_report(
+                engine,
+                owner_id=915,
+                stats=CrawlRunStats(
+                    successful_accounts=1,
+                    verified_sdo_accounts=1,
+                    saved_weeks=6,
+                    saved_lessons=71,
+                    saved_sdo_links=1,
+                    saved_sdo_courses=17,
+                ),
+            )
+            async with AsyncSession(engine) as db:
+                row = await db.scalar(select(BotOutbox))
+                notice = json.loads(row.payload)
+                assert "отчёт о плановом обходе" in notice["text"]
+                assert "С подтверждёнными данными СДО: 1" in notice["text"]
+                assert "Сохранено недель: 6; занятий: 71" in notice["text"]
+                assert "Запланировано" not in notice["text"]
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
