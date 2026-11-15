@@ -434,6 +434,8 @@ def test_sdo_launch_prompt_is_once_per_authenticated_user(client):
     settings = client.app.state.settings
     endpoint = "/v1/sdo-launch-prompt/claim"
     assert client.post(endpoint).status_code == 401
+    # Explicit operator rollback suppresses the announcement after launch.
+    settings.sdo_launch_prompt_enabled = False
     assert client.post(endpoint, headers=HEADERS).json() == {"show": False}
     settings.sdo_launch_prompt_enabled = True
     first = client.post(endpoint, headers=HEADERS)
