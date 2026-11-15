@@ -9,11 +9,10 @@ No CAPTCHA pixels, login credentials, cookies or session URLs leave this module.
 
 from datetime import UTC, datetime
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.models import RanepaCrawlGuard
 
