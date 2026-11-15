@@ -2,6 +2,7 @@ import clsx from 'clsx';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { useEventCapabilities } from '../features/events/api';
+import { SdoLaunchAnnouncement } from '../features/today/SdoLaunchAnnouncement';
 import { useOnline } from '../lib/hooks';
 import { Banner } from '../ui/Blocks';
 import { FeedbackProvider, useFeedback } from '../ui/Feedback';
@@ -99,6 +100,7 @@ function Frame() {
           </NavLink>
         ))}
       </nav>
+      <SdoLaunchAnnouncement pathname={pathname} />
       {!online ? (
         <div className="offline">
           <Banner tone="warning" icon="wifioff">Нет соединения. Проверьте интернет. Последние загруженные данные показаны ниже, если они есть.</Banner>

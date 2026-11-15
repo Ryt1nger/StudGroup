@@ -220,6 +220,8 @@ class UserProfile(Base):
     # Opaque pointer only. The login and ciphertext live in YDB after cutover.
     sdu_credential_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     sdu_setup_skipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # One-time, server-side first-visit announcement receipt (shared across devices).
+    sdo_launch_prompt_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     settings: Mapped[dict | None] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

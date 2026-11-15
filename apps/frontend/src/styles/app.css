@@ -911,3 +911,138 @@ a.pcard:active { transform: scale(.98); }
   font-size: 13px; line-height: 1.65; overflow-wrap: anywhere;
 }
 .sdo-legal > .sdo-secondary-link { margin: 16px 0 0; }
+
+
+/* Approved first-visit SDO/LC announcement. Rendered only after the backend
+   atomically grants the user's once-per-launch receipt. */
+.sdo-launch-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: calc(18px + var(--top-inset)) 18px calc(18px + var(--bottom-inset));
+  background: rgb(0 0 0 / 0.76);
+  -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.sdo-launch-dialog {
+  position: relative;
+  width: min(100%, 410px);
+  max-height: 100%;
+  overflow-y: auto;
+  border-radius: 30px;
+  padding: 42px 22px 20px;
+  border: 1px solid var(--card-edge);
+  background: var(--card);
+  box-shadow: 0 22px 70px rgb(0 0 0 / 0.54);
+  text-align: center;
+  scrollbar-width: thin;
+}
+.sdo-launch-close {
+  position: absolute;
+  top: 12px;
+  right: 15px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--label-2);
+  display: grid;
+  place-items: center;
+  font-size: 29px;
+  font-weight: 300;
+}
+.sdo-launch-close:focus-visible,
+.sdo-launch-primary:focus-visible,
+.sdo-launch-later:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.sdo-launch-art {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-text);
+  border-radius: 35px;
+  background: hsl(var(--hsl) / .13);
+}
+.sdo-launch-art-calendar { display: grid; place-items: center; }
+.sdo-launch-art-shield {
+  position: absolute;
+  right: 13px;
+  bottom: 15px;
+  border-radius: 50%;
+  padding: 5px;
+  display: grid;
+  place-items: center;
+  background: var(--card);
+}
+.sdo-launch-eyebrow {
+  width: fit-content;
+  margin: 0 auto 16px;
+  padding: 7px 16px;
+  border-radius: 99px;
+  color: var(--accent-text);
+  background: hsl(var(--hsl) / .15);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .045em;
+}
+.sdo-launch-dialog h2 {
+  font-size: clamp(24px, 6vw, 30px);
+  line-height: 1.14;
+  letter-spacing: -.04em;
+  font-weight: 750;
+  color: var(--label);
+}
+.sdo-launch-description {
+  color: var(--label-2);
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 18px 0 20px;
+}
+.sdo-launch-privacy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: left;
+  border-radius: 16px;
+  padding: 13px;
+  color: var(--label-2);
+  font-size: 13px;
+  line-height: 1.4;
+  background: var(--fill-2);
+  margin-bottom: 18px;
+}
+.sdo-launch-privacy svg { flex: none; color: var(--accent-text); }
+.sdo-launch-primary {
+  display: block;
+  width: 100%;
+  padding: 16px 12px;
+  border-radius: 18px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 750;
+  font-size: 16px;
+}
+.sdo-launch-later {
+  display: block;
+  margin: 12px auto 0;
+  padding: 10px 22px;
+  color: var(--label-2);
+  font-size: 15px;
+  font-weight: 600;
+}
+@media (max-height: 640px) {
+  .sdo-launch-dialog { padding-top: 30px; }
+  .sdo-launch-art { width: 68px; height: 68px; border-radius: 22px; }
+  .sdo-launch-art-calendar svg { width: 32px; height: 32px; }
+  .sdo-launch-art-shield { right: 3px; bottom: 2px; }
+  .sdo-launch-description { margin: 12px 0; }
+}
