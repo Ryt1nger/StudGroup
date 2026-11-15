@@ -86,8 +86,8 @@ jobs:
       # unavailable. Signed Telegram initData controls challenge access.
       RANEPA_MANUAL_CAPTCHA_ENABLED: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true) }}
       RANEPA_MANUAL_CAPTCHA_BASE_URL: https://studgroup-tyjh.onrender.com
-      # Paid CAPTCHA solving is available only for a manually selected pilot.
-      # Never enable it for scheduled multi-account queue shifts.
+      # Paid CAPTCHA is enabled for approved scheduled and full-rescan jobs.
+      # Preserve server-verified CAPTCHA resolution and owner fallback.
       CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
       # Paid mode requires an additional explicit v2 pair checkbox. An old
       # manual dispatch without it cannot silently spend on two tasks.
@@ -151,6 +151,10 @@ jobs:
           uv run python -m studgroup.ranepa_worker --batch-minutes 24
       - name: Process one explicitly approved full SDO rescan
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[run-sdo-all-once]')
+        env:
+          # All eligible accounts are re-scanned once. Give their RuCaptcha
+          # requests a shared per-run allowance; daily DB budget still caps 60.
+          RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "40"
         run: |
           # Only this tagged main-branch push may override 24-hour cooldown.
           # The workflow concurrency group still serializes all SDO crawls.

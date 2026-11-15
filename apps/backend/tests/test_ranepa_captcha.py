@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from PIL import Image
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from studgroup import ranepa_browser, ranepa_captcha
 from studgroup.main import Settings
@@ -34,6 +34,21 @@ def test_rucaptcha_is_opt_in_and_missing_key_is_only_a_warning(caplog, monkeypat
     with caplog.at_level(logging.WARNING):
         ranepa_captcha.warn_if_unconfigured(active)
     assert "CAPTCHA_API_KEY is missing" in caplog.text
+
+
+def test_owner_approved_full_rescan_budget_is_bounded_and_accepted():
+    settings = Settings(
+        _env_file=None,
+        ranepa_captcha_enabled=True,
+        ranepa_captcha_max_tasks_per_run=40,
+        ranepa_captcha_daily_max_tasks=60,
+    )
+    assert settings.ranepa_captcha_max_tasks_per_run == 40
+    assert settings.ranepa_captcha_daily_max_tasks == 60
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, ranepa_captcha_daily_max_tasks=61)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, ranepa_captcha_max_tasks_per_run=61)
 
 
 def test_configured_solver_uses_rucaptcha_not_2captcha(monkeypatch):
