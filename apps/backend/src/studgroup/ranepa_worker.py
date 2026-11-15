@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import os
 import signal
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -19,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
-from studgroup.models import Group, Membership, MemberSubgroup, User, UserProfile
+from studgroup.models import BotPanel, Group, Membership, MemberSubgroup, User, UserProfile
 from studgroup.ranepa_browser import (
     read_month,
     read_week,
@@ -54,6 +55,41 @@ from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
 
 ACCOUNT_TIMEOUT_SECONDS = 600
+
+
+async def ensure_owner_for_crawl(engine, settings: Settings) -> None:
+    """Fail closed unless account alerts/guard have one verified admin recipient.
+
+    The bot can create its "admin" panel only after authenticating the configured
+    owner. A private single-owner lookup avoids committing a Telegram user ID
+    into the public GitHub workflow. No identifier is printed to logs.
+    """
+    needs_owner = (
+        settings.ranepa_captcha_guard_enabled
+        or settings.ranepa_crawl_notify_success_enabled
+        or settings.ranepa_crawl_notify_captcha_seen_enabled
+        or settings.ranepa_crawl_notify_account_results_enabled
+    )
+    if not needs_owner:
+        return
+    configured = settings.bot_admin_user_id
+    if type(configured) is int and configured > 0:
+        return
+    if configured is not None:
+        raise RuntimeError("ranepa_owner_id_invalid")
+
+    async with AsyncSession(engine) as db:
+        owners = (
+            await db.scalars(
+                select(BotPanel.chat_id)
+                .join(User, User.telegram_user_id == BotPanel.chat_id)
+                .where(BotPanel.mode == "admin", BotPanel.chat_id > 0)
+                .distinct()
+            )
+        ).all()
+    if len(owners) != 1 or type(owners[0]) is not int:
+        raise RuntimeError("ranepa_unique_owner_recipient_required")
+    settings.bot_admin_user_id = owners[0]
 
 
 def restored_storage_state(encrypted_state: str | None, cipher: Fernet | None) -> dict | None:
@@ -711,6 +747,7 @@ async def run_forever(settings: Settings):
         loop.add_signal_handler(signum, stop.set)
     engine = create_worker_engine(settings)
     try:
+        await ensure_owner_for_crawl(engine, settings)
         next_prepare_at = 0.0
         while not stop.is_set():
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
@@ -753,6 +790,7 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
     completed = 0
     run_stats = CrawlRunStats()
     try:
+        await ensure_owner_for_crawl(engine, settings)
         await prepare_week(engine, datetime.now(ZoneInfo("Europe/Moscow")).date(), settings)
         deadline = monotonic() + max_minutes * 60
         while monotonic() < deadline:
@@ -800,6 +838,7 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
     captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     run_stats = CrawlRunStats()
     try:
+        await ensure_owner_for_crawl(engine, settings)
         today = datetime.now(ZoneInfo("Europe/Moscow")).date()
         await prepare_week(
             engine,
@@ -846,6 +885,10 @@ def main():
         parser.error("both pilot IDs are required")
     if args.pilot_group_id is not None and args.batch_minutes is not None:
         parser.error("--batch-minutes cannot be used with a single-account pilot")
+    # An absent Actions variable is represented as an empty environment string,
+    # which is not a valid optional integer for Pydantic Settings.
+    if os.environ.get("BOT_ADMIN_USER_ID") == "":
+        os.environ.pop("BOT_ADMIN_USER_ID")
     settings = Settings()
     if args.pilot_group_id is not None:
         result = asyncio.run(

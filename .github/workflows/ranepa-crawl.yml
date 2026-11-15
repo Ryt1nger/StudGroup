@@ -120,9 +120,9 @@ jobs:
           test -n "$LEGAL_DATA_REGION"
           test "$LEGAL_DOCUMENTS_APPROVED" = "true"
           test "$RANEPA_ACCESS_APPROVED" = "true"
-          if [ "$RANEPA_CAPTCHA_GUARD_ENABLED" = "true" ] || [ "$RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED" = "true" ] || [ "$RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED" = "true" ] || [ "$RANEPA_CRAWL_NOTIFY_ACCOUNT_RESULTS_ENABLED" = "true" ]; then
-            test -n "$BOT_ADMIN_USER_ID" || { echo "Owner notifications require BOT_ADMIN_USER_ID"; exit 1; }
-          fi
+          # Owner identity is checked before the first student is claimed:
+          # use configured BOT_ADMIN_USER_ID or require exactly one verified,
+          # private admin panel in the same production database. Do not print IDs.
       - name: Install browser
         run: |
           uv sync --frozen
@@ -132,7 +132,13 @@ jobs:
         env:
           PILOT_GROUP_ID: ${{ inputs.pilot_group_id }}
           PILOT_USER_ID: ${{ inputs.pilot_user_id }}
-        run: uv run python -m studgroup.ranepa_worker --pilot-group-id "$PILOT_GROUP_ID" --pilot-user-id "$PILOT_USER_ID"
+        run: |
+          # Empty GitHub variables must not reach Pydantic settings at import time.
+          if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
+          uv run python -m studgroup.ranepa_worker --pilot-group-id "$PILOT_GROUP_ID" --pilot-user-id "$PILOT_USER_ID"
       - name: Process one bounded queue shift
         if: github.event_name == 'schedule' || github.event_name == 'push'
-        run: uv run python -m studgroup.ranepa_worker --batch-minutes 24
+        run: |
+          # Keep missing optional admin ID absent until the verified DB lookup.
+          if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
+          uv run python -m studgroup.ranepa_worker --batch-minutes 24
