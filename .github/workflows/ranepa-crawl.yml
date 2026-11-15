@@ -61,14 +61,14 @@ jobs:
       RANEPA_CRAWL_PAUSE_SECONDS: "20"
       # Owner-only alerts are queued to the existing app BotOutbox. The API
       # bot (not this runner) sends them; no Telegram token on GitHub runner.
-      BOT_ADMIN_USER_ID: ${{ vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID }}
+      BOT_ADMIN_USER_ID: ${{ secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID || secrets.BOT_ADMIN_USER_ID || vars.BOT_ADMIN_USER_ID }}
       # Requires migration 0061 and the same production PostgreSQL database.
       # Pilot tests cannot trigger a global scheduled queue pause.
       RANEPA_CAPTCHA_GUARD_ENABLED: ${{ vars.RANEPA_CAPTCHA_GUARD_ENABLED == 'true' }}
       RANEPA_CRAWL_TELEMETRY_ENABLED: ${{ vars.RANEPA_CRAWL_TELEMETRY_ENABLED == 'true' }}
       # Notifications are owner-only and sent through the backend BotOutbox.
-      RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED: ${{ vars.RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED == 'true' }}
-      RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED: ${{ vars.RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED == 'true' }}
+      RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED: ${{ secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
+      RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED: ${{ secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
       # Paid CAPTCHA solving is available only for a manually selected pilot.
       # Never enable it for scheduled multi-account queue shifts.
       CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
@@ -109,8 +109,8 @@ jobs:
           test -n "$LEGAL_DATA_REGION"
           test "$LEGAL_DOCUMENTS_APPROVED" = "true"
           test "$RANEPA_ACCESS_APPROVED" = "true"
-          if [ "$RANEPA_CAPTCHA_GUARD_ENABLED" = "true" ]; then
-            test -n "$BOT_ADMIN_USER_ID" || { echo "CAPTCHA guard requires configured owner alerts"; exit 1; }
+          if [ "$RANEPA_CAPTCHA_GUARD_ENABLED" = "true" ] || [ "$RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED" = "true" ] || [ "$RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED" = "true" ]; then
+            test -n "$BOT_ADMIN_USER_ID" || { echo "Owner notifications require BOT_ADMIN_USER_ID"; exit 1; }
           fi
       - name: Install browser
         run: |
