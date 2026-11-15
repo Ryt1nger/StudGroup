@@ -184,9 +184,7 @@ def test_every_group_retains_editor_published_schedule_without_personal_data(cli
 
     asyncio.run(configure())
     client.app.state.settings.ranepa_schedule_view_enabled = True
-    response = client.get(
-        "/v1/schedule?start=2026-11-02&end=2026-11-08", headers=AUTH
-    )
+    response = client.get("/v1/schedule?start=2026-11-02&end=2026-11-08", headers=AUTH)
     assert response.status_code == 200
     assert response.json()["week_state"] == "ready"
     assert [row["subject"] for row in response.json()["lessons"]] == ["Математика"]
@@ -227,16 +225,18 @@ def test_peer_schedule_fills_group_calendar_without_sharing_private_sdo_url(clie
             )
             key = ("2026-11-02", "11:00:00", "12:00:00", "Физика", "Тест", "СДО")
             await remember_personal(
-                db, group.id, peer.id, snapshot, group_identity_verified=True,
+                db,
+                group.id,
+                peer.id,
+                snapshot,
+                group_identity_verified=True,
                 links={key: "https://lms.ranepa.ru/mod/url/view.php?id=9911"},
             )
             await db.commit()
 
     asyncio.run(configure())
     client.app.state.settings.ranepa_schedule_view_enabled = True
-    response = client.get(
-        "/v1/schedule?start=2026-11-02&end=2026-11-08", headers=AUTH
-    )
+    response = client.get("/v1/schedule?start=2026-11-02&end=2026-11-08", headers=AUTH)
     assert response.status_code == 200
     lessons = response.json()["lessons"]
     assert {row["subject"] for row in lessons} == {"Математика", "Физика"}
