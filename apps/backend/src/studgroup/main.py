@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     ranepa_crawl_notify_success_enabled: bool = False
     ranepa_crawl_notify_captcha_seen_enabled: bool = False
     ranepa_crawl_notify_account_results_enabled: bool = False
+    # Owner-only fallback when RuCaptcha cannot pass a live RANEPA challenge.
+    ranepa_manual_captcha_enabled: bool = False
+    ranepa_manual_captcha_base_url: str = ""
     # Stage encrypted browser-state reuse separately from the legacy crawler.
     ranepa_session_reuse_enabled: bool = False
     # Explicitly opt-in to paid RuCaptcha challenges; disabled by default.
@@ -669,6 +672,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(ranepa_personal_router)
     app.include_router(ranepa_schedule_router)
+    from studgroup.ranepa_manual_captcha import router as manual_captcha_router
+
+    app.include_router(manual_captcha_router)
     app.include_router(legal_router)
     from studgroup.onboarding import router as onboarding_router
 

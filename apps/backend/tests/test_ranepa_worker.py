@@ -802,3 +802,85 @@ def test_configured_owner_avoids_lookup_when_authorized():
     )
     asyncio.run(ranepa_worker.ensure_owner_for_crawl(None, settings))
     assert settings.bot_admin_user_id == 95003
+
+
+@pytest.mark.parametrize("provider_submitted", [True, False])
+def test_rucaptcha_always_precedes_owner_fallback_in_same_browser(monkeypatch, provider_submitted):
+    calls = []
+    page = SimpleNamespace(url="https://my.ranepa.ru/captcha")
+
+    class FakeContext:
+        async def new_page(self):
+            return page
+
+    class FakeBrowser:
+        async def new_context(self, **_kwargs):
+            return FakeContext()
+
+        async def close(self):
+            calls.append("browser_closed")
+
+    class FakePlaywright:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        @property
+        def chromium(self):
+            return self
+
+        async def launch(self, **_kwargs):
+            return FakeBrowser()
+
+    reads = 0
+
+    async def read_month(*args):
+        nonlocal reads
+        reads += 1
+        # When RuCaptcha submitted motions, the real site still rejects them.
+        # Only the subsequent owner solution is accepted.
+        if reads == 1 or (provider_submitted and reads == 2):
+            return SimpleNamespace(status="captcha_required")
+        return SimpleNamespace(status="preview_only", cards=[])
+
+    async def read_week(*args, **kwargs):
+        return SimpleNamespace(status="identity_unverified", snapshot=None)
+
+    async def auto(*args, **kwargs):
+        assert "manual" not in calls
+        calls.append("rucaptcha")
+        return provider_submitted
+
+    async def manual(page_argument):
+        assert page_argument is page
+        calls.append("manual")
+        return True
+
+    async def waited(*args, **kwargs):
+        return "challenge_state_checked"
+
+    monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
+    monkeypatch.setattr(ranepa_worker, "read_month", read_month)
+    monkeypatch.setattr(ranepa_worker, "read_week", read_week)
+    monkeypatch.setattr(ranepa_worker, "solve_rotating_halves", auto)
+    monkeypatch.setattr(ranepa_worker, "wait_for_captcha_resolution", waited)
+    client = SimpleNamespace(max_tasks=2)
+    result = asyncio.run(
+        ranepa_worker._collect(
+            None,
+            uuid4(),
+            uuid4(),
+            "TEST-001",
+            "test-login",
+            "test-password",
+            date(2026, 11, 15),
+            captcha_client=client,
+            captcha_budget=ranepa_worker.CaptchaBudget(2),
+            manual_captcha=manual,
+        )
+    )
+    assert result == "identity_unverified"
+    assert calls == ["rucaptcha", "manual", "browser_closed"]
+    assert reads == (3 if provider_submitted else 2)

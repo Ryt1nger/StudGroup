@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <title>StudGroup · Проверка CAPTCHA</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { background: var(--tg-theme-bg-color,#101820); color: var(--tg-theme-text-color,#f5f7fa); padding: 18px 14px 50px; margin: auto; max-width: 570px; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    p { color: var(--tg-theme-hint-color,#bbc4cd); line-height: 1.5; }
+    .frame { border: 1px solid #35465b; border-radius: 14px; padding: 12px; background: var(--tg-theme-secondary-bg-color,#172634); margin: 20px 0; }
+    #challenge { display:block; width:100%; height:auto; object-fit:contain; border-radius:8px; background:#17212c; }
+    .rounds { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .round { border:1px solid #405064; border-radius:10px; display:flex; min-height:140px; flex-direction:column; align-items:center; padding:10px 3px; overflow:hidden; }
+    .round img { width:110px; height:110px; object-fit:contain; will-change:transform; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:16px; font-size:16px; }
+    input[type=range] { display:block; width:100%; min-height:46px; accent-color:var(--tg-theme-button-color,#43a0ff); }
+    output { font-variant-numeric:tabular-nums; }
+    button { font-size:16px; border:0; border-radius:12px; padding:15px; width:100%; cursor:pointer; font-weight:600; background:var(--tg-theme-button-color,#49a4ee); color:var(--tg-theme-button-text-color,white); }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    #status { margin-top:16px; }
+    [hidden] { display:none !important; }
+  </style>
+</head>
+<body>
+  <h1>🧩 Пройти CAPTCHA</h1>
+  <p>Это <b>полная головоломка</b> из текущей сессии обхода РАНХиГС. Внизу можно повернуть обе исходные части, чтобы совместить круг. Ответ будет применён к тем же ползункам на сайте.</p>
+  <div id="status" role="status" aria-live="polite">Проверяем доступ через Telegram…</div>
+  <section id="puzzle" hidden>
+    <div class="frame">
+      <strong>Исходная CAPTCHA целиком</strong>
+      <img id="challenge" alt="Полная CAPTCHA из браузера обхода">
+    </div>
+    <div class="frame">
+      <strong>Подберите поворот обеих частей</strong>
+      <p>Двигайте оба ползунка, пока изображение станет правильным. Положение соответствует градусам поворота на настоящем сайте.</p>
+      <div class="rounds">
+        <div class="round"><span>Верхняя часть</span><img id="left" alt="Первая часть CAPTCHA"></div>
+        <div class="round"><span>Нижняя часть</span><img id="right" alt="Вторая часть CAPTCHA"></div>
+      </div>
+      <label class="row" for="angle-left"><b>Верхняя</b> <output id="value-left">0°</output></label>
+      <input type="range" id="angle-left" min="0" max="359" step="1" value="0">
+      <label class="row" for="angle-right"><b>Нижняя</b> <output id="value-right">0°</output></label>
+      <input type="range" id="angle-right" min="0" max="359" step="1" value="0">
+      <button id="submit" type="button">Отправить решение</button>
+    </div>
+  </section>
+  <script defer src="/ranepa-captcha/app.js"></script>
+</body>
+</html>

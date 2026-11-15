@@ -82,21 +82,26 @@ jobs:
       # Owner receives one outcome per completed account, including failed and
       # timetable-only reads where no verified SDO links were extracted.
       RANEPA_CRAWL_NOTIFY_ACCOUNT_RESULTS_ENABLED: ${{ github.event_name == 'schedule' || github.event_name == 'push' || secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
+      # Owner sees the whole live puzzle ONLY when RuCaptcha failed or was
+      # unavailable. Signed Telegram initData controls challenge access.
+      RANEPA_MANUAL_CAPTCHA_ENABLED: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true) }}
+      RANEPA_MANUAL_CAPTCHA_BASE_URL: https://studgroup-tyjh.onrender.com
       # Paid CAPTCHA solving is available only for a manually selected pilot.
       # Never enable it for scheduled multi-account queue shifts.
       CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
       # Paid mode requires an additional explicit v2 pair checkbox. An old
       # manual dispatch without it cannot silently spend on two tasks.
-      RANEPA_CAPTCHA_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true') || (github.event_name == 'schedule' && vars.RANEPA_CAPTCHA_SCHEDULED_ENABLED == 'true' && vars.RANEPA_CAPTCHA_GUARD_ENABLED == 'true' && vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '') }}
-      RANEPA_CAPTCHA_V2_PAIR_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true') || (github.event_name == 'schedule' && vars.RANEPA_CAPTCHA_SCHEDULED_ENABLED == 'true' && vars.RANEPA_CAPTCHA_GUARD_ENABLED == 'true' && vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '') }}
+      RANEPA_CAPTCHA_ENABLED: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true') }}
+      RANEPA_CAPTCHA_V2_PAIR_ENABLED: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true') }}
       # Must additionally opt in to BOTH paid pair and virtual-left preview;
       # never alter an existing paid pilot or a scheduled queue silently.
       RANEPA_CAPTCHA_V2_PROGRESSIVE_CONTEXT_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && inputs.progressive_context_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
       RANEPA_CAPTCHA_DIAGNOSTIC_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only == true }}
-      RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "2"
-      # Scheduled paid solving additionally requires a DB-locked daily cap;
-      # six tasks/day maximum across all GitHub runner shifts.
-      # Guard + bot admin configuration are required for scheduled opt-in.
+      RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "6"
+      # Owner-approved RuCaptcha-first: at most THREE two-task puzzles/day,
+      # six billed RotateTask requests total across ALL runner shifts.
+      # When the budget is exhausted or provider fails, ask the private owner.
+      # Daily budget remains DB-locked to prevent overlapping workers.
       RANEPA_CAPTCHA_DAILY_MAX_TASKS: "6"
       # Encrypted Cookie Reuse must be approved independently for a manual pilot.
       # Scheduled multi-account jobs retain the existing non-persistent flow.
