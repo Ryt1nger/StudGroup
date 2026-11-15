@@ -215,9 +215,12 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
                         while True:
                             # Every extra paid request must see the same images
                             # and native-thumb geometry before it is sent.
-                            if self.tasks_submitted > 0 and before_second is not None:
-                                if not await before_second():
-                                    raise RotateV2Error("challenge_changed")
+                            if (
+                                self.tasks_submitted > 0
+                                and before_second is not None
+                                and not await before_second()
+                            ):
+                                raise RotateV2Error("challenge_changed")
                             if self.tasks_submitted >= 2 + self.max_resends:
                                 raise RotateV2Error("invalid_answer")
                             self.tasks_submitted += 1
@@ -285,7 +288,7 @@ def fixture_diagnosis(
     ):
         return "provider_angle_mismatch"
     if len(values) != 2 or any(
-        not aligned(value, angle) for value, angle in zip(values, angles, strict=True)
+        not _aligned(value, angle) for value, angle in zip(values, angles, strict=True)
     ):
         return "browser_drag_mismatch"
     if status != "accepted":
