@@ -71,6 +71,9 @@ jobs:
       # Notifications are owner-only and sent through the backend BotOutbox.
       RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED: ${{ github.event_name == 'schedule' || secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
       RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED: ${{ github.event_name == 'schedule' || secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
+      # Owner receives one outcome per completed account, including failed and
+      # timetable-only reads where no verified SDO links were extracted.
+      RANEPA_CRAWL_NOTIFY_ACCOUNT_RESULTS_ENABLED: ${{ github.event_name == 'schedule' || secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
       # Paid CAPTCHA solving is available only for a manually selected pilot.
       # Never enable it for scheduled multi-account queue shifts.
       CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
@@ -111,7 +114,7 @@ jobs:
           test -n "$LEGAL_DATA_REGION"
           test "$LEGAL_DOCUMENTS_APPROVED" = "true"
           test "$RANEPA_ACCESS_APPROVED" = "true"
-          if [ "$RANEPA_CAPTCHA_GUARD_ENABLED" = "true" ] || [ "$RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED" = "true" ] || [ "$RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED" = "true" ]; then
+          if [ "$RANEPA_CAPTCHA_GUARD_ENABLED" = "true" ] || [ "$RANEPA_CRAWL_NOTIFY_SUCCESS_ENABLED" = "true" ] || [ "$RANEPA_CRAWL_NOTIFY_CAPTCHA_SEEN_ENABLED" = "true" ] || [ "$RANEPA_CRAWL_NOTIFY_ACCOUNT_RESULTS_ENABLED" = "true" ]; then
             test -n "$BOT_ADMIN_USER_ID" || { echo "Owner notifications require BOT_ADMIN_USER_ID"; exit 1; }
           fi
       - name: Install browser
