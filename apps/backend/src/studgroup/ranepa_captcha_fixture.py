@@ -253,6 +253,11 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
                             if _aligned(angle, _EXPECTED_ANGLES[side]):
                                 angles.append(angle)
                                 break
+                            print(
+                                "RANEPA_FIXTURE_WRONG_ANGLE "
+                                f"side={('left', 'right')[side]} "
+                                f"returned={angle} expected={_EXPECTED_ANGLES[side]}"
+                            )
                             if self.resends_used >= self.max_resends:
                                 ranepa_rotate_v2.log_captcha_stage(
                                     "fixture_wrong_angle_retry_limit_reached"
@@ -301,10 +306,13 @@ def mock_rucaptcha(
     max_resends: int = 0,
     wrong_first_side: str | None = None,
     always_wrong: bool = False,
+    unsolvable_first_side: str | None = None,
 ):
     """Use the real v2 client with a deterministic, in-memory fake provider."""
     if wrong_first_side not in {None, "left", "right"}:
         raise ValueError("fixture_mock_wrong_side")
+    if unsolvable_first_side not in {None, "left", "right"}:
+        raise ValueError("fixture_mock_unsolvable_side")
     seen = {
         "created": 0,
         "answered": 0,
@@ -342,8 +350,16 @@ def mock_rucaptcha(
                 raise AssertionError("fixture_mock_wrong_task_id")
             side, side_attempt = seen["task_sides"][task_id]
             seen["answered"] += 1
-            wrong = always_wrong or (
-                side_attempt == 1 and wrong_first_side == ("left", "right")[side]
+            if side_attempt == 1 and unsolvable_first_side == ("left", "right")[side]:
+                return httpx.Response(
+                    200, json={"errorId": 1, "errorCode": "ERROR_CAPTCHA_UNSOLVABLE"}
+                )
+            wrong = (
+                (always_wrong and (
+                    wrong_first_side is None
+                    or wrong_first_side == ("left", "right")[side]
+                ))
+                or (side_attempt == 1 and wrong_first_side == ("left", "right")[side])
             )
             angle = (_EXPECTED_ANGLES[side] + 90) % 360 if wrong else _EXPECTED_ANGLES[side]
             return httpx.Response(
@@ -377,6 +393,7 @@ async def run_fixture(
     allow_extra_paid: bool = False,
     mock_wrong_first_side: str | None = None,
     mock_always_wrong: bool = False,
+    mock_unsolvable_first_side: str | None = None,
 ) -> bool:
     if provider not in {"mock", "rucaptcha"}:
         raise ValueError("unsupported_fixture_provider")
@@ -387,7 +404,11 @@ async def run_fixture(
             raise ValueError("paid_fixture_requires_explicit_allow_paid")
         if max_resends > 0 and not allow_extra_paid:
             raise ValueError("paid_fixture_retries_require_explicit_opt_in")
-        if mock_wrong_first_side is not None or mock_always_wrong:
+        if (
+            mock_wrong_first_side is not None
+            or mock_always_wrong
+            or mock_unsolvable_first_side is not None
+        ):
             raise ValueError("cannot_inject_mock_answers_into_paid_mode")
         key = os.getenv("CAPTCHA_API_KEY", "").strip()
         if not key:
@@ -404,6 +425,7 @@ async def run_fixture(
             max_resends=max_resends,
             wrong_first_side=mock_wrong_first_side,
             always_wrong=mock_always_wrong,
+            unsolvable_first_side=mock_unsolvable_first_side,
         )
         # Prevent artificial 5+5-second waits for a synchronous local mock.
         ranepa_rotate_v2._POLL_SECONDS = 0
@@ -486,6 +508,7 @@ def main() -> int:
     parser.add_argument("--allow-extra-paid", action="store_true")
     parser.add_argument("--mock-wrong-first-side", choices=("left", "right"))
     parser.add_argument("--mock-always-wrong", action="store_true")
+    parser.add_argument("--mock-unsolvable-first-side", choices=("left", "right"))
     parser.add_argument("--screenshot", type=Path)
     args = parser.parse_args()
     try:
@@ -499,6 +522,7 @@ def main() -> int:
                 allow_extra_paid=args.allow_extra_paid,
                 mock_wrong_first_side=args.mock_wrong_first_side,
                 mock_always_wrong=args.mock_always_wrong,
+                mock_unsolvable_first_side=args.mock_unsolvable_first_side,
             )
         )
     except Exception:  # noqa: BLE001
