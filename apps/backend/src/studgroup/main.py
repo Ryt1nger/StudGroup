@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     ranepa_schedule_view_enabled: bool = False
     # Enable only after the SDO launch modal is approved and migration 0062 is deployed.
     sdo_launch_prompt_enabled: bool = False
+    # An owner-only preview while the student-facing launch remains disabled.
+    sdo_launch_prompt_admin_preview_enabled: bool = False
     ranepa_crawl_pause_seconds: int = Field(default=20, ge=5, le=300)
     # Opt-in durable pause after four consecutive unresolved CAPTCHA outcomes.
     ranepa_captcha_guard_enabled: bool = False
