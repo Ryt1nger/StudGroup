@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, database
@@ -284,3 +285,46 @@ async def update_profile(
     if ydb_record and row.sdu_credential_id:
         result["sdu"]["login"] = ydb_record[0]
     return result
+
+
+
+@router.post("/sdo-launch-prompt/claim")
+async def claim_sdo_launch_prompt(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(database)],
+    authorization: str | None = Header(None),
+):
+    """Show the launch modal at most once per Telegram user, across all devices.
+
+    This endpoint is an atomic first-visit claim, not consent to process
+    university credentials. It never reads or discloses a password. The
+    feature defaults OFF until migration 0062 and production launch.
+    """
+    user, _ = await current(db, authorization)
+    if not request.app.state.settings.sdo_launch_prompt_enabled:
+        return {"show": False}
+    from studgroup.api import active_membership
+
+    await active_membership(db, authorization)
+    # Serialize claims via the existing user row; this also handles a user
+    # profile that has never been created, and concurrent devices/browser tabs.
+    await db.execute(select(User.id).where(User.id == user.id).with_for_update())
+    row = await db.get(UserProfile, user.id, populate_existing=True)
+    if row and (
+        row.sdu_credential_id is not None
+        or row.sdu_password_encrypted is not None
+        or row.sdo_launch_prompt_seen_at is not None
+    ):
+        return {"show": False}
+    now = datetime.now(UTC)
+    if row is None:
+        row = UserProfile(
+            user_id=user.id,
+            updated_at=now,
+            sdo_launch_prompt_seen_at=now,
+        )
+        db.add(row)
+    else:
+        row.sdo_launch_prompt_seen_at = now
+    await db.commit()
+    return {"show": True}
