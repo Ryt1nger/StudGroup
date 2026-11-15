@@ -59,6 +59,7 @@ from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_login import normalize_sdo_login
+from studgroup.ranepa_manual_captcha import offer_manual_captcha
 from studgroup.ranepa_personal import remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
@@ -144,9 +145,10 @@ async def collect_bounded(
     trace: CrawlTrace | None = None,
     stats: CrawlRunStats | None = None,
     on_captcha=None,
+    manual_captcha=None,
 ):
     try:
-        async with asyncio.timeout(ACCOUNT_TIMEOUT_SECONDS):
+        async with asyncio.timeout(900 if manual_captcha is not None else ACCOUNT_TIMEOUT_SECONDS):
             return await _collect(
                 engine,
                 group_id,
@@ -165,6 +167,7 @@ async def collect_bounded(
                 trace=trace,
                 stats=stats,
                 on_captcha=on_captcha,
+                manual_captcha=manual_captcha,
             )
     except TimeoutError:
         log_captcha_stage("crawl_timeout")
@@ -438,7 +441,20 @@ async def process_one(
                 stats=account_stats,
                 on_captcha=on_captcha
                 if settings.ranepa_crawl_notify_captcha_seen_enabled
+                and not settings.ranepa_manual_captcha_enabled
                 else None,
+                manual_captcha=(
+                    lambda page: offer_manual_captcha(
+                        engine,
+                        page=page,
+                        owner_id=settings.bot_admin_user_id,
+                        job_id=job_id,
+                        attempt=attempt,
+                        settings=settings,
+                    )
+                    if settings.ranepa_manual_captcha_enabled
+                    else None
+                ),
             )
     async with AsyncSession(engine) as db:
         finished = await finish(db, job_id, group_id, user_id, failure_code=failure)
@@ -511,6 +527,7 @@ async def _collect(
     trace: CrawlTrace | None = None,
     stats: CrawlRunStats | None = None,
     on_captcha=None,
+    manual_captcha=None,
 ):
     try:
         async with async_playwright() as playwright:
@@ -647,6 +664,16 @@ async def _collect(
                             log_captcha_stage("month_verified_after_challenge")
                         else:
                             log_captcha_stage("month_not_verified_after_challenge")
+                if month.status == "captcha_required" and manual_captcha is not None:
+                    log_captcha_stage("owner_fallback_offered_month")
+                    if await manual_captcha(page):
+                        log_captcha_stage(await wait_for_captcha_resolution(page))
+                        month = await read_month(
+                            page, login, password, code, today.year, today.month
+                        )
+                        if month.status == "preview_only":
+                            captcha_schedule_recovered = True
+                            log_captcha_stage("month_verified_after_owner_solution")
                 if month.status != "preview_only":
                     if month.status == "captcha_required":
                         return "captcha"
@@ -691,6 +718,16 @@ async def _collect(
                                 log_captcha_stage("week_received_after_challenge")
                             else:
                                 log_captcha_stage("week_not_verified_after_challenge")
+                    if result.status == "captcha_required" and manual_captcha is not None:
+                        log_captcha_stage("owner_fallback_offered_week")
+                        if await manual_captcha(page):
+                            log_captcha_stage(await wait_for_captcha_resolution(page))
+                            result = await read_week(
+                                page, login, password, code, week_start, allow_empty=not expected
+                            )
+                            if result.snapshot is not None:
+                                captcha_schedule_recovered = True
+                                log_captcha_stage("week_verified_after_owner_solution")
                     if result.snapshot is None:
                         if result.status == "captcha_required":
                             return "captcha"
@@ -710,8 +747,20 @@ async def _collect(
                         trace.record("week_verified")
                         trace.record("sdo_exits_requested")
                     exit_kwargs = {}
-                    if captcha_client is not None and not captcha_attempted:
-                        exit_kwargs["solve_captcha"] = solve_once
+                    if (captcha_client is not None and not captcha_attempted) or manual_captcha is not None:
+
+                        async def solve_sdo_with_owner_fallback(challenge_page):
+                            submitted = await solve_once(challenge_page)
+                            if submitted:
+                                state = await wait_for_captcha_resolution(challenge_page)
+                                if state != "challenge_still_visible_after_wait":
+                                    return True
+                            if manual_captcha is not None:
+                                log_captcha_stage("owner_fallback_offered_sdo")
+                                return await manual_captcha(challenge_page)
+                            return False
+
+                        exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
                     if on_captcha is not None:
                         exit_kwargs["on_captcha"] = on_captcha
                     links, link_states, courses = await resolve_sdo_exits(
