@@ -202,9 +202,7 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
                             if before_second is not None and not await before_second():
                                 raise RotateV2Error("challenge_changed")
                             context = (
-                                ranepa_rotate_v2._context_png(
-                                    left, right, left_rotation=angles[0]
-                                )
+                                ranepa_rotate_v2._context_png(left, right, left_rotation=angles[0])
                                 if self.progressive_context
                                 else context
                             )
@@ -261,9 +259,7 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
                                 )
                                 raise RotateV2Error("invalid_answer")
                             self.resends_used += 1
-                            ranepa_rotate_v2.log_captcha_stage(
-                                "fixture_wrong_angle_resubmission"
-                            )
+                            ranepa_rotate_v2.log_captcha_stage("fixture_wrong_angle_resubmission")
         except httpx.RequestError:
             raise RotateV2Error("network_failed") from None
 
@@ -274,6 +270,7 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
 
 def _aligned(value: float, reference: float) -> bool:
     return abs((value - reference + 180) % 360 - 180) <= 8
+
 
 def fixture_diagnosis(
     *, submitted: bool, angles: tuple[int, int] | None, values: list[float], status: str
@@ -352,12 +349,9 @@ def mock_rucaptcha(
                     200, json={"errorId": 1, "errorCode": "ERROR_CAPTCHA_UNSOLVABLE"}
                 )
             wrong = (
-                (always_wrong and (
-                    wrong_first_side is None
-                    or wrong_first_side == ("left", "right")[side]
-                ))
-                or (side_attempt == 1 and wrong_first_side == ("left", "right")[side])
-            )
+                always_wrong
+                and (wrong_first_side is None or wrong_first_side == ("left", "right")[side])
+            ) or (side_attempt == 1 and wrong_first_side == ("left", "right")[side])
             angle = (_EXPECTED_ANGLES[side] + 90) % 360 if wrong else _EXPECTED_ANGLES[side]
             return httpx.Response(
                 200,
