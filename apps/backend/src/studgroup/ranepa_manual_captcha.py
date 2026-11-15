@@ -55,7 +55,9 @@ def _aware(value: datetime) -> datetime:
 
 
 def _b64(png: bytes) -> str:
-    if not 100 <= len(png) <= MAX_IMAGE_BYTES or not png.startswith(bytes.fromhex("89504e470d0a1a0a")):
+    if not 100 <= len(png) <= MAX_IMAGE_BYTES or not png.startswith(
+        bytes.fromhex("89504e470d0a1a0a")
+    ):
         raise ValueError("unsafe_captcha_image")
     return base64.b64encode(png).decode("ascii")
 
@@ -104,9 +106,7 @@ async def manual_captcha_page(challenge_id: uuid.UUID):
 
 
 @router.post("/v1/ranepa-captcha/{challenge_id}/state")
-async def manual_captcha_state(
-    challenge_id: uuid.UUID, body: OwnerCaptchaAccess, request: Request
-):
+async def manual_captcha_state(challenge_id: uuid.UUID, body: OwnerCaptchaAccess, request: Request):
     async for db in database(request):
         row = await db.get(RanepaManualCaptcha, challenge_id)
         if row is None:
@@ -114,7 +114,11 @@ async def manual_captcha_state(
         await _authorize(request, body.init_data, row.owner_telegram_id)
         pending = row.state == "pending" and _aware(row.expires_at) > datetime.now(UTC)
         return {
-            "status": "pending" if pending else "answered" if row.state == "answered" else "expired",
+            "status": "pending"
+            if pending
+            else "answered"
+            if row.state == "answered"
+            else "expired",
             "screenshot": "data:image/png;base64," + row.screenshot_base64
             if pending and row.screenshot_base64
             else None,
@@ -268,9 +272,9 @@ async def offer_manual_captcha(
                         "Ответ будет проверен на том же сайте и в той же сессии."
                     ),
                     "reply_markup": {
-                        "inline_keyboard": [[
-                            {"text": "🧩 Пройти CAPTCHA", "web_app": {"url": url}}
-                        ]]
+                        "inline_keyboard": [
+                            [{"text": "🧩 Пройти CAPTCHA", "web_app": {"url": url}}]
+                        ]
                     },
                     "link_preview_options": {"is_disabled": True},
                 },
