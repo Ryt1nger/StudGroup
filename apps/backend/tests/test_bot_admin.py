@@ -543,7 +543,6 @@ def test_shadowcards_reports_empty_without_inventing_cards(client):
     assert "пока нет" in session(client)[1][-1]["text"]
 
 
-
 def test_owner_only_ranepa_recovery_command_requires_verified_pilot(client):
     from studgroup.ranepa_crawl_guard import load_guard
 
