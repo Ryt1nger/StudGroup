@@ -312,3 +312,135 @@ def test_manual_pilot_can_retry_one_finished_job_without_affecting_other_members
             await engine.dispose()
 
     asyncio.run(scenario())
+
+def test_24_hour_cooldown_skips_account_at_week_boundary(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/daily-queue.db")
+        sunday = datetime(2026, 11, 8, 23, 55, tzinfo=UTC)
+        monday = sunday + timedelta(minutes=6)
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                group = Group(
+                    id=uuid4(),
+                    telegram_chat_id=-92018,
+                    name="Daily queue",
+                    academic_group_code="D-001",
+                    timezone="Europe/Moscow",
+                )
+                early = User(id=uuid4(), telegram_user_id=92180, display_name="Early")
+                new = User(id=uuid4(), telegram_user_id=92181, display_name="New")
+                db.add_all([group, early, new])
+                await db.flush()
+                for user in (early, new):
+                    db.add(
+                        Membership(
+                            user_id=user.id,
+                            group_id=group.id,
+                            role="student",
+                            status="active",
+                        )
+                    )
+                await db.flush()
+                early_candidate = CrawlCandidate(group.id, early.id)
+                new_candidate = CrawlCandidate(group.id, new.id)
+                assert await enqueue_week(
+                    db, date(2026, 11, 2), [early_candidate], now=sunday
+                ) == 1
+                first = await claim_next(db, now=sunday)
+                assert first.user_id == early.id
+                assert await finish(db, first.id, group.id, early.id, now=sunday)
+                await db.commit()
+
+            # Monday creates a fresh weekly job, but NOT a new 24-hour allowance.
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                assert await enqueue_week(
+                    db,
+                    date(2026, 11, 9),
+                    [early_candidate, new_candidate],
+                    now=monday,
+                ) == 2
+                claimed = await claim_next(db, now=monday)
+                assert claimed.user_id == new.id
+                assert await finish(db, claimed.id, group.id, new.id, now=monday)
+                assert await claim_next(db, now=monday + timedelta(hours=12)) is None
+                await db.commit()
+
+            # After a process restart, exactly 24 h makes the first account due.
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                assert await claim_next(db, now=sunday + timedelta(hours=24) - timedelta(seconds=1)) is None
+                due = await claim_next(db, now=sunday + timedelta(hours=24))
+                assert due is not None and due.user_id == early.id
+                assert await finish(db, due.id, group.id, early.id, now=sunday + timedelta(hours=24))
+                assert await claim_next(db, now=monday + timedelta(hours=24) - timedelta(seconds=1)) is None
+                next_due = await claim_next(db, now=monday + timedelta(hours=24))
+                assert next_due is not None and next_due.user_id == new.id
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_daily_limit_applies_across_memberships_and_requeued_jobs(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/memberships.db")
+        now = datetime(2026, 11, 10, 12, tzinfo=UTC)
+        try:
+            async with engine.begin() as connection:
+                await connection.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                groups = [
+                    Group(
+                        id=uuid4(),
+                        telegram_chat_id=-93010 - n,
+                        name=f"G{n}",
+                        academic_group_code=f"G-{n:03}",
+                        timezone="Europe/Moscow",
+                    )
+                    for n in range(2)
+                ]
+                user = User(id=uuid4(), telegram_user_id=93010, display_name="Both")
+                db.add_all([*groups, user])
+                await db.flush()
+                for group in groups:
+                    db.add(
+                        Membership(
+                            user_id=user.id,
+                            group_id=group.id,
+                            role="student",
+                            status="active",
+                        )
+                    )
+                await db.flush()
+                candidates = [CrawlCandidate(group.id, user.id) for group in groups]
+                assert await enqueue_week(db, date(2026, 11, 9), candidates, now=now) == 2
+                first = await claim_next(db, now=now)
+                # Same account cannot run concurrently in another group.
+                assert await claim_next(db, now=now + timedelta(minutes=1)) is None
+                assert await finish(
+                    db, first.id, first.group_id, first.user_id,
+                    now=now, failure_code="captcha"
+                )
+                assert await claim_next(db, now=now + timedelta(hours=23)) is None
+                await db.commit()
+
+            # New session: the other group cannot bypass the completed attempt.
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                due = await claim_next(db, now=now + timedelta(days=1))
+                assert due is not None and due.user_id == user.id
+                assert due.group_id != first.group_id
+                assert await finish(
+                    db, due.id, due.group_id, user.id,
+                    now=now + timedelta(days=1), failure_code="source_unavailable"
+                )
+                assert await enqueue_week(
+                    db, date(2026, 11, 9), candidates,
+                    now=now + timedelta(days=1, minutes=1)
+                ) == 0
+                assert await claim_next(db, now=now + timedelta(days=1, minutes=1)) is None
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
