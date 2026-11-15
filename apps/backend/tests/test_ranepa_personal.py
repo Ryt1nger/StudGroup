@@ -2,8 +2,8 @@
 
 import asyncio
 from datetime import UTC, date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select
