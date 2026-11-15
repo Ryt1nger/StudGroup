@@ -21,8 +21,10 @@ export function SdoLaunchAnnouncement({ pathname }: { pathname: string }) {
     if (!onHome || !hasSession || !userId || !profile.data) return;
     if (claimedFor.current === userId) return;
     claimedFor.current = userId;
-    if (profile.data.sdu.password_set) return;
 
+    // The backend alone decides whether this user may see the modal.
+    // Connected non-admins are excluded; configured admins are exempt
+    // from the credential check while retaining the once-only receipt.
     // The backend atomically marks the feature announcement seen for the
     // authenticated Telegram user, including across devices.
     void claimSdoLaunchPrompt()
