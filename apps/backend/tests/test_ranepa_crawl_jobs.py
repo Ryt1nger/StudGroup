@@ -472,7 +472,6 @@ def test_daily_limit_applies_across_memberships_and_requeued_jobs(tmp_path):
     asyncio.run(scenario())
 
 
-
 def test_explicit_full_rescan_preserves_history_and_claims_each_user_once(tmp_path):
     async def scenario():
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/full-rescan.db")
@@ -515,29 +514,32 @@ def test_explicit_full_rescan_preserves_history_and_claims_each_user_once(tmp_pa
                 await db.flush()
                 assert await enqueue_week(db, date(2026, 11, 9), candidates, now=base) == 3
                 first = await claim_next(db, now=base)
-                assert await finish(
-                    db, first.id, first.group_id, first.user_id, now=base
-                )
+                assert await finish(db, first.id, first.group_id, first.user_id, now=base)
                 second = await claim_next(db, now=base)
                 assert await finish(
-                    db, second.id, second.group_id, second.user_id,
-                    failure_code="parse_failed", now=base
+                    db,
+                    second.id,
+                    second.group_id,
+                    second.user_id,
+                    failure_code="parse_failed",
+                    now=base,
                 )
                 third = await claim_next(db, now=base)
-                assert await finish(
-                    db, third.id, third.group_id, third.user_id, now=base
-                )
+                assert await finish(db, third.id, third.group_id, third.user_id, now=base)
                 await db.commit()
 
             shortly_after = base + timedelta(minutes=10)
             async with AsyncSession(engine, expire_on_commit=False) as db:
-                assert await enqueue_week(
-                    db,
-                    date(2026, 11, 9),
-                    candidates,
-                    now=shortly_after,
-                    force_refresh=True,
-                ) == 0
+                assert (
+                    await enqueue_week(
+                        db,
+                        date(2026, 11, 9),
+                        candidates,
+                        now=shortly_after,
+                        force_refresh=True,
+                    )
+                    == 0
+                )
                 rows = (await db.scalars(select(RanepaCrawlJob))).all()
                 assert all(row.state == "queued" for row in rows)
                 assert all(row.finished_at == base for row in rows)
@@ -563,13 +565,16 @@ def test_explicit_full_rescan_preserves_history_and_claims_each_user_once(tmp_pa
                         now=shortly_after,
                     )
                 assert done == allowed
-                assert await claim_next(
-                    db,
-                    now=shortly_after,
-                    rescan_all=True,
-                    allowed_user_ids=allowed,
-                    processed_user_ids=done,
-                ) is None
+                assert (
+                    await claim_next(
+                        db,
+                        now=shortly_after,
+                        rescan_all=True,
+                        allowed_user_ids=allowed,
+                        processed_user_ids=done,
+                    )
+                    is None
+                )
                 # The ordinary scheduler still respects the new 24h clock.
                 assert await claim_next(db, now=shortly_after) is None
                 await db.commit()
@@ -597,28 +602,28 @@ def test_full_rescan_never_overrides_unselected_account(tmp_path):
                 b = User(id=uuid4(), telegram_user_id=99332, display_name="B")
                 db.add_all([group, a, b])
                 await db.flush()
-                db.add_all([
-                    Membership(group_id=group.id, user_id=u.id, role="student", status="active")
-                    for u in (a, b)
-                ])
+                db.add_all(
+                    [
+                        Membership(group_id=group.id, user_id=u.id, role="student", status="active")
+                        for u in (a, b)
+                    ]
+                )
                 await db.flush()
                 await enqueue_week(
-                    db, date(2026, 11, 9),
-                    [CrawlCandidate(group.id, u.id) for u in (a, b)]
+                    db, date(2026, 11, 9), [CrawlCandidate(group.id, u.id) for u in (a, b)]
                 )
-                selected = await claim_next(
-                    db, rescan_all=True, allowed_user_ids={a.id}
-                )
+                selected = await claim_next(db, rescan_all=True, allowed_user_ids={a.id})
                 assert selected.user_id == a.id
-                assert await claim_next(
-                    db,
-                    rescan_all=True,
-                    allowed_user_ids={a.id},
-                    processed_user_ids={a.id},
-                ) is None
-                assert await claim_next(
-                    db, rescan_all=True, allowed_user_ids=set()
-                ) is None
+                assert (
+                    await claim_next(
+                        db,
+                        rescan_all=True,
+                        allowed_user_ids={a.id},
+                        processed_user_ids={a.id},
+                    )
+                    is None
+                )
+                assert await claim_next(db, rescan_all=True, allowed_user_ids=set()) is None
                 await db.commit()
         finally:
             await engine.dispose()
