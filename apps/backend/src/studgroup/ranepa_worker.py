@@ -39,6 +39,11 @@ from studgroup.ranepa_crawl_guard import (
     reserve_daily_paid_tasks,
 )
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
+from studgroup.ranepa_crawl_notifications import (
+    CrawlRunStats,
+    notify_captcha_detected,
+    notify_successful_crawl,
+)
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
@@ -91,6 +96,8 @@ async def collect_bounded(
     captcha_diagnostic_only: bool = False,
     captcha_daily_limit: int = 0,
     trace: CrawlTrace | None = None,
+    stats: CrawlRunStats | None = None,
+    on_captcha=None,
 ):
     try:
         async with asyncio.timeout(ACCOUNT_TIMEOUT_SECONDS):
@@ -110,6 +117,8 @@ async def collect_bounded(
                 captcha_diagnostic_only=captcha_diagnostic_only,
                 captcha_daily_limit=captcha_daily_limit,
                 trace=trace,
+                stats=stats,
+                on_captcha=on_captcha,
             )
     except TimeoutError:
         log_captcha_stage("crawl_timeout")
@@ -177,7 +186,9 @@ async def process_one(
     pilot_group_id: UUID | None = None,
     pilot_user_id: UUID | None = None,
     captcha_budget: CaptchaBudget | None = None,
+    run_stats: CrawlRunStats | None = None,
 ) -> str:
+    account_stats = CrawlRunStats()
     available_budget = captcha_budget or CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     async with AsyncSession(engine, expire_on_commit=False) as db:
         # The durable CAPTCHA breaker never changes fair queue priorities.
@@ -226,6 +237,8 @@ async def process_one(
                     trace.observation(job_id=job_id, attempt=attempt, failure_code="login_failed")
                 )
             await db.commit()
+            if finished and run_stats is not None:
+                run_stats.failed_accounts += 1
             return "failed"
         code = group.academic_group_code
         credential_id = profile.sdu_credential_id
@@ -284,6 +297,25 @@ async def process_one(
                     # An updated/revoked account must not be recreated by a late crawl.
                     return
 
+            async def on_captcha(location: str) -> None:
+                if not settings.ranepa_crawl_notify_captcha_seen_enabled:
+                    return
+                try:
+                    queued = await notify_captcha_detected(
+                        engine,
+                        owner_id=settings.bot_admin_user_id,
+                        job_id=job_id,
+                        attempt=attempt,
+                        location=location,
+                    )
+                except Exception:  # noqa: BLE001
+                    # A failed Telegram outbox write cannot obscure a genuine
+                    # CAPTCHA or change the authorized solver/queue behavior.
+                    log_captcha_stage("owner_captcha_seen_notice_unavailable")
+                    return
+                if queued:
+                    log_captcha_stage("owner_captcha_seen_notice_queued")
+
             failure = await collect_bounded(
                 engine,
                 group_id,
@@ -310,6 +342,10 @@ async def process_one(
                     settings.ranepa_captcha_daily_max_tasks if pilot_group_id is None else 0
                 ),
                 trace=trace,
+                stats=account_stats,
+                on_captcha=on_captcha
+                if settings.ranepa_crawl_notify_captcha_seen_enabled
+                else None,
             )
     async with AsyncSession(engine) as db:
         finished = await finish(db, job_id, group_id, user_id, failure_code=failure)
@@ -331,6 +367,13 @@ async def process_one(
             elif consecutive == 0 and failure is None:
                 log_captcha_stage("crawl_captcha_streak_cleared")
         await db.commit()
+    if finished:
+        if failure is None:
+            account_stats.successful_accounts = 1
+        else:
+            account_stats.failed_accounts = 1
+        if run_stats is not None:
+            run_stats.add(account_stats)
     if pilot_group_id is not None:
         # The value is chosen exclusively from known crawl failure categories.
         known_failures = {
@@ -367,6 +410,8 @@ async def _collect(
     captcha_diagnostic_only: bool = False,
     captcha_daily_limit: int = 0,
     trace: CrawlTrace | None = None,
+    stats: CrawlRunStats | None = None,
+    on_captcha=None,
 ):
     try:
         async with async_playwright() as playwright:
@@ -399,13 +444,16 @@ async def _collect(
                 captcha_seen = False
                 captcha_schedule_recovered = False
 
-                async def solve_once(challenge_page):
+                async def solve_once(challenge_page, location="sdo"):
                     nonlocal captcha_attempted, captcha_seen
-                    # Includes challenges encountered while following SDO exits.
-                    # Record observation even if the provider is disabled.
+                    # Month/week detections were already announced before
+                    # this call. The callback here is for live SDO exits only.
                     captcha_seen = True
-                    if trace is not None and not trace.captcha_seen:
-                        trace.mark_captcha("sdo")
+                    if location == "sdo":
+                        if trace is not None and not trace.captcha_seen:
+                            trace.mark_captcha("sdo")
+                        if on_captcha is not None:
+                            await on_captcha("sdo")
                     if captcha_attempted:
                         log_captcha_stage("attempt_already_used")
                         return False
@@ -481,7 +529,9 @@ async def _collect(
                     if trace is not None:
                         trace.mark_captcha("month")
                     log_captcha_stage("challenge_detected_month")
-                    if await solve_once(page):
+                    if on_captcha is not None:
+                        await on_captcha("month")
+                    if await solve_once(page, "month"):
                         # Wait for a possible asynchronous redirect without
                         # retrying the CAPTCHA or declaring the gate solved.
                         log_captcha_stage(await wait_for_captcha_resolution(page))
@@ -525,7 +575,9 @@ async def _collect(
                         if trace is not None:
                             trace.mark_captcha("week")
                         log_captcha_stage("challenge_detected_week")
-                        if await solve_once(page):
+                        if on_captcha is not None:
+                            await on_captcha("week")
+                        if await solve_once(page, "week"):
                             log_captcha_stage(await wait_for_captcha_resolution(page))
                             log_captcha_stage("schedule_recheck_after_captcha_week")
                             if trace is not None:
@@ -558,14 +610,14 @@ async def _collect(
                     if trace is not None:
                         trace.record("week_verified")
                         trace.record("sdo_exits_requested")
+                    exit_kwargs = {}
                     if captcha_client is not None and not captcha_attempted:
-                        links, link_states, courses = await resolve_sdo_exits(
-                            context, result, login, password, solve_captcha=solve_once
-                        )
-                    else:
-                        links, link_states, courses = await resolve_sdo_exits(
-                            context, result, login, password
-                        )
+                        exit_kwargs["solve_captcha"] = solve_once
+                    if on_captcha is not None:
+                        exit_kwargs["on_captcha"] = on_captcha
+                    links, link_states, courses = await resolve_sdo_exits(
+                        context, result, login, password, **exit_kwargs
+                    )
                     sdo_captcha_unresolved = "captcha_required" in link_states.values()
                     if trace is not None:
                         if sdo_captcha_unresolved and not trace.captcha_seen:
@@ -583,6 +635,11 @@ async def _collect(
                             group_identity_verified=True,
                         )
                         await db.commit()  # Each validated week is visible immediately.
+                    if stats is not None:
+                        stats.saved_weeks += 1
+                        stats.saved_lessons += len(actual)
+                        stats.saved_sdo_links += len(links)
+                        stats.saved_sdo_courses += len(courses)
                     if sdo_captcha_unresolved:
                         log_captcha_stage("challenge_still_present_sdo")
                         return "captcha"
@@ -666,17 +723,33 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
     engine = create_worker_engine(settings)
     captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     completed = 0
+    run_stats = CrawlRunStats()
     try:
         await prepare_week(engine, datetime.now(ZoneInfo("Europe/Moscow")).date(), settings)
         deadline = monotonic() + max_minutes * 60
         while monotonic() < deadline:
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-            status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
+            status = await process_one(
+                engine, settings, today, captcha_budget=captcha_budget, run_stats=run_stats
+            )
             if status in {"idle", "paused"}:
                 break
             completed += 1
             if monotonic() < deadline:
                 await asyncio.sleep(settings.ranepa_crawl_pause_seconds)
+        if settings.ranepa_crawl_notify_success_enabled and run_stats.successful_accounts:
+            try:
+                queued = await notify_successful_crawl(
+                    engine,
+                    owner_id=settings.bot_admin_user_id,
+                    stats=run_stats,
+                    scope="batch",
+                )
+            except Exception:  # noqa: BLE001
+                log_captcha_stage("owner_success_notice_unavailable")
+            else:
+                if queued:
+                    log_captcha_stage("owner_success_notice_queued")
         return completed
     finally:
         await engine.dispose()
@@ -697,6 +770,7 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
     warn_if_unconfigured(settings)
     engine = create_worker_engine(settings)
     captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
+    run_stats = CrawlRunStats()
     try:
         today = datetime.now(ZoneInfo("Europe/Moscow")).date()
         await prepare_week(
@@ -707,14 +781,29 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
             pilot_user_id=user_id,
             bypass_cooldown=True,
         )
-        return await process_one(
+        result = await process_one(
             engine,
             settings,
             today,
             pilot_group_id=group_id,
             pilot_user_id=user_id,
             captcha_budget=captcha_budget,
+            run_stats=run_stats,
         )
+        if settings.ranepa_crawl_notify_success_enabled and run_stats.successful_accounts:
+            try:
+                queued = await notify_successful_crawl(
+                    engine,
+                    owner_id=settings.bot_admin_user_id,
+                    stats=run_stats,
+                    scope="pilot",
+                )
+            except Exception:  # noqa: BLE001
+                log_captcha_stage("owner_success_notice_unavailable")
+            else:
+                if queued:
+                    log_captcha_stage("owner_success_notice_queued")
+        return result
     finally:
         await engine.dispose()
 
