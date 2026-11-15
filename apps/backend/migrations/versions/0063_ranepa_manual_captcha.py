@@ -53,7 +53,5 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_index(
-        "ix_ranepa_manual_captcha_job", table_name="ranepa_manual_captcha"
-    )
+    op.drop_index("ix_ranepa_manual_captcha_job", table_name="ranepa_manual_captcha")
     op.drop_table("ranepa_manual_captcha")
