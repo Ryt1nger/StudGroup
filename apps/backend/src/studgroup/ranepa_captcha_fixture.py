@@ -21,11 +21,12 @@ from playwright.async_api import async_playwright
 
 from studgroup import ranepa_rotate_v2
 from studgroup.ranepa_rotate import solve_rotating_halves
-from studgroup.ranepa_rotate_v2 import RuCaptchaV2Pair
+from studgroup.ranepa_rotate_v2 import RotateV2Error, RuCaptchaV2Pair
 
 _FIXTURE_URL = "https://my.ranepa.ru/__studgroup_local_only_rotate_fixture__"
 _EXPECTED_ANGLES = (90, 180)
 _SIZE = 200
+_MAX_RESENDS = 3
 
 _HTML = """<!doctype html>
 <html lang="ru">
@@ -150,36 +151,137 @@ def fixture_html(halves: tuple[bytes, bytes]) -> str:
 
 
 class ObservedFixtureV2Pair(RuCaptchaV2Pair):
-    """Keep synthetic-only solver angles for fixture diagnosis.
+    """Fixture-only response verification and bounded wrong-angle resubmission.
 
-    This subclass is never used by the live RANEPA worker. It preserves
-    RuCaptchaV2Pair type checks and the production before_second guard.
+    Unlike a real StormWall CAPTCHA, the synthetic fixture has known angles.
+    Only this test subclass can reject an incorrect provider angle before
+    any browser slider is touched. The production solver is unchanged.
     """
 
-    last_angles: tuple[int, int] | None = None
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        client_factory=None,
+        progressive_context: bool = False,
+        max_resends: int = 0,
+    ):
+        if type(max_resends) is not int or not 0 <= max_resends <= _MAX_RESENDS:
+            raise ValueError("fixture_max_resends_out_of_range")
+        super().__init__(
+            api_key, client_factory=client_factory, progressive_context=progressive_context
+        )
+        self.max_resends = max_resends
+        self.resends_used = 0
+        self.tasks_submitted = 0
+        self.last_angles: tuple[int, int] | None = None
 
     async def solve_pair(
         self, halves: tuple[bytes, bytes], *, timeout_seconds: int = 110, before_second=None
     ) -> tuple[int, int]:
-        result = await super().solve_pair(
-            halves, timeout_seconds=timeout_seconds, before_second=before_second
-        )
+        self.last_angles = None
+        self.resends_used = 0
+        self.tasks_submitted = 0
+
+        if self.max_resends == 0:
+            # Preserve the original behaviour when retry spending is off.
+            result = await super().solve_pair(
+                halves, timeout_seconds=timeout_seconds, before_second=before_second
+            )
+            self.last_angles = result
+            self.tasks_submitted = 2
+            return result
+
+        if not isinstance(halves, tuple) or len(halves) != 2:
+            raise RotateV2Error("image_invalid")
+        left = ranepa_rotate_v2._image(halves[0])
+        right = ranepa_rotate_v2._image(halves[1])
+        context = ranepa_rotate_v2._context_png(left, right)
+        ranepa_rotate_v2.log_captcha_stage("rotate_v2_shared_context_verified")
+        angles = []
+
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                async with self._client_factory(timeout=20, follow_redirects=False) as http:
+                    for side in (0, 1):
+                        if side == 1:
+                            if before_second is not None and not await before_second():
+                                raise RotateV2Error("challenge_changed")
+                            context = (
+                                ranepa_rotate_v2._context_png(
+                                    left, right, left_rotation=angles[0]
+                                )
+                                if self.progressive_context
+                                else context
+                            )
+                            if self.progressive_context:
+                                ranepa_rotate_v2.log_captcha_stage(
+                                    "rotate_v2_progressive_context_verified"
+                                )
+                        while True:
+                            # Every extra paid request must see the same images
+                            # and native-thumb geometry before it is sent.
+                            if self.tasks_submitted > 0 and before_second is not None:
+                                if not await before_second():
+                                    raise RotateV2Error("challenge_changed")
+                            if self.tasks_submitted >= 2 + self.max_resends:
+                                raise RotateV2Error("invalid_answer")
+                            self.tasks_submitted += 1
+                            try:
+                                angle = await self._solve_one(
+                                    http,
+                                    halves[side],
+                                    context,
+                                    side,
+                                    progressive_right=(side == 1 and self.progressive_context),
+                                )
+                            except RotateV2Error as exc:
+                                # A definitive unsolvable/invalid final provider
+                                # response can be resubmitted. Transport failures,
+                                # ambiguous charge state and changed challenges
+                                # remain fail-closed without any new paid task.
+                                if exc.stage not in {"api_unsolvable", "invalid_answer"}:
+                                    raise
+                                if self.resends_used >= self.max_resends:
+                                    raise
+                                self.resends_used += 1
+                                ranepa_rotate_v2.log_captcha_stage(
+                                    "fixture_worker_error_resubmission"
+                                )
+                                continue
+
+                            if _aligned(angle, _EXPECTED_ANGLES[side]):
+                                angles.append(angle)
+                                break
+                            if self.resends_used >= self.max_resends:
+                                ranepa_rotate_v2.log_captcha_stage(
+                                    "fixture_wrong_angle_retry_limit_reached"
+                                )
+                                raise RotateV2Error("invalid_answer")
+                            self.resends_used += 1
+                            ranepa_rotate_v2.log_captcha_stage(
+                                "fixture_wrong_angle_resubmission"
+                            )
+        except httpx.RequestError:
+            raise RotateV2Error("network_failed") from None
+
+        result = angles[0], angles[1]
         self.last_angles = result
         return result
 
+
+def _aligned(value: float, reference: float) -> bool:
+    return abs((value - reference + 180) % 360 - 180) <= 8
 
 def fixture_diagnosis(
     *, submitted: bool, angles: tuple[int, int] | None, values: list[float], status: str
 ) -> str:
     """Distinguish provider-answer error from incorrect browser movement."""
 
-    def aligned(value: float, reference: float) -> bool:
-        return abs((value - reference + 180) % 360 - 180) <= 8
-
     if not submitted or angles is None:
         return "solver_incomplete"
     if any(
-        not aligned(actual, expected)
+        not _aligned(actual, expected)
         for actual, expected in zip(angles, _EXPECTED_ANGLES, strict=True)
     ):
         return "provider_angle_mismatch"
@@ -192,9 +294,24 @@ def fixture_diagnosis(
     return "accepted"
 
 
-def mock_rucaptcha(halves: tuple[bytes, bytes], *, progressive_context: bool):
-    """Actual RuCaptchaV2Pair client against a strictly local HTTPX fake API."""
-    seen = {"created": 0, "answered": 0, "contexts": []}
+def mock_rucaptcha(
+    halves: tuple[bytes, bytes],
+    *,
+    progressive_context: bool,
+    max_resends: int = 0,
+    wrong_first_side: str | None = None,
+    always_wrong: bool = False,
+):
+    """Use the real v2 client with a deterministic, in-memory fake provider."""
+    if wrong_first_side not in {None, "left", "right"}:
+        raise ValueError("fixture_mock_wrong_side")
+    seen = {
+        "created": 0,
+        "answered": 0,
+        "contexts": [],
+        "task_sides": {},
+        "side_requests": [0, 0],
+    }
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host != "api.rucaptcha.com" or request.method != "POST":
@@ -202,27 +319,39 @@ def mock_rucaptcha(halves: tuple[bytes, bytes], *, progressive_context: bool):
         data = json.loads(request.content)
         if request.url.path == "/createTask":
             index = seen["created"]
-            if index >= 2:
+            if index >= 2 + max_resends:
                 raise AssertionError("fixture_mock_task_budget_exceeded")
             task = data["task"]
             if task["type"] != "RotateTask":
                 raise AssertionError("fixture_mock_wrong_task")
-            if base64.b64decode(task["body"], validate=True) != halves[index]:
+            body = base64.b64decode(task["body"], validate=True)
+            if body not in halves:
                 raise AssertionError("fixture_mock_wrong_image")
+            side = halves.index(body)
             seen["contexts"].append(task["imgInstructions"])
+            seen["side_requests"][side] += 1
+            seen["task_sides"][1001 + index] = (
+                side,
+                seen["side_requests"][side],
+            )
             seen["created"] += 1
             return httpx.Response(200, json={"errorId": 0, "taskId": 1001 + index})
         if request.url.path == "/getTaskResult":
-            index = data["taskId"] - 1001
-            if not 0 <= index < seen["created"]:
+            task_id = data["taskId"]
+            if task_id not in seen["task_sides"]:
                 raise AssertionError("fixture_mock_wrong_task_id")
+            side, side_attempt = seen["task_sides"][task_id]
             seen["answered"] += 1
+            wrong = always_wrong or (
+                side_attempt == 1 and wrong_first_side == ("left", "right")[side]
+            )
+            angle = (_EXPECTED_ANGLES[side] + 90) % 360 if wrong else _EXPECTED_ANGLES[side]
             return httpx.Response(
                 200,
                 json={
                     "errorId": 0,
                     "status": "ready",
-                    "solution": {"rotate": _EXPECTED_ANGLES[index]},
+                    "solution": {"rotate": angle},
                 },
             )
         raise AssertionError("fixture_mock_unexpected_api")
@@ -234,25 +363,48 @@ def mock_rucaptcha(halves: tuple[bytes, bytes], *, progressive_context: bool):
         "local-mock-only",
         client_factory=factory,
         progressive_context=progressive_context,
+        max_resends=max_resends,
     ), seen
 
 
 async def run_fixture(
-    *, provider: str, allow_paid: bool, progressive_context: bool, screenshot: Path | None = None
+    *,
+    provider: str,
+    allow_paid: bool,
+    progressive_context: bool,
+    screenshot: Path | None = None,
+    max_resends: int = 0,
+    allow_extra_paid: bool = False,
+    mock_wrong_first_side: str | None = None,
+    mock_always_wrong: bool = False,
 ) -> bool:
     if provider not in {"mock", "rucaptcha"}:
         raise ValueError("unsupported_fixture_provider")
+    if type(max_resends) is not int or not 0 <= max_resends <= _MAX_RESENDS:
+        raise ValueError("fixture_max_resends_out_of_range")
     if provider == "rucaptcha":
         if not allow_paid:
             raise ValueError("paid_fixture_requires_explicit_allow_paid")
+        if max_resends > 0 and not allow_extra_paid:
+            raise ValueError("paid_fixture_retries_require_explicit_opt_in")
+        if mock_wrong_first_side is not None or mock_always_wrong:
+            raise ValueError("cannot_inject_mock_answers_into_paid_mode")
         key = os.getenv("CAPTCHA_API_KEY", "").strip()
         if not key:
             raise ValueError("paid_fixture_requires_CAPTCHA_API_KEY")
-        solver = ObservedFixtureV2Pair(key, progressive_context=progressive_context)
+        solver = ObservedFixtureV2Pair(
+            key, progressive_context=progressive_context, max_resends=max_resends
+        )
         seen = None
     else:
         halves = make_halves()
-        solver, seen = mock_rucaptcha(halves, progressive_context=progressive_context)
+        solver, seen = mock_rucaptcha(
+            halves,
+            progressive_context=progressive_context,
+            max_resends=max_resends,
+            wrong_first_side=mock_wrong_first_side,
+            always_wrong=mock_always_wrong,
+        )
         # Prevent artificial 5+5-second waits for a synchronous local mock.
         ranepa_rotate_v2._POLL_SECONDS = 0
 
@@ -283,10 +435,14 @@ async def run_fixture(
                 await page.screenshot(path=str(screenshot))
             accepted = submitted and state["status"] == "accepted"
             if seen is not None and (
-                seen["created"] != 2
-                or seen["answered"] != 2
-                or len(seen["contexts"]) != 2
-                or (seen["contexts"][0] != seen["contexts"][1]) != progressive_context
+                seen["created"] != solver.tasks_submitted
+                or seen["created"] > 2 + max_resends
+                or seen["answered"] != seen["created"]
+                or len(seen["contexts"]) != seen["created"]
+                or (
+                    max_resends == 0
+                    and (seen["contexts"][0] != seen["contexts"][1]) != progressive_context
+                )
             ):
                 raise AssertionError("fixture_mock_two_task_contract_failed")
             diagnosis = fixture_diagnosis(
@@ -309,6 +465,8 @@ async def run_fixture(
                 "RANEPA_FIXTURE_EXPECTED_ANGLES "
                 f"left={_EXPECTED_ANGLES[0]} right={_EXPECTED_ANGLES[1]}"
             )
+            print(f"RANEPA_FIXTURE_RESENDS_USED {solver.resends_used}")
+            print(f"RANEPA_FIXTURE_TASKS_SUBMITTED {solver.tasks_submitted}")
             print("RANEPA_FIXTURE_DIAGNOSIS " + diagnosis)
             print("RANEPA_FIXTURE_PROVIDER " + provider)
             print("RANEPA_FIXTURE_RESULT " + ("accepted" if accepted else "rejected"))
@@ -324,6 +482,10 @@ def main() -> int:
     parser.add_argument("--provider", choices=("mock", "rucaptcha"), default="mock")
     parser.add_argument("--allow-paid", action="store_true")
     parser.add_argument("--progressive-context", action="store_true")
+    parser.add_argument("--max-resends", type=int, default=0, choices=range(4))
+    parser.add_argument("--allow-extra-paid", action="store_true")
+    parser.add_argument("--mock-wrong-first-side", choices=("left", "right"))
+    parser.add_argument("--mock-always-wrong", action="store_true")
     parser.add_argument("--screenshot", type=Path)
     args = parser.parse_args()
     try:
@@ -333,6 +495,10 @@ def main() -> int:
                 allow_paid=args.allow_paid,
                 progressive_context=args.progressive_context,
                 screenshot=args.screenshot,
+                max_resends=args.max_resends,
+                allow_extra_paid=args.allow_extra_paid,
+                mock_wrong_first_side=args.mock_wrong_first_side,
+                mock_always_wrong=args.mock_always_wrong,
             )
         )
     except Exception:  # noqa: BLE001
