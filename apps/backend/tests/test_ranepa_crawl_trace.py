@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import UTC, date, datetime
+from datetime import date
 from uuid import uuid4
 
 import pytest
@@ -60,8 +60,11 @@ def test_crawl_trace_is_persisted_per_job_attempt_without_credentials(tmp_path):
                 await conn.run_sync(Base.metadata.create_all)
             async with AsyncSession(engine) as db:
                 group = Group(
-                    id=uuid4(), telegram_chat_id=-56781, name="Test",
-                    academic_group_code="A-001", timezone="Europe/Moscow"
+                    id=uuid4(),
+                    telegram_chat_id=-56781,
+                    name="Test",
+                    academic_group_code="A-001",
+                    timezone="Europe/Moscow",
                 )
                 user = User(id=uuid4(), telegram_user_id=56781, display_name="Student")
                 db.add_all([group, user])
