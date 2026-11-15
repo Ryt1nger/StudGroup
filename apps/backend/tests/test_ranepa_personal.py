@@ -1,7 +1,8 @@
 """Personal snapshot is immediately readable only by its owner and survives failures."""
 
 import asyncio
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 from uuid import uuid4
 
 import pytest
@@ -15,6 +16,7 @@ from studgroup.models import (
     Membership,
     MemberSubgroup,
     RanepaPersonalSnapshot,
+    SchedulePattern,
     Subgroup,
     SubjectSplit,
     User,
@@ -144,7 +146,7 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
     assert detail.json()["lesson"]["subject"] == "Новая история"
     today = client.get("/v1/today", headers=AUTH)
     assert today.status_code == 200
-    assert today.json()["next_lesson"] is None
+    assert today.json()["group_timezone"] == "Europe/Moscow"
     client.app.state.settings.ranepa_schedule_view_enabled = False
     assert (
         client.get("/v1/ranepa-schedule?start=2026-11-02&end=2026-11-09", headers=AUTH).json()[
@@ -243,6 +245,33 @@ def test_peer_schedule_fills_group_calendar_without_sharing_private_sdo_url(clie
     physics = next(row for row in lessons if row["subject"] == "Физика")
     assert physics["online_url"] is None
     assert physics["course_url"] is None
+
+
+def test_today_retains_group_timetable_when_sdo_is_enabled_without_any_own_scan(client):
+    async def configure():
+        today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            group.academic_group_code = CODE
+            row = await db.scalar(
+                select(SchedulePattern).where(
+                    SchedulePattern.group_id == group.id,
+                    SchedulePattern.subject == "Математика",
+                )
+            )
+            row.valid_from = today - timedelta(days=7)
+            row.valid_until = today + timedelta(days=70)
+            row.weekday = (today + timedelta(days=1)).weekday()
+            await db.commit()
+
+    asyncio.run(configure())
+    client.app.state.settings.ranepa_schedule_view_enabled = True
+    result = client.get("/v1/today", headers=AUTH)
+    assert result.status_code == 200
+    body = result.json()
+    assert body["next_lesson"]["lesson"]["subject"] == "Математика"
+    assert body["freshness"]["stale"] is False
+    assert body["day_lessons_state"] == "empty"
 
 
 def test_group_fallback_never_gives_another_subgroups_lesson(tmp_path):
