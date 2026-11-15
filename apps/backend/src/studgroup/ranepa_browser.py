@@ -360,12 +360,12 @@ async def resolve_sdo_exits(
             empty_course_reads = 0
             captcha_seen = False
             for _ in range(80):
-                if (
-                    solve_captcha is not None
-                    and await page.get_by_text("Используйте ползунки", exact=False).is_visible()
-                ):
+                # Observe the real challenge even if paid solving is
+                # disabled; an unresolved SDO exit must be counted by the
+                # queue circuit breaker instead of looking like success.
+                if await page.get_by_text("Используйте ползунки", exact=False).is_visible():
                     captcha_seen = True
-                    if await solve_captcha(page):
+                    if solve_captcha is not None and await solve_captcha(page):
                         captcha_seen = False
                         continue
                     break
