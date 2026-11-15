@@ -65,8 +65,9 @@ def make_challenge(client, expired=False):
                 expires_at=datetime.now(UTC) + timedelta(minutes=-1 if expired else 6),
             )
             db.add_all([job, challenge])
+            challenge_id = str(challenge.id)
             await db.commit()
-            return str(challenge.id)
+            return challenge_id
 
     return asyncio.run(seed())
 
