@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from studgroup.models import Base, BotOutbox
 from studgroup.ranepa_crawl_notifications import (
     CrawlRunStats,
+    notify_account_crawl_result,
     notify_captcha_detected,
     notify_successful_crawl,
 )
@@ -93,6 +94,94 @@ def test_successful_run_summary_uses_persisted_counts_and_run_dedup(tmp_path, mo
             assert await notify_successful_crawl(engine, owner_id=915, stats=stats, scope="batch")
         finally:
             await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/accounts.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            job = uuid4()
+            account = uuid4()
+            params = {
+                "owner_id": 915,
+                "job_id": job,
+                "attempt": 1,
+                "user_id": account,
+                "group_code": "БИ1.2",
+                "student_name": "Тестовый студент",
+            }
+            assert await notify_account_crawl_result(
+                engine,
+                **params,
+                failure_code=None,
+                stats=CrawlRunStats(saved_weeks=3, saved_lessons=12, saved_sdo_links=2),
+            )
+            assert not await notify_account_crawl_result(
+                engine,
+                **params,
+                failure_code="captcha",
+                stats=CrawlRunStats(),
+            )
+            assert await notify_account_crawl_result(
+                engine,
+                **{**params, "attempt": 2},
+                failure_code="captcha",
+                stats=CrawlRunStats(saved_weeks=1, saved_lessons=4),
+            )
+            assert await notify_account_crawl_result(
+                engine,
+                **{**params, "attempt": 3},
+                failure_code=None,
+                stats=CrawlRunStats(saved_weeks=3, saved_lessons=9),
+            )
+            async with AsyncSession(engine) as db:
+                rows = (await db.scalars(select(BotOutbox).order_by(BotOutbox.dedup_key))).all()
+                assert len(rows) == 3
+                notices = {
+                    int(row.dedup_key.rsplit(":", 1)[1]): json.loads(row.payload) for row in rows
+                }
+                assert all(notice["chat_id"] == 915 for notice in notices.values())
+                assert "✅ StudGroup · данные СДО извлечены" in notices[1]["text"]
+                assert "Ссылок СДО: 2" in notices[1]["text"]
+                assert "❌ StudGroup · ошибка" in notices[2]["text"]
+                assert "captcha" in notices[2]["text"]
+                assert "Сохранено недель: 1" in notices[2]["text"]
+                assert "⚠️ StudGroup · данные СДО не извлечены" in notices[3]["text"]
+                assert "Ссылок СДО: 0" in notices[3]["text"]
+                assert all("\\n" not in notice["text"] for notice in notices.values())
+                assert all("cookie" not in row.payload.lower() for row in rows)
+                assert all("http" not in row.payload.lower() for row in rows)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_per_account_results_reject_unsafe_values(tmp_path):
+    async def scenario():
+        account = uuid4()
+        args = {
+            "owner_id": 915,
+            "job_id": uuid4(),
+            "attempt": 1,
+            "user_id": account,
+            "group_code": "Test",
+            "student_name": "Student",
+            "stats": CrawlRunStats(),
+        }
+        with pytest.raises(ValueError, match="invalid_crawl_failure_code"):
+            await notify_account_crawl_result(None, **args, failure_code="secret")
+        with pytest.raises(ValueError, match="invalid_crawl_attempt"):
+            await notify_account_crawl_result(
+                None, **{**args, "attempt": 0}, failure_code="captcha"
+            )
+        assert not await notify_account_crawl_result(
+            None, **{**args, "owner_id": None}, failure_code="captcha"
+        )
 
     asyncio.run(scenario())
 

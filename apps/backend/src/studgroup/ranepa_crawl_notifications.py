@@ -86,6 +86,84 @@ async def notify_captcha_detected(
         return queued
 
 
+_ACCOUNT_FAILURE_REASONS = {
+    "login_failed": "вход не выполнен или разрешённые реквизиты недоступны",
+    "captcha": "CAPTCHA не пройдена",
+    "source_unavailable": "источник расписания недоступен",
+    "identity_unverified": "не удалось подтвердить принадлежность расписания",
+    "parse_failed": "данные источника не прошли проверку",
+    "internal": "внутренняя ошибка обработки",
+}
+
+
+def _safe_label(value: str | None, *, fallback: str) -> str:
+    """One printable, bounded line; reject hidden formatting or control characters."""
+    cleaned = "".join(ch if ch.isprintable() else " " for ch in (value or ""))
+    return " ".join(cleaned.split())[:72] or fallback
+
+
+async def notify_account_crawl_result(
+    engine,
+    *,
+    owner_id: int | None,
+    job_id: uuid.UUID,
+    attempt: int,
+    user_id: uuid.UUID,
+    group_code: str | None,
+    student_name: str | None,
+    failure_code: str | None,
+    stats: CrawlRunStats,
+) -> bool:
+    """One private message per finalized account attempt, even when extraction fails.
+
+    A green *SDO extraction* result requires persisted source-backed links or
+    course pages. Verified timetable-only reads are a separate warning, never
+    presented as confirmed SDO extraction.
+    """
+    if not _owner_id(owner_id):
+        return False
+    if failure_code is not None and failure_code not in _ACCOUNT_FAILURE_REASONS:
+        raise ValueError("invalid_crawl_failure_code")
+    if attempt < 1:
+        raise ValueError("invalid_crawl_attempt")
+    group = _safe_label(group_code, fallback="группа не указана")
+    name = _safe_label(student_name, fallback="студент")
+    if failure_code is not None:
+        heading = "❌ StudGroup · ошибка обработки учётки СДО"
+        outcome = "Причина: " + _ACCOUNT_FAILURE_REASONS[failure_code] + f" ({failure_code})."
+    elif stats.saved_sdo_links > 0 or stats.saved_sdo_courses > 0:
+        heading = "✅ StudGroup · данные СДО извлечены"
+        outcome = "Подтверждённые ссылки или страницы курсов успешно сохранены."
+    elif stats.saved_weeks > 0:
+        heading = "⚠️ StudGroup · данные СДО не извлечены"
+        outcome = (
+            "Расписание сохранено, но подтверждённых ссылок или страниц курсов СДО не найдено. "
+            "Это не обязательно ошибка входа — требуется проверка доступности материалов."
+        )
+    else:
+        heading = "⚠️ StudGroup · данные СДО не подтверждены"
+        outcome = "Подтверждённые данные расписания или СДО не получены."
+    message = "\n".join(
+        [
+            heading,
+            f"Студент: {name}. Группа: {group}.",
+            f"Учётка: {str(user_id)[:8]}. Попытка: {attempt}.",
+            outcome,
+            f"Сохранено недель: {stats.saved_weeks}; занятий: {stats.saved_lessons}.",
+            f"Ссылок СДО: {stats.saved_sdo_links}; страниц курсов: {stats.saved_sdo_courses}.",
+        ]
+    )
+    async with AsyncSession(engine) as db:
+        queued = await enqueue_once(
+            db,
+            "sendMessage",
+            {"chat_id": owner_id, "text": message, "link_preview_options": {"is_disabled": True}},
+            f"ranepa-crawl-account:{job_id}:{attempt}",
+        )
+        await db.commit()
+        return queued
+
+
 async def notify_successful_crawl(
     engine,
     *,
