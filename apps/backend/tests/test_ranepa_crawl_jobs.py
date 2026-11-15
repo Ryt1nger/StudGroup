@@ -283,7 +283,8 @@ def test_manual_pilot_can_retry_one_finished_job_without_affecting_other_members
                 )
                 assert first.state == "queued"
                 assert first.failure_code is None
-                assert first.finished_at is None
+                # Keep last completion for the normal 24-hour cooldown even on a pilot reset.
+                assert first.finished_at == now
                 assert first.attempts == 1
                 assert second.state == "succeeded"
                 assert second.attempts == 1
