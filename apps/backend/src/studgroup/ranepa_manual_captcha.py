@@ -216,6 +216,28 @@ async def _apply_manual_rotation(page, angles: tuple[int, int], halves) -> bool:
     return True
 
 
+async def cleanup_expired_captcha_artwork(engine) -> None:
+    """Discard captured puzzle PNGs after the deadline, including crashed runners."""
+    from sqlalchemy import update
+
+    now = datetime.now(UTC)
+    async with AsyncSession(engine) as db:
+        await db.execute(
+            update(RanepaManualCaptcha)
+            .where(
+                RanepaManualCaptcha.expires_at < now,
+                RanepaManualCaptcha.screenshot_base64.is_not(None),
+            )
+            .values(
+                state="expired",
+                screenshot_base64=None,
+                left_image_base64=None,
+                right_image_base64=None,
+            )
+        )
+        await db.commit()
+
+
 async def offer_manual_captcha(
     engine,
     *,
