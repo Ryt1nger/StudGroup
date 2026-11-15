@@ -209,20 +209,27 @@ async def schedule(
     from studgroup import subgroups
 
     _, member = await active_membership(db, authorization)
+    hidden = await subgroups.hidden(db, group.id, member.user_id)
+    published = await schedule_data(start, end, group, db)
+    published["lessons"] = subgroups.visible_lessons(published["lessons"], hidden)
     if request.app.state.settings.ranepa_schedule_view_enabled and group.academic_group_code:
         from studgroup.profile import current
-        from studgroup.ranepa_personal import personal_with_group_fallback, schedule_projection
+        from studgroup.ranepa_personal import (
+            personal_with_group_fallback,
+            schedule_with_group_fallback,
+        )
 
         user, _ = await current(db, authorization)
         try:
             personal = await personal_with_group_fallback(db, group.id, user.id, start, end)
         except ValueError:
             raise ApiError("invalid_request", "Выберите период до 32 дней", 422) from None
-        result = schedule_projection(personal, group)
+        result = schedule_with_group_fallback(personal, published, group)
+        # Own personal weeks already belong to the requesting user. Peer
+        # lessons are subgroup-matched before projection and never include
+        # another student's private SDO link or course URL.
     else:
-        result = await schedule_data(start, end, group, db)
-    hidden = await subgroups.hidden(db, group.id, member.user_id)
-    result["lessons"] = subgroups.visible_lessons(result["lessons"], hidden)
+        result = published
     return result
 
 
