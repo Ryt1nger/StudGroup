@@ -726,9 +726,12 @@ def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
             "password",
             date(2026, 11, 12),
             trace=trace,
+            stats=stats,
         )
     )
     assert result == "captcha"
+    assert stats.saved_weeks == 1
+    assert stats.saved_lessons == 0
     assert recorded == ["saved", "committed"]
     assert trace.captcha_seen
     assert trace.captcha_location == "sdo"
