@@ -26,8 +26,8 @@ from studgroup.models import RanepaManualCaptcha
 from studgroup.ranepa_captcha import _challenge_clip, _slider_boxes
 from studgroup.ranepa_rotate import (
     _angle_targets,
-    _read_original_halves,
     _read_one_shot_range_state,
+    _read_original_halves,
     _read_verified_handle_centers,
 )
 from studgroup.security import InvalidInitData, verify_init_data
