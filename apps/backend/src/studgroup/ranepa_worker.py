@@ -224,7 +224,9 @@ async def process_one(
                     manual_pilot=pilot_group_id is not None,
                 )
             if finished and trace is not None:
-                db.add(trace.observation(job_id=job_id, attempt=attempt, failure_code="login_failed"))
+                db.add(
+                    trace.observation(job_id=job_id, attempt=attempt, failure_code="login_failed")
+                )
             await db.commit()
             return "failed"
         code = group.academic_group_code
