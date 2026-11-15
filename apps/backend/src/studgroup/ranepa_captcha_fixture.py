@@ -125,7 +125,9 @@ def make_halves() -> tuple[bytes, bytes]:
     draw.line((20, 100, 180, 100), fill=(40, 105, 145, 255), width=5)
     draw.polygon([(100, 34), (70, 86), (130, 86)], fill=(225, 64, 69, 255))
     draw.polygon([(100, 163), (82, 124), (118, 124)], fill=(45, 145, 188, 255))
-    draw.rectangle((59, 88, 141, 113), fill=(255, 255, 255, 255), outline=(35, 80, 125, 255), width=2)
+    draw.rectangle(
+        (59, 88, 141, 113), fill=(255, 255, 255, 255), outline=(35, 80, 125, 255), width=2
+    )
     draw.text((73, 95), "NORTH", fill=(11, 40, 75, 255))
     draw.text((83, 14), "UP", fill=(10, 43, 91, 255))
     # Pillow's positive angle is counterclockwise. CSS rotates clockwise,
@@ -173,8 +175,12 @@ def mock_rucaptcha(halves: tuple[bytes, bytes], *, progressive_context: bool):
                 raise AssertionError("fixture_mock_wrong_task_id")
             seen["answered"] += 1
             return httpx.Response(
-                200, json={"errorId": 0, "status": "ready",
-                           "solution": {"rotate": _EXPECTED_ANGLES[index]}}
+                200,
+                json={
+                    "errorId": 0,
+                    "status": "ready",
+                    "solution": {"rotate": _EXPECTED_ANGLES[index]},
+                },
             )
         raise AssertionError("fixture_mock_unexpected_api")
 
@@ -188,8 +194,9 @@ def mock_rucaptcha(halves: tuple[bytes, bytes], *, progressive_context: bool):
     ), seen
 
 
-async def run_fixture(*, provider: str, allow_paid: bool, progressive_context: bool,
-                      screenshot: Path | None = None) -> bool:
+async def run_fixture(
+    *, provider: str, allow_paid: bool, progressive_context: bool, screenshot: Path | None = None
+) -> bool:
     if provider not in {"mock", "rucaptcha"}:
         raise ValueError("unsupported_fixture_provider")
     if provider == "rucaptcha":
@@ -211,7 +218,9 @@ async def run_fixture(*, provider: str, allow_paid: bool, progressive_context: b
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=True)
         try:
-            context = await browser.new_context(locale="ru-RU", viewport={"width": 1024, "height": 768})
+            context = await browser.new_context(
+                locale="ru-RU", viewport={"width": 1024, "height": 768}
+            )
             page = await context.new_page()
 
             async def serve_locally(route):
@@ -245,18 +254,23 @@ async def run_fixture(*, provider: str, allow_paid: bool, progressive_context: b
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Isolated synthetic RotateTask test; never RANEPA traffic")
+    parser = argparse.ArgumentParser(
+        description="Isolated synthetic RotateTask test; never RANEPA traffic"
+    )
     parser.add_argument("--provider", choices=("mock", "rucaptcha"), default="mock")
     parser.add_argument("--allow-paid", action="store_true")
     parser.add_argument("--progressive-context", action="store_true")
     parser.add_argument("--screenshot", type=Path)
     args = parser.parse_args()
     try:
-        accepted = asyncio.run(run_fixture(
-            provider=args.provider, allow_paid=args.allow_paid,
-            progressive_context=args.progressive_context,
-            screenshot=args.screenshot,
-        ))
+        accepted = asyncio.run(
+            run_fixture(
+                provider=args.provider,
+                allow_paid=args.allow_paid,
+                progressive_context=args.progressive_context,
+                screenshot=args.screenshot,
+            )
+        )
     except Exception:  # noqa: BLE001
         # Never log HTTP errors or exceptions in paid mode: they may expose
         # provider metadata or secrets. A fixed error code is sufficient.
