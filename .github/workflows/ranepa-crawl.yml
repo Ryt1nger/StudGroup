@@ -59,21 +59,32 @@ jobs:
       RANEPA_ACCESS_APPROVED: ${{ secrets.RANEPA_ACCESS_APPROVED }}
       RANEPA_CRAWL_ENABLED: "true"
       RANEPA_CRAWL_PAUSE_SECONDS: "20"
+      # Owner-only alerts are queued to the existing app BotOutbox. The API
+      # bot (not this runner) sends them; no Telegram token on GitHub runner.
+      BOT_ADMIN_USER_ID: ${{ vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID }}
+      # Requires migration 0061 and the same production PostgreSQL database.
+      # Pilot tests cannot trigger a global scheduled queue pause.
+      RANEPA_CAPTCHA_GUARD_ENABLED: ${{ vars.RANEPA_CAPTCHA_GUARD_ENABLED == 'true' }}
+      RANEPA_CRAWL_TELEMETRY_ENABLED: ${{ vars.RANEPA_CRAWL_TELEMETRY_ENABLED == 'true' }}
       # Paid CAPTCHA solving is available only for a manually selected pilot.
       # Never enable it for scheduled multi-account queue shifts.
       CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
       # Paid mode requires an additional explicit v2 pair checkbox. An old
       # manual dispatch without it cannot silently spend on two tasks.
-      RANEPA_CAPTCHA_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
-      RANEPA_CAPTCHA_V2_PAIR_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
+      RANEPA_CAPTCHA_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true') || (github.event_name == 'schedule' && vars.RANEPA_CAPTCHA_SCHEDULED_ENABLED == 'true' && vars.RANEPA_CAPTCHA_GUARD_ENABLED == 'true' && vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '') }}
+      RANEPA_CAPTCHA_V2_PAIR_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true') || (github.event_name == 'schedule' && vars.RANEPA_CAPTCHA_SCHEDULED_ENABLED == 'true' && vars.RANEPA_CAPTCHA_GUARD_ENABLED == 'true' && vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '') }}
       # Must additionally opt in to BOTH paid pair and virtual-left preview;
       # never alter an existing paid pilot or a scheduled queue silently.
       RANEPA_CAPTCHA_V2_PROGRESSIVE_CONTEXT_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && inputs.progressive_context_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
       RANEPA_CAPTCHA_DIAGNOSTIC_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only == true }}
       RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "2"
+      # Scheduled paid solving additionally requires a DB-locked daily cap;
+      # six tasks/day maximum across all GitHub runner shifts.
+      # Guard + bot admin configuration are required for scheduled opt-in.
+      RANEPA_CAPTCHA_DAILY_MAX_TASKS: "6"
       # Encrypted Cookie Reuse must be approved independently for a manual pilot.
       # Scheduled multi-account jobs retain the existing non-persistent flow.
-      RANEPA_SESSION_REUSE_ENABLED: ${{ github.event_name == 'workflow_dispatch' && vars.RANEPA_SESSION_REUSE_PILOT_ENABLED == 'true' }}
+      RANEPA_SESSION_REUSE_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && vars.RANEPA_SESSION_REUSE_PILOT_ENABLED == 'true') || (github.event_name == 'schedule' && vars.RANEPA_SESSION_REUSE_SCHEDULED_ENABLED == 'true') }}
     defaults:
       run:
         working-directory: apps/backend
@@ -95,6 +106,9 @@ jobs:
           test -n "$LEGAL_DATA_REGION"
           test "$LEGAL_DOCUMENTS_APPROVED" = "true"
           test "$RANEPA_ACCESS_APPROVED" = "true"
+          if [ "$RANEPA_CAPTCHA_GUARD_ENABLED" = "true" ]; then
+            test -n "$BOT_ADMIN_USER_ID" || { echo "CAPTCHA guard requires configured owner alerts"; exit 1; }
+          fi
       - name: Install browser
         run: |
           uv sync --frozen

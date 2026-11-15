@@ -651,3 +651,83 @@ def test_single_pilot_explicitly_requests_only_its_own_cooldown_bypass(monkeypat
         assert calls[2] == "disposed"
 
     asyncio.run(scenario())
+
+
+def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
+    from studgroup.ranepa_crawl_trace import CrawlTrace
+
+    recorded = []
+
+    class FakeContext:
+        async def new_page(self):
+            return object()
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            return FakeContext()
+
+        async def close(self):
+            return None
+
+    class FakePlaywright:
+        async def __aenter__(self):
+            self.chromium = self
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def launch(self, **kwargs):
+            return FakeBrowser()
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def commit(self):
+            recorded.append("committed")
+
+    async def month(*args):
+        return SimpleNamespace(status="preview_only", cards=())
+
+    async def week(_page, _login, _password, code, monday, *, allow_empty=False):
+        assert allow_empty
+        return SimpleNamespace(
+            status="preview_only",
+            snapshot=WeekSnapshot(code, monday, monday + timedelta(days=6), ()),
+        )
+
+    async def exits(*args, **kwargs):
+        return {}, {"test-sdo-transition": "captcha_required"}, {}
+
+    async def save(*args, **kwargs):
+        recorded.append("saved")
+
+    monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
+    monkeypatch.setattr(ranepa_worker, "read_month", month)
+    monkeypatch.setattr(ranepa_worker, "read_week", week)
+    monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", exits)
+    monkeypatch.setattr(ranepa_worker, "remember_personal", save)
+    monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
+    trace = CrawlTrace()
+
+    result = asyncio.run(
+        ranepa_worker._collect(
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "student",
+            "password",
+            date(2026, 11, 12),
+            trace=trace,
+        )
+    )
+    assert result == "captcha"
+    assert recorded == ["saved", "committed"]
+    assert trace.captcha_seen
+    assert trace.captcha_location == "sdo"
+    assert trace.preceding_step == "sdo_exits_requested"

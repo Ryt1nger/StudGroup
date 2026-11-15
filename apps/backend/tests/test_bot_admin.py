@@ -7,7 +7,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_ingestion import send
 
-from studgroup.models import BotAdminAudit, BotAdminSession, BotOutbox, Group, Membership, User
+from studgroup.models import (
+    BotAdminAudit,
+    BotAdminSession,
+    BotOutbox,
+    Group,
+    Membership,
+    RanepaCrawlGuard,
+    User,
+)
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -533,3 +541,37 @@ def test_shadowcards_reports_empty_without_inventing_cards(client):
     _mark_bot_added(client)
     private(client, "/shadowcards", update=104)
     assert "пока нет" in session(client)[1][-1]["text"]
+
+
+def test_owner_only_ranepa_recovery_command_requires_verified_pilot(client):
+    from studgroup.ranepa_crawl_guard import load_guard
+
+    private(client, "/ranepa_status", update=8100)
+    _, messages = session(client)
+    assert "работает" in messages[-1]["text"]
+
+    async def pause():
+        async with AsyncSession(client.app.state.engine) as db:
+            state = await load_guard(db)
+            state.paused = True
+            state.consecutive_captcha = 4
+            await db.commit()
+
+    asyncio.run(pause())
+    private(client, "/ranepa_resume", uid=9002, update=8101)
+
+    async def state():
+        async with AsyncSession(client.app.state.engine) as db:
+            return await db.get(RanepaCrawlGuard, 1)
+
+    assert not asyncio.run(state()).recovery_requested
+    private(client, "/ranepa_resume", update=8102)
+    _, messages = session(client)
+    assert "ОДНА проверка" in messages[-1]["text"]
+    assert "Очередь пока на паузе" in messages[-1]["text"]
+    current = asyncio.run(state())
+    assert current.paused and current.recovery_requested
+    private(client, "/ranepa_status", update=8103)
+    _, messages = session(client)
+    assert "пауза" in messages[-1]["text"]
+    assert "4" in messages[-1]["text"]

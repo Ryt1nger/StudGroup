@@ -33,8 +33,14 @@ from studgroup.ranepa_captcha import (
     solve_slider_captcha,
     warn_if_unconfigured,
 )
+from studgroup.ranepa_crawl_guard import (
+    load_guard,
+    record_crawl_outcome,
+    reserve_daily_paid_tasks,
+)
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
+from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_personal import remember_personal
@@ -83,6 +89,8 @@ async def collect_bounded(
     captcha_timeout_seconds=110,
     captcha_budget: CaptchaBudget | None = None,
     captcha_diagnostic_only: bool = False,
+    captcha_daily_limit: int = 0,
+    trace: CrawlTrace | None = None,
 ):
     try:
         async with asyncio.timeout(ACCOUNT_TIMEOUT_SECONDS):
@@ -100,6 +108,8 @@ async def collect_bounded(
                 captcha_timeout_seconds=captcha_timeout_seconds,
                 captcha_budget=captcha_budget,
                 captcha_diagnostic_only=captcha_diagnostic_only,
+                captcha_daily_limit=captcha_daily_limit,
+                trace=trace,
             )
     except TimeoutError:
         log_captcha_stage("crawl_timeout")
@@ -170,13 +180,24 @@ async def process_one(
 ) -> str:
     available_budget = captcha_budget or CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     async with AsyncSession(engine, expire_on_commit=False) as db:
+        # The durable CAPTCHA breaker never changes fair queue priorities.
+        # Owner-authorized targeted pilots may run while scheduled jobs are paused.
+        if settings.ranepa_captcha_guard_enabled:
+            guard = await load_guard(db)
+            if guard.paused and (pilot_group_id is None or not guard.recovery_requested):
+                await db.commit()
+                log_captcha_stage("crawl_paused_repeated_captcha")
+                return "paused"
         job = await claim_next(db, group_id=pilot_group_id, user_id=pilot_user_id)
         if job is None:
             await db.commit()
             if pilot_group_id is not None:
                 log_captcha_stage("pilot_queue_idle")
             return "idle"
-        job_id, group_id, user_id = job.id, job.group_id, job.user_id
+        job_id, group_id, user_id, attempt = (job.id, job.group_id, job.user_id, job.attempts)
+        trace = CrawlTrace() if settings.ranepa_crawl_telemetry_enabled else None
+        if trace is not None:
+            trace.record("job_claimed")
         group = await db.get(Group, group_id)
         profile = await db.get(UserProfile, user_id)
         if (
@@ -188,7 +209,22 @@ async def process_one(
             or not settings.ranepa_access_approved
             or not await has_consent(db, user_id, "sdo", settings)
         ):
-            await finish(db, job_id, group_id, user_id, failure_code="login_failed")
+            finished = await finish(db, job_id, group_id, user_id, failure_code="login_failed")
+            if finished and settings.ranepa_captcha_guard_enabled:
+                await record_crawl_outcome(
+                    db,
+                    owner_id=settings.bot_admin_user_id,
+                    job_id=job_id,
+                    group_id=group_id,
+                    user_id=user_id,
+                    attempt=attempt,
+                    failure_code="login_failed",
+                    manual_pilot=pilot_group_id is not None,
+                )
+            if finished and trace is not None:
+                db.add(
+                    trace.observation(job_id=job_id, attempt=attempt, failure_code="login_failed")
+                )
             await db.commit()
             return "failed"
         code = group.academic_group_code
@@ -224,6 +260,10 @@ async def process_one(
                 cipher if key_version == "v1" and settings.ranepa_session_reuse_enabled else None
             )
             storage_state = restored_storage_state(encrypted_session, session_cipher)
+            if trace is not None:
+                trace.record("credentials_ready")
+                trace.session_available = storage_state is not None
+                trace.record("session_available" if trace.session_available else "session_fresh")
 
             async def persist_session(state: dict):
                 # Browser state can include both LK and Moodle bearer cookies.
@@ -258,6 +298,7 @@ async def process_one(
                     configured_solver(settings)
                     if available_budget.remaining > 0
                     and not settings.ranepa_captcha_diagnostic_only
+                    and (pilot_group_id is not None or settings.ranepa_captcha_daily_max_tasks > 0)
                     else None
                 ),
                 captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,
@@ -265,9 +306,30 @@ async def process_one(
                 captcha_diagnostic_only=(
                     settings.ranepa_captcha_diagnostic_only and pilot_group_id is not None
                 ),
+                captcha_daily_limit=(
+                    settings.ranepa_captcha_daily_max_tasks if pilot_group_id is None else 0
+                ),
+                trace=trace,
             )
     async with AsyncSession(engine) as db:
-        await finish(db, job_id, group_id, user_id, failure_code=failure)
+        finished = await finish(db, job_id, group_id, user_id, failure_code=failure)
+        if finished and trace is not None:
+            db.add(trace.observation(job_id=job_id, attempt=attempt, failure_code=failure))
+        if finished and settings.ranepa_captcha_guard_enabled:
+            paused, consecutive = await record_crawl_outcome(
+                db,
+                owner_id=settings.bot_admin_user_id,
+                job_id=job_id,
+                group_id=group_id,
+                user_id=user_id,
+                attempt=attempt,
+                failure_code=failure,
+                manual_pilot=pilot_group_id is not None,
+            )
+            if paused:
+                log_captcha_stage("crawl_paused_repeated_captcha")
+            elif consecutive == 0 and failure is None:
+                log_captcha_stage("crawl_captcha_streak_cleared")
         await db.commit()
     if pilot_group_id is not None:
         # The value is chosen exclusively from known crawl failure categories.
@@ -303,10 +365,14 @@ async def _collect(
     captcha_timeout_seconds=110,
     captcha_budget: CaptchaBudget | None = None,
     captcha_diagnostic_only: bool = False,
+    captcha_daily_limit: int = 0,
+    trace: CrawlTrace | None = None,
 ):
     try:
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
+            if trace is not None:
+                trace.record("browser_started")
             try:
                 proxy_url = current_proxy_url()
                 proxy_config = playwright_proxy_settings(proxy_url) if proxy_url else None
@@ -325,6 +391,8 @@ async def _collect(
                         raise
                     # Structurally valid JSON may still be rejected by Playwright.
                     restored_state = None
+                    if trace is not None:
+                        trace.record("stored_session_rejected")
                     context = await browser.new_context(storage_state=None, **context_options)
                 page = await context.new_page()
                 captcha_attempted = False
@@ -336,6 +404,8 @@ async def _collect(
                     # Includes challenges encountered while following SDO exits.
                     # Record observation even if the provider is disabled.
                     captcha_seen = True
+                    if trace is not None and not trace.captcha_seen:
+                        trace.mark_captcha("sdo")
                     if captcha_attempted:
                         log_captcha_stage("attempt_already_used")
                         return False
@@ -356,7 +426,18 @@ async def _collect(
                     ):
                         log_captcha_stage("paid_budget_exhausted")
                         return False
+                    if (
+                        not captcha_diagnostic_only
+                        and captcha_daily_limit > 0
+                        and not await reserve_daily_paid_tasks(
+                            engine, count=required_tasks, daily_limit=captcha_daily_limit
+                        )
+                    ):
+                        log_captcha_stage("paid_daily_budget_exhausted")
+                        return False
                     captcha_attempted = True
+                    if trace is not None:
+                        trace.record("captcha_solver_started")
                     log_captcha_stage(
                         "diagnostic_started" if captcha_diagnostic_only else "paid_attempt_started"
                     )
@@ -383,20 +464,30 @@ async def _collect(
                             timeout_seconds=captcha_timeout_seconds,
                         )
                     if submitted:
+                        if trace is not None:
+                            trace.record("captcha_solver_submitted")
                         log_captcha_stage("motion_submitted_verification_pending")
                     elif not captcha_diagnostic_only:
+                        if trace is not None:
+                            trace.record("captcha_solver_failed")
                         log_captcha_stage("motion_not_submitted")
                     return submitted
 
+                if trace is not None:
+                    trace.record("month_requested")
                 month = await read_month(page, login, password, code, today.year, today.month)
                 if month.status == "captcha_required":
                     captcha_seen = True
+                    if trace is not None:
+                        trace.mark_captcha("month")
                     log_captcha_stage("challenge_detected_month")
                     if await solve_once(page):
                         # Wait for a possible asynchronous redirect without
                         # retrying the CAPTCHA or declaring the gate solved.
                         log_captcha_stage(await wait_for_captcha_resolution(page))
                         log_captcha_stage("schedule_recheck_after_captcha_month")
+                        if trace is not None:
+                            trace.record("month_recheck")
                         month = await read_month(
                             page, login, password, code, today.year, today.month
                         )
@@ -413,6 +504,8 @@ async def _collect(
                     if month.status == "identity_unverified":
                         return "identity_unverified"
                     return "source_unavailable"
+                if trace is not None:
+                    trace.record("month_verified")
                 first = date(today.year, today.month, 1)
                 monday = first - timedelta(days=first.weekday())
                 for offset in range(6):
@@ -422,15 +515,21 @@ async def _collect(
                         for card in month.cards
                         if week_start <= card.day <= week_start + timedelta(days=6)
                     ]
+                    if trace is not None:
+                        trace.record("week_requested")
                     result = await read_week(
                         page, login, password, code, week_start, allow_empty=not expected
                     )
                     if result.status == "captcha_required":
                         captcha_seen = True
+                        if trace is not None:
+                            trace.mark_captcha("week")
                         log_captcha_stage("challenge_detected_week")
                         if await solve_once(page):
                             log_captcha_stage(await wait_for_captcha_resolution(page))
                             log_captcha_stage("schedule_recheck_after_captcha_week")
+                            if trace is not None:
+                                trace.record("week_recheck")
                             result = await read_week(
                                 page, login, password, code, week_start, allow_empty=not expected
                             )
@@ -456,6 +555,9 @@ async def _collect(
                         (r.day, r.starts, r.subject) for r in expected
                     ):
                         return "parse_failed"
+                    if trace is not None:
+                        trace.record("week_verified")
+                        trace.record("sdo_exits_requested")
                     if captcha_client is not None and not captcha_attempted:
                         links, link_states, courses = await resolve_sdo_exits(
                             context, result, login, password, solve_captcha=solve_once
@@ -464,6 +566,11 @@ async def _collect(
                         links, link_states, courses = await resolve_sdo_exits(
                             context, result, login, password
                         )
+                    sdo_captcha_unresolved = "captcha_required" in link_states.values()
+                    if trace is not None:
+                        if sdo_captcha_unresolved and not trace.captcha_seen:
+                            trace.mark_captcha("sdo")
+                        trace.record("sdo_exits_finished")
                     async with AsyncSession(engine) as db:
                         await remember_personal(
                             db,
@@ -476,6 +583,9 @@ async def _collect(
                             group_identity_verified=True,
                         )
                         await db.commit()  # Each validated week is visible immediately.
+                    if sdo_captcha_unresolved:
+                        log_captcha_stage("challenge_still_present_sdo")
+                        return "captcha"
                 if persist_session is not None:
                     try:
                         fresh_state = await context.storage_state()
@@ -488,6 +598,8 @@ async def _collect(
                 # A green crawl result alone does not prove that a CAPTCHA was
                 # presented or solved. Emit one explicit, privacy-safe outcome
                 # for every successful collection, even when no challenge occurs.
+                if trace is not None:
+                    trace.record("schedule_verified")
                 if captcha_schedule_recovered:
                     log_captcha_stage("captcha_seen_schedule_recovered")
                 elif captcha_seen:
@@ -526,7 +638,9 @@ async def run_forever(settings: Settings):
             try:
                 await asyncio.wait_for(
                     stop.wait(),
-                    timeout=settings.ranepa_crawl_pause_seconds if status != "idle" else 300,
+                    timeout=300
+                    if status in {"idle", "paused"}
+                    else settings.ranepa_crawl_pause_seconds,
                 )
             except TimeoutError:
                 pass
@@ -558,7 +672,7 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
         while monotonic() < deadline:
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
             status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
-            if status == "idle":
+            if status in {"idle", "paused"}:
                 break
             completed += 1
             if monotonic() < deadline:

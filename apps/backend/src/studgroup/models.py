@@ -111,6 +111,38 @@ class RanepaCrawlJob(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class RanepaCrawlGuard(Base):
+    """Singleton circuit breaker for unresolved CAPTCHA failures across queue shifts."""
+
+    __tablename__ = "ranepa_crawl_guard"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    consecutive_captcha: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    recovery_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    last_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    paid_day: Mapped[date | None] = mapped_column(Date)
+    paid_tasks_reserved: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RanepaCrawlObservation(Base):
+    """One bounded private-free source-activity trace for an account attempt."""
+
+    __tablename__ = "ranepa_crawl_observations"
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ranepa_crawl_jobs.id", ondelete="CASCADE"), primary_key=True
+    )
+    attempt: Mapped[int] = mapped_column(Integer, primary_key=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    result_code: Mapped[str] = mapped_column(String(48))
+    captcha_seen: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    captcha_location: Mapped[str | None] = mapped_column(String(16))
+    preceding_step: Mapped[str | None] = mapped_column(String(48))
+    session_available: Mapped[bool] = mapped_column(Boolean, default=False)
+    elapsed_ms: Mapped[int] = mapped_column(Integer)
+    events_json: Mapped[str] = mapped_column(Text)
+
+
 class RanepaPersonalSnapshot(Base):
     """Last complete personal week, owned by one active group member."""
 

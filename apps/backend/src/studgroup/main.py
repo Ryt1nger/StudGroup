@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     ranepa_access_approved: bool = False
     ranepa_schedule_view_enabled: bool = False
     ranepa_crawl_pause_seconds: int = Field(default=20, ge=5, le=300)
+    # Opt-in durable pause after four consecutive unresolved CAPTCHA outcomes.
+    ranepa_captcha_guard_enabled: bool = False
+    # Privacy-safe event codes only: no URLs, HTML, credentials or cookies.
+    ranepa_crawl_telemetry_enabled: bool = False
     # Stage encrypted browser-state reuse separately from the legacy crawler.
     ranepa_session_reuse_enabled: bool = False
     # Explicitly opt-in to paid RuCaptcha challenges; disabled by default.
@@ -81,6 +85,9 @@ class Settings(BaseSettings):
     ranepa_captcha_timeout_seconds: int = Field(default=110, ge=30, le=150)
     # Hard cap on billable challenges per batch/worker process (not per student).
     ranepa_captcha_max_tasks_per_run: int = Field(default=1, ge=0, le=10)
+    # Conservative cap shared across scheduled GitHub runner shifts. Zero means
+    # recurring paid solving is disabled until an explicit daily allowance is set.
+    ranepa_captcha_daily_max_tasks: int = Field(default=0, ge=0, le=20)
     legal_operator_name: str = ""
     legal_operator_address: str = ""
     legal_operator_contact: str = ""

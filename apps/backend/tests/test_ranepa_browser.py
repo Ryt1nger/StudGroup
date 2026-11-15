@@ -238,6 +238,13 @@ def test_sdo_transition_logs_in_to_moodle_and_keeps_stable_url():
         def locator(self, selector):
             return Field(self, selector)
 
+        def get_by_text(self, text, **kwargs):
+            class Invisible:
+                async def is_visible(self):
+                    return False
+
+            return Invisible()
+
         async def content(self):
             return (
                 '<main class="course-content"><a href="/course/view.php?id=85813">Курс</a>'
@@ -295,6 +302,47 @@ def test_sdo_transition_logs_in_to_moodle_and_keeps_stable_url():
     links, states, courses = asyncio.run(ranepa_browser.resolve_sdo_exits(context, result))
     assert links == {} and list(states.values()) == ["no_course_links"]
     assert list(courses.values()) == ["https://lms.ranepa.ru/course/view.php?id=85813"]
+
+
+def test_sdo_exit_records_captcha_even_without_paid_solver():
+    class Visible:
+        async def is_visible(self):
+            return True
+
+    class Page:
+        url = "https://my.ranepa.ru/moodle_out.php"
+
+        async def goto(self, url, **kwargs):
+            self.url = url
+
+        def get_by_text(self, label, **kwargs):
+            assert "Используйте ползунки" in label
+            return Visible()
+
+        async def close(self):
+            return None
+
+    class Context:
+        async def new_page(self):
+            return Page()
+
+    lesson = ExternalLesson(
+        day=date(2026, 11, 16),
+        starts=time(9),
+        ends=time(10, 20),
+        subject="Test course",
+        teacher="Test teacher",
+        room="СДО",
+    )
+    result = ranepa_browser.BrowserResult(
+        "preview_only",
+        WeekSnapshot("A-001", date(2026, 11, 16), date(2026, 11, 22), (lesson,)),
+        ("https://my.ranepa.ru/moodle_out.php?id=1",),
+    )
+    links, states, courses = asyncio.run(ranepa_browser.resolve_sdo_exits(Context(), result))
+    assert links == {}
+    assert courses == {}
+    assert list(states.values()) == ["captcha_required"]
 
 
 def test_wait_for_captcha_resolution_observes_delayed_change_without_new_actions(monkeypatch):
