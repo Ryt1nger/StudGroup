@@ -136,8 +136,8 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
     assert [row["subject"] for row in live.json()["lessons"]] == ["Новая история"]
     missing = client.get("/v1/schedule?start=2026-11-16&end=2026-11-22", headers=AUTH)
     assert missing.status_code == 200
-    assert missing.json()["week_state"] == "needs_clarification"
-    assert missing.json()["lessons"] == []
+    assert missing.json()["week_state"] == "ready"
+    assert [row["subject"] for row in missing.json()["lessons"]] == ["Математика"]
     lesson_id = live.json()["lessons"][0]["id"]
     detail = client.get(f"/v1/lessons/{lesson_id}/subject", headers=AUTH)
     assert detail.status_code == 200
@@ -173,6 +173,76 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
     asyncio.run(clear_verified_week())
     cleared = client.get("/v1/ranepa-schedule?start=2026-11-02&end=2026-11-08", headers=AUTH)
     assert cleared.json()["complete"] is True and cleared.json()["lessons"] == []
+
+
+def test_every_group_retains_editor_published_schedule_without_personal_data(client):
+    async def configure():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            group.academic_group_code = CODE
+            await db.commit()
+
+    asyncio.run(configure())
+    client.app.state.settings.ranepa_schedule_view_enabled = True
+    response = client.get(
+        "/v1/schedule?start=2026-11-02&end=2026-11-08", headers=AUTH
+    )
+    assert response.status_code == 200
+    assert response.json()["week_state"] == "ready"
+    assert [row["subject"] for row in response.json()["lessons"]] == ["Математика"]
+
+
+def test_peer_schedule_fills_group_calendar_without_sharing_private_sdo_url(client):
+    async def configure():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            group.academic_group_code = CODE
+            peer = User(id=uuid4(), telegram_user_id=887711, display_name="Peer")
+            db.add(peer)
+            await db.flush()
+            db.add(
+                Membership(
+                    id=uuid4(),
+                    group_id=group.id,
+                    user_id=peer.id,
+                    status="active",
+                    role="student",
+                )
+            )
+            await db.flush()
+            snapshot = WeekSnapshot(
+                CODE,
+                date(2026, 11, 2),
+                date(2026, 11, 8),
+                (
+                    ExternalLesson(
+                        date(2026, 11, 2),
+                        time(11),
+                        time(12),
+                        "Физика",
+                        teacher="Тест",
+                        room="СДО",
+                    ),
+                ),
+            )
+            key = ("2026-11-02", "11:00:00", "12:00:00", "Физика", "Тест", "СДО")
+            await remember_personal(
+                db, group.id, peer.id, snapshot, group_identity_verified=True,
+                links={key: "https://lms.ranepa.ru/mod/url/view.php?id=9911"},
+            )
+            await db.commit()
+
+    asyncio.run(configure())
+    client.app.state.settings.ranepa_schedule_view_enabled = True
+    response = client.get(
+        "/v1/schedule?start=2026-11-02&end=2026-11-08", headers=AUTH
+    )
+    assert response.status_code == 200
+    lessons = response.json()["lessons"]
+    assert {row["subject"] for row in lessons} == {"Математика", "Физика"}
+    physics = next(row for row in lessons if row["subject"] == "Физика")
+    assert physics["online_url"] is None
+    assert physics["course_url"] is None
 
 
 def test_group_fallback_never_gives_another_subgroups_lesson(tmp_path):
