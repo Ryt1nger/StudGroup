@@ -483,9 +483,7 @@ async def run_fixture(
 
             await page.route("**/*", serve_locally)
             await page.goto(_FIXTURE_URL, wait_until="domcontentloaded")
-            submitted = await solve_rotating_halves(
-                page, solver, timeout_seconds=timeout_seconds
-            )
+            submitted = await solve_rotating_halves(page, solver, timeout_seconds=timeout_seconds)
             state = await page.evaluate("window.fixtureState")
             if screenshot is not None:
                 screenshot.parent.mkdir(parents=True, exist_ok=True)
@@ -544,9 +542,7 @@ def main() -> int:
     parser.add_argument("--allow-paid", action="store_true")
     parser.add_argument("--progressive-context", action="store_true")
     parser.add_argument("--max-resends", type=int, default=0, choices=range(4))
-    parser.add_argument(
-        "--timeout-seconds", type=int, default=_FIXTURE_TIMEOUT_SECONDS
-    )
+    parser.add_argument("--timeout-seconds", type=int, default=_FIXTURE_TIMEOUT_SECONDS)
     parser.add_argument("--allow-extra-paid", action="store_true")
     parser.add_argument("--mock-wrong-first-side", choices=("left", "right"))
     parser.add_argument("--mock-always-wrong", action="store_true")
