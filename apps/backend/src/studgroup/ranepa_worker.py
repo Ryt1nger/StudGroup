@@ -33,6 +33,7 @@ from studgroup.ranepa_captcha import (
     solve_slider_captcha,
     warn_if_unconfigured,
 )
+from studgroup.ranepa_crawl_guard import guard_is_paused, record_crawl_outcome
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
@@ -170,13 +171,22 @@ async def process_one(
 ) -> str:
     available_budget = captcha_budget or CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     async with AsyncSession(engine, expire_on_commit=False) as db:
+        # The durable CAPTCHA breaker never changes fair queue priorities.
+        # Owner-authorized targeted pilots may run while scheduled jobs are paused.
+        if settings.ranepa_captcha_guard_enabled and pilot_group_id is None:
+            if await guard_is_paused(db):
+                await db.commit()
+                log_captcha_stage("crawl_paused_repeated_captcha")
+                return "paused"
         job = await claim_next(db, group_id=pilot_group_id, user_id=pilot_user_id)
         if job is None:
             await db.commit()
             if pilot_group_id is not None:
                 log_captcha_stage("pilot_queue_idle")
             return "idle"
-        job_id, group_id, user_id = job.id, job.group_id, job.user_id
+        job_id, group_id, user_id, attempt = (
+            job.id, job.group_id, job.user_id, job.attempts
+        )
         group = await db.get(Group, group_id)
         profile = await db.get(UserProfile, user_id)
         if (
@@ -267,7 +277,22 @@ async def process_one(
                 ),
             )
     async with AsyncSession(engine) as db:
-        await finish(db, job_id, group_id, user_id, failure_code=failure)
+        finished = await finish(db, job_id, group_id, user_id, failure_code=failure)
+        if finished and settings.ranepa_captcha_guard_enabled:
+            paused, consecutive = await record_crawl_outcome(
+                db,
+                owner_id=settings.bot_admin_user_id,
+                job_id=job_id,
+                group_id=group_id,
+                user_id=user_id,
+                attempt=attempt,
+                failure_code=failure,
+                manual_pilot=pilot_group_id is not None,
+            )
+            if paused:
+                log_captcha_stage("crawl_paused_repeated_captcha")
+            elif consecutive == 0 and failure is None:
+                log_captcha_stage("crawl_captcha_streak_cleared")
         await db.commit()
     if pilot_group_id is not None:
         # The value is chosen exclusively from known crawl failure categories.
@@ -526,7 +551,7 @@ async def run_forever(settings: Settings):
             try:
                 await asyncio.wait_for(
                     stop.wait(),
-                    timeout=settings.ranepa_crawl_pause_seconds if status != "idle" else 300,
+                    timeout=300 if status in {"idle", "paused"} else settings.ranepa_crawl_pause_seconds,
                 )
             except TimeoutError:
                 pass
@@ -558,7 +583,7 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
         while monotonic() < deadline:
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
             status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
-            if status == "idle":
+            if status in {"idle", "paused"}:
                 break
             completed += 1
             if monotonic() < deadline:
