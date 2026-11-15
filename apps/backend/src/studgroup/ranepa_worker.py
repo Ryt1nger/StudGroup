@@ -298,13 +298,20 @@ async def process_one(
             async def on_captcha(location: str) -> None:
                 if not settings.ranepa_crawl_notify_captcha_seen_enabled:
                     return
-                if await notify_captcha_detected(
-                    engine,
-                    owner_id=settings.bot_admin_user_id,
-                    job_id=job_id,
-                    attempt=attempt,
-                    location=location,
-                ):
+                try:
+                    queued = await notify_captcha_detected(
+                        engine,
+                        owner_id=settings.bot_admin_user_id,
+                        job_id=job_id,
+                        attempt=attempt,
+                        location=location,
+                    )
+                except Exception:  # noqa: BLE001
+                    # A failed Telegram outbox write cannot obscure a genuine
+                    # CAPTCHA or change the authorized solver/queue behavior.
+                    log_captcha_stage("owner_captcha_seen_notice_unavailable")
+                    return
+                if queued:
                     log_captcha_stage("owner_captcha_seen_notice_queued")
 
             failure = await collect_bounded(
@@ -728,11 +735,18 @@ async def run_batch(settings: Settings, *, max_minutes: int = 24) -> int:
             if monotonic() < deadline:
                 await asyncio.sleep(settings.ranepa_crawl_pause_seconds)
         if settings.ranepa_crawl_notify_success_enabled and run_stats.successful_accounts:
-            if await notify_successful_crawl(
-                engine, owner_id=settings.bot_admin_user_id,
-                stats=run_stats, scope="batch",
-            ):
-                log_captcha_stage("owner_success_notice_queued")
+            try:
+                queued = await notify_successful_crawl(
+                    engine,
+                    owner_id=settings.bot_admin_user_id,
+                    stats=run_stats,
+                    scope="batch",
+                )
+            except Exception:  # noqa: BLE001
+                log_captcha_stage("owner_success_notice_unavailable")
+            else:
+                if queued:
+                    log_captcha_stage("owner_success_notice_queued")
         return completed
     finally:
         await engine.dispose()
@@ -774,11 +788,18 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
             run_stats=run_stats,
         )
         if settings.ranepa_crawl_notify_success_enabled and run_stats.successful_accounts:
-            if await notify_successful_crawl(
-                engine, owner_id=settings.bot_admin_user_id,
-                stats=run_stats, scope="pilot",
-            ):
-                log_captcha_stage("owner_success_notice_queued")
+            try:
+                queued = await notify_successful_crawl(
+                    engine,
+                    owner_id=settings.bot_admin_user_id,
+                    stats=run_stats,
+                    scope="pilot",
+                )
+            except Exception:  # noqa: BLE001
+                log_captcha_stage("owner_success_notice_unavailable")
+            else:
+                if queued:
+                    log_captcha_stage("owner_success_notice_queued")
         return result
     finally:
         await engine.dispose()
