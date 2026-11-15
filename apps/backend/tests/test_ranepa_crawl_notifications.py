@@ -106,14 +106,14 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 await conn.run_sync(Base.metadata.create_all)
             job = uuid4()
             account = uuid4()
-            params = dict(
-                owner_id=915,
-                job_id=job,
-                attempt=1,
-                user_id=account,
-                group_code="БИ1.2",
-                student_name="Тестовый студент",
-            )
+            params = {
+                "owner_id": 915,
+                "job_id": job,
+                "attempt": 1,
+                "user_id": account,
+                "group_code": "БИ1.2",
+                "student_name": "Тестовый студент",
+            }
             assert await notify_account_crawl_result(
                 engine,
                 **params,
@@ -165,15 +165,15 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
 def test_per_account_results_reject_unsafe_values(tmp_path):
     async def scenario():
         account = uuid4()
-        args = dict(
-            owner_id=915,
-            job_id=uuid4(),
-            attempt=1,
-            user_id=account,
-            group_code="Test",
-            student_name="Student",
-            stats=CrawlRunStats(),
-        )
+        args = {
+            "owner_id": 915,
+            "job_id": uuid4(),
+            "attempt": 1,
+            "user_id": account,
+            "group_code": "Test",
+            "student_name": "Student",
+            "stats": CrawlRunStats(),
+        }
         with pytest.raises(ValueError, match="invalid_crawl_failure_code"):
             await notify_account_crawl_result(None, **args, failure_code="secret")
         with pytest.raises(ValueError, match="invalid_crawl_attempt"):
