@@ -12,6 +12,7 @@ import asyncio
 import base64
 import json
 import os
+import time
 from io import BytesIO
 from pathlib import Path
 
@@ -27,6 +28,8 @@ _FIXTURE_URL = "https://my.ranepa.ru/__studgroup_local_only_rotate_fixture__"
 _EXPECTED_ANGLES = (90, 180)
 _SIZE = 200
 _MAX_RESENDS = 3
+_FIXTURE_TIMEOUT_SECONDS = 360
+_MIN_RETRY_WINDOW_SECONDS = 70
 
 _HTML = """<!doctype html>
 <html lang="ru">
@@ -165,6 +168,7 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
         client_factory=None,
         progressive_context: bool = False,
         max_resends: int = 0,
+        clock=None,
     ):
         if type(max_resends) is not int or not 0 <= max_resends <= _MAX_RESENDS:
             raise ValueError("fixture_max_resends_out_of_range")
@@ -175,6 +179,9 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
         self.resends_used = 0
         self.tasks_submitted = 0
         self.last_angles: tuple[int, int] | None = None
+        self.last_error_reason: str | None = None
+        self.last_provider_failure: str | None = None
+        self._clock = clock or time.monotonic
 
     async def solve_pair(
         self, halves: tuple[bytes, bytes], *, timeout_seconds: int = 110, before_second=None
@@ -182,6 +189,9 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
         self.last_angles = None
         self.resends_used = 0
         self.tasks_submitted = 0
+        self.last_error_reason = None
+        self.last_provider_failure = None
+        deadline = self._clock() + timeout_seconds
 
         # Even with zero retries, reject a known-wrong synthetic answer
         # before consuming one-shot thumbs. This does not apply in production.
@@ -217,7 +227,16 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
                                 and not await before_second()
                             ):
                                 raise RotateV2Error("challenge_changed")
+                            if self.resends_used > 0 and (
+                                deadline - self._clock() < _MIN_RETRY_WINDOW_SECONDS
+                            ):
+                                self.last_error_reason = "retry_time_budget_insufficient"
+                                ranepa_rotate_v2.log_captcha_stage(
+                                    "fixture_retry_skipped_insufficient_time"
+                                )
+                                raise RotateV2Error("invalid_answer")
                             if self.tasks_submitted >= 2 + self.max_resends:
+                                self.last_error_reason = "retry_limit_reached"
                                 raise RotateV2Error("invalid_answer")
                             self.tasks_submitted += 1
                             try:
@@ -234,8 +253,19 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
                                 # ambiguous charge state and changed challenges
                                 # remain fail-closed without any new paid task.
                                 if exc.stage not in {"api_unsolvable", "invalid_answer"}:
+                                    self.last_error_reason = exc.stage
                                     raise
+                                self.last_provider_failure = exc.stage
+                                ranepa_rotate_v2.log_captcha_stage(
+                                    "fixture_worker_error_unsolvable"
+                                    if exc.stage == "api_unsolvable"
+                                    else "fixture_worker_error_invalid_answer"
+                                )
                                 if self.resends_used >= self.max_resends:
+                                    self.last_error_reason = "retry_limit_reached"
+                                    ranepa_rotate_v2.log_captcha_stage(
+                                        "fixture_worker_error_retry_limit_reached"
+                                    )
                                     raise
                                 self.resends_used += 1
                                 ranepa_rotate_v2.log_captcha_stage(
@@ -251,15 +281,26 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
                                 f"side={('left', 'right')[side]} "
                                 f"returned={angle} expected={_EXPECTED_ANGLES[side]}"
                             )
+                            self.last_provider_failure = "wrong_angle"
                             if self.resends_used >= self.max_resends:
+                                self.last_error_reason = "retry_limit_reached"
                                 ranepa_rotate_v2.log_captcha_stage(
                                     "fixture_wrong_angle_retry_limit_reached"
                                 )
                                 raise RotateV2Error("invalid_answer")
                             self.resends_used += 1
                             ranepa_rotate_v2.log_captcha_stage("fixture_wrong_angle_resubmission")
+        except TimeoutError:
+            self.last_error_reason = "overall_timeout"
+            ranepa_rotate_v2.log_captcha_stage("fixture_overall_timeout")
+            raise
         except httpx.RequestError:
+            self.last_error_reason = "network_failed"
             raise RotateV2Error("network_failed") from None
+        except RotateV2Error as exc:
+            if self.last_error_reason is None:
+                self.last_error_reason = exc.stage
+            raise
 
         result = angles[0], angles[1]
         self.last_angles = result
@@ -383,11 +424,14 @@ async def run_fixture(
     mock_wrong_first_side: str | None = None,
     mock_always_wrong: bool = False,
     mock_unsolvable_first_side: str | None = None,
+    timeout_seconds: int = _FIXTURE_TIMEOUT_SECONDS,
 ) -> bool:
     if provider not in {"mock", "rucaptcha"}:
         raise ValueError("unsupported_fixture_provider")
     if type(max_resends) is not int or not 0 <= max_resends <= _MAX_RESENDS:
         raise ValueError("fixture_max_resends_out_of_range")
+    if type(timeout_seconds) is not int or not 120 <= timeout_seconds <= 360:
+        raise ValueError("fixture_timeout_out_of_range")
     if provider == "rucaptcha":
         if not allow_paid:
             raise ValueError("paid_fixture_requires_explicit_allow_paid")
@@ -439,7 +483,7 @@ async def run_fixture(
 
             await page.route("**/*", serve_locally)
             await page.goto(_FIXTURE_URL, wait_until="domcontentloaded")
-            submitted = await solve_rotating_halves(page, solver, timeout_seconds=110)
+            submitted = await solve_rotating_halves(page, solver, timeout_seconds=timeout_seconds)
             state = await page.evaluate("window.fixtureState")
             if screenshot is not None:
                 screenshot.parent.mkdir(parents=True, exist_ok=True)
@@ -478,6 +522,10 @@ async def run_fixture(
             )
             print(f"RANEPA_FIXTURE_RESENDS_USED {solver.resends_used}")
             print(f"RANEPA_FIXTURE_TASKS_SUBMITTED {solver.tasks_submitted}")
+            if solver.last_provider_failure is not None:
+                print("RANEPA_FIXTURE_LAST_PROVIDER_FAILURE " + solver.last_provider_failure)
+            if solver.last_error_reason is not None:
+                print("RANEPA_FIXTURE_ERROR_REASON " + solver.last_error_reason)
             print("RANEPA_FIXTURE_DIAGNOSIS " + diagnosis)
             print("RANEPA_FIXTURE_PROVIDER " + provider)
             print("RANEPA_FIXTURE_RESULT " + ("accepted" if accepted else "rejected"))
@@ -494,6 +542,7 @@ def main() -> int:
     parser.add_argument("--allow-paid", action="store_true")
     parser.add_argument("--progressive-context", action="store_true")
     parser.add_argument("--max-resends", type=int, default=0, choices=range(4))
+    parser.add_argument("--timeout-seconds", type=int, default=_FIXTURE_TIMEOUT_SECONDS)
     parser.add_argument("--allow-extra-paid", action="store_true")
     parser.add_argument("--mock-wrong-first-side", choices=("left", "right"))
     parser.add_argument("--mock-always-wrong", action="store_true")
@@ -512,6 +561,7 @@ def main() -> int:
                 mock_wrong_first_side=args.mock_wrong_first_side,
                 mock_always_wrong=args.mock_always_wrong,
                 mock_unsolvable_first_side=args.mock_unsolvable_first_side,
+                timeout_seconds=args.timeout_seconds,
             )
         )
     except Exception:  # noqa: BLE001

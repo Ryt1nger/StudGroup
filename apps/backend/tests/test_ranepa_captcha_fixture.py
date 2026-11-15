@@ -229,3 +229,97 @@ def test_fixture_paid_mode_forbids_mock_response_injection(monkeypatch):
                 mock_wrong_first_side="right",
             )
         )
+
+
+def test_fixture_timeout_defaults_to_six_minutes():
+    import inspect
+
+    signature = inspect.signature(ranepa_captcha_fixture.run_fixture)
+    assert signature.parameters["timeout_seconds"].default == 360
+    assert ranepa_captcha_fixture._MIN_RETRY_WINDOW_SECONDS == 70
+
+
+def test_fixture_logs_explicit_worker_unsolvable_failure(monkeypatch, caplog):
+    monkeypatch.setattr(ranepa_rotate_v2, "_POLL_SECONDS", 0)
+    halves = ranepa_captcha_fixture.make_halves()
+    solver, seen = ranepa_captcha_fixture.mock_rucaptcha(
+        halves,
+        progressive_context=True,
+        max_resends=3,
+        unsolvable_first_side="left",
+    )
+
+    async def scenario():
+        assert await solver.solve_pair(halves, timeout_seconds=160) == (90, 180)
+
+    asyncio.run(scenario())
+    assert "RANEPA_CAPTCHA_STAGE fixture_worker_error_unsolvable" in caplog.text
+    assert solver.last_provider_failure == "api_unsolvable"
+    assert solver.last_error_reason is None
+    assert solver.resends_used == 1
+    assert seen["created"] == 3
+
+
+def test_fixture_does_not_bill_retry_if_too_little_time_remains(monkeypatch, caplog):
+    monkeypatch.setattr(ranepa_rotate_v2, "_POLL_SECONDS", 0)
+    halves = ranepa_captcha_fixture.make_halves()
+    solver, seen = ranepa_captcha_fixture.mock_rucaptcha(
+        halves,
+        progressive_context=True,
+        max_resends=3,
+        wrong_first_side="left",
+    )
+    # Once the first incorrect answer arrives, only 69 seconds are left
+    # from the 160-second synthetic deadline (below the 70s guard).
+    solver._clock = lambda: 91 if seen["answered"] else 0
+
+    async def scenario():
+        with pytest.raises(ranepa_rotate_v2.RotateV2Error, match="invalid_answer"):
+            await solver.solve_pair(halves, timeout_seconds=160)
+
+    asyncio.run(scenario())
+    assert seen["created"] == 1
+    assert seen["answered"] == 1
+    assert solver.resends_used == 1
+    assert solver.tasks_submitted == 1
+    assert solver.last_error_reason == "retry_time_budget_insufficient"
+    assert "fixture_retry_skipped_insufficient_time" in caplog.text
+
+
+def test_fixture_timeout_has_explicit_nonsecret_diagnostic(monkeypatch, caplog):
+    halves = ranepa_captcha_fixture.make_halves()
+    solver, seen = ranepa_captcha_fixture.mock_rucaptcha(
+        halves, progressive_context=True, max_resends=3
+    )
+
+    async def hanging_solver(*args, **kwargs):
+        await asyncio.sleep(0.03)
+        return 90
+
+    monkeypatch.setattr(solver, "_solve_one", hanging_solver)
+
+    async def scenario():
+        with pytest.raises(TimeoutError):
+            await solver.solve_pair(halves, timeout_seconds=0.001)
+
+    asyncio.run(scenario())
+    assert seen["created"] == 0
+    assert solver.tasks_submitted == 1
+    assert solver.last_error_reason == "overall_timeout"
+    assert "fixture_overall_timeout" in caplog.text
+
+
+@pytest.mark.parametrize("timeout_seconds", [0, 90, 361, 1.5, True])
+def test_fixture_rejects_out_of_range_timeout_without_paid_api(monkeypatch, timeout_seconds):
+    monkeypatch.setenv("CAPTCHA_API_KEY", "test-do-not-use")
+    with pytest.raises(ValueError, match="fixture_timeout_out_of_range"):
+        asyncio.run(
+            ranepa_captcha_fixture.run_fixture(
+                provider="rucaptcha",
+                allow_paid=True,
+                allow_extra_paid=True,
+                max_resends=3,
+                progressive_context=True,
+                timeout_seconds=timeout_seconds,
+            )
+        )
