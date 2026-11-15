@@ -293,6 +293,7 @@ async def process_one(
                     group_code=group.academic_group_code if group is not None else None,
                     student_name=student.display_name if student is not None else None,
                     failure_code=failure_code,
+                    failure_detail=trace.failure_detail if trace is not None else None,
                     stats=account_stats,
                 )
             except Exception:  # noqa: BLE001
@@ -746,6 +747,7 @@ async def _collect(
                                 return "identity_unverified"
                             if trace is not None:
                                 trace.failure_detail = "week_unreadable"
+                                trace.record("week_unreadable")
                         else:
                             actual = [
                                 row
@@ -758,6 +760,7 @@ async def _collect(
                                 break
                             if trace is not None:
                                 trace.failure_detail = "week_month_mismatch"
+                                trace.record("week_month_mismatch")
                         if week_read_attempt == 1:
                             return "parse_failed"
                         if trace is not None:
