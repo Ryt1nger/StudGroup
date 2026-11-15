@@ -270,6 +270,39 @@ def test_error_alerts_stop_after_the_circuit_failure_threshold_then_recovery_is_
     asyncio.run(scenario())
 
 
+def test_duplicate_card_incident_is_russian_and_recovery_does_not_claim_merge():
+    from studgroup.worker import incident_text
+
+    now = datetime(2026, 11, 15, 13, 0, tzinfo=UTC)
+    row = OwnerIncidentEpisode(
+        id=65,
+        code="possible_duplicate_cards",
+        opened_at=now,
+        last_seen_at=now,
+        recovered_at=now + timedelta(minutes=20),
+        occurrences=1,
+        first_detail="2",
+        opening_pending=True,
+        recovery_pending=True,
+        legacy=False,
+    )
+    opened = incident_text(row, sent_at=now)
+    recovered = incident_text(row, event="recovered", sent_at=now + timedelta(minutes=21))
+    assert "возможные дубли карточек" in opened
+    assert "проверьте и объедините вручную" in opened
+    assert "Что произошло:" in opened
+    assert "Код:" not in opened
+    assert "possible_duplicate_cards" not in opened
+
+    assert "проверка похожих карточек завершена" in recovered
+    assert "ранее найденные" in recovered
+    assert "не означает" in recovered
+    assert "вручную" in recovered
+    assert "possible_duplicate_cards" not in recovered
+    assert "Код:" not in recovered
+    assert "\\n" not in recovered
+
+
 def test_ai_pause_alert_explains_actual_reason_without_dumping_internal_fields():
     from datetime import UTC, datetime
 
