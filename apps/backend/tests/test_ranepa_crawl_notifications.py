@@ -271,7 +271,6 @@ def test_stats_aggregation_keeps_partial_data_separate_from_success():
     assert summary.saved_lessons == 16
 
 
-
 def test_owner_full_rescan_report_in_russian_even_if_every_account_fails(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_RUN_ID", "202611151234")
     monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
@@ -333,9 +332,7 @@ def test_regular_reports_only_when_work_was_performed(tmp_path, monkeypatch):
         try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            assert not await notify_batch_report(
-                engine, owner_id=915, stats=CrawlRunStats()
-            )
+            assert not await notify_batch_report(engine, owner_id=915, stats=CrawlRunStats())
             assert await notify_batch_report(
                 engine,
                 owner_id=915,
