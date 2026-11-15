@@ -159,7 +159,6 @@ def test_owner_recovery_cannot_clear_pause_without_successful_single_pilot(tmp_p
     asyncio.run(scenario())
 
 
-
 def test_paid_budget_is_shared_across_separate_runner_shifts(tmp_path):
     async def scenario():
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/paid.db")
@@ -188,13 +187,9 @@ def test_paid_budget_invalid_reservations_never_charge(tmp_path):
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             for bad_count in (0, -1, 3, True):
-                assert not await reserve_daily_paid_tasks(
-                    engine, count=bad_count, daily_limit=6
-                )
+                assert not await reserve_daily_paid_tasks(engine, count=bad_count, daily_limit=6)
             for bad_limit in (0, -1, True):
-                assert not await reserve_daily_paid_tasks(
-                    engine, count=2, daily_limit=bad_limit
-                )
+                assert not await reserve_daily_paid_tasks(engine, count=2, daily_limit=bad_limit)
             async with AsyncSession(engine) as db:
                 assert (await db.scalars(select(RanepaCrawlGuard))).all() == []
         finally:
@@ -216,8 +211,11 @@ def test_paused_guard_does_not_claim_existing_fair_queue_job(tmp_path):
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             group = Group(
-                id=uuid4(), telegram_chat_id=-32001, name="Queued",
-                academic_group_code="Q-001", timezone="Europe/Moscow",
+                id=uuid4(),
+                telegram_chat_id=-32001,
+                name="Queued",
+                academic_group_code="Q-001",
+                timezone="Europe/Moscow",
             )
             user = User(id=uuid4(), telegram_user_id=32001, display_name="Student")
             async with AsyncSession(engine) as db:
@@ -225,12 +223,15 @@ def test_paused_guard_does_not_claim_existing_fair_queue_job(tmp_path):
                 await db.flush()
                 db.add(
                     Membership(
-                        group_id=group.id, user_id=user.id,
-                        role="student", status="active",
+                        group_id=group.id,
+                        user_id=user.id,
+                        role="student",
+                        status="active",
                     )
                 )
                 await enqueue_week(
-                    db, datetime(2026, 11, 9, tzinfo=UTC).date(),
+                    db,
+                    datetime(2026, 11, 9, tzinfo=UTC).date(),
                     [CrawlCandidate(group.id, user.id)],
                 )
                 guard = await load_guard(db)
