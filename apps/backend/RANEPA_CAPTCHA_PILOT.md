@@ -35,6 +35,49 @@ Run workflow on `main`. Choose:
 - `progressive_context=true` (default): use the first answer to
   virtually align the left half in the second task's `imgInstructions`.
 
+### Bounded incorrect-answer retries on the synthetic fixture
+
+The isolated fixture **knows** its target rotations (left 90°, right 180°),
+unlike production StormWall. It can therefore reject a demonstrably wrong
+RuCaptcha angle **before any one-shot browser thumb moves**. The test-only
+`ObservedFixtureV2Pair` repeats just the failed side, never the already
+verified side, for **at most 3 additional RotateTask submissions globally**
+per fixture run. Initially there are two tasks, so the maximum is
+**5 potentially billable requests**. Each retry checks the unaltered
+original image pixels and native-thumb geometry again. A changed CAPTCHA,
+invalid origin, network ambiguity, timeout, exhausted budget, or unsuccessful
+answer stops the attempt; no uncontrolled retries.
+
+In GitHub Actions the separate `retry_wrong_angles` checkbox defaults to
+`false`. For `provider=rucaptcha`, both `confirm_paid=true` and
+`retry_wrong_angles=true` are needed to permit extra charges. Without the
+second consent, **exactly zero additional retry requests are allowed**.
+The existing `RANEPA paced crawl` workflow and real accounts remain
+unchanged with the original one-shot CAPTCHA limit. An actual StormWall
+challenge does NOT expose the correct angle in advance; it must not be
+resubmitted against locked sliders without a newly issued challenge.
+
+For a **free, deterministic retry demonstration**, select `provider=mock`
+and `retry_wrong_angles=true`. The mock returns one deliberately wrong
+RIGHT angle before the correct one, confirming selective resubmission.
+A separate free Chromium smoke test automatically runs this scenario
+after fixture changes merge to `main`. Neither free test contacts RuCaptcha.
+The fixture logs `RANEPA_FIXTURE_RESENDS_USED` and
+`RANEPA_FIXTURE_TASKS_SUBMITTED`, plus the synthetic-only angle diagnosis.
+
+**After a paid run:** the isolated fixture now reports test-only
+`RANEPA_FIXTURE_PROVIDER_ANGLES`, `RANEPA_FIXTURE_SLIDER_VALUES`,
+`RANEPA_FIXTURE_EXPECTED_ANGLES` and `RANEPA_FIXTURE_DIAGNOSIS`.
+The result distinguishes `provider_angle_mismatch` (the two answers do
+not match the known synthetic orientation), `browser_drag_mismatch`
+(the returned angles were correct, but native inputs ended at different
+values), `local_verifier_rejected` and `solver_incomplete`.
+This instrumentation does NOT run on student accounts or real StormWall
+images. A prior paid run that ended in `rejected` without these fields
+cannot retrospectively reveal which angle was returned: the saved
+screenshot is useful but does not establish the exact provider response.
+Do not automatically repeat paid runs just to diagnose an earlier failure.
+
 The Python entry point is `python -m studgroup.ranepa_captcha_fixture`.
 It prints `RANEPA_FIXTURE_RESULT accepted` only when the production
 drag solver submitted both movements AND the local simulated verifier

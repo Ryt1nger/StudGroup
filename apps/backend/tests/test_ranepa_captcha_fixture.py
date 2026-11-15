@@ -49,6 +49,7 @@ def test_fixture_exercises_actual_v2_client_without_api_cost(monkeypatch, progre
 
         angles = await solver.solve_pair(halves, before_second=before_second)
         assert angles == (90, 180)
+        assert solver.last_angles == (90, 180)
         assert calls == 1
 
     asyncio.run(scenario())
@@ -86,3 +87,145 @@ def test_fixture_mock_api_never_sees_private_data(monkeypatch):
     # Synthetic images only: a randomly generated real credential is not
     # needed and no external network transport is configured.
     assert not any(b"student" in png for png in halves)
+
+
+@pytest.mark.parametrize(
+    ("submitted", "angles", "values", "status", "expected"),
+    [
+        (True, (90, 180), [90.0, 180.0], "accepted", "accepted"),
+        (True, (90, 90), [90.0, 90.0], "rejected", "provider_angle_mismatch"),
+        (True, (90, 180), [90.0, 90.0], "rejected", "browser_drag_mismatch"),
+        (True, (90, 180), [90.0, 180.0], "rejected", "local_verifier_rejected"),
+        (False, None, [0.0, 0.0], "pending", "solver_incomplete"),
+        (True, (-270, -180), [90.0, 180.0], "accepted", "accepted"),
+    ],
+)
+def test_fixture_diagnosis_distinguishes_provider_and_drag(
+    submitted, angles, values, status, expected
+):
+    assert (
+        ranepa_captcha_fixture.fixture_diagnosis(
+            submitted=submitted, angles=angles, values=values, status=status
+        )
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("wrong_side", "unsolvable_side", "always_wrong", "tasks", "resends", "valid"),
+    [
+        ("left", None, False, 3, 1, True),
+        ("right", None, False, 3, 1, True),
+        (None, "right", False, 3, 1, True),
+        ("right", None, True, 5, 3, False),
+        ("left", None, True, 4, 3, False),
+    ],
+)
+def test_fixture_retry_corrects_only_failing_half_with_global_cap(
+    monkeypatch, wrong_side, unsolvable_side, always_wrong, tasks, resends, valid
+):
+    monkeypatch.setattr(ranepa_rotate_v2, "_POLL_SECONDS", 0)
+    halves = ranepa_captcha_fixture.make_halves()
+    solver, seen = ranepa_captcha_fixture.mock_rucaptcha(
+        halves,
+        progressive_context=True,
+        max_resends=3,
+        wrong_first_side=wrong_side,
+        always_wrong=always_wrong,
+        unsolvable_first_side=unsolvable_side,
+    )
+
+    async def scenario():
+        rechecks = 0
+
+        async def still_valid():
+            nonlocal rechecks
+            rechecks += 1
+            return True
+
+        if valid:
+            assert await solver.solve_pair(halves, before_second=still_valid) == (90, 180)
+        else:
+            with pytest.raises(ranepa_rotate_v2.RotateV2Error, match="invalid_answer"):
+                await solver.solve_pair(halves, before_second=still_valid)
+        assert rechecks >= 1
+
+    asyncio.run(scenario())
+    assert seen["created"] == tasks
+    assert seen["answered"] == tasks
+    assert solver.tasks_submitted == tasks
+    assert solver.resends_used == resends
+    if wrong_side == "right" or unsolvable_side == "right":
+        assert seen["side_requests"][0] == 1
+    assert sum(seen["side_requests"]) <= 5
+
+
+def test_fixture_without_retry_does_not_submit_second_task_after_wrong_left(monkeypatch):
+    monkeypatch.setattr(ranepa_rotate_v2, "_POLL_SECONDS", 0)
+    halves = ranepa_captcha_fixture.make_halves()
+    solver, seen = ranepa_captcha_fixture.mock_rucaptcha(
+        halves, progressive_context=False, max_resends=0, wrong_first_side="left"
+    )
+
+    async def scenario():
+        with pytest.raises(ranepa_rotate_v2.RotateV2Error, match="invalid_answer"):
+            await solver.solve_pair(halves)
+
+    asyncio.run(scenario())
+    assert seen["created"] == 1
+    assert solver.resends_used == 0
+
+
+def test_fixture_retry_rejects_changes_before_extra_paid_task(monkeypatch):
+    monkeypatch.setattr(ranepa_rotate_v2, "_POLL_SECONDS", 0)
+    halves = ranepa_captcha_fixture.make_halves()
+    solver, seen = ranepa_captcha_fixture.mock_rucaptcha(
+        halves, progressive_context=True, max_resends=3, wrong_first_side="left"
+    )
+
+    async def scenario():
+        async def challenge_changed():
+            return False
+
+        with pytest.raises(ranepa_rotate_v2.RotateV2Error, match="challenge_changed"):
+            await solver.solve_pair(halves, before_second=challenge_changed)
+
+    asyncio.run(scenario())
+    assert seen["created"] == 1
+    assert seen["answered"] == 1
+    assert solver.resends_used == 1
+
+
+@pytest.mark.parametrize("max_resends", [-1, 4, 1.5, True])
+def test_fixture_rejects_invalid_retry_limits(max_resends):
+    with pytest.raises(ValueError, match="fixture_max_resends_out_of_range"):
+        ranepa_captcha_fixture.ObservedFixtureV2Pair("mock", max_resends=max_resends)
+
+
+def test_fixture_paid_retries_require_separate_consent(monkeypatch):
+    monkeypatch.setenv("CAPTCHA_API_KEY", "test-do-not-use")
+    with pytest.raises(ValueError, match="retries_require_explicit_opt_in"):
+        asyncio.run(
+            ranepa_captcha_fixture.run_fixture(
+                provider="rucaptcha",
+                allow_paid=True,
+                allow_extra_paid=False,
+                max_resends=3,
+                progressive_context=True,
+            )
+        )
+
+
+def test_fixture_paid_mode_forbids_mock_response_injection(monkeypatch):
+    monkeypatch.setenv("CAPTCHA_API_KEY", "test-do-not-use")
+    with pytest.raises(ValueError, match="cannot_inject_mock_answers_into_paid_mode"):
+        asyncio.run(
+            ranepa_captcha_fixture.run_fixture(
+                provider="rucaptcha",
+                allow_paid=True,
+                allow_extra_paid=True,
+                max_resends=3,
+                progressive_context=True,
+                mock_wrong_first_side="right",
+            )
+        )
