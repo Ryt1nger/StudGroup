@@ -313,6 +313,7 @@ def test_manual_pilot_can_retry_one_finished_job_without_affecting_other_members
 
     asyncio.run(scenario())
 
+
 def test_24_hour_cooldown_skips_account_at_week_boundary(tmp_path):
     async def scenario():
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/daily-queue.db")
@@ -345,9 +346,7 @@ def test_24_hour_cooldown_skips_account_at_week_boundary(tmp_path):
                 await db.flush()
                 early_candidate = CrawlCandidate(group.id, early.id)
                 new_candidate = CrawlCandidate(group.id, new.id)
-                assert await enqueue_week(
-                    db, date(2026, 11, 2), [early_candidate], now=sunday
-                ) == 1
+                assert await enqueue_week(db, date(2026, 11, 2), [early_candidate], now=sunday) == 1
                 first = await claim_next(db, now=sunday)
                 assert first.user_id == early.id
                 assert await finish(db, first.id, group.id, early.id, now=sunday)
@@ -355,12 +354,15 @@ def test_24_hour_cooldown_skips_account_at_week_boundary(tmp_path):
 
             # Monday creates a fresh weekly job, but NOT a new 24-hour allowance.
             async with AsyncSession(engine, expire_on_commit=False) as db:
-                assert await enqueue_week(
-                    db,
-                    date(2026, 11, 9),
-                    [early_candidate, new_candidate],
-                    now=monday,
-                ) == 2
+                assert (
+                    await enqueue_week(
+                        db,
+                        date(2026, 11, 9),
+                        [early_candidate, new_candidate],
+                        now=monday,
+                    )
+                    == 2
+                )
                 claimed = await claim_next(db, now=monday)
                 assert claimed.user_id == new.id
                 assert await finish(db, claimed.id, group.id, new.id, now=monday)
@@ -369,11 +371,19 @@ def test_24_hour_cooldown_skips_account_at_week_boundary(tmp_path):
 
             # After a process restart, exactly 24 h makes the first account due.
             async with AsyncSession(engine, expire_on_commit=False) as db:
-                assert await claim_next(db, now=sunday + timedelta(hours=24) - timedelta(seconds=1)) is None
+                assert (
+                    await claim_next(db, now=sunday + timedelta(hours=24) - timedelta(seconds=1))
+                    is None
+                )
                 due = await claim_next(db, now=sunday + timedelta(hours=24))
                 assert due is not None and due.user_id == early.id
-                assert await finish(db, due.id, group.id, early.id, now=sunday + timedelta(hours=24))
-                assert await claim_next(db, now=monday + timedelta(hours=24) - timedelta(seconds=1)) is None
+                assert await finish(
+                    db, due.id, group.id, early.id, now=sunday + timedelta(hours=24)
+                )
+                assert (
+                    await claim_next(db, now=monday + timedelta(hours=24) - timedelta(seconds=1))
+                    is None
+                )
                 next_due = await claim_next(db, now=monday + timedelta(hours=24))
                 assert next_due is not None and next_due.user_id == new.id
         finally:
@@ -419,8 +429,7 @@ def test_daily_limit_applies_across_memberships_and_requeued_jobs(tmp_path):
                 # Same account cannot run concurrently in another group.
                 assert await claim_next(db, now=now + timedelta(minutes=1)) is None
                 assert await finish(
-                    db, first.id, first.group_id, first.user_id,
-                    now=now, failure_code="captcha"
+                    db, first.id, first.group_id, first.user_id, now=now, failure_code="captcha"
                 )
                 assert await claim_next(db, now=now + timedelta(hours=23)) is None
                 await db.commit()
@@ -431,16 +440,21 @@ def test_daily_limit_applies_across_memberships_and_requeued_jobs(tmp_path):
                 assert due is not None and due.user_id == user.id
                 assert due.group_id != first.group_id
                 assert await finish(
-                    db, due.id, due.group_id, user.id,
-                    now=now + timedelta(days=1), failure_code="source_unavailable"
+                    db,
+                    due.id,
+                    due.group_id,
+                    user.id,
+                    now=now + timedelta(days=1),
+                    failure_code="source_unavailable",
                 )
-                assert await enqueue_week(
-                    db, date(2026, 11, 9), candidates,
-                    now=now + timedelta(days=1, minutes=1)
-                ) == 0
+                assert (
+                    await enqueue_week(
+                        db, date(2026, 11, 9), candidates, now=now + timedelta(days=1, minutes=1)
+                    )
+                    == 0
+                )
                 assert await claim_next(db, now=now + timedelta(days=1, minutes=1)) is None
         finally:
             await engine.dispose()
 
     asyncio.run(scenario())
-
