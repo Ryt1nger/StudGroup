@@ -547,7 +547,16 @@ def test_explicit_full_rescan_preserves_history_and_claims_each_user_once(tmp_pa
                 )
                 rows = (await db.scalars(select(RanepaCrawlJob))).all()
                 assert all(row.state == "queued" for row in rows)
-                assert all(row.finished_at == base for row in rows)
+                assert all(
+                    row.finished_at is not None
+                    and (
+                        row.finished_at.replace(tzinfo=UTC)
+                        if row.finished_at.tzinfo is None
+                        else row.finished_at
+                    )
+                    == base
+                    for row in rows
+                )
                 assert await claim_next(db, now=shortly_after) is None
                 allowed = {user.id for user in users}
                 done = set()
