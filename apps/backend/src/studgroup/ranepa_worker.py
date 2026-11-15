@@ -444,15 +444,16 @@ async def _collect(
                 captcha_seen = False
                 captcha_schedule_recovered = False
 
-                async def solve_once(challenge_page):
+                async def solve_once(challenge_page, location="sdo"):
                     nonlocal captcha_attempted, captcha_seen
-                    # Includes challenges encountered while following SDO exits.
-                    # Record observation even if the provider is disabled.
+                    # Month/week detections were already announced before
+                    # this call. The callback here is for live SDO exits only.
                     captcha_seen = True
-                    if trace is not None and not trace.captcha_seen:
-                        trace.mark_captcha("sdo")
-                    if on_captcha is not None:
-                        await on_captcha("sdo")
+                    if location == "sdo":
+                        if trace is not None and not trace.captcha_seen:
+                            trace.mark_captcha("sdo")
+                        if on_captcha is not None:
+                            await on_captcha("sdo")
                     if captcha_attempted:
                         log_captcha_stage("attempt_already_used")
                         return False
@@ -530,7 +531,7 @@ async def _collect(
                     log_captcha_stage("challenge_detected_month")
                     if on_captcha is not None:
                         await on_captcha("month")
-                    if await solve_once(page):
+                    if await solve_once(page, "month"):
                         # Wait for a possible asynchronous redirect without
                         # retrying the CAPTCHA or declaring the gate solved.
                         log_captcha_stage(await wait_for_captcha_resolution(page))
@@ -576,7 +577,7 @@ async def _collect(
                         log_captcha_stage("challenge_detected_week")
                         if on_captcha is not None:
                             await on_captcha("week")
-                        if await solve_once(page):
+                        if await solve_once(page, "week"):
                             log_captcha_stage(await wait_for_captcha_resolution(page))
                             log_captcha_stage("schedule_recheck_after_captcha_week")
                             if trace is not None:
