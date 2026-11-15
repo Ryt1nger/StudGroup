@@ -324,10 +324,7 @@ async def claim_sdo_launch_prompt(
         row.sdo_launch_prompt_seen_at is not None
         or (
             not is_admin
-            and (
-                row.sdu_credential_id is not None
-                or row.sdu_password_encrypted is not None
-            )
+            and (row.sdu_credential_id is not None or row.sdu_password_encrypted is not None)
         )
     ):
         return {"show": False}
