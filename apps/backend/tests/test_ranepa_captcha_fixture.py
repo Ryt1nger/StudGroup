@@ -111,7 +111,6 @@ def test_fixture_diagnosis_distinguishes_provider_and_drag(
     )
 
 
-
 @pytest.mark.parametrize(
     ("wrong_side", "unsolvable_side", "always_wrong", "tasks", "resends", "valid"),
     [
@@ -200,9 +199,7 @@ def test_fixture_retry_rejects_changes_before_extra_paid_task(monkeypatch):
 @pytest.mark.parametrize("max_resends", [-1, 4, 1.5, True])
 def test_fixture_rejects_invalid_retry_limits(max_resends):
     with pytest.raises(ValueError, match="fixture_max_resends_out_of_range"):
-        ranepa_captcha_fixture.ObservedFixtureV2Pair(
-            "mock", max_resends=max_resends
-        )
+        ranepa_captcha_fixture.ObservedFixtureV2Pair("mock", max_resends=max_resends)
 
 
 def test_fixture_paid_retries_require_separate_consent(monkeypatch):
