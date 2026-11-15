@@ -304,7 +304,6 @@ def test_sdo_transition_logs_in_to_moodle_and_keeps_stable_url():
     assert list(courses.values()) == ["https://lms.ranepa.ru/course/view.php?id=85813"]
 
 
-
 def test_sdo_exit_records_captcha_even_without_paid_solver():
     class Visible:
         async def is_visible(self):
@@ -340,9 +339,7 @@ def test_sdo_exit_records_captcha_even_without_paid_solver():
         WeekSnapshot("A-001", date(2026, 11, 16), date(2026, 11, 22), (lesson,)),
         ("https://my.ranepa.ru/moodle_out.php?id=1",),
     )
-    links, states, courses = asyncio.run(
-        ranepa_browser.resolve_sdo_exits(Context(), result)
-    )
+    links, states, courses = asyncio.run(ranepa_browser.resolve_sdo_exits(Context(), result))
     assert links == {}
     assert courses == {}
     assert list(states.values()) == ["captcha_required"]
