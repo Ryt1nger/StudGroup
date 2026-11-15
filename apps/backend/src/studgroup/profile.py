@@ -309,10 +309,26 @@ async def claim_sdo_launch_prompt(
     # profile that has never been created, and concurrent devices/browser tabs.
     await db.execute(select(User.id).where(User.id == user.id).with_for_update())
     row = await db.get(UserProfile, user.id, populate_existing=True)
+    # Only a server-configured owner/admin may see the announcement despite
+    # already connected credentials. Never trust a client-supplied role flag.
+    admin_ids = (
+        request.app.state.settings.bot_admin_user_id,
+        request.app.state.settings.owner_telegram_user_id,
+    )
+    is_admin = (
+        type(user.telegram_user_id) is int
+        and user.telegram_user_id > 0
+        and user.telegram_user_id in admin_ids
+    )
     if row and (
-        row.sdu_credential_id is not None
-        or row.sdu_password_encrypted is not None
-        or row.sdo_launch_prompt_seen_at is not None
+        row.sdo_launch_prompt_seen_at is not None
+        or (
+            not is_admin
+            and (
+                row.sdu_credential_id is not None
+                or row.sdu_password_encrypted is not None
+            )
+        )
     ):
         return {"show": False}
     now = datetime.now(UTC)
