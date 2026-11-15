@@ -805,9 +805,7 @@ def test_configured_owner_avoids_lookup_when_authorized():
 
 
 @pytest.mark.parametrize("provider_submitted", [True, False])
-def test_rucaptcha_always_precedes_owner_fallback_in_same_browser(
-    monkeypatch, provider_submitted
-):
+def test_rucaptcha_always_precedes_owner_fallback_in_same_browser(monkeypatch, provider_submitted):
     calls = []
     page = SimpleNamespace(url="https://my.ranepa.ru/captcha")
 
