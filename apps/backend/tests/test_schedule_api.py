@@ -157,6 +157,23 @@ def test_schedule_uses_the_students_recorded_subgroup_choice(client):
     after = client.get(url, headers=auth)
     assert [item["subject"] for item in after.json()["lessons"]] == ["Математика", "Английский 1"]
 
+    async def enable_sdo_for_group():
+        from sqlalchemy import select
+
+        async with AsyncSession(client.app.state.engine) as db:
+            row = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            row.academic_group_code = "Э-ОБ-385-04-26-02"
+            await db.commit()
+
+    asyncio.run(enable_sdo_for_group())
+    client.app.state.settings.ranepa_schedule_view_enabled = True
+    merged = client.get(url, headers=auth)
+    assert merged.status_code == 200
+    assert [item["subject"] for item in merged.json()["lessons"]] == [
+        "Математика",
+        "Английский 1",
+    ]
+
 
 def test_expired_and_missing_credentials(client):
     url = "/v1/schedule?start=2026-10-05&end=2026-10-11"
