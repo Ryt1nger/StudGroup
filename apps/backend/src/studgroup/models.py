@@ -123,6 +123,8 @@ class RanepaCrawlGuard(Base):
         Boolean, default=False, server_default="false"
     )
     last_job_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    paid_day: Mapped[date | None] = mapped_column(Date)
+    paid_tasks_reserved: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
