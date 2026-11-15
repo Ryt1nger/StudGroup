@@ -696,10 +696,12 @@ async def _collect(
                     ]
                     if trace is not None:
                         trace.record("week_requested")
-                    async def read_and_resolve_week():
+                    async def read_and_resolve_week(
+                        target_monday=week_start, allow_empty=not expected
+                    ):
                         nonlocal captcha_seen, captcha_schedule_recovered
                         result = await read_week(
-                            page, login, password, code, week_start, allow_empty=not expected
+                            page, login, password, code, target_monday, allow_empty=allow_empty
                         )
                         if result.status == "captcha_required":
                             captcha_seen = True
@@ -714,7 +716,7 @@ async def _collect(
                                 if trace is not None:
                                     trace.record("week_recheck")
                                 result = await read_week(
-                                    page, login, password, code, week_start, allow_empty=not expected
+                                    page, login, password, code, target_monday, allow_empty=allow_empty
                                 )
                                 if result.status == "captcha_required":
                                     log_captcha_stage("challenge_still_present_week")
@@ -728,7 +730,7 @@ async def _collect(
                             if await manual_captcha(page):
                                 log_captcha_stage(await wait_for_captcha_resolution(page))
                                 result = await read_week(
-                                    page, login, password, code, week_start, allow_empty=not expected
+                                    page, login, password, code, target_monday, allow_empty=allow_empty
                                 )
                                 if result.snapshot is not None:
                                     captcha_schedule_recovered = True
