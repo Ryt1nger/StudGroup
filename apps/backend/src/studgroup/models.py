@@ -143,6 +143,28 @@ class RanepaCrawlObservation(Base):
     events_json: Mapped[str] = mapped_column(Text)
 
 
+class RanepaManualCaptcha(Base):
+    """One expiring owner-only human challenge for a live browser worker."""
+
+    __tablename__ = "ranepa_manual_captcha"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ranepa_crawl_jobs.id", ondelete="CASCADE"), nullable=False
+    )
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    owner_telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    screenshot_base64: Mapped[str | None] = mapped_column(Text)
+    left_image_base64: Mapped[str | None] = mapped_column(Text)
+    right_image_base64: Mapped[str | None] = mapped_column(Text)
+    angle_left: Mapped[int | None] = mapped_column(Integer)
+    angle_right: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class RanepaPersonalSnapshot(Base):
     """Last complete personal week, owned by one active group member."""
 
