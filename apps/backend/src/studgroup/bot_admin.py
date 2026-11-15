@@ -171,7 +171,8 @@ async def handle(db, update, settings):
         state = await load_guard(db, lock=command == "/ranepa_resume")
         if command == "/ranepa_resume" and await request_recovery(db):
             await say(
-                db, chat,
+                db,
+                chat,
                 "StudGroup: разрешена ОДНА проверка восстановления СДО. "
                 "Очередь пока на паузе. После ручной проверки доступа "
                 "запусти одиночный разрешённый RANEPA pilot: очередь "
@@ -181,14 +182,12 @@ async def handle(db, update, settings):
             await say(db, chat, "Обход СДО не приостановлен; возобновлять нечего.")
         else:
             await say(
-                db, chat,
+                db,
+                chat,
                 "StudGroup · СДО: "
                 + ("пауза" if state.paused else "работает")
                 + f". Последовательных неразрешённых CAPTCHA: {state.consecutive_captcha}. "
-                + (
-                    "Разрешена одна проверка восстановления."
-                    if state.recovery_requested else ""
-                ),
+                + ("Разрешена одна проверка восстановления." if state.recovery_requested else ""),
             )
         return True
     if not callback and text.strip().casefold() == "админ":
