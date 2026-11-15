@@ -7,7 +7,7 @@ not promises that every LMS course has a working online link.
 
 import os
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +28,9 @@ class CrawlRunStats:
     saved_lessons: int = 0
     saved_sdo_links: int = 0
     saved_sdo_courses: int = 0
+    verified_sdo_accounts: int = 0
+    timetable_only_accounts: int = 0
+    failure_reasons: dict[str, int] = field(default_factory=dict)
 
     def add(self, other: "CrawlRunStats") -> None:
         self.successful_accounts += other.successful_accounts
@@ -36,6 +39,10 @@ class CrawlRunStats:
         self.saved_lessons += other.saved_lessons
         self.saved_sdo_links += other.saved_sdo_links
         self.saved_sdo_courses += other.saved_sdo_courses
+        self.verified_sdo_accounts += other.verified_sdo_accounts
+        self.timetable_only_accounts += other.timetable_only_accounts
+        for code, count in other.failure_reasons.items():
+            self.failure_reasons[code] = self.failure_reasons.get(code, 0) + count
 
 
 def _owner_id(value: int | None) -> bool:
@@ -183,6 +190,96 @@ async def notify_account_crawl_result(
             "sendMessage",
             {"chat_id": owner_id, "text": message, "link_preview_options": {"is_disabled": True}},
             f"ranepa-crawl-account:{job_id}:{attempt}",
+        )
+        await db.commit()
+        return queued
+
+
+_REPORT_ERROR_NAMES = {
+    "login_failed": "Ошибка входа или отсутствует разрешение",
+    "captcha": "Не удалось пройти проверку CAPTCHA",
+    "source_unavailable": "Сайт расписания недоступен",
+    "identity_unverified": "Не подтверждена учебная группа",
+    "parse_failed": "Данные источника не прошли проверку",
+    "internal": "Внутренняя ошибка обработки",
+}
+
+
+async def notify_batch_report(
+    engine,
+    *,
+    owner_id: int | None,
+    stats: CrawlRunStats,
+    full_rescan: bool = False,
+    planned: int | None = None,
+    remaining: int = 0,
+    stop_reason: str = "idle",
+) -> bool:
+    """One private owner summary per GitHub run, including failure-only shifts.
+
+    An empty scheduled scan is silent, while an explicitly requested full scan
+    always reports even if the circuit breaker stops it before the first login.
+    """
+    if not _owner_id(owner_id):
+        return False
+    if stop_reason not in {"idle", "paused", "time_limit"}:
+        raise ValueError("invalid_crawl_stop_reason")
+    if remaining < 0 or planned is not None and planned < 0:
+        raise ValueError("invalid_crawl_report_counts")
+    processed = stats.successful_accounts + stats.failed_accounts
+    if not full_rescan and not processed:
+        return False
+    if full_rescan and planned is None:
+        raise ValueError("full_rescan_requires_planned_count")
+    completed = full_rescan and remaining == 0 and processed >= planned
+    if full_rescan:
+        heading = (
+            "✅ StudGroup · полный повторный обход СДО завершён"
+            if completed
+            else "⚠️ StudGroup · повторный обход СДО завершён частично"
+        )
+    else:
+        heading = "📊 StudGroup · отчёт о плановом обходе СДО"
+    lines = [heading]
+    if planned is not None:
+        lines.append(f"Запланировано учёток: {planned}.")
+    lines.extend(
+        [
+            f"Обработано учёток: {processed}.",
+            f"Успешных попыток: {stats.successful_accounts}.",
+            f"Неудачных попыток: {stats.failed_accounts}.",
+            f"С подтверждёнными данными СДО: {stats.verified_sdo_accounts}.",
+            f"Только расписание, без подтверждённой СДО: {stats.timetable_only_accounts}.",
+            f"Сохранено недель: {stats.saved_weeks}; занятий: {stats.saved_lessons}.",
+            f"Подтверждённых ссылок СДО: {stats.saved_sdo_links}; страниц курсов: {stats.saved_sdo_courses}.",
+        ]
+    )
+    if stats.failure_reasons:
+        lines.append("Причины ошибок:")
+        for code, count in sorted(stats.failure_reasons.items()):
+            lines.append(f"• {_REPORT_ERROR_NAMES.get(code, 'Неизвестная ошибка')}: {count}.")
+    if full_rescan:
+        lines.append(f"Не завершено из запланированных: {remaining}.")
+    if stop_reason == "paused":
+        lines.append("Очередь остановлена защитой CAPTCHA; требуется проверка администратора.")
+    elif stop_reason == "time_limit":
+        lines.append(
+            "Достигнут лимит времени запуска. Незавершённые учётки не считаются обработанными."
+        )
+    lines.append(
+        "Для следующего обычного сканирования каждой завершённой учётки "
+        "сохраняется интервал не менее 24 часов."
+    )
+    async with AsyncSession(engine) as db:
+        queued = await enqueue_once(
+            db,
+            "sendMessage",
+            {
+                "chat_id": owner_id,
+                "text": "\n".join(lines),
+                "link_preview_options": {"is_disabled": True},
+            },
+            f"ranepa-crawl-report:{_run_key()}",
         )
         await db.commit()
         return queued
