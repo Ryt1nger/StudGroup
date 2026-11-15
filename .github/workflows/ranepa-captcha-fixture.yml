@@ -1,0 +1,92 @@
+name: RANEPA isolated CAPTCHA fixture
+
+# Test-only: two synthetic images, locally intercepted page, no YDB/PG
+# access and no university traffic. Paid API calls require two opt-ins.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ranepa-captcha-fixture.yml
+      - apps/backend/src/studgroup/ranepa_captcha_fixture.py
+      - apps/backend/tests/test_ranepa_captcha_fixture.py
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Mock is FREE; RuCaptcha v2 creates up to two PAID RotateTask jobs"
+        type: choice
+        required: true
+        default: mock
+        options:
+          - mock
+          - rucaptcha
+      confirm_paid:
+        description: "I approve at most two paid RuCaptcha RotateTask jobs for this synthetic fixture"
+        type: boolean
+        required: true
+        default: false
+      progressive_context:
+        description: "Use first answer to virtually align LEFT in the second task instructions"
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ranepa-isolated-captcha-fixture
+  cancel-in-progress: false
+
+jobs:
+  fixture:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Reject paid mode without explicit confirmation
+        if: inputs.provider == 'rucaptcha' && inputs.confirm_paid != true
+        run: |
+          echo "Choose confirm_paid=true to authorize up to two paid jobs."
+          exit 1
+      - name: Install isolated test dependencies
+        run: |
+          uv sync --frozen
+          uv run python -m playwright install chromium --with-deps
+      - name: Run offline mock using real client code (no credentials)
+        if: github.event_name == 'push' || inputs.provider == 'mock'
+        env:
+          PROGRESSIVE: ${{ github.event_name == 'push' || inputs.progressive_context }}
+        run: |
+          mkdir -p fixture-output
+          if [ "$PROGRESSIVE" = "true" ]; then
+            uv run python -m studgroup.ranepa_captcha_fixture --provider mock --progressive-context --screenshot fixture-output/mock.png
+          else
+            uv run python -m studgroup.ranepa_captcha_fixture --provider mock --screenshot fixture-output/mock.png
+          fi
+      - name: Run RuCaptcha v2 on synthetic fixture (up to two paid jobs)
+        if: inputs.provider == 'rucaptcha' && inputs.confirm_paid == true
+        env:
+          CAPTCHA_API_KEY: ${{ secrets.RUCAPTCHA_API_KEY }}
+          PROGRESSIVE: ${{ inputs.progressive_context }}
+        run: |
+          test -n "$CAPTCHA_API_KEY" || { echo "RUCAPTCHA_API_KEY secret missing"; exit 1; }
+          mkdir -p fixture-output
+          if [ "$PROGRESSIVE" = "true" ]; then
+            uv run python -m studgroup.ranepa_captcha_fixture --provider rucaptcha --allow-paid --progressive-context --screenshot fixture-output/rucaptcha.png
+          else
+            uv run python -m studgroup.ranepa_captcha_fixture --provider rucaptcha --allow-paid --screenshot fixture-output/rucaptcha.png
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolated-rotate-fixture
+          path: apps/backend/fixture-output/*.png
+          if-no-files-found: ignore
+          retention-days: 2

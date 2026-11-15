@@ -11,6 +11,51 @@ API is a possible fit, but it returns *image coordinates*, not a guaranteed Stor
 solution. A static screenshot may be insufficient to infer how the moving halves
 should align; do not assume a high solve rate from synthetic tests.
 
+## Isolated two-slider fixture (manual, no live StormWall)
+
+A separate, **opt-in** workflow `.github/workflows/ranepa-captcha-fixture.yml`
+runs the current `solve_rotating_halves` implementation against a
+synthetic page with two native range inputs, one-shot drag locking and
+rotated original PNG halves. The fixture is an approximation based on
+the observed DOM/CSS contract, **not a guaranteed pixel- or protocol-
+identical copy of a real StormWall challenge**.
+
+**How to run:** GitHub Actions → **RANEPA isolated CAPTCHA fixture** →
+Run workflow on `main`. Choose:
+- `provider=mock` (default): FREE. Runs the real `RuCaptchaV2Pair`
+  createTask/getTaskResult parsing, progressive context construction,
+  rechecks and mouse drags, but injects a local HTTPX mock transport
+  that returns known angles `90, 180`. This tests the complete local
+  flow with no provider requests or paid task creation.
+- `provider=rucaptcha`: **PAID**, additionally requires
+  `confirm_paid=true`. Uses `secrets.RUCAPTCHA_API_KEY` to submit
+  **at most two** actual `RotateTask` jobs using the already-implemented
+  v2 client, then drives the very same synthetic page with the returned
+  angles. No retries or hidden charges are initiated by this code.
+- `progressive_context=true` (default): use the first answer to
+  virtually align the left half in the second task's `imgInstructions`.
+
+The Python entry point is `python -m studgroup.ranepa_captcha_fixture`.
+It prints `RANEPA_FIXTURE_RESULT accepted` only when the production
+drag solver submitted both movements AND the local simulated verifier
+accepted them (8-degree tolerance). A `rejected` or `internal_failure`
+result fails the job. The workflow saves a synthetic-only screenshot
+artifact for 2 days.
+
+**Isolation:** The browser page URL is a synthetic path on
+`my.ranepa.ru` solely to exercise the production solver's strict
+origin check. Playwright intercepts **every** browser request: the
+fixture page is served from in-memory HTML and every other request is
+aborted. It never contacts RANEPA, reads cookies, or handles student
+credentials. Only the explicit paid mode contacts RuCaptcha's API,
+and sends only the two generated PNG images and synthetic reference
+instructions. The API key stays in GitHub Actions secrets.
+
+**Limit:** Passing the local fixture proves local integration and
+RuCaptcha's ability to return angles for the synthetic challenge,
+not that StormWall's real server will accept a response. A real
+StormWall challenge still requires an authorized live test.
+
 ## Experimental two-task RotateTask v2 pilot (2026-11-14)
 
 This is an **opt-in alternative** to the legacy v1 `rotatecaptcha` two-file
