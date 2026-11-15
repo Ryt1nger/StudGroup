@@ -33,7 +33,11 @@ from studgroup.ranepa_captcha import (
     solve_slider_captcha,
     warn_if_unconfigured,
 )
-from studgroup.ranepa_crawl_guard import guard_is_paused, record_crawl_outcome
+from studgroup.ranepa_crawl_guard import (
+    guard_is_paused,
+    record_crawl_outcome,
+    reserve_daily_paid_tasks,
+)
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
@@ -84,6 +88,7 @@ async def collect_bounded(
     captcha_timeout_seconds=110,
     captcha_budget: CaptchaBudget | None = None,
     captcha_diagnostic_only: bool = False,
+    captcha_daily_limit: int = 0,
 ):
     try:
         async with asyncio.timeout(ACCOUNT_TIMEOUT_SECONDS):
@@ -101,6 +106,7 @@ async def collect_bounded(
                 captcha_timeout_seconds=captcha_timeout_seconds,
                 captcha_budget=captcha_budget,
                 captcha_diagnostic_only=captcha_diagnostic_only,
+                captcha_daily_limit=captcha_daily_limit,
             )
     except TimeoutError:
         log_captcha_stage("crawl_timeout")
@@ -275,6 +281,10 @@ async def process_one(
                 captcha_diagnostic_only=(
                     settings.ranepa_captcha_diagnostic_only and pilot_group_id is not None
                 ),
+                captcha_daily_limit=(
+                    settings.ranepa_captcha_daily_max_tasks
+                    if pilot_group_id is None else 0
+                ),
             )
     async with AsyncSession(engine) as db:
         finished = await finish(db, job_id, group_id, user_id, failure_code=failure)
@@ -328,6 +338,7 @@ async def _collect(
     captcha_timeout_seconds=110,
     captcha_budget: CaptchaBudget | None = None,
     captcha_diagnostic_only: bool = False,
+    captcha_daily_limit: int = 0,
 ):
     try:
         async with async_playwright() as playwright:
@@ -381,6 +392,12 @@ async def _collect(
                     ):
                         log_captcha_stage("paid_budget_exhausted")
                         return False
+                    if not captcha_diagnostic_only and captcha_daily_limit > 0:
+                        if not await reserve_daily_paid_tasks(
+                            engine, count=required_tasks, daily_limit=captcha_daily_limit
+                        ):
+                            log_captcha_stage("paid_daily_budget_exhausted")
+                            return False
                     captcha_attempted = True
                     log_captcha_stage(
                         "diagnostic_started" if captcha_diagnostic_only else "paid_attempt_started"
