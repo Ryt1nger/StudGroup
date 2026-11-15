@@ -238,6 +238,13 @@ def test_sdo_transition_logs_in_to_moodle_and_keeps_stable_url():
         def locator(self, selector):
             return Field(self, selector)
 
+        def get_by_text(self, text, **kwargs):
+            class Invisible:
+                async def is_visible(self):
+                    return False
+
+            return Invisible()
+
         async def content(self):
             return (
                 '<main class="course-content"><a href="/course/view.php?id=85813">Курс</a>'
