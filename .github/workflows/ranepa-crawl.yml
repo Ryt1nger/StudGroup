@@ -106,6 +106,9 @@ jobs:
           test -n "$LEGAL_DATA_REGION"
           test "$LEGAL_DOCUMENTS_APPROVED" = "true"
           test "$RANEPA_ACCESS_APPROVED" = "true"
+          if [ "$RANEPA_CAPTCHA_GUARD_ENABLED" = "true" ]; then
+            test -n "$BOT_ADMIN_USER_ID" || { echo "CAPTCHA guard requires configured owner alerts"; exit 1; }
+          fi
       - name: Install browser
         run: |
           uv sync --frozen
