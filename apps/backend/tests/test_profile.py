@@ -4,6 +4,7 @@ import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
@@ -465,6 +466,42 @@ def test_sdo_launch_prompt_skips_existing_saved_credentials(client):
     response = client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS)
     assert response.status_code == 200
     assert response.json() == {"show": False}
+
+
+@pytest.mark.parametrize("admin_setting", ["bot_admin_user_id", "owner_telegram_user_id"])
+def test_sdo_launch_prompt_allows_configured_admin_with_saved_credentials(client, admin_setting):
+    accept_study_credentials(client)
+    saved = client.patch(
+        "/v1/profile",
+        json={"sdu_login": "connected-admin", "sdu_password": "synthetic-secret"},
+        headers=HEADERS,
+    )
+    assert saved.status_code == 200 and saved.json()["sdu"]["password_set"]
+    admin_telegram_id = client.get("/v1/profile", headers=HEADERS).json()["telegram_user_id"]
+    settings = client.app.state.settings
+    settings.sdo_launch_prompt_enabled = True
+    setattr(settings, admin_setting, admin_telegram_id)
+    endpoint = "/v1/sdo-launch-prompt/claim"
+    assert client.post(endpoint, headers=HEADERS).json() == {"show": True}
+    assert client.post(endpoint, headers=HEADERS).json() == {"show": False}
+
+
+def test_sdo_launch_prompt_does_not_treat_other_user_as_admin(client):
+    accept_study_credentials(client)
+    saved = client.patch(
+        "/v1/profile",
+        json={"sdu_login": "connected-student", "sdu_password": "synthetic-secret"},
+        headers=HEADERS,
+    )
+    assert saved.status_code == 200 and saved.json()["sdu"]["password_set"]
+    telegram_id = client.get("/v1/profile", headers=HEADERS).json()["telegram_user_id"]
+    settings = client.app.state.settings
+    settings.sdo_launch_prompt_enabled = True
+    settings.bot_admin_user_id = telegram_id + 1
+    settings.owner_telegram_user_id = telegram_id + 2
+    assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {
+        "show": False
+    }
 
 
 def test_sdo_launch_prompt_does_not_grant_study_consent(client):
