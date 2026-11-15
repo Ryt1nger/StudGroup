@@ -249,8 +249,11 @@ def test_paused_guard_does_not_claim_existing_fair_queue_job(tmp_path):
             # A manual pilot must not bypass the pause without owner approval.
             assert (
                 await process_one(
-                    engine, settings, datetime.now(UTC).date(),
-                    pilot_group_id=group.id, pilot_user_id=user.id,
+                    engine,
+                    settings,
+                    datetime.now(UTC).date(),
+                    pilot_group_id=group.id,
+                    pilot_user_id=user.id,
                 )
                 == "paused"
             )
@@ -261,8 +264,11 @@ def test_paused_guard_does_not_claim_existing_fair_queue_job(tmp_path):
             # circuit must stay paused and the authorization is consumed.
             assert (
                 await process_one(
-                    engine, settings, datetime.now(UTC).date(),
-                    pilot_group_id=group.id, pilot_user_id=user.id,
+                    engine,
+                    settings,
+                    datetime.now(UTC).date(),
+                    pilot_group_id=group.id,
+                    pilot_user_id=user.id,
                 )
                 == "failed"
             )
