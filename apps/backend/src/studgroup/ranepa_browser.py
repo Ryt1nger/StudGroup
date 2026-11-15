@@ -228,6 +228,10 @@ async def read_week(
             )
             for _ in range(abs(distance)):
                 await arrow.click()
+            # Navigation changes the URL-neutral calendar grid asynchronously.
+            # A previous week's headers may remain visible briefly after a
+            # navigation click; wait for the requested dates, never trust them.
+            last_week_error = "cabinet_week_incomplete"
             for _ in range(40):
                 state = await _state(page)
                 if state == "captcha_required":
@@ -249,9 +253,12 @@ async def read_week(
                         "cabinet_week_incomplete",
                         "cabinet_time_missing",
                         "cabinet_card_incomplete",
+                        "cabinet_day_mismatch",
+                        "cabinet_weekday_mismatch",
                         "empty_source_requires_review",
                     }:
                         return BrowserResult(str(error))
+                    last_week_error = str(error)
                 await page.wait_for_timeout(250)
             final_state = await _state(page)
             if final_state == "captcha_required":
@@ -259,7 +266,7 @@ async def read_week(
             if final_state == "challenge_pending":
                 return BrowserResult("source_unavailable")
             if final_state != "login_required":
-                return BrowserResult("cabinet_week_incomplete")
+                return BrowserResult(last_week_error)
         except Exception:  # noqa: BLE001
             # Playwright can raise rich network exceptions containing URLs or
             # server text; never let them enter a job error or log.
