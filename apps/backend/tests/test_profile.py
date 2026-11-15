@@ -429,7 +429,6 @@ def test_no_v1_route_crashes_on_an_unknown_session_token(client):
     assert failures == []
 
 
-
 def test_sdo_launch_prompt_is_once_per_authenticated_user(client):
     settings = client.app.state.settings
     endpoint = "/v1/sdo-launch-prompt/claim"
@@ -442,6 +441,7 @@ def test_sdo_launch_prompt_is_once_per_authenticated_user(client):
     second = client.post(endpoint, headers=HEADERS)
     assert second.status_code == 200
     assert second.json() == {"show": False}
+
     # Closing the app does not depend on browser localStorage: the receipt is
     # owned by the authenticated user row in the database.
     async def receipt():
@@ -469,9 +469,7 @@ def test_sdo_launch_prompt_skips_existing_saved_credentials(client):
 
 def test_sdo_launch_prompt_does_not_grant_study_consent(client):
     client.app.state.settings.sdo_launch_prompt_enabled = True
-    assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {
-        "show": True
-    }
+    assert client.post("/v1/sdo-launch-prompt/claim", headers=HEADERS).json() == {"show": True}
     saved = client.patch(
         "/v1/profile",
         json={"sdu_login": "must-consent", "sdu_password": "synthetic-secret"},
