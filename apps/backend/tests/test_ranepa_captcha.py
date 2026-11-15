@@ -36,7 +36,6 @@ def test_rucaptcha_is_opt_in_and_missing_key_is_only_a_warning(caplog, monkeypat
     assert "CAPTCHA_API_KEY is missing" in caplog.text
 
 
-
 def test_owner_approved_full_rescan_budget_is_bounded_and_accepted():
     settings = Settings(
         _env_file=None,
