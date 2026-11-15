@@ -199,8 +199,6 @@ class ObservedFixtureV2Pair(RuCaptchaV2Pair):
                 async with self._client_factory(timeout=20, follow_redirects=False) as http:
                     for side in (0, 1):
                         if side == 1:
-                            if before_second is not None and not await before_second():
-                                raise RotateV2Error("challenge_changed")
                             context = (
                                 ranepa_rotate_v2._context_png(left, right, left_rotation=angles[0])
                                 if self.progressive_context
