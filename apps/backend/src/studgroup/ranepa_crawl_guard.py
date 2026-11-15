@@ -32,8 +32,11 @@ async def load_guard(db, *, lock=False):
         raise RuntimeError("unsupported_crawl_guard_database")
     await db.execute(
         statement.values(
-            id=_GUARD_ID, consecutive_captcha=0, paused=False,
-            recovery_requested=False, updated_at=now
+            id=_GUARD_ID,
+            consecutive_captcha=0,
+            paused=False,
+            recovery_requested=False,
+            updated_at=now,
         ).on_conflict_do_nothing(index_elements=[RanepaCrawlGuard.id])
     )
     query = select(RanepaCrawlGuard).where(RanepaCrawlGuard.id == _GUARD_ID)
@@ -138,14 +141,16 @@ async def record_crawl_outcome(
                 state.paused = False
                 state.consecutive_captcha = 0
                 await _owner_message(
-                    db, owner_id,
+                    db,
+                    owner_id,
                     "StudGroup: доступ к расписанию подтверждён одиночным пилотом. "
                     "Обход СДО возобновлён; сохранённая очередь продолжится в следующем цикле.",
                     f"ranepa-captcha-resumed:{job_id}:{attempt}",
                 )
             else:
                 await _owner_message(
-                    db, owner_id,
+                    db,
+                    owner_id,
                     "StudGroup: проверочный пилот не подтвердил доступ к расписанию. "
                     "Обход остаётся приостановленным. Повторную проверку можно разрешить "
                     "командой /ranepa_resume, когда проблема будет устранена.",
@@ -159,7 +164,8 @@ async def record_crawl_outcome(
             if blocked:
                 state.paused = True
             await _owner_message(
-                db, owner_id,
+                db,
+                owner_id,
                 "StudGroup: CAPTCHA помешала получить расписание.\n"
                 f"Группа UUID: {group_id}\n"
                 f"Пользователь UUID: {user_id}\n"
@@ -168,8 +174,8 @@ async def record_crawl_outcome(
                     "Обход ПРИОСТАНОВЛЕН после четырёх последовательных сбоев. "
                     "Для восстановления потребуется разрешённый одиночный пилот "
                     "и команда /ranepa_resume в личном чате бота."
-                    if blocked else
-                    "Эта учётка пропущена; умная очередь продолжит остальные."
+                    if blocked
+                    else "Эта учётка пропущена; умная очередь продолжит остальные."
                 )
                 + "\nCAPTCHA в боте не интерактивна: её нельзя пройти по одному скриншоту.",
                 f"ranepa-captcha:{job_id}:{attempt}",
