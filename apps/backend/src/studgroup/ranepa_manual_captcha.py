@@ -55,7 +55,7 @@ def _aware(value: datetime) -> datetime:
 
 
 def _b64(png: bytes) -> str:
-    if not 100 <= len(png) <= MAX_IMAGE_BYTES or not png.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+    if not 100 <= len(png) <= MAX_IMAGE_BYTES or not png.startswith(bytes.fromhex("89504e470d0a1a0a")):
         raise ValueError("unsafe_captcha_image")
     return base64.b64encode(png).decode("ascii")
 
@@ -261,7 +261,7 @@ async def offer_manual_captcha(
                 {
                     "chat_id": owner_id,
                     "text": (
-                        "🧩 StudGroup · требуется помощь с CAPTCHA\\n"
+                        "🧩 StudGroup · требуется помощь с CAPTCHA\n"
                         "Автоматическое решение RuCaptcha не подтвердилось. "
                         "Открой головоломку по кнопке и поверни обе части. "
                         "Браузер обхода продолжает ожидать твой ответ до 6 минут.\\n"
