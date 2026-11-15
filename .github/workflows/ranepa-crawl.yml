@@ -84,7 +84,7 @@ jobs:
       RANEPA_CRAWL_NOTIFY_ACCOUNT_RESULTS_ENABLED: ${{ github.event_name == 'schedule' || github.event_name == 'push' || secrets.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || vars.RANEPA_CRAWL_BOT_ADMIN_USER_ID != '' || secrets.BOT_ADMIN_USER_ID != '' || vars.BOT_ADMIN_USER_ID != '' }}
       # Owner sees the whole live puzzle ONLY when RuCaptcha failed or was
       # unavailable. Signed Telegram initData controls challenge access.
-      RANEPA_MANUAL_CAPTCHA_ENABLED: ${{ github.event_name == 'schedule' || github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+      RANEPA_MANUAL_CAPTCHA_ENABLED: ${{ github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true) }}
       RANEPA_MANUAL_CAPTCHA_BASE_URL: https://studgroup-tyjh.onrender.com
       # Paid CAPTCHA solving is available only for a manually selected pilot.
       # Never enable it for scheduled multi-account queue shifts.
