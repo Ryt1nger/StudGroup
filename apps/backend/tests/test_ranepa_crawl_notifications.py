@@ -74,9 +74,7 @@ def test_successful_run_summary_uses_persisted_counts_and_run_dedup(tmp_path, mo
                 saved_sdo_links=15,
                 saved_sdo_courses=6,
             )
-            assert await notify_successful_crawl(
-                engine, owner_id=915, stats=stats, scope="batch"
-            )
+            assert await notify_successful_crawl(engine, owner_id=915, stats=stats, scope="batch")
             assert not await notify_successful_crawl(
                 engine, owner_id=915, stats=stats, scope="batch"
             )
@@ -90,13 +88,9 @@ def test_successful_run_summary_uses_persisted_counts_and_run_dedup(tmp_path, mo
                 assert "Подтверждено занятий: 47" in notice["text"]
                 assert "Найдено ссылок на занятия в СДО: 15" in notice["text"]
                 assert rows[0].dedup_key == "ranepa-crawl-success:batch:98902222:1"
-            assert await notify_successful_crawl(
-                engine, owner_id=915, stats=stats, scope="pilot"
-            )
+            assert await notify_successful_crawl(engine, owner_id=915, stats=stats, scope="pilot")
             monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
-            assert await notify_successful_crawl(
-                engine, owner_id=915, stats=stats, scope="batch"
-            )
+            assert await notify_successful_crawl(engine, owner_id=915, stats=stats, scope="batch")
         finally:
             await engine.dispose()
 
