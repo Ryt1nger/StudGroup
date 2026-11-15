@@ -43,13 +43,22 @@ def make_challenge(client, expired=False):
             group = (await db.scalars(select(Group))).first()
             student = (await db.scalars(select(User))).first()
             job = RanepaCrawlJob(
-                id=uuid.uuid4(), group_id=group.id, user_id=student.id,
+                id=uuid.uuid4(),
+                group_id=group.id,
+                user_id=student.id,
                 week_start=datetime(2026, 11, 9, tzinfo=UTC).date(),
-                state="running", priority=0, attempts=1, created_at=datetime.now(UTC),
+                state="running",
+                priority=0,
+                attempts=1,
+                created_at=datetime.now(UTC),
             )
             challenge = RanepaManualCaptcha(
-                id=uuid.uuid4(), job_id=job.id, attempt=1, owner_telegram_id=1,
-                state="pending", screenshot_base64=bridge._b64(png()),
+                id=uuid.uuid4(),
+                job_id=job.id,
+                attempt=1,
+                owner_telegram_id=1,
+                state="pending",
+                screenshot_base64=bridge._b64(png()),
                 left_image_base64=bridge._b64(png()),
                 right_image_base64=bridge._b64(png()),
                 created_at=datetime.now(UTC),
@@ -79,22 +88,34 @@ def test_private_captcha_full_view_and_one_time_answer(client):
     assert response.json()["status"] == "pending"
     assert response.json()["screenshot"].startswith("data:image/png;base64,")
     assert base64.b64decode(response.json()["left"].split(",")[1]) == png()
-    assert client.post(
-        path + "/answer",
-        json={"init_data": owner, "angle_left": 400, "angle_right": 210},
-    ).status_code == 422
-    assert client.post(
-        path + "/answer",
-        json={"init_data": stranger, "angle_left": 30, "angle_right": 210},
-    ).status_code == 403
-    assert client.post(
-        path + "/answer",
-        json={"init_data": owner, "angle_left": 30, "angle_right": 210},
-    ).status_code == 200
-    assert client.post(
-        path + "/answer",
-        json={"init_data": owner, "angle_left": 80, "angle_right": 180},
-    ).status_code == 409
+    assert (
+        client.post(
+            path + "/answer",
+            json={"init_data": owner, "angle_left": 400, "angle_right": 210},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            path + "/answer",
+            json={"init_data": stranger, "angle_left": 30, "angle_right": 210},
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            path + "/answer",
+            json={"init_data": owner, "angle_left": 30, "angle_right": 210},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            path + "/answer",
+            json={"init_data": owner, "angle_left": 80, "angle_right": 180},
+        ).status_code
+        == 409
+    )
     assert client.post(path + "/state", json={"init_data": owner}).json()["left"] is None
 
 
@@ -106,7 +127,10 @@ def test_expired_captcha_never_shares_images_or_accepts_answer(client):
     body = client.post(path + "/state", json={"init_data": owner}).json()
     assert body["status"] == "expired"
     assert body["screenshot"] is None
-    assert client.post(
-        path + "/answer",
-        json={"init_data": owner, "angle_left": 30, "angle_right": 210},
-    ).status_code == 409
+    assert (
+        client.post(
+            path + "/answer",
+            json={"init_data": owner, "angle_left": 30, "angle_right": 210},
+        ).status_code
+        == 409
+    )
