@@ -218,7 +218,7 @@ def test_paused_guard_does_not_claim_existing_fair_queue_job(tmp_path):
                 timezone="Europe/Moscow",
             )
             user = User(id=uuid4(), telegram_user_id=32001, display_name="Student")
-            async with AsyncSession(engine) as db:
+            async with AsyncSession(engine, expire_on_commit=False) as db:
                 db.add_all([group, user])
                 await db.flush()
                 db.add(
