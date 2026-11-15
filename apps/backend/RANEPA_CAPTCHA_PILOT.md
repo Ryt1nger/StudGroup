@@ -79,6 +79,35 @@ challenge, and no mouse clicks on stale inputs. Passing these tests
 correct angles or that StormWall accepts the completed image**.
 Do not repeat paid attempts on an unsupported, stale or failed challenge.
 
+## Explicit CAPTCHA outcome after each successful crawl
+
+The worker now emits exactly one summary stage at the end of a successful
+verified schedule collection. This prevents a green GitHub Actions run
+from being mistaken for proof that the challenge was solved:
+
+- `captcha_not_seen_schedule_verified`: verified schedule, but no CAPTCHA
+  was detected by the worker during the run.
+- `captcha_seen_schedule_recovered`: the worker observed a CAPTCHA, submitted
+  its one allowed attempt, then successfully re-read month/week schedule.
+- `captcha_seen_schedule_verified_not_solution_proof`: CAPTCHA was observed
+  (for example while visiting an SDO exit), but successful schedule retrieval
+  does **not** establish whether that separate challenge was solved.
+
+On a month/week challenge the existing bounded solve path now logs
+`schedule_recheck_after_captcha_month` or
+`schedule_recheck_after_captcha_week` before re-reading the schedule.
+These are recovery reads in the same browser context, **not** duplicate
+credential logins or extra billable solver requests. The read must still
+verify the correct group identity. Failure and unresolved CAPTCHA retain
+the existing fail-closed result codes. A local offline fixture tests both
+branches without contacting the university or RuCaptcha.
+
+There is **no client-side switch that guarantees a real StormWall CAPTCHA
+will appear**. Avoid cycling IP addresses or repeated invalid logins to
+provoke a live challenge. To test the presentation path deterministically,
+use a provider-authorized test challenge or a local simulated fixture;
+this never proves that a production StormWall CAPTCHA has been solved.
+
 ## Worker behaviour
 
 - Playwright performs the ordinary StormWall JavaScript redirect in the same

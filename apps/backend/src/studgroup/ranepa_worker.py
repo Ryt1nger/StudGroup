@@ -328,9 +328,14 @@ async def _collect(
                     context = await browser.new_context(storage_state=None, **context_options)
                 page = await context.new_page()
                 captcha_attempted = False
+                captcha_seen = False
+                captcha_schedule_recovered = False
 
                 async def solve_once(challenge_page):
-                    nonlocal captcha_attempted
+                    nonlocal captcha_attempted, captcha_seen
+                    # Includes challenges encountered while following SDO exits.
+                    # Record observation even if the provider is disabled.
+                    captcha_seen = True
                     if captcha_attempted:
                         log_captcha_stage("attempt_already_used")
                         return False
@@ -385,17 +390,20 @@ async def _collect(
 
                 month = await read_month(page, login, password, code, today.year, today.month)
                 if month.status == "captcha_required":
+                    captcha_seen = True
                     log_captcha_stage("challenge_detected_month")
                     if await solve_once(page):
                         # Wait for a possible asynchronous redirect without
                         # retrying the CAPTCHA or declaring the gate solved.
                         log_captcha_stage(await wait_for_captcha_resolution(page))
+                        log_captcha_stage("schedule_recheck_after_captcha_month")
                         month = await read_month(
                             page, login, password, code, today.year, today.month
                         )
                         if month.status == "captcha_required":
                             log_captcha_stage("challenge_still_present_month")
                         elif month.status == "preview_only":
+                            captcha_schedule_recovered = True
                             log_captcha_stage("month_verified_after_challenge")
                         else:
                             log_captcha_stage("month_not_verified_after_challenge")
@@ -418,15 +426,18 @@ async def _collect(
                         page, login, password, code, week_start, allow_empty=not expected
                     )
                     if result.status == "captcha_required":
+                        captcha_seen = True
                         log_captcha_stage("challenge_detected_week")
                         if await solve_once(page):
                             log_captcha_stage(await wait_for_captcha_resolution(page))
+                            log_captcha_stage("schedule_recheck_after_captcha_week")
                             result = await read_week(
                                 page, login, password, code, week_start, allow_empty=not expected
                             )
                             if result.status == "captcha_required":
                                 log_captcha_stage("challenge_still_present_week")
                             elif result.snapshot is not None:
+                                captcha_schedule_recovered = True
                                 log_captcha_stage("week_received_after_challenge")
                             else:
                                 log_captcha_stage("week_not_verified_after_challenge")
@@ -474,6 +485,15 @@ async def _collect(
                         # A cache failure must not invalidate verified timetable data.
                         # Playwright/YDB error messages may contain secrets; do not log them.
                         return None
+                # A green crawl result alone does not prove that a CAPTCHA was
+                # presented or solved. Emit one explicit, privacy-safe outcome
+                # for every successful collection, even when no challenge occurs.
+                if captcha_schedule_recovered:
+                    log_captcha_stage("captcha_seen_schedule_recovered")
+                elif captcha_seen:
+                    log_captcha_stage("captcha_seen_schedule_verified_not_solution_proof")
+                else:
+                    log_captcha_stage("captcha_not_seen_schedule_verified")
                 return None
             finally:
                 await browser.close()
