@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     ranepa_access_approved: bool = False
     ranepa_schedule_view_enabled: bool = False
     ranepa_crawl_pause_seconds: int = Field(default=20, ge=5, le=300)
+    # Opt-in durable pause after four consecutive unresolved CAPTCHA outcomes.
+    ranepa_captcha_guard_enabled: bool = False
     # Stage encrypted browser-state reuse separately from the legacy crawler.
     ranepa_session_reuse_enabled: bool = False
     # Explicitly opt-in to paid RuCaptcha challenges; disabled by default.
