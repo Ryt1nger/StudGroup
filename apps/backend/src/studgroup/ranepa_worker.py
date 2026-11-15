@@ -38,9 +38,9 @@ from studgroup.ranepa_crawl_guard import (
     record_crawl_outcome,
     reserve_daily_paid_tasks,
 )
-from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
+from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_personal import remember_personal
