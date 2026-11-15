@@ -179,11 +179,14 @@ async def process_one(
     async with AsyncSession(engine, expire_on_commit=False) as db:
         # The durable CAPTCHA breaker never changes fair queue priorities.
         # Owner-authorized targeted pilots may run while scheduled jobs are paused.
-        if settings.ranepa_captcha_guard_enabled and pilot_group_id is None:
-            if await guard_is_paused(db):
-                await db.commit()
-                log_captcha_stage("crawl_paused_repeated_captcha")
-                return "paused"
+        if (
+            settings.ranepa_captcha_guard_enabled
+            and pilot_group_id is None
+            and await guard_is_paused(db)
+        ):
+            await db.commit()
+            log_captcha_stage("crawl_paused_repeated_captcha")
+            return "paused"
         job = await claim_next(db, group_id=pilot_group_id, user_id=pilot_user_id)
         if job is None:
             await db.commit()
@@ -204,7 +207,20 @@ async def process_one(
             or not settings.ranepa_access_approved
             or not await has_consent(db, user_id, "sdo", settings)
         ):
-            await finish(db, job_id, group_id, user_id, failure_code="login_failed")
+            finished = await finish(
+                db, job_id, group_id, user_id, failure_code="login_failed"
+            )
+            if finished and settings.ranepa_captcha_guard_enabled:
+                await record_crawl_outcome(
+                    db,
+                    owner_id=settings.bot_admin_user_id,
+                    job_id=job_id,
+                    group_id=group_id,
+                    user_id=user_id,
+                    attempt=attempt,
+                    failure_code="login_failed",
+                    manual_pilot=pilot_group_id is not None,
+                )
             await db.commit()
             return "failed"
         code = group.academic_group_code
@@ -396,12 +412,15 @@ async def _collect(
                     ):
                         log_captcha_stage("paid_budget_exhausted")
                         return False
-                    if not captcha_diagnostic_only and captcha_daily_limit > 0:
-                        if not await reserve_daily_paid_tasks(
+                    if (
+                        not captcha_diagnostic_only
+                        and captcha_daily_limit > 0
+                        and not await reserve_daily_paid_tasks(
                             engine, count=required_tasks, daily_limit=captcha_daily_limit
-                        ):
-                            log_captcha_stage("paid_daily_budget_exhausted")
-                            return False
+                        )
+                    ):
+                        log_captcha_stage("paid_daily_budget_exhausted")
+                        return False
                     captcha_attempted = True
                     log_captcha_stage(
                         "diagnostic_started" if captcha_diagnostic_only else "paid_attempt_started"
