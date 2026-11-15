@@ -300,7 +300,18 @@ async def claim_sdo_launch_prompt(
     feature defaults OFF until migration 0062 and production launch.
     """
     user, _ = await current(db, authorization)
-    if not request.app.state.settings.sdo_launch_prompt_enabled:
+    settings = request.app.state.settings
+    # Only a server-configured owner/admin may preview the announcement or
+    # see it despite saved credentials. Never trust a client-supplied role flag.
+    admin_ids = (settings.bot_admin_user_id, settings.owner_telegram_user_id)
+    is_admin = (
+        type(user.telegram_user_id) is int
+        and user.telegram_user_id > 0
+        and user.telegram_user_id in admin_ids
+    )
+    if not settings.sdo_launch_prompt_enabled and not (
+        is_admin and settings.sdo_launch_prompt_admin_preview_enabled
+    ):
         return {"show": False}
     from studgroup.api import active_membership
 
@@ -309,17 +320,6 @@ async def claim_sdo_launch_prompt(
     # profile that has never been created, and concurrent devices/browser tabs.
     await db.execute(select(User.id).where(User.id == user.id).with_for_update())
     row = await db.get(UserProfile, user.id, populate_existing=True)
-    # Only a server-configured owner/admin may see the announcement despite
-    # already connected credentials. Never trust a client-supplied role flag.
-    admin_ids = (
-        request.app.state.settings.bot_admin_user_id,
-        request.app.state.settings.owner_telegram_user_id,
-    )
-    is_admin = (
-        type(user.telegram_user_id) is int
-        and user.telegram_user_id > 0
-        and user.telegram_user_id in admin_ids
-    )
     if row and (
         row.sdo_launch_prompt_seen_at is not None
         or (
