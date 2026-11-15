@@ -22,7 +22,9 @@ def upgrade():
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("id = 1", name="ck_ranepa_crawl_guard_singleton"),
         sa.CheckConstraint("consecutive_captcha >= 0", name="ck_ranepa_crawl_guard_nonnegative"),
-        sa.CheckConstraint("paid_tasks_reserved >= 0", name="ck_ranepa_crawl_guard_paid_nonnegative"),
+        sa.CheckConstraint(
+            "paid_tasks_reserved >= 0", name="ck_ranepa_crawl_guard_paid_nonnegative"
+        ),
     )
     op.create_table(
         "ranepa_crawl_observations",
