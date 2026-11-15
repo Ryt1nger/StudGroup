@@ -65,6 +65,9 @@ async def enqueue_week(
                 RanepaCrawlJob.week_start == week_start,
             )
         )
+        if last_completed_at is not None and last_completed_at.tzinfo is None:
+            # SQLite tests return naive datetimes despite timezone=True.
+            last_completed_at = last_completed_at.replace(tzinfo=UTC)
         if existing is not None:
             # The explicit manual pilot can retry its *selected* completed job
             # immediately. Queue workers retain the 24-hour cooldown. Never
