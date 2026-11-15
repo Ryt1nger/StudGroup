@@ -329,7 +329,13 @@ async def read_month(
 
 
 async def resolve_sdo_exits(
-    context, result: BrowserResult, login: str = "", password: str = "", *, solve_captcha=None
+    context,
+    result: BrowserResult,
+    login: str = "",
+    password: str = "",
+    *,
+    solve_captcha=None,
+    on_captcha=None,
 ) -> tuple[dict, dict, dict]:
     """Follow LK SDO exits; retain verified course and unique meeting URLs."""
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
@@ -365,6 +371,8 @@ async def resolve_sdo_exits(
                 # queue circuit breaker instead of looking like success.
                 if await page.get_by_text("Используйте ползунки", exact=False).is_visible():
                     captcha_seen = True
+                    if on_captcha is not None:
+                        await on_captcha("sdo")
                     if solve_captcha is not None and await solve_captcha(page):
                         captcha_seen = False
                         continue
