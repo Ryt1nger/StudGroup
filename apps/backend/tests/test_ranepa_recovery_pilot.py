@@ -16,7 +16,10 @@ from studgroup.models import (
     User,
     UserProfile,
 )
-from studgroup.ranepa_recovery_pilot import choose_recovery_candidate
+from studgroup.ranepa_recovery_pilot import (
+    choose_failed_captcha_accounts,
+    choose_recovery_candidate,
+)
 
 
 def test_owner_recovery_selects_exactly_one_prior_captcha_failure(tmp_path):
@@ -122,6 +125,18 @@ def test_owner_recovery_selects_exactly_one_prior_captcha_failure(tmp_path):
                 state.recovery_requested = True
                 await db.commit()
             assert await choose_recovery_candidate(engine) == target
+            # The normal three-account retry is never allowed while paused,
+            # even when the owner authorized a different single-account pilot.
+            with pytest.raises(RuntimeError, match="captcha_recovery_batch_requires_open_guard"):
+                await choose_failed_captcha_accounts(engine)
+            async with AsyncSession(engine) as db:
+                guard = await db.get(RanepaCrawlGuard, 1)
+                guard.paused = False
+                guard.recovery_requested = False
+                await db.commit()
+            assert await choose_failed_captcha_accounts(engine) == [target]
+            with pytest.raises(ValueError, match="unsafe_recovery_batch_size"):
+                await choose_failed_captcha_accounts(engine, max_accounts=4)
         finally:
             await engine.dispose()
 
