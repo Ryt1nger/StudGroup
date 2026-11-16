@@ -1564,3 +1564,64 @@ def test_catchup_batch_is_restricted_to_newest_moscow_day_before_package_split()
     ]
     assert newest_day_candidates(rows, "Europe/Moscow") == rows[:2]
     assert newest_day_candidates([], "Europe/Moscow") == []
+
+
+def test_independent_homework_reply_advances_without_unread_photo_context(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "a" * 64
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            reply = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
+            reply.reply_to_message_id = photo.telegram_message_id
+            reply.text = "По математике решить задачи 1–3 до пятницы, как самостоятельную работу"
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="pending-independent-picture-31",
+                    telegram_file_id="pending31",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    cfg = settings(photo_reading_enabled=True, ai_release_budget_required_groups=[str(group_id)])
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, cfg) == "completed"
+    assert set(provider.targets) == {32, 33}
+    context = provider.requests[0].user_payload["messages"]
+    assert 31 not in {message["telegram_message_id"] for message in context}
+    assert states(client) == {31: "pending", 32: "completed", 33: "completed"}
+
+
+def test_image_reply_classifier_stays_fail_closed_for_deictic_text():
+    from types import SimpleNamespace
+
+    from studgroup.analysis.package_worker import _self_contained_academic_reply
+
+    case = lambda text: SimpleNamespace(reply_to_message_id=31, text=text)
+    assert _self_contained_academic_reply(
+        case("По математике решить задачи 1–3 до пятницы, самостоятельная работа")
+    )
+    assert not _self_contained_academic_reply(
+        case("По математике решить эти задачи с фото, чтобы успеть до пятницы")
+    )
+    assert not _self_contained_academic_reply(case("Сделать это по математике"))
