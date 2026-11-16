@@ -457,6 +457,7 @@ async def process_one(
                             auto_attempts=attempts_used,
                             student_name=student.display_name if student else None,
                             group_code=code,
+                            telegram_group_name=group.name,
                         )
                     )
                     if settings.ranepa_manual_captcha_enabled
