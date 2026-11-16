@@ -142,6 +142,10 @@ def test_representative_upsert_is_idempotent_and_preserves_subgroup_isolation(tm
                     "Иностранный язык",
                 }
                 assert {row["subject"] for row in b["lessons"]} == {"Общий предмет"}
+                assert b["schedule_complete"] is True
+                assert b["source_checked"] is False
+                assert b["oldest_required_checked_at"] is None
+                assert b["last_success_at"] is None
                 assert b["lessons"][0]["online_url"] == (
                     "https://lms.ranepa.ru/mod/url/view.php?id=9876"
                 )
@@ -267,8 +271,7 @@ def test_borrowed_snapshot_cannot_be_rebroadcast_or_cover_a_new_subgroup(tmp_pat
                 own = await db.get(RanepaPersonalSnapshot, (group_id, users[1], WEEK))
                 assert own.identity_verified
                 assert any(
-                    row.get("source_scope") == "subgroup"
-                    for row in json.loads(own.rows_json)
+                    row.get("source_scope") == "subgroup" for row in json.loads(own.rows_json)
                 )
 
                 # It must not re-share A as if B were observed by student two.
@@ -279,7 +282,9 @@ def test_borrowed_snapshot_cannot_be_rebroadcast_or_cover_a_new_subgroup(tmp_pat
 
                 # Nor may the borrowed A row suppress a real B account crawl.
                 await enqueue_week(
-                    db, WEEK, [CrawlCandidate(group_id, users[2])],
+                    db,
+                    WEEK,
+                    [CrawlCandidate(group_id, users[2])],
                     now=CHECKED + timedelta(minutes=2),
                 )
                 claimed = await claim_next(db, now=CHECKED + timedelta(minutes=3))
@@ -299,43 +304,50 @@ def test_unconfigured_subgroup_hint_is_neither_fallback_nor_shared(tmp_path):
         try:
             group_id, users, _, _ = await fixture(engine)
             source_week = WeekSnapshot(
-                CODE, WEEK, WEEK + timedelta(days=6),
+                CODE,
+                WEEK,
+                WEEK + timedelta(days=6),
                 (
                     ExternalLesson(
-                        WEEK, time(9), time(10, 20),
+                        WEEK,
+                        time(9),
+                        time(10, 20),
                         "Неразмеченный факультатив",
                         teacher="Преподаватель B",
                         subgroup_hint="Поток Б",
                     ),
                     ExternalLesson(
-                        WEEK, time(11), time(12, 20),
-                        "Общий семинар", teacher="Преподаватель",
+                        WEEK,
+                        time(11),
+                        time(12, 20),
+                        "Общий семинар",
+                        teacher="Преподаватель",
                         subgroup_hint="Общий поток",
                     ),
                 ),
             )
             async with AsyncSession(engine, expire_on_commit=False) as db:
                 await remember_personal(
-                    db, group_id, users[0], source_week,
-                    group_identity_verified=True, checked_at=CHECKED,
+                    db,
+                    group_id,
+                    users[0],
+                    source_week,
+                    group_identity_verified=True,
+                    checked_at=CHECKED,
                 )
                 await db.commit()
             async with AsyncSession(engine, expire_on_commit=False) as db:
                 fallback = await personal_with_group_fallback(
                     db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
                 )
-                assert {item["subject"] for item in fallback["lessons"]} == {
-                    "Общий семинар"
-                }
+                assert {item["subject"] for item in fallback["lessons"]} == {"Общий семинар"}
                 await materialize_verified_facts(db, group_id, users[0], WEEK)
                 await db.commit()
             async with AsyncSession(engine) as db:
                 projected = await personal_period(
                     db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
                 )
-                assert {item["subject"] for item in projected["lessons"]} == {
-                    "Общий семинар"
-                }
+                assert {item["subject"] for item in projected["lessons"]} == {"Общий семинар"}
         finally:
             await engine.dispose()
 

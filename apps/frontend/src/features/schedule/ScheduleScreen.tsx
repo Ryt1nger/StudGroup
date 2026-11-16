@@ -253,7 +253,7 @@ export function ScheduleScreen() {
           </div>
           <button
             type="button"
-            disabled={refresh.isPending || refresh.data?.queued === true}
+            disabled={refresh.isPending}
             onClick={() => refresh.mutate()}
           >
             {refresh.isPending ? 'Запрашиваем проверку…' : 'Обновить СДО'}
