@@ -32,6 +32,13 @@ from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
 from studgroup.analysis.manual_dedupe import prompt_memory, recent_manual_cards
 from studgroup.analysis.package_run import DEFAULT_MAX_TARGETS, plan_packages
+from studgroup.analysis.product_outcomes import (
+    attributed_changes,
+    blocked_image_ids,
+    classify_targets,
+    evidence_ids,
+    summarize_targets,
+)
 from studgroup.analysis.release_budget import release_window_blocker
 from studgroup.analysis.shadow import (
     ShadowPassFailure,
@@ -1151,8 +1158,6 @@ async def _tell_the_owner(db, settings, row, group):
     created = sum(1 for action, _, _ in changes if action == "created")
     updated = sum(1 for action, _, _ in changes if action == "updated")
     held = sum(statuses.get(name, 0) for name in HELD_STATUSES)
-    if created + updated + held == 0:
-        return
     parts = []
     if created:
         parts.append(f"создано карточек: {created}")
@@ -1162,8 +1167,10 @@ async def _tell_the_owner(db, settings, row, group):
         parts.append(f"ждут проверки: {held}")
     text = (
         f"Новый движок: пакет из {len(_targets(row))} сообщений разобран, "
-        + ", ".join(parts)
-        + f". Расход ${Decimal(row.charged_usd):.4f}."
+        + ", ".join(parts or ["нет новых подтверждённых карточек"])
+        + f". Учебных результатов: {((_metrics(row).get('product') or {}).get('summary') or {}).get('useful', 0)};"
+        + f" пустых: {((_metrics(row).get('product') or {}).get('summary') or {}).get('empty', 0)}."
+        + f" Расход ${Decimal(row.charged_usd):.4f}."
     )
     lines = [
         f"• «{title[:80]}» — " + (", ".join(fields) if fields else "новая")
@@ -1182,6 +1189,7 @@ def _package_line(row, outcome, *, result=None, failure=None):
     Built BEFORE the commit (the row's attributes expire on commit) and printed after it.
     """
     statuses = (_metrics(row).get("promotion") or {}).get("statuses", {})
+    product = (_metrics(row).get("product") or {}).get("summary") or {}
     return "PACKAGE_RESULT " + json.dumps(
         {
             "outcome": outcome,
@@ -1192,6 +1200,9 @@ def _package_line(row, outcome, *, result=None, failure=None):
             "created": statuses.get("created", 0),
             "updated": statuses.get("updated", 0),
             "held": statuses.get("review", 0),
+            "product_outcomes": product.get("by_outcome", {}),
+            "useful_targets": product.get("useful", 0),
+            "empty_targets": product.get("empty", 0),
             "error": None if failure is None else failure.code,
             "charged_usd": str(row.charged_usd),
         },
@@ -1371,6 +1382,27 @@ async def process_package_next(engine, settings, provider=None, now=None):
                     row.metrics_json = json.dumps(metrics, sort_keys=True)
             await _finish_targets(db, row, "completed")
             await _watch_duplicates(db, row, group, now)
+            metrics = _metrics(row)
+            promotions = (metrics.get("promotion") or {}).get("changes", [])
+            targets = _targets(row)
+            changed = await attributed_changes(db, row.group_id, promotions, targets)
+            outcomes = classify_targets(
+                targets,
+                changed=changed,
+                accepted=evidence_ids(result.validation.accepted),
+                candidates=evidence_ids(
+                    item
+                    for item in result.validation.candidates
+                    if item.source_status != "defaulted_to_target"
+                ),
+                blocked=blocked_image_ids(analysis_input, targets),
+                rejected_count=len(result.validation.rejected),
+            )
+            metrics["product"] = {
+                "outcomes": outcomes,
+                "summary": summarize_targets(outcomes),
+            }
+            row.metrics_json = json.dumps(metrics, sort_keys=True)
             await _tell_the_owner(db, settings, row, group)
             await incident(db, "ai_daily_group_budget_limit", now, recover=True)
             line = _package_line(row, "completed", result=result)
@@ -1418,6 +1450,13 @@ async def process_package_next(engine, settings, provider=None, now=None):
             row.state = "failed"
             row.completed_at = now
             await _finish_targets(db, row, "failed")
+            metrics = _metrics(row)
+            outcomes = classify_targets(_targets(row), failed=True)
+            metrics["product"] = {
+                "outcomes": outcomes,
+                "summary": summarize_targets(outcomes),
+            }
+            row.metrics_json = json.dumps(metrics, sort_keys=True)
             await incident_once(db, "processing_exhausted", now, detail=failure.code)
             outcome = "failed"
         line = _package_line(row, outcome, failure=failure)
