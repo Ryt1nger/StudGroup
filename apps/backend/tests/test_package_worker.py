@@ -882,11 +882,16 @@ def test_the_owner_gets_one_short_message_after_a_package_that_changed_something
     assert "математике" not in text  # counts and cost only, never chat text
 
 
-def test_a_package_that_changed_nothing_sends_the_owner_nothing(client):
+def test_empty_package_still_reports_a_private_product_outcome_to_owner(client):
     seed(client)
     make_new(client)
     assert step(client, PackageProvider(propose=False), owner_settings()) == "completed"
-    assert owner_messages(client) == []
+    messages = owner_messages(client)
+    assert len(messages) == 1
+    summary = messages[0]["text"]
+    assert "нет новых подтверждённых карточек" in summary
+    assert "Учебных результатов: 0; пустых: 3" in summary
+    assert "математике" not in summary  # No private academic message text.
 
 
 def test_context_only_paraphrase_cannot_rewrite_an_existing_card(client):
@@ -1013,10 +1018,13 @@ def test_an_update_that_only_touched_technical_fields_is_not_reported(client):
         == "completed"
     )
     texts = [message["text"] for message in owner_messages(client)]
-    # The second package bumped the revision, but only the attention reasons changed: silence.
-    assert len(texts) == 1
+    # The owner gets a digest for each completed package, but a technical-only
+    # revision is neither a visible update nor a useful product outcome.
+    assert len(texts) == 2
     assert "создано карточек: 1" in texts[0]
     assert "• «Решить задачи 1–3» — новая" in texts[0]
+    assert "нет новых подтверждённых карточек" in texts[1]
+    assert "Учебных результатов: 0" in texts[1]
 
 
 def test_a_visible_update_is_reported_with_the_card_title_and_the_changed_fields(client):
