@@ -192,7 +192,11 @@ export function useRequestRanepaRefresh() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (): Promise<RanepaRefreshResponse> => unwrap<RanepaRefreshResponse>(
-      client.post({ url: '/ranepa-schedule/refresh' }),
+      client.post({ url: '/ranepa-schedule/refresh' }) as unknown as Promise<{
+        data?: RanepaRefreshResponse;
+        error?: unknown;
+        response?: Response;
+      }>,
     ),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['ranepa-freshness'] }),
   });
