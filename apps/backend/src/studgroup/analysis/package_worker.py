@@ -32,6 +32,8 @@ from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
 from studgroup.analysis.manual_dedupe import prompt_memory, recent_manual_cards
 from studgroup.analysis.package_run import DEFAULT_MAX_TARGETS, plan_packages
+from studgroup.analysis.product_outcomes import counts as outcome_counts
+from studgroup.analysis.product_outcomes import target_outcomes
 from studgroup.analysis.release_budget import release_window_blocker
 from studgroup.analysis.shadow import (
     ShadowPassFailure,
@@ -1151,8 +1153,8 @@ async def _tell_the_owner(db, settings, row, group):
     created = sum(1 for action, _, _ in changes if action == "created")
     updated = sum(1 for action, _, _ in changes if action == "updated")
     held = sum(statuses.get(name, 0) for name in HELD_STATUSES)
-    if created + updated + held == 0:
-        return
+    # Always report each completed slot/package to the opted-in owner,
+    # including no-academic-signal and rejection-only results.
     parts = []
     if created:
         parts.append(f"создано карточек: {created}")
@@ -1160,9 +1162,12 @@ async def _tell_the_owner(db, settings, row, group):
         parts.append(f"обновлено: {updated}")
     if held:
         parts.append(f"ждут проверки: {held}")
+    product = _metrics(row).get("product_outcome_counts", {})
+    product_line = ", ".join(f"{name}: {count}" for name, count in sorted(product.items()))
     text = (
         f"Новый движок: пакет из {len(_targets(row))} сообщений разобран, "
-        + ", ".join(parts)
+        + (", ".join(parts) if parts else "видимых изменений нет")
+        + (f". Итоги: {product_line}" if product_line else "")
         + f". Расход ${Decimal(row.charged_usd):.4f}."
     )
     lines = [
@@ -1194,6 +1199,7 @@ def _package_line(row, outcome, *, result=None, failure=None):
             "held": statuses.get("review", 0),
             "error": None if failure is None else failure.code,
             "charged_usd": str(row.charged_usd),
+            "product_outcomes": _metrics(row).get("product_outcome_counts", {}),
         },
         sort_keys=True,
     )
@@ -1369,6 +1375,24 @@ async def process_package_next(engine, settings, provider=None, now=None):
                     metrics = _metrics(row)
                     metrics["promotion_skipped"] = promoted
                     row.metrics_json = json.dumps(metrics, sort_keys=True)
+            media_waiting = {
+                item.telegram_message_id
+                for item in analysis_input.image_evidence
+                if item.state not in {"ready", "failed", "stale"}
+            }
+            per_target = target_outcomes(
+                _targets(row),
+                result.validation,
+                promotion=(_metrics(row).get("promotion") or {}).get("statuses", {}),
+                blocked_image_ids=media_waiting,
+            )
+            metrics = _metrics(row)
+            metrics["target_outcomes"] = {str(key): value for key, value in per_target.items()}
+            metrics["product_outcome_counts"] = outcome_counts(per_target)
+            metrics["model_empty_targets"] = sum(
+                value == "no_academic_signal" for value in per_target.values()
+            )
+            row.metrics_json = json.dumps(metrics, sort_keys=True)
             await _finish_targets(db, row, "completed")
             await _watch_duplicates(db, row, group, now)
             await _tell_the_owner(db, settings, row, group)
@@ -1417,6 +1441,11 @@ async def process_package_next(engine, settings, provider=None, now=None):
         else:
             row.state = "failed"
             row.completed_at = now
+            metrics = _metrics(row)
+            per_target = target_outcomes(_targets(row), failed=True)
+            metrics["target_outcomes"] = {str(key): value for key, value in per_target.items()}
+            metrics["product_outcome_counts"] = outcome_counts(per_target)
+            row.metrics_json = json.dumps(metrics, sort_keys=True)
             await _finish_targets(db, row, "failed")
             await incident_once(db, "processing_exhausted", now, detail=failure.code)
             outcome = "failed"
