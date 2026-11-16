@@ -18,7 +18,11 @@ from studgroup.models import (
     SubjectSplit,
 )
 from studgroup.ranepa_personal import _safe_course, _safe_link
-from studgroup.ranepa_schedule import has_unverified_subgroup_hint, normalized
+from studgroup.ranepa_schedule import (
+    has_unverified_subgroup_hint,
+    normalized,
+    subgroup_choice_changed_since_check,
+)
 
 
 def _occurrence(row):
@@ -75,9 +79,12 @@ async def materialize_verified_facts(db, group_id, source_user_id, week_start, *
         )
     ).all()
     by_member = {}
+    choice_updated = {}
     for row in choices:
         by_member.setdefault(row.membership_id, {})[row.split_id] = row.subgroup_id
-    source_choices = by_member.get(by_user[source_user_id].id, {})
+        choice_updated[(row.membership_id, row.split_id)] = row.updated_at
+    source_member_id = by_user[source_user_id].id
+    source_choices = by_member.get(source_member_id, {})
     rows = json.loads(source.rows_json)
     if not isinstance(rows, list):
         raise TypeError("invalid_source_snapshot")
@@ -105,7 +112,9 @@ async def materialize_verified_facts(db, group_id, source_user_id, week_start, *
                     ),
                 )
             )
-        elif split.id in source_choices:
+        elif split.id in source_choices and not subgroup_choice_changed_since_check(
+            choice_updated.get((source_member_id, split.id)), source.checked_at
+        ):
             prepared.append(
                 (
                     split.id,

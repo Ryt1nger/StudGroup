@@ -18,7 +18,12 @@ from studgroup.models import (
     SubjectSplit,
 )
 from studgroup.ranepa_link_states import LINK_STATES
-from studgroup.ranepa_schedule import WeekSnapshot, has_unverified_subgroup_hint, normalized
+from studgroup.ranepa_schedule import (
+    WeekSnapshot,
+    has_unverified_subgroup_hint,
+    normalized,
+    subgroup_choice_changed_since_check,
+)
 from studgroup.ranepa_storage import encode_rows
 from studgroup.subject_identity import subject_uuid
 
@@ -401,8 +406,10 @@ async def personal_with_group_fallback(db, group_id, user_id, start: date, end: 
         )
     ).all()
     by_member = {}
+    choice_updated = {}
     for row in choices:
         by_member.setdefault(row.membership_id, {})[row.split_id] = row.subgroup_id
+        choice_updated[(row.membership_id, row.split_id)] = row.updated_at
     target_choices = by_member.get(target.id, {})
     splits = (await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == group_id))).all()
     split_by_name = {normalized(row.subject_name): row for row in splits}
@@ -448,6 +455,10 @@ async def personal_with_group_fallback(db, group_id, user_id, start: date, end: 
             if split is not None and (
                 split.id not in target_choices
                 or peer_choices.get(split.id) != target_choices[split.id]
+                or subgroup_choice_changed_since_check(
+                    choice_updated.get((member_by_user[source.user_id].id, split.id)),
+                    source.checked_at,
+                )
             ):
                 continue
             key = tuple(

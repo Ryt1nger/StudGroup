@@ -16,7 +16,11 @@ from studgroup.models import (
     SubjectSplit,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
-from studgroup.ranepa_schedule import has_unverified_subgroup_hint, normalized
+from studgroup.ranepa_schedule import (
+    has_unverified_subgroup_hint,
+    normalized,
+    subgroup_choice_changed_since_check,
+)
 
 LEASE = timedelta(hours=1)
 REFRESH = timedelta(hours=6)
@@ -180,8 +184,10 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
         )
     ).all()
     by_member = {}
+    choice_updated = {}
     for choice in choices:
         by_member.setdefault(choice.membership_id, {})[choice.split_id] = choice.subgroup_id
+        choice_updated[(choice.membership_id, choice.split_id)] = choice.updated_at
     wanted = by_member.get(by_user[candidate.user_id].id, {})
     splits = (
         await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == candidate.group_id))
@@ -200,7 +206,8 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
         ]
         if not rows:
             continue
-        source_choices = by_member.get(by_user[snapshot.user_id].id, {})
+        source_member_id = by_user[snapshot.user_id].id
+        source_choices = by_member.get(source_member_id, {})
         observed = {normalized(row["subject"]) for row in rows}
         if any(
             normalized(row["subject"]) not in split_subjects
@@ -209,7 +216,13 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
         ):
             covered_common = True
         for split_id, subgroup_id in source_choices.items():
-            if split_name.get(split_id) in observed:
+            if (
+                split_name.get(split_id) in observed
+                and not subgroup_choice_changed_since_check(
+                    choice_updated.get((source_member_id, split_id)),
+                    snapshot.checked_at,
+                )
+            ):
                 covered_split.add((split_id, subgroup_id))
     # Do not suppress another account based solely on an unrelated subgroup.
     return (covered_common or bool(covered_split)) and all(

@@ -352,3 +352,46 @@ def test_unconfigured_subgroup_hint_is_neither_fallback_nor_shared(tmp_path):
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_switching_source_subgroup_invalidates_old_split_evidence(tmp_path):
+    """A source snapshot from group A cannot be relabelled B after changing choice."""
+
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/stale-choice.db")
+        try:
+            group_id, users, split_id, subgroups = await fixture(engine)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                source_choice = await db.get(MemberSubgroup, (UUID(int=1001), split_id))
+                source_choice.subgroup_id = subgroups[1].id
+                source_choice.updated_at = CHECKED + timedelta(minutes=1)
+                await db.commit()
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                fallback = await personal_with_group_fallback(
+                    db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
+                )
+                assert {lesson["subject"] for lesson in fallback["lessons"]} == {
+                    "Общий предмет"
+                }
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                projected = await personal_period(
+                    db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
+                )
+                assert {lesson["subject"] for lesson in projected["lessons"]} == {
+                    "Общий предмет"
+                }
+                await enqueue_week(
+                    db,
+                    WEEK,
+                    [CrawlCandidate(group_id, users[2])],
+                    now=CHECKED + timedelta(minutes=2),
+                )
+                claimed = await claim_next(db, now=CHECKED + timedelta(minutes=3))
+                assert claimed is not None and claimed.user_id == users[2]
+                await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
