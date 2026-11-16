@@ -1,12 +1,21 @@
 """Durable, identity-only queue for a paced university account crawl."""
 
+import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import aliased
 
-from studgroup.models import Group, Membership, RanepaCrawlJob
+from studgroup.models import (
+    Group,
+    Membership,
+    MemberSubgroup,
+    RanepaCrawlJob,
+    RanepaPersonalSnapshot,
+    SubjectSplit,
+)
+from studgroup.ranepa_schedule import normalized
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
 
 LEASE = timedelta(hours=1)
@@ -72,7 +81,7 @@ async def enqueue_week(
             # The explicit manual pilot can retry its *selected* completed job
             # immediately. Queue workers retain the 24-hour cooldown. Never
             # reset an already queued or currently running job.
-            if existing.state in {"succeeded", "failed"} and (
+            if existing.state in {"succeeded", "failed", "covered"} and (
                 force_refresh
                 or (last_completed_at is not None and last_completed_at <= now - REFRESH)
             ):
@@ -98,6 +107,71 @@ async def enqueue_week(
         created += 1
     await db.flush()
     return created
+
+
+
+async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> bool:
+    """Require fresh identity-verified reads covering the candidate's segments.
+
+    An empty/partial source or a source from a departed member never proves
+    coverage. Missing split-subject evidence keeps backups eligible.
+    """
+    snapshots = (
+        await db.scalars(
+            select(RanepaPersonalSnapshot).where(
+                RanepaPersonalSnapshot.group_id == candidate.group_id,
+                RanepaPersonalSnapshot.week_start == candidate.week_start,
+                RanepaPersonalSnapshot.identity_verified.is_(True),
+                RanepaPersonalSnapshot.checked_at >= now - REFRESH,
+            )
+        )
+    ).all()
+    if not snapshots:
+        return False
+    members = (
+        await db.scalars(
+            select(Membership).where(
+                Membership.group_id == candidate.group_id,
+                Membership.status == "active",
+            )
+        )
+    ).all()
+    by_user = {m.user_id: m for m in members}
+    if candidate.user_id not in by_user:
+        return False
+    choices = (
+        await db.scalars(
+            select(MemberSubgroup).where(
+                MemberSubgroup.membership_id.in_([m.id for m in members])
+            )
+        )
+    ).all()
+    by_member = {}
+    for choice in choices:
+        by_member.setdefault(choice.membership_id, {})[choice.split_id] = choice.subgroup_id
+    wanted = by_member.get(by_user[candidate.user_id].id, {})
+    splits = (
+        await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == candidate.group_id))
+    ).all()
+    split_name = {split.id: normalized(split.subject_name) for split in splits}
+    covered_common = False
+    covered_split = set()
+    for snapshot in snapshots:
+        if snapshot.user_id == candidate.user_id or snapshot.user_id not in by_user:
+            continue
+        rows = json.loads(snapshot.rows_json)
+        if not rows:
+            continue
+        covered_common = True
+        source_choices = by_member.get(by_user[snapshot.user_id].id, {})
+        observed = {normalized(row["subject"]) for row in rows}
+        for split_id, subgroup_id in source_choices.items():
+            if split_name.get(split_id) in observed:
+                covered_split.add((split_id, subgroup_id))
+    return covered_common and all(
+        (split_id, subgroup_id) in covered_split
+        for split_id, subgroup_id in wanted.items()
+    )
 
 
 async def claim_next(
@@ -171,30 +245,39 @@ async def claim_next(
         )
         .exists()
     )
-    job = await db.scalar(
-        select(RanepaCrawlJob)
-        .where(
-            RanepaCrawlJob.state == "queued",
-            *scope,
-            *due,
+    while True:
+        job = await db.scalar(
+            select(RanepaCrawlJob)
+            .where(
+                RanepaCrawlJob.state == "queued",
+                *scope,
+                *due,
+            )
+            .order_by(
+                RanepaCrawlJob.week_start.desc(),
+                RanepaCrawlJob.attempts,
+                RanepaCrawlJob.priority,
+                RanepaCrawlJob.id,
+            )
+            .with_for_update(skip_locked=True)
+            .limit(1)
         )
-        .order_by(
-            RanepaCrawlJob.week_start.desc(),
-            RanepaCrawlJob.attempts,
-            RanepaCrawlJob.priority,
-            RanepaCrawlJob.id,
-        )
-        .with_for_update(skip_locked=True)
-        .limit(1)
-    )
-    if job is None:
+        if job is None:
+            await db.flush()
+            return None
+        if group_id is None and not rescan_all and await _coverage_satisfied(db, job, now):
+            # No browser/payment needed. This is NOT a successful account crawl.
+            job.state = "covered"
+            job.finished_at = now
+            job.failure_code = None
+            job.claimed_at = None
+            await db.flush()
+            continue
+        job.state = "running"
+        job.attempts += 1
+        job.claimed_at = now
         await db.flush()
-        return None
-    job.state = "running"
-    job.attempts += 1
-    job.claimed_at = now
-    await db.flush()
-    return job
+        return job
 
 
 async def finish(db, job_id, group_id, user_id, *, failure_code=None, now=None) -> bool:

@@ -60,6 +60,7 @@ from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_manual_captcha import offer_manual_captcha
+from studgroup.ranepa_materialization import materialize_verified_facts
 from studgroup.ranepa_personal import enrich_personal_links, remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
@@ -878,6 +879,16 @@ async def _collect(
                         # No enrichment or provider error can roll back the committed week.
                         # Never log exception details which can contain credentials.
                         log_captcha_stage("sdo_enrichment_failed")
+                    if result.snapshot.lessons:
+                        try:
+                            async with AsyncSession(engine) as db:
+                                await materialize_verified_facts(
+                                    db, group_id, user_id, result.snapshot.week_start
+                                )
+                                await db.commit()
+                        except Exception:  # noqa: BLE001
+                            # Do not undo the saved week; never include private DB errors.
+                            log_captcha_stage("peer_materialization_failed")
                     if sdo_captcha_unresolved:
                         log_captcha_stage("challenge_still_present_sdo")
                         return "captcha"
