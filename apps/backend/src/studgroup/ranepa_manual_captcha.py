@@ -103,11 +103,11 @@ def _manual_request_text(
         else f"{auto_attempts}/3 — остальные попытки недоступны."
     )
     return (
-        "❌ Прогон учётки: CAPTCHA не пройдена автоматически.\\n"
-        f"Студент: {student}\\n"
-        f"Группа ТГ: {telegram_group}\\n"
-        f"Группа РАНХиГС: {academic_group}\\n"
-        f"RuCaptcha: {progress}\\n"
+        "❌ Прогон учётки: CAPTCHA не пройдена автоматически.\n"
+        f"Студент: {student}\n"
+        f"Группа ТГ: {telegram_group}\n"
+        f"Группа РАНХиГС: {academic_group}\n"
+        f"RuCaptcha: {progress}\n"
         "Пройти вручную за 6 минут 👇"
     )
 
