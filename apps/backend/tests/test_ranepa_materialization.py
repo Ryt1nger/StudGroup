@@ -145,7 +145,7 @@ def test_representative_upsert_is_idempotent_and_preserves_subgroup_isolation(tm
                 assert b["schedule_complete"] is True
                 assert b["source_checked"] is False
                 assert b["oldest_required_checked_at"] is None
-                assert b["last_success_at"] == CHECKED
+                assert b["last_success_at"].replace(tzinfo=UTC) == CHECKED
                 assert b["lessons"][0]["online_url"] == (
                     "https://lms.ranepa.ru/mod/url/view.php?id=9876"
                 )
