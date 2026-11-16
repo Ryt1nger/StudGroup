@@ -169,8 +169,12 @@ def test_later_success_recovers_from_historical_login_failure(tmp_path):
                 old = await claim_next(db, now=now - timedelta(days=7))
                 assert old is not None
                 assert await finish(
-                    db, old.id, group.id, user.id,
-                    failure_code="login_failed", now=now - timedelta(days=7),
+                    db,
+                    old.id,
+                    group.id,
+                    user.id,
+                    failure_code="login_failed",
+                    now=now - timedelta(days=7),
                 )
 
                 # A new scheduled attempt is forbidden while credentials are bad.
@@ -178,9 +182,7 @@ def test_later_success_recovers_from_historical_login_failure(tmp_path):
                 assert await claim_next(db, now=now) is None
 
                 # The owner manually verifies corrected credentials this week.
-                pilot = await claim_next(
-                    db, now=now, group_id=group.id, user_id=user.id
-                )
+                pilot = await claim_next(db, now=now, group_id=group.id, user_id=user.id)
                 assert pilot is not None
                 assert await finish(db, pilot.id, group.id, user.id, now=now)
                 assert old.state == "failed"
