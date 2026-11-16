@@ -15,6 +15,7 @@ worker never touches legacy/shadow groups: exactly one writer per group.
 
 import hashlib
 import json
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -242,6 +243,30 @@ def _eligible(group, settings, now, *, scheduled_slot=None, catchup_cutoff=None)
     return filters
 
 
+def _self_contained_academic_reply(row):
+    """Allow only an independently actionable academic statement, never a photo reference.
+
+    This is deliberately narrower than language understanding. Weak or deictic
+    replies must wait for the attached image; uncertain cases are not published.
+    """
+    message = (row.text or "").strip().casefold()
+    if not row.reply_to_message_id or len(message) < 30:
+        return False
+    if re.search(
+        r"\b(?:это|эти|этот|там|тут|здесь|выше|ниже|скрин|фото|картинк\w*|изображени\w*|прикрепленн\w*)\b",
+        message,
+    ):
+        return False
+    explicit_subject = re.search(r"\bпо\s+[а-яёa-z][\w-]{3,}", message)
+    actionable = re.search(
+        r"\b(?:решить|сделать|выполнить|подготовить|сдать|написать|выучить|прочитать|"
+        r"домашн\w*|задани\w*|контрольн\w*|тестировани\w*|"
+        r"лекци\w*|семинар\w*)\b",
+        message,
+    )
+    return bool(explicit_subject and actionable)
+
+
 async def _waiting_image_context(db, group, route, settings, now):
     """Source and reply-chain messages that must wait for their image evidence.
 
@@ -338,11 +363,14 @@ async def _waiting_image_context(db, group, route, settings, now):
             select(RawMessage).where(RawMessage.group_id == group.id, RawMessage.delete_at > now)
         )
     ).all()
-    # Transitive explicit Telegram replies (reply to a reply) share the source.
+    # Ambiguous replies inherit the attachment dependency. A clearly self-contained
+    # academic message may be processed without its image and enriched later.
     blocked = set(waiting)
     while True:
         children = {
-            row.telegram_message_id for row in retained if row.reply_to_message_id in blocked
+            row.telegram_message_id
+            for row in retained
+            if row.reply_to_message_id in blocked and not _self_contained_academic_reply(row)
         }
         expanded = blocked | children
         if expanded == blocked:
@@ -557,7 +585,9 @@ async def _plan_next(
             .limit(CONTEXT_AFTER)
         )
     ).all()
-    rows = {row.id: row for row in [*before, *middle, *after]}
+    # Never supply unresolved image captions as read-only context for an
+    # independent text target: its facts must stand on the text's own evidence.
+    rows = {row.id: row for row in [*before, *middle, *after] if row.id not in blocked}
     # Read explicit reply ancestors from this group even if the original image
     # arrived long before the fixed chronological context window.
     by_mid = {row.telegram_message_id: row for row in rows.values()}
@@ -579,6 +609,8 @@ async def _plan_next(
                 )
             ).all()
             for parent in parents:
+                if parent.id in blocked:
+                    continue
                 rows[parent.id] = parent
                 by_mid[parent.telegram_message_id] = parent
         seen.update(frontier)
@@ -1161,7 +1193,7 @@ async def _visible_changes(db, row):
 
 
 async def _tell_the_owner(db, settings, row, group):
-    """Private package result including zero-result packages, never a silent completed status.
+    """One short private message after a package that CHANGED something; silence otherwise.
 
     Counts, cost and the titles of the cards it wrote (the owner's private channel only). An
     "updated" card is counted only when a student-visible field changed. Skipped unless the
