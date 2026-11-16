@@ -156,6 +156,7 @@ async def notify_account_crawl_result(
     failure_code: str | None,
     stats: CrawlRunStats,
     failure_detail: str | None = None,
+    telegram_group_name: str | None = None,
 ) -> bool:
     """One private message per finalized account attempt, even when extraction fails.
 
@@ -188,6 +189,7 @@ async def notify_account_crawl_result(
             if manual_notice is not None:
                 return False
     group = _safe_label(group_code, fallback="группа не указана")
+    telegram_group = _safe_label(telegram_group_name, fallback="не указана")
     name = _safe_label(student_name, fallback="студент")
     if failure_code is not None:
         heading = "❌ StudGroup · ошибка обработки учётки СДО"
@@ -210,7 +212,8 @@ async def notify_account_crawl_result(
     message = "\n".join(
         [
             heading,
-            f"Студент: {name}. Группа: {group}.",
+            f"Студент: {name}.",
+            f"Группа ТГ: {telegram_group}. Группа РАНХиГС: {group}.",
             f"Учётка: {str(user_id)[:8]}. Попытка: {attempt}.",
             outcome,
             *(
