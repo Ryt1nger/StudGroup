@@ -1,13 +1,23 @@
 """Admin telemetry is live, read-only and restricted to the configured bot operator."""
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from studgroup.models import AcademicDeadline, AnalysisBudgetCall, RawMessage
+from studgroup.models import (
+    AcademicDeadline,
+    AnalysisBudgetCall,
+    Group,
+    RanepaCrawlJob,
+    RanepaPersonalSnapshot,
+    RawMessage,
+    ShadowEvaluationRun,
+    User,
+)
 
 pytest_plugins = ["test_schedule_api"]
 
@@ -103,3 +113,93 @@ def test_admin_page_has_no_embedded_credentials(client):
     assert response.status_code == 200
     assert "initData" not in response.text
     assert "no-store" in response.headers["cache-control"]
+
+
+def test_owner_reliability_aggregates_are_group_scoped_and_private(client):
+    """No account identity, course title or message body escapes the operator counters."""
+    client.app.state.settings.bot_admin_user_id = 1
+
+    async def seed():
+        async with AsyncSession(client.app.state.engine) as db:
+            groups = (await db.scalars(select(Group))).all()
+            selected = next(row for row in groups if row.pilot_authorized)
+            other = next(row for row in groups if not row.pilot_authorized)
+            user = await db.scalar(select(User))
+            now = datetime.now(UTC)
+            for index, group in enumerate((selected, other)):
+                db.add(
+                    RanepaPersonalSnapshot(
+                        group_id=group.id,
+                        user_id=user.id,
+                        week_start=now.date(),
+                        week_end=(now + timedelta(days=6)).date(),
+                        data_digest="a" * 64,
+                        rows_json=json.dumps(
+                            [
+                                {
+                                    "room": "СДО",
+                                    "link_state": "matched" if index == 0 else "not_checked",
+                                    "subject": "PRIVATE_ACADEMIC_COURSE",
+                                }
+                            ]
+                        ),
+                        checked_at=now - timedelta(hours=1 if index == 0 else 12),
+                        identity_verified=True,
+                    )
+                )
+                db.add(
+                    RanepaCrawlJob(
+                        group_id=group.id,
+                        user_id=user.id,
+                        week_start=now.date(),
+                        priority=1,
+                        state="retry" if index == 0 else "completed",
+                        retry_reason="captcha" if index == 0 else None,
+                        created_at=now,
+                    )
+                )
+                db.add(
+                    ShadowEvaluationRun(
+                        group_id=group.id,
+                        source_snapshot_sha256="b" * 64,
+                        engine_version="test",
+                        state="completed",
+                        metrics_json=json.dumps(
+                            {
+                                "product": {
+                                    "summary": {
+                                        "targets": 2,
+                                        "useful": 1 if index == 0 else 0,
+                                        "empty": 1 if index == 0 else 2,
+                                        "by_outcome": {
+                                            "published": 1 if index == 0 else 0,
+                                            "no_academic_signal": 1 if index == 0 else 2,
+                                        },
+                                    }
+                                }
+                            }
+                        ),
+                        created_at=now,
+                        delete_at=now + timedelta(days=30),
+                    )
+                )
+            await db.commit()
+            return selected.id
+
+    selected_id = asyncio.run(seed())
+    response = client.get(
+        f"/v1/admin/dashboard?group_id={selected_id}",
+        headers={"Authorization": "Bearer valid"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()["reliability"]
+    assert payload["sdo"]["queue_states"] == {"retry": 1}
+    assert payload["sdo"]["retry_reasons"] == {"captcha": 1}
+    assert payload["sdo"]["snapshot_fresh_under_6h"] == 1
+    assert payload["sdo"]["snapshot_stale_over_6h"] == 0
+    assert payload["sdo"]["link_states"] == {"matched": 1}
+    assert payload["ai_products"]["packages_7d"] == 1
+    assert payload["ai_products"]["outcomes_7d"]["published"] == 1
+    assert payload["ai_products"]["useful_packages_7d"] == 1
+    assert "PRIVATE_ACADEMIC_COURSE" not in response.text
+    assert "captcha" in response.text  # only enumerated retry codes, not user identity
