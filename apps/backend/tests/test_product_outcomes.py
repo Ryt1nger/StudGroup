@@ -3,6 +3,7 @@
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -118,3 +119,13 @@ def test_published_mapping_uses_changed_revision_and_exact_group(tmp_path):
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_only_unresolved_image_dependencies_are_blocked():
+    entries = [
+        SimpleNamespace(telegram_message_id=2, state="queued"),
+        SimpleNamespace(telegram_message_id=3, state="ready"),
+        SimpleNamespace(telegram_message_id=4, state="failed"),
+        SimpleNamespace(telegram_message_id=5, state="stale"),
+    ]
+    assert blocked_image_ids(SimpleNamespace(image_evidence=entries), [2, 3, 4, 5]) == {2}

@@ -12,7 +12,6 @@ from sqlalchemy import select
 
 from studgroup.models import CanonicalItemEvidence, RawMessage
 
-
 PRODUCT_OUTCOMES = frozenset(
     {
         "published",

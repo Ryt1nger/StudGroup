@@ -35,7 +35,7 @@ const fields={
   pilot_authorized:"Доступ к пилоту",schedule_version:"Версия расписания",
   expires_at:"Сессия действует до",mode:"Режим панели",generation:"Версия панели",
 };
-let token=null,loadedGroups=false,activeRequest=0,detailRequest=0,detailKind=null,detailOffset=0,previousFocus=null,lastData=null,lastVisuals=null,lastBot=null,outcome="text",currentPage="overview";
+let token=null,loadedGroups=false,activeRequest=0,detailRequest=0,detailKind=null,detailOffset=0,previousFocus=null,lastData=null,lastVisuals=null,lastBot=null,lastReliability=null,outcome="text",currentPage="overview";
 function dom(tag,cls,value){const e=document.createElement(tag);if(cls)e.className=cls;if(value!==undefined)e.textContent=String(value);return e;}
 function text(host,tag,cls,value){const e=dom(tag,cls,value);host.append(e);return e;}
 function clear(id){$(id).replaceChildren();}
@@ -198,7 +198,34 @@ function renderOutcomes(d){
   $("outcome-description").textContent=kind==="images"?"«Устарел» означает, что результат был заменён после изменения исходных данных. Это не сбой.":"Процент готовых результатов не равен точности AI. Проверку качества нужно считать отдельно.";
   for(const tab of $("outcome-tabs").querySelectorAll("button"))tab.classList.toggle("active",tab.dataset.outcome===outcome);
 }
+function reliabilityStat(host,title,value,note){
+  const item=dom("div","strip-stat");text(item,"span","strip-label",title);text(item,"strong","strip-value",value);text(item,"span","strip-explain",note);host.append(item);
+}
+function reliabilityCounts(counts){
+  const entries=Object.entries(counts||{});
+  return entries.length?entries.map(([key,count])=>key+": "+number(count)).join(" · "):"Нет записей";
+}
+function renderAiProductOutcomes(){
+  const host=$("ai-product-outcomes");host.replaceChildren();
+  const p=lastReliability?.ai_products;
+  if(!p){text(host,"p","chart-empty","Статистика продуктовых исходов недоступна.");return;}
+  reliabilityStat(host,"Учебные результаты",number(p.useful_packages_7d),"Пакеты с опубликованными или обновлёнными карточками за 7 дней");
+  reliabilityStat(host,"Пустые пакеты",number(p.empty_packages_7d),"Все target-сообщения не содержали выявленного учебного сигнала");
+  reliabilityStat(host,"Исходы сообщений",reliabilityCounts(p.outcomes_7d),"published · updated · rejected · blocked_by_image · needs_review · failed");
+  reliabilityStat(host,"Без детальных исходов",number(p.legacy_packages_without_outcomes_7d),"Старые пакеты, для которых нет классификации");
+}
+function renderSdoReliability(){
+  const host=$("sdo-reliability");host.replaceChildren();
+  const p=lastReliability?.sdo;
+  if(!p){text(host,"p","chart-empty","Статистика СДО недоступна.");return;}
+  reliabilityStat(host,"Свежие снимки",number(p.snapshot_fresh_under_6h),"Снимки, проверенные за последние 6 часов");
+  reliabilityStat(host,"Устаревшие снимки",number(p.snapshot_stale_over_6h),"Проверка старше 6 часов");
+  reliabilityStat(host,"Очередь обхода",reliabilityCounts(p.queue_states),"Состояния задач ЛК/СДО");
+  reliabilityStat(host,"Причины повторов",reliabilityCounts(p.retry_reasons),"Диагностика задержек, только коды");
+  reliabilityStat(host,"Ссылки СДО",reliabilityCounts(p.link_states),"Типы найденных ссылок в снимках");
+}
 function renderAi(d,v){
+  renderAiProductOutcomes();
   const dates=v.daily.map(x=>x.date);
   C.bars("chart-workload",[{label:"Текст",values:series(v,"text"),color:"#43d9df",kind:"text"},{label:"Фото",values:series(v,"images"),color:"#8c8bff",kind:"images"}],{labels:dates,title:"Количество прогонов по дням"});visualClickable("chart-workload","ai");
   renderOutcomes(d);
@@ -218,6 +245,7 @@ function renderFinance(d,v){
   }
 }
 function renderServer(d,v,roundTrip){
+  renderSdoReliability();
   const server=v.server,host=$("server-overview");host.replaceChildren();
   metric(host,"Обычный ответ сервера",server.p50_ms==null?"Нет замеров":number(server.p50_ms)+" мс","Медиана за 15 минут");
   metric(host,"Медленные ответы сервера",server.p95_ms==null?"Нет замеров":number(server.p95_ms)+" мс","95% измеренных запросов не медленнее");
@@ -337,8 +365,8 @@ function selectPage(name,updateHistory=false){
   document.title=meta.title+" · StudGroup";
   if(lastData)renderPage();
 }
-function render(d,v,b,elapsed){
-  lastData=d;lastVisuals=v;lastBot=b;lastElapsedMs=elapsed;
+function render(d,v,b,elapsed,reliability){
+  lastData=d;lastVisuals=v;lastBot=b;lastElapsedMs=elapsed;lastReliability=reliability?.reliability||null;
   if(!loadedGroups){
     for(const g of d.groups){const o=dom("option","",g.name);o.value=g.id;$("group").append(o);}
     loadedGroups=true;
@@ -354,8 +382,8 @@ function render(d,v,b,elapsed){
 }
 async function load(){
   if(!token)return;const id=++activeRequest;const status=$("status");status.classList.remove("error");status.textContent="Обновляем показатели…";
-  try{const begin=performance.now();const query=criteria().toString();const [d,v,b]=await Promise.all([api("/v1/admin/analytics?"+query),api("/v1/admin/visuals?"+query),api("/v1/admin/bot-monitor?"+query)]);
-    if(id!==activeRequest)return;render(d,v,b,Math.round(performance.now()-begin));status.textContent="Данные обновлены · "+datetime(d.as_of)+" · период: "+$("days").selectedOptions[0].textContent.toLowerCase();
+  try{const begin=performance.now();const query=criteria().toString();const [d,v,b,reliability]=await Promise.all([api("/v1/admin/analytics?"+query),api("/v1/admin/visuals?"+query),api("/v1/admin/bot-monitor?"+query),api("/v1/admin/dashboard?"+new URLSearchParams({group_id:$("group").value}).toString())]);
+    if(id!==activeRequest)return;render(d,v,b,Math.round(performance.now()-begin),reliability);status.textContent="Данные обновлены · "+datetime(d.as_of)+" · период: "+$("days").selectedOptions[0].textContent.toLowerCase();
   }catch(error){if(id!==activeRequest)return;status.classList.add("error");status.textContent="Не удалось загрузить статистику: "+error.message;}
 }
 function explain(message){
