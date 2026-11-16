@@ -1617,7 +1617,8 @@ def test_image_reply_classifier_stays_fail_closed_for_deictic_text():
 
     from studgroup.analysis.package_worker import _self_contained_academic_reply
 
-    case = lambda text: SimpleNamespace(reply_to_message_id=31, text=text)
+    def case(text):
+        return SimpleNamespace(reply_to_message_id=31, text=text)
     assert _self_contained_academic_reply(
         case("По математике решить задачи 1–3 до пятницы, самостоятельная работа")
     )
