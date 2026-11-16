@@ -1,5 +1,7 @@
 """Read-only, owner-scoped operational dashboard. No private message content leaves this API."""
 
+import json
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -27,6 +29,8 @@ from studgroup.models import (
     Membership,
     OwnerIncidentEpisode,
     RawMessage,
+    RanepaCrawlJob,
+    RanepaPersonalSnapshot,
     ShadowEvaluationRun,
     User,
     WebSession,
@@ -159,6 +163,62 @@ async def dashboard(
             .limit(20)
         )
     ).all()
+    # Read-only, owner-scoped reliability counters. No credentials, URLs,
+    # screenshots, target IDs, source content or student identifiers are returned.
+    crawl_states = await states(
+        db, RanepaCrawlJob, RanepaCrawlJob.state, *scope(RanepaCrawlJob)
+    )
+    crawl_reasons = await states(
+        db,
+        RanepaCrawlJob,
+        RanepaCrawlJob.retry_reason,
+        *scope(RanepaCrawlJob),
+        RanepaCrawlJob.retry_reason.is_not(None),
+    )
+    snapshots = (
+        await db.scalars(
+            select(RanepaPersonalSnapshot).where(*scope(RanepaPersonalSnapshot))
+        )
+    ).all()
+    fresh = 0
+    old = 0
+    sdo_links = Counter()
+    for snapshot in snapshots:
+        checked = snapshot.checked_at
+        if checked.tzinfo is None:
+            checked = checked.replace(tzinfo=UTC)
+        if checked >= now - timedelta(hours=6):
+            fresh += 1
+        else:
+            old += 1
+        for lesson in json.loads(snapshot.rows_json):
+            if lesson.get("room") == "СДО":
+                sdo_links[str(lesson.get("link_state") or "not_checked")] += 1
+    recent_runs = (
+        await db.scalars(
+            select(ShadowEvaluationRun).where(
+                *scope(ShadowEvaluationRun),
+                ShadowEvaluationRun.raw_message_id.is_(None),
+                ShadowEvaluationRun.created_at >= since,
+            )
+        )
+    ).all()
+    outcome_counts = Counter()
+    package_outcomes_missing = 0
+    empty_packages = 0
+    useful_packages = 0
+    for package in recent_runs:
+        metrics = json.loads(package.metrics_json or "{}")
+        product = (metrics.get("product") or {}).get("summary")
+        if product is None:
+            package_outcomes_missing += 1
+            continue
+        counts_by_outcome = product.get("by_outcome") or {}
+        outcome_counts.update(counts_by_outcome)
+        if product.get("empty") == product.get("targets") and product.get("targets", 0) > 0:
+            empty_packages += 1
+        if product.get("useful", 0) > 0:
+            useful_packages += 1
     modes_query = select(
         GroupAnalysisSettings.group_id,
         GroupAnalysisSettings.analysis_mode,
@@ -227,6 +287,22 @@ async def dashboard(
             "shadow": shadow,
             "images": image,
             "bot_outbox": outbox,
+        },
+        "reliability": {
+            "sdo": {
+                "queue_states": crawl_states,
+                "retry_reasons": crawl_reasons,
+                "snapshot_fresh_under_6h": fresh,
+                "snapshot_stale_over_6h": old,
+                "link_states": dict(sorted(sdo_links.items())),
+            },
+            "ai_products": {
+                "packages_7d": len(recent_runs),
+                "outcomes_7d": dict(sorted(outcome_counts.items())),
+                "empty_packages_7d": empty_packages,
+                "useful_packages_7d": useful_packages,
+                "legacy_packages_without_outcomes_7d": package_outcomes_missing,
+            },
         },
         "analysis_modes": [
             {"group_id": gid, "mode": mode, "hold": hold} for gid, mode, hold in modes
