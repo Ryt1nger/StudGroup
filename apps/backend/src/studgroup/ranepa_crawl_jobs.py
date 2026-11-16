@@ -20,7 +20,32 @@ from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
 from studgroup.ranepa_schedule import normalized
 
 LEASE = timedelta(hours=1)
-REFRESH = timedelta(days=1)
+REFRESH = timedelta(hours=6)
+RETRY_BACKOFF = {
+    "source_unavailable": timedelta(minutes=30),
+    "parse_failed": timedelta(minutes=5),
+    "identity_unverified": timedelta(hours=2),
+    "internal": timedelta(hours=1),
+    "captcha": timedelta(hours=3),
+}
+
+
+def retry_at(now: datetime, *, failure_code: str | None, attempts: int) -> datetime | None:
+    """Bound every retry and require user action for invalid credentials."""
+    if failure_code == "login_failed":
+        return None
+    if failure_code is None:
+        return now + REFRESH
+    if failure_code not in RETRY_BACKOFF:
+        raise ValueError("unsafe_failure_code")
+    delay = RETRY_BACKOFF[failure_code] * min(2 ** max(0, attempts - 1), 8)
+    return now + min(delay, timedelta(hours=6))
+
+
+def retry_reason(failure_code: str | None) -> str | None:
+    return "credentials_required" if failure_code == "login_failed" else failure_code
+
+
 FAILURES = {
     "login_failed",
     "captcha",
@@ -61,10 +86,15 @@ async def enqueue_week(
             or not group.academic_group_code
         ):
             continue
-        # A student's 24-hour cooldown spans group memberships and week boundaries.
+        # A student's six-hour cooldown spans group memberships and week boundaries.
         # finished_at remains on a refreshed job until its next completion.
         last_completed_at = await db.scalar(
             select(func.max(RanepaCrawlJob.finished_at)).where(
+                RanepaCrawlJob.user_id == candidate.user_id
+            )
+        )
+        last_retry_at = await db.scalar(
+            select(func.max(RanepaCrawlJob.next_attempt_at)).where(
                 RanepaCrawlJob.user_id == candidate.user_id
             )
         )
@@ -78,19 +108,23 @@ async def enqueue_week(
         if last_completed_at is not None and last_completed_at.tzinfo is None:
             # SQLite tests return naive datetimes despite timezone=True.
             last_completed_at = last_completed_at.replace(tzinfo=UTC)
+        if last_retry_at is not None and last_retry_at.tzinfo is None:
+            last_retry_at = last_retry_at.replace(tzinfo=UTC)
         if existing is not None:
-            # The explicit manual pilot can retry its *selected* completed job
-            # immediately. Queue workers retain the 24-hour cooldown. Never
-            # reset an already queued or currently running job.
-            if existing.state in {"succeeded", "failed", "covered"} and (
-                force_refresh
-                or (last_completed_at is not None and last_completed_at <= now - REFRESH)
+            # Account and week cooldown must be identical; a bad login
+            # must not trigger automatic repeated password attempts.
+            due = last_retry_at is None or last_retry_at <= now
+            can_retry = existing.failure_code != "login_failed" or force_refresh
+            if (
+                existing.state in {"succeeded", "failed", "covered"}
+                and can_retry
+                and (force_refresh or due)
             ):
                 existing.state = "queued"
                 existing.priority = priority
                 existing.failure_code = None
-                # Keep the completion timestamp as a durable not-before time.
-                # claim_next rechecks the latest finish across all weeks.
+                existing.retry_reason = None
+                existing.next_attempt_at = last_retry_at
             continue
         db.add(
             RanepaCrawlJob(
@@ -103,6 +137,8 @@ async def enqueue_week(
                 attempts=0,
                 created_at=now,
                 finished_at=last_completed_at,
+                next_attempt_at=last_retry_at,
+                retry_reason=None,
             )
         )
         created += 1
@@ -193,7 +229,7 @@ async def claim_next(
 ):
     """Claim a due account, or one per user during the owner-approved rescan.
 
-    An explicit full rescan skips the usual 24-hour filter for this claim only.
+    An explicit full rescan skips the usual six-hour filter for this claim only.
     The latest finished_at remains persisted, so regular runs stay throttled.
     """
     if (group_id is None) != (user_id is None):
@@ -229,16 +265,26 @@ async def claim_next(
         stale.claimed_at = None
     # Filter not-yet-due accounts IN the DB query, not after claiming the
     # first row; one cooling down must never block another eligible account.
-    # A second membership or next week's job cannot bypass the 24-hour clock.
+    # A second membership or next week's job cannot bypass the six-hour clock.
     completed = aliased(RanepaCrawlJob)
+    locked = aliased(RanepaCrawlJob)
     running = aliased(RanepaCrawlJob)
     due = []
     if group_id is None and not rescan_all:
         due.append(
+            ~select(locked.id)
+            .where(
+                locked.user_id == RanepaCrawlJob.user_id,
+                locked.state == "failed",
+                locked.failure_code == "login_failed",
+            )
+            .exists()
+        )
+        due.append(
             ~select(completed.id)
             .where(
                 completed.user_id == RanepaCrawlJob.user_id,
-                completed.finished_at > now - REFRESH,
+                completed.next_attempt_at > now,
             )
             .exists()
         )
@@ -257,6 +303,12 @@ async def claim_next(
             select(RanepaCrawlJob)
             .where(
                 RanepaCrawlJob.state == "queued",
+                (
+                    RanepaCrawlJob.next_attempt_at.is_(None)
+                    | (RanepaCrawlJob.next_attempt_at <= now)
+                    | (group_id is not None)
+                    | rescan_all
+                ),
                 *scope,
                 *due,
             )
@@ -276,6 +328,8 @@ async def claim_next(
             # No browser/payment needed. This is NOT a successful account crawl.
             job.state = "covered"
             job.finished_at = now
+            job.next_attempt_at = now + REFRESH
+            job.retry_reason = "covered_by_peers"
             job.failure_code = None
             job.claimed_at = None
             await db.flush()
@@ -297,6 +351,10 @@ async def finish(db, job_id, group_id, user_id, *, failure_code=None, now=None) 
     job.state = "failed" if failure_code else "succeeded"
     job.failure_code = failure_code
     job.finished_at = now or datetime.now(UTC)
+    job.next_attempt_at = retry_at(
+        job.finished_at, failure_code=failure_code, attempts=job.attempts
+    )
+    job.retry_reason = retry_reason(failure_code)
     job.claimed_at = None
     await db.flush()
     return True

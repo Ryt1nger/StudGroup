@@ -149,9 +149,7 @@ def test_daily_round_requeues_only_finished_jobs_without_crossing_groups(tmp_pat
                 assert await enqueue_week(db, monday, candidates, now=now) == 2
                 first = await claim_next(db, now=now)
                 assert await finish(db, first.id, first.group_id, first.user_id, now=now)
-                assert (
-                    await enqueue_week(db, monday, candidates, now=now + timedelta(hours=23)) == 0
-                )
+                assert await enqueue_week(db, monday, candidates, now=now + timedelta(hours=5)) == 0
                 assert first.state == "succeeded"
                 assert await enqueue_week(db, monday, candidates, now=now + timedelta(days=1)) == 0
                 assert first.state == "queued"
@@ -264,7 +262,7 @@ def test_manual_pilot_can_retry_one_finished_job_without_affecting_other_members
                 assert second is not None
                 assert await finish(db, second.id, group.id, users[1].id, now=now)
 
-                # Normal queue remains subject to its 24-hour cooldown.
+                # Normal queue remains subject to its bounded CAPTCHA backoff.
                 soon = now + timedelta(minutes=5)
                 assert await enqueue_week(db, week, candidates, now=soon) == 0
                 assert first.state == "failed" and first.failure_code == "captcha"
@@ -283,7 +281,7 @@ def test_manual_pilot_can_retry_one_finished_job_without_affecting_other_members
                 )
                 assert first.state == "queued"
                 assert first.failure_code is None
-                # Keep last completion for the normal 24-hour cooldown even on a pilot reset.
+                # Retain completion for the normal shared retry clock even on a pilot reset.
                 assert first.finished_at == now
                 assert first.attempts == 1
                 assert second.state == "succeeded"
@@ -315,7 +313,7 @@ def test_manual_pilot_can_retry_one_finished_job_without_affecting_other_members
     asyncio.run(scenario())
 
 
-def test_24_hour_cooldown_skips_account_at_week_boundary(tmp_path):
+def test_six_hour_cooldown_skips_account_at_week_boundary(tmp_path):
     async def scenario():
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/daily-queue.db")
         sunday = datetime(2026, 11, 8, 23, 55, tzinfo=UTC)
@@ -353,7 +351,7 @@ def test_24_hour_cooldown_skips_account_at_week_boundary(tmp_path):
                 assert await finish(db, first.id, group.id, early.id, now=sunday)
                 await db.commit()
 
-            # Monday creates a fresh weekly job, but NOT a new 24-hour allowance.
+            # Monday creates a fresh weekly job, but not a new six-hour allowance.
             async with AsyncSession(engine, expire_on_commit=False) as db:
                 assert (
                     await enqueue_week(
@@ -367,36 +365,34 @@ def test_24_hour_cooldown_skips_account_at_week_boundary(tmp_path):
                 claimed = await claim_next(db, now=monday)
                 assert claimed.user_id == new.id
                 assert await finish(db, claimed.id, group.id, new.id, now=monday)
-                assert await claim_next(db, now=monday + timedelta(hours=12)) is None
+                assert await claim_next(db, now=monday + timedelta(hours=5)) is None
                 await db.commit()
 
-            # After a process restart, exactly 24 h makes the first account due.
+            # After a process restart, exactly six hours makes the first account due.
             async with AsyncSession(engine, expire_on_commit=False) as db:
                 assert (
-                    await claim_next(db, now=sunday + timedelta(hours=24) - timedelta(seconds=1))
+                    await claim_next(db, now=sunday + timedelta(hours=6) - timedelta(seconds=1))
                     is None
                 )
-                due = await claim_next(db, now=sunday + timedelta(hours=24))
+                due = await claim_next(db, now=sunday + timedelta(hours=6))
                 assert due is not None and due.user_id == early.id
-                assert await finish(
-                    db, due.id, group.id, early.id, now=sunday + timedelta(hours=24)
-                )
+                assert await finish(db, due.id, group.id, early.id, now=sunday + timedelta(hours=6))
                 assert (
-                    await claim_next(db, now=monday + timedelta(hours=24) - timedelta(seconds=1))
+                    await claim_next(db, now=monday + timedelta(hours=6) - timedelta(seconds=1))
                     is None
                 )
                 # Every scheduled batch refreshes completed jobs before claiming.
-                # At exactly 24 h the second account is requeued without delay.
+                # At exactly six hours the second account is requeued without delay.
                 assert (
                     await enqueue_week(
                         db,
                         date(2026, 11, 9),
                         [early_candidate, new_candidate],
-                        now=monday + timedelta(hours=24),
+                        now=monday + timedelta(hours=6),
                     )
                     == 0
                 )
-                next_due = await claim_next(db, now=monday + timedelta(hours=24))
+                next_due = await claim_next(db, now=monday + timedelta(hours=6))
                 assert next_due is not None and next_due.user_id == new.id
         finally:
             await engine.dispose()
@@ -443,7 +439,7 @@ def test_daily_limit_applies_across_memberships_and_requeued_jobs(tmp_path):
                 assert await finish(
                     db, first.id, first.group_id, first.user_id, now=now, failure_code="captcha"
                 )
-                assert await claim_next(db, now=now + timedelta(hours=23)) is None
+                assert await claim_next(db, now=now + timedelta(hours=2)) is None
                 await db.commit()
 
             # New session: the other group cannot bypass the completed attempt.
