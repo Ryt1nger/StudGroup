@@ -253,12 +253,50 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
     ).all()
     lessons = []
     covered = set()
+    week_freshness = []
+    link_checks = []
+    materialized = False
     for row in snapshots:
         cursor = max(start, row.week_start)
         while cursor <= min(end, row.week_end):
             covered.add(cursor)
             cursor += timedelta(days=1)
-        for lesson in json.loads(row.rows_json):
+        source_rows = json.loads(row.rows_json)
+        sdo_rows = [lesson for lesson in source_rows if lesson.get("room") == "СДО"]
+        direct_links = sum(lesson.get("link_state") == "matched" for lesson in sdo_rows)
+        sdo_checked = sum(
+            lesson.get("link_state") not in {None, "not_checked"} for lesson in sdo_rows
+        )
+        dates_checked = [
+            datetime.fromisoformat(lesson["links_checked_at"])
+            for lesson in sdo_rows
+            if lesson.get("links_checked_at")
+        ]
+        link_checks.extend(dates_checked)
+        materialized = materialized or any(
+            lesson.get("source_scope") in {"common", "subgroup"} for lesson in source_rows
+        )
+        week_freshness.append(
+            {
+                "week_start": row.week_start,
+                "week_end": row.week_end,
+                "source_checked_at": row.checked_at if row.identity_verified else None,
+                "materialized_at": max(
+                    (
+                        datetime.fromisoformat(lesson["materialized_at"])
+                        for lesson in source_rows
+                        if lesson.get("materialized_at")
+                    ),
+                    default=None,
+                ),
+                "sdo_total": len(sdo_rows),
+                "sdo_checked": sdo_checked,
+                "direct_links": direct_links,
+                "course_links": sum(bool(lesson.get("course_url")) for lesson in sdo_rows),
+                "links_checked_at": min(dates_checked) if len(dates_checked) == len(sdo_rows) and dates_checked else None,
+            }
+        )
+        for lesson in source_rows:
             if start <= date.fromisoformat(lesson["day"]) <= end:
                 lessons.append(
                     {
@@ -313,6 +351,21 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
         "end": end,
         "complete": len(covered) == dates,
         "last_success_at": max((row.checked_at for row in snapshots), default=None),
+        "oldest_required_checked_at": (
+            min((row.checked_at for row in snapshots), default=None)
+            if len(covered) == dates
+            else None
+        ),
+        "schedule_complete": len(covered) == dates,
+        "links_complete": all(
+            week["sdo_checked"] == week["sdo_total"] for week in week_freshness
+        ) and len(covered) == dates,
+        "source_checked": bool(week_freshness) and all(
+            week["source_checked_at"] is not None for week in week_freshness
+        ),
+        "user_materialized": materialized,
+        "oldest_links_checked_at": min(link_checks, default=None),
+        "weeks": week_freshness,
         "lessons": lessons,
         "covered_dates": sorted(day.isoformat() for day in covered),
         "fallback_used": False,
