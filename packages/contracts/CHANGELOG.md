@@ -1,5 +1,10 @@
 # Contract changelog
 
+## 0.23.1 — 2026-11-16
+
+- Document optional per-week university schedule freshness, source/materialization coverage and consented account readiness. Old GET response keys remain unchanged.
+- Add optional, authenticated POST /ranepa-schedule/refresh to enqueue a throttled, consent-gated request. It does not perform a paid crawl synchronously.
+- Keep course links distinct from verified direct meeting links.
 ## 0.23.0 — 2026-11-09
 
 - Require current terms and personal-data processing consent for every new onboarding completion. Preserve completed memberships, keep SDO consent optional, and withhold unpublished legal drafts.

@@ -83,6 +83,28 @@ export type RanepaPersonalSchedule = {
      */
     fallback_used: boolean;
     last_success_at: string | null;
+    /**
+     * Oldest personal snapshot check when every requested day is covered.
+     */
+    oldest_required_checked_at?: string | null;
+    oldest_links_checked_at?: string | null;
+    schedule_complete?: boolean;
+    links_complete?: boolean;
+    source_checked?: boolean;
+    user_materialized?: boolean;
+    account_connected?: boolean;
+    covered_dates?: Array<string>;
+    weeks?: Array<{
+        week_start: string;
+        week_end: string;
+        source_checked_at: string | null;
+        materialized_at: string | null;
+        sdo_total: number;
+        sdo_checked: number;
+        direct_links: number;
+        course_links: number;
+        links_checked_at: string | null;
+    }>;
     lessons: Array<{
         day: string;
         starts: string;
@@ -101,7 +123,20 @@ export type RanepaPersonalSchedule = {
          * SDO link decision from the last successful scan; null for non-SDO or guarded peer fallback.
          */
         link_state?: string | null;
+        cancelled?: boolean;
+        source_scope?: string | null;
+        source_split_id?: string | null;
+        source_subgroup_id?: string | null;
     }>;
+};
+
+export type RanepaRefreshResult = {
+    /**
+     * Queue status such as queued, running, cooldown, or credentials_required.
+     */
+    state: string;
+    next_attempt_at: string | null;
+    queued: boolean;
 };
 
 export type UpdateProfileRequest = {
@@ -1604,6 +1639,39 @@ export type UpdateProfileResponses = {
 };
 
 export type UpdateProfileResponse = UpdateProfileResponses[keyof UpdateProfileResponses];
+
+export type RequestMyRanepaScheduleRefreshData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/ranepa-schedule/refresh';
+};
+
+export type RequestMyRanepaScheduleRefreshErrors = {
+    /**
+     * Telegram bootstrap or bearer session is invalid or expired
+     */
+    401: ErrorResponse;
+    /**
+     * Authenticated user cannot access the active group or resource
+     */
+    403: ErrorResponse;
+    /**
+     * Account not connected; reconnect credentials before retrying
+     */
+    409: unknown;
+};
+
+export type RequestMyRanepaScheduleRefreshError = RequestMyRanepaScheduleRefreshErrors[keyof RequestMyRanepaScheduleRefreshErrors];
+
+export type RequestMyRanepaScheduleRefreshResponses = {
+    /**
+     * Existing queue state or newly queued refresh; never guarantees immediate crawl
+     */
+    200: RanepaRefreshResult;
+};
+
+export type RequestMyRanepaScheduleRefreshResponse = RequestMyRanepaScheduleRefreshResponses[keyof RequestMyRanepaScheduleRefreshResponses];
 
 export type GetMyRanepaScheduleData = {
     body?: never;

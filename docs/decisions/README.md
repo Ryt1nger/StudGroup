@@ -38,3 +38,4 @@ Accepted decisions:
 Proposed decisions:
 
 - [ADR-015: Private Supabase database for the existing backend](ADR-015-supabase-private-backend-database.md)
+- [ADR-018: Evidence-preserving university schedule sync and coverage-aware materialization](ADR-018-reliability-schedule-materialization.md)
