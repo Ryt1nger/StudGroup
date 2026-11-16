@@ -71,7 +71,11 @@ def check_once(now=None):
     if not isinstance(issues, list):
         raise TypeError("missing_open_issues")
     existing = next(
-        (issue for issue in issues if issue.get("title") == ISSUE_TITLE and "pull_request" not in issue),
+        (
+            issue
+            for issue in issues
+            if issue.get("title") == ISSUE_TITLE and "pull_request" not in issue
+        ),
         None,
     )
     if missing and existing is None:
