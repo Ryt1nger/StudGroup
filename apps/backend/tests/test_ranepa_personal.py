@@ -604,17 +604,18 @@ def test_link_enrichment_rollback_does_not_erase_committed_week(client):
                 db, group.id, member.user_id, week(), group_identity_verified=True
             )
             await db.commit()
+            group_id, user_id = group.id, member.user_id
             key = ("2026-11-02", "09:00:00", "10:20:00", "История России", "Иванов", "СДО")
             before = await db.get(
                 RanepaPersonalSnapshot,
-                (group.id, member.user_id, date(2026, 11, 2)),
+                (group_id, user_id, date(2026, 11, 2)),
             )
             baseline_checked_at = before.checked_at
             with pytest.raises(ValueError, match="unsafe_lms_link"):
                 await enrich_personal_links(
                     db,
-                    group.id,
-                    member.user_id,
+                    group_id,
+                    user_id,
                     date(2026, 11, 2),
                     links={key: "https://invalid.example/join"},
                     link_states={key: "matched"},
@@ -622,21 +623,21 @@ def test_link_enrichment_rollback_does_not_erase_committed_week(client):
             await db.rollback()
             stored = await db.get(
                 RanepaPersonalSnapshot,
-                (group.id, member.user_id, date(2026, 11, 2)),
+                (group_id, user_id, date(2026, 11, 2)),
             )
             assert __import__("json").loads(stored.rows_json)[0]["subject"] == "История России"
             assert stored.checked_at == baseline_checked_at
             await enrich_personal_links(
                 db,
-                group.id,
-                member.user_id,
+                group_id,
+                user_id,
                 date(2026, 11, 2),
                 link_states={key: "identity_missing"},
             )
             await db.commit()
             stored = await db.get(
                 RanepaPersonalSnapshot,
-                (group.id, member.user_id, date(2026, 11, 2)),
+                (group_id, user_id, date(2026, 11, 2)),
             )
             assert stored.checked_at == baseline_checked_at
             assert __import__("json").loads(stored.rows_json)[0]["link_state"] == "identity_missing"
