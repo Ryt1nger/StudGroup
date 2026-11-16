@@ -163,23 +163,18 @@ async def record_crawl_outcome(
             blocked = state.consecutive_captcha > MAX_CONSECUTIVE_CAPTCHA
             if blocked:
                 state.paused = True
-            await _owner_message(
-                db,
-                owner_id,
-                "StudGroup: CAPTCHA помешала получить расписание.\n"
-                f"Группа UUID: {group_id}\n"
-                f"Пользователь UUID: {user_id}\n"
-                f"Неудач подряд: {state.consecutive_captcha}.\n"
-                + (
-                    "Обход ПРИОСТАНОВЛЕН после четырёх последовательных сбоев. "
-                    "Для восстановления потребуется разрешённый одиночный пилот "
-                    "и команда /ranepa_resume в личном чате бота."
-                    if blocked
-                    else "Эта учётка пропущена; умная очередь продолжит остальные."
+            if blocked:
+                # Account-level CAPTCHA errors and the action button belong in
+                # one owner WebApp notice. Only a GLOBAL queue pause warrants
+                # an additional safety notification.
+                await _owner_message(
+                    db,
+                    owner_id,
+                    "🚨 StudGroup · обход СДО приостановлен после четырёх "
+                    "неудачных CAPTCHA подряд. "
+                    "Для возобновления требуется /ranepa_resume и проверочный пилот.",
+                    f"ranepa-captcha-paused:{job_id}:{attempt}",
                 )
-                + "\nCAPTCHA в боте не интерактивна: её нельзя пройти по одному скриншоту.",
-                f"ranepa-captcha:{job_id}:{attempt}",
-            )
         else:
             # Only consecutive unresolved CAPTCHA failures open the breaker.
             state.consecutive_captcha = 0
