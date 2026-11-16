@@ -830,9 +830,7 @@ async def _collect(
                                     break
                             if manual_captcha is not None:
                                 log_captcha_stage("owner_fallback_offered_sdo")
-                                return await manual_captcha(
-                                    challenge_page, captcha_attempts_used
-                                )
+                                return await manual_captcha(challenge_page, captcha_attempts_used)
                             return False
 
                         exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
