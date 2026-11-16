@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.admin_dashboard import admin_session
+from studgroup.analysis.reliability_summary import load_product_reliability
 from studgroup.api import ApiError, database
 from studgroup.models import (
     AIJob,
@@ -229,6 +230,7 @@ async def analytics(
                 AnalysisBudgetCall.charged_usd,
             ),
         },
+        "reliability": await load_product_reliability(db, group_id, since, now),
         "finance": {
             "ledger_by_kind": [
                 {"kind": str(kind), "usd": money(amount)} for kind, amount in billed_by_kind
