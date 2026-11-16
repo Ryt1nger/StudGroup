@@ -15,8 +15,8 @@ from studgroup.models import (
     RanepaPersonalSnapshot,
     SubjectSplit,
 )
-from studgroup.ranepa_schedule import normalized
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
+from studgroup.ranepa_schedule import normalized
 
 LEASE = timedelta(hours=1)
 REFRESH = timedelta(days=1)

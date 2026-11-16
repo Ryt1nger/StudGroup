@@ -89,13 +89,13 @@ async def materialize_verified_facts(
     source_choices = by_member.get(by_user[source_user_id].id, {})
     rows = json.loads(source.rows_json)
     if not isinstance(rows, list):
-        raise ValueError("invalid_source_snapshot")
+        raise TypeError("invalid_source_snapshot")
     prepared = []
     now = (checked_at or datetime.now(UTC)).isoformat()
     source_at = source.checked_at.isoformat()
     for row in rows:
         if not isinstance(row, dict):
-            raise ValueError("invalid_source_lesson")
+            raise TypeError("invalid_source_lesson")
         split = by_subject.get(normalized(row["subject"]))
         if split is None:
             # Unconfigured explicit subgroup signals are not evidence
@@ -130,7 +130,7 @@ async def materialize_verified_facts(
         )
         previous_rows = json.loads(target.rows_json) if target else []
         if not isinstance(previous_rows, list):
-            raise ValueError("invalid_target_snapshot")
+            raise TypeError("invalid_target_snapshot")
         existing_keys = {}
         for index, row in enumerate(previous_rows):
             existing_keys.setdefault(_occurrence(row), []).append(index)
