@@ -1018,10 +1018,13 @@ def test_an_update_that_only_touched_technical_fields_is_not_reported(client):
         == "completed"
     )
     texts = [message["text"] for message in owner_messages(client)]
-    # The second package bumped the revision, but only the attention reasons changed: silence.
-    assert len(texts) == 1
+    # The owner gets a digest for each completed package, but a technical-only
+    # revision is neither a visible update nor a useful product outcome.
+    assert len(texts) == 2
     assert "создано карточек: 1" in texts[0]
     assert "• «Решить задачи 1–3» — новая" in texts[0]
+    assert "нет новых подтверждённых карточек" in texts[1]
+    assert "Учебных результатов: 0" in texts[1]
 
 
 def test_a_visible_update_is_reported_with_the_card_title_and_the_changed_fields(client):
