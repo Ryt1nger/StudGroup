@@ -447,13 +447,16 @@ async def process_one(
                 else None,
                 manual_captcha=(
                     (
-                        lambda page: offer_manual_captcha(
+                        lambda page, attempts_used: offer_manual_captcha(
                             engine,
                             page=page,
                             owner_id=settings.bot_admin_user_id,
                             job_id=job_id,
                             attempt=attempt,
                             settings=settings,
+                            auto_attempts=attempts_used,
+                            student_name=student.display_name if student else None,
+                            group_code=code,
                         )
                     )
                     if settings.ranepa_manual_captcha_enabled
