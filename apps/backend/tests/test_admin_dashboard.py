@@ -183,8 +183,9 @@ def test_owner_reliability_aggregates_are_group_scoped_and_private(client):
                         delete_at=now + timedelta(days=30),
                     )
                 )
+            selected_id = selected.id
             await db.commit()
-            return selected.id
+            return selected_id
 
     selected_id = asyncio.run(seed())
     response = client.get(
