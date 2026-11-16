@@ -75,8 +75,14 @@ async def choose_unverified_failures(
                     RanepaCrawlJob.week_start < monday,
                     RanepaCrawlJob.state == "failed",
                     RanepaCrawlJob.failure_code.in_(
-                        ("captcha", "parse_failed", "source_unavailable",
-                         "identity_unverified", "login_failed", "internal")
+                        (
+                            "captcha",
+                            "parse_failed",
+                            "source_unavailable",
+                            "identity_unverified",
+                            "login_failed",
+                            "internal",
+                        )
                     ),
                     Group.status == "active",
                     Group.pilot_authorized.is_(True),
@@ -126,9 +132,7 @@ async def retry_unverified_failures() -> int:
             still_missing = await choose_unverified_failures(engine, today=today)
             if (group_id, user_id) not in still_missing:
                 continue
-            result = await run_single_pilot(
-                settings, group_id=group_id, user_id=user_id
-            )
+            result = await run_single_pilot(settings, group_id=group_id, user_id=user_id)
             attempted += 1
             if result == "succeeded":
                 succeeded += 1
