@@ -1,6 +1,7 @@
 """Durable, identity-only queue for a paced university account crawl."""
 
 import json
+import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
@@ -151,6 +152,7 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
         await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == candidate.group_id))
     ).all()
     split_name = {split.id: normalized(split.subject_name) for split in splits}
+    split_subjects = set(split_name.values())
     covered_common = False
     covered_split = set()
     for snapshot in snapshots:
@@ -159,14 +161,24 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
         rows = json.loads(snapshot.rows_json)
         if not rows:
             continue
-        covered_common = True
         source_choices = by_member.get(by_user[snapshot.user_id].id, {})
         observed = {normalized(row["subject"]) for row in rows}
+        if any(
+            normalized(row["subject"]) not in split_subjects
+            and not re.search(
+                r"подгрупп|сг[ая]|поток",
+                normalized(row.get("subgroup_hint")),
+            )
+            for row in rows
+        ):
+            covered_common = True
         for split_id, subgroup_id in source_choices.items():
             if split_name.get(split_id) in observed:
                 covered_split.add((split_id, subgroup_id))
-    return covered_common and all(
-        (split_id, subgroup_id) in covered_split for split_id, subgroup_id in wanted.items()
+    # Do not suppress another account based solely on an unrelated subgroup.
+    return (covered_common or bool(covered_split)) and all(
+        (split_id, subgroup_id) in covered_split
+        for split_id, subgroup_id in wanted.items()
     )
 
 
