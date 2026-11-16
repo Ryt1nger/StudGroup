@@ -1,5 +1,10 @@
 # Contract compatibility
 
+## University freshness and opt-in refresh (0.23.1, 2026-11-16)
+
+The existing GET /ranepa-schedule returns the same required fields. Freshness and coverage fields are additive and optional in the OpenAPI contract so cached 0.23.0 clients may ignore them, while updated clients tolerate a backend which does not yet return them. last_success_at is still the latest successful timestamp for legacy use; an updated client must use oldest_required_checked_at, weeks and schedule_complete for a six-hour SLA. links_complete is independent of schedule coverage. Missing fields mean unknown, never fresh.
+
+POST /ranepa-schedule/refresh records a consent-gated queue request; it never directly starts a paid crawl. state=queued does not mean verified new data. Old clients do not call this endpoint. Deployments of frontend and backend can differ, so do not enable features until the deployed SHAs and API capabilities match. A Moodle course_url must not display the Join action.
 ## Mandatory first-run legal acceptance (0.23.0, 2026-11-09)
 
 `/onboarding/complete` now requires current, separately recorded acceptance of the terms and personal-data processing consent for every incomplete membership. It returns `503 legal_not_ready` while documents are unpublished, or `403 terms_required` / `consent_required` when acceptance is missing. `legal_required` remains in the response and is always true for first-run setup. Existing completed memberships still return complete without new consent. Cached older clients cannot bypass the server check and should show the returned error; users can resume on an updated client. SDO credential consent remains independent and optional. Public document routes return `503 legal_not_ready` until publication, without exposing draft operator placeholders.
