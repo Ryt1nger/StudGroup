@@ -162,3 +162,28 @@ def test_teacher_surname_must_match_whole_word():
         day=date(2026, 11, 12),
     )
     assert choice.state == "not_found"
+
+
+def test_iso_dated_activity_and_group_underscores_remain_identity_checked():
+    links = course_links(fixture(
+        "Клишина О. С. Э-ОБ26-СГЯ-лек(43,44,45) 2026-11-16 09.00-10.20",
+        "Клишина О. С. У-ОБ26-СГЯ-лек(13,14,90,91) 2026-11-16 09.00-10.20",
+    ))
+    choice = select_lesson_link(
+        links,
+        teacher="Клишина Ольга Семеновна",
+        group_label="Э_ОБ26_СГЯ_лек(43,44,45)",
+        day=date(2026, 11, 16),
+        starts=time(9),
+    )
+    assert choice.state == "matched"
+    assert choice.url.endswith("id=100")
+    wrong_date = select_lesson_link(
+        links,
+        teacher="Клишина Ольга Семеновна",
+        group_label="Э_ОБ26_СГЯ_лек(43,44,45)",
+        day=date(2026, 11, 17),
+        starts=time(9),
+    )
+    assert wrong_date.state == "timing_unverified"
+    assert wrong_date.url is None
