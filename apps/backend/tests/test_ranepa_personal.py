@@ -22,6 +22,7 @@ from studgroup.models import (
     SubjectSplit,
     User,
 )
+from studgroup.ranepa_link_states import LINK_STATES
 from studgroup.ranepa_personal import (
     enrich_personal_links,
     personal_with_group_fallback,
@@ -29,7 +30,6 @@ from studgroup.ranepa_personal import (
     schedule_projection,
     schedule_with_group_fallback,
 )
-from studgroup.ranepa_link_states import LINK_STATES
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot
 from studgroup.subject_identity import subject_uuid
 

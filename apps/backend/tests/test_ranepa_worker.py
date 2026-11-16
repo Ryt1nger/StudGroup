@@ -933,6 +933,7 @@ def test_three_rucaptcha_attempts_precede_owner_fallback(
 def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monkeypatch, state):
     """The browser is fake, but the SQLAlchemy snapshot writer is real."""
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
     from studgroup.models import Base, Group, Membership, RanepaPersonalSnapshot, User
 
     async def scenario():
