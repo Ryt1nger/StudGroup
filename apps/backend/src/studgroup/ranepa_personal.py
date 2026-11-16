@@ -360,9 +360,10 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
         "start": start,
         "end": end,
         "complete": len(covered) == dates,
-        "last_success_at": max(
-            (row.checked_at for row in snapshots if row.identity_verified), default=None
-        ),
+        # Preserve the legacy cached-data timestamp for existing clients.
+        # Source verification is conveyed separately by source_checked and
+        # oldest_required_checked_at.
+        "last_success_at": max((row.checked_at for row in snapshots), default=None),
         "oldest_required_checked_at": (
             min(row.checked_at for row in snapshots if row.identity_verified)
             if len(verified_covered) == dates
