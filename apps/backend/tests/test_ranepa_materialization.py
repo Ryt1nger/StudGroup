@@ -370,18 +370,14 @@ def test_switching_source_subgroup_invalidates_old_split_evidence(tmp_path):
                 fallback = await personal_with_group_fallback(
                     db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
                 )
-                assert {lesson["subject"] for lesson in fallback["lessons"]} == {
-                    "Общий предмет"
-                }
+                assert {lesson["subject"] for lesson in fallback["lessons"]} == {"Общий предмет"}
                 await materialize_verified_facts(db, group_id, users[0], WEEK)
                 await db.commit()
             async with AsyncSession(engine, expire_on_commit=False) as db:
                 projected = await personal_period(
                     db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
                 )
-                assert {lesson["subject"] for lesson in projected["lessons"]} == {
-                    "Общий предмет"
-                }
+                assert {lesson["subject"] for lesson in projected["lessons"]} == {"Общий предмет"}
                 await enqueue_week(
                     db,
                     WEEK,

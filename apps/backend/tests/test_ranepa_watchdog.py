@@ -49,3 +49,24 @@ def test_deduplicated_issue_creation_and_recovery(monkeypatch):
     state["runs"] = [run(NOW - timedelta(minutes=20))]
     assert monitor.check_once(NOW) == "healthy"
     assert writes[-1] == ("PATCH", "issues/17", {"state": "closed"})
+
+
+def test_deduplication_finds_existing_issue_beyond_first_page(monkeypatch):
+    """A busy repository must never open a duplicate watchdog issue."""
+
+    requests = []
+
+    def fake(method, path, payload=None):
+        requests.append((method, path))
+        if path.startswith("actions/"):
+            return {"workflow_runs": [run(NOW - timedelta(hours=4))]}
+        if path == "issues?state=open&per_page=100":
+            return [{"number": index, "title": "Other"} for index in range(100)]
+        if path == "issues?state=open&per_page=100&page=2":
+            return [{"number": 999, "title": monitor.ISSUE_TITLE}]
+        raise AssertionError("unexpected_write_or_page")
+
+    monkeypatch.setattr(monitor, "github_api", fake)
+    assert monitor.check_once(NOW) == "missing"
+    assert requests[-1] == ("GET", "issues?state=open&per_page=100&page=2")
+    assert all(method == "GET" for method, _ in requests)

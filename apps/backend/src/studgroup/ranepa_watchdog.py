@@ -56,6 +56,36 @@ def github_api(method, path, payload=None):
         return json.loads(data) if data else {}
 
 
+def find_open_watchdog_issue():
+    """Scan every open-issue page, not just the newest 100 issues.
+
+    If the bounded scan is incomplete, fail closed instead of creating a
+    duplicate alert because its existing issue was on an unseen page.
+    """
+    for page in range(1, 11):
+        path = (
+            "issues?state=open&per_page=100"
+            if page == 1
+            else f"issues?state=open&per_page=100&page={page}"
+        )
+        issues = github_api("GET", path)
+        if not isinstance(issues, list):
+            raise TypeError("missing_open_issues")
+        existing = next(
+            (
+                issue
+                for issue in issues
+                if issue.get("title") == ISSUE_TITLE and "pull_request" not in issue
+            ),
+            None,
+        )
+        if existing is not None:
+            return existing
+        if len(issues) < 100:
+            return None
+    raise RuntimeError("watchdog_issue_scan_incomplete")
+
+
 def check_once(now=None):
     """Report missing runs through at most one open issue; auto-close on recovery."""
     now = now or datetime.now(UTC)
@@ -67,17 +97,7 @@ def check_once(now=None):
     if not isinstance(runs, list):
         raise TypeError("missing_workflow_runs")
     missing, last_launch = is_missing_schedule(runs, now)
-    issues = github_api("GET", "issues?state=open&per_page=100")
-    if not isinstance(issues, list):
-        raise TypeError("missing_open_issues")
-    existing = next(
-        (
-            issue
-            for issue in issues
-            if issue.get("title") == ISSUE_TITLE and "pull_request" not in issue
-        ),
-        None,
-    )
+    existing = find_open_watchdog_issue()
     if missing and existing is None:
         last = last_launch.isoformat() if last_launch else "none"
         github_api(
