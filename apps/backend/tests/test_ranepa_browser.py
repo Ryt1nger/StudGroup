@@ -286,9 +286,15 @@ def test_sdo_transition_logs_in_to_moodle_and_keeps_stable_url():
         ("https://my.ranepa.ru/moodle_out.php?id=1",),
     )
     context = Context()
+    diagnostics = {}
     links, states, courses = asyncio.run(
-        ranepa_browser.resolve_sdo_exits(context, result, "login", "password")
+        ranepa_browser.resolve_sdo_exits(
+            context, result, "login", "password", diagnostics=diagnostics
+        )
     )
+    assert len(diagnostics) == 1
+    assert list(diagnostics.values())[0]["candidate_count"] == 1
+    assert len(list(diagnostics.values())[0]["candidate_hashes"][0]) == 16
     assert list(states.values()) == ["matched"]
     assert list(links.values()) == ["https://lms.ranepa.ru/mod/url/view.php?id=1425553"]
     assert list(courses.values()) == ["https://lms.ranepa.ru/course/view.php?id=85813"]
