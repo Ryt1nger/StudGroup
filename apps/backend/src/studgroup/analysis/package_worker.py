@@ -1144,6 +1144,25 @@ async def _revision_snapshot(db, item_id, revision):
     return json.loads(row.snapshot_json) if row else None
 
 
+async def _student_visible_promotions(db, revisions):
+    """Only actual student-visible changed revisions may count as product updates."""
+    visible = []
+    for item_id, revision, action in revisions:
+        if action != "updated":
+            visible.append((item_id, revision, action))
+            continue
+        ident = uuid.UUID(str(item_id))
+        current = await _revision_snapshot(db, ident, revision)
+        previous = await _revision_snapshot(db, ident, revision - 1)
+        if current is None:
+            continue
+        if previous is None or any(
+            previous.get(key) != current.get(key) for key in VISIBLE_FIELDS
+        ):
+            visible.append((item_id, revision, action))
+    return visible
+
+
 async def _visible_changes(db, row):
     """[(action, title, [changed visible fields])] of the cards this package wrote.
 
@@ -1417,7 +1436,9 @@ async def process_package_next(engine, settings, provider=None, now=None):
             metrics = _metrics(row)
             promotions = (metrics.get("promotion") or {}).get("changes", [])
             targets = _targets(row)
-            changed = await attributed_changes(db, row.group_id, promotions, targets)
+            changed = await attributed_changes(
+                db, row.group_id, await _student_visible_promotions(db, promotions), targets
+            )
             outcomes = classify_targets(
                 targets,
                 changed=changed,
