@@ -124,7 +124,7 @@ async def enqueue_week(
                 existing.priority = priority
                 existing.failure_code = None
                 existing.retry_reason = None
-                existing.next_attempt_at = now if force_refresh else last_retry_at
+                existing.next_attempt_at = last_retry_at
             continue
         db.add(
             RanepaCrawlJob(
@@ -137,7 +137,7 @@ async def enqueue_week(
                 attempts=0,
                 created_at=now,
                 finished_at=last_completed_at,
-                next_attempt_at=None if force_refresh else last_retry_at,
+                next_attempt_at=last_retry_at,
                 retry_reason=None,
             )
         )
@@ -267,9 +267,19 @@ async def claim_next(
     # first row; one cooling down must never block another eligible account.
     # A second membership or next week's job cannot bypass the six-hour clock.
     completed = aliased(RanepaCrawlJob)
+    locked = aliased(RanepaCrawlJob)
     running = aliased(RanepaCrawlJob)
     due = []
     if group_id is None and not rescan_all:
+        due.append(
+            ~select(locked.id)
+            .where(
+                locked.user_id == RanepaCrawlJob.user_id,
+                locked.state == "failed",
+                locked.failure_code == "login_failed",
+            )
+            .exists()
+        )
         due.append(
             ~select(completed.id)
             .where(
@@ -297,6 +307,7 @@ async def claim_next(
                     RanepaCrawlJob.next_attempt_at.is_(None)
                     | (RanepaCrawlJob.next_attempt_at <= now)
                     | (group_id is not None)
+                    | rescan_all
                 ),
                 *scope,
                 *due,
