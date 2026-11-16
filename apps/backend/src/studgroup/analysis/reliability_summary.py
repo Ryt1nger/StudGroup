@@ -2,7 +2,7 @@
 
 import json
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, timedelta
 
 from sqlalchemy import and_, select
 
