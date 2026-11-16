@@ -989,7 +989,11 @@ def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monk
             first = date(2026, 11, 1)
             monday = first - timedelta(days=first.weekday())
             cards = [
-                SimpleNamespace(day=monday + timedelta(weeks=i), starts=time(9), subject="История")
+                SimpleNamespace(
+                    day=date(2026, 11, 1) if i == 0 else monday + timedelta(weeks=i),
+                    starts=time(9),
+                    subject="История",
+                )
                 for i in range(6)
             ]
 
@@ -998,7 +1002,7 @@ def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monk
 
             async def read(_page, _login, _password, code, start, *, allow_empty=False):
                 lesson = ExternalLesson(
-                    day=start,
+                    day=date(2026, 11, 1) if start.month == 10 else start,
                     starts=time(9),
                     ends=time(10, 20),
                     subject="История",
