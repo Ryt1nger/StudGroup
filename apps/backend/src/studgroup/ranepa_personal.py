@@ -1,6 +1,7 @@
 """Persist complete account-local weeks immediately, without cross-user promotion."""
 
 import json
+import logging
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from urllib.parse import parse_qsl, urlsplit
@@ -16,6 +17,7 @@ from studgroup.models import (
     RanepaPersonalSnapshot,
     SubjectSplit,
 )
+from studgroup.ranepa_link_states import LINK_STATES
 from studgroup.ranepa_schedule import WeekSnapshot, normalized
 from studgroup.ranepa_storage import encode_rows
 from studgroup.subject_identity import subject_uuid
@@ -53,20 +55,7 @@ def _safe_course(url: str) -> bool:
     )
 
 
-LINK_STATES = {
-    "matched",
-    "not_found",
-    "timing_unverified",
-    "no_course_links",
-    "missing_course_transition",
-    "lms_login_required",
-    "course_content_unavailable",
-    "lms_other_page",
-    "cabinet_transition_unavailable",
-    "unexpected_redirect",
-    "navigation_error",
-}
-
+LOGGER = logging.getLogger(__name__)
 
 async def remember_personal(
     db,
@@ -98,21 +87,35 @@ async def remember_personal(
         raise ValueError("invalid_week_coverage")
     if not snapshot.indexed() and not group_identity_verified:
         raise ValueError("empty_source_requires_review")
+    existing = await db.get(
+        RanepaPersonalSnapshot, (group_id, user_id, snapshot.week_start), with_for_update=True
+    )
+    previous = {}
+    if existing is not None:
+        for old in json.loads(existing.rows_json):
+            key = (
+                old["day"], old["starts"], old["ends"],
+                old["subject"], old["teacher"], old["room"],
+            )
+            previous[key] = old
     rows = json.loads(encode_rows(snapshot))
     links = links or {}
     courses = courses or {}
     link_states = link_states or {}
     for row in rows:
         key = (row["day"], row["starts"], row["ends"], row["subject"], row["teacher"], row["room"])
-        url = links.get(key)
-        course = courses.get(key)
+        old = previous.get(key, {})
+        # A schedule-only refresh cannot erase previously verified link data.
+        # Explicit link-state enrichment is allowed to replace that data.
+        url = links.get(key, old.get("online_url") if key not in link_states else None)
+        course = courses.get(key, old.get("course_url") if key not in link_states else None)
         if url is not None and not _safe_link(url):
             raise ValueError("unsafe_lms_link")
         if course is not None and not _safe_course(course):
             raise ValueError("unsafe_lms_course")
         if course is not None and row["room"] != "СДО":
             raise ValueError("course_without_sdo")
-        state = link_states.get(key)
+        state = link_states.get(key, old.get("link_state"))
         if state is not None and state not in LINK_STATES:
             raise ValueError("unsafe_lms_state")
         if url is not None and state not in {None, "matched"}:
@@ -125,9 +128,6 @@ async def remember_personal(
             "matched" if url else "not_checked" if row["room"] == "СДО" else None
         )
     encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
-    existing = await db.get(
-        RanepaPersonalSnapshot, (group_id, user_id, snapshot.week_start), with_for_update=True
-    )
     digest = sha256(encoded.encode()).hexdigest()
     status = (
         "new" if existing is None else "unchanged" if existing.data_digest == digest else "changed"
@@ -167,6 +167,62 @@ async def remember_personal(
     return status
 
 
+
+async def enrich_personal_links(
+    db,
+    group_id,
+    user_id,
+    week_start: date,
+    *,
+    links=None,
+    courses=None,
+    link_states=None,
+    checked_at=None,
+):
+    """Update link fields only after schedule commit, in a separate transaction.
+
+    An exception in this step must be rolled back by the caller without
+    undoing the validated schedule. Timetable checked_at is not advanced.
+    """
+    stored = await db.get(
+        RanepaPersonalSnapshot, (group_id, user_id, week_start), with_for_update=True
+    )
+    if stored is None or not stored.identity_verified:
+        raise ValueError("unverified_personal_snapshot")
+    links = links or {}
+    courses = courses or {}
+    link_states = link_states or {}
+    rows = json.loads(stored.rows_json)
+    checked = (checked_at or datetime.now(UTC)).isoformat()
+    for row in rows:
+        key = (row["day"], row["starts"], row["ends"], row["subject"], row["teacher"], row["room"])
+        if key not in links and key not in courses and key not in link_states:
+            continue
+        url = links.get(key)
+        course = courses.get(key)
+        state = link_states.get(key, "matched" if url else "not_checked")
+        if state not in LINK_STATES:
+            raise ValueError("unsafe_lms_state")
+        if url is not None and not _safe_link(url):
+            raise ValueError("unsafe_lms_link")
+        if course is not None and not _safe_course(course):
+            raise ValueError("unsafe_lms_course")
+        if course is not None and row["room"] != "СДО":
+            raise ValueError("course_without_sdo")
+        if (url is not None and state != "matched") or (state == "matched" and url is None):
+            raise ValueError("contradictory_lms_state")
+        row["online_url"] = url
+        row["course_url"] = course or row.get("course_url")
+        row["link_state"] = state
+        row["links_checked_at"] = checked
+    encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
+    updated = stored.data_digest != sha256(encoded.encode()).hexdigest()
+    stored.rows_json = encoded
+    stored.data_digest = sha256(encoded.encode()).hexdigest()
+    await db.flush()
+    return "changed" if updated else "unchanged"
+
+
 async def personal_period(db, group_id, user_id, start: date, end: date):
     if end < start or (end - start).days > 31:
         raise ValueError("invalid_period")
@@ -201,6 +257,7 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
                         "room": lesson["room"],
                         "lesson_type": lesson["lesson_type"],
                         "stream_label": lesson["subgroup_hint"],
+                        "cancelled": bool(lesson.get("cancelled", False)),
                         "online_url": lesson.get("online_url"),
                         "course_url": lesson.get("course_url"),
                         "link_state": lesson.get("link_state"),
@@ -355,7 +412,7 @@ def schedule_projection(personal, group):
                 "location": row["room"] or None,
                 "online_url": row["online_url"],
                 "course_url": row.get("course_url"),
-                "status": "scheduled",
+                "status": "cancelled" if row.get("cancelled") else "scheduled",
             }
         )
     return {
@@ -371,34 +428,58 @@ def schedule_projection(personal, group):
 
 
 def schedule_with_group_fallback(personal, published, group):
-    """Render verified account/peer reads together with published group rules.
+    """Merge individual occurrences without treating an absent row as cancellation.
 
-    An own completed day takes precedence over potentially stale group rules,
-    including a verified empty day. For days without an own snapshot, published
-    editor-managed entries remain visible. Peer-derived rows (already filtered
-    by confirmed subgroup choices and stripped of private LMS URLs) fill
-    gaps without duplicating group cards. No account data is promoted into
-    another member's permanent personal snapshot.
+    The published occurrence retains its stable public ID. Only an explicit
+    verified source cancellation can mark it cancelled, and ambiguous matches
+    preserve both original published entries instead of hiding either.
     """
     personal_view = schedule_projection(personal, group)
-    owned_dates = set(personal.get("covered_dates", ()))
     zone = ZoneInfo(group.timezone)
-    result = []
-    group_keys = set()
-    for row in published["lessons"]:
-        start = datetime.fromisoformat(row["starts_at"]).astimezone(zone)
-        if start.date().isoformat() in owned_dates:
-            continue
-        result.append(row)
-        group_keys.add(
-            (start.date().isoformat(), start.strftime("%H:%M"), normalized(row["subject"]))
+    result = [dict(row) for row in published["lessons"]]
+    conflicts = 0
+
+    def occurrence(row):
+        start_at = datetime.fromisoformat(row["starts_at"]).astimezone(zone)
+        end_at = datetime.fromisoformat(row["ends_at"]).astimezone(zone)
+        return (
+            start_at.date(),
+            start_at.time().replace(tzinfo=None),
+            end_at.time().replace(tzinfo=None),
+            normalized(row["subject"]),
         )
-    for row in personal_view["lessons"]:
-        start = datetime.fromisoformat(row["starts_at"]).astimezone(zone)
-        day = start.date().isoformat()
-        key = (day, start.strftime("%H:%M"), normalized(row["subject"]))
-        if day in owned_dates or key not in group_keys:
-            result.append(row)
+
+    for source in personal_view["lessons"]:
+        key = occurrence(source)
+        candidates = [
+            index
+            for index, published_row in enumerate(result)
+            if occurrence(published_row) == key
+            and (
+                not normalized(source.get("teacher"))
+                or not normalized(published_row.get("teacher"))
+                or normalized(source.get("teacher")) == normalized(published_row.get("teacher"))
+            )
+        ]
+        if len(candidates) != 1:
+            if candidates:
+                conflicts += 1
+            result.append(source)
+            continue
+        index = candidates[0]
+        old = result[index]
+        if old.get("status") == "cancelled" and source["status"] != "cancelled":
+            # A successful source read does not implicitly reverse editorial cancellation.
+            continue
+        merged = dict(old)
+        for field in ("teacher", "location", "online_url", "course_url"):
+            if source.get(field) is not None:
+                merged[field] = source[field]
+        if source["status"] == "cancelled":
+            merged["status"] = "cancelled"
+        result[index] = merged
+    if conflicts:
+        LOGGER.warning("ranepa_schedule_occurrence_conflict count=%d", conflicts)
     result.sort(key=lambda row: (row["starts_at"], row["id"]))
     personal_view["lessons"] = result
     personal_view["week_state"] = (

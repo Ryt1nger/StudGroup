@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 from zoneinfo import ZoneInfo
 
 from studgroup.ranepa_cabinet import MonthCard, extract_cabinet_month, extract_cabinet_week
+from studgroup.ranepa_link_states import LinkState
 from studgroup.ranepa_lms import course_links, select_lesson_link
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot, group_code
@@ -362,7 +363,7 @@ async def resolve_sdo_exits(
             lesson.room,
         )
         if exit_url is None:
-            states[key] = "missing_course_transition"
+            states[key] = LinkState.MISSING_COURSE_TRANSITION
             continue
         page = await context.new_page()
         try:
@@ -442,25 +443,25 @@ async def resolve_sdo_exits(
             if choice is None:
                 final = urlsplit(page.url)
                 if captcha_seen:
-                    states[key] = "captcha_required"
+                    states[key] = LinkState.CAPTCHA_REQUIRED
                 elif final.hostname == "lms.ranepa.ru" and final.path == "/login/index.php":
-                    states[key] = "lms_login_required"
+                    states[key] = LinkState.LMS_LOGIN_REQUIRED
                 elif final.hostname == "lms.ranepa.ru" and final.path == "/course/view.php":
                     states[key] = (
-                        "no_course_links" if empty_course_reads else "course_content_unavailable"
+                        LinkState.NO_COURSE_LINKS if empty_course_reads else LinkState.COURSE_CONTENT_UNAVAILABLE
                     )
                 elif final.hostname == "lms.ranepa.ru":
-                    states[key] = "lms_other_page"
+                    states[key] = LinkState.LMS_OTHER_PAGE
                 elif final.hostname == HOST:
-                    states[key] = "cabinet_transition_unavailable"
+                    states[key] = LinkState.CABINET_TRANSITION_UNAVAILABLE
                 else:
-                    states[key] = "unexpected_redirect"
+                    states[key] = LinkState.UNEXPECTED_REDIRECT
             else:
                 states[key] = choice.state
                 if choice.url is not None:
                     linked[key] = choice.url
         except Exception:  # noqa: BLE001
-            states[key] = "navigation_error"
+            states[key] = LinkState.NAVIGATION_ERROR
         finally:
             await page.close()
     return linked, states, courses
