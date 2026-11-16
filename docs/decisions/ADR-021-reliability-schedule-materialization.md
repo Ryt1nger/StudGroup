@@ -1,4 +1,4 @@
-# ADR-018: Evidence-preserving university schedule sync and coverage-aware materialization
+# ADR-021: Evidence-preserving university schedule sync and coverage-aware materialization
 Status: accepted
 Date: 2026-11-16
 
@@ -14,7 +14,7 @@ A personal RANEPA/SDO snapshot can contain fewer occurrences than the published 
 
 ## Decision
 
-Preserve each published occurrence unless the same verified source explicitly cancels it. Save timetable evidence in a transaction independent of Moodle link enrichment. Direct meeting links and verified Moodle course fallbacks have different UI actions. A coverage matrix selects representatives; common facts are replicated to all eligible recipients and subgroup facts only to matching verified memberships. Preserve provenance, source check time, link check time and independent retry reasons. Never let the newest overlapping week conceal an older required week.
+Preserve each published occurrence unless the same verified source explicitly cancels it. Save timetable evidence in a transaction independent of Moodle link enrichment. Direct meeting links and verified Moodle course fallbacks have different UI actions. A conservative, observed coverage check selects representatives; common facts are replicated to all eligible recipients and subgroup facts only to matching verified memberships. Preserve provenance, source check time, link check time and independent retry reasons. Never let the newest overlapping week conceal an older required week.
 
 ## Consequences
 

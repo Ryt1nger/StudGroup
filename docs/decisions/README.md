@@ -34,8 +34,10 @@ Accepted decisions:
 - [ADR-014: Target-grounded card mutations](ADR-014-target-grounded-card-mutations.md)
 - [ADR-016: Operator-only dashboard access](ADR-016-owner-dashboard-access.md)
 - [ADR-017: Mandatory legal acceptance at first-run completion](ADR-017-mandatory-onboarding-consent.md)
+- [ADR-021: Evidence-preserving university schedule sync and coverage-aware materialization](ADR-021-reliability-schedule-materialization.md)
 
 Proposed decisions:
 
 - [ADR-015: Private Supabase database for the existing backend](ADR-015-supabase-private-backend-database.md)
-- [ADR-018: Evidence-preserving university schedule sync and coverage-aware materialization](ADR-018-reliability-schedule-materialization.md)
+- [ADR-019: Preserve published timetable and independent SDO link enrichment](ADR-019-safe-ranepa-timetable-and-link-enrichment.md)
+- [ADR-020: Coverage-aware queue and safe subgroup materialization](ADR-020-verified-coverage-and-student-materialization.md)
