@@ -139,7 +139,7 @@ def test_expired_captcha_never_shares_images_or_accepts_answer(client):
 
 def test_owner_message_after_three_solver_failures_is_concise_with_both_groups():
     text = bridge._manual_request_text(
-        student_name="Тестовая\\nучётка",
+        student_name="Тестовая\nучётка",
         telegram_group_name="Б.И. 1.3",
         group_code="Э-ОБ-385-04-26-03",
         auto_attempts=3,
@@ -149,7 +149,7 @@ def test_owner_message_after_three_solver_failures_is_concise_with_both_groups()
     assert "Группа ТГ: Б.И. 1.3" in text
     assert "Группа РАНХиГС: Э-ОБ-385-04-26-03" in text
     assert "6 минут" in text
-    assert "Тестовая\\n" not in text
+    assert "Тестовая\n" not in text
     assert "Тестовая учётка" in text
     assert len(text) < 300
     limited = bridge._manual_request_text(
