@@ -253,15 +253,15 @@ def _self_contained_academic_reply(row):
     if not row.reply_to_message_id or len(message) < 30:
         return False
     if re.search(
-        r"\\b(?:это|эти|этот|там|тут|здесь|выше|ниже|скрин|фото|картинк\\w*|изображени\\w*|прикрепленн\\w*)\\b",
+        r"\b(?:это|эти|этот|там|тут|здесь|выше|ниже|скрин|фото|картинк\w*|изображени\w*|прикрепленн\w*)\b",
         message,
     ):
         return False
-    explicit_subject = re.search(r"\\bпо\\s+[а-яёa-z][\\w-]{3,}", message)
+    explicit_subject = re.search(r"\bпо\s+[а-яёa-z][\w-]{3,}", message)
     actionable = re.search(
-        r"\\b(?:решить|сделать|выполнить|подготовить|сдать|написать|выучить|прочитать|"
-        r"домашн\\w*|задани\\w*|контрольн\\w*|тестировани\\w*|"
-        r"лекци\\w*|семинар\\w*)\\b",
+        r"\b(?:решить|сделать|выполнить|подготовить|сдать|написать|выучить|прочитать|"
+        r"домашн\w*|задани\w*|контрольн\w*|тестировани\w*|"
+        r"лекци\w*|семинар\w*)\b",
         message,
     )
     return bool(explicit_subject and actionable)
