@@ -101,15 +101,17 @@ async def materialize_verified_facts(
             # Unconfigured explicit subgroup signals are not evidence
             # that the lesson belongs to every student.
             hint = normalized(row.get("subgroup_hint"))
-            if re.search(r"подгрупп|\\bсг[ая]\\b", hint):
+            if re.search(r"подгрупп|сг[ая]|поток", hint):
                 continue
             prepared.append((None, _shared_row(
                 row, scope="common", source_checked_at=source_at, materialized_at=now
             )))
         elif split.id in source_choices:
-            prepared.append((split.id, _shared_row(
-                row, scope="subgroup", source_checked_at=source_at, materialized_at=now
-            )))
+            prepared.append((split.id, {
+                **_shared_row(row, scope="subgroup", source_checked_at=source_at, materialized_at=now),
+                "source_split_id": str(split.id),
+                "source_subgroup_id": str(source_choices[split.id]),
+            }))
     updated_users = 0
     inserted_lessons = 0
     for user_id in sorted(by_user, key=str):
