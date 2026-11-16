@@ -268,6 +268,7 @@ async def claim_next(
     # A second membership or next week's job cannot bypass the six-hour clock.
     completed = aliased(RanepaCrawlJob)
     locked = aliased(RanepaCrawlJob)
+    recovered = aliased(RanepaCrawlJob)
     running = aliased(RanepaCrawlJob)
     due = []
     if group_id is None and not rescan_all:
@@ -277,6 +278,15 @@ async def claim_next(
                 locked.user_id == RanepaCrawlJob.user_id,
                 locked.state == "failed",
                 locked.failure_code == "login_failed",
+                # An older invalid-password failure must not permanently
+                # block ordinary runs after a newer successful manual pilot.
+                ~select(recovered.id)
+                .where(
+                    recovered.user_id == locked.user_id,
+                    recovered.state == "succeeded",
+                    recovered.finished_at > locked.finished_at,
+                )
+                .exists(),
             )
             .exists()
         )
