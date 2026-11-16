@@ -65,6 +65,7 @@ from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
 
 ACCOUNT_TIMEOUT_SECONDS = 600
+MAX_AUTOMATIC_CAPTCHA_ATTEMPTS = 3
 
 
 async def ensure_owner_for_crawl(engine, settings: Settings) -> None:
@@ -559,12 +560,13 @@ async def _collect(
                         trace.record("stored_session_rejected")
                     context = await browser.new_context(storage_state=None, **context_options)
                 page = await context.new_page()
-                captcha_attempted = False
+                captcha_attempts_used = 0
+                captcha_solver_unavailable = False
                 captcha_seen = False
                 captcha_schedule_recovered = False
 
                 async def solve_once(challenge_page, location="sdo"):
-                    nonlocal captcha_attempted, captcha_seen
+                    nonlocal captcha_attempts_used, captcha_solver_unavailable, captcha_seen
                     # Month/week detections were already announced before
                     # this call. The callback here is for live SDO exits only.
                     captcha_seen = True
@@ -573,13 +575,18 @@ async def _collect(
                             trace.mark_captcha("sdo")
                         if on_captcha is not None:
                             await on_captcha("sdo")
-                    if captcha_attempted:
-                        log_captcha_stage("attempt_already_used")
+                    if captcha_attempts_used >= MAX_AUTOMATIC_CAPTCHA_ATTEMPTS:
+                        log_captcha_stage("automatic_attempts_exhausted")
+                        return False
+                    if captcha_diagnostic_only and captcha_attempts_used:
+                        log_captcha_stage("diagnostic_attempt_already_used")
                         return False
                     if urlsplit(getattr(challenge_page, "url", "")).hostname != "my.ranepa.ru":
+                        captcha_solver_unavailable = True
                         log_captcha_stage("unsupported_origin")
                         return False
                     if captcha_client is None and not captcha_diagnostic_only:
+                        captcha_solver_unavailable = True
                         log_captcha_stage("provider_not_configured")
                         return False
                     # Two v2 RotateTask jobs must be covered by the paid
@@ -591,6 +598,7 @@ async def _collect(
                         and captcha_budget is not None
                         and not captcha_budget.claim_many(required_tasks)
                     ):
+                        captcha_solver_unavailable = True
                         log_captcha_stage("paid_budget_exhausted")
                         return False
                     if (
@@ -600,9 +608,10 @@ async def _collect(
                             engine, count=required_tasks, daily_limit=captcha_daily_limit
                         )
                     ):
+                        captcha_solver_unavailable = True
                         log_captcha_stage("paid_daily_budget_exhausted")
                         return False
-                    captcha_attempted = True
+                    captcha_attempts_used += 1
                     if trace is not None:
                         trace.record("captcha_solver_started")
                     log_captcha_stage(
