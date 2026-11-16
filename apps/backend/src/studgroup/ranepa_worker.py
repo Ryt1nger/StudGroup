@@ -852,6 +852,8 @@ async def _collect(
                             exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
                         if on_captcha is not None:
                             exit_kwargs["on_captcha"] = on_captcha
+                        link_diagnostics = {}
+                        exit_kwargs["diagnostics"] = link_diagnostics
                         links, link_states, courses = await resolve_sdo_exits(
                             context, result, login, password, **exit_kwargs
                         )
@@ -870,6 +872,7 @@ async def _collect(
                                     links=links,
                                     courses=courses,
                                     link_states=link_states,
+                                    link_diagnostics=link_diagnostics,
                                 )
                                 await db.commit()
                         if stats is not None:

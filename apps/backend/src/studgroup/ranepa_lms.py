@@ -12,6 +12,7 @@ from studgroup.ranepa_schedule import normalized
 
 URL_BASE = "https://lms.ranepa.ru"
 DATE = re.compile(r"(?<!\d)(\d{1,2})\.(\d{1,2})\.(20\d{2}|\d{2})(?!\d)")
+ISO_DATE = re.compile(r"(?<!\\d)(20\\d{2})-(\\d{1,2})-(\\d{1,2})(?!\\d)")
 TIME_RANGE = re.compile(r"(?<!\d)(\d{1,2})[.:](\d{2})\s*[-–]\s*\d{1,2}[.:]\d{2}(?!\d)")
 
 
@@ -65,7 +66,7 @@ def course_links(html: str) -> tuple[LinkCandidate, ...]:
 def _group_token(label: str) -> str:
     # Tooltip labels can append a faculty after a slash; only the exact academic
     # stream/group token may match an LMS activity.
-    return normalized(label.split(" / ", 1)[0]).replace(" ", "")
+    return normalized(label.split(" / ", 1)[0]).replace(" ", "").replace("_", "")
 
 
 def select_lesson_link(
@@ -106,6 +107,11 @@ def select_lesson_link(
                 found_dates.add(
                     date(2000 + year if year < 100 else year, int(match[2]), int(match[1]))
                 )
+            except ValueError:
+                continue
+        for match in ISO_DATE.finditer(link.label):
+            try:
+                found_dates.add(date(int(match[1]), int(match[2]), int(match[3])))
             except ValueError:
                 continue
         if found_dates and day in found_dates:

@@ -190,6 +190,7 @@ async def enrich_personal_links(
     links=None,
     courses=None,
     link_states=None,
+    link_diagnostics=None,
     checked_at=None,
 ):
     """Update link fields only after schedule commit, in a separate transaction.
@@ -205,6 +206,7 @@ async def enrich_personal_links(
     links = links or {}
     courses = courses or {}
     link_states = link_states or {}
+    link_diagnostics = link_diagnostics or {}
     rows = json.loads(stored.rows_json)
     checked = (checked_at or datetime.now(UTC)).isoformat()
     for row in rows:
@@ -227,6 +229,21 @@ async def enrich_personal_links(
         row["online_url"] = url
         row["course_url"] = course or row.get("course_url")
         row["link_state"] = state
+        diagnostic = link_diagnostics.get(key)
+        if diagnostic is not None:
+            count = diagnostic.get("candidate_count", 0)
+            hashes = diagnostic.get("candidate_hashes", [])
+            if not isinstance(count, int) or not 0 <= count <= 100:
+                raise ValueError("unsafe_link_candidate_count")
+            if not isinstance(hashes, list) or len(hashes) > 10 or any(
+                not isinstance(value, str)
+                or len(value) != 16
+                or any(char not in "0123456789abcdef" for char in value)
+                for value in hashes
+            ):
+                raise ValueError("unsafe_link_candidate_hashes")
+            row["candidate_count"] = count
+            row["candidate_hashes"] = hashes
         row["links_checked_at"] = checked
     encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
     updated = stored.data_digest != sha256(encoded.encode()).hexdigest()

@@ -344,6 +344,7 @@ async def resolve_sdo_exits(
     *,
     solve_captcha=None,
     on_captcha=None,
+    diagnostics=None,
 ) -> tuple[dict, dict, dict]:
     """Follow LK SDO exits; retain verified course and unique meeting URLs."""
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
@@ -426,7 +427,20 @@ async def resolve_sdo_exits(
                         if not candidates:
                             empty_course_reads += 1
                             if empty_course_reads >= 8:
-                                break
+                                # Wait longer only if Moodle visibly indicates
+                                # asynchronous content is still loading.
+                                loading = False
+                                try:
+                                    spinner = page.locator(
+                                        '[aria-busy="true"], .loading, .spinner, .loading-icon'
+                                    )
+                                    loading = bool(
+                                        await spinner.count() and await spinner.is_visible()
+                                    )
+                                except Exception:  # noqa: BLE001
+                                    loading = False
+                                if not loading or empty_course_reads >= 44:
+                                    break
                             await page.wait_for_timeout(250)
                             continue
                         choice = select_lesson_link(
@@ -460,6 +474,16 @@ async def resolve_sdo_exits(
                     states[key] = LinkState.UNEXPECTED_REDIRECT
             else:
                 states[key] = choice.state
+                if diagnostics is not None:
+                    from hashlib import sha256
+
+                    diagnostics[key] = {
+                        "candidate_count": min(len(choice.candidates), 100),
+                        "candidate_hashes": sorted(
+                            sha256(candidate.url.encode()).hexdigest()[:16]
+                            for candidate in choice.candidates[:10]
+                        ),
+                    }
                 if choice.url is not None:
                     linked[key] = choice.url
         except Exception:  # noqa: BLE001
