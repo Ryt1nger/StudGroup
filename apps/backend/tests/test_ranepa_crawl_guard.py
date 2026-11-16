@@ -47,11 +47,13 @@ def test_four_consecutive_unresolved_captchas_pause_across_sessions(tmp_path):
             async with AsyncSession(engine) as db:
                 assert await guard_is_paused(db)
                 pending = (await db.scalars(select(BotOutbox))).all()
-                assert len(pending) == 4
+                assert len(pending) == 1
                 assert all(row.method == "sendMessage" for row in pending)
                 assert all("password" not in row.payload for row in pending)
                 assert all("cookie" not in row.payload.lower() for row in pending)
-                assert "ПРИОСТАНОВЛЕН" in pending[-1].payload
+                assert "приостановлен" in pending[-1].payload
+                assert str(group_id) not in pending[-1].payload
+                assert all(str(user_id) not in pending[-1].payload for user_id in user_ids)
                 # Repeated outcome for a previously reported job is deduplicated.
                 await record_crawl_outcome(
                     db,
@@ -65,7 +67,7 @@ def test_four_consecutive_unresolved_captchas_pause_across_sessions(tmp_path):
                 )
                 await db.commit()
             async with AsyncSession(engine) as db:
-                assert len((await db.scalars(select(BotOutbox))).all()) == 4
+                assert len((await db.scalars(select(BotOutbox))).all()) == 1
                 assert await request_recovery(db)
                 await db.commit()
             async with AsyncSession(engine) as db:
