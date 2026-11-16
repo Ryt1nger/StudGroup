@@ -1144,7 +1144,7 @@ async def _visible_changes(db, row):
 
 
 async def _tell_the_owner(db, settings, row, group):
-    """One short private message after a package that CHANGED something; silence otherwise.
+    """Private package result including zero-result packages, never a silent completed status.
 
     Counts, cost and the titles of the cards it wrote (the owner's private channel only). An
     "updated" card is counted only when a student-visible field changed. Skipped unless the

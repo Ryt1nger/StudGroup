@@ -882,11 +882,16 @@ def test_the_owner_gets_one_short_message_after_a_package_that_changed_something
     assert "математике" not in text  # counts and cost only, never chat text
 
 
-def test_a_package_that_changed_nothing_sends_the_owner_nothing(client):
+def test_empty_package_still_reports_a_private_product_outcome_to_owner(client):
     seed(client)
     make_new(client)
     assert step(client, PackageProvider(propose=False), owner_settings()) == "completed"
-    assert owner_messages(client) == []
+    messages = owner_messages(client)
+    assert len(messages) == 1
+    summary = messages[0]["text"]
+    assert "нет новых подтверждённых карточек" in summary
+    assert "Учебных результатов: 0; пустых: 3" in summary
+    assert "математике" not in summary  # No private academic message text.
 
 
 def test_context_only_paraphrase_cannot_rewrite_an_existing_card(client):
