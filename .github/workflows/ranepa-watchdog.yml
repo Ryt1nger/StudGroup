@@ -1,0 +1,26 @@
+name: RANEPA missing scheduled-run watchdog
+
+# Observation only: no RuCaptcha, no university credentials, no crawler dispatch.
+# GitHub cron is best-effort; this is not an independent high-availability SLA.
+on:
+  schedule:
+    - cron: "19 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  issues: write
+
+jobs:
+  missing-slot-check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_TOKEN: ${{ github.token }}
+      PYTHONPATH: apps/backend/src
+    steps:
+      - uses: actions/checkout@v4
+      - name: Alert on missing scheduled crawl launches (no paid crawl)
+        run: python -m studgroup.ranepa_watchdog
