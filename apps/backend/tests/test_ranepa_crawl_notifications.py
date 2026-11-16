@@ -472,9 +472,14 @@ def test_manual_captcha_button_replaces_duplicate_final_account_failure(tmp_path
                         ),
                         "reply_markup": {
                             "inline_keyboard": [
-                                [{"text": "🧩 Пройти CAPTCHA", "web_app": {
-                                    "url": f"https://studgroup.example/ranepa-captcha/{challenge_id}"
-                                }}]
+                                [
+                                    {
+                                        "text": "🧩 Пройти CAPTCHA",
+                                        "web_app": {
+                                            "url": f"https://studgroup.example/ranepa-captcha/{challenge_id}"
+                                        },
+                                    }
+                                ]
                             ]
                         },
                     },
