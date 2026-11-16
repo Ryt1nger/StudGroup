@@ -57,6 +57,7 @@ def _safe_course(url: str) -> bool:
 
 LOGGER = logging.getLogger(__name__)
 
+
 async def remember_personal(
     db,
     group_id,
@@ -94,8 +95,12 @@ async def remember_personal(
     if existing is not None:
         for old in json.loads(existing.rows_json):
             key = (
-                old["day"], old["starts"], old["ends"],
-                old["subject"], old["teacher"], old["room"],
+                old["day"],
+                old["starts"],
+                old["ends"],
+                old["subject"],
+                old["teacher"],
+                old["room"],
             )
             previous[key] = old
     rows = json.loads(encode_rows(snapshot))
@@ -165,7 +170,6 @@ async def remember_personal(
                 subject.checked_at = existing.checked_at
     await db.flush()
     return status
-
 
 
 async def enrich_personal_links(

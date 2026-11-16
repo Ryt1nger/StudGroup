@@ -828,6 +828,7 @@ async def _collect(
                             captcha_client is not None
                             and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
                         ) or manual_captcha is not None:
+
                             async def solve_sdo_with_owner_fallback(challenge_page):
                                 while (
                                     captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
@@ -842,8 +843,11 @@ async def _collect(
                                         break
                                 if manual_captcha is not None:
                                     log_captcha_stage("owner_fallback_offered_sdo")
-                                    return await manual_captcha(challenge_page, captcha_attempts_used)
+                                    return await manual_captcha(
+                                        challenge_page, captcha_attempts_used
+                                    )
                                 return False
+
                             exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
                         if on_captcha is not None:
                             exit_kwargs["on_captcha"] = on_captcha
@@ -858,8 +862,13 @@ async def _collect(
                         if result.snapshot.lessons and (links or link_states or courses):
                             async with AsyncSession(engine) as db:
                                 await enrich_personal_links(
-                                    db, group_id, user_id, result.snapshot.week_start,
-                                    links=links, courses=courses, link_states=link_states,
+                                    db,
+                                    group_id,
+                                    user_id,
+                                    result.snapshot.week_start,
+                                    links=links,
+                                    courses=courses,
+                                    link_states=link_states,
                                 )
                                 await db.commit()
                         if stats is not None:

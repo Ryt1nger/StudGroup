@@ -448,7 +448,9 @@ async def resolve_sdo_exits(
                     states[key] = LinkState.LMS_LOGIN_REQUIRED
                 elif final.hostname == "lms.ranepa.ru" and final.path == "/course/view.php":
                     states[key] = (
-                        LinkState.NO_COURSE_LINKS if empty_course_reads else LinkState.COURSE_CONTENT_UNAVAILABLE
+                        LinkState.NO_COURSE_LINKS
+                        if empty_course_reads
+                        else LinkState.COURSE_CONTENT_UNAVAILABLE
                     )
                 elif final.hostname == "lms.ranepa.ru":
                     states[key] = LinkState.LMS_OTHER_PAGE

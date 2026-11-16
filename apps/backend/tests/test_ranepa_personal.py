@@ -575,8 +575,12 @@ def test_every_matcher_state_persists_with_real_snapshot_writer(client):
                     else {}
                 )
                 await remember_personal(
-                    db, group.id, member.user_id, week(),
-                    links=url, link_states={key: state},
+                    db,
+                    group.id,
+                    member.user_id,
+                    week(),
+                    links=url,
+                    link_states={key: state},
                     group_identity_verified=True,
                 )
                 await db.commit()
@@ -608,7 +612,10 @@ def test_link_enrichment_rollback_does_not_erase_committed_week(client):
             baseline_checked_at = before.checked_at
             with pytest.raises(ValueError, match="unsafe_lms_link"):
                 await enrich_personal_links(
-                    db, group.id, member.user_id, date(2026, 11, 2),
+                    db,
+                    group.id,
+                    member.user_id,
+                    date(2026, 11, 2),
                     links={key: "https://invalid.example/join"},
                     link_states={key: "matched"},
                 )
@@ -620,7 +627,10 @@ def test_link_enrichment_rollback_does_not_erase_committed_week(client):
             assert __import__("json").loads(stored.rows_json)[0]["subject"] == "История России"
             assert stored.checked_at == baseline_checked_at
             await enrich_personal_links(
-                db, group.id, member.user_id, date(2026, 11, 2),
+                db,
+                group.id,
+                member.user_id,
+                date(2026, 11, 2),
                 link_states={key: "identity_missing"},
             )
             await db.commit()

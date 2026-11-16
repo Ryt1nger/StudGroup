@@ -943,15 +943,25 @@ def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monk
                 await conn.run_sync(Base.metadata.create_all)
             group_id, user_id = uuid4(), uuid4()
             async with AsyncSession(engine) as db:
-                db.add(Group(
-                    id=group_id, name="Test", telegram_chat_id=-90011,
-                    timezone="Europe/Moscow", academic_group_code="A-001",
-                ))
+                db.add(
+                    Group(
+                        id=group_id,
+                        name="Test",
+                        telegram_chat_id=-90011,
+                        timezone="Europe/Moscow",
+                        academic_group_code="A-001",
+                    )
+                )
                 db.add(User(id=user_id, telegram_user_id=991101, display_name="Test"))
-                db.add(Membership(
-                    id=uuid4(), group_id=group_id, user_id=user_id,
-                    status="active", role="student",
-                ))
+                db.add(
+                    Membership(
+                        id=uuid4(),
+                        group_id=group_id,
+                        user_id=user_id,
+                        status="active",
+                        role="student",
+                    )
+                )
                 await db.commit()
 
             class FakeContext:
@@ -979,8 +989,7 @@ def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monk
             first = date(2026, 11, 1)
             monday = first - timedelta(days=first.weekday())
             cards = [
-                SimpleNamespace(day=monday + timedelta(weeks=i),
-                                starts=time(9), subject="История")
+                SimpleNamespace(day=monday + timedelta(weeks=i), starts=time(9), subject="История")
                 for i in range(6)
             ]
 
@@ -989,8 +998,12 @@ def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monk
 
             async def read(_page, _login, _password, code, start, *, allow_empty=False):
                 lesson = ExternalLesson(
-                    day=start, starts=time(9), ends=time(10, 20),
-                    subject="История", teacher="Иванов", room="СДО",
+                    day=start,
+                    starts=time(9),
+                    ends=time(10, 20),
+                    subject="История",
+                    teacher="Иванов",
+                    room="СДО",
                 )
                 return SimpleNamespace(
                     status="preview_only",
@@ -1000,8 +1013,12 @@ def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monk
             async def exits(_context, result, *_args, **_kwargs):
                 lesson = result.snapshot.lessons[0]
                 key = (
-                    lesson.day.isoformat(), lesson.starts.isoformat(), lesson.ends.isoformat(),
-                    lesson.subject, lesson.teacher, lesson.room,
+                    lesson.day.isoformat(),
+                    lesson.starts.isoformat(),
+                    lesson.ends.isoformat(),
+                    lesson.subject,
+                    lesson.teacher,
+                    lesson.room,
                 )
                 return {}, {key: state}, {}
 
@@ -1010,7 +1027,12 @@ def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monk
             monkeypatch.setattr(ranepa_worker, "read_week", read)
             monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", exits)
             outcome = await ranepa_worker._collect(
-                engine, group_id, user_id, "A-001", "test", "test",
+                engine,
+                group_id,
+                user_id,
+                "A-001",
+                "test",
+                "test",
                 date(2026, 11, 16),
             )
             assert outcome == ("captcha" if state == "captcha_required" else None)
@@ -1018,6 +1040,7 @@ def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monk
                 stored = await db.get(RanepaPersonalSnapshot, (group_id, user_id, monday))
                 assert stored is not None and stored.identity_verified is True
                 import json
+
                 rows = json.loads(stored.rows_json)
                 assert len(rows) == 1
                 assert rows[0]["link_state"] == state
