@@ -107,6 +107,15 @@ async def remember_personal(
     links = links or {}
     courses = courses or {}
     link_states = link_states or {}
+    # Preserve already materialized peer facts absent from a new account read.
+    # A missing source row is never evidence of cancellation.
+    own_keys = {
+        (row["day"], row["starts"], row["ends"], row["subject"], row["teacher"], row["room"])
+        for row in rows
+    }
+    for key, old in previous.items():
+        if key not in own_keys and old.get("source_scope") in {"common", "subgroup"}:
+            rows.append(dict(old))
     for row in rows:
         key = (row["day"], row["starts"], row["ends"], row["subject"], row["teacher"], row["room"])
         old = previous.get(key, {})
@@ -262,11 +271,41 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
                         "lesson_type": lesson["lesson_type"],
                         "stream_label": lesson["subgroup_hint"],
                         "cancelled": bool(lesson.get("cancelled", False)),
+                        "source_scope": lesson.get("source_scope"),
+                        "source_split_id": lesson.get("source_split_id"),
+                        "source_subgroup_id": lesson.get("source_subgroup_id"),
                         "online_url": lesson.get("online_url"),
                         "course_url": lesson.get("course_url"),
                         "link_state": lesson.get("link_state"),
                     }
                 )
+    # Filter materialized subgroup facts against CURRENT confirmed membership.
+    # A subgroup change must not expose stale previously shared subgroup rows.
+    member = await db.scalar(
+        select(Membership).where(
+            Membership.group_id == group_id,
+            Membership.user_id == user_id,
+            Membership.status == "active",
+        )
+    )
+    if member is None:
+        lessons = []
+    else:
+        chosen = (
+            await db.scalars(
+                select(MemberSubgroup).where(MemberSubgroup.membership_id == member.id)
+            )
+        ).all()
+        current = {str(choice.split_id): str(choice.subgroup_id) for choice in chosen}
+        lessons = [
+            row
+            for row in lessons
+            if row.get("source_scope") != "subgroup"
+            or (
+                row.get("source_split_id")
+                and current.get(row["source_split_id"]) == row.get("source_subgroup_id")
+            )
+        ]
     lessons.sort(key=lambda row: (row["day"], row["starts"], row["subject"]))
     dates = (end - start).days + 1
     return {
