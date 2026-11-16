@@ -99,11 +99,7 @@ async def attributed_changes(db, group_id, revisions, targets):
 
 
 def evidence_ids(items):
-    return {
-        ref.telegram_message_id
-        for item in items
-        for ref in getattr(item, "evidence", ())
-    }
+    return {ref.telegram_message_id for item in items for ref in getattr(item, "evidence", ())}
 
 
 def blocked_image_ids(analysis_input, targets):
@@ -112,6 +108,5 @@ def blocked_image_ids(analysis_input, targets):
     return {
         item.telegram_message_id
         for item in analysis_input.image_evidence
-        if item.telegram_message_id in target_set
-        and item.state not in {"ready", "failed", "stale"}
+        if item.telegram_message_id in target_set and item.state not in {"ready", "failed", "stale"}
     }

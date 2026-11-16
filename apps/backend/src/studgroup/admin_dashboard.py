@@ -165,9 +165,7 @@ async def dashboard(
     ).all()
     # Read-only, owner-scoped reliability counters. No credentials, URLs,
     # screenshots, target IDs, source content or student identifiers are returned.
-    crawl_states = await states(
-        db, RanepaCrawlJob, RanepaCrawlJob.state, *scope(RanepaCrawlJob)
-    )
+    crawl_states = await states(db, RanepaCrawlJob, RanepaCrawlJob.state, *scope(RanepaCrawlJob))
     crawl_reasons = await states(
         db,
         RanepaCrawlJob,
@@ -176,9 +174,7 @@ async def dashboard(
         RanepaCrawlJob.retry_reason.is_not(None),
     )
     snapshots = (
-        await db.scalars(
-            select(RanepaPersonalSnapshot).where(*scope(RanepaPersonalSnapshot))
-        )
+        await db.scalars(select(RanepaPersonalSnapshot).where(*scope(RanepaPersonalSnapshot)))
     ).all()
     fresh = 0
     old = 0

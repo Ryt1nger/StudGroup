@@ -68,53 +68,83 @@ def test_published_mapping_uses_changed_revision_and_exact_group(tmp_path):
                 await conn.run_sync(Base.metadata.create_all)
             async with AsyncSession(engine, expire_on_commit=False) as db:
                 group = Group(
-                    id=uuid4(), telegram_chat_id=-23100, name="Private",
+                    id=uuid4(),
+                    telegram_chat_id=-23100,
+                    name="Private",
                     timezone="Europe/Moscow",
                 )
                 other_group = Group(
-                    id=uuid4(), telegram_chat_id=-23101, name="Other",
+                    id=uuid4(),
+                    telegram_chat_id=-23101,
+                    name="Other",
                     timezone="Europe/Moscow",
                 )
                 now = datetime.now(UTC)
                 source = RawMessage(
-                    id=uuid4(), group_id=group.id, telegram_message_id=21,
-                    text="private academic content", message_date=now, version_date=now,
+                    id=uuid4(),
+                    group_id=group.id,
+                    telegram_message_id=21,
+                    text="private academic content",
+                    message_date=now,
+                    version_date=now,
                     delete_at=now + timedelta(days=2),
                 )
                 foreign_source = RawMessage(
-                    id=uuid4(), group_id=other_group.id, telegram_message_id=22,
-                    text="foreign private content", message_date=now, version_date=now,
+                    id=uuid4(),
+                    group_id=other_group.id,
+                    telegram_message_id=22,
+                    text="foreign private content",
+                    message_date=now,
+                    version_date=now,
                     delete_at=now + timedelta(days=2),
                 )
                 item = CanonicalAcademicItem(
-                    id=uuid4(), group_id=group.id, destination="homework",
-                    semantic_kind="homework", title="Coursework",
-                    description="", state="active", created_at=now, updated_at=now,
+                    id=uuid4(),
+                    group_id=group.id,
+                    destination="homework",
+                    semantic_kind="homework",
+                    title="Coursework",
+                    description="",
+                    state="active",
+                    created_at=now,
+                    updated_at=now,
                 )
                 db.add_all([group, other_group, source, foreign_source, item])
                 await db.flush()
-                db.add_all([
-                    CanonicalItemEvidence(
-                        item_id=item.id, item_revision=1, raw_message_id=source.id,
-                        source_revision=1, fact_path="title",
-                    ),
-                    CanonicalItemEvidence(
-                        item_id=item.id, item_revision=2, raw_message_id=source.id,
-                        source_revision=1, fact_path="title",
-                    ),
-                    CanonicalItemEvidence(
-                        item_id=item.id, item_revision=2, raw_message_id=foreign_source.id,
-                        source_revision=1, fact_path="title",
-                    ),
-                ])
+                db.add_all(
+                    [
+                        CanonicalItemEvidence(
+                            item_id=item.id,
+                            item_revision=1,
+                            raw_message_id=source.id,
+                            source_revision=1,
+                            fact_path="title",
+                        ),
+                        CanonicalItemEvidence(
+                            item_id=item.id,
+                            item_revision=2,
+                            raw_message_id=source.id,
+                            source_revision=1,
+                            fact_path="title",
+                        ),
+                        CanonicalItemEvidence(
+                            item_id=item.id,
+                            item_revision=2,
+                            raw_message_id=foreign_source.id,
+                            source_revision=1,
+                            fact_path="title",
+                        ),
+                    ]
+                )
                 await db.flush()
                 changed = await attributed_changes(
                     db, group.id, [(str(item.id), 2, "updated")], [21, 22]
                 )
                 assert changed == {21: "updated"}
-                assert await attributed_changes(
-                    db, group.id, [(str(item.id), 3, "updated")], [21]
-                ) == {}
+                assert (
+                    await attributed_changes(db, group.id, [(str(item.id), 3, "updated")], [21])
+                    == {}
+                )
         finally:
             await engine.dispose()
 
