@@ -382,7 +382,7 @@ function render(d,v,b,elapsed,reliability){
 }
 async function load(){
   if(!token)return;const id=++activeRequest;const status=$("status");status.classList.remove("error");status.textContent="Обновляем показатели…";
-  try{const begin=performance.now();const query=criteria().toString();const [d,v,b,reliability]=await Promise.all([api("/v1/admin/analytics?"+query),api("/v1/admin/visuals?"+query),api("/v1/admin/bot-monitor?"+query),api("/v1/admin/dashboard?"+new URLSearchParams({group_id:$("group").value}).toString())]);
+  try{const begin=performance.now();const query=criteria().toString();const [d,v,b,reliability]=await Promise.all([api("/v1/admin/analytics?"+query),api("/v1/admin/visuals?"+query),api("/v1/admin/bot-monitor?"+query),api("/v1/admin/dashboard?"+query)]);
     if(id!==activeRequest)return;render(d,v,b,Math.round(performance.now()-begin),reliability);status.textContent="Данные обновлены · "+datetime(d.as_of)+" · период: "+$("days").selectedOptions[0].textContent.toLowerCase();
   }catch(error){if(id!==activeRequest)return;status.classList.add("error");status.textContent="Не удалось загрузить статистику: "+error.message;}
 }
