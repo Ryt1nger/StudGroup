@@ -30,6 +30,7 @@ from studgroup.analysis import duplicate_guard, photo_reading
 from studgroup.analysis.backfill import promote_run
 from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
+from studgroup.analysis.image_independence import independently_actionable_text
 from studgroup.analysis.manual_dedupe import prompt_memory, recent_manual_cards
 from studgroup.analysis.package_run import DEFAULT_MAX_TARGETS, plan_packages
 from studgroup.analysis.product_outcomes import counts as outcome_counts
@@ -343,7 +344,16 @@ async def _waiting_image_context(db, group, route, settings, now):
         if expanded == blocked:
             break
         blocked = expanded
-    return {row.id for row in retained if row.telegram_message_id in blocked}
+    # A photo-dependent caption/reply stays blocked; a complete, standalone
+    # event or deadline can be analysed from its own text, then reconsidered
+    # by the existing source-generation replay when the photo is readable.
+    # Never log or copy the message text in diagnostics.
+    return {
+        row.id
+        for row in retained
+        if row.telegram_message_id in blocked
+        and not independently_actionable_text(row.text, reply_to=row.reply_to_message_id)
+    }
 
 
 async def _read_pending_photos(db, group, rows, target_ids, settings, provider, transport, now):
