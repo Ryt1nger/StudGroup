@@ -659,10 +659,18 @@ async def _collect(
                     log_captcha_stage("challenge_detected_month")
                     if on_captcha is not None:
                         await on_captcha("month")
-                    if await solve_once(page, "month"):
-                        # Wait for a possible asynchronous redirect without
-                        # retrying the CAPTCHA or declaring the gate solved.
-                        log_captcha_stage(await wait_for_captcha_resolution(page))
+                    while (
+                        month.status == "captcha_required"
+                        and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
+                        and not captcha_solver_unavailable
+                    ):
+                        submitted = await solve_once(page, "month")
+                        if submitted:
+                            log_captcha_stage(await wait_for_captcha_resolution(page))
+                        if captcha_diagnostic_only or captcha_solver_unavailable:
+                            break
+                        # Read the real site again before considering another
+                        # paid request. Mouse motion is not proof of success.
                         log_captcha_stage("schedule_recheck_after_captcha_month")
                         if trace is not None:
                             trace.record("month_recheck")
@@ -678,7 +686,7 @@ async def _collect(
                             log_captcha_stage("month_not_verified_after_challenge")
                 if month.status == "captcha_required" and manual_captcha is not None:
                     log_captcha_stage("owner_fallback_offered_month")
-                    if await manual_captcha(page):
+                    if await manual_captcha(page, captcha_attempts_used):
                         log_captcha_stage(await wait_for_captcha_resolution(page))
                         month = await read_month(
                             page, login, password, code, today.year, today.month
@@ -742,7 +750,7 @@ async def _collect(
                                     log_captcha_stage("week_not_verified_after_challenge")
                         if result.status == "captcha_required" and manual_captcha is not None:
                             log_captcha_stage("owner_fallback_offered_week")
-                            if await manual_captcha(page):
+                            if await manual_captcha(page, captcha_attempts_used):
                                 log_captcha_stage(await wait_for_captcha_resolution(page))
                                 result = await read_week(
                                     page,
