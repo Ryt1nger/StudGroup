@@ -149,9 +149,7 @@ def test_daily_round_requeues_only_finished_jobs_without_crossing_groups(tmp_pat
                 assert await enqueue_week(db, monday, candidates, now=now) == 2
                 first = await claim_next(db, now=now)
                 assert await finish(db, first.id, first.group_id, first.user_id, now=now)
-                assert (
-                    await enqueue_week(db, monday, candidates, now=now + timedelta(hours=5)) == 0
-                )
+                assert await enqueue_week(db, monday, candidates, now=now + timedelta(hours=5)) == 0
                 assert first.state == "succeeded"
                 assert await enqueue_week(db, monday, candidates, now=now + timedelta(days=1)) == 0
                 assert first.state == "queued"
@@ -378,9 +376,7 @@ def test_six_hour_cooldown_skips_account_at_week_boundary(tmp_path):
                 )
                 due = await claim_next(db, now=sunday + timedelta(hours=6))
                 assert due is not None and due.user_id == early.id
-                assert await finish(
-                    db, due.id, group.id, early.id, now=sunday + timedelta(hours=6)
-                )
+                assert await finish(db, due.id, group.id, early.id, now=sunday + timedelta(hours=6))
                 assert (
                     await claim_next(db, now=monday + timedelta(hours=6) - timedelta(seconds=1))
                     is None

@@ -46,16 +46,24 @@ def test_retry_across_week_boundaries_and_manual_override(tmp_path):
                 await conn.run_sync(Base.metadata.create_all)
             async with AsyncSession(engine, expire_on_commit=False) as db:
                 group = Group(
-                    id=uuid4(), name="Freshness", telegram_chat_id=-66016,
-                    academic_group_code="Fresh", timezone="Europe/Moscow",
+                    id=uuid4(),
+                    name="Freshness",
+                    telegram_chat_id=-66016,
+                    academic_group_code="Fresh",
+                    timezone="Europe/Moscow",
                 )
                 user = User(id=uuid4(), telegram_user_id=66116, display_name="Student")
                 db.add_all([group, user])
                 await db.flush()
-                db.add(Membership(
-                    id=uuid4(), group_id=group.id, user_id=user.id,
-                    status="active", role="student",
-                ))
+                db.add(
+                    Membership(
+                        id=uuid4(),
+                        group_id=group.id,
+                        user_id=user.id,
+                        status="active",
+                        role="student",
+                    )
+                )
                 await db.flush()
                 candidate = CrawlCandidate(group.id, user.id)
                 assert await enqueue_week(db, monday, [candidate], now=now) == 1
@@ -70,8 +78,12 @@ def test_retry_across_week_boundaries_and_manual_override(tmp_path):
                 again = await claim_next(db, now=now + timedelta(hours=6))
                 assert again.id == claim.id
                 assert await finish(
-                    db, claim.id, group.id, user.id,
-                    failure_code="parse_failed", now=now + timedelta(hours=6),
+                    db,
+                    claim.id,
+                    group.id,
+                    user.id,
+                    failure_code="parse_failed",
+                    now=now + timedelta(hours=6),
                 )
                 assert claim.retry_reason == "parse_failed"
                 assert claim.next_attempt_at == now + timedelta(hours=6, minutes=10)
@@ -84,22 +96,29 @@ def test_retry_across_week_boundaries_and_manual_override(tmp_path):
                 due = await claim_next(db, now=now + timedelta(hours=6, minutes=10))
                 assert due is not None
                 assert await finish(
-                    db, due.id, group.id, user.id,
-                    failure_code="login_failed", now=now + timedelta(hours=6, minutes=10),
+                    db,
+                    due.id,
+                    group.id,
+                    user.id,
+                    failure_code="login_failed",
+                    now=now + timedelta(hours=6, minutes=10),
                 )
                 assert due.retry_reason == "credentials_required"
                 assert due.next_attempt_at is None
-                await enqueue_week(
-                    db, monday, [candidate], now=now + timedelta(days=7)
-                )
+                await enqueue_week(db, monday, [candidate], now=now + timedelta(days=7))
                 assert due.state == "failed"
                 await enqueue_week(
-                    db, monday, [candidate],
-                    now=now + timedelta(days=7), force_refresh=True,
+                    db,
+                    monday,
+                    [candidate],
+                    now=now + timedelta(days=7),
+                    force_refresh=True,
                 )
                 pilot = await claim_next(
-                    db, now=now + timedelta(days=7),
-                    group_id=group.id, user_id=user.id,
+                    db,
+                    now=now + timedelta(days=7),
+                    group_id=group.id,
+                    user_id=user.id,
                 )
                 assert pilot is not None
         finally:

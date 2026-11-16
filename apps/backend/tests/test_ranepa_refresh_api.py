@@ -21,9 +21,7 @@ def test_refresh_never_launches_crawl_and_is_idempotent(client, monkeypatch):
     async def setup():
         async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
-            member = await db.scalar(
-                select(Membership).where(Membership.group_id == group.id)
-            )
+            member = await db.scalar(select(Membership).where(Membership.group_id == group.id))
             group.academic_group_code = "GROUP-TEST"
             profile = await db.get(UserProfile, member.user_id)
             if profile is None:
@@ -45,7 +43,9 @@ def test_refresh_never_launches_crawl_and_is_idempotent(client, monkeypatch):
     async def jobs():
         async with AsyncSession(client.app.state.engine) as db:
             return await db.scalar(
-                select(func.count()).select_from(RanepaCrawlJob).where(
+                select(func.count())
+                .select_from(RanepaCrawlJob)
+                .where(
                     RanepaCrawlJob.group_id == group_id,
                     RanepaCrawlJob.user_id == user_id,
                 )
@@ -53,9 +53,7 @@ def test_refresh_never_launches_crawl_and_is_idempotent(client, monkeypatch):
 
     assert asyncio.run(jobs()) == 1
     assert client.post("/v1/ranepa-schedule/refresh").status_code == 401
-    current = client.get(
-        "/v1/ranepa-schedule?start=2026-11-16&end=2026-11-22", headers=AUTH
-    )
+    current = client.get("/v1/ranepa-schedule?start=2026-11-16&end=2026-11-22", headers=AUTH)
     assert current.status_code == 200
     assert current.json()["schedule_complete"] is False
     assert current.json()["account_connected"] is True
@@ -71,6 +69,7 @@ def test_refresh_requires_account_and_explicit_sdo_consent(client, monkeypatch):
     asyncio.run(prepare())
     response = client.post("/v1/ranepa-schedule/refresh", headers=AUTH)
     assert response.status_code == 409
+
     async def no_consent(*_args, **_kwargs):
         return False
 

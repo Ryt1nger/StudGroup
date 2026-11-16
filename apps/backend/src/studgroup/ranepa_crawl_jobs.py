@@ -45,6 +45,7 @@ def retry_at(now: datetime, *, failure_code: str | None, attempts: int) -> datet
 def retry_reason(failure_code: str | None) -> str | None:
     return "credentials_required" if failure_code == "login_failed" else failure_code
 
+
 FAILURES = {
     "login_failed",
     "captcha",
@@ -114,8 +115,10 @@ async def enqueue_week(
             # must not trigger automatic repeated password attempts.
             due = last_retry_at is None or last_retry_at <= now
             can_retry = existing.failure_code != "login_failed" or force_refresh
-            if existing.state in {"succeeded", "failed", "covered"} and can_retry and (
-                force_refresh or due
+            if (
+                existing.state in {"succeeded", "failed", "covered"}
+                and can_retry
+                and (force_refresh or due)
             ):
                 existing.state = "queued"
                 existing.priority = priority

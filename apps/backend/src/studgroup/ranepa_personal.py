@@ -293,7 +293,9 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
                 "sdo_checked": sdo_checked,
                 "direct_links": direct_links,
                 "course_links": sum(bool(lesson.get("course_url")) for lesson in sdo_rows),
-                "links_checked_at": min(dates_checked) if len(dates_checked) == len(sdo_rows) and dates_checked else None,
+                "links_checked_at": min(dates_checked)
+                if len(dates_checked) == len(sdo_rows) and dates_checked
+                else None,
             }
         )
         for lesson in source_rows:
@@ -357,12 +359,10 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
             else None
         ),
         "schedule_complete": len(covered) == dates,
-        "links_complete": all(
-            week["sdo_checked"] == week["sdo_total"] for week in week_freshness
-        ) and len(covered) == dates,
-        "source_checked": bool(week_freshness) and all(
-            week["source_checked_at"] is not None for week in week_freshness
-        ),
+        "links_complete": all(week["sdo_checked"] == week["sdo_total"] for week in week_freshness)
+        and len(covered) == dates,
+        "source_checked": bool(week_freshness)
+        and all(week["source_checked_at"] is not None for week in week_freshness),
         "user_materialized": materialized,
         "oldest_links_checked_at": min(link_checks, default=None),
         "weeks": week_freshness,
