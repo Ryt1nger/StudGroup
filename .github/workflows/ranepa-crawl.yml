@@ -97,7 +97,9 @@ jobs:
       # never alter an existing paid pilot or a scheduled queue silently.
       RANEPA_CAPTCHA_V2_PROGRESSIVE_CONTEXT_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only != true && inputs.dual_rotate_v2 == true && inputs.progressive_context_v2 == true && vars.RANEPA_CAPTCHA_PILOT_ENABLED == 'true' }}
       RANEPA_CAPTCHA_DIAGNOSTIC_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only == true }}
-      RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "6"
+      # Three full solution attempts per account, at most two v2 tasks per
+      # attempt; aggregate run tasks remain bound by the shared daily cap.
+      RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "60"
       # Owner approved wider temporary CAPTCHA capacity for recovery: 60 paid tasks/day
       # across all runners, with single-attempt limits and human fallback retained.
       # Every runner, including targeted pilots, reserves the shared DB budget.
@@ -154,7 +156,7 @@ jobs:
         env:
           # All eligible accounts are re-scanned once. Give their RuCaptcha
           # requests a shared per-run allowance; daily DB budget still caps 60.
-          RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "40"
+          RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "60"
         run: |
           # Only this tagged main-branch push may override 24-hour cooldown.
           # The workflow concurrency group still serializes all SDO crawls.
@@ -163,25 +165,26 @@ jobs:
       - name: Run one verified owner CAPTCHA recovery pilot
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[run-sdo-recovery-pilot]')
         env:
-          # The real account is selected inside the trusted DB and is never
-          # committed or echoed to job logs. One authorized pilot only.
-          RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "2"
+          # Three complete v2 attempts may reserve two provider tasks each.
+          # The real account remains selected privately inside the DB.
+          RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "6"
         run: |
           if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
           uv run python -m studgroup.ranepa_recovery_pilot
       - name: Retry exactly the prior CAPTCHA-failed accounts
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[run-sdo-retry-captcha-failures]')
         env:
-          # A single CAPTCHA is at most two paid v2 RotateTask requests.
-          RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "2"
+          # Up to three selected accounts, three full attempts of two tasks.
+          RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "18"
         run: |
           if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
           uv run python -m studgroup.ranepa_recovery_pilot --retry-failed
       - name: Retry only earlier SDO failures still missing the current verified week
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[run-sdo-retry-missing-weeks]')
         env:
-          # Each account retains the shared durable daily CAPTCHA allowance.
-          RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "6"
+          # Up to eight eligible accounts; each can use three pairs.
+          # The shared daily DB cap of 60 remains absolute.
+          RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "48"
         run: |
           if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
           uv run python -m studgroup.ranepa_retry_missing_weeks
