@@ -214,6 +214,7 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
         "complete": len(covered) == dates,
         "last_success_at": max((row.checked_at for row in snapshots), default=None),
         "lessons": lessons,
+        "covered_dates": sorted(day.isoformat() for day in covered),
         "fallback_used": False,
     }
 
@@ -367,3 +368,45 @@ def schedule_projection(personal, group):
         "selected_week": None,
         "lessons": lessons,
     }
+
+
+def schedule_with_group_fallback(personal, published, group):
+    """Render verified account/peer reads together with published group rules.
+
+    An own completed day takes precedence over potentially stale group rules,
+    including a verified empty day. For days without an own snapshot, published
+    editor-managed entries remain visible. Peer-derived rows (already filtered
+    by confirmed subgroup choices and stripped of private LMS URLs) fill
+    gaps without duplicating group cards. No account data is promoted into
+    another member's permanent personal snapshot.
+    """
+    personal_view = schedule_projection(personal, group)
+    owned_dates = set(personal.get("covered_dates", ()))
+    zone = ZoneInfo(group.timezone)
+    result = []
+    group_keys = set()
+    for row in published["lessons"]:
+        start = datetime.fromisoformat(row["starts_at"]).astimezone(zone)
+        if start.date().isoformat() in owned_dates:
+            continue
+        result.append(row)
+        group_keys.add(
+            (start.date().isoformat(), start.strftime("%H:%M"), normalized(row["subject"]))
+        )
+    for row in personal_view["lessons"]:
+        start = datetime.fromisoformat(row["starts_at"]).astimezone(zone)
+        day = start.date().isoformat()
+        key = (day, start.strftime("%H:%M"), normalized(row["subject"]))
+        if day in owned_dates or key not in group_keys:
+            result.append(row)
+    result.sort(key=lambda row: (row["starts_at"], row["id"]))
+    personal_view["lessons"] = result
+    personal_view["week_state"] = (
+        "ready"
+        if personal["complete"]
+        else published["week_state"]
+        if published["lessons"]
+        else "needs_clarification"
+    )
+    personal_view["selected_week"] = published["selected_week"]
+    return personal_view

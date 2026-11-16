@@ -598,6 +598,7 @@ async def today(
     current_date = now.astimezone(ZoneInfo(group.timezone)).date()
     selected_date = current_date + timedelta(days=day == "tomorrow")
     user = await user_id(db, authorization)
+    hidden = await subgroups.hidden(db, group.id, user)
     rows = (
         await db.scalars(
             select(Homework).where(
@@ -607,7 +608,7 @@ async def today(
                 ~archived_condition(
                     now, group.timezone, await completed_lesson_bindings(db, group, now)
                 ),
-                subgroups.visible(Homework.subgroup_id, await subgroups.hidden(db, group.id, user)),
+                subgroups.visible(Homework.subgroup_id, hidden),
             )
         )
     ).all()
@@ -660,43 +661,39 @@ async def today(
     personal_enabled = bool(
         request.app.state.settings.ranepa_schedule_view_enabled and group.academic_group_code
     )
-    if personal_enabled:
-        from studgroup.ranepa_personal import personal_with_group_fallback, schedule_projection
-
-        personal = await personal_with_group_fallback(
-            db,
-            group.id,
-            user,
-            selected_date,
-            selected_date if day == "tomorrow" else current_date + timedelta(days=31),
+    end_date = selected_date if day == "tomorrow" else current_date + timedelta(days=31)
+    published = await schedule_data(selected_date, end_date, group, db)
+    published["lessons"] = subgroups.visible_lessons(published["lessons"], hidden)
+    coverage = await db.scalar(
+        select(SchedulePattern.id)
+        .where(
+            SchedulePattern.group_id == group.id,
+            SchedulePattern.valid_from <= selected_date,
+            SchedulePattern.valid_until >= selected_date,
+            subgroups.visible(SchedulePattern.subgroup_id, hidden),
         )
+        .limit(1)
+    )
+    published_covered = coverage is not None
+    if personal_enabled:
+        from studgroup.ranepa_personal import (
+            personal_with_group_fallback,
+            schedule_with_group_fallback,
+        )
+
+        personal = await personal_with_group_fallback(db, group.id, user, selected_date, end_date)
         selected_personal = await personal_with_group_fallback(
             db, group.id, user, selected_date, selected_date
         )
-        calendar = schedule_projection(personal, group)
-        covered = selected_personal["complete"]
-        last_success = personal["last_success_at"]
+        calendar = schedule_with_group_fallback(personal, published, group)
+        covered = (
+            selected_personal["complete"] or published_covered or bool(selected_personal["lessons"])
+        )
+        last_success = personal["last_success_at"] or (now if published_covered else None)
     else:
-        calendar = await schedule_data(
-            selected_date,
-            selected_date if day == "tomorrow" else current_date + timedelta(days=31),
-            group,
-            db,
-        )
-        coverage = await db.scalar(
-            select(SchedulePattern.id)
-            .where(
-                SchedulePattern.group_id == group.id,
-                SchedulePattern.valid_from <= selected_date,
-                SchedulePattern.valid_until >= selected_date,
-            )
-            .limit(1)
-        )
-        covered = coverage is not None
+        calendar = published
+        covered = published_covered
         last_success = now
-    calendar["lessons"] = subgroups.visible_lessons(
-        calendar["lessons"], await subgroups.hidden(db, group.id, user)
-    )
     selected_lessons = [
         lesson
         for lesson in calendar["lessons"]
@@ -704,7 +701,7 @@ async def today(
         == selected_date
         and lesson["status"] == "scheduled"
     ]
-    if not covered or (not personal_enabled and calendar["week_state"] != "ready"):
+    if not covered or calendar["week_state"] != "ready":
         day_lessons_state = "unknown"
     elif not selected_lessons:
         day_lessons_state = "empty"
@@ -721,6 +718,7 @@ async def today(
         "freshness": {
             "last_successful_sync_at": utc(last_success) if last_success else now,
             "stale": personal_enabled
+            and not published_covered
             and (last_success is None or now - utc(last_success) > timedelta(days=7)),
         },
         "processing": {

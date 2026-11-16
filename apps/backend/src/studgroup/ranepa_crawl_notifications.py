@@ -122,6 +122,20 @@ _ACCOUNT_FAILURE_REASONS = {
 }
 
 
+_WEEK_FAILURE_DETAILS = {
+    "week_unreadable": (
+        "Недельное расписание не удалось полностью прочитать после двух проверок "
+        "интерфейса. Месячное расписание было доступно, но данные этой недели "
+        "не подтверждены. Возможна неполная загрузка или изменение страницы сайта."
+    ),
+    "week_month_mismatch": (
+        "Недельное расписание дважды не совпало с месячным списком занятий "
+        "по дате, времени начала или названию предмета. "
+        "Данные этой недели отклонены, чтобы не сохранять сомнительные занятия."
+    ),
+}
+
+
 def _safe_label(value: str | None, *, fallback: str) -> str:
     """One printable, bounded line; reject hidden formatting or control characters."""
     cleaned = "".join(ch if ch.isprintable() else " " for ch in (value or ""))
@@ -139,6 +153,7 @@ async def notify_account_crawl_result(
     student_name: str | None,
     failure_code: str | None,
     stats: CrawlRunStats,
+    failure_detail: str | None = None,
 ) -> bool:
     """One private message per finalized account attempt, even when extraction fails.
 
@@ -152,11 +167,16 @@ async def notify_account_crawl_result(
         raise ValueError("invalid_crawl_failure_code")
     if attempt < 1:
         raise ValueError("invalid_crawl_attempt")
+    if failure_detail is not None and failure_detail not in _WEEK_FAILURE_DETAILS:
+        raise ValueError("invalid_crawl_failure_detail")
     group = _safe_label(group_code, fallback="группа не указана")
     name = _safe_label(student_name, fallback="студент")
     if failure_code is not None:
         heading = "❌ StudGroup · ошибка обработки учётки СДО"
-        outcome = "Причина: " + _ACCOUNT_FAILURE_REASONS[failure_code]
+        detailed = (
+            _WEEK_FAILURE_DETAILS.get(failure_detail) if failure_code == "parse_failed" else None
+        )
+        outcome = "Причина: " + (detailed or _ACCOUNT_FAILURE_REASONS[failure_code])
     elif stats.saved_sdo_links > 0 or stats.saved_sdo_courses > 0:
         heading = "✅ StudGroup · данные СДО извлечены"
         outcome = "Подтверждённые ссылки или страницы курсов успешно сохранены."

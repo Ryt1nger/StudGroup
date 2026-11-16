@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -25,7 +25,7 @@ from studgroup.models import (
     User,
     UserProfile,
 )
-from studgroup.ranepa_schedule import WeekSnapshot
+from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot
 from studgroup.ranepa_worker import (
     collect_bounded,
     create_worker_engine,
@@ -134,10 +134,11 @@ def test_restored_session_decrypts_and_corrupt_state_is_ignored():
 
 
 @pytest.mark.parametrize("expired", [False, True])
-def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired):
+@pytest.mark.parametrize("transient", ["none", "unreadable", "mismatch"])
+def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired, transient):
     previous_state = {"cookies": [{"name": "lk", "value": "old"}], "origins": []}
     refreshed_state = {"cookies": [{"name": "lk", "value": "new"}], "origins": []}
-    captured = {"contexts": [], "logins": [], "saved": [], "closed": False}
+    captured = {"contexts": [], "logins": [], "saved": [], "closed": False, "reads": {}}
 
     class FakePage:
         url = "about:blank"
@@ -147,6 +148,9 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
 
         async def goto(self, url, **kwargs):
             self.url = url
+
+        async def wait_for_timeout(self, _milliseconds):
+            return None
 
     class FakeContext:
         def __init__(self):
@@ -194,6 +198,22 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
 
     async def week(page, login, password, code, monday, *, allow_empty=False):
         assert allow_empty
+        visits = captured["reads"].get(monday, 0) + 1
+        captured["reads"][monday] = visits
+        if monday == date(2026, 10, 26) and visits == 1:
+            if transient == "unreadable":
+                return SimpleNamespace(status="cabinet_day_mismatch", snapshot=None)
+            if transient == "mismatch":
+                extra = ExternalLesson(
+                    day=monday + timedelta(days=6),
+                    starts=time(9, 0),
+                    ends=time(10, 30),
+                    subject="Несогласованное занятие",
+                )
+                return SimpleNamespace(
+                    status="preview_only",
+                    snapshot=WeekSnapshot(code, monday, monday + timedelta(days=6), (extra,)),
+                )
         return SimpleNamespace(
             status="preview_only",
             snapshot=WeekSnapshot(code, monday, monday + timedelta(days=6), ()),
@@ -249,6 +269,7 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
     assert stats.saved_weeks == 6
     assert stats.saved_lessons == 0
     assert stats.saved_sdo_links == 0
+    assert captured["reads"][date(2026, 10, 26)] == (1 if transient == "none" else 2)
     assert captured["contexts"][0]["storage_state"] == previous_state
     assert captured["logins"] == ([("student", "password")] if expired else [])
     assert captured["saved"] == ([refreshed_state] if expired else [])

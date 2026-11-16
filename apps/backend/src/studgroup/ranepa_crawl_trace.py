@@ -23,6 +23,9 @@ STEPS = frozenset(
         "month_verified",
         "week_requested",
         "week_verified",
+        "week_retry",
+        "week_unreadable",
+        "week_month_mismatch",
         "sdo_exits_requested",
         "sdo_exits_finished",
         "captcha_month",
@@ -61,6 +64,8 @@ class CrawlTrace:
         self.captcha_location: str | None = None
         self.preceding_step: str | None = None
         self.session_available = False
+        # Predefined, privacy-safe reason for one incomplete weekly read.
+        self.failure_detail: str | None = None
 
     def record(self, step: str) -> None:
         if step not in STEPS:

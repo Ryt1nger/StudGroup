@@ -206,6 +206,45 @@ def test_every_account_failure_has_russian_explanation(tmp_path, failure_code, e
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    ("detail", "expected"),
+    [
+        ("week_unreadable", "Недельное расписание не удалось полностью прочитать"),
+        ("week_month_mismatch", "Недельное расписание дважды не совпало"),
+    ],
+)
+def test_owner_gets_specific_safe_week_failure_reason(tmp_path, detail, expected):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/weekly-reason.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            assert await notify_account_crawl_result(
+                engine,
+                owner_id=915,
+                job_id=uuid4(),
+                attempt=1,
+                user_id=uuid4(),
+                group_code="A-001",
+                student_name="Тест",
+                failure_code="parse_failed",
+                failure_detail=detail,
+                stats=CrawlRunStats(saved_weeks=1),
+            )
+            async with AsyncSession(engine) as db:
+                row = await db.scalar(select(BotOutbox))
+                message = json.loads(row.payload)["text"]
+                assert expected in message
+                assert "Сохранено недель: 1" in message
+                assert detail not in message
+                assert "password" not in row.payload.lower()
+                assert "cookie" not in row.payload.lower()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
 def test_per_account_results_reject_unsafe_values(tmp_path):
     async def scenario():
         account = uuid4()
@@ -223,6 +262,13 @@ def test_per_account_results_reject_unsafe_values(tmp_path):
         with pytest.raises(ValueError, match="invalid_crawl_attempt"):
             await notify_account_crawl_result(
                 None, **{**args, "attempt": 0}, failure_code="captcha"
+            )
+        with pytest.raises(ValueError, match="invalid_crawl_failure_detail"):
+            await notify_account_crawl_result(
+                None,
+                **args,
+                failure_code="parse_failed",
+                failure_detail="https://private.example/cookie=secret",
             )
         assert not await notify_account_crawl_result(
             None, **{**args, "owner_id": None}, failure_code="captcha"

@@ -4,6 +4,8 @@ import asyncio
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from studgroup import ranepa_browser
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot
@@ -155,7 +157,11 @@ def test_month_relogs_in_after_session_expires_mid_navigation(monkeypatch):
     assert calls["open"] == 2
 
 
-def test_week_waits_for_cards_after_a_transient_empty_grid(monkeypatch):
+@pytest.mark.parametrize(
+    "first_error",
+    ["empty_source_requires_review", "cabinet_day_mismatch", "cabinet_weekday_mismatch"],
+)
+def test_week_waits_for_cards_after_a_transient_empty_grid(monkeypatch, first_error):
     class Clicker:
         async def click(self):
             return None
@@ -190,7 +196,7 @@ def test_week_waits_for_cards_after_a_transient_empty_grid(monkeypatch):
         nonlocal calls
         calls += 1
         if calls == 1:
-            raise SourceAccessError("empty_source_requires_review")
+            raise SourceAccessError(first_error)
         return snapshot
 
     async def enrich(page, value):

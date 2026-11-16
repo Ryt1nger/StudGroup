@@ -293,6 +293,7 @@ async def process_one(
                     group_code=group.academic_group_code if group is not None else None,
                     student_name=student.display_name if student is not None else None,
                     failure_code=failure_code,
+                    failure_detail=trace.failure_detail if trace is not None else None,
                     stats=account_stats,
                 )
             except Exception:  # noqa: BLE001
@@ -695,56 +696,89 @@ async def _collect(
                     ]
                     if trace is not None:
                         trace.record("week_requested")
-                    result = await read_week(
-                        page, login, password, code, week_start, allow_empty=not expected
-                    )
-                    if result.status == "captcha_required":
-                        captcha_seen = True
-                        if trace is not None:
-                            trace.mark_captcha("week")
-                        log_captcha_stage("challenge_detected_week")
-                        if on_captcha is not None:
-                            await on_captcha("week")
-                        if await solve_once(page, "week"):
-                            log_captcha_stage(await wait_for_captcha_resolution(page))
-                            log_captcha_stage("schedule_recheck_after_captcha_week")
-                            if trace is not None:
-                                trace.record("week_recheck")
-                            result = await read_week(
-                                page, login, password, code, week_start, allow_empty=not expected
-                            )
-                            if result.status == "captcha_required":
-                                log_captcha_stage("challenge_still_present_week")
-                            elif result.snapshot is not None:
-                                captcha_schedule_recovered = True
-                                log_captcha_stage("week_received_after_challenge")
-                            else:
-                                log_captcha_stage("week_not_verified_after_challenge")
-                    if result.status == "captcha_required" and manual_captcha is not None:
-                        log_captcha_stage("owner_fallback_offered_week")
-                        if await manual_captcha(page):
-                            log_captcha_stage(await wait_for_captcha_resolution(page))
-                            result = await read_week(
-                                page, login, password, code, week_start, allow_empty=not expected
-                            )
-                            if result.snapshot is not None:
-                                captcha_schedule_recovered = True
-                                log_captcha_stage("week_verified_after_owner_solution")
-                    if result.snapshot is None:
-                        if result.status == "captcha_required":
-                            return "captcha"
-                        if result.status == "identity_unverified":
-                            return "identity_unverified"
-                        return "parse_failed"
-                    actual = [
-                        row
-                        for row in result.snapshot.indexed().values()
-                        if row.day.month == today.month
-                    ]
-                    if Counter((r.day, r.starts, r.subject) for r in actual) != Counter(
-                        (r.day, r.starts, r.subject) for r in expected
+
+                    async def read_and_resolve_week(
+                        target_monday=week_start, allow_empty=not expected
                     ):
-                        return "parse_failed"
+                        nonlocal captcha_seen, captcha_schedule_recovered
+                        result = await read_week(
+                            page, login, password, code, target_monday, allow_empty=allow_empty
+                        )
+                        if result.status == "captcha_required":
+                            captcha_seen = True
+                            if trace is not None:
+                                trace.mark_captcha("week")
+                            log_captcha_stage("challenge_detected_week")
+                            if on_captcha is not None:
+                                await on_captcha("week")
+                            if await solve_once(page, "week"):
+                                log_captcha_stage(await wait_for_captcha_resolution(page))
+                                log_captcha_stage("schedule_recheck_after_captcha_week")
+                                if trace is not None:
+                                    trace.record("week_recheck")
+                                result = await read_week(
+                                    page,
+                                    login,
+                                    password,
+                                    code,
+                                    target_monday,
+                                    allow_empty=allow_empty,
+                                )
+                                if result.status == "captcha_required":
+                                    log_captcha_stage("challenge_still_present_week")
+                                elif result.snapshot is not None:
+                                    captcha_schedule_recovered = True
+                                    log_captcha_stage("week_received_after_challenge")
+                                else:
+                                    log_captcha_stage("week_not_verified_after_challenge")
+                        if result.status == "captcha_required" and manual_captcha is not None:
+                            log_captcha_stage("owner_fallback_offered_week")
+                            if await manual_captcha(page):
+                                log_captcha_stage(await wait_for_captcha_resolution(page))
+                                result = await read_week(
+                                    page,
+                                    login,
+                                    password,
+                                    code,
+                                    target_monday,
+                                    allow_empty=allow_empty,
+                                )
+                                if result.snapshot is not None:
+                                    captcha_schedule_recovered = True
+                                    log_captcha_stage("week_verified_after_owner_solution")
+                        return result
+
+                    # Revisit a single week once if the view is transiently
+                    # incomplete or the month/week cards disagree. A second
+                    # unverified read fails closed; no source data is invented.
+                    for week_read_attempt in range(2):
+                        result = await read_and_resolve_week()
+                        if result.snapshot is None:
+                            if result.status == "captcha_required":
+                                return "captcha"
+                            if result.status == "identity_unverified":
+                                return "identity_unverified"
+                            if trace is not None:
+                                trace.failure_detail = "week_unreadable"
+                                trace.record("week_unreadable")
+                        else:
+                            actual = [
+                                row
+                                for row in result.snapshot.indexed().values()
+                                if row.day.month == today.month
+                            ]
+                            if Counter((r.day, r.starts, r.subject) for r in actual) == Counter(
+                                (r.day, r.starts, r.subject) for r in expected
+                            ):
+                                break
+                            if trace is not None:
+                                trace.failure_detail = "week_month_mismatch"
+                                trace.record("week_month_mismatch")
+                        if week_read_attempt == 1:
+                            return "parse_failed"
+                        if trace is not None:
+                            trace.record("week_retry")
+                        await page.wait_for_timeout(750)
                     if trace is not None:
                         trace.record("week_verified")
                         trace.record("sdo_exits_requested")
