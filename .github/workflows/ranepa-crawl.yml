@@ -49,7 +49,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'schedule' ||
-      (github.event_name == 'push' && (contains(github.event.head_commit.message, '[run-sdo-once]') || contains(github.event.head_commit.message, '[run-sdo-all-once]') || contains(github.event.head_commit.message, '[run-sdo-recovery-pilot]') || contains(github.event.head_commit.message, '[run-sdo-retry-captcha-failures]'))) ||
+      (github.event_name == 'push' && (contains(github.event.head_commit.message, '[run-sdo-once]') || contains(github.event.head_commit.message, '[run-sdo-all-once]') || contains(github.event.head_commit.message, '[run-sdo-recovery-pilot]') || contains(github.event.head_commit.message, '[run-sdo-retry-captcha-failures]') || contains(github.event.head_commit.message, '[run-sdo-retry-missing-weeks]'))) ||
       (github.event_name == 'workflow_dispatch' && inputs.pilot_group_id != '' && inputs.pilot_user_id != ''))
     runs-on: ubuntu-latest
     # Full owner-instructed rescan may include many ten-minute account timeouts.
@@ -144,7 +144,7 @@ jobs:
           if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
           uv run python -m studgroup.ranepa_worker --pilot-group-id "$PILOT_GROUP_ID" --pilot-user-id "$PILOT_USER_ID"
       - name: Process one bounded queue shift
-        if: github.event_name == 'schedule' || (github.event_name == 'push' && !contains(github.event.head_commit.message, '[run-sdo-all-once]') && !contains(github.event.head_commit.message, '[run-sdo-recovery-pilot]') && !contains(github.event.head_commit.message, '[run-sdo-retry-captcha-failures]'))
+        if: github.event_name == 'schedule' || (github.event_name == 'push' && !contains(github.event.head_commit.message, '[run-sdo-all-once]') && !contains(github.event.head_commit.message, '[run-sdo-recovery-pilot]') && !contains(github.event.head_commit.message, '[run-sdo-retry-captcha-failures]') && !contains(github.event.head_commit.message, '[run-sdo-retry-missing-weeks]'))
         run: |
           # Keep missing optional admin ID absent until the verified DB lookup.
           if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
@@ -177,3 +177,11 @@ jobs:
         run: |
           if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
           uv run python -m studgroup.ranepa_recovery_pilot --retry-failed
+      - name: Retry only earlier SDO failures still missing the current verified week
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[run-sdo-retry-missing-weeks]')
+        env:
+          # Each account retains the shared durable daily CAPTCHA allowance.
+          RANEPA_CAPTCHA_MAX_TASKS_PER_RUN: "6"
+        run: |
+          if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
+          uv run python -m studgroup.ranepa_retry_missing_weeks
