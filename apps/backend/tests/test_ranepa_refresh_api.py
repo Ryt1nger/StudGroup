@@ -1,6 +1,7 @@
 """P0-3: a manual refresh queues one consenting account without running a browser."""
 
 import asyncio
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import func, select
@@ -25,7 +26,7 @@ def test_refresh_never_launches_crawl_and_is_idempotent(client, monkeypatch):
             group.academic_group_code = "GROUP-TEST"
             profile = await db.get(UserProfile, member.user_id)
             if profile is None:
-                profile = UserProfile(user_id=member.user_id)
+                profile = UserProfile(user_id=member.user_id, updated_at=datetime.now(UTC))
                 db.add(profile)
             profile.sdu_credential_id = uuid4()
             await db.commit()
@@ -80,7 +81,7 @@ def test_refresh_requires_account_and_explicit_sdo_consent(client, monkeypatch):
             member = await db.scalar(select(Membership).where(Membership.status == "active"))
             profile = await db.get(UserProfile, member.user_id)
             if profile is None:
-                profile = UserProfile(user_id=member.user_id)
+                profile = UserProfile(user_id=member.user_id, updated_at=datetime.now(UTC))
                 db.add(profile)
             profile.sdu_credential_id = uuid4()
             await db.commit()
