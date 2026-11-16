@@ -98,10 +98,10 @@ def _manual_request_text(
     )
     return (
         "❌ StudGroup · автоматический прогон учётки не завершился из-за CAPTCHA\n"
-        f"Учётка: {student}. Группа: {group}.\\n"
-        f"RuCaptcha: {auto_attempts} из 3 попыток. {attempts_detail}\\n"
+        f"Учётка: {student}. Группа: {group}.\n"
+        f"RuCaptcha: {auto_attempts} из 3 попыток. {attempts_detail}\n"
         "Чтобы продолжить этот прогон, необходимо пройти CAPTCHA вручную. "
-        "Нажми кнопку «🧩 Пройти CAPTCHA» ниже.\\n"
+        "Нажми кнопку «🧩 Пройти CAPTCHA» ниже.\n"
         "Ссылка действует до 6 минут; бот проверит ответ на том же сайте "
         "в той же открытой сессии. Успех не засчитывается до этой проверки."
     )
