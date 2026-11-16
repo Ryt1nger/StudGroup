@@ -20,7 +20,7 @@ def latest_scheduled_at(runs):
     for run in runs:
         if run.get("event") != "schedule" or not run.get("created_at"):
             continue
-        stamps.append(datetime.fromisoformat(run["created_at"].replace("Z", "+00:00")))
+        stamps.append(datetime.fromisoformat(run["created_at"]))
     return max(stamps, default=None)
 
 
@@ -65,11 +65,11 @@ def check_once(now=None):
     )
     runs = data.get("workflow_runs")
     if not isinstance(runs, list):
-        raise ValueError("missing_workflow_runs")
+        raise TypeError("missing_workflow_runs")
     missing, last_launch = is_missing_schedule(runs, now)
     issues = github_api("GET", "issues?state=open&per_page=100")
     if not isinstance(issues, list):
-        raise ValueError("missing_open_issues")
+        raise TypeError("missing_open_issues")
     existing = next(
         (issue for issue in issues if issue.get("title") == ISSUE_TITLE and "pull_request" not in issue),
         None,

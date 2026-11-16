@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 
 from studgroup import ranepa_watchdog as monitor
 
-
 NOW = datetime(2026, 11, 16, 14, tzinfo=UTC)
 
 
