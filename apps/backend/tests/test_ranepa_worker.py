@@ -277,16 +277,29 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
 
 
 @pytest.mark.parametrize(
-    ("solver_succeeds", "expected_month_reads", "expected_status", "budget", "dry_run"),
+    (
+        "solver_succeeds",
+        "expected_month_reads",
+        "expected_status",
+        "budget",
+        "dry_run",
+        "expected_solver_calls",
+    ),
     [
-        (False, 1, "captcha", 1, False),
-        (True, 2, "identity_unverified", 1, False),
-        (True, 1, "captcha", 0, False),
-        (False, 1, "captcha", 1, True),
+        (False, 4, "captcha", 3, False, 3),
+        (True, 2, "identity_unverified", 1, False, 1),
+        (True, 1, "captcha", 0, False, 0),
+        (False, 1, "captcha", 1, True, 1),
     ],
 )
-def test_worker_retries_after_captcha_at_most_once(
-    monkeypatch, solver_succeeds, expected_month_reads, expected_status, budget, dry_run
+def test_worker_tries_at_most_three_captcha_solutions_and_checks_each(
+    monkeypatch,
+    solver_succeeds,
+    expected_month_reads,
+    expected_status,
+    budget,
+    dry_run,
+    expected_solver_calls,
 ):
     observed = {"month": 0, "solve": 0, "diag_assets": 0, "post_drag_wait": 0, "close": False}
 
@@ -313,7 +326,11 @@ def test_worker_retries_after_captcha_at_most_once(
 
     async def read_captcha(*args):
         observed["month"] += 1
-        status = "captcha_required" if observed["month"] == 1 else "identity_unverified"
+        status = (
+            "identity_unverified"
+            if solver_succeeds and not dry_run and observed["month"] == 2
+            else "captcha_required"
+        )
         return SimpleNamespace(status=status)
 
     async def solve(page, client, **kwargs):
@@ -355,12 +372,12 @@ def test_worker_retries_after_captcha_at_most_once(
         )
     )
     assert status == expected_status
-    assert observed["solve"] == (1 if budget else 0)
+    assert observed["solve"] == expected_solver_calls
     assert observed["diag_assets"] == (1 if dry_run and budget else 0)
     assert observed["month"] == expected_month_reads
-    assert observed["post_drag_wait"] == expected_month_reads - 1
+    assert observed["post_drag_wait"] == (1 if solver_succeeds and budget and not dry_run else 0)
     assert observed["close"] is True
-    assert budget_tracker.remaining == (budget if dry_run or budget == 0 else budget - 1)
+    assert budget_tracker.remaining == (budget if dry_run else budget - expected_solver_calls)
 
 
 def test_worker_engine_uses_bounded_supabase_pool(monkeypatch):
@@ -825,8 +842,13 @@ def test_configured_owner_avoids_lookup_when_authorized():
     assert settings.bot_admin_user_id == 95003
 
 
-@pytest.mark.parametrize("provider_submitted", [True, False])
-def test_rucaptcha_always_precedes_owner_fallback_in_same_browser(monkeypatch, provider_submitted):
+@pytest.mark.parametrize(
+    ("provider_submitted", "paid_tasks", "expected_attempts"),
+    [(True, 6, 3), (False, 6, 3), (False, 4, 2)],
+)
+def test_three_rucaptcha_attempts_precede_owner_fallback(
+    monkeypatch, provider_submitted, paid_tasks, expected_attempts
+):
     calls = []
     page = SimpleNamespace(url="https://my.ranepa.ru/captcha")
 
@@ -860,11 +882,10 @@ def test_rucaptcha_always_precedes_owner_fallback_in_same_browser(monkeypatch, p
     async def read_month(*args):
         nonlocal reads
         reads += 1
-        # When RuCaptcha submitted motions, the real site still rejects them.
-        # Only the subsequent owner solution is accepted.
-        if reads == 1 or (provider_submitted and reads == 2):
-            return SimpleNamespace(status="captcha_required")
-        return SimpleNamespace(status="preview_only", cards=[])
+        return SimpleNamespace(
+            status="preview_only" if "manual" in calls else "captcha_required",
+            cards=[],
+        )
 
     async def read_week(*args, **kwargs):
         return SimpleNamespace(status="identity_unverified", snapshot=None)
@@ -874,13 +895,14 @@ def test_rucaptcha_always_precedes_owner_fallback_in_same_browser(monkeypatch, p
         calls.append("rucaptcha")
         return provider_submitted
 
-    async def manual(page_argument):
+    async def manual(page_argument, auto_attempts):
         assert page_argument is page
+        assert auto_attempts == expected_attempts
         calls.append("manual")
         return True
 
     async def waited(*args, **kwargs):
-        return "challenge_state_checked"
+        return "challenge_still_visible_after_wait"
 
     monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
     monkeypatch.setattr(ranepa_worker, "read_month", read_month)
@@ -898,10 +920,10 @@ def test_rucaptcha_always_precedes_owner_fallback_in_same_browser(monkeypatch, p
             "test-password",
             date(2026, 11, 15),
             captcha_client=client,
-            captcha_budget=ranepa_worker.CaptchaBudget(2),
+            captcha_budget=ranepa_worker.CaptchaBudget(paid_tasks),
             manual_captcha=manual,
         )
     )
     assert result == "identity_unverified"
-    assert calls == ["rucaptcha", "manual", "browser_closed"]
-    assert reads == (3 if provider_submitted else 2)
+    assert calls == ["rucaptcha"] * expected_attempts + ["manual", "browser_closed"]
+    assert reads == expected_attempts + 2
