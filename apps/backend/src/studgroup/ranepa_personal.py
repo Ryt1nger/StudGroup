@@ -18,7 +18,7 @@ from studgroup.models import (
     SubjectSplit,
 )
 from studgroup.ranepa_link_states import LINK_STATES
-from studgroup.ranepa_schedule import WeekSnapshot, normalized
+from studgroup.ranepa_schedule import WeekSnapshot, has_unverified_subgroup_hint, normalized
 from studgroup.ranepa_storage import encode_rows
 from studgroup.subject_identity import subject_uuid
 
@@ -401,7 +401,7 @@ async def personal_with_group_fallback(db, group_id, user_id, start: date, end: 
         by_member.setdefault(row.membership_id, {})[row.split_id] = row.subgroup_id
     target_choices = by_member.get(target.id, {})
     splits = (await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == group_id))).all()
-    split_by_name = {row.subject_name.casefold(): row for row in splits}
+    split_by_name = {normalized(row.subject_name): row for row in splits}
     own_weeks = set(
         (
             await db.scalars(
@@ -432,9 +432,15 @@ async def personal_with_group_fallback(db, group_id, user_id, start: date, end: 
         peer_choices = by_member.get(member_by_user[source.user_id].id, {})
         signature = frozenset(peer_choices.items())
         for lesson in json.loads(source.rows_json):
+            # Re-shared rows are not independently verified by this account.
+            # A subgroup change must not relabel another peer's lesson.
+            if lesson.get("source_scope") in {"common", "subgroup"}:
+                continue
             if not start <= date.fromisoformat(lesson["day"]) <= end:
                 continue
-            split = split_by_name.get(lesson["subject"].casefold())
+            split = split_by_name.get(normalized(lesson["subject"]))
+            if split is None and has_unverified_subgroup_hint(lesson.get("subgroup_hint")):
+                continue
             if split is not None and (
                 split.id not in target_choices
                 or peer_choices.get(split.id) != target_choices[split.id]

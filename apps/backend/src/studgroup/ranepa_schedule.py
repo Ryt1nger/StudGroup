@@ -18,6 +18,14 @@ def normalized(value: str | None) -> str:
     return " ".join(value.casefold().replace("ё", "е").split())
 
 
+def has_unverified_subgroup_hint(value: str | None) -> bool:
+    """Conservatively reject subgroup signals until the subject's split is configured."""
+    hint = normalized(value)
+    if hint in {"общий поток", "общая группа", "все подгруппы", "для всех"}:
+        return False
+    return bool(re.search(r"подгрупп|сг[ая]|поток", hint))
+
+
 def group_code(value: str) -> str:
     value = " ".join(unicodedata.normalize("NFKC", value).strip().split())
     value = re.sub(r"[‐‑‒–—−]", "-", value)

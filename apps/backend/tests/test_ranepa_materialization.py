@@ -23,7 +23,11 @@ from studgroup.models import (
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_materialization import materialize_verified_facts
-from studgroup.ranepa_personal import personal_period, remember_personal
+from studgroup.ranepa_personal import (
+    personal_period,
+    personal_with_group_fallback,
+    remember_personal,
+)
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot
 from studgroup.subject_identity import subject_uuid
 
@@ -230,6 +234,108 @@ def test_queue_skips_covered_account_but_not_uncovered_subgroup(tmp_path):
                 )
                 assert covered.state == "covered" and covered.attempts == 0
                 await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_borrowed_snapshot_cannot_be_rebroadcast_or_cover_a_new_subgroup(tmp_path):
+    """A verified account with peer rows must not relabel those rows after a switch."""
+
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/borrowed.db")
+        try:
+            group_id, users, split_id, subgroups = await fixture(engine)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                # The second student previously received subgroup A from the source.
+                choice = await db.get(MemberSubgroup, (UUID(int=1002), split_id))
+                choice.subgroup_id = subgroups[1].id
+                await db.flush()
+                # Their own subsequent verified read has no lessons, but the
+                # cache deliberately preserves materialized peer facts.
+                empty = WeekSnapshot(CODE, WEEK, WEEK + timedelta(days=6), ())
+                await remember_personal(
+                    db,
+                    group_id,
+                    users[1],
+                    empty,
+                    group_identity_verified=True,
+                    checked_at=CHECKED + timedelta(minutes=1),
+                )
+                own = await db.get(RanepaPersonalSnapshot, (group_id, users[1], WEEK))
+                assert own.identity_verified
+                assert any(
+                    row.get("source_scope") == "subgroup"
+                    for row in json.loads(own.rows_json)
+                )
+
+                # It must not re-share A as if B were observed by student two.
+                outcome = await materialize_verified_facts(db, group_id, users[1], WEEK)
+                assert outcome == {"users_materialized": 0, "lessons_added": 0}
+                b = await personal_period(db, group_id, users[2], WEEK, WEEK + timedelta(days=6))
+                assert {item["subject"] for item in b["lessons"]} == {"Общий предмет"}
+
+                # Nor may the borrowed A row suppress a real B account crawl.
+                await enqueue_week(
+                    db, WEEK, [CrawlCandidate(group_id, users[2])],
+                    now=CHECKED + timedelta(minutes=2),
+                )
+                claimed = await claim_next(db, now=CHECKED + timedelta(minutes=3))
+                assert claimed is not None and claimed.user_id == users[2]
+                await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_unconfigured_subgroup_hint_is_neither_fallback_nor_shared(tmp_path):
+    """A subgroup tag in an unconfigured subject is not a common-group fact."""
+
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/hints.db")
+        try:
+            group_id, users, _, _ = await fixture(engine)
+            source_week = WeekSnapshot(
+                CODE, WEEK, WEEK + timedelta(days=6),
+                (
+                    ExternalLesson(
+                        WEEK, time(9), time(10, 20),
+                        "Неразмеченный факультатив",
+                        teacher="Преподаватель B",
+                        subgroup_hint="Поток Б",
+                    ),
+                    ExternalLesson(
+                        WEEK, time(11), time(12, 20),
+                        "Общий семинар", teacher="Преподаватель",
+                        subgroup_hint="Общий поток",
+                    ),
+                ),
+            )
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                await remember_personal(
+                    db, group_id, users[0], source_week,
+                    group_identity_verified=True, checked_at=CHECKED,
+                )
+                await db.commit()
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                fallback = await personal_with_group_fallback(
+                    db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
+                )
+                assert {item["subject"] for item in fallback["lessons"]} == {
+                    "Общий семинар"
+                }
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                projected = await personal_period(
+                    db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
+                )
+                assert {item["subject"] for item in projected["lessons"]} == {
+                    "Общий семинар"
+                }
         finally:
             await engine.dispose()
 

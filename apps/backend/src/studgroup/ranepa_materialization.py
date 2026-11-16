@@ -6,7 +6,6 @@ No account-local credential/session data is read or copied.
 """
 
 import json
-import re
 from datetime import UTC, datetime
 from hashlib import sha256
 
@@ -19,7 +18,7 @@ from studgroup.models import (
     SubjectSplit,
 )
 from studgroup.ranepa_personal import _safe_course, _safe_link
-from studgroup.ranepa_schedule import normalized
+from studgroup.ranepa_schedule import has_unverified_subgroup_hint, normalized
 
 
 def _occurrence(row):
@@ -88,12 +87,15 @@ async def materialize_verified_facts(db, group_id, source_user_id, week_start, *
     for row in rows:
         if not isinstance(row, dict):
             raise TypeError("invalid_source_lesson")
+        # Identity verification applies only to the account's OWN source facts.
+        # Never retransmit facts previously projected from another member.
+        if row.get("source_scope") in {"common", "subgroup"}:
+            continue
         split = by_subject.get(normalized(row["subject"]))
         if split is None:
             # Unconfigured explicit subgroup signals are not evidence
             # that the lesson belongs to every student.
-            hint = normalized(row.get("subgroup_hint"))
-            if re.search(r"подгрупп|сг[ая]|поток", hint):
+            if has_unverified_subgroup_hint(row.get("subgroup_hint")):
                 continue
             prepared.append(
                 (

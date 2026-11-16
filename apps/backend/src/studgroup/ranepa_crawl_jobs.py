@@ -1,7 +1,6 @@
 """Durable, identity-only queue for a paced university account crawl."""
 
 import json
-import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
@@ -17,7 +16,7 @@ from studgroup.models import (
     SubjectSplit,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
-from studgroup.ranepa_schedule import normalized
+from studgroup.ranepa_schedule import has_unverified_subgroup_hint, normalized
 
 LEASE = timedelta(hours=1)
 REFRESH = timedelta(hours=6)
@@ -194,17 +193,18 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
     for snapshot in snapshots:
         if snapshot.user_id == candidate.user_id or snapshot.user_id not in by_user:
             continue
-        rows = json.loads(snapshot.rows_json)
+        rows = [
+            row
+            for row in json.loads(snapshot.rows_json)
+            if row.get("source_scope") not in {"common", "subgroup"}
+        ]
         if not rows:
             continue
         source_choices = by_member.get(by_user[snapshot.user_id].id, {})
         observed = {normalized(row["subject"]) for row in rows}
         if any(
             normalized(row["subject"]) not in split_subjects
-            and not re.search(
-                r"подгрупп|сг[ая]|поток",
-                normalized(row.get("subgroup_hint")),
-            )
+            and not has_unverified_subgroup_hint(row.get("subgroup_hint"))
             for row in rows
         ):
             covered_common = True
