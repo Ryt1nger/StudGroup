@@ -18,4 +18,4 @@
 
 ## Known unresolved external dependencies
 
-Backend Render Free can sleep and GitHub scheduled jobs can be delayed or skipped. An independent always-on missing-slot alert and YDB/Postgres opaque credential reference reconciliation are not yet verified in production. Do not claim SLA success without those external checks and an owner-approved canary.
+Backend Render Free can sleep and GitHub scheduled jobs can be delayed or skipped. The separate hourly GitHub watchdog flags missing scheduled crawl launches through a deduplicated repository issue, but it shares the same GitHub scheduling platform and cannot guarantee independent always-on delivery. YDB/Postgres opaque credential reference reconciliation is not yet verified in production. Do not claim SLA success without those external checks and an owner-approved canary.
