@@ -292,6 +292,7 @@ async def process_one(
                     attempt=attempt,
                     user_id=user_id,
                     group_code=group.academic_group_code if group is not None else None,
+                    telegram_group_name=group.name if group is not None else None,
                     student_name=student.display_name if student is not None else None,
                     failure_code=failure_code,
                     failure_detail=trace.failure_detail if trace is not None else None,
