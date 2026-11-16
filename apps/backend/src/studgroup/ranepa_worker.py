@@ -728,8 +728,16 @@ async def _collect(
                             log_captcha_stage("challenge_detected_week")
                             if on_captcha is not None:
                                 await on_captcha("week")
-                            if await solve_once(page, "week"):
-                                log_captcha_stage(await wait_for_captcha_resolution(page))
+                            while (
+                                result.status == "captcha_required"
+                                and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
+                                and not captcha_solver_unavailable
+                            ):
+                                submitted = await solve_once(page, "week")
+                                if submitted:
+                                    log_captcha_stage(await wait_for_captcha_resolution(page))
+                                if captcha_diagnostic_only or captcha_solver_unavailable:
+                                    break
                                 log_captcha_stage("schedule_recheck_after_captcha_week")
                                 if trace is not None:
                                     trace.record("week_recheck")
@@ -801,18 +809,27 @@ async def _collect(
                         trace.record("sdo_exits_requested")
                     exit_kwargs = {}
                     if (
-                        captcha_client is not None and not captcha_attempted
+                        captcha_client is not None
+                        and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
                     ) or manual_captcha is not None:
 
                         async def solve_sdo_with_owner_fallback(challenge_page):
-                            submitted = await solve_once(challenge_page)
-                            if submitted:
-                                state = await wait_for_captcha_resolution(challenge_page)
-                                if state != "challenge_still_visible_after_wait":
-                                    return True
+                            while (
+                                captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
+                                and not captcha_solver_unavailable
+                            ):
+                                submitted = await solve_once(challenge_page)
+                                if submitted:
+                                    state = await wait_for_captcha_resolution(challenge_page)
+                                    if state != "challenge_still_visible_after_wait":
+                                        return True
+                                if captcha_diagnostic_only or captcha_solver_unavailable:
+                                    break
                             if manual_captcha is not None:
                                 log_captcha_stage("owner_fallback_offered_sdo")
-                                return await manual_captcha(challenge_page)
+                                return await manual_captcha(
+                                    challenge_page, captcha_attempts_used
+                                )
                             return False
 
                         exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
