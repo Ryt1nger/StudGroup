@@ -216,12 +216,9 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
         ):
             covered_common = True
         for split_id, subgroup_id in source_choices.items():
-            if (
-                split_name.get(split_id) in observed
-                and not subgroup_choice_changed_since_check(
-                    choice_updated.get((source_member_id, split_id)),
-                    snapshot.checked_at,
-                )
+            if split_name.get(split_id) in observed and not subgroup_choice_changed_since_check(
+                choice_updated.get((source_member_id, split_id)),
+                snapshot.checked_at,
             ):
                 covered_split.add((split_id, subgroup_id))
     # Do not suppress another account based solely on an unrelated subgroup.
