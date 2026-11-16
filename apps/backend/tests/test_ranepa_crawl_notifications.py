@@ -6,13 +6,22 @@ student accounts, HTML, cookies or network requests.
 
 import asyncio
 import json
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from studgroup.models import Base, BotOutbox
+from studgroup.bot_admin import enqueue_once
+from studgroup.models import (
+    Base,
+    BotOutbox,
+    Group,
+    RanepaCrawlJob,
+    RanepaManualCaptcha,
+    User,
+)
 from studgroup.ranepa_crawl_notifications import (
     CrawlRunStats,
     notify_account_crawl_result,
@@ -113,6 +122,7 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 "attempt": 1,
                 "user_id": account,
                 "group_code": "БИ1.2",
+                "telegram_group_name": "ТГ · БИ 1.2",
                 "student_name": "Тестовый студент",
             }
             assert await notify_account_crawl_result(
@@ -147,6 +157,8 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 }
                 assert all(notice["chat_id"] == 915 for notice in notices.values())
                 assert "✅ StudGroup · данные СДО извлечены" in notices[1]["text"]
+                assert "Группа ТГ: ТГ · БИ 1.2" in notices[1]["text"]
+                assert "Группа РАНХиГС: БИ1.2" in notices[1]["text"]
                 assert "Ссылок СДО: 2" in notices[1]["text"]
                 assert "❌ StudGroup · ошибка" in notices[2]["text"]
                 assert "CAPTCHA" in notices[2]["text"]
@@ -398,6 +410,114 @@ def test_regular_reports_only_when_work_was_performed(tmp_path, monkeypatch):
                 assert "С подтверждёнными данными СДО: 1" in notice["text"]
                 assert "Сохранено недель: 6; занятий: 71" in notice["text"]
                 assert "Запланировано" not in notice["text"]
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_manual_captcha_button_replaces_duplicate_final_account_failure(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/manual-once.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            group_id, user_id, job_id, challenge_id = (uuid4() for _ in range(4))
+            now = datetime.now(UTC)
+            async with AsyncSession(engine) as db:
+                db.add_all(
+                    [
+                        Group(
+                            id=group_id,
+                            telegram_chat_id=-98721,
+                            name="Группа Telegram",
+                            academic_group_code="Э-ОБ-385-04-26-03",
+                            timezone="Europe/Moscow",
+                        ),
+                        User(id=user_id, telegram_user_id=98721, display_name="Студент"),
+                    ]
+                )
+                await db.flush()
+                db.add(
+                    RanepaCrawlJob(
+                        id=job_id,
+                        group_id=group_id,
+                        user_id=user_id,
+                        week_start=date(2026, 11, 16),
+                        priority=0,
+                        state="running",
+                        attempts=1,
+                        created_at=now,
+                    )
+                )
+                await db.flush()
+                db.add(
+                    RanepaManualCaptcha(
+                        id=challenge_id,
+                        job_id=job_id,
+                        attempt=1,
+                        owner_telegram_id=915,
+                        state="pending",
+                        screenshot_base64=None,
+                        created_at=now,
+                        expires_at=now + timedelta(minutes=6),
+                    )
+                )
+                assert await enqueue_once(
+                    db,
+                    "sendMessage",
+                    {
+                        "chat_id": 915,
+                        "text": (
+                            "❌ Прогон учётки: CAPTCHA не пройдена.\n"
+                            "Группа ТГ: Группа Telegram\n"
+                            "Группа РАНХиГС: Э-ОБ-385-04-26-03"
+                        ),
+                        "reply_markup": {
+                            "inline_keyboard": [
+                                [
+                                    {
+                                        "text": "🧩 Пройти CAPTCHA",
+                                        "web_app": {
+                                            "url": f"https://studgroup.example/ranepa-captcha/{challenge_id}"
+                                        },
+                                    }
+                                ]
+                            ]
+                        },
+                    },
+                    f"ranepa-owner-captcha:{challenge_id}",
+                )
+                await db.commit()
+            params = {
+                "owner_id": 915,
+                "job_id": job_id,
+                "user_id": user_id,
+                "group_code": "Э-ОБ-385-04-26-03",
+                "telegram_group_name": "Группа Telegram",
+                "student_name": "Студент",
+                "stats": CrawlRunStats(),
+            }
+            assert not await notify_account_crawl_result(
+                engine, **params, attempt=1, failure_code="captcha"
+            )
+            async with AsyncSession(engine) as db:
+                rows = (await db.scalars(select(BotOutbox))).all()
+                assert len(rows) == 1
+                payload = json.loads(rows[0].payload)
+                assert "Группа ТГ: Группа Telegram" in payload["text"]
+                assert "Группа РАНХиГС: Э-ОБ-385-04-26-03" in payload["text"]
+                assert payload["reply_markup"]["inline_keyboard"][0][0]["text"] == (
+                    "🧩 Пройти CAPTCHA"
+                )
+            # A different parsing error after a human attempt remains reportable.
+            assert await notify_account_crawl_result(
+                engine, **params, attempt=1, failure_code="parse_failed"
+            )
+            # A new account attempt must not be silenced by an old manual link.
+            assert await notify_account_crawl_result(
+                engine, **params, attempt=2, failure_code="captcha"
+            )
         finally:
             await engine.dispose()
 

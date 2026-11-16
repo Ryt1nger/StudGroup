@@ -9,9 +9,11 @@ import os
 import uuid
 from dataclasses import dataclass, field
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.bot_admin import enqueue_once
+from studgroup.models import RanepaManualCaptcha
 
 _CAPTCHA_LOCATIONS = {
     "month": "месячное расписание",
@@ -154,6 +156,7 @@ async def notify_account_crawl_result(
     failure_code: str | None,
     stats: CrawlRunStats,
     failure_detail: str | None = None,
+    telegram_group_name: str | None = None,
 ) -> bool:
     """One private message per finalized account attempt, even when extraction fails.
 
@@ -169,7 +172,24 @@ async def notify_account_crawl_result(
         raise ValueError("invalid_crawl_attempt")
     if failure_detail is not None and failure_detail not in _WEEK_FAILURE_DETAILS:
         raise ValueError("invalid_crawl_failure_detail")
+    if failure_code == "captcha":
+        # The one-time owner WebApp notice already states the failed automatic
+        # crawl, both groups and the manual action. Do not send its duplicate
+        # final CAPTCHA error from a separate outbox item.
+        async with AsyncSession(engine) as db:
+            manual_notice = await db.scalar(
+                select(RanepaManualCaptcha.id)
+                .where(
+                    RanepaManualCaptcha.job_id == job_id,
+                    RanepaManualCaptcha.attempt == attempt,
+                    RanepaManualCaptcha.owner_telegram_id == owner_id,
+                )
+                .limit(1)
+            )
+            if manual_notice is not None:
+                return False
     group = _safe_label(group_code, fallback="группа не указана")
+    telegram_group = _safe_label(telegram_group_name, fallback="не указана")
     name = _safe_label(student_name, fallback="студент")
     if failure_code is not None:
         heading = "❌ StudGroup · ошибка обработки учётки СДО"
@@ -192,7 +212,8 @@ async def notify_account_crawl_result(
     message = "\n".join(
         [
             heading,
-            f"Студент: {name}. Группа: {group}.",
+            f"Студент: {name}.",
+            f"Группа ТГ: {telegram_group}. Группа РАНХиГС: {group}.",
             f"Учётка: {str(user_id)[:8]}. Попытка: {attempt}.",
             outcome,
             *(

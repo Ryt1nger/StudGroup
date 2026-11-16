@@ -292,6 +292,7 @@ async def process_one(
                     attempt=attempt,
                     user_id=user_id,
                     group_code=group.academic_group_code if group is not None else None,
+                    telegram_group_name=group.name if group is not None else None,
                     student_name=student.display_name if student is not None else None,
                     failure_code=failure_code,
                     failure_detail=trace.failure_detail if trace is not None else None,
@@ -457,6 +458,7 @@ async def process_one(
                             auto_attempts=attempts_used,
                             student_name=student.display_name if student else None,
                             group_code=code,
+                            telegram_group_name=group.name,
                         )
                     )
                     if settings.ranepa_manual_captcha_enabled
