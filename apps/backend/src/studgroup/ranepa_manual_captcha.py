@@ -78,6 +78,35 @@ def _captcha_url(settings, challenge_id: uuid.UUID) -> str:
     return f"{configured}/ranepa-captcha/{challenge_id}"
 
 
+def _safe_owner_label(value: str | None, fallback: str) -> str:
+    """Keep student metadata confined to one printable line in the owner's DM."""
+    printable = "".join(ch if ch.isprintable() else " " for ch in (value or ""))
+    return " ".join(printable.split())[:72] or fallback
+
+
+def _manual_request_text(
+    *, student_name: str | None, group_code: str | None, auto_attempts: int
+) -> str:
+    if type(auto_attempts) is not int or not 0 <= auto_attempts <= 3:
+        raise ValueError("invalid_auto_captcha_attempts")
+    student = _safe_owner_label(student_name, "студент")
+    group = _safe_owner_label(group_code, "не указана")
+    attempts_detail = (
+        "Три автоматические попытки не подтвердили решение."
+        if auto_attempts == 3
+        else "Остальные попытки не выполнены из-за лимита, диагностики или недоступности сервиса."
+    )
+    return (
+        "❌ StudGroup · автоматический прогон учётки не завершился из-за CAPTCHA\n"
+        f"Учётка: {student}. Группа: {group}.\\n"
+        f"RuCaptcha: {auto_attempts} из 3 попыток. {attempts_detail}\\n"
+        "Чтобы продолжить этот прогон, необходимо пройти CAPTCHA вручную. "
+        "Нажми кнопку «🧩 Пройти CAPTCHA» ниже.\\n"
+        "Ссылка действует до 6 минут; бот проверит ответ на том же сайте "
+        "в той же открытой сессии. Успех не засчитывается до этой проверки."
+    )
+
+
 async def _authorize(request: Request, init_data: str, owner: int) -> None:
     token = request.app.state.settings.telegram_bot_token
     try:
@@ -246,6 +275,9 @@ async def offer_manual_captcha(
     job_id: uuid.UUID,
     attempt: int,
     settings,
+    auto_attempts: int = 0,
+    student_name: str | None = None,
+    group_code: str | None = None,
 ) -> bool:
     """Notify owner *after* automatic solving fails and await their answer."""
     from studgroup.ranepa_captcha import log_captcha_stage
@@ -287,12 +319,10 @@ async def offer_manual_captcha(
                 "sendMessage",
                 {
                     "chat_id": owner_id,
-                    "text": (
-                        "🧩 StudGroup · требуется помощь с CAPTCHA\n"
-                        "Автоматическое решение RuCaptcha не подтвердилось. "
-                        "Открой головоломку по кнопке и поверни обе части. "
-                        "Браузер обхода продолжает ожидать твой ответ до 6 минут.\n"
-                        "Ответ будет проверен на том же сайте и в той же сессии."
+                    "text": _manual_request_text(
+                        student_name=student_name,
+                        group_code=group_code,
+                        auto_attempts=auto_attempts,
                     ),
                     "reply_markup": {
                         "inline_keyboard": [
