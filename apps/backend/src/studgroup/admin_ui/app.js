@@ -198,7 +198,40 @@ function renderOutcomes(d){
   $("outcome-description").textContent=kind==="images"?"«Устарел» означает, что результат был заменён после изменения исходных данных. Это не сбой.":"Процент готовых результатов не равен точности AI. Проверку качества нужно считать отдельно.";
   for(const tab of $("outcome-tabs").querySelectorAll("button"))tab.classList.toggle("active",tab.dataset.outcome===outcome);
 }
+function renderProductReliability(d){
+  const ai=d.reliability?.ai||{},sdo=d.reliability?.sdo||{};
+  const aiHost=$("ai-product-outcomes");aiHost.replaceChildren();
+  const labels={published:"Опубликовано",updated:"Обновлено",no_academic_signal:"Нет учебного сигнала",rejected:"Отклонено",blocked_by_image:"Ожидание фото",needs_review:"Нужна проверка",failed:"Не удалось обработать"};
+  for(const [kind,label] of Object.entries(labels)){
+    statRow(aiHost,label,number(ai.product_outcomes?.[kind]||0),null);
+  }
+  statRow(aiHost,"Пустые AI-пакеты",number(ai.zero_proposal_packages||0),null);
+  statRow(aiHost,"Пакеты с одними отклонениями",number(ai.rejection_only_packages||0),null);
+  statRow(aiHost,"Старые прогоны без продуктового исхода",number(ai.legacy_without_product_outcomes||0),null);
+  const host=$("sdo-reliability");host.replaceChildren();
+  for(const [kind,label] of Object.entries({
+    queued:"Ожидают обхода",running:"Сейчас проверяются",succeeded:"Источник подтверждён",
+    covered:"Пропущены благодаря покрытию",failed:"Обход завершился ошибкой",
+  })){
+    statRow(host,label,number(sdo.queue?.[kind]||0),null);
+  }
+  statRow(host,"Проверенные недели",number(sdo.source_verified_weeks||0),null);
+  statRow(host,"Свежие до 6 ч",number(sdo.source_fresh_under_6h||0),null);
+  statRow(host,"Устаревшие ≥ 6 ч",number(sdo.source_stale_6h_plus||0),null);
+  statRow(host,"Материализованные недели",number(sdo.materialized_student_weeks||0),null);
+  statRow(host,"Только расписание",number(sdo.timetable_only_weeks||0),null);
+  statRow(host,"Расписание со ссылками",number(sdo.enriched_weeks||0),null);
+  statRow(host,"CAPTCHA встречена",number(sdo.captcha_seen||0),null);
+  statRow(host,"CAPTCHA + подтверждённое расписание",number(sdo.captcha_verified_recovered||0),null);
+  for(const [state,count] of Object.entries(sdo.link_states||{})){
+    statRow(host,"Ссылка СДО: "+state,number(count),null);
+  }
+  for(const [reason,count] of Object.entries(sdo.retry_reasons||{})){
+    statRow(host,"Повтор: "+reason,number(count),null);
+  }
+}
 function renderAi(d,v){
+  renderProductReliability(d);
   const dates=v.daily.map(x=>x.date);
   C.bars("chart-workload",[{label:"Текст",values:series(v,"text"),color:"#43d9df",kind:"text"},{label:"Фото",values:series(v,"images"),color:"#8c8bff",kind:"images"}],{labels:dates,title:"Количество прогонов по дням"});visualClickable("chart-workload","ai");
   renderOutcomes(d);
@@ -218,6 +251,7 @@ function renderFinance(d,v){
   }
 }
 function renderServer(d,v,roundTrip){
+  renderProductReliability(d);
   const server=v.server,host=$("server-overview");host.replaceChildren();
   metric(host,"Обычный ответ сервера",server.p50_ms==null?"Нет замеров":number(server.p50_ms)+" мс","Медиана за 15 минут");
   metric(host,"Медленные ответы сервера",server.p95_ms==null?"Нет замеров":number(server.p95_ms)+" мс","95% измеренных запросов не медленнее");
