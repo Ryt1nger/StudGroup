@@ -19,7 +19,9 @@ FINAL_OUTCOMES = frozenset(
 )
 
 
-def target_outcomes(targets, validation=None, *, promotion=None, blocked_image_ids=(), failed=False):
+def target_outcomes(
+    targets, validation=None, *, promotion=None, blocked_image_ids=(), failed=False
+):
     """Classify every target exactly once with a conservative precedence.
 
     No accepted item is treated as a published card unless the writer reported
@@ -33,11 +35,7 @@ def target_outcomes(targets, validation=None, *, promotion=None, blocked_image_i
     promotion = promotion or {}
     published = promotion.get("created", 0) > 0
     updated = promotion.get("updated", 0) > 0
-    accepted = {
-        ref.telegram_message_id
-        for item in validation.accepted
-        for ref in item.evidence
-    }
+    accepted = {ref.telegram_message_id for item in validation.accepted for ref in item.evidence}
     reviewed = {
         ref.telegram_message_id
         for item in validation.candidates
@@ -52,8 +50,10 @@ def target_outcomes(targets, validation=None, *, promotion=None, blocked_image_i
             # The individual create/update mapping is not persisted by the
             # promoter; if mixed actions occurred, do not guess the target.
             output[target] = (
-                "published" if published and not updated
-                else "updated" if updated and not published
+                "published"
+                if published and not updated
+                else "updated"
+                if updated and not published
                 else "needs_review"
             )
         elif target in reviewed:

@@ -15,8 +15,7 @@ def data(*, accepted=(), candidates=(), rejected=()):
     return SimpleNamespace(
         accepted=[SimpleNamespace(evidence=[ref(n)]) for n in accepted],
         candidates=[
-            SimpleNamespace(evidence=[ref(n)], source_status="confirmed")
-            for n in candidates
+            SimpleNamespace(evidence=[ref(n)], source_status="confirmed") for n in candidates
         ],
         rejected=[SimpleNamespace(reason_code="proposal_schema_invalid") for _ in rejected],
     )
@@ -38,7 +37,8 @@ def test_classifies_all_seven_product_outcomes():
 
 def test_no_false_success_when_promotion_is_ambiguous():
     results = target_outcomes(
-        [1, 2, 3], data(accepted=(1,), candidates=(2,)),
+        [1, 2, 3],
+        data(accepted=(1,), candidates=(2,)),
         promotion={"created": 1, "updated": 1},
     )
     assert results == {1: "needs_review", 2: "needs_review", 3: "no_academic_signal"}
