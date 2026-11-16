@@ -466,8 +466,8 @@ def test_manual_captcha_button_replaces_duplicate_final_account_failure(tmp_path
                     {
                         "chat_id": 915,
                         "text": (
-                            "❌ Прогон учётки: CAPTCHA не пройдена.\\n"
-                            "Группа ТГ: Группа Telegram\\n"
+                            "❌ Прогон учётки: CAPTCHA не пройдена.\n"
+                            "Группа ТГ: Группа Telegram\n"
                             "Группа РАНХиГС: Э-ОБ-385-04-26-03"
                         ),
                         "reply_markup": {
