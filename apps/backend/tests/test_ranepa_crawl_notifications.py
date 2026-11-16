@@ -122,6 +122,7 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 "attempt": 1,
                 "user_id": account,
                 "group_code": "БИ1.2",
+                "telegram_group_name": "ТГ · БИ 1.2",
                 "student_name": "Тестовый студент",
             }
             assert await notify_account_crawl_result(
@@ -156,6 +157,8 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 }
                 assert all(notice["chat_id"] == 915 for notice in notices.values())
                 assert "✅ StudGroup · данные СДО извлечены" in notices[1]["text"]
+                assert "Группа ТГ: ТГ · БИ 1.2" in notices[1]["text"]
+                assert "Группа РАНХиГС: БИ1.2" in notices[1]["text"]
                 assert "Ссылок СДО: 2" in notices[1]["text"]
                 assert "❌ StudGroup · ошибка" in notices[2]["text"]
                 assert "CAPTCHA" in notices[2]["text"]
@@ -491,6 +494,7 @@ def test_manual_captcha_button_replaces_duplicate_final_account_failure(tmp_path
                 "job_id": job_id,
                 "user_id": user_id,
                 "group_code": "Э-ОБ-385-04-26-03",
+                "telegram_group_name": "Группа Telegram",
                 "student_name": "Студент",
                 "stats": CrawlRunStats(),
             }
