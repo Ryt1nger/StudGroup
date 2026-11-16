@@ -65,6 +65,7 @@ from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
 
 ACCOUNT_TIMEOUT_SECONDS = 600
+MAX_AUTOMATIC_CAPTCHA_ATTEMPTS = 3
 
 
 async def ensure_owner_for_crawl(engine, settings: Settings) -> None:
@@ -446,13 +447,16 @@ async def process_one(
                 else None,
                 manual_captcha=(
                     (
-                        lambda page: offer_manual_captcha(
+                        lambda page, attempts_used: offer_manual_captcha(
                             engine,
                             page=page,
                             owner_id=settings.bot_admin_user_id,
                             job_id=job_id,
                             attempt=attempt,
                             settings=settings,
+                            auto_attempts=attempts_used,
+                            student_name=student.display_name if student else None,
+                            group_code=code,
                         )
                     )
                     if settings.ranepa_manual_captcha_enabled
@@ -559,12 +563,13 @@ async def _collect(
                         trace.record("stored_session_rejected")
                     context = await browser.new_context(storage_state=None, **context_options)
                 page = await context.new_page()
-                captcha_attempted = False
+                captcha_attempts_used = 0
+                captcha_solver_unavailable = False
                 captcha_seen = False
                 captcha_schedule_recovered = False
 
                 async def solve_once(challenge_page, location="sdo"):
-                    nonlocal captcha_attempted, captcha_seen
+                    nonlocal captcha_attempts_used, captcha_solver_unavailable, captcha_seen
                     # Month/week detections were already announced before
                     # this call. The callback here is for live SDO exits only.
                     captcha_seen = True
@@ -573,13 +578,18 @@ async def _collect(
                             trace.mark_captcha("sdo")
                         if on_captcha is not None:
                             await on_captcha("sdo")
-                    if captcha_attempted:
-                        log_captcha_stage("attempt_already_used")
+                    if captcha_attempts_used >= MAX_AUTOMATIC_CAPTCHA_ATTEMPTS:
+                        log_captcha_stage("automatic_attempts_exhausted")
+                        return False
+                    if captcha_diagnostic_only and captcha_attempts_used:
+                        log_captcha_stage("diagnostic_attempt_already_used")
                         return False
                     if urlsplit(getattr(challenge_page, "url", "")).hostname != "my.ranepa.ru":
+                        captcha_solver_unavailable = True
                         log_captcha_stage("unsupported_origin")
                         return False
                     if captcha_client is None and not captcha_diagnostic_only:
+                        captcha_solver_unavailable = True
                         log_captcha_stage("provider_not_configured")
                         return False
                     # Two v2 RotateTask jobs must be covered by the paid
@@ -591,6 +601,7 @@ async def _collect(
                         and captcha_budget is not None
                         and not captcha_budget.claim_many(required_tasks)
                     ):
+                        captcha_solver_unavailable = True
                         log_captcha_stage("paid_budget_exhausted")
                         return False
                     if (
@@ -600,9 +611,10 @@ async def _collect(
                             engine, count=required_tasks, daily_limit=captcha_daily_limit
                         )
                     ):
+                        captcha_solver_unavailable = True
                         log_captcha_stage("paid_daily_budget_exhausted")
                         return False
-                    captcha_attempted = True
+                    captcha_attempts_used += 1
                     if trace is not None:
                         trace.record("captcha_solver_started")
                     log_captcha_stage(
@@ -650,10 +662,18 @@ async def _collect(
                     log_captcha_stage("challenge_detected_month")
                     if on_captcha is not None:
                         await on_captcha("month")
-                    if await solve_once(page, "month"):
-                        # Wait for a possible asynchronous redirect without
-                        # retrying the CAPTCHA or declaring the gate solved.
-                        log_captcha_stage(await wait_for_captcha_resolution(page))
+                    while (
+                        month.status == "captcha_required"
+                        and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
+                        and not captcha_solver_unavailable
+                    ):
+                        submitted = await solve_once(page, "month")
+                        if submitted:
+                            log_captcha_stage(await wait_for_captcha_resolution(page))
+                        if captcha_diagnostic_only or captcha_solver_unavailable:
+                            break
+                        # Read the real site again before considering another
+                        # paid request. Mouse motion is not proof of success.
                         log_captcha_stage("schedule_recheck_after_captcha_month")
                         if trace is not None:
                             trace.record("month_recheck")
@@ -669,7 +689,7 @@ async def _collect(
                             log_captcha_stage("month_not_verified_after_challenge")
                 if month.status == "captcha_required" and manual_captcha is not None:
                     log_captcha_stage("owner_fallback_offered_month")
-                    if await manual_captcha(page):
+                    if await manual_captcha(page, captcha_attempts_used):
                         log_captcha_stage(await wait_for_captcha_resolution(page))
                         month = await read_month(
                             page, login, password, code, today.year, today.month
@@ -711,8 +731,16 @@ async def _collect(
                             log_captcha_stage("challenge_detected_week")
                             if on_captcha is not None:
                                 await on_captcha("week")
-                            if await solve_once(page, "week"):
-                                log_captcha_stage(await wait_for_captcha_resolution(page))
+                            while (
+                                result.status == "captcha_required"
+                                and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
+                                and not captcha_solver_unavailable
+                            ):
+                                submitted = await solve_once(page, "week")
+                                if submitted:
+                                    log_captcha_stage(await wait_for_captcha_resolution(page))
+                                if captcha_diagnostic_only or captcha_solver_unavailable:
+                                    break
                                 log_captcha_stage("schedule_recheck_after_captcha_week")
                                 if trace is not None:
                                     trace.record("week_recheck")
@@ -733,7 +761,7 @@ async def _collect(
                                     log_captcha_stage("week_not_verified_after_challenge")
                         if result.status == "captcha_required" and manual_captcha is not None:
                             log_captcha_stage("owner_fallback_offered_week")
-                            if await manual_captcha(page):
+                            if await manual_captcha(page, captcha_attempts_used):
                                 log_captcha_stage(await wait_for_captcha_resolution(page))
                                 result = await read_week(
                                     page,
@@ -784,18 +812,25 @@ async def _collect(
                         trace.record("sdo_exits_requested")
                     exit_kwargs = {}
                     if (
-                        captcha_client is not None and not captcha_attempted
+                        captcha_client is not None
+                        and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
                     ) or manual_captcha is not None:
 
                         async def solve_sdo_with_owner_fallback(challenge_page):
-                            submitted = await solve_once(challenge_page)
-                            if submitted:
-                                state = await wait_for_captcha_resolution(challenge_page)
-                                if state != "challenge_still_visible_after_wait":
-                                    return True
+                            while (
+                                captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
+                                and not captcha_solver_unavailable
+                            ):
+                                submitted = await solve_once(challenge_page)
+                                if submitted:
+                                    state = await wait_for_captcha_resolution(challenge_page)
+                                    if state != "challenge_still_visible_after_wait":
+                                        return True
+                                if captcha_diagnostic_only or captcha_solver_unavailable:
+                                    break
                             if manual_captcha is not None:
                                 log_captcha_stage("owner_fallback_offered_sdo")
-                                return await manual_captcha(challenge_page)
+                                return await manual_captcha(challenge_page, captcha_attempts_used)
                             return False
 
                         exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
