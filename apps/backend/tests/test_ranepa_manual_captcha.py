@@ -150,9 +150,7 @@ def test_owner_message_after_three_solver_failures_is_actionable_and_private():
     assert "6 минут" in text
     assert "Тестовая\\n" not in text
     assert "Тестовая учётка" in text
-    limited = bridge._manual_request_text(
-        student_name=None, group_code=None, auto_attempts=1
-    )
+    limited = bridge._manual_request_text(student_name=None, group_code=None, auto_attempts=1)
     assert "1 из 3 попыток" in limited
     assert "Остальные попытки не выполнены" in limited
     assert "Три автоматические попытки не подтвердили" not in limited
