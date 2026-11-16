@@ -139,7 +139,7 @@ def test_expired_captcha_never_shares_images_or_accepts_answer(client):
 
 def test_owner_message_after_three_solver_failures_is_actionable_and_private():
     text = bridge._manual_request_text(
-        student_name="Тестовая\\nучётка",
+        student_name="Тестовая\nучётка",
         group_code="Э-ОБ-385-04-26-03",
         auto_attempts=3,
     )
@@ -148,7 +148,7 @@ def test_owner_message_after_three_solver_failures_is_actionable_and_private():
     assert "Три автоматические попытки не подтвердили решение" in text
     assert "Пройти CAPTCHA" in text
     assert "6 минут" in text
-    assert "Тестовая\\n" not in text
+    assert "Тестовая\n" not in text
     assert "Тестовая учётка" in text
     limited = bridge._manual_request_text(student_name=None, group_code=None, auto_attempts=1)
     assert "1 из 3 попыток" in limited
