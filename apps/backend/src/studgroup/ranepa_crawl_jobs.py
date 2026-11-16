@@ -177,8 +177,7 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
                 covered_split.add((split_id, subgroup_id))
     # Do not suppress another account based solely on an unrelated subgroup.
     return (covered_common or bool(covered_split)) and all(
-        (split_id, subgroup_id) in covered_split
-        for split_id, subgroup_id in wanted.items()
+        (split_id, subgroup_id) in covered_split for split_id, subgroup_id in wanted.items()
     )
 
 
