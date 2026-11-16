@@ -111,14 +111,15 @@ export function ScheduleScreen() {
   const freshness = ranepa.data;
   const scheduleChecked = freshness?.oldest_required_checked_at;
   const linksChecked = freshness?.oldest_links_checked_at;
-  const sourceAgeHours = scheduleChecked
-    ? (Date.now() - Date.parse(scheduleChecked)) / 3_600_000
-    : null;
+
   const features = useEventCapabilities();
   const groupEvents = useGroupEvents({ start: days[0]!, end: days[6]! });
   const eventItems = groupEvents.data?.events ?? NO_EVENTS;
   const data = query.data;
   const nowMs = useServerNow(data?.generated_at, query.dataUpdatedAt);
+  const sourceAgeHours = scheduleChecked
+    ? (nowMs - Date.parse(scheduleChecked)) / 3_600_000
+    : null;
   const ref = useRef<HTMLDivElement>(null);
   const eventsRef = useRef<HTMLDivElement>(null);
   const anchored = useRef('');
