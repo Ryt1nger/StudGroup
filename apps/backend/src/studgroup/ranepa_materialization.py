@@ -48,17 +48,13 @@ def _shared_row(row, *, scope, source_checked_at, materialized_at):
     return result
 
 
-async def materialize_verified_facts(
-    db, group_id, source_user_id, week_start, *, checked_at=None
-):
+async def materialize_verified_facts(db, group_id, source_user_id, week_start, *, checked_at=None):
     """Atomically upsert one representative's facts for compatible peers.
 
     Caller commits only after this fully validates and flushes; on error
     rollback leaves every previous student snapshot intact.
     """
-    source = await db.get(
-        RanepaPersonalSnapshot, (group_id, source_user_id, week_start)
-    )
+    source = await db.get(RanepaPersonalSnapshot, (group_id, source_user_id, week_start))
     if source is None or not source.identity_verified:
         raise ValueError("source_identity_unverified")
     members = (
@@ -72,15 +68,11 @@ async def materialize_verified_facts(
     by_user = {member.user_id: member for member in members}
     if source_user_id not in by_user:
         raise ValueError("source_membership_inactive")
-    splits = (
-        await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == group_id))
-    ).all()
+    splits = (await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == group_id))).all()
     by_subject = {normalized(split.subject_name): split for split in splits}
     choices = (
         await db.scalars(
-            select(MemberSubgroup).where(
-                MemberSubgroup.membership_id.in_([m.id for m in members])
-            )
+            select(MemberSubgroup).where(MemberSubgroup.membership_id.in_([m.id for m in members]))
         )
     ).all()
     by_member = {}
@@ -103,15 +95,27 @@ async def materialize_verified_facts(
             hint = normalized(row.get("subgroup_hint"))
             if re.search(r"подгрупп|сг[ая]|поток", hint):
                 continue
-            prepared.append((None, _shared_row(
-                row, scope="common", source_checked_at=source_at, materialized_at=now
-            )))
+            prepared.append(
+                (
+                    None,
+                    _shared_row(
+                        row, scope="common", source_checked_at=source_at, materialized_at=now
+                    ),
+                )
+            )
         elif split.id in source_choices:
-            prepared.append((split.id, {
-                **_shared_row(row, scope="subgroup", source_checked_at=source_at, materialized_at=now),
-                "source_split_id": str(split.id),
-                "source_subgroup_id": str(source_choices[split.id]),
-            }))
+            prepared.append(
+                (
+                    split.id,
+                    {
+                        **_shared_row(
+                            row, scope="subgroup", source_checked_at=source_at, materialized_at=now
+                        ),
+                        "source_split_id": str(split.id),
+                        "source_subgroup_id": str(source_choices[split.id]),
+                    },
+                )
+            )
     updated_users = 0
     inserted_lessons = 0
     for user_id in sorted(by_user, key=str):
@@ -120,7 +124,8 @@ async def materialize_verified_facts(
         member = by_user[user_id]
         target_choices = by_member.get(member.id, {})
         eligible = [
-            row for split_id, row in prepared
+            row
+            for split_id, row in prepared
             if split_id is None or target_choices.get(split_id) == source_choices[split_id]
         ]
         if not eligible:
@@ -152,14 +157,10 @@ async def materialize_verified_facts(
                     old["materialized_at"] = now
             elif not found:
                 previous_rows.append(dict(incoming))
-                existing_keys.setdefault(_occurrence(incoming), []).append(
-                    len(previous_rows) - 1
-                )
+                existing_keys.setdefault(_occurrence(incoming), []).append(len(previous_rows) - 1)
                 inserted_lessons += 1
             # An ambiguous target occurrence is left untouched.
-        previous_rows.sort(
-            key=lambda row: (row["day"], row["starts"], normalized(row["subject"]))
-        )
+        previous_rows.sort(key=lambda row: (row["day"], row["starts"], normalized(row["subject"])))
         encoded = json.dumps(previous_rows, ensure_ascii=False, separators=(",", ":"))
         if target is None:
             target = RanepaPersonalSnapshot(

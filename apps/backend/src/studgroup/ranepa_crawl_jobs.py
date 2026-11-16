@@ -109,7 +109,6 @@ async def enqueue_week(
     return created
 
 
-
 async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> bool:
     """Require fresh identity-verified reads covering the candidate's segments.
 
@@ -141,9 +140,7 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
         return False
     choices = (
         await db.scalars(
-            select(MemberSubgroup).where(
-                MemberSubgroup.membership_id.in_([m.id for m in members])
-            )
+            select(MemberSubgroup).where(MemberSubgroup.membership_id.in_([m.id for m in members]))
         )
     ).all()
     by_member = {}
@@ -169,8 +166,7 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
             if split_name.get(split_id) in observed:
                 covered_split.add((split_id, subgroup_id))
     return covered_common and all(
-        (split_id, subgroup_id) in covered_split
-        for split_id, subgroup_id in wanted.items()
+        (split_id, subgroup_id) in covered_split for split_id, subgroup_id in wanted.items()
     )
 
 

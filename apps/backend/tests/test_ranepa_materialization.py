@@ -38,10 +38,15 @@ async def fixture(engine):
     group_id = UUID(int=11)
     users = [UUID(int=i) for i in (101, 102, 103)]
     async with AsyncSession(engine, expire_on_commit=False) as db:
-        db.add(Group(
-            id=group_id, name="Test", telegram_chat_id=-60011,
-            academic_group_code=CODE, timezone="Europe/Moscow",
-        ))
+        db.add(
+            Group(
+                id=group_id,
+                name="Test",
+                telegram_chat_id=-60011,
+                academic_group_code=CODE,
+                timezone="Europe/Moscow",
+            )
+        )
         for index, user_id in enumerate(users):
             db.add(User(id=user_id, telegram_user_id=61100 + index, display_name=f"S{index}"))
         await db.flush()
@@ -49,38 +54,62 @@ async def fixture(engine):
         for user_id in users:
             row = Membership(
                 id=UUID(int=900 + user_id.int),
-                group_id=group_id, user_id=user_id, role="student", status="active",
+                group_id=group_id,
+                user_id=user_id,
+                role="student",
+                status="active",
             )
             memberships.append(row)
             db.add(row)
         split = SubjectSplit(
-            id=UUID(int=300), group_id=group_id,
+            id=UUID(int=300),
+            group_id=group_id,
             subject_id=subject_uuid(group_id, "Иностранный язык"),
-            subject_name="Иностранный язык", created_at=CHECKED,
+            subject_name="Иностранный язык",
+            created_at=CHECKED,
         )
         db.add(split)
         await db.flush()
         subgroups = [
-            Subgroup(id=UUID(int=301 + i), split_id=split.id, position=i + 1,
-                     name=f"Sub{i}", signals="[]")
+            Subgroup(
+                id=UUID(int=301 + i),
+                split_id=split.id,
+                position=i + 1,
+                name=f"Sub{i}",
+                signals="[]",
+            )
             for i in range(2)
         ]
         db.add_all(subgroups)
         await db.flush()
         for member, subgroup in zip(memberships, [subgroups[0], subgroups[0], subgroups[1]]):
-            db.add(MemberSubgroup(
-                membership_id=member.id, split_id=split.id,
-                subgroup_id=subgroup.id, updated_at=CHECKED,
-            ))
+            db.add(
+                MemberSubgroup(
+                    membership_id=member.id,
+                    split_id=split.id,
+                    subgroup_id=subgroup.id,
+                    updated_at=CHECKED,
+                )
+            )
         await db.flush()
-        common = ExternalLesson(WEEK, time(9), time(10, 20), "Общий предмет",
-                                teacher="Иванов", room="СДО")
-        specific = ExternalLesson(WEEK, time(11), time(12, 20), "Иностранный язык",
-                                  teacher="Петров", subgroup_hint="Поток А")
+        common = ExternalLesson(
+            WEEK, time(9), time(10, 20), "Общий предмет", teacher="Иванов", room="СДО"
+        )
+        specific = ExternalLesson(
+            WEEK,
+            time(11),
+            time(12, 20),
+            "Иностранный язык",
+            teacher="Петров",
+            subgroup_hint="Поток А",
+        )
         snapshot = WeekSnapshot(CODE, WEEK, WEEK + timedelta(days=6), (common, specific))
         key = (WEEK.isoformat(), "09:00:00", "10:20:00", "Общий предмет", "Иванов", "СДО")
         await remember_personal(
-            db, group_id, users[0], snapshot,
+            db,
+            group_id,
+            users[0],
+            snapshot,
             group_identity_verified=True,
             links={key: "https://lms.ranepa.ru/mod/url/view.php?id=9876"},
             courses={key: "https://lms.ranepa.ru/course/view.php?id=1234"},
@@ -102,14 +131,11 @@ def test_representative_upsert_is_idempotent_and_preserves_subgroup_isolation(tm
                 assert stats == {"users_materialized": 2, "lessons_added": 3}
                 await db.commit()
             async with AsyncSession(engine) as db:
-                a = await personal_period(
-                    db, group_id, users[1], WEEK, WEEK + timedelta(days=6)
-                )
-                b = await personal_period(
-                    db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
-                )
+                a = await personal_period(db, group_id, users[1], WEEK, WEEK + timedelta(days=6))
+                b = await personal_period(db, group_id, users[2], WEEK, WEEK + timedelta(days=6))
                 assert {row["subject"] for row in a["lessons"]} == {
-                    "Общий предмет", "Иностранный язык"
+                    "Общий предмет",
+                    "Иностранный язык",
                 }
                 assert {row["subject"] for row in b["lessons"]} == {"Общий предмет"}
                 assert b["lessons"][0]["online_url"] == (
@@ -158,9 +184,14 @@ def test_materialization_failure_rolls_back_all_students(tmp_path):
             group_id, users, _, _ = await fixture(engine)
             async with AsyncSession(engine) as db:
                 bad = RanepaPersonalSnapshot(
-                    group_id=group_id, user_id=users[2], week_start=WEEK,
-                    week_end=WEEK + timedelta(days=6), identity_verified=False,
-                    data_digest="invalid", rows_json="not-json", checked_at=CHECKED,
+                    group_id=group_id,
+                    user_id=users[2],
+                    week_start=WEEK,
+                    week_end=WEEK + timedelta(days=6),
+                    identity_verified=False,
+                    data_digest="invalid",
+                    rows_json="not-json",
+                    checked_at=CHECKED,
                 )
                 db.add(bad)
                 await db.commit()
