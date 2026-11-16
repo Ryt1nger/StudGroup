@@ -108,6 +108,8 @@ class RanepaCrawlJob(Base):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failure_code: Mapped[str | None] = mapped_column(String(48))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    retry_reason: Mapped[str | None] = mapped_column(String(48))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
