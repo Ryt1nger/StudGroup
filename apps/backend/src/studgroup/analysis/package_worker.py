@@ -1156,9 +1156,7 @@ async def _student_visible_promotions(db, revisions):
         previous = await _revision_snapshot(db, ident, revision - 1)
         if current is None:
             continue
-        if previous is None or any(
-            previous.get(key) != current.get(key) for key in VISIBLE_FIELDS
-        ):
+        if previous is None or any(previous.get(key) != current.get(key) for key in VISIBLE_FIELDS):
             visible.append((item_id, revision, action))
     return visible
 
