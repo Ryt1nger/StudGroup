@@ -41,7 +41,7 @@ def test_select_only_missing_failed_accounts_with_open_guard(tmp_path):
         try:
             async with engine.begin() as connection:
                 await connection.run_sync(Base.metadata.create_all)
-            async with AsyncSession(engine) as db:
+            async with AsyncSession(engine, expire_on_commit=False) as db:
                 db.add(group)
                 db.add(
                     RanepaCrawlGuard(
@@ -111,7 +111,7 @@ def test_select_only_missing_failed_accounts_with_open_guard(tmp_path):
             assert result == [(group.id, users[0].id)]
             with pytest.raises(ValueError, match="unsafe_retry_batch_size"):
                 await choose_unverified_failures(engine, today=monday, max_accounts=9)
-            async with AsyncSession(engine) as db:
+            async with AsyncSession(engine, expire_on_commit=False) as db:
                 guard = await db.get(RanepaCrawlGuard, 1)
                 guard.paused = True
                 await db.commit()
