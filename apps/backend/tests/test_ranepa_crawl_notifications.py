@@ -481,14 +481,14 @@ def test_manual_captcha_button_replaces_duplicate_final_account_failure(tmp_path
                     f"ranepa-owner-captcha:{challenge_id}",
                 )
                 await db.commit()
-            params = dict(
-                owner_id=915,
-                job_id=job_id,
-                user_id=user_id,
-                group_code="Э-ОБ-385-04-26-03",
-                student_name="Студент",
-                stats=CrawlRunStats(),
-            )
+            params = {
+                "owner_id": 915,
+                "job_id": job_id,
+                "user_id": user_id,
+                "group_code": "Э-ОБ-385-04-26-03",
+                "student_name": "Студент",
+                "stats": CrawlRunStats(),
+            }
             assert not await notify_account_crawl_result(
                 engine, **params, attempt=1, failure_code="captcha"
             )
