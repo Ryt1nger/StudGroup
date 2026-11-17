@@ -167,14 +167,10 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
     if target is None:
         return False
     splits = (
-        await db.scalars(
-            select(SubjectSplit).where(SubjectSplit.group_id == candidate.group_id)
-        )
+        await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == candidate.group_id))
     ).all()
     choices = (
-        await db.scalars(
-            select(MemberSubgroup).where(MemberSubgroup.membership_id == member.id)
-        )
+        await db.scalars(select(MemberSubgroup).where(MemberSubgroup.membership_id == member.id))
     ).all()
     wanted = {row.split_id: row.subgroup_id for row in choices}
     # Unknown subgroup is not proven by another student's common-only view.
@@ -194,6 +190,7 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
         return False
     covered_common = False
     covered_splits = set()
+
     def utc(value):
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
@@ -237,9 +234,7 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
             covered_common = True
         source_choices = (
             await db.scalars(
-                select(MemberSubgroup).where(
-                    MemberSubgroup.membership_id == source_member.id
-                )
+                select(MemberSubgroup).where(MemberSubgroup.membership_id == source_member.id)
             )
         ).all()
         by_split = {row.split_id: row for row in source_choices}
@@ -261,9 +256,9 @@ async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> b
                 ):
                     covered_splits.add((split.id, wanted[split.id]))
     return covered_common and all(
-        (split_id, subgroup_id) in covered_splits
-        for split_id, subgroup_id in wanted.items()
+        (split_id, subgroup_id) in covered_splits for split_id, subgroup_id in wanted.items()
     )
+
 
 async def claim_next(
     db,

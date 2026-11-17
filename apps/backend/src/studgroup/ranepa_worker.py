@@ -816,8 +816,12 @@ async def _collect(
                     async with AsyncSession(engine) as db:
                         try:
                             await remember_personal(
-                                db, group_id, user_id, result.snapshot,
-                                group_identity_verified=True, source_complete=True,
+                                db,
+                                group_id,
+                                user_id,
+                                result.snapshot,
+                                group_identity_verified=True,
+                                source_complete=True,
                             )
                             await materialize_verified_facts(
                                 db, group_id, user_id, result.snapshot.week_start

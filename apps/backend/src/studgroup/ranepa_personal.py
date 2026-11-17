@@ -278,7 +278,8 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
         # Legacy shared rows have no durable provenance; never render them as
         # independently confirmed timetable facts after the safe migration.
         source_rows = [
-            lesson for lesson in source_rows
+            lesson
+            for lesson in source_rows
             if lesson.get("source_scope") not in {"common", "subgroup"}
             or (lesson.get("source_user_id") and lesson.get("source_snapshot_id"))
         ]

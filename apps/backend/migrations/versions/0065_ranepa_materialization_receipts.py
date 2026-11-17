@@ -25,10 +25,22 @@ def upgrade():
     )
     op.create_table(
         "ranepa_materialization_receipts",
-        sa.Column("group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
-        sa.Column("recipient_user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+        ),
+        sa.Column(
+            "recipient_user_id",
+            sa.Uuid(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
         sa.Column("week_start", sa.Date(), primary_key=True),
-        sa.Column("source_user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "source_user_id",
+            sa.Uuid(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
         sa.Column("source_digest", sa.String(64), nullable=False),
         sa.Column("source_checked_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("applied_at", sa.DateTime(timezone=True), nullable=False),

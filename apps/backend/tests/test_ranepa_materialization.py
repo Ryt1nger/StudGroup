@@ -269,7 +269,7 @@ def test_borrowed_snapshot_cannot_be_rebroadcast_or_cover_a_new_subgroup(tmp_pat
                     users[1],
                     empty,
                     group_identity_verified=True,
-            source_complete=True,
+                    source_complete=True,
                     checked_at=CHECKED + timedelta(minutes=1),
                 )
                 own = await db.get(RanepaPersonalSnapshot, (group_id, users[1], WEEK))
@@ -337,7 +337,7 @@ def test_unconfigured_subgroup_hint_is_neither_fallback_nor_shared(tmp_path):
                     users[0],
                     source_week,
                     group_identity_verified=True,
-            source_complete=True,
+                    source_complete=True,
                     checked_at=CHECKED,
                 )
                 await db.commit()
@@ -408,14 +408,22 @@ def test_full_source_replacement_removes_missing_pair_and_changes_room_time(tmp_
                 await db.commit()
 
             moved = ExternalLesson(
-                WEEK, time(10), time(11, 20), "Общий предмет",
-                teacher="Новый преподаватель", room="Д-123",
+                WEEK,
+                time(10),
+                time(11, 20),
+                "Общий предмет",
+                teacher="Новый преподаватель",
+                room="Д-123",
             )
             revised = WeekSnapshot(CODE, WEEK, WEEK + timedelta(days=6), (moved,))
             async with AsyncSession(engine) as db:
                 await remember_personal(
-                    db, group_id, users[0], revised,
-                    group_identity_verified=True, source_complete=True,
+                    db,
+                    group_id,
+                    users[0],
+                    revised,
+                    group_identity_verified=True,
+                    source_complete=True,
                     checked_at=CHECKED + timedelta(minutes=5),
                 )
                 await materialize_verified_facts(db, group_id, users[0], WEEK)
@@ -453,8 +461,12 @@ def test_complete_empty_week_clears_peer_rows_but_partial_does_not(tmp_path):
             empty = WeekSnapshot(CODE, WEEK, WEEK + timedelta(days=6), ())
             async with AsyncSession(engine) as db:
                 await remember_personal(
-                    db, group_id, users[0], empty,
-                    group_identity_verified=False, source_complete=False,
+                    db,
+                    group_id,
+                    users[0],
+                    empty,
+                    group_identity_verified=False,
+                    source_complete=False,
                     checked_at=CHECKED + timedelta(minutes=1),
                 )
                 await db.commit()
@@ -466,8 +478,12 @@ def test_complete_empty_week_clears_peer_rows_but_partial_does_not(tmp_path):
                 assert len(peer["lessons"]) == 2
             async with AsyncSession(engine) as db:
                 await remember_personal(
-                    db, group_id, users[0], empty,
-                    group_identity_verified=True, source_complete=True,
+                    db,
+                    group_id,
+                    users[0],
+                    empty,
+                    group_identity_verified=True,
+                    source_complete=True,
                     checked_at=CHECKED + timedelta(minutes=2),
                 )
                 await materialize_verified_facts(db, group_id, users[0], WEEK)
@@ -478,12 +494,8 @@ def test_complete_empty_week_clears_peer_rows_but_partial_does_not(tmp_path):
                         db, group_id, user_id, WEEK, WEEK + timedelta(days=6)
                     )
                     assert peer["lessons"] == []
-                job = RanepaCrawlJob(
-                    group_id=group_id, user_id=users[1], week_start=WEEK
-                )
-                assert not await _coverage_satisfied(
-                    db, job, CHECKED + timedelta(minutes=3)
-                )
+                job = RanepaCrawlJob(group_id=group_id, user_id=users[1], week_start=WEEK)
+                assert not await _coverage_satisfied(db, job, CHECKED + timedelta(minutes=3))
         finally:
             await engine.dispose()
 
@@ -496,21 +508,37 @@ def test_personal_confirmed_meeting_link_outweighs_shared_refresh(tmp_path):
         try:
             group_id, users, _, _ = await fixture(engine)
             key = (
-                WEEK.isoformat(), "09:00:00", "10:20:00",
-                "Общий предмет", "Иванов", "СДО",
+                WEEK.isoformat(),
+                "09:00:00",
+                "10:20:00",
+                "Общий предмет",
+                "Иванов",
+                "СДО",
             )
             own = WeekSnapshot(
-                CODE, WEEK, WEEK + timedelta(days=6),
-                (ExternalLesson(
-                    WEEK, time(9), time(10, 20),
-                    "Общий предмет", teacher="Иванов", room="СДО",
-                ),),
+                CODE,
+                WEEK,
+                WEEK + timedelta(days=6),
+                (
+                    ExternalLesson(
+                        WEEK,
+                        time(9),
+                        time(10, 20),
+                        "Общий предмет",
+                        teacher="Иванов",
+                        room="СДО",
+                    ),
+                ),
             )
             async with AsyncSession(engine) as db:
                 await materialize_verified_facts(db, group_id, users[0], WEEK)
                 await remember_personal(
-                    db, group_id, users[1], own,
-                    group_identity_verified=True, source_complete=True,
+                    db,
+                    group_id,
+                    users[1],
+                    own,
+                    group_identity_verified=True,
+                    source_complete=True,
                     links={key: "https://lms.ranepa.ru/mod/url/view.php?id=1111"},
                     checked_at=CHECKED + timedelta(minutes=1),
                 )

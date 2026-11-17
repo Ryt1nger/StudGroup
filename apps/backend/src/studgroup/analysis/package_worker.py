@@ -160,8 +160,7 @@ async def _source_messages(db, group, rows, *, structured_images=False):
         # Photo OCR can only enter text context if it is from this revision and
         # the image actually reached verified ready state.
         verified_photo = (
-            attachment.processing_state == "ready"
-            and attachment.source_revision == source.revision
+            attachment.processing_state == "ready" and attachment.source_revision == source.revision
         )
         attachments.setdefault(attachment.raw_message_id, []).append(
             {
@@ -390,9 +389,9 @@ async def _waiting_image_context(db, group, route, settings, now):
     # is pending. Deictic captions and dependent replies still fail closed.
     retained_by_mid = {row.telegram_message_id: row for row in retained}
     blocked = {
-        mid for mid in waiting
-        if mid not in retained_by_mid
-        or not _self_contained_academic_reply(retained_by_mid[mid])
+        mid
+        for mid in waiting
+        if mid not in retained_by_mid or not _self_contained_academic_reply(retained_by_mid[mid])
     }
     # Replies still depend on the unresolved photo, even when its own caption
     # can be processed as text. Track ancestry separately from blocked targets.

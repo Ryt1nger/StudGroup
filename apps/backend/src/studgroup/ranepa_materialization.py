@@ -37,8 +37,14 @@ def _occurrence(row):
 
 
 def _shared_row(
-    row, *, scope, source_user_id, week_start, source_snapshot_id,
-    source_checked_at, materialized_at,
+    row,
+    *,
+    scope,
+    source_user_id,
+    week_start,
+    source_snapshot_id,
+    source_checked_at,
+    materialized_at,
 ):
     """Copy verified facts, never provider credentials or unverified meeting URLs."""
     result = dict(row)
@@ -145,25 +151,39 @@ async def materialize_verified_facts(db, group_id, source_user_id, week_start, *
             if has_unverified_subgroup_hint(row.get("subgroup_hint")):
                 continue
             prepared.append(
-                (None, _shared_row(
-                    row, scope="common", source_user_id=source_user_id,
-                    week_start=week_start, source_snapshot_id=source.source_digest,
-                    source_checked_at=source_at, materialized_at=now,
-                ))
+                (
+                    None,
+                    _shared_row(
+                        row,
+                        scope="common",
+                        source_user_id=source_user_id,
+                        week_start=week_start,
+                        source_snapshot_id=source.source_digest,
+                        source_checked_at=source_at,
+                        materialized_at=now,
+                    ),
+                )
             )
         elif split.id in source_choices and not subgroup_choice_changed_since_check(
             choice_updated.get((source_member_id, split.id)), source.checked_at
         ):
             prepared.append(
-                (split.id, {
-                    **_shared_row(
-                        row, scope="subgroup", source_user_id=source_user_id,
-                        week_start=week_start, source_snapshot_id=source.source_digest,
-                        source_checked_at=source_at, materialized_at=now,
-                    ),
-                    "source_split_id": str(split.id),
-                    "source_subgroup_id": str(source_choices[split.id]),
-                })
+                (
+                    split.id,
+                    {
+                        **_shared_row(
+                            row,
+                            scope="subgroup",
+                            source_user_id=source_user_id,
+                            week_start=week_start,
+                            source_snapshot_id=source.source_digest,
+                            source_checked_at=source_at,
+                            materialized_at=now,
+                        ),
+                        "source_split_id": str(split.id),
+                        "source_subgroup_id": str(source_choices[split.id]),
+                    },
+                )
             )
 
     updated_users = 0
@@ -175,7 +195,8 @@ async def materialize_verified_facts(db, group_id, source_user_id, week_start, *
         member = by_user[user_id]
         target_choices = by_member.get(member.id, {})
         eligible = [
-            row for split_id, row in prepared
+            row
+            for split_id, row in prepared
             if split_id is None or target_choices.get(split_id) == source_choices.get(split_id)
         ]
         covered_subgroups = sorted(
@@ -253,25 +274,29 @@ async def materialize_verified_facts(db, group_id, source_user_id, week_start, *
                 checked_at=source.checked_at,
             )
             db.add(target)
-        retained.sort(key=lambda row: (
-            row["day"], row["starts"], normalized(row["subject"])
-        ))
+        retained.sort(key=lambda row: (row["day"], row["starts"], normalized(row["subject"])))
         encoded = json.dumps(retained, ensure_ascii=False, separators=(",", ":"))
         target.rows_json = encoded
         target.data_digest = sha256(encoded.encode()).hexdigest()
         if has_evidence:
             if receipt is None:
                 receipt = RanepaMaterializationReceipt(
-                    group_id=group_id, recipient_user_id=user_id,
-                    week_start=week_start, source_user_id=source_user_id,
+                    group_id=group_id,
+                    recipient_user_id=user_id,
+                    week_start=week_start,
+                    source_user_id=source_user_id,
                 )
                 db.add(receipt)
             receipt.source_digest = source.source_digest
             receipt.source_checked_at = source.checked_at
             receipt.applied_at = now_dt
-            receipt.coverage_json = json.dumps({
-                "common": True, "subgroups": covered_subgroups,
-            }, separators=(",", ":"))
+            receipt.coverage_json = json.dumps(
+                {
+                    "common": True,
+                    "subgroups": covered_subgroups,
+                },
+                separators=(",", ":"),
+            )
         updated_users += 1
 
     await db.flush()

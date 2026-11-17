@@ -1681,11 +1681,7 @@ def test_independent_photo_caption_advances_without_unread_image_or_ocr_leak(cli
     assert step(client, provider, cfg) == "completed"
     assert set(provider.targets) == {31, 33}
     assert states(client) == {31: "completed", 32: "pending", 33: "completed"}
-    contexts = [
-        item
-        for request in provider.requests
-        for item in request.user_payload["messages"]
-    ]
+    contexts = [item for request in provider.requests for item in request.user_payload["messages"]]
     assert any(item["telegram_message_id"] == 31 for item in contexts)
     assert all("UNVERIFIED_IMAGE" not in str(item) for item in contexts)
 
@@ -1701,9 +1697,7 @@ def test_photo_text_independence_accepts_subject_headings_but_not_deictic_captio
     assert _self_contained_academic_reply(
         caption("История: подготовить доклад о Петре I к пятнице")
     )
-    assert _self_contained_academic_reply(
-        caption("По математике решить задачи 1–3 до пятницы")
-    )
+    assert _self_contained_academic_reply(caption("По математике решить задачи 1–3 до пятницы"))
     assert not _self_contained_academic_reply(
         caption("По математике решить эти задачи с фотографии к пятнице")
     )
