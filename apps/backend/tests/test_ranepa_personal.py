@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, date, datetime, time, timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -21,10 +22,13 @@ from studgroup.models import (
     SubjectSplit,
     User,
 )
+from studgroup.ranepa_link_states import LINK_STATES
 from studgroup.ranepa_personal import (
+    enrich_personal_links,
     personal_with_group_fallback,
     remember_personal,
     schedule_projection,
+    schedule_with_group_fallback,
 )
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot
 from studgroup.subject_identity import subject_uuid
@@ -135,12 +139,17 @@ def test_personal_snapshot_is_immediately_scoped_and_idempotent(client):
     client.app.state.settings.ranepa_schedule_view_enabled = True
     live = client.get("/v1/schedule?start=2026-11-02&end=2026-11-08", headers=AUTH)
     assert live.status_code == 200
-    assert [row["subject"] for row in live.json()["lessons"]] == ["Новая история"]
+    assert {row["subject"] for row in live.json()["lessons"]} == {
+        "Математика",
+        "Новая история",
+    }
     missing = client.get("/v1/schedule?start=2026-11-16&end=2026-11-22", headers=AUTH)
     assert missing.status_code == 200
     assert missing.json()["week_state"] == "ready"
     assert [row["subject"] for row in missing.json()["lessons"]] == ["Математика"]
-    lesson_id = live.json()["lessons"][0]["id"]
+    lesson_id = next(
+        row["id"] for row in live.json()["lessons"] if row["subject"] == "Новая история"
+    )
     detail = client.get(f"/v1/lessons/{lesson_id}/subject", headers=AUTH)
     assert detail.status_code == 200
     assert detail.json()["lesson"]["subject"] == "Новая история"
@@ -488,5 +497,149 @@ def test_one_verified_peer_shares_common_lessons_but_respects_dynamic_subject_su
                     assert all(item["course_url"] is None for item in result["lessons"])
         finally:
             await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_occurrence_merge_keeps_partial_day_and_only_cancels_explicit_match():
+    group = SimpleNamespace(timezone="Europe/Moscow", first_week_anchor=None)
+    base = "2026-11-02T"
+    published = {
+        "week_state": "ready",
+        "selected_week": None,
+        "lessons": [
+            {
+                "id": f"editor:{name}",
+                "subject": name,
+                "teacher": "Иванов",
+                "starts_at": base + start + "+03:00",
+                "ends_at": base + end + "+03:00",
+                "location": "Аудитория",
+                "online_url": None,
+                "status": "scheduled",
+            }
+            for name, start, end in [
+                ("Математика", "09:00:00", "10:20:00"),
+                ("Физика", "10:40:00", "12:00:00"),
+            ]
+        ],
+    }
+    personal = {
+        "start": date(2026, 11, 2),
+        "end": date(2026, 11, 8),
+        "complete": True,
+        "covered_dates": ["2026-11-02"],
+        "lessons": [
+            {
+                "day": "2026-11-02",
+                "starts": "09:00:00",
+                "ends": "10:20:00",
+                "subject": "Математика",
+                "teacher": "Иванов",
+                "room": "СДО",
+                "online_url": None,
+                "course_url": None,
+                "cancelled": False,
+            }
+        ],
+    }
+    first = schedule_with_group_fallback(personal, published, group)
+    assert {row["id"] for row in first["lessons"]} == {
+        "editor:Математика",
+        "editor:Физика",
+    }
+    assert all(row["status"] == "scheduled" for row in first["lessons"])
+    personal["lessons"][0]["cancelled"] = True
+    second = schedule_with_group_fallback(personal, published, group)
+    assert {row["id"] for row in second["lessons"]} == {
+        "editor:Математика",
+        "editor:Физика",
+    }
+    assert {row["subject"] for row in second["lessons"] if row["status"] == "cancelled"} == {
+        "Математика"
+    }
+    assert published["lessons"][0]["status"] == "scheduled"
+
+
+def test_every_matcher_state_persists_with_real_snapshot_writer(client):
+    async def scenario():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            group.academic_group_code = CODE
+            member = await db.scalar(select(Membership).where(Membership.group_id == group.id))
+            key = ("2026-11-02", "09:00:00", "10:20:00", "История России", "Иванов", "СДО")
+            for state in sorted(LINK_STATES):
+                url = (
+                    {key: "https://lms.ranepa.ru/mod/url/view.php?id=9911"}
+                    if state == "matched"
+                    else {}
+                )
+                await remember_personal(
+                    db,
+                    group.id,
+                    member.user_id,
+                    week(),
+                    links=url,
+                    link_states={key: state},
+                    group_identity_verified=True,
+                )
+                await db.commit()
+                rows = await db.get(
+                    RanepaPersonalSnapshot,
+                    (group.id, member.user_id, date(2026, 11, 2)),
+                )
+                assert rows.identity_verified is True
+                assert __import__("json").loads(rows.rows_json)[0]["link_state"] == state
+
+    asyncio.run(scenario())
+
+
+def test_link_enrichment_rollback_does_not_erase_committed_week(client):
+    async def scenario():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            group.academic_group_code = CODE
+            member = await db.scalar(select(Membership).where(Membership.group_id == group.id))
+            await remember_personal(
+                db, group.id, member.user_id, week(), group_identity_verified=True
+            )
+            await db.commit()
+            group_id, user_id = group.id, member.user_id
+            key = ("2026-11-02", "09:00:00", "10:20:00", "История России", "Иванов", "СДО")
+            before = await db.get(
+                RanepaPersonalSnapshot,
+                (group_id, user_id, date(2026, 11, 2)),
+            )
+            baseline_checked_at = before.checked_at
+            with pytest.raises(ValueError, match="unsafe_lms_link"):
+                await enrich_personal_links(
+                    db,
+                    group_id,
+                    user_id,
+                    date(2026, 11, 2),
+                    links={key: "https://invalid.example/join"},
+                    link_states={key: "matched"},
+                )
+            await db.rollback()
+            stored = await db.get(
+                RanepaPersonalSnapshot,
+                (group_id, user_id, date(2026, 11, 2)),
+            )
+            assert __import__("json").loads(stored.rows_json)[0]["subject"] == "История России"
+            assert stored.checked_at == baseline_checked_at
+            await enrich_personal_links(
+                db,
+                group_id,
+                user_id,
+                date(2026, 11, 2),
+                link_states={key: "identity_missing"},
+            )
+            await db.commit()
+            stored = await db.get(
+                RanepaPersonalSnapshot,
+                (group_id, user_id, date(2026, 11, 2)),
+            )
+            assert stored.checked_at == baseline_checked_at
+            assert __import__("json").loads(stored.rows_json)[0]["link_state"] == "identity_missing"
 
     asyncio.run(scenario())

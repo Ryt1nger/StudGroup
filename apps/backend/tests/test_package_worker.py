@@ -882,11 +882,16 @@ def test_the_owner_gets_one_short_message_after_a_package_that_changed_something
     assert "математике" not in text  # counts and cost only, never chat text
 
 
-def test_a_package_that_changed_nothing_sends_the_owner_nothing(client):
+def test_empty_package_still_reports_a_private_product_outcome_to_owner(client):
     seed(client)
     make_new(client)
     assert step(client, PackageProvider(propose=False), owner_settings()) == "completed"
-    assert owner_messages(client) == []
+    messages = owner_messages(client)
+    assert len(messages) == 1
+    summary = messages[0]["text"]
+    assert "нет новых подтверждённых карточек" in summary
+    assert "Учебных результатов: 0; пустых: 3" in summary
+    assert "математике" not in summary  # No private academic message text.
 
 
 def test_context_only_paraphrase_cannot_rewrite_an_existing_card(client):
@@ -1013,10 +1018,12 @@ def test_an_update_that_only_touched_technical_fields_is_not_reported(client):
         == "completed"
     )
     texts = [message["text"] for message in owner_messages(client)]
-    # The second package bumped the revision, but only the attention reasons changed: silence.
-    assert len(texts) == 1
+    # A technical-only revision still has an owner digest, but no useful outcome.
+    assert len(texts) == 2
     assert "создано карточек: 1" in texts[0]
     assert "• «Решить задачи 1–3» — новая" in texts[0]
+    assert "нет новых подтверждённых карточек" in texts[1]
+    assert "Учебных результатов: 0" in texts[1]
 
 
 def test_a_visible_update_is_reported_with_the_card_title_and_the_changed_fields(client):
@@ -1162,6 +1169,9 @@ def test_unread_photo_in_funded_group_does_not_starve_later_text(client):
             route.release_budget_until = now + timedelta(hours=1)
             route.release_budget_receipt = "a" * 64
             raw = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            # Deliberately image-dependent: unlike a complete task caption,
+            # this text has no actionable facts without reading the photo.
+            raw.text = "Задание на фото, решить это к завтра"
             db.add(
                 MessageAttachment(
                     raw_message_id=raw.id,
@@ -1209,6 +1219,7 @@ def test_photo_caption_and_reply_chain_wait_together_but_unrelated_homework_prog
             route.release_budget_until = now + timedelta(hours=1)
             route.release_budget_receipt = "a" * 64
             photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            photo.text = "Сделать это с фотографии к завтра"
             reply = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
             reply.reply_to_message_id = 31
             db.add(
@@ -1564,3 +1575,245 @@ def test_catchup_batch_is_restricted_to_newest_moscow_day_before_package_split()
     ]
     assert newest_day_candidates(rows, "Europe/Moscow") == rows[:2]
     assert newest_day_candidates([], "Europe/Moscow") == []
+
+
+def test_independent_homework_reply_advances_without_unread_photo_context(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "a" * 64
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            photo.text = "Сделать это по фотографии"
+            reply = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
+            reply.reply_to_message_id = photo.telegram_message_id
+            reply.text = "По математике решить задачи 1–3 до пятницы, как самостоятельную работу"
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="pending-independent-picture-31",
+                    telegram_file_id="pending31",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    cfg = settings(photo_reading_enabled=True, ai_release_budget_required_groups=[str(group_id)])
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, cfg) == "completed"
+    assert set(provider.targets) == {32, 33}
+    context = provider.requests[0].user_payload["messages"]
+    assert 31 not in {message["telegram_message_id"] for message in context}
+    assert states(client) == {31: "pending", 32: "completed", 33: "completed"}
+
+
+def test_image_reply_classifier_stays_fail_closed_for_deictic_text():
+    from types import SimpleNamespace
+
+    from studgroup.analysis.package_worker import _self_contained_academic_reply
+
+    def case(text):
+        return SimpleNamespace(reply_to_message_id=31, text=text)
+
+    assert _self_contained_academic_reply(
+        case("По математике решить задачи 1–3 до пятницы, самостоятельная работа")
+    )
+    assert not _self_contained_academic_reply(
+        case("По математике решить эти задачи с фото, чтобы успеть до пятницы")
+    )
+    assert not _self_contained_academic_reply(case("Сделать это по математике"))
+
+
+def test_independent_photo_caption_advances_without_unread_image_or_ocr_leak(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "c" * 64
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            reply = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
+            photo.text = "По истории подготовить доклад о Петре I к пятнице"
+            reply.reply_to_message_id = photo.telegram_message_id
+            reply.text = "Вот эти номера с фотографии нужно сделать к завтра"
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="pending-independent-caption-31",
+                    telegram_file_id="pending-caption31",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    photo_summary="UNVERIFIED_IMAGE_SUMMARY",
+                    photo_text="UNVERIFIED_IMAGE_OCR",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    cfg = settings(photo_reading_enabled=True, ai_release_budget_required_groups=[str(group_id)])
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, cfg) == "completed"
+    assert set(provider.targets) == {31, 33}
+    assert states(client) == {31: "completed", 32: "pending", 33: "completed"}
+    contexts = [item for request in provider.requests for item in request.user_payload["messages"]]
+    assert any(item["telegram_message_id"] == 31 for item in contexts)
+    assert all("UNVERIFIED_IMAGE" not in str(item) for item in contexts)
+
+
+def test_photo_text_independence_accepts_subject_headings_but_not_deictic_captions():
+    from types import SimpleNamespace
+
+    from studgroup.analysis.package_worker import _self_contained_academic_reply
+
+    def caption(text):
+        return SimpleNamespace(reply_to_message_id=None, text=text)
+
+    assert _self_contained_academic_reply(
+        caption("История: подготовить доклад о Петре I к пятнице")
+    )
+    assert _self_contained_academic_reply(caption("По математике решить задачи 1–3 до пятницы"))
+    assert not _self_contained_academic_reply(
+        caption("По математике решить эти задачи с фотографии к пятнице")
+    )
+    assert not _self_contained_academic_reply(caption("Сделать это к завтра"))
+    assert not _self_contained_academic_reply(caption("Задание на фото"))
+
+
+def test_caption_card_is_updated_after_later_image_read_without_duplicate(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "d" * 64
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            photo.text = "По математике решить задачи 1–3 к пятнице"
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="caption-later-photo-31",
+                    telegram_file_id="later31",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    cfg = settings(photo_reading_enabled=True, ai_release_budget_required_groups=[str(group_id)])
+    first = PackageProvider()
+    assert step(client, first, cfg) == "completed"
+    assert count(client, Homework) == 1
+
+    async def ready_and_reopen():
+        async with AsyncSession(client.app.state.engine) as db:
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            image = await db.scalar(
+                select(MessageAttachment).where(MessageAttachment.raw_message_id == photo.id)
+            )
+            image.processing_state = "ready"
+            image.photo_summary = "Упражнения 1–4"
+            image.photo_text = "Решить задачи 1–4"
+            photo.processing_state = "pending"
+            photo.analysis_generation += 1
+            await db.commit()
+
+    asyncio.run(ready_and_reopen())
+    second = PackageProvider(update_existing=True)
+    assert step(client, second, cfg) == "completed"
+    assert count(client, Homework) == 1
+    assert len(second.requests) == 2
+    assert any("Упражнения 1–4" in str(request.user_payload) for request in second.requests)
+
+
+def test_failed_image_does_not_release_dependent_text_or_unverified_ocr(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "e" * 64
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            reply = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
+            photo.text = "Сделать это к завтра, все подробности на фото"
+            reply.reply_to_message_id = photo.telegram_message_id
+            reply.text = "По истории подготовить доклад о Петре I к пятнице"
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="failed-image-dependent-caption",
+                    telegram_file_id="failed-caption",
+                    mime_type="image/jpeg",
+                    processing_state="failed",
+                    photo_summary="UNVERIFIED_FAILED_PHOTO_SUMMARY",
+                    photo_text="UNVERIFIED_FAILED_PHOTO_OCR",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    cfg = settings(photo_reading_enabled=True, ai_release_budget_required_groups=[str(group_id)])
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, cfg) == "completed"
+    assert set(provider.targets) == {32, 33}
+    assert states(client) == {31: "pending", 32: "completed", 33: "completed"}
+    assert all("UNVERIFIED_FAILED_PHOTO" not in str(req.user_payload) for req in provider.requests)

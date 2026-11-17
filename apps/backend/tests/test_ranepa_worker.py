@@ -223,7 +223,10 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
         return {}, {}, {}
 
     async def remember(*args, **kwargs):
-        return None
+        assert kwargs["source_complete"] is True
+
+    async def materialize(*args, **kwargs):
+        pass
 
     class FakeSession:
         async def __aenter__(self):
@@ -245,6 +248,7 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
     monkeypatch.setattr(ranepa_worker, "read_week", week)
     monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", sdo)
     monkeypatch.setattr(ranepa_worker, "remember_personal", remember)
+    monkeypatch.setattr(ranepa_worker, "materialize_verified_facts", materialize)
     monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
     monkeypatch.delenv("RANEPA_PROXY_URL", raising=False)
 
@@ -764,13 +768,18 @@ def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
         return {}, {"test-sdo-transition": "captcha_required"}, {}
 
     async def save(*args, **kwargs):
+        assert kwargs["source_complete"] is True
         recorded.append("saved")
+
+    async def materialize(*args, **kwargs):
+        recorded.append("materialized")
 
     monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
     monkeypatch.setattr(ranepa_worker, "read_month", month)
     monkeypatch.setattr(ranepa_worker, "read_week", week)
     monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", exits)
     monkeypatch.setattr(ranepa_worker, "remember_personal", save)
+    monkeypatch.setattr(ranepa_worker, "materialize_verified_facts", materialize)
     monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
     trace = CrawlTrace()
     stats = CrawlRunStats()
@@ -791,7 +800,7 @@ def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
     assert result == "captcha"
     assert stats.saved_weeks == 1
     assert stats.saved_lessons == 0
-    assert recorded == ["saved", "committed"]
+    assert recorded == ["saved", "materialized", "committed"]
     assert trace.captcha_seen
     assert trace.captcha_location == "sdo"
     assert trace.preceding_step == "sdo_exits_requested"
@@ -927,3 +936,128 @@ def test_three_rucaptcha_attempts_precede_owner_fallback(
     assert result == "identity_unverified"
     assert calls == ["rucaptcha"] * expected_attempts + ["manual", "browser_closed"]
     assert reads == expected_attempts + 2
+
+
+@pytest.mark.parametrize("state", ["ambiguous", "identity_missing", "captcha_required"])
+def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monkeypatch, state):
+    """The browser is fake, but the SQLAlchemy snapshot writer is real."""
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    from studgroup.models import Base, Group, Membership, RanepaPersonalSnapshot, User
+
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/writer-{state}.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            group_id, user_id = uuid4(), uuid4()
+            async with AsyncSession(engine) as db:
+                db.add(
+                    Group(
+                        id=group_id,
+                        name="Test",
+                        telegram_chat_id=-90011,
+                        timezone="Europe/Moscow",
+                        academic_group_code="A-001",
+                    )
+                )
+                db.add(User(id=user_id, telegram_user_id=991101, display_name="Test"))
+                db.add(
+                    Membership(
+                        id=uuid4(),
+                        group_id=group_id,
+                        user_id=user_id,
+                        status="active",
+                        role="student",
+                    )
+                )
+                await db.commit()
+
+            class FakeContext:
+                async def new_page(self):
+                    return SimpleNamespace()
+
+            class FakeBrowser:
+                async def new_context(self, **kwargs):
+                    return FakeContext()
+
+                async def close(self):
+                    return None
+
+            class FakePlaywright:
+                async def __aenter__(self):
+                    self.chromium = self
+                    return self
+
+                async def __aexit__(self, *args):
+                    return False
+
+                async def launch(self, **kwargs):
+                    return FakeBrowser()
+
+            first = date(2026, 11, 1)
+            monday = first - timedelta(days=first.weekday())
+            cards = [
+                SimpleNamespace(
+                    day=date(2026, 11, 1) if i == 0 else monday + timedelta(weeks=i),
+                    starts=time(9),
+                    subject="История",
+                )
+                for i in range(6)
+            ]
+
+            async def month(*args):
+                return SimpleNamespace(status="preview_only", cards=cards)
+
+            async def read(_page, _login, _password, code, start, *, allow_empty=False):
+                lesson = ExternalLesson(
+                    day=date(2026, 11, 1) if start.month == 10 else start,
+                    starts=time(9),
+                    ends=time(10, 20),
+                    subject="История",
+                    teacher="Иванов",
+                    room="СДО",
+                )
+                return SimpleNamespace(
+                    status="preview_only",
+                    snapshot=WeekSnapshot(code, start, start + timedelta(days=6), (lesson,)),
+                )
+
+            async def exits(_context, result, *_args, **_kwargs):
+                lesson = result.snapshot.lessons[0]
+                key = (
+                    lesson.day.isoformat(),
+                    lesson.starts.isoformat(),
+                    lesson.ends.isoformat(),
+                    lesson.subject,
+                    lesson.teacher,
+                    lesson.room,
+                )
+                return {}, {key: state}, {}
+
+            monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
+            monkeypatch.setattr(ranepa_worker, "read_month", month)
+            monkeypatch.setattr(ranepa_worker, "read_week", read)
+            monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", exits)
+            outcome = await ranepa_worker._collect(
+                engine,
+                group_id,
+                user_id,
+                "A-001",
+                "test",
+                "test",
+                date(2026, 11, 16),
+            )
+            assert outcome == ("captcha" if state == "captcha_required" else None)
+            async with AsyncSession(engine) as db:
+                stored = await db.get(RanepaPersonalSnapshot, (group_id, user_id, monday))
+                assert stored is not None and stored.identity_verified is True
+                import json
+
+                rows = json.loads(stored.rows_json)
+                assert len(rows) == 1
+                assert rows[0]["link_state"] == state
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

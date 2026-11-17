@@ -3,6 +3,9 @@ import {
   getAttachmentImage,
   getHomework,
   getSchedule,
+  getMyRanepaSchedule,
+  client,
+  type RanepaPersonalSchedule,
   listHomework,
   getToday,
   getLessonSubject,
@@ -146,6 +149,56 @@ export function useAcademicDeadlineQuery(id: string) {
     queryKey: ['academic-deadline', id],
     queryFn: () => api.event(id),
     ...detailQueryOptions,
+  });
+}
+
+export type RanepaFreshness = RanepaPersonalSchedule & {
+  account_connected?: boolean;
+  oldest_required_checked_at?: string | null;
+  oldest_links_checked_at?: string | null;
+  schedule_complete?: boolean;
+  links_complete?: boolean;
+  source_checked?: boolean;
+  user_materialized?: boolean;
+  weeks?: Array<{
+    week_start: string;
+    source_checked_at: string | null;
+    materialized_at: string | null;
+    sdo_total: number;
+    sdo_checked: number;
+    direct_links: number;
+    course_links: number;
+  }>;
+};
+
+export type RanepaRefreshResponse = {
+  state: 'queued' | 'running' | 'cooldown' | 'credentials_required' | 'unavailable';
+  next_attempt_at: string | null;
+  queued: boolean;
+};
+
+export function useRanepaFreshnessQuery(start: string, end: string, enabled = true) {
+  return useQuery({
+    queryKey: ['ranepa-freshness', start, end],
+    queryFn: () => unwrap(getMyRanepaSchedule({ query: { start, end } })) as Promise<RanepaFreshness>,
+    enabled,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    retry: false,
+  });
+}
+
+export function useRequestRanepaRefresh() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (): Promise<RanepaRefreshResponse> => unwrap<RanepaRefreshResponse>(
+      client.post({ url: '/ranepa-schedule/refresh' }) as unknown as Promise<{
+        data?: RanepaRefreshResponse;
+        error?: unknown;
+        response?: Response;
+      }>,
+    ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['ranepa-freshness'] }),
   });
 }
 

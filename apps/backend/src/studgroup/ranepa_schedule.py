@@ -7,7 +7,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import date, time
+from datetime import UTC, date, datetime, time
 from hashlib import sha256
 
 from studgroup.subgroups import recognise
@@ -16,6 +16,23 @@ from studgroup.subgroups import recognise
 def normalized(value: str | None) -> str:
     value = unicodedata.normalize("NFKC", value or "")
     return " ".join(value.casefold().replace("ё", "е").split())
+
+
+def has_unverified_subgroup_hint(value: str | None) -> bool:
+    """Conservatively reject subgroup signals until the subject's split is configured."""
+    hint = normalized(value)
+    if hint in {"общий поток", "общая группа", "все подгруппы", "для всех"}:
+        return False
+    return bool(re.search(r"подгрупп|\bсг(?=[а-яе0-9-]|\b)|поток", hint))
+
+
+def subgroup_choice_changed_since_check(updated_at: datetime | None, checked_at: datetime) -> bool:
+    """A subgroup choice after the source read cannot relabel its old lessons."""
+    if updated_at is None:
+        return True
+    choice = updated_at.replace(tzinfo=UTC) if updated_at.tzinfo is None else updated_at
+    source = checked_at.replace(tzinfo=UTC) if checked_at.tzinfo is None else checked_at
+    return choice > source
 
 
 def group_code(value: str) -> str:

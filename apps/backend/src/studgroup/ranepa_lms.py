@@ -6,6 +6,7 @@ from datetime import date, time
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 from studgroup.ranepa_cabinet import Document
+from studgroup.ranepa_link_states import LinkState
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import normalized
 
@@ -22,7 +23,7 @@ class LinkCandidate:
 
 @dataclass(frozen=True)
 class LinkChoice:
-    state: str
+    state: LinkState
     url: str | None
     candidates: tuple[LinkCandidate, ...]
 
@@ -77,11 +78,11 @@ def select_lesson_link(
 ) -> LinkChoice:
     """Accept one exact group and teacher link, dated for the lesson or permanent."""
     if not teacher.strip() or not group_label.strip():
-        return LinkChoice("identity_missing", None, ())
+        return LinkChoice(LinkState.IDENTITY_MISSING, None, ())
     surname = normalized(teacher.split()[0])
     token = _group_token(group_label)
     if len(token) < 10:
-        return LinkChoice("identity_missing", None, ())
+        return LinkChoice(LinkState.IDENTITY_MISSING, None, ())
     dated = []
     permanent = []
     identity_matches = []
@@ -113,9 +114,9 @@ def select_lesson_link(
             permanent.append(link)
     matches = dated or permanent
     if len(matches) == 1:
-        return LinkChoice("matched", matches[0].url, tuple(matches))
+        return LinkChoice(LinkState.MATCHED, matches[0].url, tuple(matches))
     if matches:
-        return LinkChoice("ambiguous", None, tuple(matches))
+        return LinkChoice(LinkState.AMBIGUOUS, None, tuple(matches))
     if identity_matches:
-        return LinkChoice("timing_unverified", None, tuple(identity_matches))
-    return LinkChoice("not_found", None, ())
+        return LinkChoice(LinkState.TIMING_UNVERIFIED, None, tuple(identity_matches))
+    return LinkChoice(LinkState.NOT_FOUND, None, ())

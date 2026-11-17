@@ -15,12 +15,13 @@ worker never touches legacy/shadow groups: exactly one writer per group.
 
 import hashlib
 import json
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import photo_dedupe
@@ -32,6 +33,13 @@ from studgroup.analysis.context import assemble_memory_context
 from studgroup.analysis.contracts import AnalysisInput, SourceMessage
 from studgroup.analysis.manual_dedupe import prompt_memory, recent_manual_cards
 from studgroup.analysis.package_run import DEFAULT_MAX_TARGETS, plan_packages
+from studgroup.analysis.product_outcomes import (
+    attributed_changes,
+    blocked_image_ids,
+    classify_targets,
+    evidence_ids,
+    summarize_targets,
+)
 from studgroup.analysis.release_budget import release_window_blocker
 from studgroup.analysis.shadow import (
     ShadowPassFailure,
@@ -146,7 +154,14 @@ async def _source_messages(db, group, rows, *, structured_images=False):
         else []
     )
     kept = {a.id for a in (stored if structured_images else photo_dedupe.distinct(stored, earlier))}
+    by_source = {row.id: row for row in rows}
     for attachment in stored:
+        source = by_source[attachment.raw_message_id]
+        # Photo OCR can only enter text context if it is from this revision and
+        # the image actually reached verified ready state.
+        verified_photo = (
+            attachment.processing_state == "ready" and attachment.source_revision == source.revision
+        )
         attachments.setdefault(attachment.raw_message_id, []).append(
             {
                 "kind": attachment.kind,
@@ -160,8 +175,8 @@ async def _source_messages(db, group, rows, *, structured_images=False):
                     attachment.processing_state if attachment.id in kept else "irrelevant"
                 ),
                 "file_name": (attachment.file_name or None) and attachment.file_name[:255],
-                "photo_summary": attachment.photo_summary,
-                "photo_text": attachment.photo_text,
+                "photo_summary": attachment.photo_summary if verified_photo else None,
+                "photo_text": attachment.photo_text if verified_photo else None,
             }
         )
     topics = {
@@ -235,6 +250,43 @@ def _eligible(group, settings, now, *, scheduled_slot=None, catchup_cutoff=None)
     return filters
 
 
+def _self_contained_academic_reply(row):
+    """Allow only an independently actionable academic statement, never a photo reference.
+
+    This is deliberately narrower than language understanding. Weak or deictic
+    replies must wait for the attached image; uncertain cases are not published.
+    """
+    message = (row.text or "").strip().casefold()
+    # A caption on the image message is independent exactly like a reply.
+    # Do not require reply_to_message_id: the image itself may be unreadable.
+    if len(message) < 20:
+        return False
+    if re.search(
+        r"\b(?:это|эти|этот|там|тут|здесь|выше|ниже|скрин|фото|картинк\w*|изображени\w*|прикрепленн\w*)\b",
+        message,
+    ):
+        return False
+    explicit_subject = re.search(
+        r"\bпо\s+[а-яёa-z][\w-]{3,}|^[а-яёa-z][\w\s-]{3,40}[:—-]\s*",
+        message,
+    )
+    # A verb alone is not enough: the specific task must be stated in text.
+    specific_work = re.search(
+        r"\b(?:задач\w*\s*(?:№|\d)|упражнени\w*\s*(?:№|\d)|"
+        r"доклад\w*|реферат\w*|конспект\w*|презентаци\w*|"
+        r"эссе\w*|параграф\w*|стихотворени\w*|лабораторн\w*|"
+        r"контрольн\w*|тестировани\w*|проект\w*|глав\w*\s*\d)\b",
+        message,
+    )
+    actionable = re.search(
+        r"\b(?:решить|сделать|выполнить|подготовить|сдать|написать|выучить|прочитать|"
+        r"домашн\w*|задани\w*|контрольн\w*|тестировани\w*|"
+        r"лекци\w*|семинар\w*)\b",
+        message,
+    )
+    return bool(explicit_subject and specific_work and actionable)
+
+
 async def _waiting_image_context(db, group, route, settings, now):
     """Source and reply-chain messages that must wait for their image evidence.
 
@@ -293,8 +345,8 @@ async def _waiting_image_context(db, group, route, settings, now):
             await db.execute(
                 select(ImageAnalysisJob.attachment_id, ImageAnalysisJob.source_revision).where(
                     ImageAnalysisJob.group_id == group.id,
-                    ImageAnalysisJob.state.in_(("ready", "failed")),
-                    or_(ImageAnalysisJob.pass_number == 2, ImageAnalysisJob.state == "failed"),
+                    ImageAnalysisJob.state == "ready",
+                    ImageAnalysisJob.pass_number == 2,
                     ImageAnalysisJob.delete_at > now,
                 )
             )
@@ -312,7 +364,7 @@ async def _waiting_image_context(db, group, route, settings, now):
         if independent:
             unresolved = not live_mode(settings) or (attachment.id, source.revision) not in ready
         else:
-            unresolved = attachment.processing_state == "metadata_only"
+            unresolved = attachment.processing_state != "ready"
         if unresolved:
             waiting.add(source.telegram_message_id)
             if attachment.media_group_id:
@@ -331,16 +383,31 @@ async def _waiting_image_context(db, group, route, settings, now):
             select(RawMessage).where(RawMessage.group_id == group.id, RawMessage.delete_at > now)
         )
     ).all()
-    # Transitive explicit Telegram replies (reply to a reply) share the source.
-    blocked = set(waiting)
+    # Ambiguous replies inherit the attachment dependency. A clearly self-contained
+    # academic message may be processed without its image and enriched later.
+    # A complete academic caption must not be held just because its own photo
+    # is pending. Deictic captions and dependent replies still fail closed.
+    retained_by_mid = {row.telegram_message_id: row for row in retained}
+    blocked = {
+        mid
+        for mid in waiting
+        if mid not in retained_by_mid or not _self_contained_academic_reply(retained_by_mid[mid])
+    }
+    # Replies still depend on the unresolved photo, even when its own caption
+    # can be processed as text. Track ancestry separately from blocked targets.
+    dependent_chain = set(waiting)
     while True:
         children = {
-            row.telegram_message_id for row in retained if row.reply_to_message_id in blocked
+            row.telegram_message_id
+            for row in retained
+            if row.reply_to_message_id in dependent_chain
+            and not _self_contained_academic_reply(row)
         }
-        expanded = blocked | children
-        if expanded == blocked:
+        expanded = dependent_chain | children
+        if expanded == dependent_chain:
             break
-        blocked = expanded
+        dependent_chain = expanded
+        blocked.update(children)
     return {row.id for row in retained if row.telegram_message_id in blocked}
 
 
@@ -383,7 +450,12 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
     ):
         # An unread *context-only* photo is not grounds to block an unrelated
         # text package. Unread target photos remain pending for separate vision.
-        return Decimal(0), any(a.raw_message_id in target_ids for a in pending)
+        row_by_id = {row.id: row for row in rows}
+        return Decimal(0), any(
+            a.raw_message_id in target_ids
+            and not _self_contained_academic_reply(row_by_id.get(a.raw_message_id))
+            for a in pending
+        )
     if provider is None:
         from studgroup.ai import DeepSeekProvider
 
@@ -550,7 +622,9 @@ async def _plan_next(
             .limit(CONTEXT_AFTER)
         )
     ).all()
-    rows = {row.id: row for row in [*before, *middle, *after]}
+    # Never supply unresolved image captions as read-only context for an
+    # independent text target: its facts must stand on the text's own evidence.
+    rows = {row.id: row for row in [*before, *middle, *after] if row.id not in blocked}
     # Read explicit reply ancestors from this group even if the original image
     # arrived long before the fixed chronological context window.
     by_mid = {row.telegram_message_id: row for row in rows.values()}
@@ -572,6 +646,8 @@ async def _plan_next(
                 )
             ).all()
             for parent in parents:
+                if parent.id in blocked:
+                    continue
                 rows[parent.id] = parent
                 by_mid[parent.telegram_message_id] = parent
         seen.update(frontier)
@@ -1105,6 +1181,23 @@ async def _revision_snapshot(db, item_id, revision):
     return json.loads(row.snapshot_json) if row else None
 
 
+async def _student_visible_promotions(db, revisions):
+    """Only actual student-visible changed revisions may count as product updates."""
+    visible = []
+    for item_id, revision, action in revisions:
+        if action != "updated":
+            visible.append((item_id, revision, action))
+            continue
+        ident = uuid.UUID(str(item_id))
+        current = await _revision_snapshot(db, ident, revision)
+        previous = await _revision_snapshot(db, ident, revision - 1)
+        if current is None:
+            continue
+        if previous is None or any(previous.get(key) != current.get(key) for key in VISIBLE_FIELDS):
+            visible.append((item_id, revision, action))
+    return visible
+
+
 async def _visible_changes(db, row):
     """[(action, title, [changed visible fields])] of the cards this package wrote.
 
@@ -1151,8 +1244,6 @@ async def _tell_the_owner(db, settings, row, group):
     created = sum(1 for action, _, _ in changes if action == "created")
     updated = sum(1 for action, _, _ in changes if action == "updated")
     held = sum(statuses.get(name, 0) for name in HELD_STATUSES)
-    if created + updated + held == 0:
-        return
     parts = []
     if created:
         parts.append(f"создано карточек: {created}")
@@ -1162,8 +1253,10 @@ async def _tell_the_owner(db, settings, row, group):
         parts.append(f"ждут проверки: {held}")
     text = (
         f"Новый движок: пакет из {len(_targets(row))} сообщений разобран, "
-        + ", ".join(parts)
-        + f". Расход ${Decimal(row.charged_usd):.4f}."
+        + ", ".join(parts or ["нет новых подтверждённых карточек"])
+        + f". Учебных результатов: {((_metrics(row).get('product') or {}).get('summary') or {}).get('useful', 0)};"
+        + f" пустых: {((_metrics(row).get('product') or {}).get('summary') or {}).get('empty', 0)}."
+        + f" Расход ${Decimal(row.charged_usd):.4f}."
     )
     lines = [
         f"• «{title[:80]}» — " + (", ".join(fields) if fields else "новая")
@@ -1182,6 +1275,7 @@ def _package_line(row, outcome, *, result=None, failure=None):
     Built BEFORE the commit (the row's attributes expire on commit) and printed after it.
     """
     statuses = (_metrics(row).get("promotion") or {}).get("statuses", {})
+    product = (_metrics(row).get("product") or {}).get("summary") or {}
     return "PACKAGE_RESULT " + json.dumps(
         {
             "outcome": outcome,
@@ -1192,6 +1286,9 @@ def _package_line(row, outcome, *, result=None, failure=None):
             "created": statuses.get("created", 0),
             "updated": statuses.get("updated", 0),
             "held": statuses.get("review", 0),
+            "product_outcomes": product.get("by_outcome", {}),
+            "useful_targets": product.get("useful", 0),
+            "empty_targets": product.get("empty", 0),
             "error": None if failure is None else failure.code,
             "charged_usd": str(row.charged_usd),
         },
@@ -1371,6 +1468,29 @@ async def process_package_next(engine, settings, provider=None, now=None):
                     row.metrics_json = json.dumps(metrics, sort_keys=True)
             await _finish_targets(db, row, "completed")
             await _watch_duplicates(db, row, group, now)
+            metrics = _metrics(row)
+            promotions = (metrics.get("promotion") or {}).get("changes", [])
+            targets = _targets(row)
+            changed = await attributed_changes(
+                db, row.group_id, await _student_visible_promotions(db, promotions), targets
+            )
+            outcomes = classify_targets(
+                targets,
+                changed=changed,
+                accepted=evidence_ids(result.validation.accepted),
+                candidates=evidence_ids(
+                    item
+                    for item in result.validation.candidates
+                    if item.source_status != "defaulted_to_target"
+                ),
+                blocked=blocked_image_ids(analysis_input, targets),
+                rejected_count=len(result.validation.rejected),
+            )
+            metrics["product"] = {
+                "outcomes": outcomes,
+                "summary": summarize_targets(outcomes),
+            }
+            row.metrics_json = json.dumps(metrics, sort_keys=True)
             await _tell_the_owner(db, settings, row, group)
             await incident(db, "ai_daily_group_budget_limit", now, recover=True)
             line = _package_line(row, "completed", result=result)
@@ -1418,6 +1538,13 @@ async def process_package_next(engine, settings, provider=None, now=None):
             row.state = "failed"
             row.completed_at = now
             await _finish_targets(db, row, "failed")
+            metrics = _metrics(row)
+            outcomes = classify_targets(_targets(row), failed=True)
+            metrics["product"] = {
+                "outcomes": outcomes,
+                "summary": summarize_targets(outcomes),
+            }
+            row.metrics_json = json.dumps(metrics, sort_keys=True)
             await incident_once(db, "processing_exhausted", now, detail=failure.code)
             outcome = "failed"
         line = _package_line(row, outcome, failure=failure)

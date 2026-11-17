@@ -60,7 +60,8 @@ from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_manual_captcha import offer_manual_captcha
-from studgroup.ranepa_personal import remember_personal
+from studgroup.ranepa_materialization import materialize_verified_facts
+from studgroup.ranepa_personal import enrich_personal_links, remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
 
@@ -811,58 +812,101 @@ async def _collect(
                         await page.wait_for_timeout(750)
                     if trace is not None:
                         trace.record("week_verified")
-                        trace.record("sdo_exits_requested")
-                    exit_kwargs = {}
-                    if (
-                        captcha_client is not None
-                        and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
-                    ) or manual_captcha is not None:
-
-                        async def solve_sdo_with_owner_fallback(challenge_page):
-                            while (
-                                captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
-                                and not captcha_solver_unavailable
-                            ):
-                                submitted = await solve_once(challenge_page)
-                                if submitted:
-                                    state = await wait_for_captcha_resolution(challenge_page)
-                                    if state != "challenge_still_visible_after_wait":
-                                        return True
-                                if captcha_diagnostic_only or captcha_solver_unavailable:
-                                    break
-                            if manual_captcha is not None:
-                                log_captcha_stage("owner_fallback_offered_sdo")
-                                return await manual_captcha(challenge_page, captcha_attempts_used)
-                            return False
-
-                        exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
-                    if on_captcha is not None:
-                        exit_kwargs["on_captcha"] = on_captcha
-                    links, link_states, courses = await resolve_sdo_exits(
-                        context, result, login, password, **exit_kwargs
-                    )
-                    sdo_captcha_unresolved = "captcha_required" in link_states.values()
-                    if trace is not None:
-                        if sdo_captcha_unresolved and not trace.captcha_seen:
-                            trace.mark_captcha("sdo")
-                        trace.record("sdo_exits_finished")
+                    # Source and every recipient MUST commit atomically. A failed
+                    # group projection cannot produce a false covered backup job.
+                    # Optional SDO link enrichment remains a separate transaction.
                     async with AsyncSession(engine) as db:
-                        await remember_personal(
-                            db,
-                            group_id,
-                            user_id,
-                            result.snapshot,
-                            links=links,
-                            courses=courses,
-                            link_states=link_states,
-                            group_identity_verified=True,
-                        )
-                        await db.commit()  # Each validated week is visible immediately.
+                        try:
+                            await remember_personal(
+                                db,
+                                group_id,
+                                user_id,
+                                result.snapshot,
+                                group_identity_verified=True,
+                                source_complete=True,
+                            )
+                            await materialize_verified_facts(
+                                db, group_id, user_id, result.snapshot.week_start
+                            )
+                            await db.commit()
+                        except Exception:  # noqa: BLE001
+                            await db.rollback()
+                            # No private exception text (may contain credentials).
+                            log_captcha_stage("peer_materialization_failed")
+                            return "internal"
                     if stats is not None:
                         stats.saved_weeks += 1
                         stats.saved_lessons += len(actual)
-                        stats.saved_sdo_links += len(links)
-                        stats.saved_sdo_courses += len(courses)
+                    if trace is not None:
+                        trace.record("sdo_exits_requested")
+                    sdo_captcha_unresolved = False
+                    try:
+                        exit_kwargs = {}
+                        if (
+                            captcha_client is not None
+                            and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
+                        ) or manual_captcha is not None:
+
+                            async def solve_sdo_with_owner_fallback(challenge_page):
+                                while (
+                                    captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
+                                    and not captcha_solver_unavailable
+                                ):
+                                    submitted = await solve_once(challenge_page)
+                                    if submitted:
+                                        state = await wait_for_captcha_resolution(challenge_page)
+                                        if state != "challenge_still_visible_after_wait":
+                                            return True
+                                    if captcha_diagnostic_only or captcha_solver_unavailable:
+                                        break
+                                if manual_captcha is not None:
+                                    log_captcha_stage("owner_fallback_offered_sdo")
+                                    return await manual_captcha(
+                                        challenge_page, captcha_attempts_used
+                                    )
+                                return False
+
+                            exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
+                        if on_captcha is not None:
+                            exit_kwargs["on_captcha"] = on_captcha
+                        links, link_states, courses = await resolve_sdo_exits(
+                            context, result, login, password, **exit_kwargs
+                        )
+                        sdo_captcha_unresolved = "captcha_required" in link_states.values()
+                        if trace is not None:
+                            if sdo_captcha_unresolved and not trace.captcha_seen:
+                                trace.mark_captcha("sdo")
+                            trace.record("sdo_exits_finished")
+                        if result.snapshot.lessons and (links or link_states or courses):
+                            async with AsyncSession(engine) as db:
+                                await enrich_personal_links(
+                                    db,
+                                    group_id,
+                                    user_id,
+                                    result.snapshot.week_start,
+                                    links=links,
+                                    courses=courses,
+                                    link_states=link_states,
+                                )
+                                await db.commit()
+                        if stats is not None:
+                            stats.saved_sdo_links += len(links)
+                            stats.saved_sdo_courses += len(courses)
+                    except Exception:  # noqa: BLE001
+                        # No enrichment or provider error can roll back the committed week.
+                        # Never log exception details which can contain credentials.
+                        log_captcha_stage("sdo_enrichment_failed")
+                    # After optional link enrichment, refresh the projection
+                    # without turning a link failure into timetable failure.
+                    if result.snapshot.lessons:
+                        try:
+                            async with AsyncSession(engine) as db:
+                                await materialize_verified_facts(
+                                    db, group_id, user_id, result.snapshot.week_start
+                                )
+                                await db.commit()
+                        except Exception:  # noqa: BLE001
+                            log_captcha_stage("peer_link_projection_failed")
                     if sdo_captcha_unresolved:
                         log_captcha_stage("challenge_still_present_sdo")
                         return "captcha"

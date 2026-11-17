@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: StudGroup Slice 1 API
-  version: 0.23.0
+  version: 0.23.1
   description: >-
     Contract for the first live vertical slice. Prepared frontend sections are
     intentionally absent until their backend behavior is implemented.
@@ -239,6 +239,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /ranepa-schedule/refresh:
+    post:
+      operationId: requestMyRanepaScheduleRefresh
+      summary: Queue a consent-gated account refresh without starting a crawl from HTTP
+      responses:
+        "200":
+          description: Existing queue state or newly queued refresh; never guarantees immediate crawl
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RanepaRefreshResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Account not connected; reconnect credentials before retrying }
   /ranepa-schedule:
     get:
       operationId: getMyRanepaSchedule
@@ -1867,6 +1880,32 @@ components:
         complete: { type: boolean }
         fallback_used: { type: boolean, description: True when compatible peer data fills a missing personal week; complete remains false }
         last_success_at: { type: [string, "null"], format: date-time }
+        oldest_required_checked_at:
+          type: [string, "null"]
+          format: date-time
+          description: Oldest personal snapshot check when every requested day is covered.
+        oldest_links_checked_at: { type: [string, "null"], format: date-time }
+        schedule_complete: { type: boolean }
+        links_complete: { type: boolean }
+        source_checked: { type: boolean }
+        user_materialized: { type: boolean }
+        account_connected: { type: boolean }
+        covered_dates: { type: array, items: { type: string, format: date } }
+        weeks:
+          type: array
+          items:
+            type: object
+            required: [week_start, week_end, source_checked_at, materialized_at, sdo_total, sdo_checked, direct_links, course_links, links_checked_at]
+            properties:
+              week_start: { type: string, format: date }
+              week_end: { type: string, format: date }
+              source_checked_at: { type: [string, "null"], format: date-time }
+              materialized_at: { type: [string, "null"], format: date-time }
+              sdo_total: { type: integer, minimum: 0 }
+              sdo_checked: { type: integer, minimum: 0 }
+              direct_links: { type: integer, minimum: 0 }
+              course_links: { type: integer, minimum: 0 }
+              links_checked_at: { type: [string, "null"], format: date-time }
         lessons:
           type: array
           items:
@@ -1889,6 +1928,20 @@ components:
               link_state:
                 type: [string, "null"]
                 description: SDO link decision from the last successful scan; null for non-SDO or guarded peer fallback.
+              cancelled: { type: boolean }
+              source_scope: { type: [string, "null"] }
+              source_split_id: { type: [string, "null"] }
+              source_subgroup_id: { type: [string, "null"] }
+    RanepaRefreshResult:
+      type: object
+      additionalProperties: false
+      required: [state, next_attempt_at, queued]
+      properties:
+        state:
+          type: string
+          description: Queue status such as queued, running, cooldown, or credentials_required.
+        next_attempt_at: { type: [string, "null"], format: date-time }
+        queued: { type: boolean }
     UpdateProfileRequest:
       type: object
       additionalProperties: false
