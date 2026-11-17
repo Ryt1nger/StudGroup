@@ -1769,3 +1769,51 @@ def test_caption_card_is_updated_after_later_image_read_without_duplicate(client
     assert count(client, Homework) == 1
     assert len(second.requests) == 2
     assert any("Упражнения 1–4" in str(request.user_payload) for request in second.requests)
+
+
+def test_failed_image_does_not_release_dependent_text_or_unverified_ocr(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "e" * 64
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            reply = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
+            photo.text = "Сделать это к завтра, все подробности на фото"
+            reply.reply_to_message_id = photo.telegram_message_id
+            reply.text = "По истории подготовить доклад о Петре I к пятнице"
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="failed-image-dependent-caption",
+                    telegram_file_id="failed-caption",
+                    mime_type="image/jpeg",
+                    processing_state="failed",
+                    photo_summary="UNVERIFIED_FAILED_PHOTO_SUMMARY",
+                    photo_text="UNVERIFIED_FAILED_PHOTO_OCR",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    cfg = settings(photo_reading_enabled=True, ai_release_budget_required_groups=[str(group_id)])
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, cfg) == "completed"
+    assert set(provider.targets) == {32, 33}
+    assert states(client) == {31: "pending", 32: "completed", 33: "completed"}
+    assert all("UNVERIFIED_FAILED_PHOTO" not in str(req.user_payload) for req in provider.requests)

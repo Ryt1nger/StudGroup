@@ -224,10 +224,9 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
 
     async def remember(*args, **kwargs):
         assert kwargs["source_complete"] is True
-        return None
 
     async def materialize(*args, **kwargs):
-        return None
+        pass
 
     class FakeSession:
         async def __aenter__(self):

@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import photo_dedupe
@@ -345,8 +345,8 @@ async def _waiting_image_context(db, group, route, settings, now):
             await db.execute(
                 select(ImageAnalysisJob.attachment_id, ImageAnalysisJob.source_revision).where(
                     ImageAnalysisJob.group_id == group.id,
-                    ImageAnalysisJob.state.in_(("ready", "failed")),
-                    or_(ImageAnalysisJob.pass_number == 2, ImageAnalysisJob.state == "failed"),
+                    ImageAnalysisJob.state == "ready",
+                    ImageAnalysisJob.pass_number == 2,
                     ImageAnalysisJob.delete_at > now,
                 )
             )
@@ -364,7 +364,7 @@ async def _waiting_image_context(db, group, route, settings, now):
         if independent:
             unresolved = not live_mode(settings) or (attachment.id, source.revision) not in ready
         else:
-            unresolved = attachment.processing_state == "metadata_only"
+            unresolved = attachment.processing_state != "ready"
         if unresolved:
             waiting.add(source.telegram_message_id)
             if attachment.media_group_id:
