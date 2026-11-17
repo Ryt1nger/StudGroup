@@ -66,9 +66,15 @@ def _shared_row(
 
 
 def _preserve_verified_link(incoming, previous):
-    """Keep a previously confirmed direct link for the SAME source occurrence."""
+    """Keep a confirmed link only if the meeting identity has not changed."""
+    if (
+        normalized(previous.get("teacher")) != normalized(incoming.get("teacher"))
+        or normalized(previous.get("room")) != normalized(incoming.get("room"))
+    ):
+        return
     if (
         previous.get("link_state") == "matched"
+        and incoming.get("link_state") in {None, "not_checked"}
         and previous.get("online_url")
         and _safe_link(previous["online_url"])
         and not incoming.get("online_url")

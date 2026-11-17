@@ -354,9 +354,7 @@ def test_unconfigured_subgroup_hint_is_neither_fallback_nor_shared(tmp_path):
                 await materialize_verified_facts(db, group_id, users[0], WEEK)
                 await db.commit()
             async with AsyncSession(engine) as db:
-                projected = await personal_period(
-                    db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
-                )
+                projected = await personal_period(db, group_id, users[2], WEEK, WEEK + timedelta(days=6))
                 assert {item["subject"] for item in projected["lessons"]} == {"Общий семинар"}
         finally:
             await engine.dispose()
@@ -748,6 +746,57 @@ def test_subgroup_only_source_never_creates_unmatched_or_common_receipt(tmp_path
                 for user_id in users[1:]:
                     job = RanepaCrawlJob(group_id=group_id, user_id=user_id, week_start=WEEK)
                     assert not await _coverage_satisfied(db, job, CHECKED + timedelta(minutes=2))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_changed_teacher_and_room_do_not_reuse_stale_online_link(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/stale-link.db")
+        try:
+            group_id, users, _, _ = await fixture(engine)
+            async with AsyncSession(engine) as db:
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            new_week = WeekSnapshot(
+                CODE,
+                WEEK,
+                WEEK + timedelta(days=6),
+                (
+                    ExternalLesson(
+                        WEEK,
+                        time(9),
+                        time(10, 20),
+                        "Общий предмет",
+                        teacher="Другой преподаватель",
+                        room="Д-101",
+                    ),
+                ),
+            )
+            async with AsyncSession(engine) as db:
+                await remember_personal(
+                    db,
+                    group_id,
+                    users[0],
+                    new_week,
+                    group_identity_verified=True,
+                    source_complete=True,
+                    checked_at=CHECKED + timedelta(minutes=4),
+                )
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                projected = await personal_period(
+                    db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
+                )
+                assert len(projected["lessons"]) == 1
+                lesson = projected["lessons"][0]
+                assert lesson["teacher"] == "Другой преподаватель"
+                assert lesson["room"] == "Д-101"
+                assert lesson["online_url"] is None
+                assert lesson["course_url"] is None
         finally:
             await engine.dispose()
 

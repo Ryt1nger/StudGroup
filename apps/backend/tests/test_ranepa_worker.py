@@ -223,6 +223,10 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
         return {}, {}, {}
 
     async def remember(*args, **kwargs):
+        assert kwargs["source_complete"] is True
+        return None
+
+    async def materialize(*args, **kwargs):
         return None
 
     class FakeSession:
@@ -245,6 +249,7 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
     monkeypatch.setattr(ranepa_worker, "read_week", week)
     monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", sdo)
     monkeypatch.setattr(ranepa_worker, "remember_personal", remember)
+    monkeypatch.setattr(ranepa_worker, "materialize_verified_facts", materialize
     monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
     monkeypatch.delenv("RANEPA_PROXY_URL", raising=False)
 
@@ -764,13 +769,18 @@ def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
         return {}, {"test-sdo-transition": "captcha_required"}, {}
 
     async def save(*args, **kwargs):
+        assert kwargs["source_complete"] is True
         recorded.append("saved")
+
+    async def materialize(*args, **kwargs):
+        recorded.append("materialized")
 
     monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
     monkeypatch.setattr(ranepa_worker, "read_month", month)
     monkeypatch.setattr(ranepa_worker, "read_week", week)
     monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", exits)
     monkeypatch.setattr(ranepa_worker, "remember_personal", save)
+    monkeypatch.setattr(ranepa_worker, "materialize_verified_facts", materialize
     monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
     trace = CrawlTrace()
     stats = CrawlRunStats()
@@ -791,7 +801,7 @@ def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
     assert result == "captcha"
     assert stats.saved_weeks == 1
     assert stats.saved_lessons == 0
-    assert recorded == ["saved", "committed"]
+    assert recorded == ["saved", "materialized", "committed"]
     assert trace.captcha_seen
     assert trace.captcha_location == "sdo"
     assert trace.preceding_step == "sdo_exits_requested"
