@@ -39,6 +39,12 @@ jobs:
         run: |
           uv run alembic downgrade 0053
           uv run alembic upgrade head
+      - name: Verify 0065 downgrade and replay on disposable CI PostgreSQL
+        run: |
+          uv run alembic downgrade 0064
+          uv run alembic current | grep -F "0064"
+          uv run alembic upgrade 0065
+          uv run alembic current | grep -F "0065"
       - name: Repeat safety regressions in different file orders
         run: |
           uv run pytest -q tests/test_ranepa_materialization.py tests/test_package_worker.py tests/test_ranepa_captcha_outcome.py tests/test_ranepa_worker.py --maxfail=1
