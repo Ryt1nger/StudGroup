@@ -211,6 +211,10 @@ def test_materialization_failure_rolls_back_all_students(tmp_path):
             async with AsyncSession(engine) as db:
                 target_a = await db.get(RanepaPersonalSnapshot, (group_id, users[1], WEEK))
                 assert target_a is None
+                # A failed fan-out cannot suppress an alternate account crawl.
+                await enqueue_week(db, WEEK, [CrawlCandidate(group_id, users[1])], now=CHECKED)
+                retry = await claim_next(db, now=CHECKED + timedelta(minutes=1))
+                assert retry is not None and retry.user_id == users[1]
         finally:
             await engine.dispose()
 
@@ -459,12 +463,18 @@ def test_complete_empty_week_clears_peer_rows_but_partial_does_not(tmp_path):
                 await materialize_verified_facts(db, group_id, users[0], WEEK)
                 await db.commit()
             empty = WeekSnapshot(CODE, WEEK, WEEK + timedelta(days=6), ())
+            partial = WeekSnapshot(
+                CODE,
+                WEEK,
+                WEEK + timedelta(days=6),
+                (ExternalLesson(WEEK, time(9), time(10, 20), "Общий предмет"),),
+            )
             async with AsyncSession(engine) as db:
                 await remember_personal(
                     db,
                     group_id,
                     users[0],
-                    empty,
+                    partial,
                     group_identity_verified=False,
                     source_complete=False,
                     checked_at=CHECKED + timedelta(minutes=1),
@@ -580,6 +590,102 @@ def test_coverage_requires_committed_recipient_proof_and_fresh_subgroup(tmp_path
                 assert not await _coverage_satisfied(db, job_a, CHECKED + timedelta(minutes=4))
                 view = await personal_period(db, group_id, users[1], WEEK, WEEK + timedelta(days=6))
                 assert {row["subject"] for row in view["lessons"]} == {"Общий предмет"}
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_disabled_source_and_changed_source_version_invalidate_coverage(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/invalid-proof.db")
+        try:
+            group_id, users, _, _ = await fixture(engine)
+            job = RanepaCrawlJob(group_id=group_id, user_id=users[1], week_start=WEEK)
+            async with AsyncSession(engine) as db:
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                assert await _coverage_satisfied(db, job, CHECKED + timedelta(minutes=1))
+                updated = WeekSnapshot(
+                    CODE,
+                    WEEK,
+                    WEEK + timedelta(days=6),
+                    (ExternalLesson(
+                        WEEK, time(9), time(10, 20), "Перенесённый предмет",
+                    ),),
+                )
+                await remember_personal(
+                    db,
+                    group_id,
+                    users[0],
+                    updated,
+                    group_identity_verified=True,
+                    source_complete=True,
+                    checked_at=CHECKED + timedelta(minutes=2),
+                )
+                # Simulate a source update without a matching recipient commit.
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                assert not await _coverage_satisfied(db, job, CHECKED + timedelta(minutes=3))
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                assert await _coverage_satisfied(db, job, CHECKED + timedelta(minutes=4))
+                source_member = await db.scalar(
+                    select(Membership).where(
+                        Membership.group_id == group_id,
+                        Membership.user_id == users[0],
+                    )
+                )
+                source_member.status = "left"
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                assert not await _coverage_satisfied(db, job, CHECKED + timedelta(minutes=5))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_recipient_receipt_never_crosses_group_memberships(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/multi-group-proof.db")
+        try:
+            group_id, users, _, _ = await fixture(engine)
+            async with AsyncSession(engine) as db:
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                other = Group(
+                    id=UUID(int=12),
+                    name="Other",
+                    telegram_chat_id=-60012,
+                    academic_group_code="GROUP-B",
+                    timezone="Europe/Moscow",
+                )
+                db.add(other)
+                db.add(Membership(
+                    id=UUID(int=10050), group_id=other.id, user_id=users[1],
+                    role="student", status="active",
+                ))
+                db.add(RanepaPersonalSnapshot(
+                    group_id=other.id,
+                    user_id=users[1],
+                    week_start=WEEK,
+                    week_end=WEEK + timedelta(days=6),
+                    rows_json="[]",
+                    data_digest="0" * 64,
+                    checked_at=CHECKED,
+                    identity_verified=False,
+                    source_complete=False,
+                ))
+                await db.commit()
+            other_job = RanepaCrawlJob(
+                group_id=UUID(int=12), user_id=users[1], week_start=WEEK
+            )
+            async with AsyncSession(engine) as db:
+                assert not await _coverage_satisfied(
+                    db, other_job, CHECKED + timedelta(minutes=1)
+                )
         finally:
             await engine.dispose()
 

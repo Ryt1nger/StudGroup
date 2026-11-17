@@ -1169,6 +1169,9 @@ def test_unread_photo_in_funded_group_does_not_starve_later_text(client):
             route.release_budget_until = now + timedelta(hours=1)
             route.release_budget_receipt = "a" * 64
             raw = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            # Deliberately image-dependent: unlike a complete task caption,
+            # this text has no actionable facts without reading the photo.
+            raw.text = "Задание на фото, решить это к завтра"
             db.add(
                 MessageAttachment(
                     raw_message_id=raw.id,
