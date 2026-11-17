@@ -619,6 +619,14 @@ def test_disabled_source_and_changed_source_version_invalidate_coverage(tmp_path
                             time(10, 20),
                             "Перенесённый предмет",
                         ),
+                        ExternalLesson(
+                            WEEK,
+                            time(11),
+                            time(12, 20),
+                            "Иностранный язык",
+                            teacher="Петров",
+                            subgroup_hint="Поток А",
+                        ),
                     ),
                 )
                 await remember_personal(
