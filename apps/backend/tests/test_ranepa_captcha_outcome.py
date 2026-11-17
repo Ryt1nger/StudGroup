@@ -21,7 +21,15 @@ def test_successful_crawl_reports_whether_captcha_appeared_and_was_recovered(
     monkeypatch, caplog, challenge_present, fanout_fails
 ):
     async def scenario():
-        calls = {"month": 0, "week": 0, "solve": 0, "wait": 0, "saved": 0, "materialized": 0, "rolled_back": 0}
+        calls = {
+            "month": 0,
+            "week": 0,
+            "solve": 0,
+            "wait": 0,
+            "saved": 0,
+            "materialized": 0,
+            "rolled_back": 0,
+        }
 
         class Browser:
             async def new_context(self, **kwargs):
