@@ -249,7 +249,7 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
     monkeypatch.setattr(ranepa_worker, "read_week", week)
     monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", sdo)
     monkeypatch.setattr(ranepa_worker, "remember_personal", remember)
-    monkeypatch.setattr(ranepa_worker, "materialize_verified_facts", materialize
+    monkeypatch.setattr(ranepa_worker, "materialize_verified_facts", materialize)
     monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
     monkeypatch.delenv("RANEPA_PROXY_URL", raising=False)
 
@@ -780,7 +780,7 @@ def test_worker_preserves_week_and_flags_unresolved_sdo_captcha(monkeypatch):
     monkeypatch.setattr(ranepa_worker, "read_week", week)
     monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", exits)
     monkeypatch.setattr(ranepa_worker, "remember_personal", save)
-    monkeypatch.setattr(ranepa_worker, "materialize_verified_facts", materialize
+    monkeypatch.setattr(ranepa_worker, "materialize_verified_facts", materialize)
     monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
     trace = CrawlTrace()
     stats = CrawlRunStats()
