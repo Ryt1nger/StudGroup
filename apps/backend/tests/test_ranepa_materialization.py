@@ -354,7 +354,9 @@ def test_unconfigured_subgroup_hint_is_neither_fallback_nor_shared(tmp_path):
                 await materialize_verified_facts(db, group_id, users[0], WEEK)
                 await db.commit()
             async with AsyncSession(engine) as db:
-                projected = await personal_period(db, group_id, users[2], WEEK, WEEK + timedelta(days=6))
+                projected = await personal_period(
+                    db, group_id, users[2], WEEK, WEEK + timedelta(days=6)
+                )
                 assert {item["subject"] for item in projected["lessons"]} == {"Общий семинар"}
         finally:
             await engine.dispose()

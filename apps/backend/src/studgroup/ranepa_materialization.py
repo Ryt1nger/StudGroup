@@ -67,10 +67,9 @@ def _shared_row(
 
 def _preserve_verified_link(incoming, previous):
     """Keep a confirmed link only if the meeting identity has not changed."""
-    if (
-        normalized(previous.get("teacher")) != normalized(incoming.get("teacher"))
-        or normalized(previous.get("room")) != normalized(incoming.get("room"))
-    ):
+    if normalized(previous.get("teacher")) != normalized(incoming.get("teacher")) or normalized(
+        previous.get("room")
+    ) != normalized(incoming.get("room")):
         return
     if (
         previous.get("link_state") == "matched"
