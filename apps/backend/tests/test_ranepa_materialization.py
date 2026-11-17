@@ -15,6 +15,7 @@ from studgroup.models import (
     Membership,
     MemberSubgroup,
     RanepaCrawlJob,
+    RanepaMaterializationReceipt,
     RanepaPersonalSnapshot,
     Subgroup,
     SubjectSplit,
@@ -694,6 +695,59 @@ def test_recipient_receipt_never_crosses_group_memberships(tmp_path):
             other_job = RanepaCrawlJob(group_id=UUID(int=12), user_id=users[1], week_start=WEEK)
             async with AsyncSession(engine) as db:
                 assert not await _coverage_satisfied(db, other_job, CHECKED + timedelta(minutes=1))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_subgroup_only_source_never_creates_unmatched_or_common_receipt(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/subgroup-receipt.db")
+        try:
+            group_id, users, _, _ = await fixture(engine)
+            source_week = WeekSnapshot(
+                CODE,
+                WEEK,
+                WEEK + timedelta(days=6),
+                (
+                    ExternalLesson(
+                        WEEK,
+                        time(11),
+                        time(12, 20),
+                        "Иностранный язык",
+                        teacher="Петров",
+                        subgroup_hint="Поток А",
+                    ),
+                ),
+            )
+            async with AsyncSession(engine) as db:
+                await remember_personal(
+                    db,
+                    group_id,
+                    users[0],
+                    source_week,
+                    group_identity_verified=True,
+                    source_complete=True,
+                    checked_at=CHECKED + timedelta(minutes=1),
+                )
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                a = await db.get(
+                    RanepaMaterializationReceipt,
+                    (group_id, users[1], WEEK, users[0]),
+                )
+                b = await db.get(
+                    RanepaMaterializationReceipt,
+                    (group_id, users[2], WEEK, users[0]),
+                )
+                assert a is not None
+                assert json.loads(a.coverage_json)["common"] is False
+                assert b is None
+                for user_id in users[1:]:
+                    job = RanepaCrawlJob(group_id=group_id, user_id=user_id, week_start=WEEK)
+                    assert not await _coverage_satisfied(db, job, CHECKED + timedelta(minutes=2))
         finally:
             await engine.dispose()
 

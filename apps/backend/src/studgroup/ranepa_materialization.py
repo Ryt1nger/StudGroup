@@ -257,7 +257,7 @@ async def materialize_verified_facts(db, group_id, source_user_id, week_start, *
         )
         # If a complete source contains only unverified subgroup hints or is
         # empty, it cannot prove fresh coverage for a compatible account.
-        has_evidence = own_count > 0 and bool(prepared)
+        has_evidence = own_count > 0 and bool(eligible)
         if receipt is not None and not has_evidence:
             await db.delete(receipt)
         if not (retired or eligible or receipt is not None or has_evidence):
@@ -292,7 +292,7 @@ async def materialize_verified_facts(db, group_id, source_user_id, week_start, *
             receipt.applied_at = now_dt
             receipt.coverage_json = json.dumps(
                 {
-                    "common": True,
+                    "common": any(split_id is None for split_id, _ in prepared),
                     "subgroups": covered_subgroups,
                 },
                 separators=(",", ":"),
