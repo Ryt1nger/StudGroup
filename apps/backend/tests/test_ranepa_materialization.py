@@ -611,9 +611,14 @@ def test_disabled_source_and_changed_source_version_invalidate_coverage(tmp_path
                     CODE,
                     WEEK,
                     WEEK + timedelta(days=6),
-                    (ExternalLesson(
-                        WEEK, time(9), time(10, 20), "Перенесённый предмет",
-                    ),),
+                    (
+                        ExternalLesson(
+                            WEEK,
+                            time(9),
+                            time(10, 20),
+                            "Перенесённый предмет",
+                        ),
+                    ),
                 )
                 await remember_personal(
                     db,
@@ -663,29 +668,32 @@ def test_recipient_receipt_never_crosses_group_memberships(tmp_path):
                     timezone="Europe/Moscow",
                 )
                 db.add(other)
-                db.add(Membership(
-                    id=UUID(int=10050), group_id=other.id, user_id=users[1],
-                    role="student", status="active",
-                ))
-                db.add(RanepaPersonalSnapshot(
-                    group_id=other.id,
-                    user_id=users[1],
-                    week_start=WEEK,
-                    week_end=WEEK + timedelta(days=6),
-                    rows_json="[]",
-                    data_digest="0" * 64,
-                    checked_at=CHECKED,
-                    identity_verified=False,
-                    source_complete=False,
-                ))
-                await db.commit()
-            other_job = RanepaCrawlJob(
-                group_id=UUID(int=12), user_id=users[1], week_start=WEEK
-            )
-            async with AsyncSession(engine) as db:
-                assert not await _coverage_satisfied(
-                    db, other_job, CHECKED + timedelta(minutes=1)
+                db.add(
+                    Membership(
+                        id=UUID(int=10050),
+                        group_id=other.id,
+                        user_id=users[1],
+                        role="student",
+                        status="active",
+                    )
                 )
+                db.add(
+                    RanepaPersonalSnapshot(
+                        group_id=other.id,
+                        user_id=users[1],
+                        week_start=WEEK,
+                        week_end=WEEK + timedelta(days=6),
+                        rows_json="[]",
+                        data_digest="0" * 64,
+                        checked_at=CHECKED,
+                        identity_verified=False,
+                        source_complete=False,
+                    )
+                )
+                await db.commit()
+            other_job = RanepaCrawlJob(group_id=UUID(int=12), user_id=users[1], week_start=WEEK)
+            async with AsyncSession(engine) as db:
+                assert not await _coverage_satisfied(db, other_job, CHECKED + timedelta(minutes=1))
         finally:
             await engine.dispose()
 

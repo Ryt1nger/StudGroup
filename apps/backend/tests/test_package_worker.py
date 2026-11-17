@@ -1219,6 +1219,7 @@ def test_photo_caption_and_reply_chain_wait_together_but_unrelated_homework_prog
             route.release_budget_until = now + timedelta(hours=1)
             route.release_budget_receipt = "a" * 64
             photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            photo.text = "Сделать это с фотографии к завтра"
             reply = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
             reply.reply_to_message_id = 31
             db.add(
@@ -1590,6 +1591,7 @@ def test_independent_homework_reply_advances_without_unread_photo_context(client
             route.release_budget_until = now + timedelta(hours=1)
             route.release_budget_receipt = "a" * 64
             photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            photo.text = "Сделать это по фотографии"
             reply = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 32))
             reply.reply_to_message_id = photo.telegram_message_id
             reply.text = "По математике решить задачи 1–3 до пятницы, как самостоятельную работу"
@@ -1706,3 +1708,64 @@ def test_photo_text_independence_accepts_subject_headings_but_not_deictic_captio
     )
     assert not _self_contained_academic_reply(caption("Сделать это к завтра"))
     assert not _self_contained_academic_reply(caption("Задание на фото"))
+
+
+def test_caption_card_is_updated_after_later_image_read_without_duplicate(client):
+    seed(client)
+    make_new(client)
+
+    async def prepare():
+        now = datetime.now(UTC)
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            route = await db.get(GroupAnalysisSettings, group.id)
+            route.release_budget_usd = Decimal("0.20")
+            route.release_budget_since = now - timedelta(hours=1)
+            route.release_budget_until = now + timedelta(hours=1)
+            route.release_budget_receipt = "d" * 64
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            photo.text = "По математике решить задачи 1–3 к пятнице"
+            db.add(
+                MessageAttachment(
+                    raw_message_id=photo.id,
+                    group_id=group.id,
+                    source_revision=photo.revision,
+                    kind="photo",
+                    stable_file_id="caption-later-photo-31",
+                    telegram_file_id="later31",
+                    mime_type="image/jpeg",
+                    processing_state="metadata_only",
+                    active=True,
+                    created_at=BASE,
+                    delete_at=BASE + timedelta(days=30),
+                )
+            )
+            ident = group.id
+            await db.commit()
+            return ident
+
+    group_id = asyncio.run(prepare())
+    cfg = settings(photo_reading_enabled=True, ai_release_budget_required_groups=[str(group_id)])
+    first = PackageProvider()
+    assert step(client, first, cfg) == "completed"
+    assert count(client, Homework) == 1
+
+    async def ready_and_reopen():
+        async with AsyncSession(client.app.state.engine) as db:
+            photo = await db.scalar(select(RawMessage).where(RawMessage.telegram_message_id == 31))
+            image = await db.scalar(
+                select(MessageAttachment).where(MessageAttachment.raw_message_id == photo.id)
+            )
+            image.processing_state = "ready"
+            image.photo_summary = "Упражнения 1–4"
+            image.photo_text = "Решить задачи 1–4"
+            photo.processing_state = "pending"
+            photo.analysis_generation += 1
+            await db.commit()
+
+    asyncio.run(ready_and_reopen())
+    second = PackageProvider(update_existing=True)
+    assert step(client, second, cfg) == "completed"
+    assert count(client, Homework) == 1
+    assert len(second.requests) == 2
+    assert any("Упражнения 1–4" in str(request.user_payload) for request in second.requests)
