@@ -12,8 +12,8 @@ from studgroup.models import (
     Membership,
     MemberSubgroup,
     RanepaCrawlJob,
-    RanepaPersonalSnapshot,
     RanepaMaterializationReceipt,
+    RanepaPersonalSnapshot,
     SubjectSplit,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
