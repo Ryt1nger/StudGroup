@@ -73,6 +73,7 @@ async def remember_personal(
     courses=None,
     link_states=None,
     group_identity_verified=False,
+    source_complete=False,
     checked_at=None,
 ):
     group = await db.get(Group, group_id)
@@ -160,7 +161,11 @@ async def remember_personal(
     existing.data_digest = digest
     existing.rows_json = encoded
     existing.checked_at = checked_at or datetime.now(UTC)
-    existing.identity_verified = bool(existing.identity_verified or group_identity_verified)
+    # Verification describes THIS read, not a previous successful read.
+    # A partial/unconfirmed refresh must never retain old source authority.
+    existing.identity_verified = bool(group_identity_verified)
+    existing.source_complete = bool(group_identity_verified and source_complete)
+    existing.source_digest = snapshot.digest() if existing.source_complete else None
     if group_identity_verified:
         names = {}
         for lesson in snapshot.indexed().values():
@@ -270,6 +275,13 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
                 verified_covered.add(cursor)
             cursor += timedelta(days=1)
         source_rows = json.loads(row.rows_json)
+        # Legacy shared rows have no durable provenance; never render them as
+        # independently confirmed timetable facts after the safe migration.
+        source_rows = [
+            lesson for lesson in source_rows
+            if lesson.get("source_scope") not in {"common", "subgroup"}
+            or (lesson.get("source_user_id") and lesson.get("source_snapshot_id"))
+        ]
         sdo_rows = [lesson for lesson in source_rows if lesson.get("room") == "СДО"]
         direct_links = sum(lesson.get("link_state") == "matched" for lesson in sdo_rows)
         sdo_checked = sum(

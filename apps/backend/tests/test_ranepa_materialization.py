@@ -20,7 +20,7 @@ from studgroup.models import (
     SubjectSplit,
     User,
 )
-from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
+from studgroup.ranepa_crawl_jobs import _coverage_satisfied, claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_materialization import materialize_verified_facts
 from studgroup.ranepa_personal import (
@@ -115,6 +115,7 @@ async def fixture(engine):
             users[0],
             snapshot,
             group_identity_verified=True,
+            source_complete=True,
             links={key: "https://lms.ranepa.ru/mod/url/view.php?id=9876"},
             courses={key: "https://lms.ranepa.ru/course/view.php?id=1234"},
             checked_at=CHECKED,
@@ -229,6 +230,8 @@ def test_queue_skips_covered_account_but_not_uncovered_subgroup(tmp_path):
                 assert await finish(
                     db, first.id, group_id, users[0], now=CHECKED + timedelta(minutes=1)
                 )
+                # Delivery proof, not just the source read, enables covered.
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
                 # Same confirmed subgroup: already covered, no actual crawl.
                 # Next account belongs to another subgroup, so its scan remains due.
                 next_job = await claim_next(db, now=CHECKED + timedelta(minutes=2))
@@ -266,6 +269,7 @@ def test_borrowed_snapshot_cannot_be_rebroadcast_or_cover_a_new_subgroup(tmp_pat
                     users[1],
                     empty,
                     group_identity_verified=True,
+            source_complete=True,
                     checked_at=CHECKED + timedelta(minutes=1),
                 )
                 own = await db.get(RanepaPersonalSnapshot, (group_id, users[1], WEEK))
@@ -333,6 +337,7 @@ def test_unconfigured_subgroup_hint_is_neither_fallback_nor_shared(tmp_path):
                     users[0],
                     source_week,
                     group_identity_verified=True,
+            source_complete=True,
                     checked_at=CHECKED,
                 )
                 await db.commit()
@@ -387,6 +392,166 @@ def test_switching_source_subgroup_invalidates_old_split_evidence(tmp_path):
                 claimed = await claim_next(db, now=CHECKED + timedelta(minutes=3))
                 assert claimed is not None and claimed.user_id == users[2]
                 await db.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_full_source_replacement_removes_missing_pair_and_changes_room_time(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/replace.db")
+        try:
+            group_id, users, _, _ = await fixture(engine)
+            async with AsyncSession(engine) as db:
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+
+            moved = ExternalLesson(
+                WEEK, time(10), time(11, 20), "Общий предмет",
+                teacher="Новый преподаватель", room="Д-123",
+            )
+            revised = WeekSnapshot(CODE, WEEK, WEEK + timedelta(days=6), (moved,))
+            async with AsyncSession(engine) as db:
+                await remember_personal(
+                    db, group_id, users[0], revised,
+                    group_identity_verified=True, source_complete=True,
+                    checked_at=CHECKED + timedelta(minutes=5),
+                )
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                for user_id in users[1:]:
+                    personal = await personal_period(
+                        db, group_id, user_id, WEEK, WEEK + timedelta(days=6)
+                    )
+                    assert len(personal["lessons"]) == 1
+                    row = personal["lessons"][0]
+                    assert row["subject"] == "Общий предмет"
+                    assert row["starts"] == "10:00:00"
+                    assert row["teacher"] == "Новый преподаватель"
+                    assert row["room"] == "Д-123"
+                # A second replay of the same version does not append duplicates.
+                repeated = await materialize_verified_facts(
+                    db, group_id, users[0], WEEK, checked_at=CHECKED + timedelta(minutes=5)
+                )
+                assert repeated["lessons_added"] == 0
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_complete_empty_week_clears_peer_rows_but_partial_does_not(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/empty.db")
+        try:
+            group_id, users, _, _ = await fixture(engine)
+            async with AsyncSession(engine) as db:
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            empty = WeekSnapshot(CODE, WEEK, WEEK + timedelta(days=6), ())
+            async with AsyncSession(engine) as db:
+                await remember_personal(
+                    db, group_id, users[0], empty,
+                    group_identity_verified=False, source_complete=False,
+                    checked_at=CHECKED + timedelta(minutes=1),
+                )
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                with pytest.raises(ValueError, match="source_identity_unverified"):
+                    await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.rollback()
+                peer = await personal_period(db, group_id, users[1], WEEK, WEEK + timedelta(days=6))
+                assert len(peer["lessons"]) == 2
+            async with AsyncSession(engine) as db:
+                await remember_personal(
+                    db, group_id, users[0], empty,
+                    group_identity_verified=True, source_complete=True,
+                    checked_at=CHECKED + timedelta(minutes=2),
+                )
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                for user_id in users[1:]:
+                    peer = await personal_period(
+                        db, group_id, user_id, WEEK, WEEK + timedelta(days=6)
+                    )
+                    assert peer["lessons"] == []
+                job = RanepaCrawlJob(
+                    group_id=group_id, user_id=users[1], week_start=WEEK
+                )
+                assert not await _coverage_satisfied(
+                    db, job, CHECKED + timedelta(minutes=3)
+                )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_personal_confirmed_meeting_link_outweighs_shared_refresh(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/personal-priority.db")
+        try:
+            group_id, users, _, _ = await fixture(engine)
+            key = (
+                WEEK.isoformat(), "09:00:00", "10:20:00",
+                "Общий предмет", "Иванов", "СДО",
+            )
+            own = WeekSnapshot(
+                CODE, WEEK, WEEK + timedelta(days=6),
+                (ExternalLesson(
+                    WEEK, time(9), time(10, 20),
+                    "Общий предмет", teacher="Иванов", room="СДО",
+                ),),
+            )
+            async with AsyncSession(engine) as db:
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await remember_personal(
+                    db, group_id, users[1], own,
+                    group_identity_verified=True, source_complete=True,
+                    links={key: "https://lms.ranepa.ru/mod/url/view.php?id=1111"},
+                    checked_at=CHECKED + timedelta(minutes=1),
+                )
+                await materialize_verified_facts(
+                    db, group_id, users[0], WEEK, checked_at=CHECKED + timedelta(minutes=2)
+                )
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                peer = await personal_period(db, group_id, users[1], WEEK, WEEK + timedelta(days=6))
+                common = [row for row in peer["lessons"] if row["subject"] == "Общий предмет"]
+                assert len(common) == 1
+                assert common[0]["online_url"].endswith("id=1111")
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_coverage_requires_committed_recipient_proof_and_fresh_subgroup(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/evidence.db")
+        try:
+            group_id, users, split_id, subgroups = await fixture(engine)
+            job_a = RanepaCrawlJob(group_id=group_id, user_id=users[1], week_start=WEEK)
+            job_b = RanepaCrawlJob(group_id=group_id, user_id=users[2], week_start=WEEK)
+            async with AsyncSession(engine) as db:
+                assert not await _coverage_satisfied(db, job_a, CHECKED + timedelta(minutes=1))
+                await materialize_verified_facts(db, group_id, users[0], WEEK)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                assert await _coverage_satisfied(db, job_a, CHECKED + timedelta(minutes=2))
+                assert not await _coverage_satisfied(db, job_b, CHECKED + timedelta(minutes=2))
+                assert not await _coverage_satisfied(db, job_a, CHECKED + timedelta(hours=7))
+                choice = await db.get(MemberSubgroup, (UUID(int=1002), split_id))
+                choice.subgroup_id = subgroups[1].id
+                choice.updated_at = CHECKED + timedelta(minutes=3)
+                await db.commit()
+            async with AsyncSession(engine) as db:
+                assert not await _coverage_satisfied(db, job_a, CHECKED + timedelta(minutes=4))
+                view = await personal_period(db, group_id, users[1], WEEK, WEEK + timedelta(days=6))
+                assert {row["subject"] for row in view["lessons"]} == {"Общий предмет"}
         finally:
             await engine.dispose()
 

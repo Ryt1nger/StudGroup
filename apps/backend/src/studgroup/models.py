@@ -183,6 +183,34 @@ class RanepaPersonalSnapshot(Base):
     rows_json: Mapped[str] = mapped_column(Text)
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     identity_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # False for legacy/partial snapshots; only full verified source reads may replace peer rows.
+    source_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    source_digest: Mapped[str | None] = mapped_column(String(64))
+
+
+class RanepaMaterializationReceipt(Base):
+    """Proof that a specific verified source version was applied to one recipient/week.
+
+    Written in the SAME transaction as the recipient's materialized rows. Never
+    infer successful delivery merely from an available peer source snapshot.
+    """
+
+    __tablename__ = "ranepa_materialization_receipts"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    recipient_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    week_start: Mapped[date] = mapped_column(Date, primary_key=True)
+    source_user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_digest: Mapped[str] = mapped_column(String(64))
+    source_checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # {"common": true, "subgroups": [[split_id, subgroup_id], ...]}
+    coverage_json: Mapped[str] = mapped_column(Text)
 
 
 class SchedulePattern(Base):

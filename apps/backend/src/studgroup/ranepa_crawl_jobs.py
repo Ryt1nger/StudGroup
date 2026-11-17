@@ -13,14 +13,11 @@ from studgroup.models import (
     MemberSubgroup,
     RanepaCrawlJob,
     RanepaPersonalSnapshot,
+    RanepaMaterializationReceipt,
     SubjectSplit,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
-from studgroup.ranepa_schedule import (
-    has_unverified_subgroup_hint,
-    normalized,
-    subgroup_choice_changed_since_check,
-)
+from studgroup.ranepa_schedule import subgroup_choice_changed_since_check
 
 LEASE = timedelta(hours=1)
 REFRESH = timedelta(hours=6)
@@ -150,82 +147,123 @@ async def enqueue_week(
 
 
 async def _coverage_satisfied(db, candidate: RanepaCrawlJob, now: datetime) -> bool:
-    """Require fresh identity-verified reads covering the candidate's segments.
+    """Skip only after fresh, atomic, recipient-specific materialization proof.
 
-    An empty/partial source or a source from a departed member never proves
-    coverage. Missing split-subject evidence keeps backups eligible.
+    A peer's source snapshot alone never proves another account was updated.
     """
-    snapshots = (
+    member = await db.scalar(
+        select(Membership).where(
+            Membership.group_id == candidate.group_id,
+            Membership.user_id == candidate.user_id,
+            Membership.status == "active",
+        )
+    )
+    if member is None:
+        return False
+    target = await db.get(
+        RanepaPersonalSnapshot,
+        (candidate.group_id, candidate.user_id, candidate.week_start),
+    )
+    if target is None:
+        return False
+    splits = (
         await db.scalars(
-            select(RanepaPersonalSnapshot).where(
-                RanepaPersonalSnapshot.group_id == candidate.group_id,
-                RanepaPersonalSnapshot.week_start == candidate.week_start,
-                RanepaPersonalSnapshot.identity_verified.is_(True),
-                RanepaPersonalSnapshot.checked_at >= now - REFRESH,
+            select(SubjectSplit).where(SubjectSplit.group_id == candidate.group_id)
+        )
+    ).all()
+    choices = (
+        await db.scalars(
+            select(MemberSubgroup).where(MemberSubgroup.membership_id == member.id)
+        )
+    ).all()
+    wanted = {row.split_id: row.subgroup_id for row in choices}
+    # Unknown subgroup is not proven by another student's common-only view.
+    if any(split.id not in wanted for split in splits):
+        return False
+
+    receipts = (
+        await db.scalars(
+            select(RanepaMaterializationReceipt).where(
+                RanepaMaterializationReceipt.group_id == candidate.group_id,
+                RanepaMaterializationReceipt.recipient_user_id == candidate.user_id,
+                RanepaMaterializationReceipt.week_start == candidate.week_start,
             )
         )
     ).all()
-    if not snapshots:
+    if not receipts:
         return False
-    members = (
-        await db.scalars(
+    covered_common = False
+    covered_splits = set()
+    def utc(value):
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+    for receipt in receipts:
+        source_member = await db.scalar(
             select(Membership).where(
                 Membership.group_id == candidate.group_id,
+                Membership.user_id == receipt.source_user_id,
                 Membership.status == "active",
             )
         )
-    ).all()
-    by_user = {m.user_id: m for m in members}
-    if candidate.user_id not in by_user:
-        return False
-    choices = (
-        await db.scalars(
-            select(MemberSubgroup).where(MemberSubgroup.membership_id.in_([m.id for m in members]))
+        if source_member is None or receipt.source_user_id == candidate.user_id:
+            continue
+        source = await db.get(
+            RanepaPersonalSnapshot,
+            (candidate.group_id, receipt.source_user_id, candidate.week_start),
         )
-    ).all()
-    by_member = {}
-    choice_updated = {}
-    for choice in choices:
-        by_member.setdefault(choice.membership_id, {})[choice.split_id] = choice.subgroup_id
-        choice_updated[(choice.membership_id, choice.split_id)] = choice.updated_at
-    wanted = by_member.get(by_user[candidate.user_id].id, {})
-    splits = (
-        await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == candidate.group_id))
-    ).all()
-    split_name = {split.id: normalized(split.subject_name) for split in splits}
-    split_subjects = set(split_name.values())
-    covered_common = False
-    covered_split = set()
-    for snapshot in snapshots:
-        if snapshot.user_id == candidate.user_id or snapshot.user_id not in by_user:
+        if (
+            source is None
+            or not source.identity_verified
+            or not source.source_complete
+            or not source.source_digest
+            or source.source_digest != receipt.source_digest
+            or utc(source.checked_at) != utc(receipt.source_checked_at)
+            or utc(source.checked_at) < utc(now) - REFRESH
+        ):
             continue
-        rows = [
-            row
-            for row in json.loads(snapshot.rows_json)
-            if row.get("source_scope") not in {"common", "subgroup"}
-        ]
-        if not rows:
+        try:
+            coverage = json.loads(receipt.coverage_json)
+            rows = json.loads(source.rows_json)
+        except (ValueError, TypeError):
             continue
-        source_member_id = by_user[snapshot.user_id].id
-        source_choices = by_member.get(source_member_id, {})
-        observed = {normalized(row["subject"]) for row in rows}
-        if any(
-            normalized(row["subject"]) not in split_subjects
-            and not has_unverified_subgroup_hint(row.get("subgroup_hint"))
+        if not isinstance(coverage, dict) or not isinstance(rows, list):
+            continue
+        if not any(
+            isinstance(row, dict) and row.get("source_scope") not in {"common", "subgroup"}
             for row in rows
         ):
+            continue
+        if coverage.get("common") is True:
             covered_common = True
-        for split_id, subgroup_id in source_choices.items():
-            if split_name.get(split_id) in observed and not subgroup_choice_changed_since_check(
-                choice_updated.get((source_member_id, split_id)),
-                snapshot.checked_at,
-            ):
-                covered_split.add((split_id, subgroup_id))
-    # Do not suppress another account based solely on an unrelated subgroup.
-    return (covered_common or bool(covered_split)) and all(
-        (split_id, subgroup_id) in covered_split for split_id, subgroup_id in wanted.items()
+        source_choices = (
+            await db.scalars(
+                select(MemberSubgroup).where(
+                    MemberSubgroup.membership_id == source_member.id
+                )
+            )
+        ).all()
+        by_split = {row.split_id: row for row in source_choices}
+        if not isinstance(coverage.get("subgroups"), list):
+            continue
+        for item in coverage["subgroups"]:
+            if not isinstance(item, list) or len(item) != 2:
+                continue
+            split_id, subgroup_id = item
+            for split in splits:
+                if (
+                    str(split.id) == split_id
+                    and str(wanted.get(split.id)) == subgroup_id
+                    and split.id in by_split
+                    and str(by_split[split.id].subgroup_id) == subgroup_id
+                    and not subgroup_choice_changed_since_check(
+                        by_split[split.id].updated_at, source.checked_at
+                    )
+                ):
+                    covered_splits.add((split.id, wanted[split.id]))
+    return covered_common and all(
+        (split_id, subgroup_id) in covered_splits
+        for split_id, subgroup_id in wanted.items()
     )
-
 
 async def claim_next(
     db,

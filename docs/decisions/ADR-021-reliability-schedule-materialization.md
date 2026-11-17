@@ -14,7 +14,11 @@ A personal RANEPA/SDO snapshot can contain fewer occurrences than the published 
 
 ## Decision
 
-Preserve each published occurrence unless the same verified source explicitly cancels it. Save timetable evidence in a transaction independent of Moodle link enrichment. Direct meeting links and verified Moodle course fallbacks have different UI actions. A conservative, observed coverage check selects representatives; common facts are replicated to all eligible recipients and subgroup facts only to matching verified memberships. Preserve provenance, source check time, link check time and independent retry reasons. Never let the newest overlapping week conceal an older required week.
+Preserve each published occurrence unless the same verified source explicitly cancels it. Save timetable evidence in a transaction independent of Moodle link enrichment. Direct meeting links and verified Moodle course fallbacks have different UI actions. A conservative, observed coverage check selects representatives; common facts are replicated to all eligible recipients and subgroup facts only to matching verified memberships. Provenance includes source account, week, scope, subgroup and source snapshot digest. Materialize only a full identity/group/week-verified source, atomically replacing its obsolete rows and recording an applied-recipient receipt before claim_next may declare covered. An error in mandatory fan-out fails the crawl; optional link enrichment is independent. Preserve source check time, link check time and retry reasons. Never let the newest overlapping week conceal an older required week.
+
+## Release constraints
+
+Migration 0065 (after 0064) adds source completeness/version metadata and transactional per-recipient delivery receipts. Legacy rows cannot prove coverage and are not blindly backfilled. The public timetable API remains additive/compatible. No production migration, merge or deploy is implied by accepting this design.
 
 ## Consequences
 

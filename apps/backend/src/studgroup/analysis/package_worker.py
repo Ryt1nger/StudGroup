@@ -154,7 +154,15 @@ async def _source_messages(db, group, rows, *, structured_images=False):
         else []
     )
     kept = {a.id for a in (stored if structured_images else photo_dedupe.distinct(stored, earlier))}
+    by_source = {row.id: row for row in rows}
     for attachment in stored:
+        source = by_source[attachment.raw_message_id]
+        # Photo OCR can only enter text context if it is from this revision and
+        # the image actually reached verified ready state.
+        verified_photo = (
+            attachment.processing_state == "ready"
+            and attachment.source_revision == source.revision
+        )
         attachments.setdefault(attachment.raw_message_id, []).append(
             {
                 "kind": attachment.kind,
@@ -168,8 +176,8 @@ async def _source_messages(db, group, rows, *, structured_images=False):
                     attachment.processing_state if attachment.id in kept else "irrelevant"
                 ),
                 "file_name": (attachment.file_name or None) and attachment.file_name[:255],
-                "photo_summary": attachment.photo_summary,
-                "photo_text": attachment.photo_text,
+                "photo_summary": attachment.photo_summary if verified_photo else None,
+                "photo_text": attachment.photo_text if verified_photo else None,
             }
         )
     topics = {
@@ -250,21 +258,34 @@ def _self_contained_academic_reply(row):
     replies must wait for the attached image; uncertain cases are not published.
     """
     message = (row.text or "").strip().casefold()
-    if not row.reply_to_message_id or len(message) < 30:
+    # A caption on the image message is independent exactly like a reply.
+    # Do not require reply_to_message_id: the image itself may be unreadable.
+    if len(message) < 20:
         return False
     if re.search(
         r"\b(?:это|эти|этот|там|тут|здесь|выше|ниже|скрин|фото|картинк\w*|изображени\w*|прикрепленн\w*)\b",
         message,
     ):
         return False
-    explicit_subject = re.search(r"\bпо\s+[а-яёa-z][\w-]{3,}", message)
+    explicit_subject = re.search(
+        r"\bпо\s+[а-яёa-z][\w-]{3,}|^[а-яёa-z][\w\s-]{3,40}[:—-]\s*",
+        message,
+    )
+    # A verb alone is not enough: the specific task must be stated in text.
+    specific_work = re.search(
+        r"\b(?:задач\w*\s*(?:№|\d)|упражнени\w*\s*(?:№|\d)|"
+        r"доклад\w*|реферат\w*|конспект\w*|презентаци\w*|"
+        r"эссе\w*|параграф\w*|стихотворени\w*|лабораторн\w*|"
+        r"контрольн\w*|тестировани\w*|проект\w*|глав\w*\s*\d)\b",
+        message,
+    )
     actionable = re.search(
         r"\b(?:решить|сделать|выполнить|подготовить|сдать|написать|выучить|прочитать|"
         r"домашн\w*|задани\w*|контрольн\w*|тестировани\w*|"
         r"лекци\w*|семинар\w*)\b",
         message,
     )
-    return bool(explicit_subject and actionable)
+    return bool(explicit_subject and specific_work and actionable)
 
 
 async def _waiting_image_context(db, group, route, settings, now):
@@ -365,17 +386,29 @@ async def _waiting_image_context(db, group, route, settings, now):
     ).all()
     # Ambiguous replies inherit the attachment dependency. A clearly self-contained
     # academic message may be processed without its image and enriched later.
-    blocked = set(waiting)
+    # A complete academic caption must not be held just because its own photo
+    # is pending. Deictic captions and dependent replies still fail closed.
+    retained_by_mid = {row.telegram_message_id: row for row in retained}
+    blocked = {
+        mid for mid in waiting
+        if mid not in retained_by_mid
+        or not _self_contained_academic_reply(retained_by_mid[mid])
+    }
+    # Replies still depend on the unresolved photo, even when its own caption
+    # can be processed as text. Track ancestry separately from blocked targets.
+    dependent_chain = set(waiting)
     while True:
         children = {
             row.telegram_message_id
             for row in retained
-            if row.reply_to_message_id in blocked and not _self_contained_academic_reply(row)
+            if row.reply_to_message_id in dependent_chain
+            and not _self_contained_academic_reply(row)
         }
-        expanded = blocked | children
-        if expanded == blocked:
+        expanded = dependent_chain | children
+        if expanded == dependent_chain:
             break
-        blocked = expanded
+        dependent_chain = expanded
+        blocked.update(children)
     return {row.id for row in retained if row.telegram_message_id in blocked}
 
 
@@ -418,7 +451,12 @@ async def _read_pending_photos(db, group, rows, target_ids, settings, provider, 
     ):
         # An unread *context-only* photo is not grounds to block an unrelated
         # text package. Unread target photos remain pending for separate vision.
-        return Decimal(0), any(a.raw_message_id in target_ids for a in pending)
+        row_by_id = {row.id: row for row in rows}
+        return Decimal(0), any(
+            a.raw_message_id in target_ids
+            and not _self_contained_academic_reply(row_by_id.get(a.raw_message_id))
+            for a in pending
+        )
     if provider is None:
         from studgroup.ai import DeepSeekProvider
 

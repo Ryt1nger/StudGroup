@@ -810,13 +810,24 @@ async def _collect(
                         await page.wait_for_timeout(750)
                     if trace is not None:
                         trace.record("week_verified")
-                    # Commit verified timetable BEFORE any optional SDO navigation.
-                    # Link extraction and its database transaction may fail independently.
+                    # Source and every recipient MUST commit atomically. A failed
+                    # group projection cannot produce a false covered backup job.
+                    # Optional SDO link enrichment remains a separate transaction.
                     async with AsyncSession(engine) as db:
-                        await remember_personal(
-                            db, group_id, user_id, result.snapshot, group_identity_verified=True
-                        )
-                        await db.commit()
+                        try:
+                            await remember_personal(
+                                db, group_id, user_id, result.snapshot,
+                                group_identity_verified=True, source_complete=True,
+                            )
+                            await materialize_verified_facts(
+                                db, group_id, user_id, result.snapshot.week_start
+                            )
+                            await db.commit()
+                        except Exception:  # noqa: BLE001
+                            await db.rollback()
+                            # No private exception text (may contain credentials).
+                            log_captcha_stage("peer_materialization_failed")
+                            return "internal"
                     if stats is not None:
                         stats.saved_weeks += 1
                         stats.saved_lessons += len(actual)
@@ -879,6 +890,8 @@ async def _collect(
                         # No enrichment or provider error can roll back the committed week.
                         # Never log exception details which can contain credentials.
                         log_captcha_stage("sdo_enrichment_failed")
+                    # After optional link enrichment, refresh the projection
+                    # without turning a link failure into timetable failure.
                     if result.snapshot.lessons:
                         try:
                             async with AsyncSession(engine) as db:
@@ -887,8 +900,7 @@ async def _collect(
                                 )
                                 await db.commit()
                         except Exception:  # noqa: BLE001
-                            # Do not undo the saved week; never include private DB errors.
-                            log_captcha_stage("peer_materialization_failed")
+                            log_captcha_stage("peer_link_projection_failed")
                     if sdo_captcha_unresolved:
                         log_captcha_stage("challenge_still_present_sdo")
                         return "captcha"
