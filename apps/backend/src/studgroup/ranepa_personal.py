@@ -63,6 +63,49 @@ def _safe_course(url: str) -> bool:
 LOGGER = logging.getLogger(__name__)
 
 
+def _sdo_cache_key(row):
+    return (
+        normalized(row.get("subject")),
+        normalized(row.get("teacher")),
+        normalized(row.get("subgroup_hint")),
+    )
+
+
+async def _verified_sdo_link_cache(db, group_id, user_id):
+    """Newest safe LMS links for this account, reusable across timetable weeks."""
+    snapshots = (
+        await db.scalars(
+            select(RanepaPersonalSnapshot)
+            .where(
+                RanepaPersonalSnapshot.group_id == group_id,
+                RanepaPersonalSnapshot.user_id == user_id,
+            )
+            .order_by(RanepaPersonalSnapshot.checked_at.desc())
+        )
+    ).all()
+    cache = {}
+    for snapshot in snapshots:
+        for row in json.loads(snapshot.rows_json):
+            if row.get("room") != "СДО":
+                continue
+            url = row.get("online_url")
+            course = row.get("course_url")
+            if url is not None and not _safe_link(url):
+                url = None
+            if course is not None and not _safe_course(course):
+                course = None
+            if url is None and course is None:
+                continue
+            item = cache.setdefault(_sdo_cache_key(row), {})
+            if url is not None and "online_url" not in item:
+                item["online_url"] = url
+                item["online_checked_at"] = row.get("links_checked_at") or snapshot.checked_at.isoformat()
+            if course is not None and "course_url" not in item:
+                item["course_url"] = course
+                item["course_checked_at"] = row.get("links_checked_at") or snapshot.checked_at.isoformat()
+    return cache
+
+
 async def remember_personal(
     db,
     group_id,
@@ -97,6 +140,7 @@ async def remember_personal(
     existing = await db.get(
         RanepaPersonalSnapshot, (group_id, user_id, snapshot.week_start), with_for_update=True
     )
+    cached_links = await _verified_sdo_link_cache(db, group_id, user_id)
     previous = {}
     if existing is not None:
         for old in json.loads(existing.rows_json):
@@ -136,6 +180,21 @@ async def remember_personal(
         if course is not None and row["room"] != "СДО":
             raise ValueError("course_without_sdo")
         state = link_states.get(key, old.get("link_state"))
+        cached = cached_links.get(_sdo_cache_key(row), {}) if row["room"] == "СДО" else {}
+        link_cached = False
+        if url is None and cached.get("online_url"):
+            url = cached["online_url"]
+            state = "matched"
+            row["link_cached_at"] = cached.get("online_checked_at")
+            link_cached = True
+        if course is None and cached.get("course_url"):
+            course = cached["course_url"]
+            row["course_cached_at"] = cached.get("course_checked_at")
+            link_cached = True
+        if link_cached:
+            row["link_source"] = "cached"
+        elif url is not None or course is not None:
+            row["link_source"] = "live"
         if state is not None and state not in LINK_STATES:
             raise ValueError("unsafe_lms_state")
         if url is not None and state not in {None, "matched"}:
@@ -216,6 +275,7 @@ async def enrich_personal_links(
     courses = courses or {}
     link_states = link_states or {}
     rows = json.loads(stored.rows_json)
+    cached_links = await _verified_sdo_link_cache(db, group_id, user_id)
     checked = (checked_at or datetime.now(UTC)).isoformat()
     for row in rows:
         key = (row["day"], row["starts"], row["ends"], row["subject"], row["teacher"], row["room"])
@@ -224,6 +284,21 @@ async def enrich_personal_links(
         url = links.get(key)
         course = courses.get(key)
         state = link_states.get(key, "matched" if url else "not_checked")
+        cached = cached_links.get(_sdo_cache_key(row), {}) if row["room"] == "СДО" else {}
+        link_cached = False
+        if url is None and cached.get("online_url"):
+            url = cached["online_url"]
+            state = "matched"
+            row["link_cached_at"] = cached.get("online_checked_at")
+            link_cached = True
+        if course is None and cached.get("course_url"):
+            course = cached["course_url"]
+            row["course_cached_at"] = cached.get("course_checked_at")
+            link_cached = True
+        if link_cached:
+            row["link_source"] = "cached"
+        elif url is not None or course is not None:
+            row["link_source"] = "live"
         if state not in LINK_STATES:
             raise ValueError("unsafe_lms_state")
         if url is not None and not _safe_link(url):

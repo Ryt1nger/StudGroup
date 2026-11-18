@@ -643,3 +643,84 @@ def test_link_enrichment_rollback_does_not_erase_committed_week(client):
             assert __import__("json").loads(stored.rows_json)[0]["link_state"] == "identity_missing"
 
     asyncio.run(scenario())
+
+
+def test_verified_sdo_link_is_reused_for_the_same_account_in_a_later_week(client):
+    async def scenario():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            group.academic_group_code = CODE
+            member = await db.scalar(select(Membership).where(Membership.group_id == group.id))
+            first = week()
+            first_key = (
+                "2026-11-02",
+                "09:00:00",
+                "10:20:00",
+                "История России",
+                "Иванов",
+                "СДО",
+            )
+            url = "https://lms.ranepa.ru/mod/url/view.php?id=9911"
+            course = "https://lms.ranepa.ru/course/view.php?id=8822"
+            await remember_personal(
+                db,
+                group.id,
+                member.user_id,
+                first,
+                links={first_key: url},
+                courses={first_key: course},
+                group_identity_verified=True,
+                source_complete=True,
+            )
+            later = WeekSnapshot(
+                CODE,
+                date(2026, 11, 9),
+                date(2026, 11, 15),
+                (
+                    ExternalLesson(
+                        date(2026, 11, 9),
+                        time(9),
+                        time(10, 20),
+                        "История России",
+                        teacher="Иванов",
+                        room="СДО",
+                        subgroup_hint="Э-ОБ26-СГЯ-лек(43,44,45)",
+                    ),
+                ),
+            )
+            await remember_personal(
+                db,
+                group.id,
+                member.user_id,
+                later,
+                group_identity_verified=True,
+                source_complete=True,
+            )
+            later_key = (
+                "2026-11-09",
+                "09:00:00",
+                "10:20:00",
+                "История России",
+                "Иванов",
+                "СДО",
+            )
+            await enrich_personal_links(
+                db,
+                group.id,
+                member.user_id,
+                later.week_start,
+                link_states={later_key: "not_found"},
+            )
+            await db.commit()
+            stored = await db.get(
+                RanepaPersonalSnapshot,
+                (group.id, member.user_id, later.week_start),
+            )
+            return __import__("json").loads(stored.rows_json)[0]
+
+    row = asyncio.run(scenario())
+    assert row["online_url"] == "https://lms.ranepa.ru/mod/url/view.php?id=9911"
+    assert row["course_url"] == "https://lms.ranepa.ru/course/view.php?id=8822"
+    assert row["link_state"] == "matched"
+    assert row["link_source"] == "cached"
+    assert row["link_cached_at"]
