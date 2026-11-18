@@ -96,8 +96,18 @@ jobs:
                       print("frontend-render-hosts:", render_hosts[:15])
                       print("frontend-api-url-present:", api.encode() in bundle[2])
                       if api.encode() not in bundle[2]:
-                          print("frontend-api-url: FAIL new Render URL not found in entry bundle")
-                          failures.append("frontend-api-url")
+                          all_assets = bundle[2].decode("utf-8", "replace")
+                          candidates = sorted(set(re.findall(r'[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\\.js', all_assets)))
+                          print("frontend-chunk-candidate-count:", len(candidates))
+                          matches = []
+                          for filename in candidates[:40]:
+                              chunk = get("asset:" + filename, web + "/assets/" + filename, expected=(200, 404))
+                              if chunk and chunk[0] == 200 and api.encode() in chunk[2]:
+                                  matches.append(filename)
+                          print("frontend-api-url-in-chunks:", matches[:8])
+                          if not matches:
+                              print("frontend-api-url: FAIL new Render URL not found in entry or candidate chunks")
+                              failures.append("frontend-api-url")
           get("landing", landing + "/")
 
           unauthorized = get("admin-auth", api + "/v1/admin/dashboard", expected=(401, 403))
