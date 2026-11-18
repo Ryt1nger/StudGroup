@@ -89,9 +89,15 @@ jobs:
                   failures.append("frontend-entry-js")
               else:
                   bundle = get("frontend-bundle", web + entry.group(1))
-                  if bundle and api.encode() not in bundle[2]:
-                      print("frontend-api-url: FAIL new Render URL not found in entry bundle")
-                      failures.append("frontend-api-url")
+                  if bundle:
+                      print("frontend-bundle-bytes:", len(bundle[2]))
+                      urls = re.findall(rb'https?://[a-zA-Z0-9._:-]+', bundle[2])
+                      render_hosts = sorted({u.decode("ascii", "replace") for u in urls if b"onrender.com" in u})
+                      print("frontend-render-hosts:", render_hosts[:15])
+                      print("frontend-api-url-present:", api.encode() in bundle[2])
+                      if api.encode() not in bundle[2]:
+                          print("frontend-api-url: FAIL new Render URL not found in entry bundle")
+                          failures.append("frontend-api-url")
           get("landing", landing + "/")
 
           unauthorized = get("admin-auth", api + "/v1/admin/dashboard", expected=(401, 403))
