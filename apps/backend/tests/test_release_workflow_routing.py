@@ -26,9 +26,7 @@ def test_crawl_checks_schema_before_browser_and_student_access():
     assert "studgroup-tyjh.onrender.com" not in data
     assert "uv run alembic current" in data
     assert data.index("Require Alembic 0065") < data.index("Install browser")
-    assert data.index("Require Alembic 0065") < data.index(
-        "Process one bounded queue shift"
-    )
+    assert data.index("Require Alembic 0065") < data.index("Process one bounded queue shift")
 
 
 def test_watchdog_only_checks_enabled_schedule():
