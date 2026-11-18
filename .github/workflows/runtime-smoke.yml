@@ -1,0 +1,135 @@
+name: Verify migrated StudGroup runtime
+
+# Read-only smoke checks, including a cold-start window for Render Free.
+# This never sends Telegram events, accesses students, or starts paid workers.
+on:
+  push:
+    paths: ['.github/workflows/runtime-smoke.yml']
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check public runtime, readiness, CORS, and admin access controls
+        env:
+          API: https://studgroup-api-v2.onrender.com
+          WEB: https://studgroup-frontend-migrated.onrender.com
+          LANDING: https://studgroup-landing-migrated.onrender.com
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          api = os.environ["API"].rstrip("/")
+          api_v1 = api + "/v1"
+          web = os.environ["WEB"].rstrip("/")
+          landing = os.environ["LANDING"].rstrip("/")
+          failures = []
+
+          def get(label, url, *, headers=None, method="GET", expected=(200,)):
+              result = None
+              for attempt in range(3):
+                  req = Request(url, headers=headers or {}, method=method)
+                  try:
+                      with urlopen(req, timeout=90) as r:
+                          result = (r.status, r.headers, r.read(4_000_000))
+                  except HTTPError as e:
+                      result = (e.code, e.headers, e.read(1000))
+                  except (URLError, TimeoutError) as e:
+                      print(f"{label}: request error type={type(e).__name__}; retry={attempt < 2}")
+                  if result is not None and result[0] != 503:
+                      break
+                  if attempt < 2:
+                      time.sleep(8)
+              if result is None or result[0] not in expected:
+                  status = result[0] if result else "network_error"
+                  print(f"{label}: FAIL HTTP {status}")
+                  failures.append(f"{label}: {status}")
+                  return None
+              print(f"{label}: HTTP {result[0]}")
+              return result
+
+          health = get("api-health", api + "/health")
+          if health:
+              try:
+                  health_data = json.loads(health[2])
+                  assert health_data["status"] == "ok"
+                  print("api-ai-processing:", health_data.get("ai_processing", "unknown"))
+              except (ValueError, KeyError, AssertionError):
+                  failures.append("health-body")
+                  print("health-body: FAIL")
+
+          ready = get("api-readiness", api + "/ready")
+          if ready:
+              try:
+                  body = json.loads(ready[2])
+                  print("api-mode:", body.get("status"), "postgres:", body.get("checks", {}).get("postgres"))
+                  assert body.get("checks", {}).get("postgres") is True
+                  assert body.get("status") in {"read_only", "ready"}
+                  if body.get("status") == "read_only":
+                      print("NOTICE: database is reachable but CUTOVER_READ_ONLY remains active; full production processing is NOT verified")
+              except (ValueError, AssertionError):
+                  failures.append("readiness-body")
+                  print("readiness-body: FAIL")
+
+          for path in ("/admin/", "/admin/app.js", "/admin/style.css"):
+              get("admin" + path, api + path)
+          frontend = get("frontend", web + "/")
+          if frontend:
+              import re
+              entry = re.search(r'<script[^>]+src="(/assets/[^"]+\.js)"', frontend[2].decode("utf-8", "replace"))
+              if not entry:
+                  print("frontend-bundle: FAIL no entry JS found")
+                  failures.append("frontend-entry-js")
+              else:
+                  bundle = get("frontend-bundle", web + entry.group(1))
+                  if bundle:
+                      print("frontend-bundle-bytes:", len(bundle[2]))
+                      urls = re.findall(rb'https?://[a-zA-Z0-9._:-]+', bundle[2])
+                      render_hosts = sorted({u.decode("ascii", "replace") for u in urls if b"onrender.com" in u})
+                      print("frontend-render-hosts:", render_hosts[:15])
+                      print("frontend-api-url-present:", api_v1.encode() in bundle[2])
+                      if api_v1.encode() not in bundle[2]:
+                          all_assets = bundle[2].decode("utf-8", "replace")
+                          candidates = sorted(set(re.findall(r'[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\.js', all_assets)))
+                          print("frontend-chunk-candidate-count:", len(candidates))
+                          matches = []
+                          for filename in candidates[:40]:
+                              chunk = get("asset:" + filename, web + "/assets/" + filename, expected=(200, 404))
+                              if chunk and chunk[0] == 200 and api_v1.encode() in chunk[2]:
+                                  matches.append(filename)
+                          print("frontend-api-url-in-chunks:", matches[:8])
+                          if not matches:
+                              print("frontend-api-url: FAIL new Render URL not found in entry or candidate chunks")
+                              failures.append("frontend-api-url")
+          get("landing", landing + "/")
+
+          unauthorized = get("admin-auth", api + "/v1/admin/dashboard", expected=(401, 403))
+          if unauthorized:
+              print("admin-auth: protected (no admin token provided)")
+
+          cors = get(
+              "frontend-cors",
+              api + "/v1/admin/dashboard",
+              method="OPTIONS",
+              headers={
+                  "Origin": web,
+                  "Access-Control-Request-Method": "GET",
+                  "Access-Control-Request-Headers": "authorization",
+              },
+          )
+          if cors and cors[1].get("Access-Control-Allow-Origin") != web:
+              failures.append("frontend-cors-origin")
+              print("frontend-cors-origin: FAIL")
+
+          if failures:
+              raise SystemExit("Smoke failures: " + ", ".join(failures))
+          print("PASS: public endpoints reachable and expected protection enforced")
+          PY

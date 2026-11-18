@@ -18,8 +18,17 @@ export function apiAuthorization(): string | null {
   return accessToken ? `Bearer ${accessToken}` : null;
 }
 
+/** Keep the OpenAPI server prefix even when Render supplies only the API origin.
+ * The generated SDK requests /session/bootstrap, while FastAPI mounts it at /v1/session/bootstrap.
+ */
+export function normalizeApiBaseUrl(configured: string | undefined): string | undefined {
+  const cleaned = configured?.trim().replace(/\/+$/, '');
+  if (!cleaned) return undefined;
+  return cleaned.endsWith('/v1') ? cleaned : `${cleaned}/v1`;
+}
+
 export function configureApiClient(fetchImplementation?: typeof fetch): void {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL;
+  const baseUrl = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
   client.setConfig({
     ...(baseUrl ? { baseUrl } : {}),
     ...(fetchImplementation ? { fetch: fetchImplementation } : {}),
