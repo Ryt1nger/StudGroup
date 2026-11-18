@@ -14,7 +14,7 @@
 
 - Require green backend and frontend CI on final combined head SHA, including database migration upgrade from revision 0053 through 0065, Ruff/format, backend unit suite, TypeScript, frontend unit suite, production build, Playwright Chromium, and shared-types/OpenAPI generation drift.
 - Verify that no merge message includes a [run-sdo-once], [run-sdo-all-once] or other paid-crawl trigger tag.
-- Block merging to main while Render studgroup-frontend has autoDeployTrigger=checksPass on main. Owner authorization is needed before disabling that production setting, merging or deploying. Backend autoDeploy is off.
+- Recheck actual Render auto-deploy settings before any later merge. The new workspace's frontend and backend were created with auto-deploy off; do not assume older settings still apply.
 - Record the deployed frontend and backend SHAs and the database schema revision. Never assume main equals deployed.
 
 ## Gate 2 — controlled release (separate owner authorization)
@@ -30,3 +30,13 @@
 ## Known unresolved external dependencies
 
 Backend Render Free can sleep and GitHub scheduled jobs can be delayed or skipped. The separate hourly GitHub watchdog flags missing scheduled crawl launches through a deduplicated repository issue, but it shares the same GitHub scheduling platform and cannot guarantee independent always-on delivery. YDB/Postgres opaque credential reference reconciliation is not yet verified in production. Do not claim SLA success without those external checks and an owner-approved canary.
+
+## 2026-11-18 migration incident and safe scheduled operations
+
+- Main after #194: `83714e09adef7f620daeec55b49cc05760bf6730`. New API origin: `https://studgroup-api-v2.onrender.com`. Confirm deployed frontend/backend SHAs separately.
+- Read-only Supabase check on project `ytghmfxjjyxkcaglbhfj`: Alembic `0063`; missing `ranepa_crawl_jobs.next_attempt_at` and materialization receipt table. The crawler now checks `0065` before Chromium or student accounts; **never auto-upgrade a production database from GitHub Actions**.
+- New Render Free workspace also runs another service, so keepalive is off unless GitHub repository variable `STUDGROUP_KEEPALIVE_ENABLED=true` is configured. A manual keepalive run issues just one `/ready` check. The old multi-hour push-triggered wake loop was removed.
+- The scheduled RANEPA crawler and its missing-schedule watchdog are off until GitHub repository variable `RANEPA_SCHEDULE_ENABLED=true` is set. Before enabling: verified restorable backup; nonproduction clone migration test; controlled `0064` then `0065` production upgrade; Render/YDB/Telegram checks; and separate approval for recurring student account access and paid CAPTCHA budgets. Explicit manual and owner-tagged actions keep their original guards.
+- Optional public repository variable `STUDGROUP_API_ORIGIN` overrides the new API origin used by keepalive and signed CAPTCHA fallback. Never point it to the suspended old Render service or store credentials in it.
+- Genuine missed scheduled launches must still be investigated after schedules are enabled. An existing watchdog incident should not be closed just because checks are paused.
+- A Render `live` deploy does not prove `/ready`, authenticated admin, YDB, Telegram, canaries or the six-hour timetable SLA. Verify these separately.
