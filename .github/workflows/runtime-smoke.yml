@@ -38,7 +38,7 @@ jobs:
                   req = Request(url, headers=headers or {}, method=method)
                   try:
                       with urlopen(req, timeout=90) as r:
-                          result = (r.status, r.headers, r.read(512_000))
+                          result = (r.status, r.headers, r.read(4_000_000))
                   except HTTPError as e:
                       result = (e.code, e.headers, e.read(1000))
                   except (URLError, TimeoutError) as e:
@@ -58,7 +58,9 @@ jobs:
           health = get("api-health", api + "/health")
           if health:
               try:
-                  assert json.loads(health[2])["status"] == "ok"
+                  health_data = json.loads(health[2])
+                  assert health_data["status"] == "ok"
+                  print("api-ai-processing:", health_data.get("ai_processing", "unknown"))
               except (ValueError, KeyError, AssertionError):
                   failures.append("health-body")
                   print("health-body: FAIL")
@@ -78,7 +80,18 @@ jobs:
 
           for path in ("/admin/", "/admin/app.js", "/admin/style.css"):
               get("admin" + path, api + path)
-          get("frontend", web + "/")
+          frontend = get("frontend", web + "/")
+          if frontend:
+              import re
+              entry = re.search(r'<script[^>]+src="(/assets/[^"]+\.js)"', frontend[2].decode("utf-8", "replace"))
+              if not entry:
+                  print("frontend-bundle: FAIL no entry JS found")
+                  failures.append("frontend-entry-js")
+              else:
+                  bundle = get("frontend-bundle", web + entry.group(1))
+                  if bundle and api.encode() not in bundle[2]:
+                      print("frontend-api-url: FAIL new Render URL not found in entry bundle")
+                      failures.append("frontend-api-url")
           get("landing", landing + "/")
 
           unauthorized = get("admin-auth", api + "/v1/admin/dashboard", expected=(401, 403))
