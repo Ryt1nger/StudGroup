@@ -97,7 +97,7 @@ jobs:
                       print("frontend-api-url-present:", api.encode() in bundle[2])
                       if api.encode() not in bundle[2]:
                           all_assets = bundle[2].decode("utf-8", "replace")
-                          candidates = sorted(set(re.findall(r'[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\\.js', all_assets)))
+                          candidates = sorted(set(re.findall(r'[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{6,}\.js', all_assets)))
                           print("frontend-chunk-candidate-count:", len(candidates))
                           matches = []
                           for filename in candidates[:40]:
