@@ -20,7 +20,7 @@ MAX_DETAIL_PAGES = 8
 LMS_MEETING_PATHS = frozenset(
     {"/mod/url/view.php", "/mod/mtslinkrnhgs/view.php", "/mod/bigbluebuttonbn/view.php"}
 )
-LMS_DETAIL_PATHS = frozenset({"/mod/page/view.php", "/mod/book/view.php"})
+LMS_DETAIL_PATHS = frozenset({"/mod/page/view.php", "/mod/book/view.php", "/course/section.php"})
 
 
 @dataclass(frozen=True)
@@ -37,13 +37,17 @@ class LinkChoice:
 
 
 def _canonical_lms_activity(raw: str, paths: frozenset[str]) -> str | None:
-    parsed = urlsplit(urljoin(URL_BASE, raw))
+    try:
+        parsed = urlsplit(urljoin(URL_BASE, raw))
+        port = parsed.port
+    except ValueError:
+        return None
     if (
         parsed.scheme != "https"
         or parsed.hostname != "lms.ranepa.ru"
         or parsed.username
         or parsed.password
-        or parsed.port not in (None, 443)
+        or port not in (None, 443)
         or parsed.path not in paths
     ):
         return None
@@ -62,7 +66,11 @@ def meeting_url(raw: str) -> str | None:
     if lms:
         return lms
     # The safe host/path allowlist is shared with Telegram message links.
-    if joining_url(raw) and not urlsplit(raw).fragment:
+    try:
+        safe_external = joining_url(raw) and not urlsplit(raw).fragment
+    except ValueError:
+        safe_external = False
+    if safe_external:
         return raw
     return None
 
@@ -95,7 +103,7 @@ def _nearby_label(node, ancestors, url):
     if len(label) >= 36 and not label.casefold().startswith(("открыть", "перейти")):
         return label[:500]
     for parent in reversed(ancestors):
-        if parent.tag not in {"li", "p", "div", "article"}:
+        if parent.tag not in {"li", "p", "div", "article", "details", "section"}:
             continue
         text = parent.text()
         if not (12 <= len(text) <= 500):
@@ -106,7 +114,15 @@ def _nearby_label(node, ancestors, url):
             for a in parent.tags("a")
             if meeting_url(a.attrs.get("href", "")) is not None
         ]
-        if len(meeting_anchors) == 1 and meeting_url(meeting_anchors[0].attrs.get("href", "")) == url:
+        meeting_frames = [
+            frame
+            for frame in parent.tags("iframe")
+            if meeting_url(frame.attrs.get("src", "")) == url
+        ]
+        if (
+            (len(meeting_anchors) == 1 and meeting_url(meeting_anchors[0].attrs.get("href", "")) == url)
+            or (not meeting_anchors and len(meeting_frames) == 1)
+        ):
             return text[:500]
     return label[:500]
 
@@ -133,13 +149,13 @@ def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandida
     result: dict[str, LinkCandidate] = {}
     for node, ancestors in _nodes_with_ancestors(document.root):
         if node.tag == "a":
-            url = meeting_url(node.attrs.get("href", ""))
+            url = meeting_url(node.attrs.get("href", "") or node.attrs.get("data-url", ""))
             if url:
                 label = _nearby_label(node, ancestors, url)
                 if label and (url not in result or len(label) > len(result[url].label)):
                     result[url] = LinkCandidate(url, label)
-        elif node.tag == "iframe":
-            url = meeting_url(node.attrs.get("src", ""))
+        elif node.tag in {"iframe", "button"}:
+            url = meeting_url(node.attrs.get("src", "") or node.attrs.get("data-url", ""))
             if url:
                 label = _nearby_label(node, ancestors, url)
                 if label:
