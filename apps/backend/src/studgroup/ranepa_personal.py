@@ -30,19 +30,10 @@ from studgroup.subject_identity import subject_uuid
 
 
 def _safe_link(url: str) -> bool:
-    parsed = urlsplit(url)
-    parameters = parse_qsl(parsed.query, keep_blank_values=True)
-    return (
-        parsed.scheme == "https"
-        and parsed.hostname == "lms.ranepa.ru"
-        and parsed.path in {"/mod/url/view.php", "/mod/mtslinkrnhgs/view.php"}
-        and len(parameters) == 1
-        and parameters[0][0] == "id"
-        and parameters[0][1].isdigit()
-        and not parsed.username
-        and not parsed.password
-        and not parsed.fragment
-    )
+    try:
+        return bool(url) and meeting_url(url) == url
+    except ValueError:
+        return False
 
 
 def _safe_course(url: str) -> bool:
@@ -235,7 +226,7 @@ async def remember_personal(
     existing = await db.get(
         RanepaPersonalSnapshot, (group_id, user_id, snapshot.week_start), with_for_update=True
     )
-    cached_links = await _verified_sdo_link_cache(db, group_id, user_id)
+    cached_links, course_candidates = await _verified_sdo_link_cache(db, group_id, user_id)
     previous = {}
     if existing is not None:
         for old in json.loads(existing.rows_json):
@@ -277,15 +268,28 @@ async def remember_personal(
         state = link_states.get(key, old.get("link_state"))
         cached = cached_links.get(_sdo_cache_key(row), {}) if row["room"] == "СДО" else {}
         link_cached = False
-        if url is None and cached.get("online_url"):
-            url = cached["online_url"]
-            state = "matched"
-            row["link_cached_at"] = cached.get("online_checked_at")
-            link_cached = True
         if course is None and cached.get("course_url"):
             course = cached["course_url"]
             row["course_cached_at"] = cached.get("course_checked_at")
             link_cached = True
+        if (
+            url is None
+            and row["room"] == "СДО"
+            and state not in {"ambiguous", "timing_unverified", "identity_missing"}
+        ):
+            url = _reuse_verified_candidate(row, course, course_candidates, cached_links)
+            if url:
+                state = "matched"
+                row["link_cached_at"] = cached.get("online_checked_at")
+                link_cached = True
+        if row["room"] == "СДО":
+            # Durable candidate list stays on the verified account-local row.
+            row["link_candidates"] = _merge_course_candidates(
+                old.get("link_candidates", ()),
+                course_candidates.get(course, {}).values() if course else (),
+                course,
+                (checked_at or datetime.now(UTC)).isoformat(),
+            )
         if link_cached:
             row["link_source"] = "cached"
         elif url is not None or course is not None:
