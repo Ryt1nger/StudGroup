@@ -358,6 +358,7 @@ async def enrich_personal_links(
     links=None,
     courses=None,
     link_states=None,
+    candidates=None,
     checked_at=None,
 ):
     """Update link fields only after schedule commit, in a separate transaction.
@@ -373,27 +374,71 @@ async def enrich_personal_links(
     links = links or {}
     courses = courses or {}
     link_states = link_states or {}
+    candidates = candidates or {}
     rows = json.loads(stored.rows_json)
-    cached_links = await _verified_sdo_link_cache(db, group_id, user_id)
+    cached_links, course_candidates = await _verified_sdo_link_cache(db, group_id, user_id)
     checked = (checked_at or datetime.now(UTC)).isoformat()
     for row in rows:
         key = (row["day"], row["starts"], row["ends"], row["subject"], row["teacher"], row["room"])
-        if key not in links and key not in courses and key not in link_states:
+        if (
+            key not in links
+            and key not in courses
+            and key not in link_states
+            and key not in candidates
+        ):
             continue
         url = links.get(key)
-        course = courses.get(key)
+        course = courses.get(key) or row.get("course_url")
         state = link_states.get(key, "matched" if url else "not_checked")
         cached = cached_links.get(_sdo_cache_key(row), {}) if row["room"] == "СДО" else {}
         link_cached = False
-        if url is None and cached.get("online_url"):
-            url = cached["online_url"]
-            state = "matched"
-            row["link_cached_at"] = cached.get("online_checked_at")
-            link_cached = True
         if course is None and cached.get("course_url"):
             course = cached["course_url"]
             row["course_cached_at"] = cached.get("course_checked_at")
             link_cached = True
+        if row["room"] == "СДО":
+            # Store all candidates even for ambiguous or currently unmatched
+            # lessons. The record is private to the verified source account.
+            row["link_candidates"] = _merge_course_candidates(
+                (*row.get("link_candidates", ()), *(
+                    course_candidates.get(course, {}).values() if course else ()
+                )),
+                candidates.get(key, ()),
+                course,
+                checked,
+            )
+        if (
+            url is None
+            and row["room"] == "СДО"
+            and state not in {"ambiguous", "timing_unverified", "identity_missing"}
+        ):
+            historical = _reuse_verified_candidate(
+                row, course, course_candidates, cached_links
+            )
+            if historical:
+                url = historical
+                link_cached = True
+            else:
+                # A previously unchosen meeting may become matchable after
+                # the timetable supplies the exact teacher and stream.
+                choices = tuple(
+                    LinkCandidate(item["url"], item["label"])
+                    for item in row.get("link_candidates", ())
+                    if item["course_url"] == course
+                )
+                if choices:
+                    selected = select_lesson_link(
+                        choices,
+                        teacher=row.get("teacher") or "",
+                        group_label=row.get("subgroup_hint") or "",
+                        day=date.fromisoformat(row["day"]),
+                        starts=time.fromisoformat(row["starts"]),
+                    )
+                    url = selected.url
+            if url:
+                state = "matched"
+                row["link_cached_at"] = cached.get("online_checked_at")
+                link_cached = True
         if link_cached:
             row["link_source"] = "cached"
         elif url is not None or course is not None:
