@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from urllib.parse import parse_qsl, urlsplit
 from zoneinfo import ZoneInfo
@@ -18,6 +18,7 @@ from studgroup.models import (
     SubjectSplit,
 )
 from studgroup.ranepa_link_states import LINK_STATES
+from studgroup.ranepa_lms import LinkCandidate, meeting_url, select_lesson_link
 from studgroup.ranepa_schedule import (
     WeekSnapshot,
     has_unverified_subgroup_hint,
@@ -63,6 +64,9 @@ def _safe_course(url: str) -> bool:
 LOGGER = logging.getLogger(__name__)
 
 
+MAX_COURSE_CANDIDATES = 80
+
+
 def _sdo_cache_key(row):
     return (
         normalized(row.get("subject")),
@@ -71,8 +75,59 @@ def _sdo_cache_key(row):
     )
 
 
+def _valid_candidate(record):
+    if not isinstance(record, dict):
+        return None
+    url, label, course = (
+        record.get("url"),
+        record.get("label"),
+        record.get("course_url"),
+    )
+    if (
+        not isinstance(url, str)
+        or not _safe_link(url)
+        or not isinstance(label, str)
+        or not (1 <= len(label) <= 500)
+        or not isinstance(course, str)
+        or not _safe_course(course)
+    ):
+        return None
+    return {"url": url, "label": label, "course_url": course}
+
+
+def _merge_course_candidates(previous, discovered, course, checked):
+    """Retain validated history; a failed/empty refresh cannot erase old evidence."""
+    merged = {}
+    for item in previous or ():
+        vetted = _valid_candidate(item)
+        if vetted:
+            merged[(vetted["course_url"], vetted["url"])] = {
+                **vetted,
+                "seen_at": item.get("seen_at") or checked,
+            }
+    if course and _safe_course(course):
+        for link in discovered or ():
+            if isinstance(link, LinkCandidate):
+                url, label = link.url, link.label
+            elif isinstance(link, dict):
+                url, label = link.get("url"), link.get("label")
+            else:
+                continue
+            if not isinstance(url, str) or not _safe_link(url):
+                continue
+            if not isinstance(label, str) or not (1 <= len(label) <= 500):
+                continue
+            merged[(course, url)] = {
+                "url": url,
+                "label": label,
+                "course_url": course,
+                "seen_at": checked,
+            }
+    return list(merged.values())[-MAX_COURSE_CANDIDATES:]
+
+
 async def _verified_sdo_link_cache(db, group_id, user_id):
-    """Newest safe LMS links for this account, reusable across timetable weeks."""
+    """Account-local verified links and full per-course candidate history."""
     snapshots = (
         await db.scalars(
             select(RanepaPersonalSnapshot)
@@ -83,10 +138,11 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
             .order_by(RanepaPersonalSnapshot.checked_at.desc())
         )
     ).all()
-    cache = {}
+    by_identity = {}
+    by_course = {}
     for snapshot in snapshots:
         for row in json.loads(snapshot.rows_json):
-            if row.get("room") != "СДО":
+            if row.get("room") != "СДО" or row.get("source_scope") in {"common", "subgroup"}:
                 continue
             url = row.get("online_url")
             course = row.get("course_url")
@@ -94,16 +150,55 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
                 url = None
             if course is not None and not _safe_course(course):
                 course = None
-            if url is None and course is None:
-                continue
-            item = cache.setdefault(_sdo_cache_key(row), {})
-            if url is not None and "online_url" not in item:
-                item["online_url"] = url
-                item["online_checked_at"] = row.get("links_checked_at") or snapshot.checked_at.isoformat()
-            if course is not None and "course_url" not in item:
-                item["course_url"] = course
-                item["course_checked_at"] = row.get("links_checked_at") or snapshot.checked_at.isoformat()
-    return cache
+            if url is not None or course is not None:
+                item = by_identity.setdefault(_sdo_cache_key(row), {})
+                if url is not None and "online_url" not in item:
+                    item["online_url"] = url
+                    item["online_checked_at"] = (
+                        row.get("links_checked_at") or snapshot.checked_at.isoformat()
+                    )
+                    item["link_course_url"] = course
+                if course is not None and "course_url" not in item:
+                    item["course_url"] = course
+                    item["course_checked_at"] = (
+                        row.get("links_checked_at") or snapshot.checked_at.isoformat()
+                    )
+            for record in row.get("link_candidates", ()):
+                vetted = _valid_candidate(record)
+                if vetted:
+                    course_map = by_course.setdefault(vetted["course_url"], {})
+                    course_map.setdefault(vetted["url"], vetted)
+    return by_identity, by_course
+
+
+def _reuse_verified_candidate(row, course, by_course, identity):
+    """Never guess when stored candidates conflict or the course changed."""
+    if not course or not _safe_course(course):
+        return None
+    links = tuple(
+        LinkCandidate(item["url"], item["label"])
+        for item in by_course.get(course, {}).values()
+    )
+    if links:
+        choice = select_lesson_link(
+            links,
+            teacher=row.get("teacher") or "",
+            group_label=row.get("subgroup_hint") or "",
+            day=date.fromisoformat(row["day"]),
+            starts=time.fromisoformat(row["starts"]),
+        )
+        if choice.state == "matched":
+            return choice.url
+        if choice.state == "ambiguous":
+            return None
+    old = identity.get(_sdo_cache_key(row), {})
+    if (
+        old.get("online_url")
+        and _safe_link(old["online_url"])
+        and old.get("link_course_url") in {None, course}
+    ):
+        return old["online_url"]
+    return None
 
 
 async def remember_personal(
