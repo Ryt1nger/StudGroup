@@ -372,7 +372,7 @@ async def _expand_lms_sections(page) -> None:
             }"""
         )
     except Exception:  # noqa: BLE001 -- optional progressive page reveal
-        pass
+        return
 
 
 async def _read_course_candidates(page, context):
@@ -410,7 +410,7 @@ async def _read_course_candidates(page, context):
             if (
                 final.scheme != "https"
                 or final.hostname != "lms.ranepa.ru"
-                or final.path not in {"/mod/page/view.php", "/mod/book/view.php"}
+                or final.path not in {"/mod/page/view.php", "/mod/book/view.php", "/course/section.php"}
             ):
                 continue
             await _expand_lms_sections(child)
@@ -420,7 +420,7 @@ async def _read_course_candidates(page, context):
                     found.setdefault(link.url, link)
                 await child.wait_for_timeout(250)
         except Exception:  # noqa: BLE001 -- best-effort optional nested page
-            pass
+            continue
         finally:
             await child.close()
     return tuple(found.values())[:80], True
