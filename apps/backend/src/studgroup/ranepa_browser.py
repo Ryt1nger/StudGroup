@@ -1,6 +1,7 @@
 """Read-only personal-cabinet browser port with one automatic re-login."""
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from urllib.parse import parse_qs, urljoin, urlsplit
@@ -15,6 +16,7 @@ from studgroup.ranepa_ui import page_status
 
 SCHEDULE = "https://my.ranepa.ru/lk/student/schedule"
 HOST = "my.ranepa.ru"
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -419,8 +421,9 @@ async def _read_course_candidates(page, context):
                 for link in course_links(html, require_course=False):
                     found.setdefault(link.url, link)
                 await child.wait_for_timeout(250)
-        except Exception:  # noqa: BLE001 -- best-effort optional nested page
-            continue
+        except Exception as error:  # noqa: BLE001 -- best-effort optional nested page
+            # Log only the exception type: URLs can carry session data.
+            LOGGER.debug("sdo_nested_page_unavailable reason=%s", type(error).__name__)
         finally:
             await child.close()
     return tuple(found.values())[:80], True
