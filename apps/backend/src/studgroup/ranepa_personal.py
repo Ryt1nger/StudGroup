@@ -66,6 +66,10 @@ def _sdo_cache_key(row):
     )
 
 
+def _sdo_subject_key(row):
+    return (normalized(row.get("subject")), normalized(row.get("subgroup_hint")))
+
+
 def _valid_candidate(record):
     if not isinstance(record, dict):
         return None
@@ -131,6 +135,7 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
     ).all()
     by_identity = {}
     by_course = {}
+    by_subject = {}
     for snapshot in snapshots:
         for row in json.loads(snapshot.rows_json):
             if row.get("room") != "СДО" or row.get("source_scope") in {"common", "subgroup"}:
@@ -141,6 +146,8 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
                 url = None
             if course is not None and not _safe_course(course):
                 course = None
+            if course is not None:
+                by_subject.setdefault(_sdo_subject_key(row), set()).add(course)
             if url is not None or course is not None:
                 item = by_identity.setdefault(_sdo_cache_key(row), {})
                 if url is not None and "online_url" not in item:
@@ -159,7 +166,7 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
                 if vetted:
                     course_map = by_course.setdefault(vetted["course_url"], {})
                     course_map.setdefault(vetted["url"], vetted)
-    return by_identity, by_course
+    return by_identity, by_course, by_subject
 
 
 def _reuse_verified_candidate(row, course, by_course, identity):
@@ -226,7 +233,7 @@ async def remember_personal(
     existing = await db.get(
         RanepaPersonalSnapshot, (group_id, user_id, snapshot.week_start), with_for_update=True
     )
-    cached_links, course_candidates = await _verified_sdo_link_cache(db, group_id, user_id)
+    cached_links, course_candidates, subject_courses = await _verified_sdo_link_cache(db, group_id, user_id)
     previous = {}
     if existing is not None:
         for old in json.loads(existing.rows_json):
@@ -272,6 +279,16 @@ async def remember_personal(
             course = cached["course_url"]
             row["course_cached_at"] = cached.get("course_checked_at")
             link_cached = True
+        if course is None and row["room"] == "СДО":
+            unique_courses = subject_courses.get(_sdo_subject_key(row), set())
+            if len(unique_courses) == 1:
+                # A single verified course for this subject + stream can be
+                # reused even when the teacher changes between weeks.
+                course = next(iter(unique_courses))
+                row["course_cached_at"] = (
+                    cached.get("course_checked_at") or datetime.now(UTC).isoformat()
+                )
+                link_cached = True
         if (
             url is None
             and row["room"] == "СДО"
@@ -376,7 +393,7 @@ async def enrich_personal_links(
     link_states = link_states or {}
     candidates = candidates or {}
     rows = json.loads(stored.rows_json)
-    cached_links, course_candidates = await _verified_sdo_link_cache(db, group_id, user_id)
+    cached_links, course_candidates, subject_courses = await _verified_sdo_link_cache(db, group_id, user_id)
     checked = (checked_at or datetime.now(UTC)).isoformat()
     for row in rows:
         key = (row["day"], row["starts"], row["ends"], row["subject"], row["teacher"], row["room"])
@@ -396,6 +413,16 @@ async def enrich_personal_links(
             course = cached["course_url"]
             row["course_cached_at"] = cached.get("course_checked_at")
             link_cached = True
+        if course is None and row["room"] == "СДО":
+            unique_courses = subject_courses.get(_sdo_subject_key(row), set())
+            if len(unique_courses) == 1:
+                # A single verified course for this subject + stream can be
+                # reused even when the teacher changes between weeks.
+                course = next(iter(unique_courses))
+                row["course_cached_at"] = (
+                    cached.get("course_checked_at") or datetime.now(UTC).isoformat()
+                )
+                link_cached = True
         if row["room"] == "СДО":
             # Store all candidates even for ambiguous or currently unmatched
             # lessons. The record is private to the verified source account.
