@@ -4,7 +4,7 @@ from datetime import date, time
 
 import pytest
 
-from studgroup.ranepa_lms import course_links, select_lesson_link
+from studgroup.ranepa_lms import course_detail_pages, course_links, meeting_url, select_lesson_link
 from studgroup.ranepa_probe import SourceAccessError
 
 
@@ -162,3 +162,77 @@ def test_teacher_surname_must_match_whole_word():
         day=date(2026, 11, 12),
     )
     assert choice.state == "not_found"
+
+
+
+def test_collapsed_course_details_provide_teacher_context_for_generic_join_label():
+    html = (
+        '<main class="course-content"><a href="/course/view.php?id=85813">Курс</a>'
+        '<details><summary>Клишина О. С. Э-ОБ26-СГЯ-лек(43,44,45) '
+        'постоянная ссылка</summary><p>'
+        '<a href="/mod/url/view.php?id=200&sesskey=secret">Подключиться</a>'
+        "</p></details>"
+        '<details><summary>Дёмина Т. М. Э-ОБ26-СГЯ-лек(43,44,45) '
+        'постоянная ссылка</summary><p>'
+        '<a href="/mod/url/view.php?id=201">Подключиться</a>'
+        "</p></details></main>"
+    )
+    all_links = course_links(html)
+    assert len(all_links) == 2
+    assert all("secret" not in candidate.url for candidate in all_links)
+    choice = select_lesson_link(
+        all_links,
+        teacher="Клишина Ольга Семеновна",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45)",
+        day=date(2026, 11, 19),
+    )
+    assert choice.state == "matched"
+    assert choice.url == "https://lms.ranepa.ru/mod/url/view.php?id=200"
+
+
+def test_multiple_teachers_and_direct_meeting_urls_on_nested_moodle_text_page():
+    course = (
+        '<main class="course-content"><a href="/course/view.php?id=85813">Курс</a>'
+        '<a href="/mod/page/view.php?id=77&sesskey=secret">Внутренняя страница</a>'
+        '<a href="/mod/book/view.php?id=88">Книга</a>'
+        '<a href="/course/section.php?id=99">Раздел</a>'
+        '<a href="https://evil.example/mod/page/view.php?id=3">Постороннее</a>'
+        "</main>"
+    )
+    assert course_detail_pages(course) == (
+        "https://lms.ranepa.ru/mod/page/view.php?id=77",
+        "https://lms.ranepa.ru/mod/book/view.php?id=88",
+        "https://lms.ranepa.ru/course/section.php?id=99",
+    )
+    nested = (
+        '<main><p>Федотова Е. А. Э-ОБ26-СГЯ-лек(43,44,45) '
+        'постоянная ссылка https://my.mts-link.ru/j/Ranepa/98765</p>'
+        '<p>Клишина О. С. Э-ОБ26-СГЯ-лек(43,44,45) '
+        '<a href="https://us06web.zoom.us/j/123456">постоянная ссылка</a></p>'
+        '</main>'
+    )
+    links = course_links(nested, require_course=False)
+    assert len(links) == 2
+    choice = select_lesson_link(
+        links,
+        teacher="Федотова Елена Алексеевна",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45)",
+        day=date(2026, 11, 19),
+    )
+    assert choice.url == "https://my.mts-link.ru/j/Ranepa/98765"
+    assert choice.state == "matched"
+
+
+def test_links_from_untrusted_hosts_and_file_downloads_are_not_candidates():
+    html = (
+        '<main class="course-content"><a href="/course/view.php?id=11">Курс</a>'
+        '<a href="https://zoom.us.evil.example/j/123">Иванов поток постоянная</a>'
+        '<a href="https://lms.ranepa.ru/mod/quiz/view.php?id=12">Тест</a>'
+        '<a href="https://evil.example/mod/url/view.php?id=19">Не наш курс</a>'
+        '<a href="http://my.mts-link.ru/j/123">Не HTTPS</a></main>'
+    )
+    assert course_links(html) == ()
+    assert meeting_url("https://lms.ranepa.ru/mod/url/view.php?id=15&sesskey=secret") == (
+        "https://lms.ranepa.ru/mod/url/view.php?id=15"
+    )
+    assert meeting_url("https://evil.example/mod/url/view.php?id=15") is None
