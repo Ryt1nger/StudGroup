@@ -100,8 +100,7 @@ def _nodes_with_ancestors(node, ancestors=()):
 def _nearby_label(node, ancestors, url):
     """Look for the closest single-link activity/paragraph, not a whole teacher list."""
     label = node.text().strip()
-    if len(label) >= 36 and not label.casefold().startswith(("открыть", "перейти")):
-        return label[:500]
+    best = label[:500]
     for parent in reversed(ancestors):
         if parent.tag not in {"li", "p", "div", "article", "details", "section"}:
             continue
@@ -122,9 +121,9 @@ def _nearby_label(node, ancestors, url):
         if (
             (len(meeting_anchors) == 1 and meeting_url(meeting_anchors[0].attrs.get("href", "")) == url)
             or (not meeting_anchors and len(meeting_frames) == 1)
-        ):
-            return text[:500]
-    return label[:500]
+        ) and len(text) > len(best):
+            best = text[:500]
+    return best
 
 
 def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandidate, ...]:
