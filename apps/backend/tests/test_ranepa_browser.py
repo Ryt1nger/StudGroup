@@ -443,3 +443,87 @@ def test_wait_for_captcha_resolution_does_not_expose_page_errors(monkeypatch):
         )
 
     asyncio.run(scenario())
+
+
+def test_sdo_scans_hidden_course_page_and_preserves_all_teacher_candidates():
+    class Invisible:
+        async def is_visible(self):
+            return False
+
+    class FakePage:
+        def __init__(self):
+            self.url = ""
+
+        async def goto(self, url, **_kwargs):
+            self.url = (
+                "https://lms.ranepa.ru/course/view.php?id=85813" if "moodle_out.php" in url else url
+            )
+
+        def get_by_text(self, *_args, **_kwargs):
+            return Invisible()
+
+        async def evaluate(self, _script):
+            return None
+
+        async def content(self):
+            if "/mod/page/view.php" in self.url:
+                return (
+                    "<main><p>Петров П. П. Э-ОБ26-СГЯ-лек(43,44,45) "
+                    "постоянная ссылка https://my.mts-link.ru/j/Ranepa/222"
+                    "</p></main>"
+                )
+            return (
+                '<main class="course-content">'
+                '<a href="/course/view.php?id=85813">Курс</a>'
+                "<details><summary>Иванов И. И. Э-ОБ26-СГЯ-лек(43,44,45) "
+                "постоянная ссылка</summary>"
+                '<p><a href="/mod/url/view.php?id=111">Присоединиться</a></p></details>'
+                '<a href="/mod/page/view.php?id=77&sesskey=private">Материалы</a>'
+                "</main>"
+            )
+
+        async def wait_for_timeout(self, _milliseconds):
+            pass
+
+        async def close(self):
+            pass
+
+    class Context:
+        async def new_page(self):
+            return FakePage()
+
+    lesson = ExternalLesson(
+        day=date(2026, 11, 19),
+        starts=time(9),
+        ends=time(10, 20),
+        subject="История России",
+        teacher="Петров Павел Петрович",
+        room="СДО",
+        subgroup_hint="Э-ОБ26-СГЯ-лек(43,44,45)",
+    )
+    snapshot = WeekSnapshot(
+        "Э-ОБ-385-04-26-02",
+        date(2026, 11, 16),
+        date(2026, 11, 22),
+        (lesson,),
+    )
+    result = asyncio.run(
+        ranepa_browser.resolve_sdo_exits(
+            Context(),
+            ranepa_browser.BrowserResult(
+                "preview_only",
+                snapshot,
+                ("https://my.ranepa.ru/moodle_out.php?id=1",),
+            ),
+        )
+    )
+    links, states, courses = result
+    assert list(states.values()) == ["matched"]
+    assert list(links.values()) == ["https://my.mts-link.ru/j/Ranepa/222"]
+    assert list(courses.values()) == ["https://lms.ranepa.ru/course/view.php?id=85813"]
+    inventory = next(iter(result.candidates.values()))
+    assert len(inventory) == 2
+    assert {item.url for item in inventory} == {
+        "https://lms.ranepa.ru/mod/url/view.php?id=111",
+        "https://my.mts-link.ru/j/Ranepa/222",
+    }

@@ -48,6 +48,9 @@ def _shared_row(
 ):
     """Copy verified facts, never provider credentials or unverified meeting URLs."""
     result = dict(row)
+    # Inventories belong to the source account. Shared rows expose only the
+    # chosen verified lesson link, never all private course meeting candidates.
+    result.pop("link_candidates", None)
     if result.get("link_state") != "matched" or not (
         result.get("online_url") and _safe_link(result["online_url"])
     ):

@@ -1,6 +1,7 @@
 """Read-only personal-cabinet browser port with one automatic re-login."""
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from urllib.parse import parse_qs, urljoin, urlsplit
@@ -8,13 +9,14 @@ from zoneinfo import ZoneInfo
 
 from studgroup.ranepa_cabinet import MonthCard, extract_cabinet_month, extract_cabinet_week
 from studgroup.ranepa_link_states import LinkState
-from studgroup.ranepa_lms import course_links, select_lesson_link
+from studgroup.ranepa_lms import course_detail_pages, course_links, select_lesson_link
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot, group_code
 from studgroup.ranepa_ui import page_status
 
 SCHEDULE = "https://my.ranepa.ru/lk/student/schedule"
 HOST = "my.ranepa.ru"
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -336,6 +338,97 @@ async def read_month(
     return BrowserMonthResult("login_failed")
 
 
+@dataclass
+class SdoLinkResolution:
+    """Backwards-compatible three-map result with private course candidates."""
+
+    links: dict
+    states: dict
+    courses: dict
+    candidates: dict
+
+    def __iter__(self):
+        yield self.links
+        yield self.states
+        yield self.courses
+
+
+async def _expand_lms_sections(page) -> None:
+    """Reveal only read-only Moodle course sections, not forms or activities."""
+    if not hasattr(page, "evaluate"):
+        return
+    try:
+        await page.evaluate(
+            """() => {
+                for (const item of document.querySelectorAll('main details:not([open])')) {
+                    item.open = true;
+                }
+                for (const item of document.querySelectorAll(
+                    'main .course-section button[aria-expanded="false"],' +
+                    'main .course-section a[aria-expanded="false"],' +
+                    'main button.section-collapser[aria-expanded="false"]'
+                )) {
+                    item.click();
+                }
+            }"""
+        )
+    except Exception:  # noqa: BLE001 -- optional progressive page reveal
+        return
+
+
+async def _read_course_candidates(page, context):
+    """Bounded discovery on the course and linked same-origin text/book pages.
+
+    Never open a conference, download files, submit forms, or follow redirects
+    outside Moodle. Each page is read at most twice after a section expansion.
+    """
+    found = {}
+    child_pages = {}
+    verified = False
+    for attempt in range(8):
+        try:
+            html = await page.content()
+            current = course_links(html)
+            verified = True
+            for link in current:
+                found.setdefault(link.url, link)
+            for url in course_detail_pages(html):
+                child_pages[url] = None
+        except SourceAccessError:
+            pass
+        if attempt == 0:
+            await _expand_lms_sections(page)
+        if verified and attempt >= 2:
+            break
+        await page.wait_for_timeout(250)
+    if not verified:
+        return (), False
+    for url in tuple(child_pages)[:8]:
+        child = await context.new_page()
+        try:
+            await child.goto(url, wait_until="domcontentloaded", timeout=10000)
+            final = urlsplit(child.url)
+            if (
+                final.scheme != "https"
+                or final.hostname != "lms.ranepa.ru"
+                or final.path
+                not in {"/mod/page/view.php", "/mod/book/view.php", "/course/section.php"}
+            ):
+                continue
+            await _expand_lms_sections(child)
+            for _ in range(2):
+                html = await child.content()
+                for link in course_links(html, require_course=False):
+                    found.setdefault(link.url, link)
+                await child.wait_for_timeout(250)
+        except Exception as error:  # noqa: BLE001 -- best-effort optional nested page
+            # Log only the exception type: URLs can carry session data.
+            LOGGER.debug("sdo_nested_page_unavailable reason=%s", type(error).__name__)
+        finally:
+            await child.close()
+    return tuple(found.values())[:80], True
+
+
 async def resolve_sdo_exits(
     context,
     result: BrowserResult,
@@ -344,13 +437,15 @@ async def resolve_sdo_exits(
     *,
     solve_captcha=None,
     on_captcha=None,
-) -> tuple[dict, dict, dict]:
-    """Follow LK SDO exits; retain verified course and unique meeting URLs."""
+) -> SdoLinkResolution:
+    """Follow LK SDO exits; save all course candidates for future safe matching."""
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
-        return {}, {"not_checked": 1}, {}
+        return SdoLinkResolution({}, {"not_checked": 1}, {}, {})
     linked = {}
     states = {}
     courses = {}
+    candidates_by_lesson = {}
+    course_cache = {}
     for lesson, exit_url in zip(result.snapshot.lessons, result.sdo_exits, strict=True):
         if lesson.room != "СДО":
             continue
@@ -419,16 +514,25 @@ async def resolve_sdo_exits(
                     break
                 if parsed.hostname == "lms.ranepa.ru" and parsed.path == "/course/view.php":
                     try:
-                        candidates = course_links(await page.content())
                         ids = parse_qs(parsed.query).get("id", [])
-                        if len(ids) == 1 and ids[0].isdigit():
-                            courses[key] = f"https://lms.ranepa.ru/course/view.php?id={ids[0]}"
-                        if not candidates:
+                        if len(ids) != 1 or not ids[0].isdigit():
+                            break
+                        course = f"https://lms.ranepa.ru/course/view.php?id={ids[0]}"
+                        courses[key] = course
+                        if course not in course_cache:
+                            course_cache[course] = await _read_course_candidates(page, context)
+                        candidates, verified = course_cache[course]
+                        if not verified:
                             empty_course_reads += 1
                             if empty_course_reads >= 8:
                                 break
                             await page.wait_for_timeout(250)
+                            course_cache.pop(course, None)
                             continue
+                        if not candidates:
+                            empty_course_reads = 8
+                            break
+                        candidates_by_lesson[key] = candidates
                         choice = select_lesson_link(
                             candidates,
                             teacher=lesson.teacher or "",
@@ -466,4 +570,4 @@ async def resolve_sdo_exits(
             states[key] = LinkState.NAVIGATION_ERROR
         finally:
             await page.close()
-    return linked, states, courses
+    return SdoLinkResolution(linked, states, courses, candidates_by_lesson)

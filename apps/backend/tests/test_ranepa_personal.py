@@ -724,3 +724,197 @@ def test_verified_sdo_link_is_reused_for_the_same_account_in_a_later_week(client
     assert row["link_state"] == "matched"
     assert row["link_source"] == "cached"
     assert row["link_cached_at"]
+
+
+def test_course_candidate_memory_selects_correct_teacher_and_survives_failed_rescan(client):
+    """One Moodle course can contain several professors' permanent meetings."""
+
+    async def scenario():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            group.academic_group_code = CODE
+            member = await db.scalar(select(Membership).where(Membership.group_id == group.id))
+            first = week()
+            course = "https://lms.ranepa.ru/course/view.php?id=85813"
+            key = (
+                "2026-11-02",
+                "09:00:00",
+                "10:20:00",
+                "История России",
+                "Иванов",
+                "СДО",
+            )
+            await remember_personal(
+                db,
+                group.id,
+                member.user_id,
+                first,
+                group_identity_verified=True,
+                source_complete=True,
+            )
+            from studgroup.ranepa_lms import LinkCandidate
+
+            candidates = (
+                LinkCandidate(
+                    "https://lms.ranepa.ru/mod/url/view.php?id=101",
+                    "Иванов И. И. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка",
+                ),
+                LinkCandidate(
+                    "https://lms.ranepa.ru/mod/url/view.php?id=102",
+                    "Петров П. П. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка",
+                ),
+            )
+            await enrich_personal_links(
+                db,
+                group.id,
+                member.user_id,
+                first.week_start,
+                courses={key: course},
+                link_states={key: "not_found"},
+                candidates={key: candidates},
+            )
+            await db.commit()
+            old = await db.get(RanepaPersonalSnapshot, (group.id, member.user_id, first.week_start))
+            stored = __import__("json").loads(old.rows_json)[0]
+            assert len(stored["link_candidates"]) == 2
+            assert stored["online_url"].endswith("id=101")
+
+            second = WeekSnapshot(
+                CODE,
+                date(2026, 11, 9),
+                date(2026, 11, 15),
+                (
+                    ExternalLesson(
+                        date(2026, 11, 9),
+                        time(9),
+                        time(10, 20),
+                        "История России",
+                        teacher="Петров",
+                        room="СДО",
+                        subgroup_hint="Э-ОБ26-СГЯ-лек(43,44,45)",
+                    ),
+                ),
+            )
+            await remember_personal(
+                db,
+                group.id,
+                member.user_id,
+                second,
+                group_identity_verified=True,
+                source_complete=True,
+            )
+            await db.commit()
+            second_key = (
+                "2026-11-09",
+                "09:00:00",
+                "10:20:00",
+                "История России",
+                "Петров",
+                "СДО",
+            )
+            await enrich_personal_links(
+                db,
+                group.id,
+                member.user_id,
+                second.week_start,
+                link_states={second_key: "navigation_error"},
+            )
+            await db.commit()
+            later = await db.get(
+                RanepaPersonalSnapshot, (group.id, member.user_id, second.week_start)
+            )
+            return __import__("json").loads(later.rows_json)[0]
+
+    row = asyncio.run(scenario())
+    assert row["course_url"] == "https://lms.ranepa.ru/course/view.php?id=85813"
+    assert row["online_url"] == "https://lms.ranepa.ru/mod/url/view.php?id=102"
+    assert row["link_state"] == "matched"
+    assert row["link_source"] == "cached"
+    assert len(row["link_candidates"]) == 2
+
+
+def test_ambiguous_teacher_meetings_are_stored_but_not_guessed(client):
+    async def scenario():
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
+            group.academic_group_code = CODE
+            member = await db.scalar(select(Membership).where(Membership.group_id == group.id))
+            snapshot = week()
+            key = (
+                "2026-11-02",
+                "09:00:00",
+                "10:20:00",
+                "История России",
+                "Иванов",
+                "СДО",
+            )
+            from studgroup.ranepa_lms import LinkCandidate
+
+            await remember_personal(
+                db, group.id, member.user_id, snapshot, group_identity_verified=True
+            )
+            await enrich_personal_links(
+                db,
+                group.id,
+                member.user_id,
+                snapshot.week_start,
+                courses={key: "https://lms.ranepa.ru/course/view.php?id=1011"},
+                link_states={key: "ambiguous"},
+                candidates={
+                    key: (
+                        LinkCandidate(
+                            "https://lms.ranepa.ru/mod/url/view.php?id=201",
+                            "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка",
+                        ),
+                        LinkCandidate(
+                            "https://lms.ranepa.ru/mod/url/view.php?id=202",
+                            "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка 2",
+                        ),
+                    )
+                },
+            )
+            await db.commit()
+            row = await db.get(
+                RanepaPersonalSnapshot, (group.id, member.user_id, snapshot.week_start)
+            )
+            return __import__("json").loads(row.rows_json)[0]
+
+    row = asyncio.run(scenario())
+    assert row["online_url"] is None
+    assert row["link_state"] == "ambiguous"
+    assert len(row["link_candidates"]) == 2
+
+
+def test_materialization_does_not_expose_private_course_candidate_inventory():
+    from studgroup.ranepa_materialization import _shared_row
+
+    original = {
+        "day": "2026-11-02",
+        "starts": "09:00:00",
+        "ends": "10:20:00",
+        "subject": "История России",
+        "teacher": "Иванов",
+        "room": "СДО",
+        "online_url": "https://lms.ranepa.ru/mod/url/view.php?id=101",
+        "link_state": "matched",
+        "course_url": "https://lms.ranepa.ru/course/view.php?id=85813",
+        "link_candidates": [
+            {
+                "url": "https://lms.ranepa.ru/mod/url/view.php?id=102",
+                "label": "Петров постоянная",
+                "course_url": "https://lms.ranepa.ru/course/view.php?id=85813",
+            }
+        ],
+    }
+    shared = _shared_row(
+        original,
+        scope="common",
+        source_user_id="source",
+        week_start=date(2026, 11, 2),
+        source_snapshot_id="digest",
+        source_checked_at="2026-11-19T00:00:00Z",
+        materialized_at="2026-11-19T00:00:00Z",
+    )
+    assert "link_candidates" not in shared
+    assert "link_candidates" in original
+    assert shared["online_url"].endswith("id=101")

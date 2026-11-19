@@ -869,9 +869,13 @@ async def _collect(
                             exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
                         if on_captcha is not None:
                             exit_kwargs["on_captcha"] = on_captcha
-                        links, link_states, courses = await resolve_sdo_exits(
+                        resolution = await resolve_sdo_exits(
                             context, result, login, password, **exit_kwargs
                         )
+                        links, link_states, courses = resolution
+                        # All vetted candidates are retained privately even when
+                        # the course contains multiple teachers or no safe match.
+                        candidates = getattr(resolution, "candidates", {})
                         sdo_captcha_unresolved = "captcha_required" in link_states.values()
                         if trace is not None:
                             if sdo_captcha_unresolved and not trace.captcha_seen:
@@ -887,6 +891,7 @@ async def _collect(
                                     links=links,
                                     courses=courses,
                                     link_states=link_states,
+                                    candidates=candidates,
                                 )
                                 await db.commit()
                         if stats is not None:
