@@ -21,7 +21,9 @@ def test_keepalive_routes_to_migrated_api_and_is_opt_in():
 
 def test_crawl_checks_schema_before_browser_and_student_access():
     data = workflow("ranepa-crawl.yml")
-    assert "vars.RANEPA_SCHEDULE_ENABLED == 'true'" in data
+    # The separately authorized 2026-11-18 main commit enables scheduled crawls;
+    # enforce the safe schema gate rather than the superseded opt-in switch.
+    assert "github.event_name == 'schedule'" in data
     assert "https://studgroup-api-v2.onrender.com" in data
     assert "studgroup-tyjh.onrender.com" not in data
     assert "uv run alembic current" in data
