@@ -338,7 +338,6 @@ async def read_month(
     return BrowserMonthResult("login_failed")
 
 
-
 @dataclass
 class SdoLinkResolution:
     """Backwards-compatible three-map result with private course candidates."""
@@ -412,7 +411,8 @@ async def _read_course_candidates(page, context):
             if (
                 final.scheme != "https"
                 or final.hostname != "lms.ranepa.ru"
-                or final.path not in {"/mod/page/view.php", "/mod/book/view.php", "/course/section.php"}
+                or final.path
+                not in {"/mod/page/view.php", "/mod/book/view.php", "/course/section.php"}
             ):
                 continue
             await _expand_lms_sections(child)

@@ -109,9 +109,7 @@ def _nearby_label(node, ancestors, url):
             continue
         # Do not attach a whole section listing links for different teachers.
         meeting_anchors = [
-            a
-            for a in parent.tags("a")
-            if meeting_url(a.attrs.get("href", "")) is not None
+            a for a in parent.tags("a") if meeting_url(a.attrs.get("href", "")) is not None
         ]
         meeting_frames = [
             frame
@@ -119,7 +117,10 @@ def _nearby_label(node, ancestors, url):
             if meeting_url(frame.attrs.get("src", "")) == url
         ]
         if (
-            (len(meeting_anchors) == 1 and meeting_url(meeting_anchors[0].attrs.get("href", "")) == url)
+            (
+                len(meeting_anchors) == 1
+                and meeting_url(meeting_anchors[0].attrs.get("href", "")) == url
+            )
             or (not meeting_anchors and len(meeting_frames) == 1)
         ) and len(text) > len(best):
             best = text[:500]

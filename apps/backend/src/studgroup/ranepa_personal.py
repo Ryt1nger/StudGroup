@@ -174,8 +174,7 @@ def _reuse_verified_candidate(row, course, by_course, identity):
     if not course or not _safe_course(course):
         return None
     links = tuple(
-        LinkCandidate(item["url"], item["label"])
-        for item in by_course.get(course, {}).values()
+        LinkCandidate(item["url"], item["label"]) for item in by_course.get(course, {}).values()
     )
     if links:
         choice = select_lesson_link(
@@ -233,7 +232,9 @@ async def remember_personal(
     existing = await db.get(
         RanepaPersonalSnapshot, (group_id, user_id, snapshot.week_start), with_for_update=True
     )
-    cached_links, course_candidates, subject_courses = await _verified_sdo_link_cache(db, group_id, user_id)
+    cached_links, course_candidates, subject_courses = await _verified_sdo_link_cache(
+        db, group_id, user_id
+    )
     previous = {}
     if existing is not None:
         for old in json.loads(existing.rows_json):
@@ -393,7 +394,9 @@ async def enrich_personal_links(
     link_states = link_states or {}
     candidates = candidates or {}
     rows = json.loads(stored.rows_json)
-    cached_links, course_candidates, subject_courses = await _verified_sdo_link_cache(db, group_id, user_id)
+    cached_links, course_candidates, subject_courses = await _verified_sdo_link_cache(
+        db, group_id, user_id
+    )
     checked = (checked_at or datetime.now(UTC)).isoformat()
     for row in rows:
         key = (row["day"], row["starts"], row["ends"], row["subject"], row["teacher"], row["room"])
@@ -427,9 +430,10 @@ async def enrich_personal_links(
             # Store all candidates even for ambiguous or currently unmatched
             # lessons. The record is private to the verified source account.
             row["link_candidates"] = _merge_course_candidates(
-                (*row.get("link_candidates", ()), *(
-                    course_candidates.get(course, {}).values() if course else ()
-                )),
+                (
+                    *row.get("link_candidates", ()),
+                    *(course_candidates.get(course, {}).values() if course else ()),
+                ),
                 candidates.get(key, ()),
                 course,
                 checked,
@@ -439,9 +443,7 @@ async def enrich_personal_links(
             and row["room"] == "СДО"
             and state not in {"ambiguous", "timing_unverified", "identity_missing"}
         ):
-            historical = _reuse_verified_candidate(
-                row, course, course_candidates, cached_links
-            )
+            historical = _reuse_verified_candidate(row, course, course_candidates, cached_links)
             if historical:
                 url = historical
                 link_cached = True

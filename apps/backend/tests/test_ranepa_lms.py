@@ -164,16 +164,15 @@ def test_teacher_surname_must_match_whole_word():
     assert choice.state == "not_found"
 
 
-
 def test_collapsed_course_details_provide_teacher_context_for_generic_join_label():
     html = (
         '<main class="course-content"><a href="/course/view.php?id=85813">Курс</a>'
-        '<details><summary>Клишина О. С. Э-ОБ26-СГЯ-лек(43,44,45) '
-        'постоянная ссылка</summary><p>'
+        "<details><summary>Клишина О. С. Э-ОБ26-СГЯ-лек(43,44,45) "
+        "постоянная ссылка</summary><p>"
         '<a href="/mod/url/view.php?id=200&sesskey=secret">Подключиться</a>'
         "</p></details>"
-        '<details><summary>Дёмина Т. М. Э-ОБ26-СГЯ-лек(43,44,45) '
-        'постоянная ссылка</summary><p>'
+        "<details><summary>Дёмина Т. М. Э-ОБ26-СГЯ-лек(43,44,45) "
+        "постоянная ссылка</summary><p>"
         '<a href="/mod/url/view.php?id=201">Подключиться</a>'
         "</p></details></main>"
     )
@@ -205,11 +204,11 @@ def test_multiple_teachers_and_direct_meeting_urls_on_nested_moodle_text_page():
         "https://lms.ranepa.ru/course/section.php?id=99",
     )
     nested = (
-        '<main><p>Федотова Е. А. Э-ОБ26-СГЯ-лек(43,44,45) '
-        'постоянная ссылка https://my.mts-link.ru/j/Ranepa/98765</p>'
-        '<p>Клишина О. С. Э-ОБ26-СГЯ-лек(43,44,45) '
+        "<main><p>Федотова Е. А. Э-ОБ26-СГЯ-лек(43,44,45) "
+        "постоянная ссылка https://my.mts-link.ru/j/Ranepa/98765</p>"
+        "<p>Клишина О. С. Э-ОБ26-СГЯ-лек(43,44,45) "
         '<a href="https://us06web.zoom.us/j/123456">постоянная ссылка</a></p>'
-        '</main>'
+        "</main>"
     )
     links = course_links(nested, require_course=False)
     assert len(links) == 2

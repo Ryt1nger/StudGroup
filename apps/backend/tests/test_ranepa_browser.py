@@ -445,7 +445,6 @@ def test_wait_for_captcha_resolution_does_not_expose_page_errors(monkeypatch):
     asyncio.run(scenario())
 
 
-
 def test_sdo_scans_hidden_course_page_and_preserves_all_teacher_candidates():
     class Invisible:
         async def is_visible(self):
@@ -457,9 +456,7 @@ def test_sdo_scans_hidden_course_page_and_preserves_all_teacher_candidates():
 
         async def goto(self, url, **_kwargs):
             self.url = (
-                "https://lms.ranepa.ru/course/view.php?id=85813"
-                if "moodle_out.php" in url
-                else url
+                "https://lms.ranepa.ru/course/view.php?id=85813" if "moodle_out.php" in url else url
             )
 
         def get_by_text(self, *_args, **_kwargs):
@@ -478,8 +475,8 @@ def test_sdo_scans_hidden_course_page_and_preserves_all_teacher_candidates():
             return (
                 '<main class="course-content">'
                 '<a href="/course/view.php?id=85813">Курс</a>'
-                '<details><summary>Иванов И. И. Э-ОБ26-СГЯ-лек(43,44,45) '
-                'постоянная ссылка</summary>'
+                "<details><summary>Иванов И. И. Э-ОБ26-СГЯ-лек(43,44,45) "
+                "постоянная ссылка</summary>"
                 '<p><a href="/mod/url/view.php?id=111">Присоединиться</a></p></details>'
                 '<a href="/mod/page/view.php?id=77&sesskey=private">Материалы</a>'
                 "</main>"
@@ -514,7 +511,8 @@ def test_sdo_scans_hidden_course_page_and_preserves_all_teacher_candidates():
         ranepa_browser.resolve_sdo_exits(
             Context(),
             ranepa_browser.BrowserResult(
-                "preview_only", snapshot,
+                "preview_only",
+                snapshot,
                 ("https://my.ranepa.ru/moodle_out.php?id=1",),
             ),
         )
