@@ -198,7 +198,7 @@ def _reuse_verified_candidate(row, course, by_course, identity):
     return None
 
 
-def _display_link_from_candidates(row):
+def _display_link_from_candidates(row, historical_by_course=None):
     """Re-match an account's stored vetted meetings without a new SDO login."""
     if row.get("online_url") or row.get("room") != "СДО":
         return None
@@ -207,16 +207,21 @@ def _display_link_from_candidates(row):
     course = row.get("course_url")
     if not isinstance(course, str) or not _safe_course(course):
         return None
-    links = []
-    for item in row.get("link_candidates", ()):
+    links_by_url = {}
+    for item in row.get("link_candidates") or ():
         vetted = _valid_candidate(item)
         if vetted is not None and vetted["course_url"] == course:
-            links.append(LinkCandidate(vetted["url"], vetted["label"]))
-    if not links:
+            links_by_url[vetted["url"]] = LinkCandidate(vetted["url"], vetted["label"])
+    if historical_by_course is not None:
+        for item in historical_by_course.get(course, {}).values():
+            vetted = _valid_candidate(item)
+            if vetted is not None:
+                links_by_url[vetted["url"]] = LinkCandidate(vetted["url"], vetted["label"])
+    if not links_by_url:
         return None
     try:
         choice = select_lesson_link(
-            tuple(links),
+            tuple(links_by_url.values()),
             teacher=row.get("teacher") or "",
             group_label=row.get("subgroup_hint") or "",
             day=date.fromisoformat(row["day"]),
@@ -544,6 +549,7 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
     week_freshness = []
     link_checks = []
     materialized = False
+    historical_by_course = None
     for row in snapshots:
         cursor = max(start, row.week_start)
         while cursor <= min(end, row.week_end):
@@ -561,8 +567,22 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
             or (lesson.get("source_user_id") and lesson.get("source_snapshot_id"))
         ]
         if row.identity_verified:
-            for lesson in source_rows:
-                url = _display_link_from_candidates(lesson)
+            pending = [
+                lesson
+                for lesson in source_rows
+                if lesson.get("room") == "СДО"
+                and lesson.get("course_url")
+                and not lesson.get("online_url")
+                and lesson.get("source_scope") not in {"common", "subgroup"}
+            ]
+            if pending and historical_by_course is None:
+                # Historical inventories are private to this exact user and
+                # group, even when the relevant course was read in another week.
+                _, historical_by_course, _ = await _verified_sdo_link_cache(
+                    db, group_id, user_id
+                )
+            for lesson in pending:
+                url = _display_link_from_candidates(lesson, historical_by_course)
                 if url is not None:
                     # Account-local read projection; original SQL is unchanged.
                     lesson["online_url"] = url
