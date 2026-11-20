@@ -178,7 +178,7 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
 
 
 _EXPLICITLY_TEMPORARY = re.compile(
-    r"\\b(?:одноразов|однократн|разов|временн)\\w*|\\bна\\s+(?:одну|эту)\\s+пару"
+    r"\b(?:одноразов|однократн|разов|временн)\w*|\bна\s+(?:одну|эту)\s+пару"
 )
 
 
