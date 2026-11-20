@@ -411,6 +411,7 @@ async def process_one(
         code = group.academic_group_code
         credential_id = profile.sdu_credential_id
         await db.commit()
+    notice_failure_detail = None
     store = configured_store(settings)
     if store is None:
         failure = "internal"
@@ -434,6 +435,7 @@ async def process_one(
             password = cipher.decrypt(encrypted_password.encode()).decode()
         except (ValueError, InvalidToken, UnicodeDecodeError):
             failure = "login_failed"
+            notice_failure_detail = "credentials_unreadable"
             if trace is not None:
                 trace.failure_detail = "credentials_unreadable"
         else:
@@ -540,6 +542,8 @@ async def process_one(
                     else None
                 ),
             )
+            if failure == "login_failed":
+                notice_failure_detail = "login_rejected"
     async with AsyncSession(engine) as db:
         finished = await finish(db, job_id, group_id, user_id, failure_code=failure)
         if finished and trace is not None:
@@ -594,13 +598,13 @@ async def process_one(
                     group_code=group.academic_group_code if group else None,
                     user_id=user_id,
                     failure_code=failure,
-                    failure_detail=trace.failure_detail if trace is not None else None,
+                    failure_detail=notice_failure_detail or (trace.failure_detail if trace is not None else None),
                     diagnostic_code=trace.diagnostic if trace is not None else None,
                 )
             )
         if run_stats is not None:
             run_stats.add(account_stats)
-        await notify_finalized_attempt(failure)
+        await notify_finalized_attempt(failure, detail=notice_failure_detail)
     if pilot_group_id is not None:
         # The value is chosen exclusively from known crawl failure categories.
         known_failures = {
