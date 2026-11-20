@@ -17,6 +17,7 @@ from studgroup.legal import VERSION, document_hash
 from studgroup.main import Settings
 from studgroup.models import (
     Base,
+    BotOutbox,
     BotPanel,
     Group,
     LegalConsentEvent,
@@ -25,6 +26,7 @@ from studgroup.models import (
     User,
     UserProfile,
 )
+from studgroup.ranepa_crawl_notifications import CrawlRunStats
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot
 from studgroup.ranepa_worker import (
     collect_bounded,
@@ -546,6 +548,8 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
             ranepa_captcha_enabled=True,
             captcha_api_key=SecretStr("test-provider-key"),
             ranepa_captcha_diagnostic_only=True,
+            ranepa_crawl_notify_account_results_enabled=True,
+            bot_admin_user_id=915,
         )
 
         saved_state = {"cookies": [], "origins": []}
@@ -624,6 +628,7 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
                 )
                 == 1
             )
+            run_stats = CrawlRunStats()
             assert (
                 await process_one(
                     engine,
@@ -631,6 +636,7 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
                     today,
                     pilot_group_id=group.id,
                     pilot_user_id=users[1].id,
+                    run_stats=run_stats,
                 )
                 == "succeeded"
             )
@@ -648,6 +654,13 @@ def test_manual_pilot_prepares_and_runs_only_selected_student(tmp_path, monkeypa
                 jobs = (await db.scalars(select(RanepaCrawlJob))).all()
                 assert len(jobs) == 1
                 assert jobs[0].user_id == users[1].id and jobs[0].state == "succeeded"
+                notices = (await db.scalars(select(BotOutbox))).all()
+                assert len(notices) == 1
+                notice = json.loads(notices[0].payload)
+                assert notice["chat_id"] == 915
+                assert "U1" in notice["text"]
+                assert "Группа РАНХиГС: P-001" in notice["text"]
+                assert notices[0].dedup_key.startswith("ranepa-crawl-account:")
         finally:
             await engine.dispose()
 
