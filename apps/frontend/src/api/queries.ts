@@ -46,6 +46,22 @@ import { unwrap, isApiRequestError } from './errors';
 import { queryKeys } from './keys';
 import { detailQueryOptions, scheduleQueryOptions, todayQueryOptions } from './cachePolicy';
 
+/** Bound long-running academic requests so Telegram WebView cannot spin forever.
+ * Abort releases the browser connection; unwrap maps the error to a retryable network state.
+ */
+export async function withRequestTimeout<T>(
+  request: (signal: AbortSignal) => Promise<T>,
+  timeoutMs = 20_000,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await request(controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const HOMEWORK_PAGE_SIZE = 50;
 export type HomeworkListFilter = NonNullable<
   NonNullable<Parameters<typeof listHomework>[0]>['query']
@@ -66,7 +82,7 @@ export const api = {
     unwrap(listAcademicDeadlines({ query: { archive, ...(review ? { review: true } : {}) } })),
   event: (id: string) => unwrap(getAcademicDeadline({ path: { deadline_id: id } })),
   schedule: (start: string, end: string): Promise<ScheduleResponse> =>
-    unwrap(getSchedule({ query: { start, end } })),
+    unwrap(withRequestTimeout((signal) => getSchedule({ query: { start, end }, signal }))),
   listHomework: (filter: HomeworkListFilter, cursor?: string): Promise<HomeworkListResponse> =>
     unwrap(listHomework({ query: { filter, limit: HOMEWORK_PAGE_SIZE, ...(cursor ? { cursor } : {}) } })),
   attachmentImage: (id: string): Promise<Blob> =>
@@ -160,6 +176,9 @@ export type RanepaFreshness = RanepaPersonalSchedule & {
   links_complete?: boolean;
   source_checked?: boolean;
   user_materialized?: boolean;
+  refresh_state?: 'idle' | 'queued' | 'running' | 'cooldown' | 'credentials_required';
+  refresh_next_attempt_at?: string | null;
+  last_success_at?: string | null;
   weeks?: Array<{
     week_start: string;
     source_checked_at: string | null;
@@ -180,7 +199,9 @@ export type RanepaRefreshResponse = {
 export function useRanepaFreshnessQuery(start: string, end: string, enabled = true) {
   return useQuery({
     queryKey: ['ranepa-freshness', start, end],
-    queryFn: () => unwrap(getMyRanepaSchedule({ query: { start, end } })) as Promise<RanepaFreshness>,
+    queryFn: () => unwrap(withRequestTimeout((signal) =>
+      getMyRanepaSchedule({ query: { start, end }, signal }),
+    )) as Promise<RanepaFreshness>,
     enabled,
     staleTime: 60_000,
     refetchInterval: 60_000,
@@ -188,17 +209,29 @@ export function useRanepaFreshnessQuery(start: string, end: string, enabled = tr
   });
 }
 
-export function useRequestRanepaRefresh() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (): Promise<RanepaRefreshResponse> => unwrap<RanepaRefreshResponse>(
-      client.post({ url: '/ranepa-schedule/refresh' }) as unknown as Promise<{
+export function requestRanepaRefresh(timeoutMs = 15_000): Promise<RanepaRefreshResponse> {
+  return unwrap<RanepaRefreshResponse>(
+    withRequestTimeout(
+      (signal) => client.post({ url: '/ranepa-schedule/refresh', signal }) as unknown as Promise<{
         data?: RanepaRefreshResponse;
         error?: unknown;
         response?: Response;
       }>,
+      timeoutMs,
     ),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['ranepa-freshness'] }),
+  );
+}
+
+export function useRequestRanepaRefresh() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => requestRanepaRefresh(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ranepa-freshness'] });
+      // Queue acknowledgement is not a completed crawl. Refresh visible
+      // cached lessons once now, then again when the source timestamp changes.
+      void queryClient.invalidateQueries({ queryKey: ['schedule'] });
+    },
   });
 }
 
@@ -208,6 +241,9 @@ export function useScheduleQuery(start: string, end: string, enabled = true, ref
     queryFn: () => api.schedule(start, end),
     enabled,
     ...scheduleQueryOptions,
+    // A 5xx must display an actionable error rather than chaining 3 long
+    // sequential HTTP waits while the customer sees only a skeleton.
+    retry: false,
     ...(refreshOnMount ? { refetchOnMount: 'always' as const } : {}),
   });
 }
