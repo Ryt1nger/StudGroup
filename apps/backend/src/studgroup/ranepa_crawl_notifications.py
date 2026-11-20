@@ -179,11 +179,8 @@ def _stage(code: str, detail: str | None, last_step: str | None) -> str:
 
 def _action(code: str, detail: str | None, attempt: int) -> str:
     if detail in _ACTIONS:
-        return _ACTIONS[detail] + (
-            " Автоповтор отключён." if code == "login_failed" else ""
-        )
+        return _ACTIONS[detail] + (" Автоповтор отключён." if code == "login_failed" else "")
     return _retry_summary(code, attempt)
-
 
 
 def _retry_summary(code: str, attempt: int) -> str:
@@ -247,7 +244,6 @@ def failed_account_line(
     )
 
 
-
 async def notify_account_crawl_result(
     engine,
     *,
@@ -283,8 +279,13 @@ async def notify_account_crawl_result(
     if diagnostic_code is not None and diagnostic_code not in DIAGNOSTIC_REASONS:
         raise ValueError("invalid_crawl_diagnostic_code")
     if last_step is not None and last_step not in {
-        "month_requested", "month_recheck", "week_requested",
-        "week_recheck", "week_retry", "sdo_exits_requested", "sdo_exits_finished",
+        "month_requested",
+        "month_recheck",
+        "week_requested",
+        "week_recheck",
+        "week_retry",
+        "sdo_exits_requested",
+        "sdo_exits_finished",
     }:
         raise ValueError("invalid_crawl_notification_stage")
     if failure_code == "captcha":
@@ -430,8 +431,11 @@ async def notify_batch_report(
         if automatic:
             lines.append(
                 f"Ожидают автоматического повтора: {automatic}; "
-                + ("очередь приостановлена CAPTCHA." if stop_reason == "paused"
-                   else "запуск по расписанию очереди.")
+                + (
+                    "очередь приостановлена CAPTCHA."
+                    if stop_reason == "paused"
+                    else "запуск по расписанию очереди."
+                )
             )
         async with AsyncSession(engine) as db:
             queued = await enqueue_once(
