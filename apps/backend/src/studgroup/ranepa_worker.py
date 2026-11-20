@@ -55,6 +55,7 @@ from studgroup.ranepa_crawl_notifications import (
     notify_batch_report,
     notify_captcha_detected,
     notify_successful_crawl,
+    successful_account_line,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_crawl_trace import CrawlTrace
@@ -571,7 +572,17 @@ async def process_one(
                 and trace.diagnostic is not None
             ):
                 account_stats.diagnostic_reasons[trace.diagnostic] = 1
-        if failure is not None:
+        if failure is None:
+            account_stats.successful_accounts_detail.append(
+                successful_account_line(
+                    student_name=student_name,
+                    telegram_group_name=group.name if group else None,
+                    group_code=group.academic_group_code if group else None,
+                    user_id=user_id,
+                    stats=account_stats,
+                )
+            )
+        else:
             account_stats.failed_accounts_detail.append(
                 failed_account_line(
                     student_name=student_name,
