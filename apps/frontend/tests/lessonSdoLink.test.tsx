@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { buildSchedule } from '../src/mocks/data';
@@ -38,6 +38,28 @@ describe('lesson SDO actions', () => {
     expect(links.length).toBeGreaterThan(0);
     expect(links.some((link) => link.classList.contains('lesson-join-main'))).toBe(true);
     expect(screen.queryByRole('link', { name: 'Подключиться к паре' })).not.toBeInTheDocument();
+  });
+
+  it('refreshes stale navigation state to recover a link saved by the worker', async () => {
+    useScenario();
+    mockLesson('https://my.mts-link.ru/j/Ranepa/98765', false);
+    const scheduled = buildSchedule('2026-11-16', '2026-11-22', Date.now()).lessons[0]!;
+    const stale = {
+      ...scheduled,
+      id: 'sdo-lesson',
+      subject: 'История России',
+      location: 'СДО',
+      course_url: 'https://lms.ranepa.ru/course/view.php?id=88849',
+      online_url: null,
+    };
+    const { router } = renderApp({ route: '/today' });
+    await act(async () => {
+      await router.navigate('/schedule/lesson/sdo-lesson', {
+        state: { lesson: stale, timeZone: 'Europe/Moscow' },
+      });
+    });
+    const link = await screen.findByRole('link', { name: 'Подключиться к паре' });
+    expect(link).toHaveAttribute('href', 'https://my.mts-link.ru/j/Ranepa/98765');
   });
 
   it('retains a verified permanent meeting link after the lesson ends', async () => {
