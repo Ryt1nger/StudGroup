@@ -578,9 +578,7 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
             if pending and historical_by_course is None:
                 # Historical inventories are private to this exact user and
                 # group, even when the relevant course was read in another week.
-                _, historical_by_course, _ = await _verified_sdo_link_cache(
-                    db, group_id, user_id
-                )
+                _, historical_by_course, _ = await _verified_sdo_link_cache(db, group_id, user_id)
             for lesson in pending:
                 url = _display_link_from_candidates(lesson, historical_by_course)
                 if url is not None:
