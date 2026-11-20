@@ -306,9 +306,7 @@ def test_undated_same_teacher_stream_with_two_distinct_meetings_is_not_guessed()
 
 
 def test_course_detail_pages_prioritize_later_meeting_page_over_irrelevant_handouts():
-    links = "".join(
-        f'<a href="/mod/page/view.php?id={i}">Материал {i}</a>' for i in range(30)
-    )
+    links = "".join(f'<a href="/mod/page/view.php?id={i}">Материал {i}</a>' for i in range(30))
     html = (
         '<main class="course-content"><a href="/course/view.php?id=1">Курс</a>'
         + links
