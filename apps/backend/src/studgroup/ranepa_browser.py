@@ -14,7 +14,12 @@ from studgroup.ranepa_failure_diagnostics import (
     diagnose_http_response,
 )
 from studgroup.ranepa_link_states import LinkState
-from studgroup.ranepa_lms import MAX_DETAIL_PAGES, course_detail_pages, course_links, select_lesson_link
+from studgroup.ranepa_lms import (
+    MAX_DETAIL_PAGES,
+    course_detail_pages,
+    course_links,
+    select_lesson_link,
+)
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot, group_code
 from studgroup.ranepa_ui import page_status
