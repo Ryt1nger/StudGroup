@@ -1108,3 +1108,202 @@ def test_balanced_sample_alternates_groups_and_caps_distinct_due_users():
         ranepa_worker.balanced_sample_users(queued, limit=16)
     with pytest.raises(ValueError, match="invalid_sdo_sample_limit"):
         ranepa_worker.balanced_sample_users(queued, limit=0)
+
+
+def test_failed_month_recheck_after_captcha_is_not_called_site_outage(monkeypatch):
+    from studgroup.ranepa_crawl_trace import CrawlTrace
+
+    calls = 0
+
+    class FakeContext:
+        async def new_page(self):
+            return SimpleNamespace(url="https://my.ranepa.ru/lk/student/schedule")
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            return FakeContext()
+
+        async def close(self):
+            return None
+
+    class FakePlaywright:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        @property
+        def chromium(self):
+            return self
+
+        async def launch(self, **kwargs):
+            return FakeBrowser()
+
+    async def month(*args):
+        nonlocal calls
+        calls += 1
+        return SimpleNamespace(
+            status="captcha_required" if calls == 1 else "source_unavailable",
+            diagnostic=None,
+        )
+
+    async def submitted(*args, **kwargs):
+        return True
+
+    async def wait(*args):
+        return "challenge_still_visible_after_wait"
+
+    monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
+    monkeypatch.setattr(ranepa_worker, "read_month", month)
+    monkeypatch.setattr(ranepa_worker, "solve_rotating_halves", submitted)
+    monkeypatch.setattr(ranepa_worker, "wait_for_captcha_resolution", wait)
+    trace = CrawlTrace()
+    status = asyncio.run(
+        ranepa_worker._collect(
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "login",
+            "password",
+            date(2026, 11, 20),
+            captcha_client=SimpleNamespace(max_tasks=1),
+            trace=trace,
+        )
+    )
+    assert calls == 2
+    assert status == "captcha"
+    assert trace.failure_detail == "captcha_unverified"
+    assert trace.diagnostic == "challenge_pending"
+
+
+def test_bounded_optional_sdo_discovery_never_invalidates_six_committed_weeks(monkeypatch):
+    from studgroup.ranepa_crawl_trace import CrawlTrace
+
+    saved = []
+
+    class FakeContext:
+        async def new_page(self):
+            return object()
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs):
+            return FakeContext()
+
+        async def close(self):
+            return None
+
+    class FakePlaywright:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        @property
+        def chromium(self):
+            return self
+
+        async def launch(self, **kwargs):
+            return FakeBrowser()
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def commit(self):
+            return None
+
+    async def month(*args):
+        return SimpleNamespace(status="preview_only", cards=())
+
+    async def week(_page, _login, _password, code, monday, *, allow_empty=False):
+        return SimpleNamespace(
+            status="preview_only",
+            snapshot=WeekSnapshot(code, monday, monday + timedelta(days=6), ()),
+        )
+
+    async def exits(*args, **kwargs):
+        await asyncio.Event().wait()  # Never finishes; budget MUST cancel it.
+
+    async def save(db, group_id, user_id, snapshot, **kwargs):
+        saved.append(snapshot.week_start)
+
+    async def materialize(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(ranepa_worker, "async_playwright", FakePlaywright)
+    monkeypatch.setattr(ranepa_worker, "read_month", month)
+    monkeypatch.setattr(ranepa_worker, "read_week", week)
+    monkeypatch.setattr(ranepa_worker, "resolve_sdo_exits", exits)
+    monkeypatch.setattr(ranepa_worker, "remember_personal", save)
+    monkeypatch.setattr(ranepa_worker, "materialize_verified_facts", materialize)
+    monkeypatch.setattr(ranepa_worker, "AsyncSession", lambda *_: FakeSession())
+    monkeypatch.setattr(ranepa_worker, "MAX_SDO_SCAN_WEEK_SECONDS", 0.01)
+    monkeypatch.setattr(ranepa_worker, "MAX_SDO_SCAN_TOTAL_SECONDS", 0.02)
+    stats = CrawlRunStats()
+    trace = CrawlTrace()
+    outcome = asyncio.run(
+        ranepa_worker._collect(
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "login",
+            "password",
+            date(2026, 11, 20),
+            trace=trace,
+            stats=stats,
+        )
+    )
+    assert outcome is None
+    assert stats.saved_weeks == 6
+    assert len(saved) == 6
+    assert trace.events[-1]["step"] == "schedule_verified"
+    assert any(e["step"] == "sdo_exits_timed_out" for e in trace.events)
+
+
+def test_account_timeout_preserves_complete_snapshots(monkeypatch):
+    from studgroup.ranepa_crawl_trace import CrawlTrace
+
+    async def timed_out(*args, **kwargs):
+        raise TimeoutError
+
+    monkeypatch.setattr(ranepa_worker, "_collect", timed_out)
+    trace = CrawlTrace()
+    stats = CrawlRunStats(saved_weeks=6)
+    result = asyncio.run(
+        collect_bounded(
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "login",
+            "password",
+            date(2026, 11, 20),
+            trace=trace,
+            stats=stats,
+        )
+    )
+    assert result is None
+    assert trace.diagnostic == "timeout"
+    assert trace.events[-1]["step"] == "schedule_verified"
+
+    incomplete = CrawlRunStats(saved_weeks=5)
+    result = asyncio.run(
+        collect_bounded(
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "login",
+            "password",
+            date(2026, 11, 20),
+            stats=incomplete,
+        )
+    )
+    assert result == "source_unavailable"

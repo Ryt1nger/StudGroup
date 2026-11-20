@@ -145,6 +145,7 @@ _ACCOUNT_FAILURE_DETAILS = {
     "access_not_approved": "Нет разрешения на подключение к РАНХиГС",
     "credentials_unreadable": "Не удалось прочитать сохранённые данные входа",
     "login_rejected": "Личный кабинет не подтвердил вход; точная причина неизвестна",
+    "captcha_unverified": "После CAPTCHA не удалось подтвердить открытие расписания",
 }
 
 _FAILURE_STAGE = {
@@ -156,6 +157,7 @@ _FAILURE_STAGE = {
     "access_not_approved": "Проверка разрешения",
     "credentials_unreadable": "Чтение сохранённых данных",
     "login_rejected": "Авторизация в личном кабинете",
+    "captcha_unverified": "Проверка CAPTCHA и повторный вход",
     "month_incomplete": "Загрузка месячного расписания",
     "week_unreadable": "Загрузка недельного расписания",
     "week_month_mismatch": "Сверка расписания",
@@ -170,6 +172,7 @@ _ACTIONS = {
     "access_not_approved": "Проверьте разрешение на подключение к РАНХиГС.",
     "credentials_unreadable": "Студенту нужно заново подключить СДО.",
     "login_rejected": "Проверьте вход в ЛК у студента; пароль мог измениться.",
+    "captcha_unverified": "Проверьте CAPTCHA и состояние сессии. Повтор зависит от защиты очереди.",
 }
 
 

@@ -108,7 +108,9 @@ jobs:
       RANEPA_CAPTCHA_DAILY_MAX_TASKS: "60"
       # Encrypted Cookie Reuse must be approved independently for a manual pilot.
       # Scheduled multi-account jobs retain the existing non-persistent flow.
-      RANEPA_SESSION_REUSE_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && vars.RANEPA_SESSION_REUSE_PILOT_ENABLED == 'true') || (github.event_name == 'schedule' && vars.RANEPA_SESSION_REUSE_SCHEDULED_ENABLED == 'true') }}
+      # Reuse encrypted account-scoped sessions in a tagged, approved pilot only
+      # when the owner explicitly enabled the existing pilot feature flag.
+      RANEPA_SESSION_REUSE_ENABLED: ${{ (github.event_name == 'workflow_dispatch' && vars.RANEPA_SESSION_REUSE_PILOT_ENABLED == 'true') || (github.event_name == 'schedule' && vars.RANEPA_SESSION_REUSE_SCHEDULED_ENABLED == 'true') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[run-sdo-sample-15]') && vars.RANEPA_SESSION_REUSE_PILOT_ENABLED == 'true') }}
     defaults:
       run:
         working-directory: apps/backend

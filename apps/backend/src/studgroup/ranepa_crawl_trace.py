@@ -29,6 +29,8 @@ STEPS = frozenset(
         "week_month_mismatch",
         "sdo_exits_requested",
         "sdo_exits_finished",
+        "sdo_exits_timed_out",
+        "sdo_exits_skipped_budget",
         "captcha_month",
         "captcha_week",
         "captcha_sdo",
