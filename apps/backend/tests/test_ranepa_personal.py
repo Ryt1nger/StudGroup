@@ -25,6 +25,8 @@ from studgroup.models import (
 from studgroup.ranepa_link_states import LINK_STATES
 from studgroup.ranepa_personal import (
     _display_link_from_candidates,
+    _reuse_verified_candidate,
+    _sdo_cache_key,
     enrich_personal_links,
     personal_with_group_fallback,
     remember_personal,
@@ -951,3 +953,80 @@ def test_saved_lms_inventory_can_fill_link_on_read_only_for_own_verified_lesson(
     assert _display_link_from_candidates({**row, "link_candidates": []}, cached) == candidate["url"]
     cached[course][extra["url"]] = extra
     assert _display_link_from_candidates({**row, "link_candidates": []}, cached) is None
+
+
+def test_confirmed_moodle_meeting_is_reused_when_new_scan_has_multiple_stable_links():
+    course = "https://lms.ranepa.ru/course/view.php?id=85813"
+    old = "https://lms.ranepa.ru/mod/url/view.php?id=101"
+    alternate = "https://lms.ranepa.ru/mod/url/view.php?id=102"
+    row = {
+        "room": "СДО",
+        "subject": "История России",
+        "teacher": "Иванов Иван Иванович",
+        "subgroup_hint": "Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+        "day": "2026-11-23",
+        "starts": "09:00:00",
+        "course_url": course,
+        "online_url": None,
+        "link_state": "ambiguous",
+    }
+    def record(url, label):
+        return {"url": url, "label": label, "course_url": course}
+    a = record(old, "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка")
+    b = record(alternate, "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка")
+    inventory = {course: {old: a, alternate: b}}
+    confirmed = {
+        _sdo_cache_key(row): {"online_url": old, "link_course_url": course}
+    }
+    # Neither candidate can be chosen by label alone, but the exact account's
+    # previously confirmed meeting can be reused without another browser login.
+    assert _reuse_verified_candidate(row, course, inventory, confirmed) == old
+    assert _display_link_from_candidates(row, inventory, confirmed) == old
+    assert _reuse_verified_candidate(row, course, inventory, {}) is None
+    assert _display_link_from_candidates({**row, "source_scope": "common"}, inventory, confirmed) is None
+    wrong_course = course.replace("85813", "99999")
+    assert _reuse_verified_candidate(row, wrong_course, inventory, confirmed) is None
+    assert _reuse_verified_candidate(
+        {**row, "teacher": "Петров Пётр Петрович"}, course, inventory, confirmed
+    ) is None
+
+
+def test_explicit_one_off_or_dated_lms_meetings_are_not_reused_other_days():
+    course = "https://lms.ranepa.ru/course/view.php?id=85813"
+    old = "https://lms.ranepa.ru/mod/url/view.php?id=101"
+    row = {
+        "room": "СДО",
+        "subject": "История России",
+        "teacher": "Иванов Иван Иванович",
+        "subgroup_hint": "Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+        "day": "2026-11-23",
+        "starts": "09:00:00",
+        "course_url": course,
+        "online_url": None,
+    }
+    confirmed = {_sdo_cache_key(row): {"online_url": old, "link_course_url": course}}
+    for label in (
+        "Иванов Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ разовая конференция",
+        "Иванов Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ занятие 16.11.2026",
+        "Иванов Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ занятия 9, 16.11",
+        "Иванов Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ 10:30-12:00",
+    ):
+        inventory = {course: {old: {"url": old, "label": label, "course_url": course}}}
+        assert _reuse_verified_candidate(row, course, inventory, confirmed) is None
+
+
+def test_last_confirmed_moodle_meeting_survives_missing_course_link_listing():
+    course = "https://lms.ranepa.ru/course/view.php?id=85813"
+    url = "https://lms.ranepa.ru/mod/url/view.php?id=101"
+    row = {
+        "room": "СДО",
+        "subject": "История России",
+        "teacher": "Иванов Иван Иванович",
+        "subgroup_hint": "Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+        "day": "2026-11-23",
+        "starts": "09:00:00",
+        "course_url": course,
+        "online_url": None,
+    }
+    confirmed = {_sdo_cache_key(row): {"online_url": url, "link_course_url": course}}
+    assert _display_link_from_candidates(row, {}, confirmed) == url
