@@ -38,6 +38,7 @@ class CrawlRunStats:
     timetable_only_accounts: int = 0
     failure_reasons: dict[str, int] = field(default_factory=dict)
     diagnostic_reasons: dict[str, int] = field(default_factory=dict)
+    failed_accounts_detail: list[str] = field(default_factory=list)
 
     def add(self, other: "CrawlRunStats") -> None:
         self.successful_accounts += other.successful_accounts
@@ -53,6 +54,7 @@ class CrawlRunStats:
             self.failure_reasons[code] = self.failure_reasons.get(code, 0) + count
         for code, count in other.diagnostic_reasons.items():
             self.diagnostic_reasons[code] = self.diagnostic_reasons.get(code, 0) + count
+        self.failed_accounts_detail.extend(other.failed_accounts_detail[:15])
 
 
 def _owner_id(value: int | None) -> bool:
@@ -118,6 +120,71 @@ _WEEK_FAILURE_DETAILS = {
     "week_month_mismatch": "Недельное расписание не совпало с месячным",
 }
 
+# Known reasons are separated from guessed password errors. An unreachable
+# Moodle page or refused login does not establish invalid credentials.
+_ACCOUNT_FAILURE_DETAILS = {
+    "group_missing": "Учебная группа не найдена или не настроена",
+    "profile_missing": "Профиль студента не найден",
+    "credentials_missing": "Учётные данные СДО не подключены",
+    "consent_missing": "Отсутствует действующее согласие на доступ к СДО",
+    "legal_not_ready": "Не выполнены необходимые юридические настройки",
+    "access_not_approved": "Нет разрешения на подключение к РАНХиГС",
+    "credentials_unreadable": "Не удалось прочитать сохранённые данные входа",
+    "login_rejected": "Личный кабинет не подтвердил вход; точная причина неизвестна",
+}
+
+_FAILURE_STAGE = {
+    "group_missing": "Проверка группы",
+    "profile_missing": "Проверка профиля",
+    "credentials_missing": "Проверка подключения СДО",
+    "consent_missing": "Проверка согласия",
+    "legal_not_ready": "Проверка настроек",
+    "access_not_approved": "Проверка разрешения",
+    "credentials_unreadable": "Чтение сохранённых данных",
+    "login_rejected": "Авторизация в личном кабинете",
+    "month_incomplete": "Загрузка месячного расписания",
+    "week_unreadable": "Загрузка недельного расписания",
+    "week_month_mismatch": "Сверка расписания",
+}
+
+_ACTIONS = {
+    "group_missing": "Проверьте группу и её код в админке.",
+    "profile_missing": "Проверьте профиль студента.",
+    "credentials_missing": "Студенту нужно подключить СДО в профиле.",
+    "consent_missing": "Студенту нужно дать согласие на доступ к СДО.",
+    "legal_not_ready": "Проверьте настройки обработки данных.",
+    "access_not_approved": "Проверьте разрешение на подключение к РАНХиГС.",
+    "credentials_unreadable": "Студенту нужно заново подключить СДО.",
+    "login_rejected": "Проверьте вход в ЛК у студента; пароль мог измениться.",
+}
+
+
+def _stage(code: str, detail: str | None, last_step: str | None) -> str:
+    if detail in _FAILURE_STAGE:
+        return _FAILURE_STAGE[detail]
+    if last_step in {"month_requested", "month_recheck"}:
+        return "Загрузка месячного расписания"
+    if last_step in {"week_requested", "week_recheck", "week_retry"}:
+        return "Загрузка недельного расписания"
+    if last_step in {"sdo_exits_requested", "sdo_exits_finished"}:
+        return "Поиск ссылок на занятия СДО"
+    if code == "login_failed":
+        return "Авторизация в личном кабинете"
+    if code == "captcha":
+        return "Проверка CAPTCHA"
+    if code == "internal":
+        return "Внутренняя обработка"
+    return "Обход СДО"
+
+
+def _action(code: str, detail: str | None, attempt: int) -> str:
+    if detail in _ACTIONS:
+        return _ACTIONS[detail] + (
+            " Автоповтор отключён." if code == "login_failed" else ""
+        )
+    return _retry_summary(code, attempt)
+
+
 
 def _retry_summary(code: str, attempt: int) -> str:
     if code == "login_failed":
@@ -137,6 +204,8 @@ def _retry_summary(code: str, attempt: int) -> str:
 
 
 def _failure_summary(code: str, detail: str | None, diagnostic: str | None) -> str:
+    if detail in _ACCOUNT_FAILURE_DETAILS:
+        return _ACCOUNT_FAILURE_DETAILS[detail]
     if code == "parse_failed" and detail:
         return _WEEK_FAILURE_DETAILS[detail]
     if code in {"source_unavailable", "internal"} and diagnostic:
@@ -164,6 +233,7 @@ async def notify_account_crawl_result(
     failure_detail: str | None = None,
     diagnostic_code: str | None = None,
     telegram_group_name: str | None = None,
+    last_step: str | None = None,
 ) -> bool:
     """One private message per finalized account attempt, even when extraction fails.
 
@@ -177,10 +247,17 @@ async def notify_account_crawl_result(
         raise ValueError("invalid_crawl_failure_code")
     if attempt < 1:
         raise ValueError("invalid_crawl_attempt")
-    if failure_detail is not None and failure_detail not in _WEEK_FAILURE_DETAILS:
+    if failure_detail is not None and failure_detail not in (
+        _WEEK_FAILURE_DETAILS | _ACCOUNT_FAILURE_DETAILS
+    ):
         raise ValueError("invalid_crawl_failure_detail")
     if diagnostic_code is not None and diagnostic_code not in DIAGNOSTIC_REASONS:
         raise ValueError("invalid_crawl_diagnostic_code")
+    if last_step is not None and last_step not in {
+        "month_requested", "month_recheck", "week_requested",
+        "week_recheck", "week_retry", "sdo_exits_requested", "sdo_exits_finished",
+    }:
+        raise ValueError("invalid_crawl_notification_stage")
     if failure_code == "captcha":
         # The one-time owner WebApp notice already states the failed automatic
         # crawl, both groups and the manual action. Do not send its duplicate
@@ -201,13 +278,22 @@ async def notify_account_crawl_result(
     telegram_group = _safe_label(telegram_group_name, fallback="не указана")
     name = _safe_label(student_name, fallback="студент")
     if failure_code is not None:
-        # Account details and zero counters belong to the admin trace, not Telegram.
+        cause = _failure_summary(failure_code, failure_detail, diagnostic_code)
         message = "\n".join(
             [
-                "❌ StudGroup · сбой СДО",
-                f"{name} · {_safe_label(telegram_group_name or group_code, fallback='группа не указана')}",
-                "Причина: " + _failure_summary(failure_code, failure_detail, diagnostic_code) + ".",
-                _retry_summary(failure_code, attempt),
+                "❌ StudGroup · ошибка обхода СДО",
+                f"Студент: {name} · ID {str(user_id)[:8]}",
+                f"Группа ТГ: {telegram_group}",
+                f"Группа РАНХиГС: {group}",
+                f"Этап: {_stage(failure_code, failure_detail, last_step)}",
+                f"Причина: {cause}.",
+                f"Что делать: {_action(failure_code, failure_detail, attempt)}",
+                (
+                    f"Результат: недель {stats.saved_weeks}, "
+                    f"занятий {stats.saved_lessons}, "
+                    f"найдено ссылок {stats.discovered_sdo_candidates}, "
+                    f"подтверждено {stats.saved_sdo_links}."
+                ),
             ]
         )
     else:
@@ -298,12 +384,26 @@ async def notify_batch_report(
         for code, count in sorted(stats.failure_reasons.items()):
             if code != "source_unavailable":
                 causes.append(f"{_REPORT_ERROR_NAMES.get(code, 'Неизвестная ошибка')} — {count}")
+        manual = stats.failure_reasons.get("login_failed", 0)
+        automatic = stats.failed_accounts - manual
         lines = [
-            "⚠️ StudGroup · ошибки обхода СДО",
-            f"Не удалось обработать: {stats.failed_accounts} из {processed} учёток.",
+            "⚠️ StudGroup · итоги обхода СДО",
+            f"Обработано: {processed}; успешно: {stats.successful_accounts}; ошибок: {stats.failed_accounts}.",
             "Причины: " + "; ".join(causes[:4]) + ".",
-            "Повтор будет выполнен автоматически по очереди; детали — в админке.",
         ]
+        if stats.failed_accounts_detail:
+            lines.append("У кого:")
+            lines.extend(f"• {item}" for item in stats.failed_accounts_detail[:8])
+            if len(stats.failed_accounts_detail) > 8:
+                lines.append(f"• И ещё {len(stats.failed_accounts_detail) - 8} учёток.")
+        if manual:
+            lines.append(f"Требует проверки входа/согласия: {manual}; автоповтор отключён.")
+        if automatic:
+            lines.append(
+                f"Ожидают автоматического повтора: {automatic}; "
+                + ("очередь приостановлена CAPTCHA." if stop_reason == "paused"
+                   else "запуск по расписанию очереди.")
+            )
         async with AsyncSession(engine) as db:
             queued = await enqueue_once(
                 db,
