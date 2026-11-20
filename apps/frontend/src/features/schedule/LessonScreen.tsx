@@ -98,6 +98,20 @@ function JoinBar({ url, ended }: { url: string; ended: boolean }) {
   );
 }
 
+function CourseBar({ url }: { url: string }) {
+  const open = useLessonLinkClick(url);
+  return (
+    <Float>
+      <div className="cta-bar lesson-join-bar">
+        <a className="btn lesson-join-main" href={url} target="_blank" rel="noopener noreferrer" onClick={open}>
+          <Ic name="book" size={18} />
+          Открыть курс СДО
+        </a>
+      </div>
+    </Float>
+  );
+}
+
 function CourseLink({ url }: { url: string }) {
   const open = useLessonLinkClick(url);
   return <a className="srow" href={url} target="_blank" rel="noopener noreferrer" onClick={open}>
@@ -144,6 +158,8 @@ export function LessonScreen() {
   // Permanent meeting links remain useful after the lesson ends. Do not
   // hide the only access path merely because the calendar time has passed.
   const hasLessonLink = online !== null && lesson.status !== 'cancelled';
+  const canOpenCourse = online === null && course !== null
+    && lesson.status !== 'cancelled' && endMs > nowMs;
   const homework = (subject.data?.homework ?? []).filter(
     (item) => item.my_state.completion !== 'completed' && !isHomeworkArchived(item, nowMs, timeZone),
   );
@@ -192,6 +208,11 @@ export function LessonScreen() {
         <>
           <div className="cta-space" />
           <JoinBar url={online} ended={endMs <= nowMs} />
+        </>
+      ) : canOpenCourse ? (
+        <>
+          <div className="cta-space" />
+          <CourseBar url={course} />
         </>
       ) : null}
     </>
