@@ -160,11 +160,12 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 assert "Группа ТГ: ТГ · БИ 1.2" in notices[1]["text"]
                 assert "Группа РАНХиГС: БИ1.2" in notices[1]["text"]
                 assert "Ссылок СДО: 2" in notices[1]["text"]
-                assert "❌ StudGroup · ошибка" in notices[2]["text"]
+                assert "❌ StudGroup · сбой СДО" in notices[2]["text"]
                 assert "CAPTCHA" in notices[2]["text"]
                 assert "captcha" not in notices[2]["text"]
-                assert "Следующая плановая попытка" in notices[2]["text"]
-                assert "Сохранено недель: 1" in notices[2]["text"]
+                assert "Повтор автоматически через 6 ч" in notices[2]["text"]
+                assert "Сохранено недель" not in notices[2]["text"]
+                assert len(notices[2]["text"].splitlines()) == 4
                 assert "⚠️ StudGroup · данные СДО не извлечены" in notices[3]["text"]
                 assert "Ссылок СДО: 0" in notices[3]["text"]
                 assert all("\\n" not in notice["text"] for notice in notices.values())
@@ -179,12 +180,12 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
 @pytest.mark.parametrize(
     ("failure_code", "expected"),
     [
-        ("login_failed", "Не удалось выполнить вход"),
-        ("captcha", "Сайт запросил проверку CAPTCHA"),
-        ("source_unavailable", "временно недоступен"),
-        ("identity_unverified", "нужной учебной группе"),
-        ("parse_failed", "не прошли проверку"),
-        ("internal", "внутренняя ошибка StudGroup"),
+        ("login_failed", "Не удалось войти"),
+        ("captcha", "Не удалось пройти проверку CAPTCHA"),
+        ("source_unavailable", "точная причина неизвестна"),
+        ("identity_unverified", "Не удалось подтвердить учебную группу"),
+        ("parse_failed", "не удалось проверить"),
+        ("internal", "Внутренний сбой StudGroup"),
     ],
 )
 def test_every_account_failure_has_russian_explanation(tmp_path, failure_code, expected):
@@ -210,7 +211,8 @@ def test_every_account_failure_has_russian_explanation(tmp_path, failure_code, e
                 assert expected in message
                 assert failure_code not in message
                 assert "Причина:" in message
-                assert "Сохранено недель: 1" in message
+                assert "Сохранено недель" not in message
+                assert len(message.splitlines()) == 4
                 assert "\\n" not in message
         finally:
             await engine.dispose()
@@ -221,8 +223,9 @@ def test_every_account_failure_has_russian_explanation(tmp_path, failure_code, e
 @pytest.mark.parametrize(
     ("detail", "expected"),
     [
-        ("week_unreadable", "Недельное расписание не удалось полностью прочитать"),
-        ("week_month_mismatch", "Недельное расписание дважды не совпало"),
+        ("week_unreadable", "Недельное расписание не удалось прочитать"),
+        ("week_month_mismatch", "Недельное расписание не совпало"),
+        ("month_incomplete", "Месячное расписание загрузилось не полностью"),
     ],
 )
 def test_owner_gets_specific_safe_week_failure_reason(tmp_path, detail, expected):
@@ -247,7 +250,7 @@ def test_owner_gets_specific_safe_week_failure_reason(tmp_path, detail, expected
                 row = await db.scalar(select(BotOutbox))
                 message = json.loads(row.payload)["text"]
                 assert expected in message
-                assert "Сохранено недель: 1" in message
+                assert "Сохранено недель" not in message
                 assert detail not in message
                 assert "password" not in row.payload.lower()
                 assert "cookie" not in row.payload.lower()
@@ -281,6 +284,11 @@ def test_per_account_results_reject_unsafe_values(tmp_path):
                 **args,
                 failure_code="parse_failed",
                 failure_detail="https://private.example/cookie=secret",
+            )
+        with pytest.raises(ValueError, match="invalid_crawl_diagnostic_code"):
+            await notify_account_crawl_result(
+                None, **args, failure_code="source_unavailable",
+                diagnostic_code="https://private.example/token=secret",
             )
         assert not await notify_account_crawl_result(
             None, **{**args, "owner_id": None}, failure_code="captcha"
@@ -518,6 +526,71 @@ def test_manual_captcha_button_replaces_duplicate_final_account_failure(tmp_path
             assert await notify_account_crawl_result(
                 engine, **params, attempt=2, failure_code="captcha"
             )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_owner_receives_short_specific_timeout_diagnosis_and_real_backoff(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/timeout.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            assert await notify_account_crawl_result(
+                engine,
+                owner_id=915,
+                job_id=uuid4(),
+                attempt=3,
+                user_id=uuid4(),
+                group_code="Э-ОБ-385-04-26-02",
+                telegram_group_name="БИ 1.2",
+                student_name="Katerina",
+                failure_code="source_unavailable",
+                diagnostic_code="timeout",
+                stats=CrawlRunStats(),
+            )
+            async with AsyncSession(engine) as db:
+                row = await db.scalar(select(BotOutbox))
+                message = json.loads(row.payload)["text"]
+            assert len(message.splitlines()) == 4
+            assert "Katerina · БИ 1.2" in message
+            assert "Причина: Сайт не ответил вовремя." in message
+            assert "Повтор автоматически через 2 ч." in message
+            assert "24 часа" not in message
+            assert "недель" not in message
+            assert "учётка:" not in message.lower()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_routine_batch_groups_transient_failures_and_diagnostic_causes(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/batch-errors.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            stats = CrawlRunStats(
+                failed_accounts=2,
+                failure_reasons={"source_unavailable": 2},
+                diagnostic_reasons={"timeout": 2},
+            )
+            assert await notify_batch_report(engine, owner_id=915, stats=stats)
+            assert not await notify_batch_report(engine, owner_id=915, stats=stats)
+            async with AsyncSession(engine) as db:
+                rows = (await db.scalars(select(BotOutbox))).all()
+                assert len(rows) == 1
+                message = json.loads(rows[0].payload)["text"]
+            assert len(message.splitlines()) == 4
+            assert "2 из 2 учёток" in message
+            assert "Сайт не ответил вовремя — 2" in message
+            assert "Повтор будет выполнен автоматически" in message
         finally:
             await engine.dispose()
 
