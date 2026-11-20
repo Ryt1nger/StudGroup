@@ -18,6 +18,11 @@ describe('SDO API request timeouts', () => {
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 
+  it('surfaces fast errors without waiting for a timeout', async () => {
+    const failure = new Error('offline');
+    await expect(withRequestTimeout(() => Promise.reject(failure), 200)).rejects.toBe(failure);
+  });
+
   it('keeps the successful response and does not abort before completion', async () => {
     let captured: AbortSignal | undefined;
     const value = await withRequestTimeout((signal) => {
