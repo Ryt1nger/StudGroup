@@ -308,10 +308,9 @@ async def process_one(
         ) -> None:
             if not settings.ranepa_crawl_notify_account_results_enabled:
                 return
-            # Scheduled batches send one grouped report; keep action-required
-            # login and CAPTCHA notices per account and pilots unchanged.
-            if run_stats is not None and failure_code not in {"login_failed", "captcha"}:
-                return
+            # Send each completed account outcome immediately, including during
+            # a scheduled batch or a long-running sample. The final aggregate
+            # report is additional and must not delay owner notifications.
             try:
                 queued = await notify_account_crawl_result(
                     engine,
