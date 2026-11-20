@@ -2,7 +2,6 @@
 
 import json
 import logging
-import re
 from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
 from urllib.parse import parse_qsl, urlsplit
@@ -22,6 +21,7 @@ from studgroup.ranepa_link_states import LINK_STATES
 from studgroup.ranepa_lms import (
     DATE,
     DATE_LIST,
+    EXPLICITLY_TEMPORARY,
     LinkCandidate,
     meeting_url,
     select_lesson_link,
@@ -181,11 +181,6 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
     return by_identity, by_course, by_subject
 
 
-_EXPLICITLY_TEMPORARY = re.compile(
-    r"\b(?:одноразов|однократн|разов|временн)\w*|\bна\s+(?:одну|эту)\s+пару"
-)
-
-
 def _previous_confirmed_meeting(row, course, by_course, identity):
     """Use a verified link for precisely this course, subject, teacher and stream.
 
@@ -206,7 +201,7 @@ def _previous_confirmed_meeting(row, course, by_course, identity):
     candidate = by_course.get(course, {}).get(url)
     if candidate is not None:
         label = candidate["label"]
-        if _EXPLICITLY_TEMPORARY.search(normalized(label)):
+        if EXPLICITLY_TEMPORARY.search(normalized(label)):
             return None
         try:
             choice = select_lesson_link(
