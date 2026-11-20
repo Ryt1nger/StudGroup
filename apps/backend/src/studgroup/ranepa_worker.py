@@ -2,12 +2,11 @@
 
 import argparse
 import asyncio
-from collections import defaultdict, deque
 import json
 import os
 import signal
-from collections import Counter
-from datetime import date, datetime, timedelta
+from collections import Counter, defaultdict, deque
+from datetime import UTC, date, datetime, timedelta
 from time import monotonic
 from urllib.parse import urlsplit
 from uuid import UUID
