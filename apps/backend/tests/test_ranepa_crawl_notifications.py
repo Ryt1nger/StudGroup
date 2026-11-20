@@ -287,7 +287,9 @@ def test_per_account_results_reject_unsafe_values(tmp_path):
             )
         with pytest.raises(ValueError, match="invalid_crawl_diagnostic_code"):
             await notify_account_crawl_result(
-                None, **args, failure_code="source_unavailable",
+                None,
+                **args,
+                failure_code="source_unavailable",
                 diagnostic_code="https://private.example/token=secret",
             )
         assert not await notify_account_crawl_result(
