@@ -18,7 +18,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, TimeoutError as PoolCheckoutTimeout
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from studgroup.academic_deadlines import router as deadlines_router
@@ -345,7 +345,7 @@ def database_engine_options(settings: Settings, *, for_web_service: bool = False
     # unbounded 5+10 default. The public web API needs enough concurrency to
     # survive a lost Render env var; standalone crawlers keep just one slot.
     if supabase_session_pooler:
-        options.setdefault("pool_size", 4 if for_web_service else 1)
+        options.setdefault("pool_size", 5 if for_web_service else 1)
         options.setdefault("max_overflow", 0)
         options.setdefault("pool_timeout", 10)
     return options
@@ -707,6 +707,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 }
             },
             status_code=error.status,
+        )
+
+    @app.exception_handler(PoolCheckoutTimeout)
+    async def database_pool_busy(request, error):
+        # Avoid exposing connection URLs, SQL or credentials in a 500.
+        # The frontend can recover from a bounded 503, rather than spinning.
+        return JSONResponse(
+            {
+                "error": {
+                    "code": "service_unavailable",
+                    "message": "Сервер занят, попробуйте обновить позже",
+                    "retryable": True,
+                    "correlation_id": "",
+                    "retry_after_seconds": 5,
+                }
+            },
+            status_code=503,
+            headers={"Retry-After": "5"},
         )
 
     @app.exception_handler(RequestValidationError)
