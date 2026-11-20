@@ -527,3 +527,49 @@ def test_sdo_scans_hidden_course_page_and_preserves_all_teacher_candidates():
         "https://lms.ranepa.ru/mod/url/view.php?id=111",
         "https://my.mts-link.ru/j/Ranepa/222",
     }
+
+
+def test_course_reader_waits_for_late_meetings_from_other_teachers():
+    class Page:
+        def __init__(self):
+            self.reads = 0
+            self.waits = 0
+
+        async def content(self):
+            self.reads += 1
+            links = ""
+            if self.reads >= 5:
+                links = (
+                    '<a href="/mod/url/view.php?id=100">'
+                    "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка</a>"
+                    '<a href="/mod/url/view.php?id=101">'
+                    "Петров П.П. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка</a>"
+                )
+            return (
+                '<main class="course-content">'
+                '<a href="/course/view.php?id=85813">Курс</a>'
+                + links
+                + "</main>"
+            )
+
+        async def wait_for_timeout(self, milliseconds):
+            assert milliseconds == 250
+            self.waits += 1
+
+        async def evaluate(self, _script):
+            pass
+
+    class Context:
+        async def new_page(self):
+            raise AssertionError("No nested page was offered")
+
+    page = Page()
+    candidates, verified = asyncio.run(ranepa_browser._read_course_candidates(page, Context()))
+    assert verified is True
+    assert len(candidates) == 2
+    assert page.reads >= 5
+    assert page.waits >= 4
+    assert {item.url for item in candidates} == {
+        "https://lms.ranepa.ru/mod/url/view.php?id=100",
+        "https://lms.ranepa.ru/mod/url/view.php?id=101",
+    }
