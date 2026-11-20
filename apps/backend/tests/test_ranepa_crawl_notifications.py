@@ -24,6 +24,7 @@ from studgroup.models import (
 )
 from studgroup.ranepa_crawl_notifications import (
     CrawlRunStats,
+    failed_account_line,
     notify_account_crawl_result,
     notify_batch_report,
     notify_captcha_detected,
@@ -160,12 +161,14 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 assert "Группа ТГ: ТГ · БИ 1.2" in notices[1]["text"]
                 assert "Группа РАНХиГС: БИ1.2" in notices[1]["text"]
                 assert "Ссылок СДО: 2" in notices[1]["text"]
-                assert "❌ StudGroup · сбой СДО" in notices[2]["text"]
+                assert "❌ StudGroup · ошибка обхода СДО" in notices[2]["text"]
                 assert "CAPTCHA" in notices[2]["text"]
                 assert "captcha" not in notices[2]["text"]
                 assert "Автоповтор — не раньше чем через 6 ч" in notices[2]["text"]
-                assert "Сохранено недель" not in notices[2]["text"]
-                assert len(notices[2]["text"].splitlines()) == 4
+                assert "Результат: недель 1, занятий 4" in notices[2]["text"]
+                assert "Студент: Тестовый студент" in notices[2]["text"]
+                assert "Группа РАНХиГС: БИ1.2" in notices[2]["text"]
+                assert len(notices[2]["text"].splitlines()) == 8
                 assert "⚠️ StudGroup · данные СДО не извлечены" in notices[3]["text"]
                 assert "Ссылок СДО: 0" in notices[3]["text"]
                 assert all("\\n" not in notice["text"] for notice in notices.values())
@@ -211,8 +214,8 @@ def test_every_account_failure_has_russian_explanation(tmp_path, failure_code, e
                 assert expected in message
                 assert failure_code not in message
                 assert "Причина:" in message
-                assert "Сохранено недель" not in message
-                assert len(message.splitlines()) == 4
+                assert "Результат: недель 1" in message
+                assert len(message.splitlines()) == 8
                 assert "\\n" not in message
         finally:
             await engine.dispose()
@@ -556,13 +559,14 @@ def test_owner_receives_short_specific_timeout_diagnosis_and_real_backoff(tmp_pa
             async with AsyncSession(engine) as db:
                 row = await db.scalar(select(BotOutbox))
                 message = json.loads(row.payload)["text"]
-            assert len(message.splitlines()) == 4
-            assert "Katerina · БИ 1.2" in message
+            assert len(message.splitlines()) == 8
+            assert "Студент: Katerina" in message
+            assert "Группа ТГ: БИ 1.2" in message
+            assert "Группа РАНХиГС: Э-ОБ-385-04-26-02" in message
             assert "Причина: Сайт не ответил вовремя." in message
             assert "Автоповтор — не раньше чем через 2 ч." in message
             assert "24 часа" not in message
-            assert "недель" not in message
-            assert "учётка:" not in message.lower()
+            assert "Результат: недель 0" in message
         finally:
             await engine.dispose()
 
@@ -589,11 +593,101 @@ def test_routine_batch_groups_transient_failures_and_diagnostic_causes(tmp_path,
                 rows = (await db.scalars(select(BotOutbox))).all()
                 assert len(rows) == 1
                 message = json.loads(rows[0].payload)["text"]
-            assert len(message.splitlines()) == 4
-            assert "2 из 2 учёток" in message
+            assert len(message.splitlines()) >= 4
+            assert "Обработано: 2; успешно: 0; ошибок: 2" in message
             assert "Сайт не ответил вовремя — 2" in message
-            assert "Повтор будет выполнен автоматически" in message
+            assert "Ожидают автоматического повтора: 2" in message
         finally:
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_account_notice_explains_missing_consent_with_full_owner_context(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/consent.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            uid = uuid4()
+            assert await notify_account_crawl_result(
+                engine,
+                owner_id=915,
+                job_id=uuid4(),
+                attempt=1,
+                user_id=uid,
+                group_code="Э-ОБ-385-04-26-02",
+                telegram_group_name="БИ 1.2",
+                student_name="Иванов Иван",
+                failure_code="login_failed",
+                failure_detail="consent_missing",
+                stats=CrawlRunStats(),
+            )
+            async with AsyncSession(engine) as db:
+                row = await db.scalar(select(BotOutbox))
+                message = json.loads(row.payload)["text"]
+            assert f"Студент: Иванов Иван · ID {str(uid)[:8]}" in message
+            assert "Группа ТГ: БИ 1.2" in message
+            assert "Группа РАНХиГС: Э-ОБ-385-04-26-02" in message
+            assert "Этап: Проверка согласия" in message
+            assert "Причина: Отсутствует действующее согласие" in message
+            assert "Студенту нужно дать согласие" in message
+            assert "Автоповтор отключён" in message
+            assert "пароль неверный" not in message.lower()
+            assert len(message.splitlines()) == 8
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_batch_summary_does_not_promise_retry_for_login_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_RUN_ID", "2026112088888")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/mixed.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            uid = uuid4()
+            detail = failed_account_line(
+                student_name="Иванов Иван",
+                telegram_group_name="БИ 1.2",
+                group_code="Э-ОБ-385-04-26-02",
+                user_id=uid,
+                failure_code="login_failed",
+                failure_detail="credentials_missing",
+            )
+            stats = CrawlRunStats(
+                successful_accounts=2,
+                failed_accounts=1,
+                failure_reasons={"login_failed": 1},
+                failed_accounts_detail=[detail],
+            )
+            assert await notify_batch_report(engine, owner_id=915, stats=stats)
+            async with AsyncSession(engine) as db:
+                row = await db.scalar(select(BotOutbox))
+                message = json.loads(row.payload)["text"]
+            assert "Обработано: 3; успешно: 2; ошибок: 1" in message
+            assert f"Иванов Иван (ID {str(uid)[:8]})" in message
+            assert "БИ 1.2 / Э-ОБ-385-04-26-02" in message
+            assert "Учётные данные СДО не подключены" in message
+            assert "Требует проверки входа/согласия: 1; автоповтор отключён." in message
+            assert "Ожидают автоматического повтора" not in message
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_failed_account_line_rejects_untrusted_cause():
+    with pytest.raises(ValueError, match="invalid_crawl_failure_detail"):
+        failed_account_line(
+            student_name="Иван",
+            telegram_group_name="БИ 1.2",
+            group_code="Э-ОБ-385-04-26-02",
+            user_id=uuid4(),
+            failure_code="login_failed",
+            failure_detail="https://evil.example/?token=secret",
+        )
