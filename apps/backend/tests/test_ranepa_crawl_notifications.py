@@ -29,6 +29,7 @@ from studgroup.ranepa_crawl_notifications import (
     notify_batch_report,
     notify_captcha_detected,
     notify_successful_crawl,
+    successful_account_line,
 )
 
 
@@ -659,17 +660,33 @@ def test_batch_summary_does_not_promise_retry_for_login_failure(tmp_path, monkey
                 failure_code="login_failed",
                 failure_detail="credentials_missing",
             )
+            success_item = successful_account_line(
+                student_name="Katerina",
+                telegram_group_name="БИ 1.2",
+                group_code="Э-ОБ-385-04-26-02",
+                user_id=uuid4(),
+                stats=CrawlRunStats(
+                    saved_weeks=6,
+                    saved_lessons=70,
+                    discovered_sdo_candidates=12,
+                    saved_sdo_links=3,
+                ),
+            )
             stats = CrawlRunStats(
                 successful_accounts=2,
                 failed_accounts=1,
                 failure_reasons={"login_failed": 1},
                 failed_accounts_detail=[detail],
+                successful_accounts_detail=[success_item],
             )
             assert await notify_batch_report(engine, owner_id=915, stats=stats)
             async with AsyncSession(engine) as db:
                 row = await db.scalar(select(BotOutbox))
                 message = json.loads(row.payload)["text"]
             assert "Обработано: 3; успешно: 2; ошибок: 1" in message
+            assert "Успешно:" in message
+            assert "Katerina" in message
+            assert "кандидатов 12, подтверждённых ссылок 3" in message
             assert f"Иванов Иван (ID {str(uid)[:8]})" in message
             assert "БИ 1.2 / Э-ОБ-385-04-26-02" in message
             assert "Учётные данные СДО не подключены" in message
