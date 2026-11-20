@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+from collections import defaultdict, deque
 import json
 import os
 import signal
@@ -1150,11 +1151,42 @@ async def run_forever(settings: Settings):
             loop.remove_signal_handler(signum)
 
 
+def balanced_sample_users(
+    queued: list[tuple[UUID, UUID]], *, limit: int = 15
+) -> tuple[UUID, ...]:
+    """Choose at most 15 distinct due users, alternating across groups.
+
+    The caller provides eligible queued (group_id, user_id) rows in durable
+    priority order. This never changes job priorities or bypasses cooldowns.
+    """
+    if not 1 <= limit <= 15:
+        raise ValueError("invalid_sdo_sample_limit")
+    groups: dict[UUID, deque[UUID]] = defaultdict(deque)
+    seen: set[UUID] = set()
+    for group_id, user_id in queued:
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        groups[group_id].append(user_id)
+    selected: list[UUID] = []
+    while len(selected) < limit:
+        made_progress = False
+        for group_id in sorted(groups):
+            if groups[group_id] and len(selected) < limit:
+                selected.append(groups[group_id].popleft())
+                made_progress = True
+        if not made_progress:
+            break
+    return tuple(selected)
+
+
+
 async def run_batch(
     settings: Settings,
     *,
     max_minutes: int = 24,
     rescan_all: bool = False,
+    sample_accounts: int | None = None,
 ) -> int:
     """Process a bounded shift or one owner-approved full rescan.
 
@@ -1163,6 +1195,8 @@ async def run_batch(
     """
     if not settings.ranepa_crawl_enabled:
         return 0
+    if sample_accounts is not None and (rescan_all or not 1 <= sample_accounts <= 15):
+        raise ValueError("invalid_sample_scope")
     if not legal_ready(settings) or not settings.ranepa_access_approved:
         raise RuntimeError("Approved legal settings and university access are required")
     if not settings.profile_encryption_key.get_secret_value():
@@ -1178,11 +1212,32 @@ async def run_batch(
     run_stats = CrawlRunStats()
     processed_ids: set[UUID] = set()
     eligible_ids: set[UUID] | None = None
+    sample_order: tuple[UUID, ...] = ()
     stop_reason = "time_limit"
     try:
         await ensure_owner_for_crawl(engine, settings)
         today = datetime.now(ZoneInfo("Europe/Moscow")).date()
         await prepare_week(engine, today, settings, rescan_all=rescan_all)
+        if sample_accounts is not None:
+            monday = today - timedelta(days=today.weekday())
+            async with AsyncSession(engine) as db:
+                now = datetime.now(UTC)
+                rows = (
+                    await db.execute(
+                        select(RanepaCrawlJob.group_id, RanepaCrawlJob.user_id)
+                        .where(
+                            RanepaCrawlJob.week_start == monday,
+                            RanepaCrawlJob.state == "queued",
+                            (
+                                RanepaCrawlJob.next_attempt_at.is_(None)
+                                | (RanepaCrawlJob.next_attempt_at <= now)
+                            ),
+                        )
+                        .order_by(RanepaCrawlJob.priority, RanepaCrawlJob.id)
+                    )
+                ).all()
+            sample_order = balanced_sample_users(rows, limit=sample_accounts)
+            print(f"RANEPA_BALANCED_SAMPLE_PLANNED {len(sample_order)}", flush=True)
         if rescan_all:
             monday = today - timedelta(days=today.weekday())
             async with AsyncSession(engine) as db:
@@ -1198,25 +1253,54 @@ async def run_batch(
                 )
             print(f"RANEPA_OWNER_RESCAN_PLANNED {len(eligible_ids)}", flush=True)
         deadline = monotonic() + max_minutes * 60
-        while monotonic() < deadline:
-            today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-            status = await process_one(
-                engine,
-                settings,
-                today,
-                captcha_budget=captcha_budget,
-                run_stats=run_stats,
-                rescan_all=rescan_all,
-                allowed_user_ids=eligible_ids,
-                processed_user_ids=processed_ids if rescan_all else None,
-            )
-            if status in {"idle", "paused"}:
-                stop_reason = status
-                break
-            completed += 1
-            if monotonic() < deadline:
-                await asyncio.sleep(settings.ranepa_crawl_pause_seconds)
-        remaining = max(0, len(eligible_ids) - completed) if eligible_ids is not None else 0
+        if sample_accounts is not None:
+            # Each selected user is eligible at claim time and is attempted at
+            # most once, while allowing another group's turn immediately.
+            for selected_id in sample_order:
+                if monotonic() >= deadline:
+                    break
+                status = await process_one(
+                    engine,
+                    settings,
+                    datetime.now(ZoneInfo("Europe/Moscow")).date(),
+                    captcha_budget=captcha_budget,
+                    run_stats=run_stats,
+                    allowed_user_ids={selected_id},
+                )
+                if status == "paused":
+                    stop_reason = "paused"
+                    break
+                if status == "idle":
+                    continue
+                completed += 1
+                if monotonic() < deadline:
+                    await asyncio.sleep(settings.ranepa_crawl_pause_seconds)
+            else:
+                stop_reason = "idle"
+        else:
+            while monotonic() < deadline:
+                today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+                status = await process_one(
+                    engine,
+                    settings,
+                    today,
+                    captcha_budget=captcha_budget,
+                    run_stats=run_stats,
+                    rescan_all=rescan_all,
+                    allowed_user_ids=eligible_ids,
+                    processed_user_ids=processed_ids if rescan_all else None,
+                )
+                if status in {"idle", "paused"}:
+                    stop_reason = status
+                    break
+                completed += 1
+                if monotonic() < deadline:
+                    await asyncio.sleep(settings.ranepa_crawl_pause_seconds)
+        remaining = (
+            max(0, len(sample_order) - completed)
+            if sample_accounts is not None
+            else max(0, len(eligible_ids) - completed) if eligible_ids is not None else 0
+        )
         if settings.ranepa_crawl_notify_success_enabled or (
             settings.ranepa_crawl_notify_account_results_enabled and run_stats.failed_accounts
         ):
@@ -1240,6 +1324,8 @@ async def run_batch(
             + json.dumps(
                 {
                     "rescan_all": rescan_all,
+                    "sample_cap": sample_accounts,
+                    "sample_selected": len(sample_order) if sample_accounts is not None else None,
                     "processed": completed,
                     "succeeded": run_stats.successful_accounts,
                     "failed": run_stats.failed_accounts,
@@ -1313,6 +1399,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-minutes", type=int, choices=range(1, 181))
     parser.add_argument("--force-rescan-all", action="store_true")
+    parser.add_argument("--sample-accounts", type=int, choices=range(1, 16))
     parser.add_argument("--pilot-group-id", type=UUID)
     parser.add_argument("--pilot-user-id", type=UUID)
     args = parser.parse_args()
@@ -1320,13 +1407,17 @@ def main():
         parser.error("both pilot IDs are required")
     if args.pilot_group_id is not None and args.batch_minutes is not None:
         parser.error("--batch-minutes cannot be used with a single-account pilot")
+    if args.sample_accounts is not None and (
+        args.force_rescan_all or args.pilot_group_id is not None or args.batch_minutes is None
+    ):
+        parser.error("a bounded SDO sample requires --batch-minutes and no pilot/full rescan")
     if args.force_rescan_all and (
         args.batch_minutes is None
         or args.pilot_group_id is not None
         or os.environ.get("RANEPA_FORCE_RESCAN_ALL_APPROVED") != "true"
     ):
         parser.error("full rescan requires explicit owner-approved release workflow")
-    if not args.force_rescan_all and args.batch_minutes and args.batch_minutes > 24:
+    if not args.force_rescan_all and args.sample_accounts is None and args.batch_minutes and args.batch_minutes > 24:
         parser.error("scheduled batches cannot exceed 24 minutes")
     # An absent Actions variable is represented as an empty environment string,
     # which is not a valid optional integer for Pydantic Settings.
@@ -1346,6 +1437,7 @@ def main():
                 settings,
                 max_minutes=args.batch_minutes,
                 rescan_all=args.force_rescan_all,
+                sample_accounts=args.sample_accounts,
             )
         )
     else:
