@@ -403,7 +403,9 @@ async def _read_course_candidates(page, context):
             current = course_links(html)
             verified = True
             for link in current:
-                found.setdefault(link.url, link)
+                previous = found.get(link.url)
+                if previous is None or len(link.label) > len(previous.label):
+                    found[link.url] = link
             for url in course_detail_pages(html):
                 child_pages[url] = None
         except SourceAccessError:
@@ -433,7 +435,9 @@ async def _read_course_candidates(page, context):
             for _ in range(2):
                 html = await child.content()
                 for link in course_links(html, require_course=False):
-                    found.setdefault(link.url, link)
+                    previous = found.get(link.url)
+                    if previous is None or len(link.label) > len(previous.label):
+                        found[link.url] = link
                 await child.wait_for_timeout(250)
         except Exception as error:  # noqa: BLE001 -- best-effort optional nested page
             # Log only the exception type: URLs can carry session data.
@@ -546,6 +550,9 @@ async def resolve_sdo_exits(
                             course_cache.pop(course, None)
                             continue
                         if not candidates:
+                            # An empty but verified shell is not proof the
+                            # course will stay empty on a later week.
+                            course_cache.pop(course, None)
                             empty_course_reads = 8
                             break
                         candidates_by_lesson[key] = candidates
