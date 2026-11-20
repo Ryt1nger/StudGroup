@@ -477,6 +477,10 @@ async def process_one(
                         job_id=job_id,
                         attempt=attempt,
                         location=location,
+                        user_id=user_id,
+                        student_name=student_name,
+                        telegram_group_name=group.name if group is not None else None,
+                        group_code=code,
                     )
                 except Exception:  # noqa: BLE001
                     # A failed Telegram outbox write cannot obscure a genuine
