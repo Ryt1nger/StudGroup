@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { LessonOccurrence, PublishedEvent } from '@studgroup/shared-types';
 import { useRanepaFreshnessQuery, useRequestRanepaRefresh, useScheduleQuery } from '../../api/queries';
@@ -111,6 +111,20 @@ export function ScheduleScreen() {
   const freshness = ranepa.data;
   const scheduleChecked = freshness?.oldest_required_checked_at;
   const linksChecked = freshness?.oldest_links_checked_at;
+  const knownSourceCheck = useRef<string | null>(null);
+
+  // The queue acknowledgment is not a finished crawl. When a worker writes
+  // fresher source data, automatically update the visible calendar.
+  useEffect(() => {
+    const checked = freshness?.last_success_at;
+    if (!checked) return;
+    if (knownSourceCheck.current === null) {
+      knownSourceCheck.current = checked;
+    } else if (knownSourceCheck.current !== checked) {
+      knownSourceCheck.current = checked;
+      void query.refetch();
+    }
+  }, [freshness?.last_success_at, query.refetch]);
 
   const features = useEventCapabilities();
   const groupEvents = useGroupEvents({ start: days[0]!, end: days[6]! });
@@ -258,13 +272,29 @@ export function ScheduleScreen() {
           >
             {refresh.isPending ? 'Запрашиваем проверку…' : 'Обновить СДО'}
           </button>
+          {freshness?.refresh_state === 'queued' || freshness?.refresh_state === 'running' ? (
+            <div role="status" className="dim">
+              {freshness.refresh_state === 'running'
+                ? 'СДО обрабатывается в фоновом режиме. Расписание обновится после сохранения данных.'
+                : 'Заявка в очереди. Данные появятся после обработки, не нужно нажимать повторно.'}
+            </div>
+          ) : null}
+          {freshness?.refresh_state === 'credentials_required' ? (
+            <div role="status" className="dim">
+              Не удалось войти в СДО. Проверьте подключение учётной записи и согласие в профиле.
+            </div>
+          ) : null}
           {refresh.data ? <div role="status" className="dim">
-            {refresh.data.queued ? 'Проверка поставлена в очередь'
-              : refresh.data.state === 'cooldown' ? 'Проверка пока на паузе по интервалу'
-              : refresh.data.state === 'credentials_required' ? 'Требуется проверить данные входа'
-              : 'Проверка сейчас недоступна'}
+            {refresh.data.queued ? 'Заявка уже в очереди или принята в обработку'
+              : refresh.data.state === 'cooldown' ? 'Повтор ограничен интервалом ожидания'
+              : refresh.data.state === 'credentials_required' ? 'Требуется проверить вход в СДО'
+              : 'Повторная проверка сейчас недоступна'}
           </div> : null}
-          {refresh.isError ? <div role="alert" className="dim">Не удалось запросить проверку СДО</div> : null}
+          {refresh.isError ? (
+            <div role="alert" className="dim">
+              Сервер СДО не ответил на запрос проверки вовремя. Попробуйте позже: повторные нажатия не ускорят очередь.
+            </div>
+          ) : null}
         </section>
       ) : null}
       {features.events && groupEvents.isError ? <RequestError error={groupEvents.error} onRetry={() => void groupEvents.refetch()} /> : null}
