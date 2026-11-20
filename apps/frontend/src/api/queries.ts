@@ -54,11 +54,18 @@ export async function withRequestTimeout<T>(
   timeoutMs = 20_000,
 ): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error('request_timeout'));
+    }, timeoutMs);
+  });
   try {
-    return await request(controller.signal);
+    // Do not rely on the transport honouring AbortSignal: always settle.
+    return await Promise.race([request(controller.signal), deadline]);
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
@@ -204,7 +211,10 @@ export function useRanepaFreshnessQuery(start: string, end: string, enabled = tr
     )) as Promise<RanepaFreshness>,
     enabled,
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: (query) => {
+      const state = (query.state.data as RanepaFreshness | undefined)?.refresh_state;
+      return state === 'queued' || state === 'running' ? 20_000 : 60_000;
+    },
     retry: false,
   });
 }
