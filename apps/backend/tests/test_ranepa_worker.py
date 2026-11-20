@@ -4,7 +4,7 @@ import asyncio
 import json
 from datetime import UTC, date, datetime, time, timedelta
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from cryptography.fernet import Fernet
@@ -1075,3 +1075,23 @@ def test_owner_notification_name_prefers_profile_when_telegram_name_is_placehold
         == "Katerina"
     )
     assert ranepa_worker.owner_student_name(None, None) == "Имя не указано"
+
+
+def test_balanced_sample_alternates_groups_and_caps_distinct_due_users():
+    group_ids = [UUID(int=i) for i in range(1, 5)]
+    users = [UUID(int=100 + i) for i in range(18)]
+    queued = (
+        [(group_ids[0], user) for user in users[:10]]
+        + [(group_ids[1], user) for user in users[10:13]]
+        + [(group_ids[2], user) for user in users[13:17]]
+        + [(group_ids[3], users[17])]
+    )
+    ordered = ranepa_worker.balanced_sample_users(queued, limit=15)
+    assert len(ordered) == len(set(ordered)) == 15
+    assert ordered[:4] == (users[0], users[10], users[13], users[17])
+    assert users[17] in ordered
+    assert ranepa_worker.balanced_sample_users(queued[:1], limit=15) == (users[0],)
+    with pytest.raises(ValueError, match="invalid_sdo_sample_limit"):
+        ranepa_worker.balanced_sample_users(queued, limit=16)
+    with pytest.raises(ValueError, match="invalid_sdo_sample_limit"):
+        ranepa_worker.balanced_sample_users(queued, limit=0)
