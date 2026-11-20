@@ -70,6 +70,10 @@ from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
 
 ACCOUNT_TIMEOUT_SECONDS = 600
 MAX_AUTOMATIC_CAPTCHA_ATTEMPTS = 3
+# Optional Moodle discovery must not use up the entire account deadline.
+# The six verified timetable weeks are persisted before link enrichment.
+MAX_SDO_SCAN_TOTAL_SECONDS = 330
+MAX_SDO_SCAN_WEEK_SECONDS = 70
 
 
 def owner_student_name(student, profile) -> str:
@@ -192,6 +196,13 @@ async def collect_bounded(
     except TimeoutError:
         if trace is not None:
             trace.mark_diagnostic("timeout")
+        # All six week snapshots were committed; a late optional Moodle
+        # enrichment/session timeout must not invalidate the timetable.
+        if stats is not None and stats.saved_weeks >= 6:
+            if trace is not None:
+                trace.record("schedule_verified")
+            log_captcha_stage("crawl_optional_enrichment_timeout_after_six_weeks")
+            return None
         log_captcha_stage("crawl_timeout")
         return "source_unavailable"
 
@@ -828,6 +839,13 @@ async def _collect(
                         if trace is not None:
                             trace.failure_detail = "month_incomplete"
                         return "parse_failed"
+                    # The login CAPTCHA was observed, but subsequent page
+                    # verification failed. This is NOT proof the site is down.
+                    if captcha_seen:
+                        if trace is not None:
+                            trace.failure_detail = "captcha_unverified"
+                            trace.mark_diagnostic("challenge_pending")
+                        return "captcha"
                     return "source_unavailable"
                 if trace is not None:
                     trace.record("month_verified")
@@ -835,6 +853,7 @@ async def _collect(
                 # same Moodle course for every occurrence of the same lesson.
                 course_candidates_cache = {}
                 observed_sdo_candidates = set()
+                sdo_discovery_deadline = monotonic() + MAX_SDO_SCAN_TOTAL_SECONDS
                 first = date(today.year, today.month, 1)
                 monday = first - timedelta(days=first.weekday())
                 for offset in range(6):
@@ -985,6 +1004,12 @@ async def _collect(
                     if stats is not None:
                         stats.saved_weeks += 1
                         stats.saved_lessons += len(actual)
+                    if monotonic() >= sdo_discovery_deadline:
+                        # The week was committed. Continue other weeks without
+                        # spending the remaining account budget on optional URLs.
+                        if trace is not None:
+                            trace.record("sdo_exits_skipped_budget")
+                        continue
                     if trace is not None:
                         trace.record("sdo_exits_requested")
                     sdo_captcha_unresolved = False
@@ -1017,9 +1042,15 @@ async def _collect(
                             exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
                         if on_captcha is not None:
                             exit_kwargs["on_captcha"] = on_captcha
-                        resolution = await resolve_sdo_exits(
-                            context, result, login, password, **exit_kwargs
-                        )
+                        async with asyncio.timeout(
+                            min(
+                                MAX_SDO_SCAN_WEEK_SECONDS,
+                                max(0.01, sdo_discovery_deadline - monotonic()),
+                            )
+                        ):
+                            resolution = await resolve_sdo_exits(
+                                context, result, login, password, **exit_kwargs
+                            )
                         links, link_states, courses = resolution
                         # All vetted candidates are retained privately even when
                         # the course contains multiple teachers or no safe match.
@@ -1052,6 +1083,10 @@ async def _collect(
                             stats.saved_sdo_links += len(links)
                             stats.saved_sdo_courses += len(courses)
                             stats.discovered_sdo_candidates = len(observed_sdo_candidates)
+                    except TimeoutError:
+                        if trace is not None:
+                            trace.record("sdo_exits_timed_out")
+                        log_captcha_stage("sdo_enrichment_time_budget_exhausted")
                     except Exception:  # noqa: BLE001
                         # No enrichment or provider error can roll back the committed week.
                         # Never log exception details which can contain credentials.
