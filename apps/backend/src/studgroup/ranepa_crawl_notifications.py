@@ -219,6 +219,35 @@ def _safe_label(value: str | None, *, fallback: str) -> str:
     return " ".join(cleaned.split())[:72] or fallback
 
 
+def failed_account_line(
+    *,
+    student_name: str | None,
+    telegram_group_name: str | None,
+    group_code: str | None,
+    user_id: uuid.UUID,
+    failure_code: str,
+    failure_detail: str | None = None,
+    diagnostic_code: str | None = None,
+) -> str:
+    """Owner-only safe overview; enough identity to distinguish same-name accounts."""
+    if failure_code not in _ACCOUNT_FAILURE_REASONS:
+        raise ValueError("invalid_crawl_failure_code")
+    if failure_detail is not None and failure_detail not in (
+        _WEEK_FAILURE_DETAILS | _ACCOUNT_FAILURE_DETAILS
+    ):
+        raise ValueError("invalid_crawl_failure_detail")
+    if diagnostic_code is not None and diagnostic_code not in DIAGNOSTIC_REASONS:
+        raise ValueError("invalid_crawl_diagnostic_code")
+    return (
+        f"{_safe_label(student_name, fallback='Имя не указано')} "
+        f"(ID {str(user_id)[:8]}) · "
+        f"{_safe_label(telegram_group_name, fallback='ТГ не указана')} / "
+        f"{_safe_label(group_code, fallback='группа РАНХиГС не указана')} — "
+        f"{_failure_summary(failure_code, failure_detail, diagnostic_code)}"
+    )
+
+
+
 async def notify_account_crawl_result(
     engine,
     *,
