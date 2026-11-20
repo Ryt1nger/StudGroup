@@ -24,6 +24,7 @@ from studgroup.models import (
 )
 from studgroup.ranepa_link_states import LINK_STATES
 from studgroup.ranepa_personal import (
+    _display_link_from_candidates,
     enrich_personal_links,
     personal_with_group_fallback,
     remember_personal,
@@ -918,3 +919,32 @@ def test_materialization_does_not_expose_private_course_candidate_inventory():
     assert "link_candidates" not in shared
     assert "link_candidates" in original
     assert shared["online_url"].endswith("id=101")
+
+
+def test_saved_lms_inventory_can_fill_link_on_read_only_for_own_verified_lesson():
+    course = "https://lms.ranepa.ru/course/view.php?id=88849"
+    candidate = {
+        "url": "https://lms.ranepa.ru/mod/url/view.php?id=100",
+        "label": (
+            "Алпеев О.Е. занятия (9, 16, 23.11) "
+            "Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ"
+        ),
+        "course_url": course,
+    }
+    row = {
+        "room": "СДО",
+        "subject": "История России",
+        "teacher": "Алпеев Олег Евгеньевич",
+        "subgroup_hint": "Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+        "day": "2026-11-16",
+        "starts": "09:00:00",
+        "course_url": course,
+        "online_url": None,
+        "link_candidates": [candidate],
+    }
+    assert _display_link_from_candidates(row) == candidate["url"]
+    # Never use other students' inventories or a different course.
+    assert _display_link_from_candidates({**row, "source_scope": "common"}) is None
+    assert _display_link_from_candidates({**row, "course_url": course.replace("88849", "123")}) is None
+    extra = {**candidate, "url": "https://lms.ranepa.ru/mod/url/view.php?id=101"}
+    assert _display_link_from_candidates({**row, "link_candidates": [candidate, extra]}) is None
