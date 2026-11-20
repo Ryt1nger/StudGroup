@@ -312,7 +312,7 @@ async def notify_account_crawl_result(
         message = "\n".join(
             [
                 "❌ StudGroup · ошибка обхода СДО",
-                f"Студент: {name} · ID {str(user_id)[:8]}",
+                f"Студент: {name} · ID {str(user_id)[:8]} · попытка {attempt}",
                 f"Группа ТГ: {telegram_group}",
                 f"Группа РАНХиГС: {group}",
                 f"Этап: {_stage(failure_code, failure_detail, last_step)}",
