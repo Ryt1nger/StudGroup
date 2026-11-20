@@ -19,7 +19,7 @@ TIME_RANGE = re.compile(r"(?<!\d)(\d{1,2})[.:](\d{2})\s*[-–]\s*\d{1,2}[.:]\d{2
 DATE_LIST = re.compile(r"(?<!\d)(\d{1,2}(?:\s*,\s*\d{1,2})*)\.(\d{1,2})(?![.\d])")
 INLINE_JOIN = re.compile(r"https://[^\s<>\"']+", re.IGNORECASE)
 MAX_CANDIDATES = 80
-MAX_DETAIL_PAGES = 8
+MAX_DETAIL_PAGES = 16
 LMS_MEETING_PATHS = frozenset(
     {"/mod/url/view.php", "/mod/mtslinkrnhgs/view.php", "/mod/bigbluebuttonbn/view.php"}
 )
@@ -88,10 +88,15 @@ def course_detail_pages(html: str) -> tuple[str, ...]:
     for anchor in document.root.tags("a"):
         url = _canonical_lms_activity(anchor.attrs.get("href", ""), LMS_DETAIL_PATHS)
         if url:
-            pages[url] = None
-        if len(pages) >= MAX_DETAIL_PAGES:
-            break
-    return tuple(pages)
+            # Relevant text pages may appear BELOW unrelated handouts/books.
+            # Prefer their titles without ever crossing the Moodle origin.
+            label = normalized(anchor.text())
+            priority = any(
+                word in label
+                for word in ("ссылк", "заняти", "лекц", "вебинар", "конференц", "подключ")
+            )
+            pages[url] = pages.get(url, False) or priority
+    return tuple(sorted(pages, key=lambda url: not pages[url]))[:MAX_DETAIL_PAGES]
 
 
 def _nodes_with_ancestors(node, ancestors=()):
