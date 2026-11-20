@@ -296,9 +296,13 @@ async def notify_batch_report(
         ]
         async with AsyncSession(engine) as db:
             queued = await enqueue_once(
-                db, "sendMessage",
-                {"chat_id": owner_id, "text": "\n".join(lines),
-                 "link_preview_options": {"is_disabled": True}},
+                db,
+                "sendMessage",
+                {
+                    "chat_id": owner_id,
+                    "text": "\n".join(lines),
+                    "link_preview_options": {"is_disabled": True},
+                },
                 f"ranepa-crawl-report:{_run_key()}",
             )
             await db.commit()
