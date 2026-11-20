@@ -723,7 +723,10 @@ async def _collect(
                         )
                         if diagnostic is not None:
                             trace.mark_diagnostic(diagnostic)
-                    if month.status.startswith("cabinet_") or month.status == "empty_source_requires_review":
+                    if (
+                        month.status.startswith("cabinet_")
+                        or month.status == "empty_source_requires_review"
+                    ):
                         if trace is not None:
                             trace.failure_detail = "month_incomplete"
                         return "parse_failed"
@@ -814,9 +817,9 @@ async def _collect(
                             if result.status == "login_failed":
                                 return "login_failed"
                             if trace is not None:
-                                diagnostic = getattr(result, "diagnostic", None) or diagnose_browser_state(
-                                    result.status
-                                )
+                                diagnostic = getattr(
+                                    result, "diagnostic", None
+                                ) or diagnose_browser_state(result.status)
                                 if diagnostic is not None:
                                     trace.mark_diagnostic(diagnostic)
                                 trace.failure_detail = "week_unreadable"
@@ -836,9 +839,15 @@ async def _collect(
                                 trace.record("week_month_mismatch")
                         if week_read_attempt == 1:
                             if result.snapshot is None and (
-                                result.status in {"source_unavailable", "challenge_pending",
-                                                  "unexpected_redirect", "http_403", "http_429",
-                                                  "http_5xx"}
+                                result.status
+                                in {
+                                    "source_unavailable",
+                                    "challenge_pending",
+                                    "unexpected_redirect",
+                                    "http_403",
+                                    "http_429",
+                                    "http_5xx",
+                                }
                             ):
                                 return "source_unavailable"
                             return "parse_failed"
@@ -978,7 +987,15 @@ async def _collect(
         diagnostic = diagnose_exception(error)
         if trace is not None:
             trace.mark_diagnostic(diagnostic)
-        if diagnostic in {"timeout", "dns", "connection", "tls", "http_403", "http_429", "http_5xx"}:
+        if diagnostic in {
+            "timeout",
+            "dns",
+            "connection",
+            "tls",
+            "http_403",
+            "http_429",
+            "http_5xx",
+        }:
             log_captcha_stage("crawl_source_connection_error")
             return "source_unavailable"
         log_captcha_stage("crawl_internal_error")
