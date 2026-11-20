@@ -235,3 +235,86 @@ def test_links_from_untrusted_hosts_and_file_downloads_are_not_candidates():
         "https://lms.ranepa.ru/mod/url/view.php?id=15"
     )
     assert meeting_url("https://evil.example/mod/url/view.php?id=15") is None
+
+
+def test_abbreviated_semester_date_list_is_matched_for_actual_lesson_day():
+    label = (
+        "Алпеев О.Е. Ссылка на занятия на понедельник "
+        "(14, 21, 28.09; 05, 12, 19.10; 9, 16, 23.11) "
+        "и четверг (24.09; 22.10; 19.11) "
+        "для группы Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ"
+    )
+    links = course_links(fixture(label))
+    for when in (date(2026, 11, 9), date(2026, 11, 16), date(2026, 11, 19)):
+        choice = select_lesson_link(
+            links,
+            teacher="Алпеев Олег Евгеньевич",
+            group_label="Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+            day=when,
+        )
+        assert choice.state == "matched"
+        assert choice.url == "https://lms.ranepa.ru/mod/url/view.php?id=100"
+    other_day = select_lesson_link(
+        links,
+        teacher="Алпеев Олег Евгеньевич",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45)",
+        day=date(2026, 11, 20),
+    )
+    assert other_day.url is None
+
+
+def test_single_exact_teacher_and_stream_meeting_without_permanent_word_is_matched():
+    links = course_links(
+        fixture(
+            "Федотова Е. А._Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка",
+            "Федотова Е. А._Г-ОБ26-СГЯ-лек(46,47,48,49,63,70,71,72) Гиперссылка",
+            "Дёмина Т. М._Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка",
+        )
+    )
+    choice = select_lesson_link(
+        links,
+        teacher="Федотова Елена Алексеевна",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+        day=date(2026, 11, 23),
+    )
+    assert choice.state == "matched"
+    assert choice.url.endswith("id=100")
+    choice_other = select_lesson_link(
+        links,
+        teacher="Федотова Елена Алексеевна",
+        group_label="Г-ОБ26-СГЯ-лек(46,47,48,49,63,70,71,72)",
+        day=date(2026, 11, 23),
+    )
+    assert choice_other.url.endswith("id=101")
+
+
+def test_undated_same_teacher_stream_with_two_distinct_meetings_is_not_guessed():
+    links = course_links(
+        fixture(
+            "Федотова Е.А. Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка",
+            "Федотова Е.А. Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка",
+        )
+    )
+    choice = select_lesson_link(
+        links,
+        teacher="Федотова Елена Алексеевна",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45)",
+        day=date(2026, 11, 23),
+    )
+    assert choice.url is None
+    assert choice.state == "timing_unverified"
+
+
+def test_course_detail_pages_prioritize_later_meeting_page_over_irrelevant_handouts():
+    links = "".join(
+        f'<a href="/mod/page/view.php?id={i}">Материал {i}</a>' for i in range(30)
+    )
+    html = (
+        '<main class="course-content"><a href="/course/view.php?id=1">Курс</a>'
+        + links
+        + '<a href="/mod/page/view.php?id=444">Ссылки на онлайн-занятия</a></main>'
+    )
+    urls = course_detail_pages(html)
+    assert len(urls) == 16
+    assert urls[0] == "https://lms.ranepa.ru/mod/page/view.php?id=444"
+    assert "https://lms.ranepa.ru/mod/page/view.php?id=0" in urls
