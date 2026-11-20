@@ -131,7 +131,7 @@ def _retry_summary(code: str, attempt: int) -> str:
         interval = f"{minutes // 60} ч {minutes % 60} мин"
     else:
         interval = f"{minutes // 60} ч"
-    return f"Повтор автоматически через {interval}."
+    return f"Автоповтор — не раньше чем через {interval}."
 
 
 def _failure_summary(code: str, detail: str | None, diagnostic: str | None) -> str:
@@ -285,8 +285,15 @@ async def notify_batch_report(
         for code, count in sorted(stats.diagnostic_reasons.items()):
             if code in DIAGNOSTIC_REASONS:
                 causes.append(f"{DIAGNOSTIC_REASONS[code]} — {count}")
+        unknown_source = max(
+            0,
+            stats.failure_reasons.get("source_unavailable", 0)
+            - sum(stats.diagnostic_reasons.values()),
+        )
+        if unknown_source:
+            causes.append(f"Причина пока неизвестна — {unknown_source}")
         for code, count in sorted(stats.failure_reasons.items()):
-            if code != "source_unavailable" or not causes:
+            if code != "source_unavailable":
                 causes.append(f"{_REPORT_ERROR_NAMES.get(code, 'Неизвестная ошибка')} — {count}")
         lines = [
             "⚠️ StudGroup · ошибки обхода СДО",
