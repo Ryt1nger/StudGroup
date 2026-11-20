@@ -162,7 +162,7 @@ def test_explicit_supabase_pool_settings_override_safe_defaults():
     }
 
 
-def test_web_api_pool_keeps_three_slots_if_render_config_disappears():
+def test_web_api_pool_keeps_five_slots_if_render_config_disappears():
     # Session-pool default for standalone worker remains one, but public API
     # must not silently regress to the one-slot outage configuration.
     settings = Settings(
@@ -173,7 +173,7 @@ def test_web_api_pool_keeps_three_slots_if_render_config_disappears():
         ),
     )
     assert database_engine_options(settings, for_web_service=True) == {
-        "pool_size": 3,
+        "pool_size": 5,
         "max_overflow": 0,
         "pool_timeout": 10,
     }
