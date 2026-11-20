@@ -158,7 +158,11 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
                 by_subject.setdefault(_sdo_subject_key(row), set()).add(course)
             if (url is not None and row.get("link_state") == "matched") or course is not None:
                 item = by_identity.setdefault(_sdo_cache_key(row), {})
-                if url is not None and row.get("link_state") == "matched" and "online_url" not in item:
+                if (
+                    url is not None
+                    and row.get("link_state") == "matched"
+                    and "online_url" not in item
+                ):
                     item["online_url"] = url
                     item["online_checked_at"] = (
                         row.get("links_checked_at") or snapshot.checked_at.isoformat()
@@ -188,17 +192,16 @@ def _previous_confirmed_meeting(row, course, by_course, identity):
     Explicit date/time or one-off labels override the default expectation of
     recurring Moodle meetings. Other users' private inventories are never read.
     """
-    if not course or not _safe_course(course) or not row.get("teacher") or not row.get(
-        "subgroup_hint"
+    if (
+        not course
+        or not _safe_course(course)
+        or not row.get("teacher")
+        or not row.get("subgroup_hint")
     ):
         return None
     previous = identity.get(_sdo_cache_key(row), {})
     url = previous.get("online_url")
-    if (
-        not isinstance(url, str)
-        or not _safe_link(url)
-        or previous.get("link_course_url") != course
-    ):
+    if not isinstance(url, str) or not _safe_link(url) or previous.get("link_course_url") != course:
         return None
     candidate = by_course.get(course, {}).get(url)
     if candidate is not None:
@@ -240,8 +243,7 @@ def _reuse_verified_candidate(row, course, by_course, identity):
         if choice.state == "identity_missing":
             return None
         if choice.state == "ambiguous" and any(
-            DATE.search(link.label) or DATE_LIST.search(link.label)
-            for link in choice.candidates
+            DATE.search(link.label) or DATE_LIST.search(link.label) for link in choice.candidates
         ):
             # Never resolve two explicitly dated competing meetings by guessing.
             return None
@@ -367,11 +369,7 @@ async def remember_personal(
                     cached.get("course_checked_at") or datetime.now(UTC).isoformat()
                 )
                 link_cached = True
-        if (
-            url is None
-            and row["room"] == "СДО"
-            and state != "identity_missing"
-        ):
+        if url is None and row["room"] == "СДО" and state != "identity_missing":
             url = _reuse_verified_candidate(row, course, course_candidates, cached_links)
             if url:
                 state = "matched"
@@ -515,11 +513,7 @@ async def enrich_personal_links(
                 course,
                 checked,
             )
-        if (
-            url is None
-            and row["room"] == "СДО"
-            and state != "identity_missing"
-        ):
+        if url is None and row["room"] == "СДО" and state != "identity_missing":
             historical = _reuse_verified_candidate(row, course, course_candidates, cached_links)
             if historical:
                 url = historical
