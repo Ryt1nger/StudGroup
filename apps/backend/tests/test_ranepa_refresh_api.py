@@ -134,7 +134,6 @@ def test_freshness_exposes_per_account_job_state_without_restarting_crawl(client
     assert client.get(path, headers=AUTH).json()["refresh_state"] == "credentials_required"
 
 
-
 def test_web_supabase_pool_has_bounded_capacity_and_finite_checkout():
     from studgroup.main import Settings, database_engine_options
 
