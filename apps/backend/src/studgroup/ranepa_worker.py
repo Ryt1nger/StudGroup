@@ -86,7 +86,6 @@ def owner_student_name(student, profile) -> str:
     return display_name or "Имя не указано"
 
 
-
 async def ensure_owner_for_crawl(engine, settings: Settings) -> None:
     """Fail closed unless account alerts/guard have one verified admin recipient.
 
@@ -330,9 +329,14 @@ async def process_one(
                             (
                                 event["step"]
                                 for event in reversed(trace.events)
-                                if event["step"] in {
-                                    "month_requested", "month_recheck", "week_requested",
-                                    "week_recheck", "week_retry", "sdo_exits_requested",
+                                if event["step"]
+                                in {
+                                    "month_requested",
+                                    "month_recheck",
+                                    "week_requested",
+                                    "week_recheck",
+                                    "week_retry",
+                                    "sdo_exits_requested",
                                     "sdo_exits_finished",
                                 }
                             ),
