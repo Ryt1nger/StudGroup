@@ -345,7 +345,7 @@ def database_engine_options(settings: Settings, *, for_web_service: bool = False
     # unbounded 5+10 default. The public web API needs enough concurrency to
     # survive a lost Render env var; standalone crawlers keep just one slot.
     if supabase_session_pooler:
-        options.setdefault("pool_size", 3 if for_web_service else 1)
+        options.setdefault("pool_size", 4 if for_web_service else 1)
         options.setdefault("max_overflow", 0)
         options.setdefault("pool_timeout", 10)
     return options
@@ -606,6 +606,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "/v1/session/bootstrap",
             "/v1/today",
             "/v1/schedule",
+            "/v1/ranepa-schedule",
+            "/v1/ranepa-schedule/refresh",
             "/v1/homework",
             "/v1/deadlines",
             "/v1/profile",
