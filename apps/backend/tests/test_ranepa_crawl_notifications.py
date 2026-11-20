@@ -702,7 +702,7 @@ def test_batch_summary_does_not_promise_retry_for_login_failure(tmp_path, monkey
             assert f"Иванов Иван (ID {str(uid)[:8]})" in message
             assert "БИ 1.2 / Э-ОБ-385-04-26-02" in message
             assert "Учётные данные СДО не подключены" in message
-            assert "Требует проверки входа/согласия: 1; автоповтор отключён." in message
+            assert "Требует действий по учётке: 1; автоповтор отключён." in message
             assert "Ожидают автоматического повтора" not in message
         finally:
             await engine.dispose()
