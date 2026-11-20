@@ -57,6 +57,7 @@ from studgroup.ranepa_crawl_notifications import (
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_crawl_trace import CrawlTrace
+from studgroup.ranepa_failure_diagnostics import diagnose_browser_state, diagnose_exception
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_manual_captcha import offer_manual_captcha
@@ -172,6 +173,8 @@ async def collect_bounded(
                 manual_captcha=manual_captcha,
             )
     except TimeoutError:
+        if trace is not None:
+            trace.mark_diagnostic("timeout")
         log_captcha_stage("crawl_timeout")
         return "source_unavailable"
 
@@ -297,6 +300,7 @@ async def process_one(
                     student_name=student.display_name if student is not None else None,
                     failure_code=failure_code,
                     failure_detail=trace.failure_detail if trace is not None else None,
+                    diagnostic_code=trace.diagnostic if trace is not None else None,
                     stats=account_stats,
                 )
             except Exception:  # noqa: BLE001
@@ -705,6 +709,18 @@ async def _collect(
                         return "captcha"
                     if month.status == "identity_unverified":
                         return "identity_unverified"
+                    if month.status == "login_failed":
+                        return "login_failed"
+                    if trace is not None:
+                        diagnostic = getattr(month, "diagnostic", None) or diagnose_browser_state(
+                            month.status
+                        )
+                        if diagnostic is not None:
+                            trace.mark_diagnostic(diagnostic)
+                    if month.status.startswith("cabinet_") or month.status == "empty_source_requires_review":
+                        if trace is not None:
+                            trace.failure_detail = "month_incomplete"
+                        return "parse_failed"
                     return "source_unavailable"
                 if trace is not None:
                     trace.record("month_verified")
@@ -789,7 +805,14 @@ async def _collect(
                                 return "captcha"
                             if result.status == "identity_unverified":
                                 return "identity_unverified"
+                            if result.status == "login_failed":
+                                return "login_failed"
                             if trace is not None:
+                                diagnostic = getattr(result, "diagnostic", None) or diagnose_browser_state(
+                                    result.status
+                                )
+                                if diagnostic is not None:
+                                    trace.mark_diagnostic(diagnostic)
                                 trace.failure_detail = "week_unreadable"
                                 trace.record("week_unreadable")
                         else:
@@ -806,6 +829,12 @@ async def _collect(
                                 trace.failure_detail = "week_month_mismatch"
                                 trace.record("week_month_mismatch")
                         if week_read_attempt == 1:
+                            if result.snapshot is None and (
+                                result.status in {"source_unavailable", "challenge_pending",
+                                                  "unexpected_redirect", "http_403", "http_429",
+                                                  "http_5xx"}
+                            ):
+                                return "source_unavailable"
                             return "parse_failed"
                         if trace is not None:
                             trace.record("week_retry")
@@ -938,8 +967,14 @@ async def _collect(
                 return None
             finally:
                 await browser.close()
-    except Exception:  # noqa: BLE001
-        # Never include provider exception text, HTML, URLs or credentials in SQL/logs.
+    except Exception as error:  # noqa: BLE001
+        # Only closed diagnostic codes may reach DB/Telegram, never raw exceptions.
+        diagnostic = diagnose_exception(error)
+        if trace is not None:
+            trace.mark_diagnostic(diagnostic)
+        if diagnostic in {"timeout", "dns", "connection", "tls", "http_403", "http_429", "http_5xx"}:
+            log_captcha_stage("crawl_source_connection_error")
+            return "source_unavailable"
         log_captcha_stage("crawl_internal_error")
         return "internal"
 
