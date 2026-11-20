@@ -50,10 +50,12 @@ from studgroup.ranepa_crawl_guard import (
 from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_notifications import (
     CrawlRunStats,
+    failed_account_line,
     notify_account_crawl_result,
     notify_batch_report,
     notify_captcha_detected,
     notify_successful_crawl,
+    successful_account_line,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_crawl_trace import CrawlTrace
@@ -68,6 +70,21 @@ from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
 
 ACCOUNT_TIMEOUT_SECONDS = 600
 MAX_AUTOMATIC_CAPTCHA_ATTEMPTS = 3
+
+
+def owner_student_name(student, profile) -> str:
+    """Use entered name when Telegram only provides a placeholder."""
+    display_name = (student.display_name or "").strip() if student else ""
+    profile_name = " ".join(
+        item.strip()
+        for item in (getattr(profile, "last_name", None), getattr(profile, "first_name", None))
+        if isinstance(item, str) and item.strip()
+    )
+    if display_name in {"", "-", "—", "–", "?"}:
+        display_name = profile_name
+    if not display_name and student and student.username:
+        display_name = "@" + student.username
+    return display_name or "Имя не указано"
 
 
 async def ensure_owner_for_crawl(engine, settings: Settings) -> None:
@@ -284,8 +301,11 @@ async def process_one(
         group = await db.get(Group, group_id)
         student = await db.get(User, user_id)
         profile = await db.get(UserProfile, user_id)
+        student_name = owner_student_name(student, profile)
 
-        async def notify_finalized_attempt(failure_code: str | None) -> None:
+        async def notify_finalized_attempt(
+            failure_code: str | None, *, detail: str | None = None
+        ) -> None:
             if not settings.ranepa_crawl_notify_account_results_enabled:
                 return
             # Scheduled batches send one grouped report; keep action-required
@@ -301,10 +321,31 @@ async def process_one(
                     user_id=user_id,
                     group_code=group.academic_group_code if group is not None else None,
                     telegram_group_name=group.name if group is not None else None,
-                    student_name=student.display_name if student is not None else None,
+                    student_name=student_name,
                     failure_code=failure_code,
-                    failure_detail=trace.failure_detail if trace is not None else None,
+                    failure_detail=detail or (trace.failure_detail if trace is not None else None),
                     diagnostic_code=trace.diagnostic if trace is not None else None,
+                    last_step=(
+                        next(
+                            (
+                                event["step"]
+                                for event in reversed(trace.events)
+                                if event["step"]
+                                in {
+                                    "month_requested",
+                                    "month_recheck",
+                                    "week_requested",
+                                    "week_recheck",
+                                    "week_retry",
+                                    "sdo_exits_requested",
+                                    "sdo_exits_finished",
+                                }
+                            ),
+                            None,
+                        )
+                        if trace is not None
+                        else None
+                    ),
                     stats=account_stats,
                 )
             except Exception:  # noqa: BLE001
@@ -314,15 +355,24 @@ async def process_one(
                 if queued:
                     log_captcha_stage("owner_account_notice_queued")
 
-        if (
-            group is None
-            or profile is None
-            or not group.academic_group_code
-            or not profile.sdu_credential_id
-            or not legal_ready(settings)
-            or not settings.ranepa_access_approved
-            or not await has_consent(db, user_id, "sdo", settings)
-        ):
+        # A missing profile/consent is NOT a refused password. Report the
+        # specific safe preflight reason rather than guessing a login failure.
+        preflight_detail = None
+        if group is None or not group.academic_group_code:
+            preflight_detail = "group_missing"
+        elif profile is None:
+            preflight_detail = "profile_missing"
+        elif not profile.sdu_credential_id:
+            preflight_detail = "credentials_missing"
+        elif not legal_ready(settings):
+            preflight_detail = "legal_not_ready"
+        elif not settings.ranepa_access_approved:
+            preflight_detail = "access_not_approved"
+        elif not await has_consent(db, user_id, "sdo", settings):
+            preflight_detail = "consent_missing"
+        if preflight_detail is not None:
+            if trace is not None:
+                trace.failure_detail = preflight_detail
             finished = await finish(db, job_id, group_id, user_id, failure_code="login_failed")
             if finished and settings.ranepa_captcha_guard_enabled:
                 await record_crawl_outcome(
@@ -345,12 +395,23 @@ async def process_one(
                 run_stats.failure_reasons["login_failed"] = (
                     run_stats.failure_reasons.get("login_failed", 0) + 1
                 )
+                run_stats.failed_accounts_detail.append(
+                    failed_account_line(
+                        student_name=student_name,
+                        telegram_group_name=group.name if group else None,
+                        group_code=group.academic_group_code if group else None,
+                        user_id=user_id,
+                        failure_code="login_failed",
+                        failure_detail=preflight_detail,
+                    )
+                )
             if finished:
-                await notify_finalized_attempt("login_failed")
+                await notify_finalized_attempt("login_failed", detail=preflight_detail)
             return "failed"
         code = group.academic_group_code
         credential_id = profile.sdu_credential_id
         await db.commit()
+    notice_failure_detail = None
     store = configured_store(settings)
     if store is None:
         failure = "internal"
@@ -374,6 +435,9 @@ async def process_one(
             password = cipher.decrypt(encrypted_password.encode()).decode()
         except (ValueError, InvalidToken, UnicodeDecodeError):
             failure = "login_failed"
+            notice_failure_detail = "credentials_unreadable"
+            if trace is not None:
+                trace.failure_detail = "credentials_unreadable"
         else:
             # The project currently has exactly one configured Fernet key, labelled v1.
             # Other versions must not be decoded or overwritten with the wrong key.
@@ -415,6 +479,10 @@ async def process_one(
                         job_id=job_id,
                         attempt=attempt,
                         location=location,
+                        user_id=user_id,
+                        student_name=student_name,
+                        telegram_group_name=group.name if group is not None else None,
+                        group_code=code,
                     )
                 except Exception:  # noqa: BLE001
                     # A failed Telegram outbox write cannot obscure a genuine
@@ -474,6 +542,8 @@ async def process_one(
                     else None
                 ),
             )
+            if failure == "login_failed":
+                notice_failure_detail = "login_rejected"
     async with AsyncSession(engine) as db:
         finished = await finish(db, job_id, group_id, user_id, failure_code=failure)
         if finished and trace is not None:
@@ -510,9 +580,32 @@ async def process_one(
                 and trace.diagnostic is not None
             ):
                 account_stats.diagnostic_reasons[trace.diagnostic] = 1
+        if failure is None:
+            account_stats.successful_accounts_detail.append(
+                successful_account_line(
+                    student_name=student_name,
+                    telegram_group_name=group.name if group else None,
+                    group_code=group.academic_group_code if group else None,
+                    user_id=user_id,
+                    stats=account_stats,
+                )
+            )
+        else:
+            account_stats.failed_accounts_detail.append(
+                failed_account_line(
+                    student_name=student_name,
+                    telegram_group_name=group.name if group else None,
+                    group_code=group.academic_group_code if group else None,
+                    user_id=user_id,
+                    failure_code=failure,
+                    failure_detail=notice_failure_detail
+                    or (trace.failure_detail if trace is not None else None),
+                    diagnostic_code=trace.diagnostic if trace is not None else None,
+                )
+            )
         if run_stats is not None:
             run_stats.add(account_stats)
-        await notify_finalized_attempt(failure)
+        await notify_finalized_attempt(failure, detail=notice_failure_detail)
     if pilot_group_id is not None:
         # The value is chosen exclusively from known crawl failure categories.
         known_failures = {
@@ -720,6 +813,8 @@ async def _collect(
                     if month.status == "identity_unverified":
                         return "identity_unverified"
                     if month.status == "login_failed":
+                        if trace is not None:
+                            trace.failure_detail = "login_rejected"
                         return "login_failed"
                     if trace is not None:
                         diagnostic = getattr(month, "diagnostic", None) or diagnose_browser_state(
@@ -823,6 +918,8 @@ async def _collect(
                             if result.status == "identity_unverified":
                                 return "identity_unverified"
                             if result.status == "login_failed":
+                                if trace is not None:
+                                    trace.failure_detail = "login_rejected"
                                 return "login_failed"
                             if trace is not None:
                                 diagnostic = getattr(

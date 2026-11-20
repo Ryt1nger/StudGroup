@@ -1061,3 +1061,17 @@ def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monk
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_owner_notification_name_prefers_profile_when_telegram_name_is_placeholder():
+    user = SimpleNamespace(display_name="-", username="student_handle")
+    profile = SimpleNamespace(first_name="Иван", last_name="Иванов")
+    assert ranepa_worker.owner_student_name(user, profile) == "Иванов Иван"
+    assert ranepa_worker.owner_student_name(user, None) == "@student_handle"
+    assert (
+        ranepa_worker.owner_student_name(
+            SimpleNamespace(display_name="Katerina", username=None), profile
+        )
+        == "Katerina"
+    )
+    assert ranepa_worker.owner_student_name(None, None) == "Имя не указано"
