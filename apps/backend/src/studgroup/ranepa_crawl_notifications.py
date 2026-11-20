@@ -8,11 +8,14 @@ not promises that every LMS course has a working online link.
 import os
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.bot_admin import enqueue_once
+from studgroup.ranepa_crawl_jobs import retry_at
+from studgroup.ranepa_failure_diagnostics import DIAGNOSTIC_REASONS
 from studgroup.models import RanepaManualCaptcha
 
 _CAPTCHA_LOCATIONS = {
@@ -33,6 +36,7 @@ class CrawlRunStats:
     verified_sdo_accounts: int = 0
     timetable_only_accounts: int = 0
     failure_reasons: dict[str, int] = field(default_factory=dict)
+    diagnostic_reasons: dict[str, int] = field(default_factory=dict)
 
     def add(self, other: "CrawlRunStats") -> None:
         self.successful_accounts += other.successful_accounts
@@ -45,6 +49,8 @@ class CrawlRunStats:
         self.timetable_only_accounts += other.timetable_only_accounts
         for code, count in other.failure_reasons.items():
             self.failure_reasons[code] = self.failure_reasons.get(code, 0) + count
+        for code, count in other.diagnostic_reasons.items():
+            self.diagnostic_reasons[code] = self.diagnostic_reasons.get(code, 0) + count
 
 
 def _owner_id(value: int | None) -> bool:
@@ -96,46 +102,44 @@ async def notify_captcha_detected(
 
 
 _ACCOUNT_FAILURE_REASONS = {
-    "login_failed": (
-        "Не удалось выполнить вход или подтвердить условия доступа к учётной записи. "
-        "Проверьте сохранённые реквизиты и согласие на подключение СДО."
-    ),
-    "captcha": (
-        "Сайт запросил проверку CAPTCHA, но пройти её в этой попытке не удалось. "
-        "Учётная запись пропущена; общая очередь продолжится, если не сработал защитный стоп."
-    ),
-    "source_unavailable": (
-        "Сайт СДО или личного кабинета не ответил вовремя либо временно недоступен. "
-        "Полный результат обхода получить не удалось."
-    ),
-    "identity_unverified": (
-        "Не удалось достоверно подтвердить, что полученное расписание относится "
-        "к нужной учебной группе. Сомнительные данные не принимаются за проверенные."
-    ),
-    "parse_failed": (
-        "На одном из этапов полученные данные расписания или СДО не прошли проверку. "
-        "Полное извлечение не подтверждено; уже сохранённые проверенные сведения не удаляются. "
-        "Это не обязательно ошибка пароля."
-    ),
-    "internal": (
-        "Во время обработки произошла внутренняя ошибка StudGroup. "
-        "Учётная запись не считается успешно обработанной; нужна проверка технического журнала."
-    ),
+    "login_failed": "Не удалось войти в личный кабинет",
+    "captcha": "Не удалось пройти проверку CAPTCHA",
+    "source_unavailable": "Не удалось открыть сайт; точная причина неизвестна",
+    "identity_unverified": "Не удалось подтвердить учебную группу",
+    "parse_failed": "Сайт открылся, но данные расписания не удалось проверить",
+    "internal": "Внутренний сбой StudGroup",
 }
-
 
 _WEEK_FAILURE_DETAILS = {
-    "week_unreadable": (
-        "Недельное расписание не удалось полностью прочитать после двух проверок "
-        "интерфейса. Месячное расписание было доступно, но данные этой недели "
-        "не подтверждены. Возможна неполная загрузка или изменение страницы сайта."
-    ),
-    "week_month_mismatch": (
-        "Недельное расписание дважды не совпало с месячным списком занятий "
-        "по дате, времени начала или названию предмета. "
-        "Данные этой недели отклонены, чтобы не сохранять сомнительные занятия."
-    ),
+    "month_incomplete": "Месячное расписание загрузилось не полностью",
+    "week_unreadable": "Недельное расписание не удалось прочитать",
+    "week_month_mismatch": "Недельное расписание не совпало с месячным",
 }
+
+
+def _retry_summary(code: str, attempt: int) -> str:
+    if code == "login_failed":
+        return "Нужна проверка входа или согласия. Автоповтор отключён."
+    now = datetime.now(UTC)
+    scheduled = retry_at(now, failure_code=code, attempts=attempt)
+    if scheduled is None:
+        return "Автоповтор не запланирован."
+    minutes = max(1, round((scheduled - now).total_seconds() / 60))
+    if minutes < 60:
+        interval = f"{minutes} мин"
+    elif minutes % 60:
+        interval = f"{minutes // 60} ч {minutes % 60} мин"
+    else:
+        interval = f"{minutes // 60} ч"
+    return f"Повтор автоматически через {interval}."
+
+
+def _failure_summary(code: str, detail: str | None, diagnostic: str | None) -> str:
+    if code == "parse_failed" and detail:
+        return _WEEK_FAILURE_DETAILS[detail]
+    if code in {"source_unavailable", "internal"} and diagnostic:
+        return DIAGNOSTIC_REASONS[diagnostic]
+    return _ACCOUNT_FAILURE_REASONS[code]
 
 
 def _safe_label(value: str | None, *, fallback: str) -> str:
@@ -156,6 +160,7 @@ async def notify_account_crawl_result(
     failure_code: str | None,
     stats: CrawlRunStats,
     failure_detail: str | None = None,
+    diagnostic_code: str | None = None,
     telegram_group_name: str | None = None,
 ) -> bool:
     """One private message per finalized account attempt, even when extraction fails.
@@ -172,6 +177,8 @@ async def notify_account_crawl_result(
         raise ValueError("invalid_crawl_attempt")
     if failure_detail is not None and failure_detail not in _WEEK_FAILURE_DETAILS:
         raise ValueError("invalid_crawl_failure_detail")
+    if diagnostic_code is not None and diagnostic_code not in DIAGNOSTIC_REASONS:
+        raise ValueError("invalid_crawl_diagnostic_code")
     if failure_code == "captcha":
         # The one-time owner WebApp notice already states the failed automatic
         # crawl, both groups and the manual action. Do not send its duplicate
@@ -192,39 +199,39 @@ async def notify_account_crawl_result(
     telegram_group = _safe_label(telegram_group_name, fallback="не указана")
     name = _safe_label(student_name, fallback="студент")
     if failure_code is not None:
-        heading = "❌ StudGroup · ошибка обработки учётки СДО"
-        detailed = (
-            _WEEK_FAILURE_DETAILS.get(failure_detail) if failure_code == "parse_failed" else None
-        )
-        outcome = "Причина: " + (detailed or _ACCOUNT_FAILURE_REASONS[failure_code])
-    elif stats.saved_sdo_links > 0 or stats.saved_sdo_courses > 0:
-        heading = "✅ StudGroup · данные СДО извлечены"
-        outcome = "Подтверждённые ссылки или страницы курсов успешно сохранены."
-    elif stats.saved_weeks > 0:
-        heading = "⚠️ StudGroup · данные СДО не извлечены"
-        outcome = (
-            "Расписание сохранено, но подтверждённых ссылок или страниц курсов СДО не найдено. "
-            "Это не обязательно ошибка входа — требуется проверка доступности материалов."
+        # Account details and zero counters belong to the admin trace, not Telegram.
+        message = "\n".join(
+            [
+                "❌ StudGroup · сбой СДО",
+                f"{name} · {_safe_label(telegram_group_name or group_code, fallback='группа не указана')}",
+                "Причина: " + _failure_summary(failure_code, failure_detail, diagnostic_code) + ".",
+                _retry_summary(failure_code, attempt),
+            ]
         )
     else:
-        heading = "⚠️ StudGroup · данные СДО не подтверждены"
-        outcome = "Подтверждённые данные расписания или СДО не получены."
-    message = "\n".join(
-        [
-            heading,
-            f"Студент: {name}.",
-            f"Группа ТГ: {telegram_group}. Группа РАНХиГС: {group}.",
-            f"Учётка: {str(user_id)[:8]}. Попытка: {attempt}.",
-            outcome,
-            *(
-                ["Следующая плановая попытка — не раньше чем через 24 часа после завершения."]
-                if failure_code is not None
-                else []
-            ),
-            f"Сохранено недель: {stats.saved_weeks}; занятий: {stats.saved_lessons}.",
-            f"Ссылок СДО: {stats.saved_sdo_links}; страниц курсов: {stats.saved_sdo_courses}.",
-        ]
-    )
+        if stats.saved_sdo_links > 0 or stats.saved_sdo_courses > 0:
+            heading = "✅ StudGroup · данные СДО извлечены"
+            outcome = "Подтверждённые ссылки или страницы курсов успешно сохранены."
+        elif stats.saved_weeks > 0:
+            heading = "⚠️ StudGroup · данные СДО не извлечены"
+            outcome = (
+                "Расписание сохранено, но подтверждённых ссылок или страниц курсов СДО не найдено. "
+                "Это не обязательно ошибка входа — требуется проверка доступности материалов."
+            )
+        else:
+            heading = "⚠️ StudGroup · данные СДО не подтверждены"
+            outcome = "Подтверждённые данные расписания или СДО не получены."
+        message = "\n".join(
+            [
+                heading,
+                f"Студент: {name}.",
+                f"Группа ТГ: {telegram_group}. Группа РАНХиГС: {group}.",
+                f"Учётка: {str(user_id)[:8]}. Попытка: {attempt}.",
+                outcome,
+                f"Сохранено недель: {stats.saved_weeks}; занятий: {stats.saved_lessons}.",
+                f"Ссылок СДО: {stats.saved_sdo_links}; страниц курсов: {stats.saved_sdo_courses}.",
+            ]
+        )
     async with AsyncSession(engine) as db:
         queued = await enqueue_once(
             db,
@@ -273,6 +280,29 @@ async def notify_batch_report(
     if full_rescan and planned is None:
         raise ValueError("full_rescan_requires_planned_count")
     completed = full_rescan and remaining == 0 and processed >= planned
+    if not full_rescan and stats.failed_accounts:
+        causes = []
+        for code, count in sorted(stats.diagnostic_reasons.items()):
+            if code in DIAGNOSTIC_REASONS:
+                causes.append(f"{DIAGNOSTIC_REASONS[code]} — {count}")
+        for code, count in sorted(stats.failure_reasons.items()):
+            if code != "source_unavailable" or not causes:
+                causes.append(f"{_REPORT_ERROR_NAMES.get(code, 'Неизвестная ошибка')} — {count}")
+        lines = [
+            "⚠️ StudGroup · ошибки обхода СДО",
+            f"Не удалось обработать: {stats.failed_accounts} из {processed} учёток.",
+            "Причины: " + "; ".join(causes[:4]) + ".",
+            "Повтор будет выполнен автоматически по очереди; детали — в админке.",
+        ]
+        async with AsyncSession(engine) as db:
+            queued = await enqueue_once(
+                db, "sendMessage",
+                {"chat_id": owner_id, "text": "\n".join(lines),
+                 "link_preview_options": {"is_disabled": True}},
+                f"ranepa-crawl-report:{_run_key()}",
+            )
+            await db.commit()
+            return queued
     if full_rescan:
         heading = (
             "✅ StudGroup · полный повторный обход СДО завершён"
