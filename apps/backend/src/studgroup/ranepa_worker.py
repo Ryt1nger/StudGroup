@@ -57,8 +57,8 @@ from studgroup.ranepa_crawl_notifications import (
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_crawl_trace import CrawlTrace
-from studgroup.ranepa_failure_diagnostics import diagnose_browser_state, diagnose_exception
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
+from studgroup.ranepa_failure_diagnostics import diagnose_browser_state, diagnose_exception
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_manual_captcha import offer_manual_captcha
 from studgroup.ranepa_materialization import materialize_verified_facts
