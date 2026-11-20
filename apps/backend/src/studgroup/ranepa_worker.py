@@ -737,6 +737,10 @@ async def _collect(
                     return "source_unavailable"
                 if trace is not None:
                     trace.record("month_verified")
+                # One authenticated account, many weeks: do not re-parse the
+                # same Moodle course for every occurrence of the same lesson.
+                course_candidates_cache = {}
+                observed_sdo_candidates = set()
                 first = date(today.year, today.month, 1)
                 monday = first - timedelta(days=first.weekday())
                 for offset in range(6):
@@ -889,7 +893,7 @@ async def _collect(
                         trace.record("sdo_exits_requested")
                     sdo_captcha_unresolved = False
                     try:
-                        exit_kwargs = {}
+                        exit_kwargs = {"course_cache": course_candidates_cache}
                         if (
                             captcha_client is not None
                             and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
@@ -924,6 +928,12 @@ async def _collect(
                         # All vetted candidates are retained privately even when
                         # the course contains multiple teachers or no safe match.
                         candidates = getattr(resolution, "candidates", {})
+                        for lesson_key, choices in candidates.items():
+                            course_url = courses.get(lesson_key)
+                            if course_url:
+                                observed_sdo_candidates.update(
+                                    (course_url, item.url) for item in choices
+                                )
                         sdo_captcha_unresolved = "captcha_required" in link_states.values()
                         if trace is not None:
                             if sdo_captcha_unresolved and not trace.captcha_seen:
@@ -945,6 +955,7 @@ async def _collect(
                         if stats is not None:
                             stats.saved_sdo_links += len(links)
                             stats.saved_sdo_courses += len(courses)
+                            stats.discovered_sdo_candidates = len(observed_sdo_candidates)
                     except Exception:  # noqa: BLE001
                         # No enrichment or provider error can roll back the committed week.
                         # Never log exception details which can contain credentials.
