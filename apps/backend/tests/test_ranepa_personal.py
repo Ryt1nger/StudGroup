@@ -970,25 +970,30 @@ def test_confirmed_moodle_meeting_is_reused_when_new_scan_has_multiple_stable_li
         "online_url": None,
         "link_state": "ambiguous",
     }
+
     def record(url, label):
         return {"url": url, "label": label, "course_url": course}
     a = record(old, "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка")
     b = record(alternate, "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка")
     inventory = {course: {old: a, alternate: b}}
-    confirmed = {
-        _sdo_cache_key(row): {"online_url": old, "link_course_url": course}
-    }
+    confirmed = {_sdo_cache_key(row): {"online_url": old, "link_course_url": course}}
     # Neither candidate can be chosen by label alone, but the exact account's
     # previously confirmed meeting can be reused without another browser login.
     assert _reuse_verified_candidate(row, course, inventory, confirmed) == old
     assert _display_link_from_candidates(row, inventory, confirmed) == old
     assert _reuse_verified_candidate(row, course, inventory, {}) is None
-    assert _display_link_from_candidates({**row, "source_scope": "common"}, inventory, confirmed) is None
+    assert (
+        _display_link_from_candidates({**row, "source_scope": "common"}, inventory, confirmed)
+        is None
+    )
     wrong_course = course.replace("85813", "99999")
     assert _reuse_verified_candidate(row, wrong_course, inventory, confirmed) is None
-    assert _reuse_verified_candidate(
-        {**row, "teacher": "Петров Пётр Петрович"}, course, inventory, confirmed
-    ) is None
+    assert (
+        _reuse_verified_candidate(
+            {**row, "teacher": "Петров Пётр Петрович"}, course, inventory, confirmed
+        )
+        is None
+    )
 
 
 def test_explicit_one_off_or_dated_lms_meetings_are_not_reused_other_days():
