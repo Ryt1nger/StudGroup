@@ -504,7 +504,11 @@ async def process_one(
         else:
             account_stats.failed_accounts = 1
             account_stats.failure_reasons[failure] = 1
-            if trace is not None and trace.diagnostic is not None:
+            if (
+                failure == "source_unavailable"
+                and trace is not None
+                and trace.diagnostic is not None
+            ):
                 account_stats.diagnostic_reasons[trace.diagnostic] = 1
         if run_stats is not None:
             run_stats.add(account_stats)
