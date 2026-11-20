@@ -163,7 +163,7 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 assert "❌ StudGroup · сбой СДО" in notices[2]["text"]
                 assert "CAPTCHA" in notices[2]["text"]
                 assert "captcha" not in notices[2]["text"]
-                assert "Повтор автоматически через 6 ч" in notices[2]["text"]
+                assert "Автоповтор — не раньше чем через 6 ч" in notices[2]["text"]
                 assert "Сохранено недель" not in notices[2]["text"]
                 assert len(notices[2]["text"].splitlines()) == 4
                 assert "⚠️ StudGroup · данные СДО не извлечены" in notices[3]["text"]
@@ -559,7 +559,7 @@ def test_owner_receives_short_specific_timeout_diagnosis_and_real_backoff(tmp_pa
             assert len(message.splitlines()) == 4
             assert "Katerina · БИ 1.2" in message
             assert "Причина: Сайт не ответил вовремя." in message
-            assert "Повтор автоматически через 2 ч." in message
+            assert "Автоповтор — не раньше чем через 2 ч." in message
             assert "24 часа" not in message
             assert "недель" not in message
             assert "учётка:" not in message.lower()
