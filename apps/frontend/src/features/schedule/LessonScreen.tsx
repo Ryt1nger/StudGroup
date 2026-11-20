@@ -68,7 +68,7 @@ function relative(startMs: number, endMs: number, nowMs: number): { text: string
   return { text: ru.schedule.lesson.statusUpcoming, kind: 'soon' };
 }
 
-function JoinBar({ url }: { url: string }) {
+function JoinBar({ url, ended }: { url: string; ended: boolean }) {
   const open = useLessonLinkClick(url);
   const { toast } = useFeedback();
   const { adapter } = useTelegram();
@@ -82,7 +82,7 @@ function JoinBar({ url }: { url: string }) {
       <div className="cta-bar lesson-join-bar">
         <a className="btn lesson-join-main" href={url} target="_blank" rel="noopener noreferrer" onClick={open}>
           <Ic name="video" size={18} />
-          Подключиться к паре
+          {ended ? 'Открыть ссылку на занятие' : 'Подключиться к паре'}
         </a>
         <button
           className="btn lesson-join-copy"
@@ -141,7 +141,9 @@ export function LessonScreen() {
   const minutes = Math.max(0, Math.round((endMs - startMs) / 60_000));
   const online = safeLessonUrl(lesson.online_url);
   const course = safeRanepaCourseUrl(lesson.course_url);
-  const canJoin = online !== null && lesson.status !== 'cancelled' && endMs > nowMs;
+  // Permanent meeting links remain useful after the lesson ends. Do not
+  // hide the only access path merely because the calendar time has passed.
+  const hasLessonLink = online !== null && lesson.status !== 'cancelled';
   const homework = (subject.data?.homework ?? []).filter(
     (item) => item.my_state.completion !== 'completed' && !isHomeworkArchived(item, nowMs, timeZone),
   );
@@ -186,10 +188,10 @@ export function LessonScreen() {
           ))}
         </Sec>
       ) : null}
-      {canJoin ? (
+      {hasLessonLink ? (
         <>
           <div className="cta-space" />
-          <JoinBar url={online} />
+          <JoinBar url={online} ended={endMs <= nowMs} />
         </>
       ) : null}
     </>
