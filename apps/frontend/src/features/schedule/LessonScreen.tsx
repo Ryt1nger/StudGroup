@@ -50,11 +50,18 @@ function useLesson(lessonId: string, state: LessonState | null, fallbackTz: stri
       }
     }
   }
-  const days = weekKeys(dayKey(nowMs, fallbackTz));
-  const week = useScheduleQuery(days[0]!, days[6]!, found === null);
-  if (!found && week.data) {
-    const lesson = week.data.lessons.find((l) => l.id === lessonId);
-    if (lesson) found = { lesson, timeZone: week.data.group_timezone };
+  // Navigation state and cached Today data can precede the SDO crawler's
+  // update. For a remote lesson, re-check the authoritative schedule even
+  // when the card was already found in navigation state.
+  const isSdo = found?.lesson.location === 'СДО' || Boolean(found?.lesson.course_url);
+  const targetDay = found ? dayKey(Date.parse(found.lesson.starts_at), found.timeZone) : dayKey(nowMs, fallbackTz);
+  const days = weekKeys(targetDay);
+  const week = useScheduleQuery(days[0]!, days[6]!, found === null || isSdo, isSdo);
+  if (week.data) {
+    const fresh = week.data.lessons.find((l) => l.id === lessonId);
+    if (fresh && (!found || (isSdo && week.isFetchedAfterMount))) {
+      found = { lesson: fresh, timeZone: week.data.group_timezone };
+    }
   }
   return { found, loading: found === null && week.isPending };
 }
