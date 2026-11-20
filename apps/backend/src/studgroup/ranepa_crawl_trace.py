@@ -10,6 +10,7 @@ import time
 from datetime import UTC, datetime
 
 from studgroup.models import RanepaCrawlObservation
+from studgroup.ranepa_failure_diagnostics import DIAGNOSTIC_REASONS
 
 STEPS = frozenset(
     {
@@ -39,6 +40,7 @@ STEPS = frozenset(
         "schedule_verified",
     }
 )
+STEPS |= frozenset(f"diagnostic_{code}" for code in DIAGNOSTIC_REASONS)
 MAX_EVENTS = 40
 _SAFE_RESULTS = frozenset(
     {
@@ -66,6 +68,7 @@ class CrawlTrace:
         self.session_available = False
         # Predefined, privacy-safe reason for one incomplete weekly read.
         self.failure_detail: str | None = None
+        self.diagnostic: str | None = None
 
     def record(self, step: str) -> None:
         if step not in STEPS:
@@ -74,6 +77,14 @@ class CrawlTrace:
             self.events.pop(0)
         milliseconds = max(0, int((self._clock() - self._start) * 1000))
         self.events.append({"step": step, "elapsed_ms": milliseconds})
+
+    def mark_diagnostic(self, code: str) -> None:
+        """Persist only a reviewed, non-sensitive failure category."""
+        if code not in DIAGNOSTIC_REASONS:
+            raise ValueError("unsafe_crawl_diagnostic")
+        if self.diagnostic != code:
+            self.diagnostic = code
+            self.record("diagnostic_" + code)
 
     def mark_captcha(self, location: str) -> None:
         if location not in {"month", "week", "sdo"}:

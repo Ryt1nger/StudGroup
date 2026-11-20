@@ -8,6 +8,11 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 from zoneinfo import ZoneInfo
 
 from studgroup.ranepa_cabinet import MonthCard, extract_cabinet_month, extract_cabinet_week
+from studgroup.ranepa_failure_diagnostics import (
+    diagnose_browser_state,
+    diagnose_exception,
+    diagnose_http_response,
+)
 from studgroup.ranepa_link_states import LinkState
 from studgroup.ranepa_lms import course_detail_pages, course_links, select_lesson_link
 from studgroup.ranepa_probe import SourceAccessError
@@ -24,12 +29,14 @@ class BrowserResult:
     status: str
     snapshot: WeekSnapshot | None = None
     sdo_exits: tuple[str | None, ...] = ()
+    diagnostic: str | None = None
 
 
 @dataclass(frozen=True)
 class BrowserMonthResult:
     status: str
     cards: tuple[MonthCard, ...] = ()
+    diagnostic: str | None = None
 
 
 async def _state(page) -> str:
@@ -113,12 +120,18 @@ async def _open(page, login: str, password: str) -> str:
     if current.hostname == HOST and current.path == urlsplit(SCHEDULE).path:
         state = await _wait_visible_state(page)
     else:
-        await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
+        response = await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
+        problem = diagnose_http_response(response)
+        if problem is not None:
+            return problem
         state = await _wait_visible_state(page)
     if state == "login_required":
         state = await _sign_in(page, login, password)
         if state == "rendered":
-            await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
+            response = await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
+            problem = diagnose_http_response(response)
+            if problem is not None:
+                return problem
             state = await _wait_visible_state(page)
     return state
 
@@ -215,7 +228,7 @@ async def read_week(
         try:
             state = await _open(page, login, password)
             if state != "rendered":
-                return BrowserResult(state)
+                return BrowserResult(state, diagnostic=diagnose_browser_state(state))
             if not await _verify_group(page, code):
                 return BrowserResult("identity_unverified")
             await page.get_by_role("button", name="Мое расписание", exact=True).click()
@@ -267,13 +280,12 @@ async def read_week(
             if final_state == "captcha_required":
                 return BrowserResult("captcha_required")
             if final_state == "challenge_pending":
-                return BrowserResult("source_unavailable")
+                return BrowserResult("source_unavailable", diagnostic="challenge_pending")
             if final_state != "login_required":
                 return BrowserResult(last_week_error)
-        except Exception:  # noqa: BLE001
-            # Playwright can raise rich network exceptions containing URLs or
-            # server text; never let them enter a job error or log.
-            return BrowserResult("source_unavailable")
+        except Exception as error:  # noqa: BLE001
+            # Exception content may contain session URLs; keep only the safe code.
+            return BrowserResult("source_unavailable", diagnostic=diagnose_exception(error))
         if attempt == 1:
             break
     return BrowserResult("login_failed")
@@ -287,7 +299,7 @@ async def read_month(
         try:
             state = await _open(page, login, password)
             if state != "rendered":
-                return BrowserMonthResult(state)
+                return BrowserMonthResult(state, diagnostic=diagnose_browser_state(state))
             if not await _verify_group(page, code):
                 return BrowserMonthResult("identity_unverified")
             await page.get_by_role("button", name="Мое расписание", exact=True).click()
@@ -328,11 +340,11 @@ async def read_month(
             if final_state == "captcha_required":
                 return BrowserMonthResult("captcha_required")
             if final_state == "challenge_pending":
-                return BrowserMonthResult("source_unavailable")
+                return BrowserMonthResult("source_unavailable", diagnostic="challenge_pending")
             if final_state != "login_required":
                 return BrowserMonthResult("cabinet_month_incomplete")
-        except Exception:  # noqa: BLE001
-            return BrowserMonthResult("source_unavailable")
+        except Exception as error:  # noqa: BLE001
+            return BrowserMonthResult("source_unavailable", diagnostic=diagnose_exception(error))
         if attempt == 1:
             break
     return BrowserMonthResult("login_failed")
