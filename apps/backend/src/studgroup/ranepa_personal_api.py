@@ -36,6 +36,31 @@ async def my_ranepa_schedule(
     response["account_connected"] = bool(
         profile and profile.sdu_credential_id and group.academic_group_code
     )
+    # Reading this metadata never starts a crawl or discloses another account.
+    # The Mini App can report whether the button actually queued a job, and
+    # distinguish queue latency from a stalled HTTP request.
+    local_day = datetime.now(UTC).astimezone(ZoneInfo(group.timezone)).date()
+    monday = local_day - timedelta(days=local_day.weekday())
+    job = await db.scalar(
+        select(RanepaCrawlJob).where(
+            RanepaCrawlJob.group_id == group.id,
+            RanepaCrawlJob.user_id == user.id,
+            RanepaCrawlJob.week_start == monday,
+        )
+    )
+    state = "idle"
+    if job is not None:
+        if job.failure_code == "login_failed":
+            state = "credentials_required"
+        elif job.state in {"queued", "running"}:
+            state = job.state
+        elif job.next_attempt_at is not None:
+            next_at = job.next_attempt_at
+            if next_at.tzinfo is None:
+                next_at = next_at.replace(tzinfo=UTC)
+            state = "cooldown" if next_at > datetime.now(UTC) else "idle"
+    response["refresh_state"] = state
+    response["refresh_next_attempt_at"] = job.next_attempt_at if job else None
     return response
 
 
