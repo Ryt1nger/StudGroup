@@ -132,3 +132,31 @@ def test_freshness_exposes_per_account_job_state_without_restarting_crawl(client
     assert client.get(path, headers=AUTH).json()["refresh_state"] == "running"
     asyncio.run(set_state("failed", "login_failed"))
     assert client.get(path, headers=AUTH).json()["refresh_state"] == "credentials_required"
+
+
+
+def test_web_supabase_pool_has_bounded_capacity_and_finite_checkout():
+    from studgroup.main import Settings, database_engine_options
+
+    settings = Settings(
+        _env_file=None,
+        database_url="postgresql+asyncpg://safe:password@aws-0-eu.pooler.supabase.com:5432/postgres",
+    )
+    options = database_engine_options(settings, for_web_service=True)
+    assert options["pool_size"] == 5
+    assert options["max_overflow"] == 0
+    assert options["pool_timeout"] == 10
+    worker = database_engine_options(settings)
+    assert worker["pool_size"] == 1
+    assert worker["max_overflow"] == 0
+
+
+def test_pool_timeout_is_recoverable_api_error(client):
+    from sqlalchemy.exc import TimeoutError as PoolCheckoutTimeout
+
+    handler = client.app.exception_handlers[PoolCheckoutTimeout]
+    response = asyncio.run(handler(None, PoolCheckoutTimeout("private-db-url")))
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "5"
+    assert b"private-db-url" not in response.body
+    assert b"service_unavailable" in response.body
