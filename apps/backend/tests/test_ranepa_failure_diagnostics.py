@@ -54,13 +54,13 @@ def test_browser_return_includes_diagnostic_without_exception_text(monkeypatch):
     monkeypatch.setattr(ranepa_browser, "_open", broken_open)
     today = datetime.now(ZoneInfo("Europe/Moscow")).date()
     month = asyncio.run(
-        ranepa_browser.read_month(object(), "secret_login", "secret_password", "A-001",
-                                  today.year, today.month)
+        ranepa_browser.read_month(
+            object(), "secret_login", "secret_password", "A-001", today.year, today.month
+        )
     )
     monday = today.fromordinal(today.toordinal() - today.weekday())
     week = asyncio.run(
-        ranepa_browser.read_week(object(), "secret_login", "secret_password", "A-001",
-                                 monday)
+        ranepa_browser.read_week(object(), "secret_login", "secret_password", "A-001", monday)
     )
     assert month.status == week.status == "source_unavailable"
     assert month.diagnostic == week.diagnostic == "dns"
