@@ -23,9 +23,6 @@ DIAGNOSTIC_REASONS = {
     "unknown": "Точную причину сбоя установить не удалось",
 }
 
-_HTTP_SERVER_ERROR = re.compile(r"(?<!\d)5\d\d(?!\d)")
-
-
 def diagnose_exception(error: BaseException) -> str:
     """Classify an exception without exposing its potentially sensitive message."""
     name = type(error).__name__.lower()
@@ -34,11 +31,22 @@ def diagnose_exception(error: BaseException) -> str:
     if isinstance(error, (ConnectionError, ConnectionResetError, BrokenPipeError)):
         return "connection"
     message = str(error)[:2048].lower()
-    if any(s in message for s in ("err_name_not_resolved", "getaddrinfo", "eai_again", "dns_probe_finished")):
+    if any(
+        s in message
+        for s in ("err_name_not_resolved", "getaddrinfo", "eai_again", "dns_probe_finished")
+    ):
         return "dns"
     if any(s in message for s in ("err_cert_", "ssl_error", "tls handshake", "certificate verify")):
         return "tls"
-    if any(s in message for s in ("err_connection_", "err_tunnel_connection_", "network is unreachable", "connection refused")):
+    if any(
+        s in message
+        for s in (
+            "err_connection_",
+            "err_tunnel_connection_",
+            "network is unreachable",
+            "connection refused",
+        )
+    ):
         return "connection"
     if re.search(r"\b(?:http[ /]|status[=: ]+|response[=: ]+|error[=: ]+)403\b", message):
         return "http_403"
@@ -46,7 +54,16 @@ def diagnose_exception(error: BaseException) -> str:
         return "http_429"
     if re.search(r"\b(?:http[ /]|status[=: ]+|response[=: ]+|error[=: ]+)5\d\d\b", message):
         return "http_5xx"
-    if any(s in message for s in ("strict mode violation", "no element matches", "selector", "locator(", "not visible")):
+    if any(
+        s in message
+        for s in (
+            "strict mode violation",
+            "no element matches",
+            "selector",
+            "locator(",
+            "not visible",
+        )
+    ):
         return "page_changed"
     return "unknown"
 
@@ -67,7 +84,11 @@ def diagnose_browser_state(status: str) -> str | None:
     """Map known browser states, never interpreting an unknown state as fact."""
     if status in DIAGNOSTIC_REASONS:
         return status
-    if status in {"cabinet_month_incomplete", "cabinet_month_card_incomplete", "cabinet_month_mismatch"}:
+    if status in {
+        "cabinet_month_incomplete",
+        "cabinet_month_card_incomplete",
+        "cabinet_month_mismatch",
+    }:
         return "month_incomplete"
     if status in {"cabinet_week_incomplete", "cabinet_week_grid_missing", "cabinet_week_loading"}:
         return "week_unavailable"
