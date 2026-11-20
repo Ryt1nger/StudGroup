@@ -40,8 +40,17 @@ def test_captcha_seen_notification_is_immediate_private_and_deduplicated(tmp_pat
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             job_id = uuid4()
+            student_id = uuid4()
             assert await notify_captcha_detected(
-                engine, owner_id=915, job_id=job_id, attempt=1, location="month"
+                engine,
+                owner_id=915,
+                job_id=job_id,
+                attempt=1,
+                location="month",
+                user_id=student_id,
+                student_name="Иванов Иван",
+                telegram_group_name="БИ 1.2",
+                group_code="Э-ОБ-385-04-26-02",
             )
             assert not await notify_captcha_detected(
                 engine, owner_id=915, job_id=job_id, attempt=1, location="week"
@@ -53,6 +62,9 @@ def test_captcha_seen_notification_is_immediate_private_and_deduplicated(tmp_pat
                 assert notice["chat_id"] == 915
                 assert "обнаружена CAPTCHA" in notice["text"]
                 assert "месячное расписание" in notice["text"]
+                assert f"Иванов Иван · ID {str(student_id)[:8]}" in notice["text"]
+                assert "Группа ТГ: БИ 1.2" in notice["text"]
+                assert "Группа РАНХиГС: Э-ОБ-385-04-26-02" in notice["text"]
                 assert "password" not in rows[0].payload
                 assert "cookie" not in rows[0].payload.lower()
                 assert "http" not in rows[0].payload
