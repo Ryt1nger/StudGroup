@@ -316,3 +316,15 @@ def test_course_detail_pages_prioritize_later_meeting_page_over_irrelevant_hando
     assert len(urls) == 16
     assert urls[0] == "https://lms.ranepa.ru/mod/page/view.php?id=444"
     assert "https://lms.ranepa.ru/mod/page/view.php?id=0" in urls
+
+
+def test_explicitly_one_off_undated_link_does_not_become_permanent():
+    links = course_links(fixture("Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) разовая конференция"))
+    choice = select_lesson_link(
+        links,
+        teacher="Иванов Иван Иванович",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45)",
+        day=date(2026, 11, 23),
+    )
+    assert choice.url is None
+    assert choice.state == "timing_unverified"

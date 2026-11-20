@@ -18,7 +18,14 @@ from studgroup.models import (
     SubjectSplit,
 )
 from studgroup.ranepa_link_states import LINK_STATES
-from studgroup.ranepa_lms import LinkCandidate, meeting_url, select_lesson_link
+from studgroup.ranepa_lms import (
+    DATE,
+    DATE_LIST,
+    EXPLICITLY_TEMPORARY,
+    LinkCandidate,
+    meeting_url,
+    select_lesson_link,
+)
 from studgroup.ranepa_schedule import (
     WeekSnapshot,
     has_unverified_subgroup_hint,
@@ -129,6 +136,7 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
             .where(
                 RanepaPersonalSnapshot.group_id == group_id,
                 RanepaPersonalSnapshot.user_id == user_id,
+                RanepaPersonalSnapshot.identity_verified.is_(True),
             )
             .order_by(RanepaPersonalSnapshot.checked_at.desc())
         )
@@ -148,9 +156,13 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
                 course = None
             if course is not None:
                 by_subject.setdefault(_sdo_subject_key(row), set()).add(course)
-            if url is not None or course is not None:
+            if (url is not None and row.get("link_state") == "matched") or course is not None:
                 item = by_identity.setdefault(_sdo_cache_key(row), {})
-                if url is not None and "online_url" not in item:
+                if (
+                    url is not None
+                    and row.get("link_state") == "matched"
+                    and "online_url" not in item
+                ):
                     item["online_url"] = url
                     item["online_checked_at"] = (
                         row.get("links_checked_at") or snapshot.checked_at.isoformat()
@@ -169,8 +181,45 @@ async def _verified_sdo_link_cache(db, group_id, user_id):
     return by_identity, by_course, by_subject
 
 
+def _previous_confirmed_meeting(row, course, by_course, identity):
+    """Use a verified link for precisely this course, subject, teacher and stream.
+
+    Explicit date/time or one-off labels override the default expectation of
+    recurring Moodle meetings. Other users' private inventories are never read.
+    """
+    if (
+        not course
+        or not _safe_course(course)
+        or not row.get("teacher")
+        or not row.get("subgroup_hint")
+    ):
+        return None
+    previous = identity.get(_sdo_cache_key(row), {})
+    url = previous.get("online_url")
+    if not isinstance(url, str) or not _safe_link(url) or previous.get("link_course_url") != course:
+        return None
+    candidate = by_course.get(course, {}).get(url)
+    if candidate is not None:
+        label = candidate["label"]
+        if EXPLICITLY_TEMPORARY.search(normalized(label)):
+            return None
+        try:
+            choice = select_lesson_link(
+                (LinkCandidate(url, label),),
+                teacher=row["teacher"],
+                group_label=row["subgroup_hint"],
+                day=date.fromisoformat(row["day"]),
+                starts=time.fromisoformat(row["starts"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+        if choice.url != url:
+            return None
+    return url
+
+
 def _reuse_verified_candidate(row, course, by_course, identity):
-    """Never guess when stored candidates conflict or the course changed."""
+    """Prefer new unambiguous evidence, then the last confirmed recurring link."""
     if not course or not _safe_course(course):
         return None
     links = tuple(
@@ -186,20 +235,18 @@ def _reuse_verified_candidate(row, course, by_course, identity):
         )
         if choice.state == "matched":
             return choice.url
-        if choice.state == "ambiguous":
+        if choice.state == "identity_missing":
             return None
-    old = identity.get(_sdo_cache_key(row), {})
-    if (
-        old.get("online_url")
-        and _safe_link(old["online_url"])
-        and old.get("link_course_url") in {None, course}
-    ):
-        return old["online_url"]
-    return None
+        if choice.state == "ambiguous" and any(
+            DATE.search(link.label) or DATE_LIST.search(link.label) for link in choice.candidates
+        ):
+            # Never resolve two explicitly dated competing meetings by guessing.
+            return None
+    return _previous_confirmed_meeting(row, course, by_course, identity)
 
 
-def _display_link_from_candidates(row, historical_by_course=None):
-    """Re-match an account's stored vetted meetings without a new SDO login."""
+def _display_link_from_candidates(row, historical_by_course=None, confirmed_by_identity=None):
+    """Re-match this account's stored vetted meetings without a new SDO login."""
     if row.get("online_url") or row.get("room") != "СДО":
         return None
     if row.get("source_scope") in {"common", "subgroup"}:
@@ -211,25 +258,18 @@ def _display_link_from_candidates(row, historical_by_course=None):
     for item in row.get("link_candidates") or ():
         vetted = _valid_candidate(item)
         if vetted is not None and vetted["course_url"] == course:
-            links_by_url[vetted["url"]] = LinkCandidate(vetted["url"], vetted["label"])
+            links_by_url[vetted["url"]] = vetted
     if historical_by_course is not None:
         for item in historical_by_course.get(course, {}).values():
             vetted = _valid_candidate(item)
             if vetted is not None:
-                links_by_url[vetted["url"]] = LinkCandidate(vetted["url"], vetted["label"])
-    if not links_by_url:
-        return None
+                links_by_url[vetted["url"]] = vetted
     try:
-        choice = select_lesson_link(
-            tuple(links_by_url.values()),
-            teacher=row.get("teacher") or "",
-            group_label=row.get("subgroup_hint") or "",
-            day=date.fromisoformat(row["day"]),
-            starts=time.fromisoformat(row["starts"]),
+        return _reuse_verified_candidate(
+            row, course, {course: links_by_url}, confirmed_by_identity or {}
         )
     except (KeyError, TypeError, ValueError):
         return None
-    return choice.url if choice.state == "matched" else None
 
 
 async def remember_personal(
@@ -324,11 +364,7 @@ async def remember_personal(
                     cached.get("course_checked_at") or datetime.now(UTC).isoformat()
                 )
                 link_cached = True
-        if (
-            url is None
-            and row["room"] == "СДО"
-            and state not in {"ambiguous", "timing_unverified", "identity_missing"}
-        ):
+        if url is None and row["room"] == "СДО" and state != "identity_missing":
             url = _reuse_verified_candidate(row, course, course_candidates, cached_links)
             if url:
                 state = "matched"
@@ -472,11 +508,7 @@ async def enrich_personal_links(
                 course,
                 checked,
             )
-        if (
-            url is None
-            and row["room"] == "СДО"
-            and state not in {"ambiguous", "timing_unverified", "identity_missing"}
-        ):
+        if url is None and row["room"] == "СДО" and state != "identity_missing":
             historical = _reuse_verified_candidate(row, course, course_candidates, cached_links)
             if historical:
                 url = historical
@@ -550,6 +582,7 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
     link_checks = []
     materialized = False
     historical_by_course = None
+    historical_by_identity = {}
     for row in snapshots:
         cursor = max(start, row.week_start)
         while cursor <= min(end, row.week_end):
@@ -578,9 +611,13 @@ async def personal_period(db, group_id, user_id, start: date, end: date):
             if pending and historical_by_course is None:
                 # Historical inventories are private to this exact user and
                 # group, even when the relevant course was read in another week.
-                _, historical_by_course, _ = await _verified_sdo_link_cache(db, group_id, user_id)
+                historical_by_identity, historical_by_course, _ = await _verified_sdo_link_cache(
+                    db, group_id, user_id
+                )
             for lesson in pending:
-                url = _display_link_from_candidates(lesson, historical_by_course)
+                url = _display_link_from_candidates(
+                    lesson, historical_by_course, historical_by_identity
+                )
                 if url is not None:
                     # Account-local read projection; original SQL is unchanged.
                     lesson["online_url"] = url

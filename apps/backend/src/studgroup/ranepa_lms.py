@@ -17,6 +17,9 @@ TIME_RANGE = re.compile(r"(?<!\d)(\d{1,2})[.:](\d{2})\s*[-–]\s*\d{1,2}[.:]\d{2
 # Moodle labels frequently abbreviate a semester into "9, 16, 23.11".
 # Such dates are not full DD.MM.YYYY dates and must not be treated as unknown.
 DATE_LIST = re.compile(r"(?<!\d)(\d{1,2}(?:\s*,\s*\d{1,2})*)\.(\d{1,2})(?![.\d])")
+EXPLICITLY_TEMPORARY = re.compile(
+    r"\b(?:одноразов|однократн|разов|временн)\w*|\bна\s+(?:одну|эту)\s+пару"
+)
 INLINE_JOIN = re.compile(r"https://[^\s<>\"']+", re.IGNORECASE)
 MAX_CANDIDATES = 80
 MAX_DETAIL_PAGES = 16
@@ -245,7 +248,7 @@ def select_lesson_link(
             dated.append(link)
         elif not found_dates and "постоянн" in label:
             permanent.append(link)
-        elif not found_dates:
+        elif not found_dates and not EXPLICITLY_TEMPORARY.search(label):
             # A Moodle "Гиперссылка" with exact teacher AND stream identity
             # is a usable meeting when it is the only such candidate. Multiple
             # different links stay unverified rather than choosing at random.
