@@ -14,9 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.bot_admin import enqueue_once
+from studgroup.models import RanepaManualCaptcha
 from studgroup.ranepa_crawl_jobs import retry_at
 from studgroup.ranepa_failure_diagnostics import DIAGNOSTIC_REASONS
-from studgroup.models import RanepaManualCaptcha
 
 _CAPTCHA_LOCATIONS = {
     "month": "месячное расписание",
