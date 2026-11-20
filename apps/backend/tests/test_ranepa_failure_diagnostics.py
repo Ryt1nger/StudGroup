@@ -19,6 +19,7 @@ from studgroup.ranepa_failure_diagnostics import (
     ("error", "expected"),
     [
         (TimeoutError("private URL with cookie"), "timeout"),
+        (TimeoutError("Locator.click: waiting for locator('button')"), "page_changed"),
         (Exception("net::ERR_NAME_NOT_RESOLVED at https://secret"), "dns"),
         (Exception("net::ERR_CONNECTION_RESET"), "connection"),
         (Exception("net::ERR_CERT_AUTHORITY_INVALID"), "tls"),
