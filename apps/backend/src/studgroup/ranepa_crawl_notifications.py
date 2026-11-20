@@ -32,6 +32,7 @@ class CrawlRunStats:
     saved_weeks: int = 0
     saved_lessons: int = 0
     saved_sdo_links: int = 0
+    discovered_sdo_candidates: int = 0
     saved_sdo_courses: int = 0
     verified_sdo_accounts: int = 0
     timetable_only_accounts: int = 0
@@ -44,6 +45,7 @@ class CrawlRunStats:
         self.saved_weeks += other.saved_weeks
         self.saved_lessons += other.saved_lessons
         self.saved_sdo_links += other.saved_sdo_links
+        self.discovered_sdo_candidates += other.discovered_sdo_candidates
         self.saved_sdo_courses += other.saved_sdo_courses
         self.verified_sdo_accounts += other.verified_sdo_accounts
         self.timetable_only_accounts += other.timetable_only_accounts
@@ -230,6 +232,7 @@ async def notify_account_crawl_result(
                 outcome,
                 f"Сохранено недель: {stats.saved_weeks}; занятий: {stats.saved_lessons}.",
                 f"Ссылок СДО: {stats.saved_sdo_links}; страниц курсов: {stats.saved_sdo_courses}.",
+                f"Обнаружено вариантов ссылок: {stats.discovered_sdo_candidates}.",
             ]
         )
     async with AsyncSession(engine) as db:
@@ -334,6 +337,7 @@ async def notify_batch_report(
             f"Только расписание, без подтверждённой СДО: {stats.timetable_only_accounts}.",
             f"Сохранено недель: {stats.saved_weeks}; занятий: {stats.saved_lessons}.",
             f"Подтверждённых ссылок СДО: {stats.saved_sdo_links}; страниц курсов: {stats.saved_sdo_courses}.",
+            f"Обнаружено вариантов ссылок на курсах: {stats.discovered_sdo_candidates}.",
         ]
     )
     if stats.failure_reasons:
@@ -386,6 +390,7 @@ async def notify_successful_crawl(
         f"Сохранено недель расписания: {stats.saved_weeks}.\n"
         f"Подтверждено занятий: {stats.saved_lessons}.\n"
         f"Найдено ссылок на занятия в СДО: {stats.saved_sdo_links}.\n"
+        f"Обнаружено вариантов ссылок на курсах: {stats.discovered_sdo_candidates}.\n"
         f"Найдено страниц курсов СДО: {stats.saved_sdo_courses}.\n"
         "Ссылки указываются только там, где источник их действительно подтвердил. "
         "Отсутствие ссылки не означает, что занятие не существует."
