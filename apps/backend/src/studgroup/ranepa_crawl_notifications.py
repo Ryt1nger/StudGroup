@@ -55,8 +55,12 @@ class CrawlRunStats:
             self.failure_reasons[code] = self.failure_reasons.get(code, 0) + count
         for code, count in other.diagnostic_reasons.items():
             self.diagnostic_reasons[code] = self.diagnostic_reasons.get(code, 0) + count
-        self.failed_accounts_detail.extend(other.failed_accounts_detail[:15])
-        self.successful_accounts_detail.extend(other.successful_accounts_detail[:15])
+        self.failed_accounts_detail.extend(
+            other.failed_accounts_detail[: max(0, 15 - len(self.failed_accounts_detail))]
+        )
+        self.successful_accounts_detail.extend(
+            other.successful_accounts_detail[: max(0, 15 - len(self.successful_accounts_detail))]
+        )
 
 
 def _owner_id(value: int | None) -> bool:
@@ -78,6 +82,10 @@ async def notify_captcha_detected(
     job_id: uuid.UUID,
     attempt: int,
     location: str,
+    user_id: uuid.UUID | None = None,
+    student_name: str | None = None,
+    telegram_group_name: str | None = None,
+    group_code: str | None = None,
 ) -> bool:
     """Queue the first CAPTCHA sighting immediately, before paid solving.
 
@@ -88,13 +96,17 @@ async def notify_captcha_detected(
         return False
     if location not in _CAPTCHA_LOCATIONS:
         raise ValueError("invalid_captcha_notice_location")
-    text = (
-        "⚠️ StudGroup · обнаружена CAPTCHA в СДО/ЛК РАНХиГС.\n"
-        f"Этап: {_CAPTCHA_LOCATIONS[location]}.\n"
-        "Автоматическая проверка продолжится в пределах разрешённого бюджета. "
-        "Если решить CAPTCHA не удастся, очередь перейдёт к следующей учётке.\n"
-        "Это уведомление не содержит самой CAPTCHA: её нельзя пройти по изображению "
-        "в Telegram без той же активной браузерной сессии."
+    label = _safe_label(student_name, fallback="Имя не указано")
+    suffix = f" · ID {str(user_id)[:8]}" if user_id is not None else ""
+    text = "\n".join(
+        [
+            "⚠️ StudGroup · обнаружена CAPTCHA",
+            f"Студент: {label}{suffix} · попытка {attempt}",
+            f"Группа ТГ: {_safe_label(telegram_group_name, fallback='не указана')}",
+            f"Группа РАНХиГС: {_safe_label(group_code, fallback='не указана')}",
+            f"Этап: {_CAPTCHA_LOCATIONS[location]}.",
+            "Действие: автоматическая проверка в пределах бюджета; при неудаче — ручная помощь.",
+        ]
     )
     async with AsyncSession(engine) as db:
         queued = await enqueue_once(
