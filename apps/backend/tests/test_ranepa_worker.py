@@ -219,7 +219,7 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
             snapshot=WeekSnapshot(code, monday, monday + timedelta(days=6), ()),
         )
 
-    async def sdo(*args):
+    async def sdo(*args, **kwargs):
         return {}, {}, {}
 
     async def remember(*args, **kwargs):
