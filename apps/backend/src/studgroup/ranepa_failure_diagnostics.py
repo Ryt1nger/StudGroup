@@ -23,14 +23,17 @@ DIAGNOSTIC_REASONS = {
     "unknown": "Точную причину сбоя установить не удалось",
 }
 
+
 def diagnose_exception(error: BaseException) -> str:
     """Classify an exception without exposing its potentially sensitive message."""
     name = type(error).__name__.lower()
+    message = str(error)[:2048].lower()
     if isinstance(error, TimeoutError) or "timeouterror" in name:
+        if "locator." in message or "waiting for locator" in message:
+            return "page_changed"
         return "timeout"
     if isinstance(error, (ConnectionError, ConnectionResetError, BrokenPipeError)):
         return "connection"
-    message = str(error)[:2048].lower()
     if any(
         s in message
         for s in ("err_name_not_resolved", "getaddrinfo", "eai_again", "dns_probe_finished")
