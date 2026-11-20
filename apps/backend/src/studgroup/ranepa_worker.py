@@ -598,7 +598,8 @@ async def process_one(
                     group_code=group.academic_group_code if group else None,
                     user_id=user_id,
                     failure_code=failure,
-                    failure_detail=notice_failure_detail or (trace.failure_detail if trace is not None else None),
+                    failure_detail=notice_failure_detail
+                    or (trace.failure_detail if trace is not None else None),
                     diagnostic_code=trace.diagnostic if trace is not None else None,
                 )
             )
