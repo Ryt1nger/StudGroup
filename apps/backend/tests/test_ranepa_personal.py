@@ -947,3 +947,7 @@ def test_saved_lms_inventory_can_fill_link_on_read_only_for_own_verified_lesson(
     )
     extra = {**candidate, "url": "https://lms.ranepa.ru/mod/url/view.php?id=101"}
     assert _display_link_from_candidates({**row, "link_candidates": [candidate, extra]}) is None
+    cached = {course: {candidate["url"]: candidate}}
+    assert _display_link_from_candidates({**row, "link_candidates": []}, cached) == candidate["url"]
+    cached[course][extra["url"]] = extra
+    assert _display_link_from_candidates({**row, "link_candidates": []}, cached) is None
