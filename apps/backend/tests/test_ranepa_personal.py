@@ -925,10 +925,7 @@ def test_saved_lms_inventory_can_fill_link_on_read_only_for_own_verified_lesson(
     course = "https://lms.ranepa.ru/course/view.php?id=88849"
     candidate = {
         "url": "https://lms.ranepa.ru/mod/url/view.php?id=100",
-        "label": (
-            "Алпеев О.Е. занятия (9, 16, 23.11) "
-            "Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ"
-        ),
+        "label": ("Алпеев О.Е. занятия (9, 16, 23.11) Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ"),
         "course_url": course,
     }
     row = {
@@ -945,6 +942,8 @@ def test_saved_lms_inventory_can_fill_link_on_read_only_for_own_verified_lesson(
     assert _display_link_from_candidates(row) == candidate["url"]
     # Never use other students' inventories or a different course.
     assert _display_link_from_candidates({**row, "source_scope": "common"}) is None
-    assert _display_link_from_candidates({**row, "course_url": course.replace("88849", "123")}) is None
+    assert (
+        _display_link_from_candidates({**row, "course_url": course.replace("88849", "123")}) is None
+    )
     extra = {**candidate, "url": "https://lms.ranepa.ru/mod/url/view.php?id=101"}
     assert _display_link_from_candidates({**row, "link_candidates": [candidate, extra]}) is None
