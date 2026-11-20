@@ -547,9 +547,7 @@ def test_course_reader_waits_for_late_meetings_from_other_teachers():
                 )
             return (
                 '<main class="course-content">'
-                '<a href="/course/view.php?id=85813">Курс</a>'
-                + links
-                + "</main>"
+                '<a href="/course/view.php?id=85813">Курс</a>' + links + "</main>"
             )
 
         async def wait_for_timeout(self, milliseconds):
