@@ -1150,9 +1150,7 @@ async def run_forever(settings: Settings):
             loop.remove_signal_handler(signum)
 
 
-def balanced_sample_users(
-    queued: list[tuple[UUID, UUID]], *, limit: int = 15
-) -> tuple[UUID, ...]:
+def balanced_sample_users(queued: list[tuple[UUID, UUID]], *, limit: int = 15) -> tuple[UUID, ...]:
     """Choose at most 15 distinct due users, alternating across groups.
 
     The caller provides eligible queued (group_id, user_id) rows in durable
@@ -1177,7 +1175,6 @@ def balanced_sample_users(
         if not made_progress:
             break
     return tuple(selected)
-
 
 
 async def run_batch(
@@ -1298,7 +1295,9 @@ async def run_batch(
         remaining = (
             max(0, len(sample_order) - completed)
             if sample_accounts is not None
-            else max(0, len(eligible_ids) - completed) if eligible_ids is not None else 0
+            else max(0, len(eligible_ids) - completed)
+            if eligible_ids is not None
+            else 0
         )
         if settings.ranepa_crawl_notify_success_enabled or (
             settings.ranepa_crawl_notify_account_results_enabled and run_stats.failed_accounts
@@ -1416,7 +1415,12 @@ def main():
         or os.environ.get("RANEPA_FORCE_RESCAN_ALL_APPROVED") != "true"
     ):
         parser.error("full rescan requires explicit owner-approved release workflow")
-    if not args.force_rescan_all and args.sample_accounts is None and args.batch_minutes and args.batch_minutes > 24:
+    if (
+        not args.force_rescan_all
+        and args.sample_accounts is None
+        and args.batch_minutes
+        and args.batch_minutes > 24
+    ):
         parser.error("scheduled batches cannot exceed 24 minutes")
     # An absent Actions variable is represented as an empty environment string,
     # which is not a valid optional integer for Pydantic Settings.
