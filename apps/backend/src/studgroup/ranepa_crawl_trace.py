@@ -82,7 +82,7 @@ class CrawlTrace:
         """Persist only a reviewed, non-sensitive failure category."""
         if code not in DIAGNOSTIC_REASONS:
             raise ValueError("unsafe_crawl_diagnostic")
-        if self.diagnostic is None or (self.diagnostic == "unknown" and code != "unknown"):
+        if self.diagnostic != code:
             self.diagnostic = code
             self.record("diagnostic_" + code)
 
