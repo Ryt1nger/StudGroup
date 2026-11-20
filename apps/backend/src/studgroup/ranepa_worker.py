@@ -288,6 +288,10 @@ async def process_one(
         async def notify_finalized_attempt(failure_code: str | None) -> None:
             if not settings.ranepa_crawl_notify_account_results_enabled:
                 return
+            # Scheduled batches send one grouped report; keep action-required
+            # login and CAPTCHA notices per account and pilots unchanged.
+            if run_stats is not None and failure_code not in {"login_failed", "captcha"}:
+                return
             try:
                 queued = await notify_account_crawl_result(
                     engine,
@@ -500,6 +504,8 @@ async def process_one(
         else:
             account_stats.failed_accounts = 1
             account_stats.failure_reasons[failure] = 1
+            if trace is not None and trace.diagnostic is not None:
+                account_stats.diagnostic_reasons[trace.diagnostic] = 1
         if run_stats is not None:
             run_stats.add(account_stats)
         await notify_finalized_attempt(failure)
@@ -1082,7 +1088,9 @@ async def run_batch(
             if monotonic() < deadline:
                 await asyncio.sleep(settings.ranepa_crawl_pause_seconds)
         remaining = max(0, len(eligible_ids) - completed) if eligible_ids is not None else 0
-        if settings.ranepa_crawl_notify_success_enabled:
+        if settings.ranepa_crawl_notify_success_enabled or (
+            settings.ranepa_crawl_notify_account_results_enabled and run_stats.failed_accounts
+        ):
             try:
                 queued = await notify_batch_report(
                     engine,
