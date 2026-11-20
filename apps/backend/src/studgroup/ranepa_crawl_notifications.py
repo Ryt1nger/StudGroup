@@ -39,6 +39,7 @@ class CrawlRunStats:
     failure_reasons: dict[str, int] = field(default_factory=dict)
     diagnostic_reasons: dict[str, int] = field(default_factory=dict)
     failed_accounts_detail: list[str] = field(default_factory=list)
+    successful_accounts_detail: list[str] = field(default_factory=list)
 
     def add(self, other: "CrawlRunStats") -> None:
         self.successful_accounts += other.successful_accounts
@@ -55,6 +56,7 @@ class CrawlRunStats:
         for code, count in other.diagnostic_reasons.items():
             self.diagnostic_reasons[code] = self.diagnostic_reasons.get(code, 0) + count
         self.failed_accounts_detail.extend(other.failed_accounts_detail[:15])
+        self.successful_accounts_detail.extend(other.successful_accounts_detail[:15])
 
 
 def _owner_id(value: int | None) -> bool:
@@ -244,6 +246,27 @@ def failed_account_line(
     )
 
 
+def successful_account_line(
+    *,
+    student_name: str | None,
+    telegram_group_name: str | None,
+    group_code: str | None,
+    user_id: uuid.UUID,
+    stats: CrawlRunStats,
+) -> str:
+    """One owner-only line; discovered candidates are not confirmed meetings."""
+    return (
+        f"{_safe_label(student_name, fallback='Имя не указано')} "
+        f"(ID {str(user_id)[:8]}) · "
+        f"{_safe_label(telegram_group_name, fallback='ТГ не указана')} / "
+        f"{_safe_label(group_code, fallback='группа РАНХиГС не указана')} — "
+        f"недель {stats.saved_weeks}, пар {stats.saved_lessons}, "
+        f"кандидатов {stats.discovered_sdo_candidates}, "
+        f"подтверждённых ссылок {stats.saved_sdo_links}"
+    )
+
+
+
 async def notify_account_crawl_result(
     engine,
     *,
@@ -419,6 +442,10 @@ async def notify_batch_report(
         lines = [
             "⚠️ StudGroup · итоги обхода СДО",
             f"Обработано: {processed}; успешно: {stats.successful_accounts}; ошибок: {stats.failed_accounts}.",
+            (
+                f"Ссылки: кандидатов {stats.discovered_sdo_candidates}; "
+                f"подтверждено {stats.saved_sdo_links}."
+            ),
             "Причины: " + "; ".join(causes[:4]) + ".",
         ]
         if stats.failed_accounts_detail:
@@ -426,6 +453,11 @@ async def notify_batch_report(
             lines.extend(f"• {item}" for item in stats.failed_accounts_detail[:8])
             if len(stats.failed_accounts_detail) > 8:
                 lines.append(f"• И ещё {len(stats.failed_accounts_detail) - 8} учёток.")
+        if stats.successful_accounts_detail:
+            lines.append("Успешно:")
+            lines.extend(f"• {item}" for item in stats.successful_accounts_detail[:8])
+            if len(stats.successful_accounts_detail) > 8:
+                lines.append(f"• Ещё успешных: {len(stats.successful_accounts_detail) - 8}.")
         if manual:
             lines.append(f"Требует проверки входа/согласия: {manual}; автоповтор отключён.")
         if automatic:
@@ -473,10 +505,20 @@ async def notify_batch_report(
             f"Обнаружено вариантов ссылок на курсах: {stats.discovered_sdo_candidates}.",
         ]
     )
+    if stats.successful_accounts_detail:
+        lines.append("Успешно обработаны:")
+        lines.extend(f"• {item}" for item in stats.successful_accounts_detail[:8])
+        if len(stats.successful_accounts_detail) > 8:
+            lines.append(f"• Ещё успешных: {len(stats.successful_accounts_detail) - 8}.")
     if stats.failure_reasons:
         lines.append("Причины ошибок:")
         for code, count in sorted(stats.failure_reasons.items()):
             lines.append(f"• {_REPORT_ERROR_NAMES.get(code, 'Неизвестная ошибка')}: {count}.")
+    if stats.failed_accounts_detail:
+        lines.append("Ошибки учёток:")
+        lines.extend(f"• {item}" for item in stats.failed_accounts_detail[:8])
+        if len(stats.failed_accounts_detail) > 8:
+            lines.append(f"• Ещё с ошибкой: {len(stats.failed_accounts_detail) - 8}.")
     if full_rescan:
         lines.append(f"Не завершено из запланированных: {remaining}.")
     if stop_reason == "paused":
