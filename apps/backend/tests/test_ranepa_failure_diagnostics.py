@@ -49,7 +49,7 @@ def test_http_response_and_page_state_are_classified_without_urls():
 
 def test_browser_return_includes_diagnostic_without_exception_text(monkeypatch):
     async def broken_open(*_args):
-        raise Exception("net::ERR_NAME_NOT_RESOLVED URL https://private/cookie=abc")
+        raise RuntimeError("net::ERR_NAME_NOT_RESOLVED URL https://private/cookie=abc")
 
     monkeypatch.setattr(ranepa_browser, "_open", broken_open)
     today = datetime.now(ZoneInfo("Europe/Moscow")).date()
