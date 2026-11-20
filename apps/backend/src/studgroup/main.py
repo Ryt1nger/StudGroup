@@ -18,7 +18,8 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import SQLAlchemyError, TimeoutError as PoolCheckoutTimeout
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import TimeoutError as PoolCheckoutTimeout
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from studgroup.academic_deadlines import router as deadlines_router
