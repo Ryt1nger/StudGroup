@@ -50,7 +50,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'schedule' ||
-      (github.event_name == 'push' && (contains(github.event.head_commit.message, '[run-sdo-once]') || contains(github.event.head_commit.message, '[run-sdo-all-once]') || contains(github.event.head_commit.message, '[run-sdo-recovery-pilot]') || contains(github.event.head_commit.message, '[run-sdo-retry-captcha-failures]') || contains(github.event.head_commit.message, '[run-sdo-retry-missing-weeks]'))) ||
+      (github.event_name == 'push' && (contains(github.event.head_commit.message, '[run-sdo-once]') || contains(github.event.head_commit.message, '[run-sdo-all-once]') || contains(github.event.head_commit.message, '[run-sdo-recovery-pilot]') || contains(github.event.head_commit.message, '[run-sdo-retry-captcha-failures]') || contains(github.event.head_commit.message, '[run-sdo-retry-missing-weeks]') || contains(github.event.head_commit.message, '[run-sdo-sample-15]'))) ||
       (github.event_name == 'workflow_dispatch' && inputs.pilot_group_id != '' && inputs.pilot_user_id != ''))
     runs-on: ubuntu-latest
     # Full owner-instructed rescan may include many ten-minute account timeouts.
@@ -154,11 +154,18 @@ jobs:
           if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
           uv run python -m studgroup.ranepa_worker --pilot-group-id "$PILOT_GROUP_ID" --pilot-user-id "$PILOT_USER_ID"
       - name: Process one bounded queue shift
-        if: github.event_name == 'schedule' || (github.event_name == 'push' && !contains(github.event.head_commit.message, '[run-sdo-all-once]') && !contains(github.event.head_commit.message, '[run-sdo-recovery-pilot]') && !contains(github.event.head_commit.message, '[run-sdo-retry-captcha-failures]') && !contains(github.event.head_commit.message, '[run-sdo-retry-missing-weeks]'))
+        if: github.event_name == 'schedule' || (github.event_name == 'push' && !contains(github.event.head_commit.message, '[run-sdo-all-once]') && !contains(github.event.head_commit.message, '[run-sdo-recovery-pilot]') && !contains(github.event.head_commit.message, '[run-sdo-retry-captcha-failures]') && !contains(github.event.head_commit.message, '[run-sdo-retry-missing-weeks]') && !contains(github.event.head_commit.message, '[run-sdo-sample-15]'))
         run: |
           # Keep missing optional admin ID absent until the verified DB lookup.
           if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
           uv run python -m studgroup.ranepa_worker --batch-minutes 24
+      - name: Run an approved 15-account cross-group SDO sample
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[run-sdo-sample-15]')
+        run: |
+          # Real queued and due accounts only: selection alternates groups,
+          # checks consent again and never bypasses retry/captcha safeguards.
+          if [ -z "$BOT_ADMIN_USER_ID" ]; then unset BOT_ADMIN_USER_ID; fi
+          uv run python -m studgroup.ranepa_worker --batch-minutes 160 --sample-accounts 15
       - name: Process one explicitly approved full SDO rescan
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[run-sdo-all-once]')
         env:
