@@ -973,6 +973,7 @@ def test_confirmed_moodle_meeting_is_reused_when_new_scan_has_multiple_stable_li
 
     def record(url, label):
         return {"url": url, "label": label, "course_url": course}
+
     a = record(old, "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка")
     b = record(alternate, "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка")
     inventory = {course: {old: a, alternate: b}}
