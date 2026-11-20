@@ -397,7 +397,7 @@ async def notify_account_crawl_result(
 
 
 _REPORT_ERROR_NAMES = {
-    "login_failed": "Ошибка входа или отсутствует разрешение",
+    "login_failed": "Не пройдена проверка входа, подключения или согласия",
     "captcha": "Не удалось пройти проверку CAPTCHA",
     "source_unavailable": "Сайт расписания недоступен",
     "identity_unverified": "Не подтверждена учебная группа",
@@ -470,7 +470,7 @@ async def notify_batch_report(
             if len(stats.successful_accounts_detail) > 8:
                 lines.append(f"• Ещё успешных: {len(stats.successful_accounts_detail) - 8}.")
         if manual:
-            lines.append(f"Требует проверки входа/согласия: {manual}; автоповтор отключён.")
+            lines.append(f"Требует действий по учётке: {manual}; автоповтор отключён.")
         if automatic:
             lines.append(
                 f"Ожидают автоматического повтора: {automatic}; "
