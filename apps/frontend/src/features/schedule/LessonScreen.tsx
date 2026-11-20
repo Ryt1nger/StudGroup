@@ -50,11 +50,18 @@ function useLesson(lessonId: string, state: LessonState | null, fallbackTz: stri
       }
     }
   }
-  const days = weekKeys(dayKey(nowMs, fallbackTz));
-  const week = useScheduleQuery(days[0]!, days[6]!, found === null);
-  if (!found && week.data) {
-    const lesson = week.data.lessons.find((l) => l.id === lessonId);
-    if (lesson) found = { lesson, timeZone: week.data.group_timezone };
+  // Navigation state and cached Today data can precede the SDO crawler's
+  // update. For a remote lesson, re-check the authoritative schedule even
+  // when the card was already found in navigation state.
+  const isSdo = found?.lesson.location === 'СДО' || Boolean(found?.lesson.course_url);
+  const targetDay = found ? dayKey(Date.parse(found.lesson.starts_at), found.timeZone) : dayKey(nowMs, fallbackTz);
+  const days = weekKeys(targetDay);
+  const week = useScheduleQuery(days[0]!, days[6]!, found === null || isSdo, isSdo);
+  if (week.data) {
+    const fresh = week.data.lessons.find((l) => l.id === lessonId);
+    if (fresh && (!found || (isSdo && week.isFetchedAfterMount))) {
+      found = { lesson: fresh, timeZone: week.data.group_timezone };
+    }
   }
   return { found, loading: found === null && week.isPending };
 }
@@ -68,7 +75,7 @@ function relative(startMs: number, endMs: number, nowMs: number): { text: string
   return { text: ru.schedule.lesson.statusUpcoming, kind: 'soon' };
 }
 
-function JoinBar({ url }: { url: string }) {
+function JoinBar({ url, ended }: { url: string; ended: boolean }) {
   const open = useLessonLinkClick(url);
   const { toast } = useFeedback();
   const { adapter } = useTelegram();
@@ -82,7 +89,7 @@ function JoinBar({ url }: { url: string }) {
       <div className="cta-bar lesson-join-bar">
         <a className="btn lesson-join-main" href={url} target="_blank" rel="noopener noreferrer" onClick={open}>
           <Ic name="video" size={18} />
-          Подключиться к паре
+          {ended ? 'Открыть ссылку на занятие' : 'Подключиться к паре'}
         </a>
         <button
           className="btn lesson-join-copy"
@@ -93,6 +100,20 @@ function JoinBar({ url }: { url: string }) {
         >
           <Ic name="copy" size={22} />
         </button>
+      </div>
+    </Float>
+  );
+}
+
+function CourseBar({ url }: { url: string }) {
+  const open = useLessonLinkClick(url);
+  return (
+    <Float>
+      <div className="cta-bar lesson-join-bar">
+        <a className="btn lesson-join-main" href={url} target="_blank" rel="noopener noreferrer" onClick={open}>
+          <Ic name="book" size={18} />
+          Открыть курс СДО
+        </a>
       </div>
     </Float>
   );
@@ -141,7 +162,11 @@ export function LessonScreen() {
   const minutes = Math.max(0, Math.round((endMs - startMs) / 60_000));
   const online = safeLessonUrl(lesson.online_url);
   const course = safeRanepaCourseUrl(lesson.course_url);
-  const canJoin = online !== null && lesson.status !== 'cancelled' && endMs > nowMs;
+  // Permanent meeting links remain useful after the lesson ends. Do not
+  // hide the only access path merely because the calendar time has passed.
+  const hasLessonLink = online !== null && lesson.status !== 'cancelled';
+  const canOpenCourse = online === null && course !== null
+    && lesson.status !== 'cancelled' && endMs > nowMs;
   const homework = (subject.data?.homework ?? []).filter(
     (item) => item.my_state.completion !== 'completed' && !isHomeworkArchived(item, nowMs, timeZone),
   );
@@ -186,10 +211,15 @@ export function LessonScreen() {
           ))}
         </Sec>
       ) : null}
-      {canJoin ? (
+      {hasLessonLink ? (
         <>
           <div className="cta-space" />
-          <JoinBar url={online} />
+          <JoinBar url={online} ended={endMs <= nowMs} />
+        </>
+      ) : canOpenCourse ? (
+        <>
+          <div className="cta-space" />
+          <CourseBar url={course} />
         </>
       ) : null}
     </>

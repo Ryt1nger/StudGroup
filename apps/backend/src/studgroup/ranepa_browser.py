@@ -14,7 +14,12 @@ from studgroup.ranepa_failure_diagnostics import (
     diagnose_http_response,
 )
 from studgroup.ranepa_link_states import LinkState
-from studgroup.ranepa_lms import course_detail_pages, course_links, select_lesson_link
+from studgroup.ranepa_lms import (
+    MAX_DETAIL_PAGES,
+    course_detail_pages,
+    course_links,
+    select_lesson_link,
+)
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import ExternalLesson, WeekSnapshot, group_code
 from studgroup.ranepa_ui import page_status
@@ -403,19 +408,23 @@ async def _read_course_candidates(page, context):
             current = course_links(html)
             verified = True
             for link in current:
-                found.setdefault(link.url, link)
+                previous = found.get(link.url)
+                if previous is None or len(link.label) > len(previous.label):
+                    found[link.url] = link
             for url in course_detail_pages(html):
                 child_pages[url] = None
         except SourceAccessError:
             pass
         if attempt == 0:
             await _expand_lms_sections(page)
-        if verified and attempt >= 2:
-            break
-        await page.wait_for_timeout(250)
+        # Moodle can hydrate activity sections after the course shell renders.
+        # Do not stop after the first link: later sections may contain OTHER
+        # teachers' meetings. Keep the read bounded to eight observations.
+        if attempt < 7:
+            await page.wait_for_timeout(250)
     if not verified:
         return (), False
-    for url in tuple(child_pages)[:8]:
+    for url in tuple(child_pages)[:MAX_DETAIL_PAGES]:
         child = await context.new_page()
         try:
             await child.goto(url, wait_until="domcontentloaded", timeout=10000)
@@ -431,7 +440,9 @@ async def _read_course_candidates(page, context):
             for _ in range(2):
                 html = await child.content()
                 for link in course_links(html, require_course=False):
-                    found.setdefault(link.url, link)
+                    previous = found.get(link.url)
+                    if previous is None or len(link.label) > len(previous.label):
+                        found[link.url] = link
                 await child.wait_for_timeout(250)
         except Exception as error:  # noqa: BLE001 -- best-effort optional nested page
             # Log only the exception type: URLs can carry session data.
@@ -449,6 +460,7 @@ async def resolve_sdo_exits(
     *,
     solve_captcha=None,
     on_captcha=None,
+    course_cache: dict | None = None,
 ) -> SdoLinkResolution:
     """Follow LK SDO exits; save all course candidates for future safe matching."""
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
@@ -457,7 +469,8 @@ async def resolve_sdo_exits(
     states = {}
     courses = {}
     candidates_by_lesson = {}
-    course_cache = {}
+    if course_cache is None:
+        course_cache = {}
     for lesson, exit_url in zip(result.snapshot.lessons, result.sdo_exits, strict=True):
         if lesson.room != "СДО":
             continue
@@ -542,6 +555,9 @@ async def resolve_sdo_exits(
                             course_cache.pop(course, None)
                             continue
                         if not candidates:
+                            # An empty but verified shell is not proof the
+                            # course will stay empty on a later week.
+                            course_cache.pop(course, None)
                             empty_course_reads = 8
                             break
                         candidates_by_lesson[key] = candidates

@@ -202,12 +202,13 @@ export function useRequestRanepaRefresh() {
   });
 }
 
-export function useScheduleQuery(start: string, end: string, enabled = true) {
+export function useScheduleQuery(start: string, end: string, enabled = true, refreshOnMount = false) {
   return useQuery({
     queryKey: queryKeys.schedule(start, end),
     queryFn: () => api.schedule(start, end),
     enabled,
     ...scheduleQueryOptions,
+    ...(refreshOnMount ? { refetchOnMount: 'always' as const } : {}),
   });
 }
 

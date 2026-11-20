@@ -14,9 +14,12 @@ from studgroup.ranepa_schedule import normalized
 URL_BASE = "https://lms.ranepa.ru"
 DATE = re.compile(r"(?<!\d)(\d{1,2})\.(\d{1,2})\.(20\d{2}|\d{2})(?!\d)")
 TIME_RANGE = re.compile(r"(?<!\d)(\d{1,2})[.:](\d{2})\s*[-–]\s*\d{1,2}[.:]\d{2}(?!\d)")
+# Moodle labels frequently abbreviate a semester into "9, 16, 23.11".
+# Such dates are not full DD.MM.YYYY dates and must not be treated as unknown.
+DATE_LIST = re.compile(r"(?<!\d)(\d{1,2}(?:\s*,\s*\d{1,2})*)\.(\d{1,2})(?![.\d])")
 INLINE_JOIN = re.compile(r"https://[^\s<>\"']+", re.IGNORECASE)
 MAX_CANDIDATES = 80
-MAX_DETAIL_PAGES = 8
+MAX_DETAIL_PAGES = 16
 LMS_MEETING_PATHS = frozenset(
     {"/mod/url/view.php", "/mod/mtslinkrnhgs/view.php", "/mod/bigbluebuttonbn/view.php"}
 )
@@ -85,10 +88,15 @@ def course_detail_pages(html: str) -> tuple[str, ...]:
     for anchor in document.root.tags("a"):
         url = _canonical_lms_activity(anchor.attrs.get("href", ""), LMS_DETAIL_PATHS)
         if url:
-            pages[url] = None
-        if len(pages) >= MAX_DETAIL_PAGES:
-            break
-    return tuple(pages)
+            # Relevant text pages may appear BELOW unrelated handouts/books.
+            # Prefer their titles without ever crossing the Moodle origin.
+            label = normalized(anchor.text())
+            priority = any(
+                word in label
+                for word in ("ссылк", "заняти", "лекц", "вебинар", "конференц", "подключ")
+            )
+            pages[url] = pages.get(url, False) or priority
+    return tuple(sorted(pages, key=lambda url: not pages[url]))[:MAX_DETAIL_PAGES]
 
 
 def _nodes_with_ancestors(node, ancestors=()):
@@ -181,6 +189,25 @@ def _group_token(label: str) -> str:
     return normalized(label.split(" / ", 1)[0]).replace(" ", "")
 
 
+def _lesson_dates(label: str, *, year: int) -> set[date]:
+    """Recognise both explicit dates and semester day-lists, with validation."""
+    found = set()
+    for match in DATE.finditer(label):
+        try:
+            value = int(match[3])
+            found.add(date(2000 + value if value < 100 else value, int(match[2]), int(match[1])))
+        except ValueError:
+            continue
+    for match in DATE_LIST.finditer(label):
+        month = int(match[2])
+        for day_text in match[1].split(","):
+            try:
+                found.add(date(year, month, int(day_text.strip())))
+            except ValueError:
+                continue
+    return found
+
+
 def select_lesson_link(
     links: tuple[LinkCandidate, ...],
     *,
@@ -199,6 +226,7 @@ def select_lesson_link(
     dated = []
     permanent = []
     identity_matches = []
+    undated = []
     for link in links:
         label = normalized(link.label)
         compact = label.replace(" ", "").replace("_", "")
@@ -212,26 +240,27 @@ def select_lesson_link(
         if starts is not None and times and starts not in times:
             continue
         identity_matches.append(link)
-        found_dates = set()
-        for match in DATE.finditer(link.label):
-            try:
-                year = int(match[3])
-                found_dates.add(
-                    date(2000 + year if year < 100 else year, int(match[2]), int(match[1]))
-                )
-            except ValueError:
-                continue
+        found_dates = _lesson_dates(link.label, year=day.year)
         if found_dates and day in found_dates:
             dated.append(link)
         elif not found_dates and "постоянн" in label:
             permanent.append(link)
+        elif not found_dates:
+            # A Moodle "Гиперссылка" with exact teacher AND stream identity
+            # is a usable meeting when it is the only such candidate. Multiple
+            # different links stay unverified rather than choosing at random.
+            undated.append(link)
     matches = dated or permanent
-    # A duplicate mention of the very same meeting is one choice, not ambiguity.
     unique = {link.url: link for link in matches}
     if len(unique) == 1:
         return LinkChoice(LinkState.MATCHED, next(iter(unique)), tuple(unique.values()))
     if unique:
         return LinkChoice(LinkState.AMBIGUOUS, None, tuple(unique.values()))
+    undated_unique = {link.url: link for link in undated}
+    if len(undated_unique) == 1:
+        return LinkChoice(
+            LinkState.MATCHED, next(iter(undated_unique)), tuple(undated_unique.values())
+        )
     if identity_matches:
         return LinkChoice(LinkState.TIMING_UNVERIFIED, None, tuple(identity_matches))
     return LinkChoice(LinkState.NOT_FOUND, None, ())
