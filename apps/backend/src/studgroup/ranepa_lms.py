@@ -13,10 +13,10 @@ from studgroup.ranepa_schedule import normalized
 
 URL_BASE = "https://lms.ranepa.ru"
 DATE = re.compile(r"(?<!\d)(\d{1,2})\.(\d{1,2})\.(20\d{2}|\d{2})(?!\d)")
-TIME_RANGE = re.compile(r"(?<!\\d)(\\d{1,2})[.:](\\d{2})\\s*[-–]\\s*\\d{1,2}[.:]\\d{2}(?!\\d)")
+TIME_RANGE = re.compile(r"(?<!\d)(\d{1,2})[.:](\d{2})\s*[-–]\s*\d{1,2}[.:]\d{2}(?!\d)")
 # Moodle labels frequently abbreviate a semester into "9, 16, 23.11".
 # Such dates are not full DD.MM.YYYY dates and must not be treated as unknown.
-DATE_LIST = re.compile(r"(?<!\\d)(\\d{1,2}(?:\\s*,\\s*\\d{1,2})*)\\.(\\d{1,2})(?![.\\d])")
+DATE_LIST = re.compile(r"(?<!\d)(\d{1,2}(?:\s*,\s*\d{1,2})*)\.(\d{1,2})(?![.\d])")
 INLINE_JOIN = re.compile(r"https://[^\s<>\"']+", re.IGNORECASE)
 MAX_CANDIDATES = 80
 MAX_DETAIL_PAGES = 8
