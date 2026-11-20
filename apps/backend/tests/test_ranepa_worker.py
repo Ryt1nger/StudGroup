@@ -1161,8 +1161,14 @@ def test_failed_month_recheck_after_captcha_is_not_called_site_outage(monkeypatc
     trace = CrawlTrace()
     status = asyncio.run(
         ranepa_worker._collect(
-            None, uuid4(), uuid4(), "A-001", "login", "password",
-            date(2026, 11, 20), captcha_client=SimpleNamespace(max_tasks=1),
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "login",
+            "password",
+            date(2026, 11, 20),
+            captcha_client=SimpleNamespace(max_tasks=1),
             trace=trace,
         )
     )
@@ -1243,8 +1249,15 @@ def test_bounded_optional_sdo_discovery_never_invalidates_six_committed_weeks(mo
     trace = CrawlTrace()
     outcome = asyncio.run(
         ranepa_worker._collect(
-            None, uuid4(), uuid4(), "A-001", "login", "password",
-            date(2026, 11, 20), trace=trace, stats=stats,
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "login",
+            "password",
+            date(2026, 11, 20),
+            trace=trace,
+            stats=stats,
         )
     )
     assert outcome is None
@@ -1265,8 +1278,15 @@ def test_account_timeout_preserves_complete_snapshots(monkeypatch):
     stats = CrawlRunStats(saved_weeks=6)
     result = asyncio.run(
         collect_bounded(
-            None, uuid4(), uuid4(), "A-001", "login", "password",
-            date(2026, 11, 20), trace=trace, stats=stats,
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "login",
+            "password",
+            date(2026, 11, 20),
+            trace=trace,
+            stats=stats,
         )
     )
     assert result is None
@@ -1276,8 +1296,14 @@ def test_account_timeout_preserves_complete_snapshots(monkeypatch):
     incomplete = CrawlRunStats(saved_weeks=5)
     result = asyncio.run(
         collect_bounded(
-            None, uuid4(), uuid4(), "A-001", "login", "password",
-            date(2026, 11, 20), stats=incomplete,
+            None,
+            uuid4(),
+            uuid4(),
+            "A-001",
+            "login",
+            "password",
+            date(2026, 11, 20),
+            stats=incomplete,
         )
     )
     assert result == "source_unavailable"
