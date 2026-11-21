@@ -32,6 +32,7 @@ def test_trace_remembers_preceding_step_and_session_mode():
     assert obj.preceding_step == "month_requested"
     assert obj.session_available
     assert obj.result_code == "captcha"
+    assert obj.notification_state is None
     assert json.loads(obj.events_json)[2] == {"step": "captcha_month", "elapsed_ms": 6000}
     assert all(set(item) == {"step", "elapsed_ms"} for item in json.loads(obj.events_json))
 
@@ -78,7 +79,14 @@ def test_crawl_trace_is_persisted_per_job_attempt_without_credentials(tmp_path):
                 trace = CrawlTrace()
                 trace.record("month_requested")
                 trace.mark_captcha("month")
-                db.add(trace.observation(job_id=job.id, attempt=1, failure_code="captcha"))
+                db.add(
+                    trace.observation(
+                        job_id=job.id,
+                        attempt=1,
+                        failure_code="captcha",
+                        notification_pending=True,
+                    )
+                )
                 await db.commit()
             async with AsyncSession(engine) as db:
                 saved = await db.scalar(select(RanepaCrawlObservation))
@@ -86,6 +94,7 @@ def test_crawl_trace_is_persisted_per_job_attempt_without_credentials(tmp_path):
                 assert saved.captcha_location == "month"
                 assert saved.preceding_step == "month_requested"
                 assert saved.attempt == 1
+                assert saved.notification_state == "pending"
                 assert "password" not in saved.events_json
                 assert "https:" not in saved.events_json
         finally:

@@ -2,7 +2,7 @@ name: RANEPA paced crawl
 
 # Owner-approved scheduled launch: default-branch only, serial, fail-closed
 # on legal/credential/Telegram preflight. No student is accessed without consent.
-# Scheduled crawls are enabled autonomously and require verified schema 0065.
+# Scheduled crawls are enabled autonomously and require verified schema 0066.
 # Manual and tagged owner actions retain their existing separate safeguards.
 on:
   # Explicit one-off owner activation on a tagged main-branch commit.
@@ -137,11 +137,11 @@ jobs:
           # private admin panel in the same production database. Do not print IDs.
       - name: Install pinned backend dependencies
         run: uv sync --frozen
-      - name: Require Alembic 0065 before any SDO account access
+      - name: Require Alembic 0066 before any SDO account access
         run: |
           current="$(uv run alembic current)"
-          if ! printf '%s\n' "$current" | grep -Eq '(^|[^0-9])0065([^0-9]|$)'; then
-            echo "::error title=Production migration required::Apply and verify Alembic 0064 and 0065 through the controlled release process before any SDO crawl."
+          if ! printf '%s\n' "$current" | grep -Eq '(^|[^0-9])0066([^0-9]|$)'; then
+            echo "::error title=Production migration required::Apply and verify Alembic 0064 through 0066 through the controlled release process before any SDO crawl."
             exit 1
           fi
       - name: Install browser

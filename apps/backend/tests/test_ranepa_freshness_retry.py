@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.models import Base, Group, Membership, RanepaCrawlJob, User
 from studgroup.ranepa_crawl_jobs import (
+    MAX_ATTEMPTS,
     REFRESH,
     claim_next,
     enqueue_week,
@@ -32,7 +33,10 @@ from studgroup.ranepa_crawl_plan import CrawlCandidate
 def test_backoff_is_reasoned_and_bounded(failure, expected):
     now = datetime(2026, 11, 16, 10, tzinfo=UTC)
     assert retry_at(now, failure_code=failure, attempts=1) == now + expected
-    assert retry_at(now, failure_code=failure, attempts=5) <= now + REFRESH
+    if failure is not None:
+        before_terminal = max(1, MAX_ATTEMPTS[failure] - 1)
+        assert retry_at(now, failure_code=failure, attempts=before_terminal) <= now + REFRESH
+        assert retry_at(now, failure_code=failure, attempts=MAX_ATTEMPTS[failure]) is None
     assert retry_at(now, failure_code="login_failed", attempts=1) is None
 
 
@@ -130,6 +134,121 @@ def test_retry_across_week_boundaries_and_manual_override(tmp_path):
 def test_migration_model_has_retry_fields():
     assert hasattr(RanepaCrawlJob, "next_attempt_at")
     assert hasattr(RanepaCrawlJob, "retry_reason")
+
+
+def test_retry_budget_moves_repeated_failure_to_dead_letter(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/dead-letter.db")
+        now = datetime(2026, 11, 16, 10, tzinfo=UTC)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                group = Group(
+                    id=uuid4(),
+                    name="Dead letter",
+                    telegram_chat_id=-66120,
+                    academic_group_code="DL",
+                    timezone="Europe/Moscow",
+                )
+                user = User(id=uuid4(), telegram_user_id=66120, display_name="Student")
+                db.add_all([group, user])
+                await db.flush()
+                db.add(
+                    Membership(
+                        id=uuid4(),
+                        group_id=group.id,
+                        user_id=user.id,
+                        status="active",
+                        role="student",
+                    )
+                )
+                await db.flush()
+                await enqueue_week(
+                    db, date(2026, 11, 16), [CrawlCandidate(group.id, user.id)], now=now
+                )
+                job = await claim_next(db, now=now)
+                assert job is not None
+                job.attempts = MAX_ATTEMPTS["captcha"]
+                assert await finish(db, job.id, group.id, user.id, failure_code="captcha", now=now)
+                assert job.state == "dead_letter"
+                assert job.next_attempt_at is None
+                assert job.retry_reason == "attempts_exhausted:captcha"
+
+                await enqueue_week(
+                    db,
+                    date(2026, 11, 16),
+                    [CrawlCandidate(group.id, user.id)],
+                    now=now + timedelta(days=1),
+                )
+                assert job.state == "dead_letter"
+                assert await claim_next(db, now=now + timedelta(days=1)) is None
+
+                await enqueue_week(
+                    db,
+                    date(2026, 11, 16),
+                    [CrawlCandidate(group.id, user.id)],
+                    now=now + timedelta(days=1),
+                    force_refresh=True,
+                )
+                assert job.state == "queued"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_repeated_expired_lease_is_dead_lettered_without_blocking_next_job(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/stale-lease.db")
+        now = datetime(2026, 11, 16, 10, tzinfo=UTC)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                group = Group(
+                    id=uuid4(),
+                    name="Lease",
+                    telegram_chat_id=-66121,
+                    academic_group_code="LEASE",
+                    timezone="Europe/Moscow",
+                )
+                users = [
+                    User(id=uuid4(), telegram_user_id=66121 + i, display_name=f"U{i}")
+                    for i in range(2)
+                ]
+                db.add_all([group, *users])
+                await db.flush()
+                for user in users:
+                    db.add(
+                        Membership(
+                            id=uuid4(),
+                            group_id=group.id,
+                            user_id=user.id,
+                            status="active",
+                            role="student",
+                        )
+                    )
+                await db.flush()
+                await enqueue_week(
+                    db,
+                    date(2026, 11, 16),
+                    [CrawlCandidate(group.id, user.id) for user in users],
+                    now=now,
+                )
+                stale = await claim_next(db, now=now)
+                assert stale is not None
+                stale.attempts = MAX_ATTEMPTS["internal"]
+                stale.claimed_at = now - timedelta(hours=2)
+                next_job = await claim_next(db, now=now)
+                assert next_job is not None and next_job.id != stale.id
+                assert stale.state == "dead_letter"
+                assert stale.retry_reason == "lease_expired_exhausted"
+                assert stale.next_attempt_at is None
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
 
 
 def test_later_success_recovers_from_historical_login_failure(tmp_path):
