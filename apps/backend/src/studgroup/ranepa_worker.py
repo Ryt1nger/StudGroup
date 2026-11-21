@@ -55,6 +55,7 @@ from studgroup.ranepa_crawl_notifications import (
     notify_batch_report,
     notify_captcha_detected,
     notify_successful_crawl,
+    recover_account_crawl_notifications,
     successful_account_line,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate
@@ -335,27 +336,7 @@ async def process_one(
                     failure_code=failure_code,
                     failure_detail=detail or (trace.failure_detail if trace is not None else None),
                     diagnostic_code=trace.diagnostic if trace is not None else None,
-                    last_step=(
-                        next(
-                            (
-                                event["step"]
-                                for event in reversed(trace.events)
-                                if event["step"]
-                                in {
-                                    "month_requested",
-                                    "month_recheck",
-                                    "week_requested",
-                                    "week_recheck",
-                                    "week_retry",
-                                    "sdo_exits_requested",
-                                    "sdo_exits_finished",
-                                }
-                            ),
-                            None,
-                        )
-                        if trace is not None
-                        else None
-                    ),
+                    last_step=trace.last_notification_step() if trace is not None else None,
                     stats=account_stats,
                 )
             except Exception:  # noqa: BLE001
@@ -397,7 +378,13 @@ async def process_one(
                 )
             if finished and trace is not None:
                 db.add(
-                    trace.observation(job_id=job_id, attempt=attempt, failure_code="login_failed")
+                    trace.observation(
+                        job_id=job_id,
+                        attempt=attempt,
+                        failure_code="login_failed",
+                        stats=account_stats,
+                        notification_pending=settings.ranepa_crawl_notify_account_results_enabled,
+                    )
                 )
             await db.commit()
             if finished and run_stats is not None:
@@ -557,7 +544,15 @@ async def process_one(
     async with AsyncSession(engine) as db:
         finished = await finish(db, job_id, group_id, user_id, failure_code=failure)
         if finished and trace is not None:
-            db.add(trace.observation(job_id=job_id, attempt=attempt, failure_code=failure))
+            db.add(
+                trace.observation(
+                    job_id=job_id,
+                    attempt=attempt,
+                    failure_code=failure,
+                    stats=account_stats,
+                    notification_pending=settings.ranepa_crawl_notify_account_results_enabled,
+                )
+            )
         if finished and settings.ranepa_captcha_guard_enabled:
             paused, consecutive = await record_crawl_outcome(
                 db,
@@ -1246,6 +1241,13 @@ async def run_batch(
     stop_reason = "time_limit"
     try:
         await ensure_owner_for_crawl(engine, settings)
+        if settings.ranepa_crawl_notify_account_results_enabled:
+            try:
+                await recover_account_crawl_notifications(
+                    engine, owner_id=settings.bot_admin_user_id
+                )
+            except Exception:  # noqa: BLE001
+                log_captcha_stage("owner_account_notice_recovery_unavailable")
         today = datetime.now(ZoneInfo("Europe/Moscow")).date()
         await prepare_week(engine, today, settings, rescan_all=rescan_all)
         if sample_accounts is not None:
@@ -1391,6 +1393,13 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
     run_stats = CrawlRunStats()
     try:
         await ensure_owner_for_crawl(engine, settings)
+        if settings.ranepa_crawl_notify_account_results_enabled:
+            try:
+                await recover_account_crawl_notifications(
+                    engine, owner_id=settings.bot_admin_user_id
+                )
+            except Exception:  # noqa: BLE001
+                log_captcha_stage("owner_account_notice_recovery_unavailable")
         today = datetime.now(ZoneInfo("Europe/Moscow")).date()
         await prepare_week(
             engine,

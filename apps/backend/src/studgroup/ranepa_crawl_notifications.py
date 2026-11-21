@@ -14,8 +14,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.bot_admin import enqueue_once
-from studgroup.models import RanepaManualCaptcha
-from studgroup.ranepa_crawl_jobs import retry_at
+from studgroup.models import (
+    Group,
+    RanepaCrawlJob,
+    RanepaCrawlObservation,
+    RanepaManualCaptcha,
+    User,
+)
+from studgroup.ranepa_crawl_jobs import retry_at, terminal_failure
 from studgroup.ranepa_failure_diagnostics import DIAGNOSTIC_REASONS
 
 _CAPTCHA_LOCATIONS = {
@@ -203,6 +209,11 @@ def _action(code: str, detail: str | None, attempt: int) -> str:
 def _retry_summary(code: str, attempt: int) -> str:
     if code == "login_failed":
         return "Нужна проверка входа или согласия. Автоповтор отключён."
+    if terminal_failure(code, attempt):
+        return (
+            "Лимит автоматических попыток исчерпан. Нужна ручная проверка причины "
+            "перед новым запуском."
+        )
     now = datetime.now(UTC)
     scheduled = retry_at(now, failure_code=code, attempts=attempt)
     if scheduled is None:
@@ -267,7 +278,7 @@ def successful_account_line(
     telegram_group_name: str | None,
     group_code: str | None,
     user_id: uuid.UUID,
-    stats: CrawlRunStats,
+    stats: CrawlRunStats | None,
 ) -> str:
     """One owner-only line; discovered candidates are not confirmed meetings."""
     return (
@@ -296,6 +307,7 @@ async def notify_account_crawl_result(
     diagnostic_code: str | None = None,
     telegram_group_name: str | None = None,
     last_step: str | None = None,
+    historical_replay: bool = False,
 ) -> bool:
     """One private message per finalized account attempt, even when extraction fails.
 
@@ -344,50 +356,84 @@ async def notify_account_crawl_result(
     group = _safe_label(group_code, fallback="группа не указана")
     telegram_group = _safe_label(telegram_group_name, fallback="не указана")
     name = _safe_label(student_name, fallback="студент")
+    if stats is None:
+        result_line = (
+            "Результат: количество сохранённых недель, занятий и ссылок не было записано в истории."
+        )
+        has_saved_schedule = False
+    else:
+        result_line = (
+            f"Результат: недель {stats.saved_weeks}, "
+            f"занятий {stats.saved_lessons}, "
+            f"найдено ссылок {stats.discovered_sdo_candidates}, "
+            f"подтверждено {stats.saved_sdo_links}."
+        )
+        has_saved_schedule = stats.saved_weeks > 0 or stats.saved_lessons > 0
     if failure_code is not None:
         cause = _failure_summary(failure_code, failure_detail, diagnostic_code)
-        message = "\n".join(
-            [
-                "❌ StudGroup · ошибка обхода СДО",
-                f"Студент: {name} · ID {str(user_id)[:8]} · попытка {attempt}",
-                f"Группа ТГ: {telegram_group}",
-                f"Группа РАНХиГС: {group}",
-                f"Этап: {_stage(failure_code, failure_detail, last_step)}",
-                f"Причина: {cause}.",
-                f"Что делать: {_action(failure_code, failure_detail, attempt)}",
-                (
-                    f"Результат: недель {stats.saved_weeks}, "
-                    f"занятий {stats.saved_lessons}, "
-                    f"найдено ссылок {stats.discovered_sdo_candidates}, "
-                    f"подтверждено {stats.saved_sdo_links}."
-                ),
-            ]
-        )
-    else:
-        if stats.saved_sdo_links > 0 or stats.saved_sdo_courses > 0:
-            heading = "✅ StudGroup · данные СДО извлечены"
-            outcome = "Подтверждённые ссылки или страницы курсов успешно сохранены."
-        elif stats.saved_weeks > 0:
-            heading = "⚠️ StudGroup · данные СДО не извлечены"
-            outcome = (
-                "Расписание сохранено, но подтверждённых ссылок или страниц курсов СДО не найдено. "
-                "Это не обязательно ошибка входа — требуется проверка доступности материалов."
+        lines = [
+            (
+                "⚠️ StudGroup · обход СДО завершён частично"
+                if has_saved_schedule
+                else "❌ StudGroup · ошибка обхода СДО"
+            ),
+            f"Студент: {name} · ID {str(user_id)[:8]} · попытка {attempt}",
+            f"Группа ТГ: {telegram_group}",
+            f"Группа РАНХиГС: {group}",
+            f"Этап: {_stage(failure_code, failure_detail, last_step)}",
+            f"Причина: {cause}.",
+            f"Что делать: {_action(failure_code, failure_detail, attempt)}",
+            result_line,
+        ]
+        if historical_replay:
+            lines.append(
+                "Источник: уведомление восстановлено из истории; новый обход СДО не запускался."
             )
+        message = "\n".join(lines)
+    else:
+        if stats is None:
+            heading = "ℹ️ StudGroup · результат обхода восстановлен"
+            outcome = (
+                "История содержит успешный технический результат, но не содержит доказательства "
+                "количества сохранённых недель или ссылок."
+            )
+            saved_line = "Сохранённые недели и занятия: нет данных в истории."
+            links_line = "Ссылки и страницы курсов: нет данных в истории."
+            candidates_line = "Варианты ссылок: нет данных в истории."
         else:
-            heading = "⚠️ StudGroup · данные СДО не подтверждены"
-            outcome = "Подтверждённые данные расписания или СДО не получены."
-        message = "\n".join(
-            [
-                heading,
-                f"Студент: {name}.",
-                f"Группа ТГ: {telegram_group}. Группа РАНХиГС: {group}.",
-                f"Учётка: {str(user_id)[:8]}. Попытка: {attempt}.",
-                outcome,
-                f"Сохранено недель: {stats.saved_weeks}; занятий: {stats.saved_lessons}.",
-                f"Ссылок СДО: {stats.saved_sdo_links}; страниц курсов: {stats.saved_sdo_courses}.",
-                f"Обнаружено вариантов ссылок: {stats.discovered_sdo_candidates}.",
-            ]
-        )
+            if stats.saved_sdo_links > 0 or stats.saved_sdo_courses > 0:
+                heading = "✅ StudGroup · данные СДО извлечены"
+                outcome = "Подтверждённые ссылки или страницы курсов успешно сохранены."
+            elif stats.saved_weeks > 0:
+                heading = "⚠️ StudGroup · данные СДО не извлечены"
+                outcome = (
+                    "Расписание сохранено, но подтверждённых ссылок или страниц курсов СДО "
+                    "не найдено. Это не обязательно ошибка входа — требуется проверка "
+                    "доступности материалов."
+                )
+            else:
+                heading = "⚠️ StudGroup · данные СДО не подтверждены"
+                outcome = "Подтверждённые данные расписания или СДО не получены."
+            saved_line = f"Сохранено недель: {stats.saved_weeks}; занятий: {stats.saved_lessons}."
+            links_line = (
+                f"Ссылок СДО: {stats.saved_sdo_links}; страниц курсов: {stats.saved_sdo_courses}."
+            )
+            candidates_line = f"Обнаружено вариантов ссылок: {stats.discovered_sdo_candidates}."
+        lines = [
+            heading,
+            f"Студент: {name}.",
+            f"Группа ТГ: {telegram_group}. Группа РАНХиГС: {group}.",
+            f"Учётка: {str(user_id)[:8]}. Попытка: {attempt}.",
+            outcome,
+            saved_line,
+            links_line,
+            candidates_line,
+        ]
+        if historical_replay:
+            lines.append(
+                "Источник: уведомление восстановлено из истории; новый обход СДО не запускался."
+            )
+        message = "\n".join(lines)
     async with AsyncSession(engine) as db:
         queued = await enqueue_once(
             db,
@@ -397,6 +443,80 @@ async def notify_account_crawl_result(
         )
         await db.commit()
         return queued
+
+
+async def recover_account_crawl_notifications(
+    engine, *, owner_id: int | None, limit: int = 20
+) -> int:
+    """Rebuild only new pending notices from durable privacy-safe outcomes.
+
+    Legacy observations have ``notification_state=NULL`` and are intentionally ignored.
+    The outbox dedup key makes a crash after enqueue but before marking the observation safe.
+    """
+    if not _owner_id(owner_id):
+        return 0
+    if not 1 <= limit <= 100:
+        raise ValueError("invalid_notification_recovery_limit")
+    async with AsyncSession(engine, expire_on_commit=False) as db:
+        pending = (
+            await db.execute(
+                select(RanepaCrawlObservation, RanepaCrawlJob, Group, User)
+                .join(RanepaCrawlJob, RanepaCrawlJob.id == RanepaCrawlObservation.job_id)
+                .join(Group, Group.id == RanepaCrawlJob.group_id)
+                .join(User, User.id == RanepaCrawlJob.user_id)
+                .where(RanepaCrawlObservation.notification_state == "pending")
+                .order_by(RanepaCrawlObservation.observed_at, RanepaCrawlObservation.job_id)
+                .limit(limit)
+            )
+        ).all()
+    recovered = 0
+    for observation, job, group, user in pending:
+        counts = (
+            observation.saved_weeks,
+            observation.saved_lessons,
+            observation.saved_sdo_links,
+            observation.discovered_sdo_candidates,
+            observation.saved_sdo_courses,
+        )
+        stats = (
+            CrawlRunStats(
+                saved_weeks=counts[0],
+                saved_lessons=counts[1],
+                saved_sdo_links=counts[2],
+                discovered_sdo_candidates=counts[3],
+                saved_sdo_courses=counts[4],
+            )
+            if all(value is not None for value in counts)
+            else None
+        )
+        failure_code = None if observation.result_code == "succeeded" else observation.result_code
+        await notify_account_crawl_result(
+            engine,
+            owner_id=owner_id,
+            job_id=job.id,
+            attempt=observation.attempt,
+            user_id=user.id,
+            group_code=group.academic_group_code,
+            telegram_group_name=group.name,
+            student_name=user.display_name,
+            failure_code=failure_code,
+            failure_detail=observation.failure_detail,
+            diagnostic_code=observation.diagnostic_code,
+            last_step=observation.last_step,
+            stats=stats,
+            historical_replay=True,
+        )
+        async with AsyncSession(engine) as db:
+            saved = await db.get(
+                RanepaCrawlObservation,
+                (observation.job_id, observation.attempt),
+                with_for_update=True,
+            )
+            if saved is not None and saved.notification_state == "pending":
+                saved.notification_state = "queued"
+                recovered += 1
+                await db.commit()
+    return recovered
 
 
 _REPORT_ERROR_NAMES = {

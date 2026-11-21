@@ -28,11 +28,25 @@ RETRY_BACKOFF = {
     "internal": timedelta(hours=1),
     "captcha": timedelta(hours=3),
 }
+MAX_ATTEMPTS = {
+    "source_unavailable": 5,
+    "parse_failed": 4,
+    "identity_unverified": 3,
+    "internal": 3,
+    "captcha": 5,
+}
+
+
+def terminal_failure(failure_code: str | None, attempts: int) -> bool:
+    """Stop automatic work when credentials or a bounded retry budget is exhausted."""
+    if failure_code == "login_failed":
+        return True
+    return failure_code in MAX_ATTEMPTS and attempts >= MAX_ATTEMPTS[failure_code]
 
 
 def retry_at(now: datetime, *, failure_code: str | None, attempts: int) -> datetime | None:
     """Bound every retry and require user action for invalid credentials."""
-    if failure_code == "login_failed":
+    if terminal_failure(failure_code, attempts):
         return None
     if failure_code is None:
         return now + REFRESH
@@ -42,8 +56,12 @@ def retry_at(now: datetime, *, failure_code: str | None, attempts: int) -> datet
     return now + min(delay, timedelta(hours=6))
 
 
-def retry_reason(failure_code: str | None) -> str | None:
-    return "credentials_required" if failure_code == "login_failed" else failure_code
+def retry_reason(failure_code: str | None, attempts: int) -> str | None:
+    if failure_code == "login_failed":
+        return "credentials_required"
+    if terminal_failure(failure_code, attempts):
+        return f"attempts_exhausted:{failure_code}"
+    return failure_code
 
 
 FAILURES = {
@@ -116,9 +134,9 @@ async def enqueue_week(
             due = last_retry_at is None or last_retry_at <= now
             can_retry = existing.failure_code != "login_failed" or force_refresh
             if (
-                existing.state in {"succeeded", "failed", "covered"}
+                existing.state in {"succeeded", "failed", "covered", "dead_letter"}
                 and can_retry
-                and (force_refresh or due)
+                and (force_refresh or (due and existing.state != "dead_letter"))
             ):
                 existing.state = "queued"
                 existing.priority = priority
@@ -304,7 +322,16 @@ async def claim_next(
         .limit(1)
     )
     if stale is not None:
-        stale.state = "queued"
+        if stale.attempts >= MAX_ATTEMPTS["internal"]:
+            stale.state = "dead_letter"
+            stale.failure_code = "internal"
+            stale.retry_reason = "lease_expired_exhausted"
+            stale.next_attempt_at = None
+            stale.finished_at = now
+        else:
+            stale.state = "queued"
+            stale.retry_reason = "lease_expired"
+            stale.next_attempt_at = now
         stale.claimed_at = None
     # Filter not-yet-due accounts IN the DB query, not after claiming the
     # first row; one cooling down must never block another eligible account.
@@ -401,13 +428,16 @@ async def finish(db, job_id, group_id, user_id, *, failure_code=None, now=None) 
     job = await db.get(RanepaCrawlJob, job_id, with_for_update=True)
     if job is None or job.state != "running" or job.group_id != group_id or job.user_id != user_id:
         return False
-    job.state = "failed" if failure_code else "succeeded"
+    exhausted = failure_code != "login_failed" and terminal_failure(failure_code, job.attempts)
+    job.state = (
+        "dead_letter" if failure_code and exhausted else "failed" if failure_code else "succeeded"
+    )
     job.failure_code = failure_code
     job.finished_at = now or datetime.now(UTC)
     job.next_attempt_at = retry_at(
         job.finished_at, failure_code=failure_code, attempts=job.attempts
     )
-    job.retry_reason = retry_reason(failure_code)
+    job.retry_reason = retry_reason(failure_code, job.attempts)
     job.claimed_at = None
     await db.flush()
     return True

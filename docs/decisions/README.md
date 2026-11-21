@@ -35,6 +35,7 @@ Accepted decisions:
 - [ADR-016: Operator-only dashboard access](ADR-016-owner-dashboard-access.md)
 - [ADR-017: Mandatory legal acceptance at first-run completion](ADR-017-mandatory-onboarding-consent.md)
 - [ADR-021: Evidence-preserving university schedule sync and coverage-aware materialization](ADR-021-reliability-schedule-materialization.md)
+- [ADR-022: Durable crawl outcomes and bounded retries](ADR-022-durable-crawl-outcomes-and-bounded-retries.md)
 
 Proposed decisions:
 
