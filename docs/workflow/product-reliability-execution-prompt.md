@@ -11,7 +11,7 @@ canary/backfill, merge и deploy. Пиши по-русски простым яз
 
 ЖИВОЙ CHECKPOINT
 Последнее обновление: 21 ноября 2026 года, Europe/Moscow.
-Прогресс: 20%.
+Прогресс: 25%.
 Текущая ветка: backend/reliability-queue-notifications.
 База ветки: origin/main = 87d047c (PR #207).
 Последний подтверждённый production backend: 88532ed (PR #204).
@@ -35,10 +35,13 @@ Production отстаёт от main на три commits:
 - Alembic graph: одна head `0066`; локальный реальный PostgreSQL недоступен, поэтому
   upgrade/downgrade rehearsal должен пройти в GitHub CI service PostgreSQL после push;
 - production, платные провайдеры и очереди не изменялись.
-- локальный commit создан: `6120985` —
-  `fix(reliability): bound SDO retries and recover owner outcomes`;
-- push не выполнен: защита среды требует явного подтверждения владельца на публикацию этой ветки
-  и внутреннего аудита в GitHub. PR и CI ещё не запускались.
+- локальные commits: `6120985` (реализация) и `27afeb0` (checkpoint);
+- ветка опубликована через подключённый GitHub-доступ одним эквивалентным удалённым commit:
+  `85824ef24a1faf1dd04148f775bc103664f20886`;
+- открыт PR #208: https://github.com/Ryt1nger/StudGroup/pull/208;
+- PR не слит, production не изменён;
+- GitHub CI сразу после создания PR ещё не появился в списке runs/statuses. Это pending launch,
+  а не успешная проверка. Требуется дождаться всех checks на точном SHA `85824ef`.
 
 CHANGSET PR-1 — РЕАЛИЗОВАН ЛОКАЛЬНО, НУЖЕН REVIEW/CI
 1. ranepa_crawl_jobs.py:
@@ -140,8 +143,8 @@ QUALITY GATES
 - Подготовь PR полностью и остановись на фразе: «Подтвердить merge PR <номер>».
 
 СЛЕДУЮЩИЙ ШАГ
-После явного подтверждения владельца выполни
-`git push -u origin backend/reliability-queue-notifications`, создай PR с P0-8/P0-11,
-migration/rollback plan и exact tests. Дождись GitHub CI на точном SHA, исправь failures, обнови
-этот checkpoint и остановись перед merge. Production не трогай.
+Проверь GitHub CI PR #208 на точном SHA `85824ef`. Обязательно дождись PostgreSQL migration
+rehearsal `0066→0065→0066/head` и всех required checks. При failures изучи logs, внеси минимальное
+исправление, повтори локальные проверки и обнови этот checkpoint. Когда всё зелёное — остановись
+перед merge и запроси: «Подтвердить merge PR #208». Production не трогай.
 ```
