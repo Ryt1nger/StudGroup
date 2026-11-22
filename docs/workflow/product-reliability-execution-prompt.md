@@ -11,14 +11,17 @@ canary/backfill, merge и deploy. Пиши по-русски простым яз
 
 ЖИВОЙ CHECKPOINT
 Последнее обновление: 22 ноября 2026 года, Europe/Moscow.
-Прогресс: 95%.
-Текущая ветка: backend/performance-diagnostics.
-База ветки: main = a918afa (merged PR #208).
+Прогресс текущего этапа PR-3: 75%.
+Общий reliability-план: 35%.
+Текущая ветка: backend/sdo-link-delivery.
+База ветки: main = 1ae5119 (merged PR #209).
 Последний подтверждённый production backend: 88532ed (PR #204).
-Production отстаёт от main на три commits:
+Production отстаёт от main как минимум на пять product changesets:
 - a505f7e — owner notification для каждой завершённой SDO-учётки (#205);
 - 7b2fcee — reuse подтверждённых recurring SDO links (#206);
 - 87d047c — точная CAPTCHA classification и optional Moodle deadlines (#207).
+- a918afa — durable outcomes, bounded retries и notification recovery (#208);
+- 1ae5119 — batch academic cards и privacy-safe DB timing (#209).
 
 Текущее состояние работы:
 - чистый актуальный репозиторий восстановлен в новой среде;
@@ -66,8 +69,27 @@ Production отстаёт от main на три commits:
 - открыт PR #209: https://github.com/Ryt1nger/StudGroup/pull/209;
 - Backend CI #3014 завершён с `success` на code-equivalent head `457f714`: Ruff, format, migrations,
   safety regressions и полный backend suite прошли;
+- финальный docs-only Backend CI #3015 завершён с `success` на head `3897b05`;
+- PR #209 слит 22 ноября 2026 года squash commit `1ae5119`;
+- создана ветка PR-3 `backend/sdo-link-delivery` от `1ae5119`;
 - это обновление checkpoint меняет только документацию; production не изменён,
   deploy/restart/migration не выполнялись.
+- read-only production aggregate 22 ноября доказал: candidate inventory не теряется при сохранении;
+  matched rows содержат в среднем 36,57 candidates, максимум 54;
+- not_found содержит 177 candidate records, но 0 одновременно совпадают по teacher+stream — их
+  нельзя выдавать без риска чужой ссылки;
+- timing_unverified содержит 70 identity-matching records, сведённых всего к 3 label; 60 records
+  относятся к 6 Moodle `/mod/url` activities, которые могут быть дубликатами одной конференции;
+- PR-3 безопасно читает только первый Moodle redirect с `max_redirects=0`; cookies не уходят
+  внешнему провайдеру. Несколько activities становятся matched только если все ведут на один
+  allowlisted meeting URL; разные/небезопасные/неполные ответы остаются unverified;
+- targeted SDO suite после реализации: 84 passed; Ruff green.
+- расширенный SDO regression suite: 194 passed;
+- полный backend: 1941 passed, 37 skipped, 0 failed за 136.61s;
+- владелец заранее подтвердил merge PR-3 после зелёного CI, затем production migration/deploy и
+  bounded full SDO rescan всех eligible аккаунтов с уже существующими данными;
+- mass rescan выполнять только после live/readiness проверки; сохранить budget/CAPTCHA guards,
+  остановить волну при системной CAPTCHA/source failure и не запускать DeepSeek.
 
 CHANGSET PR-1 — СЛИТ, PRODUCTION ЕЩЁ НЕ ОБНОВЛЁН
 1. ranepa_crawl_jobs.py:
@@ -169,10 +191,10 @@ QUALITY GATES
 - Подготовь PR полностью и остановись на фразе: «Подтвердить merge PR <номер>».
 
 СЛЕДУЮЩИЙ ШАГ
-Убедись, что docs-only обновление checkpoint не ухудшило required checks PR #209. После зелёного
-check остановись и запроси: «Подтвердить merge PR #209». Merge, production migration/deploy и
-restart без отдельного подтверждения владельца не выполнять.
-В следующем performance changeset используй production timing `db_queries/db_ms`, чтобы отдельно
-исправить повторные schedule reads и доказать, что задержка profile относится к DB или внешнему YDB.
-Не выполнять merge, production migration/deploy или restart без отдельного подтверждения владельца.
+Закоммить и опубликуй PR-3, дождись зелёного Backend CI и слей по уже выданному подтверждению.
+После merge проверь/примени production migration 0066, разверни точный merged SHA, проверь
+`/health` и `/ready`, затем запусти один bounded full SDO rescan через штатный guarded workflow.
+Отчёт после волны: eligible/started/completed accounts, courses, raw/distinct candidates,
+identity matches, redirect collapses, confirmed links, materialized/API-delivered links и причины
+каждого unmatched класса. Не запускать DeepSeek; CAPTCHA не должна превышать настроенные лимиты.
 ```
