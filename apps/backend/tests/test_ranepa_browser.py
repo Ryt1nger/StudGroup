@@ -529,6 +529,119 @@ def test_sdo_scans_hidden_course_page_and_preserves_all_teacher_candidates():
     }
 
 
+def test_duplicate_moodle_activities_with_one_safe_target_are_one_meeting():
+    class Invisible:
+        async def is_visible(self):
+            return False
+
+    class Response:
+        def __init__(self):
+            self.headers = {"location": "https://my.mts-link.ru/j/Ranepa/777"}
+
+        async def dispose(self):
+            pass
+
+    class Request:
+        def __init__(self):
+            self.calls = []
+
+        async def get(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            return Response()
+
+    class Page:
+        def __init__(self):
+            self.url = ""
+
+        async def goto(self, url, **_kwargs):
+            self.url = "https://lms.ranepa.ru/course/view.php?id=85813"
+
+        def get_by_text(self, *_args, **_kwargs):
+            return Invisible()
+
+        async def evaluate(self, _script):
+            pass
+
+        async def content(self):
+            return (
+                '<main class="course-content"><a href="/course/view.php?id=85813">Курс</a>'
+                '<a href="/mod/url/view.php?id=101">Федотова Е.А. '
+                "Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка</a>"
+                '<a href="/mod/url/view.php?id=102">Федотова Е.А. '
+                "Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ Гиперссылка</a></main>"
+            )
+
+        async def wait_for_timeout(self, _milliseconds):
+            pass
+
+        async def close(self):
+            pass
+
+    class Context:
+        def __init__(self):
+            self.request = Request()
+
+        async def new_page(self):
+            return Page()
+
+    context = Context()
+    lesson = ExternalLesson(
+        day=date(2026, 11, 23),
+        starts=time(9),
+        ends=time(10, 20),
+        subject="История России",
+        teacher="Федотова Елена Алексеевна",
+        room="СДО",
+        subgroup_hint="Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+    )
+    result = asyncio.run(
+        ranepa_browser.resolve_sdo_exits(
+            context,
+            ranepa_browser.BrowserResult(
+                "preview_only",
+                WeekSnapshot(
+                    "Э-ОБ-385-04-26-02",
+                    date(2026, 11, 23),
+                    date(2026, 11, 29),
+                    (lesson,),
+                ),
+                ("https://my.ranepa.ru/moodle_out.php?id=1",),
+            ),
+        )
+    )
+
+    assert list(result.states.values()) == ["matched"]
+    assert list(result.links.values()) == ["https://my.mts-link.ru/j/Ranepa/777"]
+    assert len(context.request.calls) == 2
+    assert all(call[1]["max_redirects"] == 0 for call in context.request.calls)
+
+
+def test_duplicate_moodle_activities_with_different_targets_stay_unverified():
+    from studgroup.ranepa_browser import _shared_moodle_redirect
+    from studgroup.ranepa_lms import LinkCandidate
+
+    class Response:
+        def __init__(self, location):
+            self.headers = {"location": location}
+
+        async def dispose(self):
+            pass
+
+    class Request:
+        async def get(self, url, **_kwargs):
+            ident = url.rsplit("=", 1)[1]
+            return Response(f"https://my.mts-link.ru/j/Ranepa/{ident}")
+
+    class Context:
+        request = Request()
+
+    candidates = tuple(
+        LinkCandidate(f"https://lms.ranepa.ru/mod/url/view.php?id={ident}", "label")
+        for ident in (101, 102)
+    )
+    assert asyncio.run(_shared_moodle_redirect(Context(), candidates)) is None
+
+
 def test_course_reader_waits_for_late_meetings_from_other_teachers():
     class Page:
         def __init__(self):
