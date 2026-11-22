@@ -165,6 +165,16 @@ def role_permissions(role):
     return STUDENT_PERMISSIONS + STAFF_PERMISSIONS.get(role, [])
 
 
+def cached_request_context(db, authorization):
+    """Objects already authenticated in this request's single AsyncSession."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    context = db.info.get("studgroup_request_context")
+    if context and context["token_hash"] == token_hash(authorization[7:]):
+        return context
+    return None
+
+
 async def active_group(
     db: Annotated[AsyncSession, Depends(database)], authorization: str | None = Header(None)
 ):
@@ -176,7 +186,10 @@ async def active_membership(db, authorization):
     """The bearer session's active group and membership; every route re-checks it per request."""
     if not authorization or not authorization.startswith("Bearer "):
         raise ApiError("unauthenticated", "Откройте приложение из Telegram")
-    credential = await db.get(WebSession, token_hash(authorization[7:]))
+    digest = token_hash(authorization[7:])
+    if context := cached_request_context(db, authorization):
+        return context["group"], context["membership"]
+    credential = await db.get(WebSession, digest)
     expiry = credential.expires_at if credential else None
     if expiry is not None and expiry.tzinfo is None:
         expiry = expiry.replace(tzinfo=UTC)
@@ -194,6 +207,12 @@ async def active_membership(db, authorization):
         raise ApiError("no_active_group", "Нет активной группы", 403)
     if not group.pilot_authorized or group.status != "active":
         raise ApiError("permission_denied", "Доступ к группе недоступен", 403)
+    db.info["studgroup_request_context"] = {
+        "token_hash": digest,
+        "credential": credential,
+        "membership": member,
+        "group": group,
+    }
     return group, member
 
 

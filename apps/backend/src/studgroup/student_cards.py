@@ -5,9 +5,10 @@ evaluation results and never makes a canonical item public by itself.
 """
 
 import json
+from collections import defaultdict
 from datetime import UTC
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from studgroup.analysis.deadline_policy import DeadlineDecision, student_label
 from studgroup.materials import links
@@ -20,11 +21,13 @@ from studgroup.models import (
     Group,
     HeadmanDecision,
     Homework,
+    MaterialLink,
     MessageAttachment,
     RawMessage,
 )
 from studgroup.photo_dedupe import distinct as distinct_photos
 from studgroup.subject_identity import subject_uuid
+from studgroup.telegram_files import present
 
 CARD_KINDS = {
     "homework",
@@ -251,6 +254,29 @@ async def projected_updates(db, link):
         .order_by(CanonicalItemRevision.item_revision.desc())
         .limit(1)
     )
+    return updates_from_revisions(link, [row for row in (previous, current) if row is not None])
+
+
+def updates_from_revisions(link, revisions):
+    if link is None or link.projected_revision <= 1:
+        return []
+    current = next((row for row in revisions if row.item_revision == link.projected_revision), None)
+    if current is None or current.action == "create":
+        return []
+    if current.action == "cancel":
+        return [
+            {
+                "id": current.id,
+                "kind": "cancellation",
+                "text": "Задание отменено",
+                "created_at": utc(current.created_at),
+            }
+        ]
+    previous = max(
+        (row for row in revisions if row.item_revision < link.projected_revision),
+        key=lambda row: row.item_revision,
+        default=None,
+    )
     current_snapshot = json.loads(current.snapshot_json)
     previous_snapshot = json.loads(previous.snapshot_json) if previous else {}
     only_description = (
@@ -275,7 +301,22 @@ async def projected_updates(db, link):
     ]
 
 
-async def projected_materials(db, group_id, entity_key, now, sources):
+async def projected_materials(
+    db,
+    group_id,
+    entity_key,
+    now,
+    sources,
+    *,
+    base_materials=None,
+    source_paths=None,
+    raw_rows=None,
+    attachments=None,
+    image_metadata=None,
+):
+    base_materials = (
+        await links(db, group_id, [entity_key]) if base_materials is None else base_materials
+    )
     result = [
         {
             "kind": "link",
@@ -285,7 +326,7 @@ async def projected_materials(db, group_id, entity_key, now, sources):
             "replaces_description": False,
             **item,
         }
-        for item in await links(db, group_id, [entity_key])
+        for item in base_materials
     ]
     source_urls = {
         source["id"]: source["action"]["url"]
@@ -295,16 +336,19 @@ async def projected_materials(db, group_id, entity_key, now, sources):
     if not source_urls:
         return result
     source_order = {source_id: index for index, source_id in enumerate(source_urls)}
-    attachments = (
-        await db.scalars(
-            select(MessageAttachment).where(
-                MessageAttachment.group_id == group_id,
-                MessageAttachment.raw_message_id.in_(source_urls),
-                MessageAttachment.active.is_(True),
-                MessageAttachment.delete_at > now,
+    if attachments is None:
+        attachments = (
+            await db.scalars(
+                select(MessageAttachment).where(
+                    MessageAttachment.group_id == group_id,
+                    MessageAttachment.raw_message_id.in_(source_urls),
+                    MessageAttachment.active.is_(True),
+                    MessageAttachment.delete_at > now,
+                )
             )
-        )
-    ).all()
+        ).all()
+    else:
+        attachments = [item for item in attachments if item.raw_message_id in source_urls]
     attachments.sort(
         key=lambda attachment: (
             source_order[attachment.raw_message_id],
@@ -316,14 +360,15 @@ async def projected_materials(db, group_id, entity_key, now, sources):
     from studgroup.analysis.image_evidence import display_metadata, load_image_evidence
     from studgroup.photo_dedupe import select_evidence_images
 
-    raw_rows = (
-        await db.scalars(
-            select(RawMessage).where(
-                RawMessage.group_id == group_id,
-                RawMessage.id.in_(source_urls),
+    if raw_rows is None:
+        raw_rows = (
+            await db.scalars(
+                select(RawMessage).where(
+                    RawMessage.group_id == group_id,
+                    RawMessage.id.in_(source_urls),
+                )
             )
-        )
-    ).all()
+        ).all()
     messages = [
         SourceMessage(
             telegram_message_id=raw.telegram_message_id,
@@ -333,38 +378,46 @@ async def projected_materials(db, group_id, entity_key, now, sources):
         )
         for raw in raw_rows
     ]
-    image_rows = await load_image_evidence(db, group_id, messages, now)
-    image_rows = [item for item in image_rows if item.error != "image_not_scheduled"]
-    metadata = await display_metadata(db, group_id, image_rows)
+    if image_metadata is None:
+        image_rows = await load_image_evidence(db, group_id, messages, now)
+        image_rows = [item for item in image_rows if item.error != "image_not_scheduled"]
+        metadata = await display_metadata(db, group_id, image_rows)
+    else:
+        attachment_ids = {item.id for item in attachments}
+        metadata = {
+            ident: value for ident, value in image_metadata.items() if ident in attachment_ids
+        }
     structured_ids = set(metadata)
     legacy = distinct_photos([item for item in attachments if item.id not in structured_ids])
     kept = {item.id for item in legacy}
-    from uuid import UUID
+    if source_paths is None:
+        from uuid import UUID
 
-    entity_type = "homework" if entity_key.startswith("h:") else "deadline"
-    projection = await db.scalar(
-        select(CanonicalProjectionLink).where(
-            CanonicalProjectionLink.entity_type == entity_type,
-            CanonicalProjectionLink.entity_id == UUID(entity_key.split(":", 1)[1]),
-        )
-    )
-    source_paths = (
-        (
-            await db.scalars(
-                select(CanonicalItemEvidence.fact_path)
-                .join(
-                    CanonicalAcademicItem, CanonicalAcademicItem.id == CanonicalItemEvidence.item_id
-                )
-                .where(
-                    CanonicalAcademicItem.group_id == group_id,
-                    CanonicalItemEvidence.item_id == projection.item_id,
-                    CanonicalItemEvidence.item_revision == projection.projected_revision,
-                )
+        entity_type = "homework" if entity_key.startswith("h:") else "deadline"
+        projection = await db.scalar(
+            select(CanonicalProjectionLink).where(
+                CanonicalProjectionLink.entity_type == entity_type,
+                CanonicalProjectionLink.entity_id == UUID(entity_key.split(":", 1)[1]),
             )
-        ).all()
-        if projection
-        else []
-    )
+        )
+        source_paths = (
+            (
+                await db.scalars(
+                    select(CanonicalItemEvidence.fact_path)
+                    .join(
+                        CanonicalAcademicItem,
+                        CanonicalAcademicItem.id == CanonicalItemEvidence.item_id,
+                    )
+                    .where(
+                        CanonicalAcademicItem.group_id == group_id,
+                        CanonicalItemEvidence.item_id == projection.item_id,
+                        CanonicalItemEvidence.item_revision == projection.projected_revision,
+                    )
+                )
+            ).all()
+            if projection
+            else []
+        )
     required_images = {path.split(":")[1] for path in source_paths if path.startswith("image:")}
     uses_structured = "image_analysis" in source_paths or bool(required_images)
     if not uses_structured:
@@ -395,14 +448,7 @@ async def projected_materials(db, group_id, entity_key, now, sources):
     # image-fact path. Students can inspect the actual source image.
     kept.update(item.id for item in attachments if item.kind == "photo")
     attachments = [item for item in attachments if item.id in kept]
-    captions = {
-        raw_id: text or ""
-        for raw_id, text in (
-            await db.execute(
-                select(RawMessage.id, RawMessage.text).where(RawMessage.id.in_(source_urls))
-            )
-        ).all()
-    }
+    captions = {raw.id: raw.text or "" for raw in raw_rows}
     for attachment in attachments:
         if attachment.kind not in ATTACHMENT_KINDS:
             continue
@@ -448,6 +494,214 @@ async def enrich_homework(db, group, row, now):
         "materials": await projected_materials(db, row.group_id, f"h:{row.id}", now, sources),
         "updates": await projected_updates(db, link),
     }
+
+
+async def enrich_homework_batch(db, group, rows, now):
+    """Set-based list enrichment; remote DB round trips must not grow per card."""
+    if not rows:
+        return {}
+    row_ids = [row.id for row in rows]
+    entity_keys = [f"h:{ident}" for ident in row_ids]
+    projections = (
+        await db.scalars(
+            select(CanonicalProjectionLink).where(
+                CanonicalProjectionLink.entity_type == "homework",
+                CanonicalProjectionLink.entity_id.in_(row_ids),
+            )
+        )
+    ).all()
+    projections_by_entity = {row.entity_id: row for row in projections}
+    item_ids = {row.item_id for row in projections}
+    items = (
+        (
+            await db.scalars(
+                select(CanonicalAcademicItem).where(CanonicalAcademicItem.id.in_(item_ids))
+            )
+        ).all()
+        if item_ids
+        else []
+    )
+    items_by_id = {item.id: item for item in items}
+
+    evidence_by_item = defaultdict(list)
+    source_paths_by_item = defaultdict(list)
+    raw_by_id = {}
+    if item_ids:
+        evidence = (
+            await db.execute(
+                select(
+                    RawMessage,
+                    CanonicalItemEvidence.item_id,
+                    CanonicalItemEvidence.item_revision,
+                    CanonicalItemEvidence.source_revision,
+                    CanonicalItemEvidence.fact_path,
+                )
+                .join(
+                    CanonicalItemEvidence,
+                    CanonicalItemEvidence.raw_message_id == RawMessage.id,
+                )
+                .where(
+                    CanonicalItemEvidence.item_id.in_(item_ids),
+                    RawMessage.group_id == group.id,
+                )
+                .order_by(RawMessage.message_date, RawMessage.telegram_message_id)
+            )
+        ).all()
+        for raw, item_id, revision, source_revision, fact_path in evidence:
+            projection = next((row for row in projections if row.item_id == item_id), None)
+            if projection is None or revision != projection.projected_revision:
+                continue
+            raw_by_id[raw.id] = raw
+            evidence_by_item[item_id].append((raw, source_revision))
+            source_paths_by_item[item_id].append(fact_path)
+    fallback_ids = {row.raw_message_id for row in rows if row.raw_message_id is not None}
+    if fallback_ids:
+        fallback_rows = (
+            await db.scalars(
+                select(RawMessage).where(
+                    RawMessage.group_id == group.id,
+                    RawMessage.id.in_(fallback_ids),
+                )
+            )
+        ).all()
+        raw_by_id.update({raw.id: raw for raw in fallback_rows})
+
+    decisions = (
+        await db.scalars(select(HeadmanDecision).where(HeadmanDecision.entity_key.in_(entity_keys)))
+    ).all()
+    decisions_by_key = {row.entity_key: row for row in decisions}
+    material_rows = (
+        await db.scalars(
+            select(MaterialLink)
+            .where(MaterialLink.group_id == group.id, MaterialLink.entity_key.in_(entity_keys))
+            .order_by(MaterialLink.title, MaterialLink.id)
+        )
+    ).all()
+    materials_by_key = defaultdict(list)
+    for material in material_rows:
+        materials_by_key[material.entity_key].append(present(material))
+    revision_rows = (
+        (
+            await db.scalars(
+                select(CanonicalItemRevision)
+                .where(CanonicalItemRevision.item_id.in_(item_ids))
+                .order_by(CanonicalItemRevision.item_id, CanonicalItemRevision.item_revision)
+            )
+        ).all()
+        if item_ids
+        else []
+    )
+    revisions_by_item = defaultdict(list)
+    for revision in revision_rows:
+        revisions_by_item[revision.item_id].append(revision)
+
+    prepared = {}
+    for row in rows:
+        key = f"h:{row.id}"
+        link = projections_by_entity.get(row.id)
+        item = items_by_id.get(link.item_id) if link else None
+        if (
+            item is None
+            or item.group_id != row.group_id
+            or item.destination != "task"
+            or item.semantic_kind != "homework"
+            or link.projected_revision > item.revision
+        ):
+            link = item = None
+        unique = {}
+        if link is not None:
+            for raw, source_revision in evidence_by_item[link.item_id]:
+                unique.setdefault(raw.id, (raw, source_revision))
+        if unique:
+            sources = [
+                source_detail(group, raw, now, source_revision)
+                for raw, source_revision in unique.values()
+            ]
+        else:
+            raw = raw_by_id.get(row.raw_message_id)
+            sources = [source_detail(group, raw, now)]
+        decision = decisions_by_key.get(key)
+        resolved = decision is not None and decision.locked
+        certainty, origin = deadline_metadata(row, item, resolved)
+        source_paths = source_paths_by_item[link.item_id] if link else []
+        source_raws = [raw_by_id[source["id"]] for source in sources if source["id"] in raw_by_id]
+        prepared[row.id] = (
+            key,
+            link,
+            item,
+            sources,
+            certainty,
+            origin,
+            source_paths,
+            source_raws,
+        )
+
+    all_source_ids = {
+        source["id"]
+        for _, _, _, sources, _, _, _, _ in prepared.values()
+        for source in sources
+        if source["id"] is not None and source["action"]["type"] == "open_telegram_link"
+    }
+    if all_source_ids:
+        all_attachments = (
+            await db.scalars(
+                select(MessageAttachment).where(
+                    MessageAttachment.group_id == group.id,
+                    MessageAttachment.raw_message_id.in_(all_source_ids),
+                    MessageAttachment.active.is_(True),
+                    MessageAttachment.delete_at > now,
+                )
+            )
+        ).all()
+        from studgroup.analysis.contracts import SourceMessage
+        from studgroup.analysis.image_evidence import display_metadata, load_image_evidence
+
+        messages = [
+            SourceMessage(
+                telegram_message_id=raw_by_id[ident].telegram_message_id,
+                revision=raw_by_id[ident].revision,
+                message_date=utc(raw_by_id[ident].message_date),
+                text=raw_by_id[ident].text or "[attachment source]",
+            )
+            for ident in all_source_ids
+            if ident in raw_by_id
+        ]
+        image_rows = await load_image_evidence(db, group.id, messages, now)
+        image_rows = [item for item in image_rows if item.error != "image_not_scheduled"]
+        image_metadata = await display_metadata(db, group.id, image_rows)
+    else:
+        all_attachments = []
+        image_metadata = {}
+
+    result = {}
+    for row in rows:
+        key, link, item, sources, certainty, origin, source_paths, source_raws = prepared[row.id]
+        result[row.id] = {
+            "card_kind": (
+                item.semantic_kind if item and item.semantic_kind in CARD_KINDS else "homework"
+            ),
+            "confirmed_subject": confirmed_subject(row, item),
+            "deadline_certainty": certainty,
+            "deadline_origin": origin,
+            "deadline_label": deadline_label(row, item),
+            "sources": sources,
+            "materials": await projected_materials(
+                db,
+                row.group_id,
+                key,
+                now,
+                sources,
+                base_materials=materials_by_key[key],
+                source_paths=source_paths,
+                raw_rows=source_raws,
+                attachments=all_attachments,
+                image_metadata=image_metadata,
+            ),
+            "updates": updates_from_revisions(
+                link, revisions_by_item[link.item_id] if link else []
+            ),
+        }
+    return result
 
 
 async def enrich_deadline(db, group, row: AcademicDeadline, now):
@@ -546,3 +800,244 @@ async def enrich_deadline(db, group, row: AcademicDeadline, now):
         "materials": await projected_materials(db, row.group_id, f"e:{row.id}", now, sources),
         "updates": await projected_updates(db, link),
     }
+
+
+async def enrich_deadline_batch(db, group, rows, now):
+    """Set-based deadline enrichment for list and Today responses."""
+    if not rows:
+        return {}
+    row_ids = [row.id for row in rows]
+    entity_keys = [f"e:{ident}" for ident in row_ids]
+    projections = (
+        await db.scalars(
+            select(CanonicalProjectionLink).where(
+                CanonicalProjectionLink.entity_type == "deadline",
+                CanonicalProjectionLink.entity_id.in_(row_ids),
+            )
+        )
+    ).all()
+    projections_by_entity = {row.entity_id: row for row in projections}
+    projections_by_item = {row.item_id: row for row in projections}
+    item_ids = set(projections_by_item)
+    items = (
+        (
+            await db.scalars(
+                select(CanonicalAcademicItem).where(CanonicalAcademicItem.id.in_(item_ids))
+            )
+        ).all()
+        if item_ids
+        else []
+    )
+    items_by_id = {item.id: item for item in items}
+    evidence_by_item = defaultdict(list)
+    source_paths_by_item = defaultdict(list)
+    raw_by_id = {}
+    if item_ids:
+        evidence = (
+            await db.execute(
+                select(
+                    RawMessage,
+                    CanonicalItemEvidence.item_id,
+                    CanonicalItemEvidence.item_revision,
+                    CanonicalItemEvidence.source_revision,
+                    CanonicalItemEvidence.fact_path,
+                )
+                .join(
+                    CanonicalItemEvidence,
+                    CanonicalItemEvidence.raw_message_id == RawMessage.id,
+                )
+                .where(
+                    CanonicalItemEvidence.item_id.in_(item_ids),
+                    RawMessage.group_id == group.id,
+                )
+                .order_by(RawMessage.message_date, RawMessage.telegram_message_id)
+            )
+        ).all()
+        for raw, item_id, revision, source_revision, fact_path in evidence:
+            projection = projections_by_item.get(item_id)
+            if projection is None or revision != projection.projected_revision:
+                continue
+            raw_by_id[raw.id] = raw
+            evidence_by_item[item_id].append((raw, source_revision))
+            source_paths_by_item[item_id].append(fact_path)
+
+    telegram_ids = {
+        message_id for row in rows for message_id in json.loads(row.source_message_ids or "[]")
+    }
+    raw_ids = {row.raw_message_id for row in rows if row.raw_message_id is not None}
+    fallback_filters = []
+    if raw_ids:
+        fallback_filters.append(RawMessage.id.in_(raw_ids))
+    if telegram_ids:
+        fallback_filters.append(RawMessage.telegram_message_id.in_(telegram_ids))
+    fallback_rows = (
+        (
+            await db.scalars(
+                select(RawMessage).where(
+                    RawMessage.group_id == group.id,
+                    or_(*fallback_filters),
+                )
+            )
+        ).all()
+        if fallback_filters
+        else []
+    )
+    raw_by_id.update({raw.id: raw for raw in fallback_rows})
+    raws_by_telegram = {raw.telegram_message_id: raw for raw in fallback_rows}
+
+    decisions = (
+        await db.scalars(select(HeadmanDecision).where(HeadmanDecision.entity_key.in_(entity_keys)))
+    ).all()
+    decisions_by_key = {row.entity_key: row for row in decisions}
+    material_rows = (
+        await db.scalars(
+            select(MaterialLink)
+            .where(MaterialLink.group_id == group.id, MaterialLink.entity_key.in_(entity_keys))
+            .order_by(MaterialLink.title, MaterialLink.id)
+        )
+    ).all()
+    materials_by_key = defaultdict(list)
+    for material in material_rows:
+        materials_by_key[material.entity_key].append(present(material))
+    revision_rows = (
+        (
+            await db.scalars(
+                select(CanonicalItemRevision)
+                .where(CanonicalItemRevision.item_id.in_(item_ids))
+                .order_by(CanonicalItemRevision.item_id, CanonicalItemRevision.item_revision)
+            )
+        ).all()
+        if item_ids
+        else []
+    )
+    revisions_by_item = defaultdict(list)
+    for revision in revision_rows:
+        revisions_by_item[revision.item_id].append(revision)
+
+    prepared = {}
+    for row in rows:
+        key = f"e:{row.id}"
+        link = projections_by_entity.get(row.id)
+        item = items_by_id.get(link.item_id) if link else None
+        if (
+            item is None
+            or item.group_id != row.group_id
+            or item.destination != "deadline"
+            or item.semantic_kind == "homework"
+            or link.projected_revision > item.revision
+        ):
+            link = item = None
+        unique = {}
+        if link is not None:
+            for raw, source_revision in evidence_by_item[link.item_id]:
+                unique.setdefault(raw.id, (raw, source_revision))
+        if unique:
+            sources = [
+                source_detail(group, raw, now, source_revision)
+                for raw, source_revision in unique.values()
+            ]
+        else:
+            sources = [
+                source_detail(group, raws_by_telegram[message_id], now)
+                for message_id in json.loads(row.source_message_ids or "[]")
+                if message_id in raws_by_telegram
+            ]
+        if not sources:
+            sources = [source_detail(group, raw_by_id.get(row.raw_message_id), now)]
+        decision = decisions_by_key.get(key)
+        resolved = decision is not None and decision.locked
+        if item:
+            certainty, origin = deadline_metadata(row, item, resolved)
+            kind = item.semantic_kind if item.semantic_kind in CARD_KINDS else row.kind
+            subject = (
+                {"id": subject_uuid(group.id, item.subject), "name": item.subject}
+                if item.subject
+                else None
+            )
+        else:
+            certainty, origin = deadline_metadata(row, None, resolved) if resolved else (None, None)
+            if certainty is None:
+                certainty = (
+                    "needs_clarification"
+                    if row.needs_clarification
+                    else ("from_source" if row.deadline_at else "unknown")
+                )
+                origin = (
+                    "ambiguous_message"
+                    if row.needs_clarification
+                    else ("explicit_message" if row.deadline_at else "unknown")
+                )
+            kind = row.kind if row.kind in CARD_KINDS else "other_academic_deadline"
+            subject = (
+                None
+                if row.subject.strip().casefold() in {"предмет не указан", "неизвестно"}
+                else {"id": subject_uuid(group.id, row.subject), "name": row.subject}
+            )
+        prepared[row.id] = (key, link, item, sources, certainty, origin, kind, subject)
+
+    all_source_ids = {
+        source["id"]
+        for _, _, _, sources, _, _, _, _ in prepared.values()
+        for source in sources
+        if source["id"] is not None and source["action"]["type"] == "open_telegram_link"
+    }
+    if all_source_ids:
+        all_attachments = (
+            await db.scalars(
+                select(MessageAttachment).where(
+                    MessageAttachment.group_id == group.id,
+                    MessageAttachment.raw_message_id.in_(all_source_ids),
+                    MessageAttachment.active.is_(True),
+                    MessageAttachment.delete_at > now,
+                )
+            )
+        ).all()
+        from studgroup.analysis.contracts import SourceMessage
+        from studgroup.analysis.image_evidence import display_metadata, load_image_evidence
+
+        messages = [
+            SourceMessage(
+                telegram_message_id=raw_by_id[ident].telegram_message_id,
+                revision=raw_by_id[ident].revision,
+                message_date=utc(raw_by_id[ident].message_date),
+                text=raw_by_id[ident].text or "[attachment source]",
+            )
+            for ident in all_source_ids
+            if ident in raw_by_id
+        ]
+        image_rows = await load_image_evidence(db, group.id, messages, now)
+        image_rows = [item for item in image_rows if item.error != "image_not_scheduled"]
+        image_metadata = await display_metadata(db, group.id, image_rows)
+    else:
+        all_attachments = []
+        image_metadata = {}
+
+    result = {}
+    for row in rows:
+        key, link, item, sources, certainty, origin, kind, subject = prepared[row.id]
+        source_paths = source_paths_by_item[link.item_id] if link else []
+        source_raws = [raw_by_id[source["id"]] for source in sources if source["id"] in raw_by_id]
+        result[row.id] = {
+            "card_kind": kind,
+            "confirmed_subject": subject,
+            "deadline_certainty": certainty,
+            "deadline_origin": origin,
+            "deadline_label": deadline_label(row, item),
+            "sources": sources,
+            "materials": await projected_materials(
+                db,
+                row.group_id,
+                key,
+                now,
+                sources,
+                base_materials=materials_by_key[key],
+                source_paths=source_paths,
+                raw_rows=source_raws,
+                attachments=all_attachments,
+                image_metadata=image_metadata,
+            ),
+            "updates": updates_from_revisions(
+                link, revisions_by_item[link.item_id] if link else []
+            ),
+        }
+    return result

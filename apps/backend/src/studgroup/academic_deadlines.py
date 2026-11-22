@@ -13,9 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from studgroup import subgroups
 from studgroup.api import ApiError, active_group, database, edit_permissions
 from studgroup.lesson_archive import lesson_day_archived, today_lesson_cutoffs
-from studgroup.models import AcademicDeadline, Group, WebSession
+from studgroup.models import AcademicDeadline, Group, Subgroup, WebSession
 from studgroup.security import token_hash
-from studgroup.student_cards import enrich_deadline
+from studgroup.student_cards import enrich_deadline, enrich_deadline_batch
 
 router = APIRouter(prefix="/v1")
 
@@ -47,14 +47,19 @@ def archived(row, now, timezone, lesson_cutoffs=None):
     return bool(row.window_end and utc(row.window_end) <= now)
 
 
-async def representation(db, group, row, now):
-    enrichment = await enrich_deadline(db, group, row, now)
+async def representation(db, group, row, now, context=None):
+    if context is None:
+        enrichment = await enrich_deadline(db, group, row, now)
+        subgroup = await subgroups.label(db, row.subgroup_id)
+    else:
+        enrichment = context["enrichments"][row.id]
+        subgroup = context["subgroups"].get(row.subgroup_id)
     return {
         "id": row.id,
         "kind": row.kind,
         "card_kind": enrichment["card_kind"],
         "subject": row.subject,
-        "subgroup": await subgroups.label(db, row.subgroup_id),
+        "subgroup": subgroup,
         "confirmed_subject": enrichment["confirmed_subject"],
         "title": row.title,
         "description": row.description,
@@ -73,6 +78,19 @@ async def representation(db, group, row, now):
         "materials": enrichment["materials"],
         "revision": row.revision,
         "cancelled_at": utc(row.cancelled_at) if row.cancelled_at else None,
+    }
+
+
+async def representation_context(db, group, rows, now):
+    subgroup_ids = {row.subgroup_id for row in rows if row.subgroup_id is not None}
+    subgroup_rows = (
+        (await db.scalars(select(Subgroup).where(Subgroup.id.in_(subgroup_ids)))).all()
+        if subgroup_ids
+        else []
+    )
+    return {
+        "enrichments": await enrich_deadline_batch(db, group, rows, now),
+        "subgroups": {row.id: {"id": row.id, "name": row.name} for row in subgroup_rows},
     }
 
 
@@ -106,9 +124,10 @@ async def items(db, group, now, archive=False, subject=None, review=False, hidde
             str(row.id),
         )
     )
+    context = await representation_context(db, group, selected, now)
     result = []
     for row in selected:
-        item = await representation(db, group, row, now)
+        item = await representation(db, group, row, now, context)
         result.append(item)
     return result
 

@@ -12,7 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup import subgroups
 from studgroup.academic_deadlines import items as deadline_items
-from studgroup.api import ApiError, active_group, database, edit_permissions, schedule_data
+from studgroup.api import (
+    ApiError,
+    active_group,
+    cached_request_context,
+    database,
+    edit_permissions,
+    schedule_data,
+)
 from studgroup.lesson_archive import lesson_cutoff, today_lesson_cutoffs
 from studgroup.materials import links
 from studgroup.models import (
@@ -27,12 +34,13 @@ from studgroup.models import (
     RawMessage,
     ScheduleException,
     SchedulePattern,
+    Subgroup,
     WebSession,
 )
 from studgroup.pagination import decode_cursor, encode_cursor
 from studgroup.schedule import next_lesson
 from studgroup.security import token_hash
-from studgroup.student_cards import enrich_homework
+from studgroup.student_cards import enrich_homework, enrich_homework_batch
 
 router = APIRouter(prefix="/v1")
 Database = Annotated[AsyncSession, Depends(database)]
@@ -48,26 +56,37 @@ def utc(value):
 
 
 async def user_id(db, authorization):
+    if context := cached_request_context(db, authorization):
+        return context["credential"].user_id
     session = await db.get(WebSession, token_hash(authorization[7:]))
     return session.user_id
 
 
-async def representation(db, row, user, now):
-    completed = await db.scalar(
-        select(PersonalCompletion).where(
-            PersonalCompletion.homework_id == row.id, PersonalCompletion.user_id == user
+async def representation(db, row, user, now, context=None):
+    if context is None:
+        completed = await db.scalar(
+            select(PersonalCompletion).where(
+                PersonalCompletion.homework_id == row.id, PersonalCompletion.user_id == user
+            )
         )
-    )
-    group = await db.get(Group, row.group_id)
-    enrichment = await enrich_homework(db, group, row, now)
+        group = await db.get(Group, row.group_id)
+        enrichment = await enrich_homework(db, group, row, now)
+        membership = await db.scalar(
+            select(Membership).where(
+                Membership.user_id == user,
+                Membership.group_id == row.group_id,
+                Membership.status == "active",
+            )
+        )
+        subgroup = await subgroups.label(db, row.subgroup_id)
+        permissions = await edit_permissions(db, row.group_id, user)
+    else:
+        completed = context["completions"].get(row.id)
+        enrichment = context["enrichments"][row.id]
+        membership = context["membership"]
+        subgroup = context["subgroups"].get(row.subgroup_id)
+        permissions = context["permissions"]
     source_detail = enrichment["sources"][0]
-    membership = await db.scalar(
-        select(Membership).where(
-            Membership.user_id == user,
-            Membership.group_id == row.group_id,
-            Membership.status == "active",
-        )
-    )
     verification_state = row.verification_state
     if verification_state in {"needs_clarification", "inferred"} and (
         membership is None or membership.role not in {"headman", "deputy"}
@@ -81,7 +100,7 @@ async def representation(db, row, user, now):
         "card_kind": enrichment["card_kind"],
         "title": row.title,
         "subject": {"id": row.subject_id, "name": row.subject_name},
-        "subgroup": await subgroups.label(db, row.subgroup_id),
+        "subgroup": subgroup,
         "confirmed_subject": enrichment["confirmed_subject"],
         "summary": row.description,
         "description": row.description,
@@ -121,8 +140,38 @@ async def representation(db, row, user, now):
         "permissions": [
             "homework.read",
             "homework.completion.write",
-            *(await edit_permissions(db, row.group_id, user)),
+            *permissions,
         ],
+    }
+
+
+async def representation_context(db, group, rows, user, member, now):
+    """Load list-card dependencies in fixed set-based queries."""
+    row_ids = [row.id for row in rows]
+    completions = (
+        await db.scalars(
+            select(PersonalCompletion).where(
+                PersonalCompletion.user_id == user,
+                PersonalCompletion.homework_id.in_(row_ids),
+            )
+        )
+    ).all()
+    subgroup_ids = {row.subgroup_id for row in rows if row.subgroup_id is not None}
+    subgroup_rows = (
+        (await db.scalars(select(Subgroup).where(Subgroup.id.in_(subgroup_ids)))).all()
+        if subgroup_ids
+        else []
+    )
+    return {
+        "completions": {row.homework_id: row for row in completions},
+        "enrichments": await enrich_homework_batch(db, group, rows, now),
+        "membership": member,
+        "subgroups": {row.id: {"id": row.id, "name": row.name} for row in subgroup_rows},
+        "permissions": (
+            ["homework.edit", "homework.material.write"]
+            if member is not None and member.role in {"headman", "deputy"}
+            else []
+        ),
     }
 
 
@@ -224,8 +273,9 @@ async def homework_list(
             and_(Homework.created_at == created, Homework.id > last_id),
         )
     user = await user_id(db, authorization)
+    member = await subgroups.membership(db, group.id, user)
     # The review queue (cards the editors must look at) exists only for headman and deputy.
-    editor = bool(await edit_permissions(db, group.id, user))
+    editor = bool(member and member.role in {"headman", "deputy"})
     if filter == "review" and not editor:
         raise ApiError("permission_denied", "Очередь проверки доступна старосте и помощнику", 403)
     query = (
@@ -242,7 +292,7 @@ async def homework_list(
             Homework.status.in_(["published", "needs_clarification", "completed", "cancelled"]),
             Homework.delete_at > generated,
             Homework.created_at <= selected_at,
-            subgroups.visible(Homework.subgroup_id, await subgroups.hidden(db, group.id, user)),
+            subgroups.visible(Homework.subgroup_id, await subgroups.hidden_for_member(db, member)),
         )
     )
     archived = archived_condition(
@@ -283,9 +333,11 @@ async def homework_list(
     rows = (
         await db.scalars(query.order_by(Homework.created_at, Homework.id).limit(limit + 1))
     ).all()
+    selected_rows = rows[:limit]
+    context = await representation_context(db, group, selected_rows, user, member, generated)
     items = []
-    for row in rows[:limit]:
-        card = await representation(db, row, user, generated)
+    for row in selected_rows:
+        card = await representation(db, row, user, generated, context)
         for detail_field in (
             "description",
             "source_detail",
@@ -525,7 +577,8 @@ async def lesson_subject(
     now = datetime.now(UTC)
     starts = datetime.fromisoformat(lesson["starts_at"])
     user = await user_id(db, authorization)
-    hidden = await subgroups.hidden(db, group.id, user)
+    member = await subgroups.membership(db, group.id, user)
+    hidden = await subgroups.hidden_for_member(db, member)
     if lesson.get("subgroup_id") in {str(value) for value in hidden}:
         raise ApiError("not_found", "Пара не найдена", 404)
     rows = (
@@ -598,7 +651,8 @@ async def today(
     current_date = now.astimezone(ZoneInfo(group.timezone)).date()
     selected_date = current_date + timedelta(days=day == "tomorrow")
     user = await user_id(db, authorization)
-    hidden = await subgroups.hidden(db, group.id, user)
+    member = await subgroups.membership(db, group.id, user)
+    hidden = await subgroups.hidden_for_member(db, member)
     rows = (
         await db.scalars(
             select(Homework).where(
@@ -638,10 +692,19 @@ async def today(
     # ordering for equal deadlines, including the original database row order.
     bucket_rows["upcoming"] = sorted(upcoming, key=lambda row: utc(row.deadline_at))[:3]
 
+    selected = list(
+        dict.fromkeys(row.id for selected_rows in bucket_rows.values() for row in selected_rows)
+    )
+    selected_by_id = {
+        row.id: row for selected_rows in bucket_rows.values() for row in selected_rows
+    }
+    context = await representation_context(
+        db, group, [selected_by_id[ident] for ident in selected], user, member, now
+    )
     buckets = {"due_today": [], "upcoming": [], "new_or_changed": []}
     for kind, selected_rows in bucket_rows.items():
         for row in selected_rows:
-            card = await representation(db, row, user, now)
+            card = await representation(db, row, user, now, context)
             # Undated completed edits must not reappear in the update feed.
             if card["my_state"]["completion"] == "completed" and row.deadline_at is None:
                 continue
