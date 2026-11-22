@@ -16,8 +16,10 @@ from studgroup.ranepa_failure_diagnostics import (
 from studgroup.ranepa_link_states import LinkState
 from studgroup.ranepa_lms import (
     MAX_DETAIL_PAGES,
+    LinkChoice,
     course_detail_pages,
     course_links,
+    meeting_url,
     select_lesson_link,
 )
 from studgroup.ranepa_probe import SourceAccessError
@@ -452,6 +454,41 @@ async def _read_course_candidates(page, context):
     return tuple(found.values())[:80], True
 
 
+async def _shared_moodle_redirect(context, candidates):
+    """Collapse duplicate Moodle URL activities only when every redirect agrees.
+
+    The authenticated request stops at Moodle's first response, so cookies are
+    never sent to the external meeting provider. Any missing, unsafe or
+    conflicting Location keeps the original ambiguity.
+    """
+    if not 2 <= len(candidates) <= 8 or not hasattr(context, "request"):
+        return None
+    targets = set()
+    for candidate in candidates:
+        parsed = urlsplit(candidate.url)
+        if parsed.hostname != "lms.ranepa.ru" or parsed.path != "/mod/url/view.php":
+            return None
+        response = None
+        try:
+            response = await context.request.get(
+                candidate.url,
+                max_redirects=0,
+                timeout=8000,
+                fail_on_status_code=False,
+            )
+            location = response.headers.get("location")
+            target = meeting_url(urljoin(candidate.url, location or ""))
+            if target is None or urlsplit(target).hostname == "lms.ranepa.ru":
+                return None
+            targets.add(target)
+        except Exception:  # noqa: BLE001 -- optional read-only deduplication
+            return None
+        finally:
+            if response is not None:
+                await response.dispose()
+    return next(iter(targets)) if len(targets) == 1 else None
+
+
 async def resolve_sdo_exits(
     context,
     result: BrowserResult,
@@ -568,6 +605,17 @@ async def resolve_sdo_exits(
                             day=lesson.day,
                             starts=lesson.starts,
                         )
+                        if choice.url is None and choice.state in {
+                            LinkState.AMBIGUOUS,
+                            LinkState.TIMING_UNVERIFIED,
+                        }:
+                            shared_target = await _shared_moodle_redirect(
+                                context, choice.candidates
+                            )
+                            if shared_target is not None:
+                                choice = LinkChoice(
+                                    LinkState.MATCHED, shared_target, choice.candidates
+                                )
                         break
                     except SourceAccessError:
                         pass

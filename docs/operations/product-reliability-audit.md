@@ -77,6 +77,22 @@ credentials required 1. DeepSeek после прежнего `provider_not_confi
 2. Matching/release: кандидаты найдены, но теряются на teacher/group/date/permanent проверке либо
    дальше до materialization/API/UI. Не ослаблять matcher до угадывания.
 
+Дополнительный read-only срез 22 ноября подтвердил, что candidate inventory до БД доходит:
+
+- `matched`: 58 строк, 2 121 candidate records, среднее 36,57 и максимум 54 на строку;
+- `timing_unverified`: 17 строк, 470 records, среднее 27,65; точной паре преподаватель+поток
+  соответствуют 70 records, но это всего 3 различных label и несколько Moodle activity URL;
+- `not_found`: 42 строки и 177 records; ни один candidate не содержит одновременно требуемый
+  поток и преподавателя, поэтому автоматическая подстановка была бы чужой ссылкой;
+- `no_course_links`: 191 актуальная строка и 0 candidates — это отдельная discovery-проблема.
+
+Следовательно, наблюдение «до приложения дошли только 1–2 ссылки» не вызвано обрезанием inventory:
+API намеренно выдаёт одну подтверждённую meeting URL на пару. Доказанная исправимая потеря — разные
+Moodle `/mod/url` activities с одинаковыми teacher/stream могут вести в одну конференцию, но раньше
+считались разными и оставались `timing_unverified`. PR-3 разрешает только первый Moodle redirect без
+перехода на внешний сайт и объединяет activities лишь когда все безопасные конечные URL совпадают.
+Разные, отсутствующие или небезопасные destinations остаются неоднозначными.
+
 Обязательная цепочка метрик: `course seen → raw candidates → identity match → timing match →
 persisted candidate → confirmed link → recipient materialization → API DTO → frontend action`.
 Считать distinct courses/candidates/links/recipients, не повторяющиеся lesson rows.
@@ -140,9 +156,10 @@ outbox dedup, partial-success heading и запрет legacy auto-replay. Accept
 
 ### P1-2. Низкий recall SDO links
 
-Создать отдельный PR после P0-11: DOM fixtures трёх проблемных курсов, stage counters, dynamic
-stability waits, bounded detail traversal, точная reason taxonomy для 146 unmatched candidates и
-end-to-end test до frontend action. `course_url` никогда не является Join.
+PR-3 в работе: inventory delivery подтверждён production-агрегатами; добавлено безопасное схлопывание
+нескольких Moodle URL activities, ведущих в одну allowlisted конференцию, с fail-closed поведением
+при разных destinations. Далее нужны stage counters, DOM fixtures трёх `no_course_links` курсов,
+точная reason taxonomy и end-to-end test до frontend action. `course_url` никогда не является Join.
 
 ### P1-3/P1-4. Неполная freshness и грубый retry
 
