@@ -11,7 +11,7 @@ canary/backfill, merge и deploy. Пиши по-русски простым яз
 
 ЖИВОЙ CHECKPOINT
 Последнее обновление: 22 ноября 2026 года, Europe/Moscow.
-Прогресс: 65%.
+Прогресс: 95%.
 Текущая ветка: backend/performance-diagnostics.
 База ветки: main = a918afa (merged PR #208).
 Последний подтверждённый production backend: 88532ed (PR #204).
@@ -62,9 +62,12 @@ Production отстаёт от main на три commits:
   параметров, токенов, URL, идентификаторов или текста студентов и отделяет DB latency от YDB/HTTP;
 - targeted performance/contract suite: 85 passed; отдельные telemetry tests: 3 passed;
 - полный backend после PR-2 изменений: 1938 passed, 37 skipped, 0 failed за 272.13s;
-- Ruff и `git diff --check` проходят; changeset закоммичен локально как `d32fb70`, но публикация
-  ветки была остановлена защитой среды до явного подтверждения отправки кода в GitHub;
-- production не изменён, deploy/restart/migration не выполнялись.
+- Ruff и `git diff --check` проходят; changeset `d32fb70` и checkpoint `457f714` опубликованы;
+- открыт PR #209: https://github.com/Ryt1nger/StudGroup/pull/209;
+- Backend CI #3014 завершён с `success` на code-equivalent head `457f714`: Ruff, format, migrations,
+  safety regressions и полный backend suite прошли;
+- это обновление checkpoint меняет только документацию; production не изменён,
+  deploy/restart/migration не выполнялись.
 
 CHANGSET PR-1 — СЛИТ, PRODUCTION ЕЩЁ НЕ ОБНОВЛЁН
 1. ranepa_crawl_jobs.py:
@@ -166,9 +169,9 @@ QUALITY GATES
 - Подготовь PR полностью и остановись на фразе: «Подтвердить merge PR <номер>».
 
 СЛЕДУЮЩИЙ ШАГ
-После явного подтверждения владельца опубликуй commit `d32fb70` в доверенный репозиторий
-`Ryt1nger/StudGroup`, открой небольшой PR только для устранения N+1 в homework/today/deadlines и
-privacy-safe DB timing. Дождись CI и остановись перед merge.
+Убедись, что docs-only обновление checkpoint не ухудшило required checks PR #209. После зелёного
+check остановись и запроси: «Подтвердить merge PR #209». Merge, production migration/deploy и
+restart без отдельного подтверждения владельца не выполнять.
 В следующем performance changeset используй production timing `db_queries/db_ms`, чтобы отдельно
 исправить повторные schedule reads и доказать, что задержка profile относится к DB или внешнему YDB.
 Не выполнять merge, production migration/deploy или restart без отдельного подтверждения владельца.
