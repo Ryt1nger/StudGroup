@@ -11,11 +11,11 @@ canary/backfill, merge и deploy. Пиши по-русски простым яз
 
 ЖИВОЙ CHECKPOINT
 Последнее обновление: 22 ноября 2026 года, Europe/Moscow.
-Прогресс текущего этапа PR-3: 75%.
+Прогресс текущего этапа PR-3: 95%.
 Общий reliability-план: 35%.
 Текущая ветка: backend/sdo-link-delivery.
 База ветки: main = 1ae5119 (merged PR #209).
-Последний подтверждённый production backend: 88532ed (PR #204).
+Последний подтверждённый production backend: 87d047c (PR #207); Render deploy нового SHA заблокирован billing suspension.
 Production отстаёт от main как минимум на пять product changesets:
 - a505f7e — owner notification для каждой завершённой SDO-учётки (#205);
 - 7b2fcee — reuse подтверждённых recurring SDO links (#206);
@@ -88,7 +88,16 @@ Production отстаёт от main как минимум на пять product 
 - полный backend: 1941 passed, 37 skipped, 0 failed за 136.61s;
 - владелец заранее подтвердил merge PR-3 после зелёного CI, затем production migration/deploy и
   bounded full SDO rescan всех eligible аккаунтов с уже существующими данными;
-- mass rescan выполнять только после live/readiness проверки; сохранить budget/CAPTCHA guards,
+- PR #210 слит 22 ноября 2026 года squash commit `9b98fec6fc8e41aab3cd36899badfbb5e00fbe2c`;
+- production Supabase migration 0066 применена и проверена: Alembic current=0066, 9 колонок и index на месте;
+- Render service `studgroup-api-v2` однозначно найден, repo/branch/main и autoDeploy=no подтверждены;
+- deploy точного merged SHA запрошен, но Render вернул `cannot deploy suspended service`: сервис остановлен
+  самим Render из-за billing; поэтому `/health` и `/ready` нового релиза пока проверить невозможно;
+- этот внешний billing-блокер не влияет на GitHub Actions crawler: он checkout-ит актуальный main;
+- перед full rescan: 19 eligible accounts; guard открыт; 58 matched rows; 4 distinct confirmed URLs;
+  2,768 raw candidate records; 77 rows с candidates; 17 accounts с matched; 11 accounts имеют
+  более одной matched lesson row; 138 observations;
+- owner-approved guarded full SDO rescan запускается этим commit. Сохранить budget/CAPTCHA guards,
   остановить волну при системной CAPTCHA/source failure и не запускать DeepSeek.
 
 CHANGSET PR-1 — СЛИТ, PRODUCTION ЕЩЁ НЕ ОБНОВЛЁН
@@ -191,9 +200,10 @@ QUALITY GATES
 - Подготовь PR полностью и остановись на фразе: «Подтвердить merge PR <номер>».
 
 СЛЕДУЮЩИЙ ШАГ
-Закоммить и опубликуй PR-3, дождись зелёного Backend CI и слей по уже выданному подтверждению.
-После merge проверь/примени production migration 0066, разверни точный merged SHA, проверь
-`/health` и `/ready`, затем запусти один bounded full SDO rescan через штатный guarded workflow.
+PR-3 уже слит, migration 0066 уже применена. Сейчас дождись завершения одного bounded full SDO
+rescan, запущенного штатным guarded workflow этим commit. Затем сними post-run агрегаты и сравни
+с baseline выше. После устранения billing suspension на Render немедленно разверни точный merged
+SHA `9b98fec6fc8e41aab3cd36899badfbb5e00fbe2c`, проверь `/health` и `/ready`.
 Отчёт после волны: eligible/started/completed accounts, courses, raw/distinct candidates,
 identity matches, redirect collapses, confirmed links, materialized/API-delivered links и причины
 каждого unmatched класса. Не запускать DeepSeek; CAPTCHA не должна превышать настроенные лимиты.
