@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.models import Group, Homework, Membership, PersonalCompletion, User, WebSession
@@ -96,6 +96,24 @@ def cards(client, monkeypatch):
 def titles(response):
     assert response.status_code == 200, response.text
     return {item["title"] for item in response.json()["items"]}
+
+
+def test_homework_list_query_count_is_bounded(client, cards):
+    statements = []
+
+    def record(_connection, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+
+    engine = client.app.state.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        response = client.get("/v1/homework", headers=HEADERS)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert response.status_code == 200
+    # Five list cards used to issue 43 statements: completions, permissions,
+    # projection metadata and materials were fetched again for every row.
+    assert len(statements) <= 16
 
 
 def test_ai_review_marker_is_visible_only_to_headman_or_deputy(client, cards):

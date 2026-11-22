@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.models import Group, Homework, RawMessage
@@ -122,12 +122,24 @@ def test_today_only_enriches_three_nearest_upcoming_cards(client, monkeypatch):
     original = homework_api.representation
     enriched_ids = []
 
-    async def recorded(db, row, user, now):
+    async def recorded(db, row, user, now, context=None):
         enriched_ids.append(row.id)
-        return await original(db, row, user, now)
+        return await original(db, row, user, now, context)
 
     monkeypatch.setattr(homework_api, "representation", recorded)
-    response = client.get("/v1/today", headers={"Authorization": "Bearer valid"})
+    statements = []
+
+    def count_query(_connection, _cursor, statement, *_args):
+        statements.append(statement)
+
+    engine = client.app.state.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", count_query)
+    try:
+        response = client.get("/v1/today", headers={"Authorization": "Bearer valid"})
+    finally:
+        event.remove(engine, "before_cursor_execute", count_query)
+    # Three displayed cards used to fan out into per-card source/material queries.
+    assert len(statements) <= 20
     assert response.status_code == 200
     upcoming = next(
         section for section in response.json()["sections"] if section["kind"] == "upcoming"

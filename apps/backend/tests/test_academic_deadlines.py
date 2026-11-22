@@ -2,7 +2,7 @@ import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.models import AcademicDeadline, Group
@@ -136,6 +136,26 @@ def set_role(client, role):
 
 
 HEADERS = {"Authorization": "Bearer valid"}
+
+
+def test_deadline_list_query_count_is_bounded(client):
+    seed(client)
+    for index in range(4):
+        add_event(client, f"extra-{index}", index + 1, False)
+    statements = []
+
+    def record(*_args):
+        statements.append(1)
+
+    engine = client.app.state.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        response = client.get("/v1/deadlines", headers=HEADERS)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert response.status_code == 200
+    # Five events used to trigger projection/source/material queries per row.
+    assert len(statements) <= 13
 
 
 def test_review_queue_lists_active_unsettled_events_for_editors(client):

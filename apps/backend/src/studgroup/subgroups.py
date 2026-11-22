@@ -273,6 +273,11 @@ async def assign(db, group_id, subject, label, text, all_splits=None):
 
 
 async def membership(db, group_id, user_id):
+    context = db.info.get("studgroup_request_context")
+    if context:
+        member = context["membership"]
+        if member.group_id == group_id and member.user_id == user_id:
+            return member
     return await db.scalar(
         select(Membership).where(
             Membership.group_id == group_id,
@@ -296,6 +301,11 @@ async def hidden(db, group_id, user_id):
     """Subgroup ids whose cards this user must not see: the other subgroups of every split
     subject the user answered. Editors and people without a choice see everything."""
     member = await membership(db, group_id, user_id) if user_id else None
+    return await hidden_for_member(db, member)
+
+
+async def hidden_for_member(db, member):
+    """Visibility using an already authenticated membership, without re-reading it."""
     if member is None or member.role in EDITOR_ROLES:
         return set()
     picked = await choices(db, member.id)

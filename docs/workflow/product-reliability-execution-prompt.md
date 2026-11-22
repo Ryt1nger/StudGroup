@@ -11,9 +11,9 @@ canary/backfill, merge и deploy. Пиши по-русски простым яз
 
 ЖИВОЙ CHECKPOINT
 Последнее обновление: 22 ноября 2026 года, Europe/Moscow.
-Прогресс: 30%.
-Текущая ветка: backend/reliability-queue-notifications.
-База ветки: origin/main = 87d047c (PR #207).
+Прогресс: 95%.
+Текущая ветка: backend/performance-diagnostics.
+База ветки: main = a918afa (merged PR #208).
 Последний подтверждённый production backend: 88532ed (PR #204).
 Production отстаёт от main на три commits:
 - a505f7e — owner notification для каждой завершённой SDO-учётки (#205);
@@ -39,13 +39,37 @@ Production отстаёт от main на три commits:
 - локальные commits: `6120985` (реализация) и `27afeb0` (checkpoint);
 - ветка опубликована через подключённый GitHub-доступ одним эквивалентным удалённым commit:
   `85824ef24a1faf1dd04148f775bc103664f20886`;
-- открыт PR #208: https://github.com/Ryt1nger/StudGroup/pull/208;
-- PR не слит, production не изменён;
+- PR #208 слит 22 ноября 2026 года squash commit `a918afa`:
+  https://github.com/Ryt1nger/StudGroup/pull/208;
+- production migration/deploy не выполнялись, production остаётся без изменений;
 - Backend CI #3010 завершён с `success` на code-equivalent head `9b5dc4a`;
 - это обновление checkpoint меняет только документацию и не меняет проверенный backend changeset;
-- PR готов к подтверждению merge после зелёного required check на текущем docs-only head.
+- финальный Backend CI #3011 завершён с `success` на head `634acd0`;
+- создана чистая ветка PR-2 `backend/performance-diagnostics` от `a918afa`;
+- PR-2 начат с read-only анализа `/v1/schedule`, `/v1/profile`, `/v1/deadlines`, `/v1/today`
+  и `/v1/homework`; индексы запрещено добавлять без EXPLAIN/BUFFERS и теста запроса.
+- production Supabase read-only анализ подтвердил: таблицы малы, а релевантные SQL-запросы обычно
+  выполняются быстрее 1 ms; основная причина 7–11 секунд — большое число последовательных сетевых
+  round trips/N+1, а не тяжёлый SQL;
+- четыре FK без отдельного индекса проверены; существующие composite indexes уже покрывают основные
+  реальные запросы, поэтому недоказанные индексы не добавлялись;
+- в PR-2 реализована request-local cache аутентификации и set-based загрузка карточек homework,
+  today и deadlines: зависимости карточек, источники, материалы, revisions, вложения, completion,
+  subgroup и permissions больше не читаются отдельным набором запросов на каждую карточку;
+- измерения SQLite regression tests: homework list из 5 карточек — 43 → не более 16 SQL statements;
+  today из 3 карточек — 29 → 20; deadlines из 5 событий удерживаются в бюджете 13;
+- добавлена privacy-safe строка `ACADEMIC_API_TIMING` с `db_queries` и `db_ms`: она не содержит SQL,
+  параметров, токенов, URL, идентификаторов или текста студентов и отделяет DB latency от YDB/HTTP;
+- targeted performance/contract suite: 85 passed; отдельные telemetry tests: 3 passed;
+- полный backend после PR-2 изменений: 1938 passed, 37 skipped, 0 failed за 272.13s;
+- Ruff и `git diff --check` проходят; changeset `d32fb70` и checkpoint `457f714` опубликованы;
+- открыт PR #209: https://github.com/Ryt1nger/StudGroup/pull/209;
+- Backend CI #3014 завершён с `success` на code-equivalent head `457f714`: Ruff, format, migrations,
+  safety regressions и полный backend suite прошли;
+- это обновление checkpoint меняет только документацию; production не изменён,
+  deploy/restart/migration не выполнялись.
 
-CHANGSET PR-1 — РЕАЛИЗОВАН, CI GREEN, НУЖНО ПОДТВЕРЖДЕНИЕ MERGE
+CHANGSET PR-1 — СЛИТ, PRODUCTION ЕЩЁ НЕ ОБНОВЛЁН
 1. ranepa_crawl_jobs.py:
    - MAX_ATTEMPTS: source=5, parse=4, identity=3, internal=3, captcha=5;
    - terminal_failure(); retry_at() возвращает None при исчерпании бюджета;
@@ -145,7 +169,10 @@ QUALITY GATES
 - Подготовь PR полностью и остановись на фразе: «Подтвердить merge PR <номер>».
 
 СЛЕДУЮЩИЙ ШАГ
-Убедись, что docs-only обновление checkpoint не ухудшило required checks PR #208. После зелёного
-check остановись и запроси: «Подтвердить merge PR #208». После подтверждения merge отдельно запроси
-разрешение на production migration/deploy; merge сам по себе не разрешает production-изменения.
+Убедись, что docs-only обновление checkpoint не ухудшило required checks PR #209. После зелёного
+check остановись и запроси: «Подтвердить merge PR #209». Merge, production migration/deploy и
+restart без отдельного подтверждения владельца не выполнять.
+В следующем performance changeset используй production timing `db_queries/db_ms`, чтобы отдельно
+исправить повторные schedule reads и доказать, что задержка profile относится к DB или внешнему YDB.
+Не выполнять merge, production migration/deploy или restart без отдельного подтверждения владельца.
 ```

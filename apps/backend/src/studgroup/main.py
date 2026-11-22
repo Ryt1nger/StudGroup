@@ -34,6 +34,11 @@ from studgroup.homework import router as homework_router
 from studgroup.ingestion import router as ingestion_router
 from studgroup.notifications import router as notifications_router
 from studgroup.profile import router as profile_router
+from studgroup.request_db_telemetry import (
+    finish_database_trace,
+    install_database_telemetry,
+    start_database_trace,
+)
 from studgroup.staff_api import router as staff_router
 from studgroup.subgroup_api import router as subgroup_router
 from studgroup.subjects import router as subjects_router
@@ -384,6 +389,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.engine = create_async_engine(
             settings.database_url, pool_pre_ping=True, **engine_options
         )
+        install_database_telemetry(app.state.engine)
         if settings.cutover_read_only:
             app.state.redis = None
             app.state.processor = None
@@ -616,6 +622,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if path not in measured_routes:
             return await call_next(request)
         start = perf_counter()
+        database_trace, database_trace_token = start_database_trace()
         status = 500
         try:
             response = await call_next(request)
@@ -623,7 +630,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return response
         finally:
             duration_ms = round((perf_counter() - start) * 1000)
-            print(f"ACADEMIC_API_TIMING route={path} status={status} ms={duration_ms}", flush=True)
+            finish_database_trace(database_trace_token)
+            print(
+                f"ACADEMIC_API_TIMING route={path} status={status} ms={duration_ms} "
+                f"db_queries={database_trace.query_count} "
+                f"db_ms={round(database_trace.total_ms)}",
+                flush=True,
+            )
 
     @app.middleware("http")
     async def cutover_write_gate(request, call_next):
