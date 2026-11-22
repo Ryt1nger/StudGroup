@@ -143,6 +143,15 @@ class RanepaCrawlObservation(Base):
     session_available: Mapped[bool] = mapped_column(Boolean, default=False)
     elapsed_ms: Mapped[int] = mapped_column(Integer)
     events_json: Mapped[str] = mapped_column(Text)
+    failure_detail: Mapped[str | None] = mapped_column(String(48))
+    diagnostic_code: Mapped[str | None] = mapped_column(String(48))
+    last_step: Mapped[str | None] = mapped_column(String(48))
+    saved_weeks: Mapped[int | None] = mapped_column(Integer)
+    saved_lessons: Mapped[int | None] = mapped_column(Integer)
+    saved_sdo_links: Mapped[int | None] = mapped_column(Integer)
+    discovered_sdo_candidates: Mapped[int | None] = mapped_column(Integer)
+    saved_sdo_courses: Mapped[int | None] = mapped_column(Integer)
+    notification_state: Mapped[str | None] = mapped_column(String(16), index=True)
 
 
 class RanepaManualCaptcha(Base):

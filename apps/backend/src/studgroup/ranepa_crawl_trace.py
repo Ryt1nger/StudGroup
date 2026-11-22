@@ -97,7 +97,31 @@ class CrawlTrace:
             self.preceding_step = self.events[-1]["step"] if self.events else None
         self.record("captcha_" + location)
 
-    def observation(self, *, job_id, attempt: int, failure_code: str | None):
+    def last_notification_step(self) -> str | None:
+        """Return the last owner-relevant stage from the closed trace vocabulary."""
+        relevant = {
+            "month_requested",
+            "month_recheck",
+            "week_requested",
+            "week_recheck",
+            "week_retry",
+            "sdo_exits_requested",
+            "sdo_exits_finished",
+        }
+        return next(
+            (event["step"] for event in reversed(self.events) if event["step"] in relevant),
+            None,
+        )
+
+    def observation(
+        self,
+        *,
+        job_id,
+        attempt: int,
+        failure_code: str | None,
+        stats=None,
+        notification_pending: bool = False,
+    ):
         result = "succeeded" if failure_code is None else failure_code
         if result not in _SAFE_RESULTS:
             result = "internal"
@@ -112,4 +136,15 @@ class CrawlTrace:
             session_available=self.session_available,
             elapsed_ms=max(0, int((self._clock() - self._start) * 1000)),
             events_json=json.dumps(self.events, separators=(",", ":")),
+            failure_detail=self.failure_detail,
+            diagnostic_code=self.diagnostic,
+            last_step=self.last_notification_step(),
+            saved_weeks=stats.saved_weeks if stats is not None else None,
+            saved_lessons=stats.saved_lessons if stats is not None else None,
+            saved_sdo_links=stats.saved_sdo_links if stats is not None else None,
+            discovered_sdo_candidates=(
+                stats.discovered_sdo_candidates if stats is not None else None
+            ),
+            saved_sdo_courses=stats.saved_sdo_courses if stats is not None else None,
+            notification_state="pending" if notification_pending else None,
         )

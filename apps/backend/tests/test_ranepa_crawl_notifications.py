@@ -19,6 +19,7 @@ from studgroup.models import (
     BotOutbox,
     Group,
     RanepaCrawlJob,
+    RanepaCrawlObservation,
     RanepaManualCaptcha,
     User,
 )
@@ -29,6 +30,7 @@ from studgroup.ranepa_crawl_notifications import (
     notify_batch_report,
     notify_captcha_detected,
     notify_successful_crawl,
+    recover_account_crawl_notifications,
     successful_account_line,
 )
 
@@ -174,7 +176,7 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 assert "Группа ТГ: ТГ · БИ 1.2" in notices[1]["text"]
                 assert "Группа РАНХиГС: БИ1.2" in notices[1]["text"]
                 assert "Ссылок СДО: 2" in notices[1]["text"]
-                assert "❌ StudGroup · ошибка обхода СДО" in notices[2]["text"]
+                assert "⚠️ StudGroup · обход СДО завершён частично" in notices[2]["text"]
                 assert "CAPTCHA" in notices[2]["text"]
                 assert "captcha" not in notices[2]["text"]
                 assert "Автоповтор — не раньше чем через 6 ч" in notices[2]["text"]
@@ -187,6 +189,145 @@ def test_per_account_results_report_actual_sdo_extraction_and_failures(tmp_path)
                 assert all("\\n" not in notice["text"] for notice in notices.values())
                 assert all("cookie" not in row.payload.lower() for row in rows)
                 assert all("http" not in row.payload.lower() for row in rows)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_historical_replay_never_turns_missing_counts_into_zero(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/history-replay.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            assert await notify_account_crawl_result(
+                engine,
+                owner_id=915,
+                job_id=uuid4(),
+                attempt=5,
+                user_id=uuid4(),
+                group_code="Э-ОБ-385-04-26-02",
+                telegram_group_name="БИ 1.2",
+                student_name="Тестовый студент",
+                failure_code=None,
+                stats=None,
+                historical_replay=True,
+            )
+            async with AsyncSession(engine) as db:
+                row = await db.scalar(select(BotOutbox))
+                message = json.loads(row.payload)["text"]
+                assert "ℹ️ StudGroup · результат обхода восстановлен" in message
+                assert "нет данных в истории" in message
+                assert "новый обход СДО не запускался" in message
+                assert "недель: 0" not in message
+                assert "Ссылок СДО: 0" not in message
+                assert "✅" not in message
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_historical_partial_timeout_reports_saved_result_and_stage(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/history-partial.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            assert await notify_account_crawl_result(
+                engine,
+                owner_id=915,
+                job_id=uuid4(),
+                attempt=5,
+                user_id=uuid4(),
+                group_code="П-ОБ-401-04-26-03",
+                telegram_group_name="3 группа ГП",
+                student_name="Тестовый студент",
+                failure_code="source_unavailable",
+                diagnostic_code="timeout",
+                last_step="sdo_exits_requested",
+                stats=CrawlRunStats(saved_weeks=4, saved_lessons=18),
+                historical_replay=True,
+            )
+            async with AsyncSession(engine) as db:
+                row = await db.scalar(select(BotOutbox))
+                message = json.loads(row.payload)["text"]
+                assert "⚠️ StudGroup · обход СДО завершён частично" in message
+                assert "Этап: Поиск ссылок на занятия СДО" in message
+                assert "Причина: Сайт не ответил вовремя" in message
+                assert "Результат: недель 4, занятий 18" in message
+                assert "новый обход СДО не запускался" in message
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_pending_durable_outcome_recovers_once_after_notification_crash(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/durable-recovery.db")
+        now = datetime(2026, 11, 20, 9, tzinfo=UTC)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine) as db:
+                group = Group(
+                    id=uuid4(),
+                    telegram_chat_id=-92020,
+                    name="БИ 1.3",
+                    academic_group_code="Э-ОБ-385-04-26-03",
+                    timezone="Europe/Moscow",
+                )
+                user = User(id=uuid4(), telegram_user_id=92020, display_name="Тест")
+                job = RanepaCrawlJob(
+                    id=uuid4(),
+                    group_id=group.id,
+                    user_id=user.id,
+                    week_start=date(2026, 11, 16),
+                    priority=0,
+                    state="failed",
+                    attempts=5,
+                    finished_at=now,
+                    failure_code="source_unavailable",
+                    retry_reason="attempts_exhausted:source_unavailable",
+                    created_at=now,
+                )
+                observation = RanepaCrawlObservation(
+                    job_id=job.id,
+                    attempt=5,
+                    observed_at=now,
+                    result_code="source_unavailable",
+                    captcha_seen=False,
+                    session_available=True,
+                    elapsed_ms=900_000,
+                    events_json="[]",
+                    diagnostic_code="timeout",
+                    last_step="sdo_exits_requested",
+                    saved_weeks=4,
+                    saved_lessons=18,
+                    saved_sdo_links=0,
+                    discovered_sdo_candidates=62,
+                    saved_sdo_courses=4,
+                    notification_state="pending",
+                )
+                job_id = job.id
+                db.add_all([group, user, job, observation])
+                await db.commit()
+
+            assert await recover_account_crawl_notifications(engine, owner_id=915) == 1
+            assert await recover_account_crawl_notifications(engine, owner_id=915) == 0
+            async with AsyncSession(engine) as db:
+                outbox = (await db.scalars(select(BotOutbox))).all()
+                saved = await db.get(RanepaCrawlObservation, (job_id, 5))
+                assert len(outbox) == 1
+                message = json.loads(outbox[0].payload)["text"]
+                assert "обход СДО завершён частично" in message
+                assert "Поиск ссылок на занятия СДО" in message
+                assert "Сайт не ответил вовремя" in message
+                assert "недель 4, занятий 18" in message
+                assert "новый обход СДО не запускался" in message
+                assert saved.notification_state == "queued"
         finally:
             await engine.dispose()
 
