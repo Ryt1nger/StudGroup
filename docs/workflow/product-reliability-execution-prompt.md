@@ -10,8 +10,8 @@
 canary/backfill, merge и deploy. Пиши по-русски простым языком.
 
 ЖИВОЙ CHECKPOINT
-Последнее обновление: 21 ноября 2026 года, Europe/Moscow.
-Прогресс: 25%.
+Последнее обновление: 22 ноября 2026 года, Europe/Moscow.
+Прогресс: 30%.
 Текущая ветка: backend/reliability-queue-notifications.
 База ветки: origin/main = 87d047c (PR #207).
 Последний подтверждённый production backend: 88532ed (PR #204).
@@ -32,18 +32,20 @@ Production отстаёт от main на три commits:
 - Ruff/format: 432 backend files, green;
 - targeted: 87 passed;
 - full backend: 1934 passed, 37 skipped, 0 failed за 274.74s;
-- Alembic graph: одна head `0066`; локальный реальный PostgreSQL недоступен, поэтому
-  upgrade/downgrade rehearsal должен пройти в GitHub CI service PostgreSQL после push;
+- Alembic graph: одна head `0066`;
+- GitHub Backend workflow #3010 успешно прошёл на head `9b5dc4a`, включая disposable PostgreSQL
+  rehearsal `0066→0065→0066/head` и полный backend suite;
 - production, платные провайдеры и очереди не изменялись.
 - локальные commits: `6120985` (реализация) и `27afeb0` (checkpoint);
 - ветка опубликована через подключённый GitHub-доступ одним эквивалентным удалённым commit:
   `85824ef24a1faf1dd04148f775bc103664f20886`;
 - открыт PR #208: https://github.com/Ryt1nger/StudGroup/pull/208;
 - PR не слит, production не изменён;
-- GitHub CI сразу после создания PR ещё не появился в списке runs/statuses. Это pending launch,
-  а не успешная проверка. Требуется дождаться всех checks на точном SHA `85824ef`.
+- Backend CI #3010 завершён с `success` на code-equivalent head `9b5dc4a`;
+- это обновление checkpoint меняет только документацию и не меняет проверенный backend changeset;
+- PR готов к подтверждению merge после зелёного required check на текущем docs-only head.
 
-CHANGSET PR-1 — РЕАЛИЗОВАН ЛОКАЛЬНО, НУЖЕН REVIEW/CI
+CHANGSET PR-1 — РЕАЛИЗОВАН, CI GREEN, НУЖНО ПОДТВЕРЖДЕНИЕ MERGE
 1. ranepa_crawl_jobs.py:
    - MAX_ATTEMPTS: source=5, parse=4, identity=3, internal=3, captcha=5;
    - terminal_failure(); retry_at() возвращает None при исчерпании бюджета;
@@ -143,8 +145,7 @@ QUALITY GATES
 - Подготовь PR полностью и остановись на фразе: «Подтвердить merge PR <номер>».
 
 СЛЕДУЮЩИЙ ШАГ
-Проверь GitHub CI PR #208 на точном SHA `85824ef`. Обязательно дождись PostgreSQL migration
-rehearsal `0066→0065→0066/head` и всех required checks. При failures изучи logs, внеси минимальное
-исправление, повтори локальные проверки и обнови этот checkpoint. Когда всё зелёное — остановись
-перед merge и запроси: «Подтвердить merge PR #208». Production не трогай.
+Убедись, что docs-only обновление checkpoint не ухудшило required checks PR #208. После зелёного
+check остановись и запроси: «Подтвердить merge PR #208». После подтверждения merge отдельно запроси
+разрешение на production migration/deploy; merge сам по себе не разрешает production-изменения.
 ```
