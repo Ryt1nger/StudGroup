@@ -123,9 +123,15 @@ class Settings(BaseSettings):
     # Paid processing must be an explicit production opt-in. A permissive default can spend
     # money merely by starting the API with an otherwise minimal environment.
     owner_funded_pilot: bool = False
-    # Off until the operator sets an approved Stars price and enables live checkout.
-    # The RUB tariff is marketing information; Telegram's currency is XTR.
+    # Off until the owner supplies four REAL Alfa payment URLs and opts in.
+    # The manual flow never grants access on the student's \"I paid\" click.
     billing_enabled: bool = False
+    billing_payment_mode: Literal["manual_alfa", "stars"] = "manual_alfa"
+    billing_alfa_url_1m: str = ""
+    billing_alfa_url_2m: str = ""
+    billing_alfa_url_3m: str = ""
+    billing_alfa_url_4m: str = ""
+    # Kept for already-issued legacy Telegram invoices, not used in manual mode.
     billing_stars_per_month: int = Field(default=0, ge=0, le=2500)
     # Independent second gate: do not interrupt existing study processing on rollout.
     billing_enforce_access: bool = False
@@ -589,13 +595,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             )
         billing_task = None
+        bank_cleanup_task = None
         if settings.billing_enabled:
             from studgroup.billing import loop as billing_loop
 
             billing_task = asyncio.create_task(billing_loop(app.state.background_engine, settings))
+            if settings.billing_payment_mode == "manual_alfa":
+                from studgroup.billing_manual import cleanup_loop
+
+                bank_cleanup_task = asyncio.create_task(
+                    cleanup_loop(app.state.background_engine, settings)
+                )
         try:
             yield
         finally:
+            if bank_cleanup_task is not None:
+                bank_cleanup_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await bank_cleanup_task
             if billing_task is not None:
                 billing_task.cancel()
                 with suppress(asyncio.CancelledError):
