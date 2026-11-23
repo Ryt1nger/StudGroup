@@ -36,6 +36,7 @@ PRICE_NOTE = (
 def payment_ready(settings) -> bool:
     return bool(
         settings.billing_enabled
+        and settings.billing_payment_mode == "stars"
         and settings.billing_stars_per_month > 0
         and settings.telegram_bot_token
         and not settings.cutover_read_only
@@ -115,7 +116,11 @@ async def ensure_subscription(
 
 async def group_limited(db, group_id: uuid.UUID, settings, now=None) -> bool:
     """Check enforcement only when explicitly enabled; never restrict a pilot by default."""
-    if not payment_ready(settings) or not settings.billing_enforce_access:
+    from studgroup.billing_manual import ready as bank_ready
+
+    if not settings.billing_enforce_access or not (
+        payment_ready(settings) or bank_ready(settings)
+    ):
         return False
     subscription = await ensure_subscription(db, group_id, now)
     return state(subscription, now or datetime.now(UTC)) == "expired"
@@ -378,7 +383,9 @@ async def tick(engine, settings) -> None:
     Operational queue dedupe plus persisted timestamps protect against restarts and
     concurrent server instances. Messages are sent only to the active headman.
     """
-    if not payment_ready(settings):
+    from studgroup.billing_manual import ready as bank_ready
+
+    if not (payment_ready(settings) or bank_ready(settings)):
         return
     async with AsyncSession(engine, expire_on_commit=False) as db:
         people = (
