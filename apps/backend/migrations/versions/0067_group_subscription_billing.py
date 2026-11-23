@@ -60,14 +60,14 @@ def upgrade() -> None:
     op.execute("ALTER TABLE group_payment_orders ENABLE ROW LEVEL SECURITY")
     # Bare PostgreSQL CI databases do not have Supabase's API roles.
     op.execute(
-        """DO $ BEGIN
+        """DO $$ BEGIN
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
             REVOKE ALL ON group_subscriptions, group_payment_orders FROM anon;
         END IF;
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
             REVOKE ALL ON group_subscriptions, group_payment_orders FROM authenticated;
         END IF;
-        END $;"""
+        END $$;"""
     )
 
 
