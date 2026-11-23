@@ -83,6 +83,14 @@ class SuccessfulPayment(BaseModel):
     provider_payment_charge_id: str | None = Field(default=None, max_length=255)
 
 
+class RefundedPayment(BaseModel):
+    currency: str = Field(max_length=3)
+    total_amount: int = Field(ge=1)
+    invoice_payload: str = Field(max_length=128)
+    telegram_payment_charge_id: str = Field(max_length=255)
+    provider_payment_charge_id: str | None = Field(default=None, max_length=255)
+
+
 class Message(BaseModel):
     message_id: int
     date: int = Field(ge=0)
@@ -99,6 +107,7 @@ class Message(BaseModel):
     new_chat_members: list[ChatMember] = Field(default_factory=list, max_length=100)
     users_shared: UsersShared | None = None
     successful_payment: SuccessfulPayment | None = None
+    refunded_payment: RefundedPayment | None = None
     forward_origin: ForwardOrigin | None = None
     media_group_id: str | None = Field(default=None, max_length=255)
     photo: list[TelegramFile] = Field(default_factory=list, max_length=20)
@@ -200,6 +209,27 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
                     ),
                 },
                 f"billing-review:{reference}",
+            )
+        await db.commit()
+        return {"ok": True}
+
+    if update.message is not None and update.message.refunded_payment is not None:
+        from studgroup.billing import register_refund
+        from studgroup.bot_admin import enqueue_once
+
+        outcome = await register_refund(db, update.message)
+        if outcome not in {"applied", "already_applied"}:
+            await enqueue_once(
+                db,
+                "sendMessage",
+                {
+                    "chat_id": update.message.chat.id,
+                    "text": (
+                        "⚠️ Возврат получен, но корректировка доступа требует проверки. "
+                        "Обратитесь к @studgroup_admin."
+                    ),
+                },
+                f"billing-refund-review:{update.update_id}",
             )
         await db.commit()
         return {"ok": True}
