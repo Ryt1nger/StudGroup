@@ -75,6 +75,14 @@ class TelegramFile(BaseModel):
     height: int | None = Field(default=None, ge=0)
 
 
+class SuccessfulPayment(BaseModel):
+    currency: str = Field(max_length=3)
+    total_amount: int = Field(ge=1)
+    invoice_payload: str = Field(max_length=128)
+    telegram_payment_charge_id: str = Field(max_length=255)
+    provider_payment_charge_id: str | None = Field(default=None, max_length=255)
+
+
 class Message(BaseModel):
     message_id: int
     date: int = Field(ge=0)
@@ -90,6 +98,7 @@ class Message(BaseModel):
     forum_topic_edited: ForumTopicEdited | None = None
     new_chat_members: list[ChatMember] = Field(default_factory=list, max_length=100)
     users_shared: UsersShared | None = None
+    successful_payment: SuccessfulPayment | None = None
     forward_origin: ForwardOrigin | None = None
     media_group_id: str | None = Field(default=None, max_length=255)
     photo: list[TelegramFile] = Field(default_factory=list, max_length=20)
@@ -120,11 +129,20 @@ class CallbackQuery(BaseModel):
     data: str | None = Field(default=None, max_length=64)
 
 
+class PreCheckoutQuery(BaseModel):
+    id: str = Field(max_length=256)
+    sender: Sender = Field(alias="from")
+    currency: str = Field(max_length=3)
+    total_amount: int = Field(ge=1)
+    invoice_payload: str = Field(max_length=128)
+
+
 class Update(BaseModel):
     update_id: int
     message: Message | None = None
     edited_message: Message | None = None
     callback_query: CallbackQuery | None = None
+    pre_checkout_query: PreCheckoutQuery | None = None
     my_chat_member: MyChatMemberUpdated | None = None
 
 
@@ -148,6 +166,42 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
             db.add(ReceivedUpdate(update_id=update.update_id, received_at=datetime.now(UTC)))
             await db.flush()
     except IntegrityError:
+        return {"ok": True}
+
+    # Payment events do not belong to /start panels. Answer pre-checkout in the
+    # Telegram-required short window, and only a successful_payment may grant access.
+    if update.pre_checkout_query is not None:
+        from studgroup.billing import answer_pre_checkout
+
+        await answer_pre_checkout(db, update.pre_checkout_query, request.app.state.settings)
+        await db.commit()
+        return {"ok": True}
+    if update.message is not None and update.message.successful_payment is not None:
+        from studgroup.billing import confirm_payment
+        from studgroup.bot_admin import enqueue_once
+
+        outcome = await confirm_payment(db, update.message, request.app.state.settings)
+        if outcome not in {"applied", "already_applied"}:
+            # A paid-but-unmatched Telegram receipt needs human reconciliation,
+            # never a guessed group entitlement or an automatic repeat payment.
+            payment = update.message.successful_payment
+            reference = hashlib.sha256(
+                payment.telegram_payment_charge_id.encode("utf-8")
+            ).hexdigest()
+            await enqueue_once(
+                db,
+                "sendMessage",
+                {
+                    "chat_id": update.message.chat.id,
+                    "text": (
+                        "⚠️ Платёж получен Telegram, но автоматическое "
+                        "продление пока не подтверждено. Не платите повторно. "
+                        "Напишите в поддержку: @studgroup_admin."
+                    ),
+                },
+                f"billing-review:{reference}",
+            )
+        await db.commit()
         return {"ok": True}
 
     from studgroup.bot_panels import dispatch
@@ -178,6 +232,14 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
             await bot_connect.on_group_message(db, settings, update.message)
         await db.commit()
         return {"ok": True}
+    # When separately enabled, expire only paid academic processing; do not
+    # delete past cards or suspend the group's Telegram membership.
+    if settings.billing_enforce_access:
+        from studgroup.billing import group_limited
+
+        if await group_limited(db, group.id, settings):
+            await db.commit()
+            return {"ok": True}
     if (
         update.message is not None
         and (update.message.text or "").lstrip().startswith("/start")
