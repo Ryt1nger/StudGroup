@@ -301,6 +301,65 @@ async def confirm_payment(db: AsyncSession, message, settings) -> str:
     return "applied"
 
 
+
+async def register_refund(db: AsyncSession, message) -> str:
+    """Apply a Telegram-refunded Stars receipt once; never issue a refund request.
+
+    The remaining group entitlement is reduced by the refunded number of days,
+    while already consumed time cannot be taken back. Other settled orders stay
+    intact and no negative period is possible.
+    """
+    receipt = message.refunded_payment
+    if receipt is None or message.sender is None or message.chat.id != message.sender.id:
+        return "invalid_message"
+    order_id = parse_payload(receipt.invoice_payload)
+    if order_id is None:
+        return "invalid_order"
+    order = await db.scalar(
+        select(GroupPaymentOrder).where(GroupPaymentOrder.id == order_id).with_for_update()
+    )
+    if order is None:
+        return "unknown_order"
+    if (
+        receipt.currency != "XTR"
+        or receipt.total_amount != order.stars_amount
+        or receipt.telegram_payment_charge_id != order.telegram_charge_id
+        or message.sender.id != order.payer_telegram_id
+    ):
+        return "mismatched_refund"
+    if order.status == "refunded":
+        return "already_applied"
+    if order.status != "paid":
+        return "invalid_state"
+    now = datetime.now(UTC)
+    subscription = await ensure_subscription(db, order.group_id, now)
+    if subscription.paid_until is not None:
+        previous = as_utc(subscription.paid_until)
+        end = max(
+            as_utc(subscription.trial_ends_at),
+            previous - timedelta(days=30 * order.months),
+        )
+        subscription.paid_until = end
+        subscription.renewal_warning_for = None
+        subscription.updated_at = now
+    order.status = "refunded"
+    order.refunded_at = now
+    await enqueue_once(
+        db,
+        "sendMessage",
+        {
+            "chat_id": order.payer_telegram_id,
+            "text": (
+                "↩️ Возврат Telegram Stars подтверждён.\\n\\n"
+                "Оплаченный срок доступа всей группы пересчитан. "
+                "Если нужна помощь, напишите @studgroup_admin."
+            ),
+        },
+        f"billing-refund:{order.id}",
+    )
+    return "applied"
+
+
 def warning_keyboard(settings):
     name = (settings.bot_username or "").lstrip("@")
     return (
