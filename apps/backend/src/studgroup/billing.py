@@ -301,7 +301,6 @@ async def confirm_payment(db: AsyncSession, message, settings) -> str:
     return "applied"
 
 
-
 async def register_refund(db: AsyncSession, message) -> str:
     """Apply a Telegram-refunded Stars receipt once; never issue a refund request.
 
