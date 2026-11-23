@@ -400,6 +400,24 @@ async def tick(engine, settings) -> None:
                 )
                 if sent:
                     subscription.trial_expired_notice_at = now
+            elif now >= deadline and not is_trial:
+                # The unique key makes paid-expiry notices safe to replay without
+                # mutating the paid period or sending daily reminders.
+                await enqueue_once(
+                    db,
+                    "sendMessage",
+                    {
+                        "chat_id": telegram_id,
+                        "text": (
+                            "⏳ Оплаченный период StudGroup завершился.\n\n"
+                            "В течение двух дней доступ всей группы сохраняется. "
+                            "Для продолжения выберите 1–4 месяца.\n"
+                            + OPEN_CHECKOUT_TEXT
+                        ),
+                        **({"reply_markup": keyboard} if keyboard else {}),
+                    },
+                    f"billing-paid-expired:{group_id}:{int(deadline.timestamp())}",
+                )
         await db.commit()
 
 
