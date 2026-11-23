@@ -310,7 +310,7 @@ async def register_refund(db: AsyncSession, message) -> str:
     intact and no negative period is possible.
     """
     receipt = message.refunded_payment
-    if receipt is None or message.sender is None or message.chat.id != message.sender.id:
+    if receipt is None or message.chat.type != "private":
         return "invalid_message"
     order_id = parse_payload(receipt.invoice_payload)
     if order_id is None:
@@ -324,7 +324,7 @@ async def register_refund(db: AsyncSession, message) -> str:
         receipt.currency != "XTR"
         or receipt.total_amount != order.stars_amount
         or receipt.telegram_payment_charge_id != order.telegram_charge_id
-        or message.sender.id != order.payer_telegram_id
+        or message.chat.id != order.payer_telegram_id
     ):
         return "mismatched_refund"
     if order.status == "refunded":
@@ -350,7 +350,7 @@ async def register_refund(db: AsyncSession, message) -> str:
         {
             "chat_id": order.payer_telegram_id,
             "text": (
-                "↩️ Возврат Telegram Stars подтверждён.\\n\\n"
+                "↩️ Возврат Telegram Stars подтверждён.\n\n"
                 "Оплаченный срок доступа всей группы пересчитан. "
                 "Если нужна помощь, напишите @studgroup_admin."
             ),
