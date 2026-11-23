@@ -590,9 +590,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.billing_enabled:
             from studgroup.billing import loop as billing_loop
 
-            billing_task = asyncio.create_task(
-                billing_loop(app.state.background_engine, settings)
-            )
+            billing_task = asyncio.create_task(billing_loop(app.state.background_engine, settings))
         try:
             yield
         finally:
