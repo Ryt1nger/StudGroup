@@ -646,8 +646,9 @@ def test_the_welcome_screen_reaches_every_info_topic_by_buttons(foreman):
     tap(foreman, "Назад")
 
     tap(foreman, "Тарифы")
-    assert "Тарифы StudGroup скоро появятся" in last(foreman)["text"]
-    assert "₽" not in last(foreman)["text"]
+    assert "800 ₽" in last(foreman)["text"]
+    assert "всей группы" in last(foreman)["text"]
+    assert "7 дней" in last(foreman)["text"]
     tap(foreman, "Назад")
 
     assert button(foreman, "Поддержка") == {
