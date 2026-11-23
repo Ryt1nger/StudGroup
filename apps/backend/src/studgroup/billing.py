@@ -118,9 +118,7 @@ async def group_limited(db, group_id: uuid.UUID, settings, now=None) -> bool:
     """Check enforcement only when explicitly enabled; never restrict a pilot by default."""
     from studgroup.billing_manual import ready as bank_ready
 
-    if not settings.billing_enforce_access or not (
-        payment_ready(settings) or bank_ready(settings)
-    ):
+    if not settings.billing_enforce_access or not (payment_ready(settings) or bank_ready(settings)):
         return False
     subscription = await ensure_subscription(db, group_id, now)
     return state(subscription, now or datetime.now(UTC)) == "expired"
