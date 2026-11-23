@@ -1,0 +1,72 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 160mb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ../../apps/backend
+      dockerfile: Dockerfile
+    image: studgroup-api:${STUDGROUP_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: /etc/studgroup/backend.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [internal]
+    expose: ["8000"]
+    mem_limit: 1400m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 128m
+
+networks:
+  internal:
+
+volumes:
+  redis_data:
+  caddy_data:
+  caddy_config:
