@@ -52,7 +52,17 @@ def upgrade() -> None:
     # monetary records; defense-in-depth RLS denies all direct client-side access.
     op.execute("ALTER TABLE group_subscriptions ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE group_payment_orders ENABLE ROW LEVEL SECURITY")
-    op.execute("REVOKE ALL ON group_subscriptions, group_payment_orders FROM anon, authenticated")
+    # Bare PostgreSQL CI databases do not have Supabase's API roles.
+    op.execute(
+        """DO $ BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+            REVOKE ALL ON group_subscriptions, group_payment_orders FROM anon;
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+            REVOKE ALL ON group_subscriptions, group_payment_orders FROM authenticated;
+        END IF;
+        END $;"""
+    )
 
 
 def downgrade() -> None:
