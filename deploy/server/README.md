@@ -23,6 +23,13 @@ docker compose -f deploy/server/compose.yml build caddy
 docker compose -f deploy/server/compose.yml up -d redis api caddy
 ```
 
+The normal path is automated: a successful `Backend` workflow for `main` triggers
+`.github/workflows/deploy-vps.yml`. Its restricted SSH key can invoke only
+`deploy/server/deploy-wrapper.sh`, which passes the original request to `deploy.sh`; the server
+validates the exact current `origin/main` SHA, serializes
+deploys, runs health checks, and rolls back to the previous SHA if verification fails. Manual
+commands above are the recovery path, not the routine release process.
+
 Validate `docker compose ps`, `/health`, `/ready`, HTTPS, logs, and external dependencies before
 changing the Telegram webhook or starting any batch SDO processing. The temporary public endpoints
 are `https://api.109-237-97-85.sslip.io` and `https://app.109-237-97-85.sslip.io`. Paid AI stays off
