@@ -138,8 +138,9 @@ def test_today_only_enriches_three_nearest_upcoming_cards(client, monkeypatch):
         response = client.get("/v1/today", headers={"Authorization": "Bearer valid"})
     finally:
         event.remove(engine, "before_cursor_execute", count_query)
-    # Three displayed cards used to fan out into per-card source/material queries.
-    assert len(statements) <= 20
+    # Three displayed cards must not cause per-card fan-out; include the single
+    # fixed calendar-coverage probe needed to distinguish empty from unknown days.
+    assert len(statements) <= 21
     assert response.status_code == 200
     upcoming = next(
         section for section in response.json()["sections"] if section["kind"] == "upcoming"
