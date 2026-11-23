@@ -1491,3 +1491,31 @@ class GroupPaymentOrder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GroupBankOrder(Base):
+    """A RUB bank-link payment request awaiting explicit owner verification.
+
+    No student callback, bank redirect or client message can grant paid access.
+    """
+
+    __tablename__ = "group_bank_orders"
+    __table_args__ = (
+        CheckConstraint("months BETWEEN 1 AND 4", name="months_1_4"),
+        CheckConstraint("amount_rub > 0", name="positive_amount"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="RESTRICT"), index=True
+    )
+    payer_telegram_id: Mapped[int] = mapped_column(BigInteger)
+    months: Mapped[int] = mapped_column(Integer)
+    amount_rub: Mapped[int] = mapped_column(Integer)
+    payment_url: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_by: Mapped[int | None] = mapped_column(BigInteger)
+    cleanup_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cleanup_done: Mapped[bool] = mapped_column(Boolean, default=False)
