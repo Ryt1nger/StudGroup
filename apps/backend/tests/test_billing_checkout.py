@@ -141,6 +141,38 @@ def test_wrong_stars_total_rejected_before_payment_and_cannot_activate(client, m
     assert subscription.paid_until is None
 
 
+def test_telegram_refund_shortens_group_access_only_once(client, monkeypatch):
+    enable(client, monkeypatch)
+    order, _ = start_checkout(client)
+    assert telegram_settlement(client, order).status_code == 200
+    _paid, subscription = single_order(client)
+    old_deadline = billing.as_utc(subscription.paid_until)
+
+    refund = {
+        "update_id": 70090,
+        "message": {
+            "message_id": 70090,
+            "date": int(datetime.now(UTC).timestamp()),
+            "chat": {"id": 1, "type": "private"},
+            "refunded_payment": {
+                "currency": "XTR",
+                "total_amount": order.stars_amount,
+                "invoice_payload": billing.invoice_payload(order.id),
+                "telegram_payment_charge_id": "test-star-charge",
+            },
+        },
+    }
+    assert send(client, refund).status_code == 200
+    refunded, subscription = single_order(client)
+    assert refunded.status == "refunded"
+    assert refunded.refunded_at is not None
+    assert billing.as_utc(subscription.paid_until) == old_deadline - timedelta(days=60)
+    refund["update_id"] += 1
+    refund["message"]["message_id"] += 1
+    assert send(client, refund).status_code == 200
+    assert billing.as_utc(single_order(client)[1].paid_until) == old_deadline - timedelta(days=60)
+
+
 def test_a_repeat_start_does_not_reset_the_groups_trial(client, monkeypatch):
     enable(client, monkeypatch)
     deliver(client, "/start", uid=1)
