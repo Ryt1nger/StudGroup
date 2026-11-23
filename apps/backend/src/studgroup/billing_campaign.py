@@ -66,13 +66,11 @@ async def queue_billing_announcement(engine, settings, *, now=None):
                 )
             )
         ).all()
-        excluded_ids = {user_id for user_id, _, group_id in rows if group_id == EXCLUDED_GROUP_ID}
+        excluded_ids = {telegram_id for _, telegram_id, group_id in rows if group_id == EXCLUDED_GROUP_ID}
         recipients = {
             telegram_id
-            for user_id, telegram_id, group_id in rows
-            if group_id != EXCLUDED_GROUP_ID
-            and user_id not in excluded_ids
-            and telegram_id > 0
+            for _, telegram_id, group_id in rows
+            if group_id != EXCLUDED_GROUP_ID and telegram_id not in excluded_ids and telegram_id > 0
         }
         queued = 0
         for telegram_id in sorted(recipients):
