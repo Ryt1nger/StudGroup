@@ -11,6 +11,7 @@ COMMANDS = {
     "/connect": "connect",
     "/faq": "faq",
     "/support": "support",
+    "/paysupport": "support",
 }
 
 # Deep-link payloads (Telegram allows A-Z a-z 0-9 _ -). ``invite_*`` is NOT here: it belongs
