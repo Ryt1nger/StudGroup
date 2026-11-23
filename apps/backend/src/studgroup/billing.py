@@ -44,20 +44,25 @@ def payment_ready(settings) -> bool:
     )
 
 
+def as_utc(value: datetime) -> datetime:
+    """Normalize database timestamps, including SQLite test drivers."""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
 def state(subscription: GroupSubscription, now: datetime) -> str:
-    if subscription.paid_until is not None and subscription.paid_until > now:
+    now = as_utc(now)
+    trial_end_at = as_utc(subscription.trial_ends_at)
+    paid_end_at = as_utc(subscription.paid_until) if subscription.paid_until else None
+    if paid_end_at is not None and paid_end_at > now:
         return "active"
-    if subscription.trial_ends_at > now:
+    if trial_end_at > now:
         return "trial"
-    latest = max(
-        subscription.trial_ends_at,
-        subscription.paid_until or subscription.trial_ends_at,
-    )
+    latest = max(trial_end_at, paid_end_at or trial_end_at)
     return "grace" if latest + timedelta(days=GRACE_DAYS) > now else "expired"
 
 
 def formatted_date(value: datetime) -> str:
-    return value.astimezone(UTC).strftime("%d.%m.%Y %H:%M UTC")
+    return as_utc(value).strftime("%d.%m.%Y %H:%M UTC")
 
 
 async def member_group(db, telegram_id: int) -> tuple[Membership, Group] | None:
@@ -267,10 +272,10 @@ async def confirm_payment(db: AsyncSession, message, settings) -> str:
     subscription = await ensure_subscription(db, order.group_id, now)
     # Protect the free week when someone pays early; no purchased days are lost.
     paid_from = subscription.paid_until
-    if subscription.trial_ends_at > now and (
-        paid_from is None or paid_from < subscription.trial_ends_at
-    ):
-        paid_from = subscription.trial_ends_at
+    trial_deadline = as_utc(subscription.trial_ends_at)
+    paid_from = as_utc(paid_from) if paid_from is not None else None
+    if trial_deadline > now and (paid_from is None or paid_from < trial_deadline):
+        paid_from = trial_deadline
     subscription.paid_until = extended_paid_until(now=now, paid_until=paid_from, months=order.months)
     subscription.renewal_warning_for = None
     subscription.updated_at = now
@@ -328,7 +333,7 @@ async def tick(engine, settings) -> None:
         now = datetime.now(UTC)
         for group_id, telegram_id in people:
             subscription = await ensure_subscription(db, group_id, now)
-            deadline = subscription.paid_until or subscription.trial_ends_at
+            deadline = as_utc(subscription.paid_until or subscription.trial_ends_at)
             is_trial = subscription.paid_until is None
             keyboard = warning_keyboard(settings)
             if now < deadline <= now + timedelta(hours=24):
@@ -349,7 +354,10 @@ async def tick(engine, settings) -> None:
                     )
                     if sent:
                         subscription.trial_warning_at = now
-                elif not is_trial and subscription.renewal_warning_for != deadline:
+                elif not is_trial and (
+                    subscription.renewal_warning_for is None
+                    or as_utc(subscription.renewal_warning_for) != deadline
+                ):
                     sent = await enqueue_once(
                         db, "sendMessage",
                         {
