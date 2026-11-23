@@ -187,8 +187,10 @@ async def create_invoice(
         order.status = "failed"
         return None
     url = invoice.get("result")
-    if invoice.get("ok") is not True or not isinstance(url, str) or not url.startswith(
-        "https://t.me/"
+    if (
+        invoice.get("ok") is not True
+        or not isinstance(url, str)
+        or not url.startswith("https://t.me/")
     ):
         order.status = "failed"
         return None
@@ -274,7 +276,9 @@ async def confirm_payment(db: AsyncSession, message, settings) -> str:
     paid_from = as_utc(paid_from) if paid_from is not None else None
     if trial_deadline > now and (paid_from is None or paid_from < trial_deadline):
         paid_from = trial_deadline
-    subscription.paid_until = extended_paid_until(now=now, paid_until=paid_from, months=order.months)
+    subscription.paid_until = extended_paid_until(
+        now=now, paid_until=paid_from, months=order.months
+    )
     subscription.renewal_warning_for = None
     subscription.updated_at = now
     order.telegram_charge_id = receipt.telegram_payment_charge_id
@@ -300,7 +304,11 @@ async def confirm_payment(db: AsyncSession, message, settings) -> str:
 def warning_keyboard(settings):
     name = (settings.bot_username or "").lstrip("@")
     return (
-        {"inline_keyboard": [[{"text": "💳 Продлить доступ группы", "url": f"https://t.me/{name}?start=billing"}]]}
+        {
+            "inline_keyboard": [
+                [{"text": "💳 Продлить доступ группы", "url": f"https://t.me/{name}?start=billing"}]
+            ]
+        }
         if name
         else None
     )
@@ -337,12 +345,14 @@ async def tick(engine, settings) -> None:
             if now < deadline <= now + timedelta(hours=24):
                 if is_trial and subscription.trial_warning_at is None:
                     sent = await enqueue_once(
-                        db, "sendMessage",
+                        db,
+                    "sendMessage",
                         {
                             "chat_id": telegram_id,
                             "text": (
                                 "⏳ Бесплатный период StudGroup заканчивается завтра.\n\n"
-                                + PRICE_NOTE + "\n\n"
+                                + PRICE_NOTE
+                                + "\n\n"
                                 + "Продлить доступ может один участник за всю группу.\n"
                                 + OPEN_CHECKOUT_TEXT
                             ),
@@ -357,13 +367,13 @@ async def tick(engine, settings) -> None:
                     or as_utc(subscription.renewal_warning_for) != deadline
                 ):
                     sent = await enqueue_once(
-                        db, "sendMessage",
+                        db,
+                    "sendMessage",
                         {
                             "chat_id": telegram_id,
                             "text": (
                                 "⏳ Оплаченный доступ всей группы к StudGroup заканчивается завтра.\n\n"
-                                "Продление — от 800 ₽ за 30 дней для группы.\n"
-                                + OPEN_CHECKOUT_TEXT
+                                "Продление — от 800 ₽ за 30 дней для группы.\n" + OPEN_CHECKOUT_TEXT
                             ),
                             **({"reply_markup": keyboard} if keyboard else {}),
                         },
@@ -373,12 +383,14 @@ async def tick(engine, settings) -> None:
                         subscription.renewal_warning_for = deadline
             elif now >= deadline and is_trial and subscription.trial_expired_notice_at is None:
                 sent = await enqueue_once(
-                    db, "sendMessage",
+                    db,
+                    "sendMessage",
                     {
                         "chat_id": telegram_id,
                         "text": (
                             "🎓 Бесплатная неделя StudGroup завершилась.\n\n"
-                            + PRICE_NOTE + "\n\n"
+                            + PRICE_NOTE
+                                + "\n\n"
                             + "Выберите срок — 1, 2, 3 или 4 месяца. "
                             + OPEN_CHECKOUT_TEXT
                         ),
