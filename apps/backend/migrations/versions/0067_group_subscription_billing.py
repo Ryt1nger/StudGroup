@@ -16,7 +16,9 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "group_subscriptions",
-        sa.Column("group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+        ),
         sa.Column("trial_started_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("trial_ends_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("paid_until", sa.DateTime(timezone=True)),
@@ -28,7 +30,9 @@ def upgrade() -> None:
     op.create_table(
         "group_payment_orders",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("payer_telegram_id", sa.BigInteger(), nullable=False),
         sa.Column("months", sa.Integer(), nullable=False),
         sa.Column("amount_rub", sa.Integer(), nullable=False),
@@ -45,7 +49,9 @@ def upgrade() -> None:
             "amount_rub > 0 AND stars_amount > 0",
             name="ck_group_payment_orders_positive_amounts",
         ),
-        sa.UniqueConstraint("telegram_charge_id", name="uq_group_payment_orders_telegram_charge_id"),
+        sa.UniqueConstraint(
+            "telegram_charge_id", name="uq_group_payment_orders_telegram_charge_id"
+        ),
     )
     op.create_index("ix_group_payment_orders_group_id", "group_payment_orders", ["group_id"])
     # Public is part of Supabase's Data API exposed schemas. Never grant anon access to
