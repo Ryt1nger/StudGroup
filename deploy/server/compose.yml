@@ -47,14 +47,18 @@ services:
       start_period: 60s
 
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: ../..
+      dockerfile: deploy/server/Caddy.Dockerfile
+      args:
+        VITE_API_BASE_URL: https://api.109-237-97-85.sslip.io/v1
+    image: studgroup-caddy:${STUDGROUP_IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     networks: [internal]

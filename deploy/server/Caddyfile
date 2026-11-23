@@ -2,3 +2,16 @@ api.109-237-97-85.sslip.io {
   encode zstd gzip
   reverse_proxy api:8000
 }
+
+app.109-237-97-85.sslip.io {
+  encode zstd gzip
+  root * /srv/frontend
+  try_files {path} /index.html
+  file_server
+
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  }
+}

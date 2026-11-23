@@ -1,6 +1,7 @@
 # Production runtime on the StudGroup VPS
 
-This Compose project runs the StudGroup API, its operational Redis queue, and Caddy on the VPS.
+This Compose project runs the StudGroup API, its operational Redis queue, and a Caddy image that
+serves the production frontend on the VPS.
 PostgreSQL/Supabase and YDB remain managed external services and are never copied into this stack.
 
 ## Required host state
@@ -18,11 +19,13 @@ git fetch origin
 git checkout --detach <merged-sha>
 export STUDGROUP_IMAGE_TAG=<first-12-characters-of-merged-sha>
 docker compose -f deploy/server/compose.yml build api
+docker compose -f deploy/server/compose.yml build caddy
 docker compose -f deploy/server/compose.yml up -d redis api caddy
 ```
 
 Validate `docker compose ps`, `/health`, `/ready`, HTTPS, logs, and external dependencies before
-changing the Telegram webhook or starting any batch SDO processing. Paid AI processing stays off
+changing the Telegram webhook or starting any batch SDO processing. The temporary public endpoints
+are `https://api.109-237-97-85.sslip.io` and `https://app.109-237-97-85.sslip.io`. Paid AI stays off
 until separately approved.
 
 ## Rollback
