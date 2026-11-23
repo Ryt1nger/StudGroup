@@ -48,9 +48,7 @@ def test_early_group_renewal_does_not_discard_remaining_paid_days():
 def test_expired_group_renews_from_payment_date():
     now = datetime(2026, 11, 23, 8, 0, tzinfo=UTC)
     old_end = now - timedelta(days=5)
-    assert extended_paid_until(now=now, paid_until=old_end, months=2) == (
-        now + timedelta(days=60)
-    )
+    assert extended_paid_until(now=now, paid_until=old_end, months=2) == (now + timedelta(days=60))
 
 
 def test_timestamps_must_be_timezone_aware():
