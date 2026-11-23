@@ -17,7 +17,9 @@ def upgrade() -> None:
     op.create_table(
         "group_bank_orders",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column(
+            "group_id", sa.Uuid(), sa.ForeignKey("groups.id", ondelete="RESTRICT"), nullable=False
+        ),
         sa.Column("payer_telegram_id", sa.BigInteger(), nullable=False),
         sa.Column("months", sa.Integer(), nullable=False),
         sa.Column("amount_rub", sa.Integer(), nullable=False),
