@@ -1,10 +1,7 @@
-"""Public informational topics for the Telegram bot: about, help, support, partners and tariffs.
+"""Public read-only information topics in StudGroup's single /start bot panel.
 
-Reachable from buttons of the /start panel, by the old commands (/tariffs, /help, /connect, /faq,
-/support) and by Telegram deep links ``https://t.me/<bot>?start=<topic>`` used by the landing page;
-the last two only select the topic, ``bot_start`` shows it inside the single /start panel so no
-loose messages pile up. Read-only: no state, no authorization decisions. Deliberately contains no
-prices: tariffs are not published yet. Texts never tell people to type a command.
+Published group prices are informational; payment collection is feature-gated,
+and Telegram-native digital access uses Stars rather than bank transfer links.
 """
 
 COMMANDS = {
@@ -14,6 +11,7 @@ COMMANDS = {
     "/connect": "connect",
     "/faq": "faq",
     "/support": "support",
+    "/paysupport": "support",
 }
 
 # Deep-link payloads (Telegram allows A-Z a-z 0-9 _ -). ``invite_*`` is NOT here: it belongs
@@ -61,10 +59,16 @@ def render(topic, support_contact=""):
         )
     elif topic == "tariffs":
         body = (
-            "Тарифы\n\n"
-            "Тарифы StudGroup скоро появятся. Сейчас приложение работает в закрытом пилоте, "
-            "цены пока не опубликованы.\n"
-            "Актуальная информация будет здесь и на сайте."
+            "Тарифы StudGroup\n\n"
+            "🎁 Первые 7 дней для всей учебной группы бесплатно.\n"
+            "После — 800 ₽ за 30 дней для всей группы, не за одного студента.\n"
+            "Один платёж можно внести за 1, 2, 3 или 4 месяца: "
+            "800 / 1 600 / 2 400 / 3 200 ₽.\n\n"
+            "В группе из 30–35 человек это всего около 23–27 ₽ с каждого; "
+            "при 25–30 — 27–32 ₽, а при 20 — 40 ₽. "
+            "Собирать взносы со студентов StudGroup не требует.\n\n"
+            "Внутри Telegram цифровой доступ оплачивается звёздами Telegram Stars. "
+            "Подключение оплаты зависит от готовности платёжной системы."
         )
     elif topic == "howto":
         body = (

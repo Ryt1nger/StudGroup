@@ -48,6 +48,9 @@ jobs:
           uv run alembic downgrade 0065
           uv run alembic current | grep -F "0065"
           uv run alembic upgrade head
+      - name: Verify group billing and Telegram checkout in isolation
+        run: |
+          uv run pytest -q tests/test_billing_plans.py tests/test_billing_checkout.py tests/test_bot_info.py --maxfail=1
       - name: Repeat safety regressions in different file orders
         run: |
           uv run pytest -q tests/test_ranepa_materialization.py tests/test_package_worker.py tests/test_ranepa_captcha_outcome.py tests/test_ranepa_worker.py --maxfail=1

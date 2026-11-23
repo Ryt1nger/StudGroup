@@ -123,6 +123,12 @@ class Settings(BaseSettings):
     # Paid processing must be an explicit production opt-in. A permissive default can spend
     # money merely by starting the API with an otherwise minimal environment.
     owner_funded_pilot: bool = False
+    # Off until the operator sets an approved Stars price and enables live checkout.
+    # The RUB tariff is marketing information; Telegram's currency is XTR.
+    billing_enabled: bool = False
+    billing_stars_per_month: int = Field(default=0, ge=0, le=2500)
+    # Independent second gate: do not interrupt existing study processing on rollout.
+    billing_enforce_access: bool = False
     # Live paid operation after pilots: no expiring release grant or amount cap.
     # Only explicitly enrolled groups; all requests still use accounting and safety holds.
     ai_production_groups: list[str] = Field(default_factory=list)
@@ -513,6 +519,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             or settings.bot_admin_user_id is not None
             or settings.cabinet_schedule_background_enabled
             or settings.processing_mode == "embedded"
+            or settings.billing_enabled
         )
         background_options = (
             background_database_engine_options(settings) if background_needed else None
@@ -537,7 +544,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Give its durable outbox a dedicated bounded pool for concurrent deliveries.
         app.state.delivery_engine = app.state.background_engine
         if background_options is not None and (
-            settings.bot_admin_user_id is not None or settings.owner_update_notifications_enabled
+            settings.bot_admin_user_id is not None
+            or settings.owner_update_notifications_enabled
+            or settings.billing_enabled
         ):
             app.state.delivery_engine = create_async_engine(
                 settings.database_url,
@@ -563,7 +572,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         app.state.cabinet_processor = cabinet_processor
         delivery = None
-        if settings.bot_admin_user_id is not None or settings.owner_update_notifications_enabled:
+        if (
+            settings.bot_admin_user_id is not None
+            or settings.owner_update_notifications_enabled
+            or settings.billing_enabled
+        ):
             from studgroup.bot_admin import delivery_loop
 
             delivery = asyncio.create_task(
@@ -575,9 +588,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     else 1,
                 )
             )
+        billing_task = None
+        if settings.billing_enabled:
+            from studgroup.billing import loop as billing_loop
+
+            billing_task = asyncio.create_task(billing_loop(app.state.background_engine, settings))
         try:
             yield
         finally:
+            if billing_task is not None:
+                billing_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await billing_task
             if diagnostics_task is not None:
                 diagnostics_task.cancel()
                 with suppress(asyncio.CancelledError):

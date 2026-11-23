@@ -40,3 +40,33 @@ until separately approved.
 Check out the previously recorded merged SHA, rebuild the API with its SHA tag, and run the same
 `docker compose up -d` command. Redis data and Caddy certificates live in named volumes and are not
 removed during a rollback.
+
+## Group billing rollout (Germany)
+
+The authoritative database is **Supabase Frankfurt** project `qzninfmbjegxuxncsueu`.
+The older US West project `ytghmfxjjyxkcaglbhfj` is not a target. YDB remains unchanged.
+The code introduces Alembic revision `0067`, which adds `group_subscriptions`
+and `group_payment_orders` with Row Level Security and no client access.
+
+**Important:** `deploy.sh` does not automatically run Alembic migrations.
+Before enabling billing, migrate the *new Germany database* from `0066` to `0067`
+using the deployed backend's `alembic upgrade head`, and verify `alembic current`.
+Do not run a migration against US West or an unverified `DATABASE_URL`.
+
+The bot starts with `BILLING_ENABLED=false`, `BILLING_STARS_PER_MONTH=0`,
+and `BILLING_ENFORCE_ACCESS=false`. Leave these off during first rollout. Only
+set the Stars price with operator approval, after a sandbox payment test and
+verification of one-time 1–4 month checkout, replay protection, refunds,
+legal receipts and backend backups. Enabling checkout does not automatically
+enable access enforcement; that is a separate release decision.
+
+Telegram digital access may only be sold **inside Telegram via Stars**. This
+branch does not fabricate bank transfer URLs or use individual card transfers.
+An external bank/merchant integration requires a separate compliant checkout,
+merchant credentials and server-side settlement verification.
+
+Production deployment follows the successful GitHub `Backend` workflow for
+`main` and the protected `Deploy VPS production` workflow. If the
+VPS SSH identity or host variables are unavailable, do not deploy via a
+historic Render service. Investigate GitHub Actions logs and ask the owner to
+restore the actual VPS access path.
