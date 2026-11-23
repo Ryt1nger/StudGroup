@@ -120,7 +120,7 @@ def test_tariffs_publish_one_price_for_the_whole_group(client):
     assert "всей группы" in text
     assert "7 дней" in text
     assert "1, 2, 3 или 4" in text
-    assert "Telegram Stars" in text
+    assert "банковской ссылке" in text
 
 
 def test_howto_offers_the_webapp_button(client):
