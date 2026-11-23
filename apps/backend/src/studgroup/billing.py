@@ -14,8 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.billing_plans import (
-    ALLOWED_MONTHS,
-    FREE_TRIAL_DAYS,
     extended_paid_until,
     price_quote,
     trial_end,
