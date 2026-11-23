@@ -43,30 +43,67 @@ removed during a rollback.
 
 ## Group billing rollout (Germany)
 
-The authoritative database is **Supabase Frankfurt** project `qzninfmbjegxuxncsueu`.
-The older US West project `ytghmfxjjyxkcaglbhfj` is not a target. YDB remains unchanged.
-The code introduces Alembic revision `0067`, which adds `group_subscriptions`
-and `group_payment_orders` with Row Level Security and no client access.
+The authoritative DB is Supabase Frankfurt `qzninfmbjegxuxncsueu`, never
+the old US West `ytghmfxjjyxkcaglbhfj`. YDB remains unchanged.
+The previous Stars billing schema is revision `0067`; manual bank-link
+orders require **revision `0068`**. `deploy.sh` does **not** run Alembic.
+Before enabling the bank-link flow, run `alembic upgrade head` against the
+verified German production DB and confirm `alembic current` is `0068`.
+Never run this against the old database.
 
-**Important:** `deploy.sh` does not automatically run Alembic migrations.
-Before enabling billing, migrate the *new Germany database* from `0066` to `0067`
-using the deployed backend's `alembic upgrade head`, and verify `alembic current`.
-Do not run a migration against US West or an unverified `DATABASE_URL`.
+### Alfa-Bank manual checkout
 
-The bot starts with `BILLING_ENABLED=false`, `BILLING_STARS_PER_MONTH=0`,
-and `BILLING_ENFORCE_ACCESS=false`. Leave these off during first rollout. Only
-set the Stars price with operator approval, after a sandbox payment test and
-verification of one-time 1–4 month checkout, replay protection, refunds,
-legal receipts and backend backups. Enabling checkout does not automatically
-enable access enforcement; that is a separate release decision.
+The owner supplies **four actual HTTPS payment links** in
+`/etc/studgroup/backend.env`. Generate them via the bank's supported
+self-employed payment-link feature, with these **fixed amounts**:
 
-Telegram digital access may only be sold **inside Telegram via Stars**. This
-branch does not fabricate bank transfer URLs or use individual card transfers.
-An external bank/merchant integration requires a separate compliant checkout,
-merchant credentials and server-side settlement verification.
+- `BILLING_ALFA_URL_1M`: 800 RUB
+- `BILLING_ALFA_URL_2M`: 1600 RUB
+- `BILLING_ALFA_URL_3M`: 2400 RUB
+- `BILLING_ALFA_URL_4M`: 3200 RUB
 
-Production deployment follows the successful GitHub `Backend` workflow for
-`main` and the protected `Deploy VPS production` workflow. If the
-VPS SSH identity or host variables are unavailable, do not deploy via a
-historic Render service. Investigate GitHub Actions logs and ask the owner to
-restore the actual VPS access path.
+The app never manufactures Alfa URLs or modifies bank parameters. No
+bank API credentials are required. The four links must already point to
+the owner's actual account and carry the intended payment amounts.
+
+Set `OWNER_TELEGRAM_USER_ID` (or `BOT_ADMIN_USER_ID`) to the Telegram
+numeric ID that is allowed to approve payments. Enable only after link,
+recipient, and amount checks:
+
+```sh
+BILLING_PAYMENT_MODE=manual_alfa
+BILLING_ENABLED=true
+BILLING_ALFA_URL_1M=https://<actual-bank-issued-800-rub-link>
+BILLING_ALFA_URL_2M=https://<actual-bank-issued-1600-rub-link>
+BILLING_ALFA_URL_3M=https://<actual-bank-issued-2400-rub-link>
+BILLING_ALFA_URL_4M=https://<actual-bank-issued-3200-rub-link>
+BILLING_ENFORCE_ACCESS=false
+```
+
+The student opens the link and returns to click "Я оплатил". This creates
+a **review request**, not a credit. The owner receives a private bot
+message with group, period, amount, Telegram payer ID and order reference.
+Only that authenticated owner can click "Подтвердить получение" and
+extend the group's paid period, exactly once, after checking their bank.
+"Не поступило" rejects without extending access. On confirmation, the
+student's existing single-message start panel shows success, then changes
+back to the normal home panel about 20 seconds later. Telegram does not
+provide bot read receipts; this delay is **after confirmation**, not
+guaranteed to be 20 seconds after the person reads it. The student can
+return home immediately using the on-screen button.
+
+Manual verification is operationally mandatory: a bank link and a
+student's click cannot prove a payment. Do not approve two different
+order references for the same bank receipt. Always check transaction
+amount and beneficiary in the bank.
+
+The legacy Stars code and `BILLING_STARS_PER_MONTH` remain only for
+compatibility with old invoices and have no role in `manual_alfa` mode.
+If Telegram has granted the owner an exception for external checkout of
+digital access, retain the written permission and its scope; the project
+does not independently verify that authorization.
+
+Production deployment follows successful Backend CI and the protected
+VPS workflow. If this fails, inspect GitHub Actions and server logs.
+Do not use the historic Render service. Never enable access enforcement
+during first rollout.

@@ -19,6 +19,7 @@ pytest_plugins = ["test_schedule_api"]
 def enable(client, monkeypatch):
     settings = client.app.state.settings
     settings.billing_enabled = True
+    settings.billing_payment_mode = "stars"
     settings.billing_stars_per_month = 100
     settings.billing_enforce_access = False
     settings.telegram_bot_token = "test-token"

@@ -1,7 +1,7 @@
 """Public read-only information topics in StudGroup's single /start bot panel.
 
-Published group prices are informational; payment collection is feature-gated,
-and Telegram-native digital access uses Stars rather than bank transfer links.
+Published group prices are informational; payment collection is feature-gated.
+Bank payment links are owner-configured and never automatically settle access.
 """
 
 COMMANDS = {
@@ -67,8 +67,8 @@ def render(topic, support_contact=""):
             "В группе из 30–35 человек это всего около 23–27 ₽ с каждого; "
             "при 25–30 — 27–32 ₽, а при 20 — 40 ₽. "
             "Собирать взносы со студентов StudGroup не требует.\n\n"
-            "Внутри Telegram цифровой доступ оплачивается звёздами Telegram Stars. "
-            "Подключение оплаты зависит от готовности платёжной системы."
+            "Оплата по банковской ссылке доступна после подключения реквизитов. "
+            "Подтверждение поступления выполняет владелец вручную."
         )
     elif topic == "howto":
         body = (

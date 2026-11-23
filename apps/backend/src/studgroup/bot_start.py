@@ -538,14 +538,14 @@ async def registration_complete(db, session, settings, telegram_id):
 
 async def billing_status_screen(db, session, settings, telegram_id):
     """A single group subscription, never a personal student subscription."""
-    from studgroup import billing
+    from studgroup import billing, billing_manual
 
     found = await billing.member_group(db, telegram_id)
     if not found:
         await home(db, session, settings, telegram_id)
         return
     _member, group = found
-    if not billing.payment_ready(settings):
+    if not (billing.payment_ready(settings) or billing_manual.ready(settings)):
         await screen(
             db,
             session,
@@ -572,8 +572,11 @@ async def billing_status_screen(db, session, settings, telegram_id):
         f"Действует до: {billing.formatted_date(end)}\n\n"
         f"{billing.PRICE_NOTE}\n\n"
         "Можно оплатить сразу 1, 2, 3 или 4 месяца.\n"
-        "В Telegram цифровой доступ оплачивается звёздами ⭐, "
-        "без ввода банковских реквизитов в боте."
+        + (
+            "Оплата по ссылке Альфа-Банка, затем ручная проверка поступления."
+            if billing_manual.ready(settings)
+            else "Оплата через Telegram Stars."
+        )
     )
     await screen(
         db,
@@ -586,10 +589,10 @@ async def billing_status_screen(db, session, settings, telegram_id):
 
 
 async def billing_period_screen(db, session, settings, telegram_id):
-    from studgroup import billing
+    from studgroup import billing, billing_manual
 
     found = await billing.member_group(db, telegram_id)
-    if not found or not billing.payment_ready(settings):
+    if not found or not (billing.payment_ready(settings) or billing_manual.ready(settings)):
         await billing_status_screen(db, session, settings, telegram_id)
         return
     _member, group = found
@@ -602,7 +605,11 @@ async def billing_period_screen(db, session, settings, telegram_id):
         "3 месяца — 2 400 ₽\n"
         "4 месяца — 3 200 ₽\n\n"
         "Один платёж действует для всех участников. "
-        "Сумма платежа в Telegram будет показана в звёздах ⭐.",
+        + (
+            "После перевода нажмите «Я оплатил», чтобы отправить заявку на проверку."
+            if billing_manual.ready(settings)
+            else "Сумма платежа в Telegram будет показана в звёздах ⭐."
+        ),
         [
             [("1 месяц · 800 ₽", "billing_month_1")],
             [("2 месяца · 1 600 ₽", "billing_month_2")],
@@ -616,16 +623,47 @@ async def billing_period_screen(db, session, settings, telegram_id):
 
 
 async def billing_checkout_screen(db, session, settings, telegram_id, months):
-    from studgroup import billing
+    from studgroup import billing, billing_manual
 
     found = await billing.member_group(db, telegram_id)
-    if not found or not billing.payment_ready(settings):
+    if not found or not (billing.payment_ready(settings) or billing_manual.ready(settings)):
         await billing_status_screen(db, session, settings, telegram_id)
         return
     _member, group = found
     data = json.loads(session.payload)
     if data.get("group_id") != str(group.id):
         await billing_status_screen(db, session, settings, telegram_id)
+        return
+    if billing_manual.ready(settings):
+        order = await billing_manual.create_order(
+            db, settings, group_id=group.id, buyer_id=telegram_id, months=months
+        )
+        if order is None:
+            await billing_status_screen(db, session, settings, telegram_id)
+            return
+        await screen(
+            db,
+            session,
+            f"🏦 Оплата доступа группы «{group.name}»\n\n"
+            f"Срок: {months} мес. ({30 * months} дней)\n"
+            f"К оплате: {order.amount_rub:,} ₽\n\n"
+            "1. Нажмите «Перейти к оплате».\n"
+            "2. Подтвердите перевод в банке.\n"
+            "3. Вернитесь сюда и нажмите «Я оплатил».\n\n"
+            "Доступ будет продлён только после ручной проверки поступления.",
+            [
+                [
+                    {
+                        "text": f"🏦 Перейти к оплате · {order.amount_rub:,} ₽",
+                        "url": order.payment_url,
+                    }
+                ],
+                [("✅ Я оплатил", "billing_submitted")],
+                [("‹ Выбрать другой срок", "billing_pay")],
+            ],
+            "billing_manual_checkout",
+            {"group_id": str(group.id), "order_id": str(order.id)},
+        )
         return
     result = await billing.create_invoice(
         db, settings, group_id=group.id, buyer_id=telegram_id, months=months
@@ -1959,6 +1997,33 @@ async def handle(db, update, settings, topic=None):
         await billing_status_screen(db, session, settings, sender.id)
     elif action == "billing_pay":
         await billing_period_screen(db, session, settings, sender.id)
+    elif action == "billing_submitted" and session.step == "billing_manual_checkout":
+        from studgroup import billing_manual
+
+        details = json.loads(session.payload)
+        try:
+            order_id = uuid.UUID(details.get("order_id", ""))
+            group_id = uuid.UUID(details.get("group_id", ""))
+        except (TypeError, ValueError):
+            await billing_status_screen(db, session, settings, sender.id)
+        else:
+            result = await billing_manual.submit(
+                db, settings, order_id=order_id, buyer_id=sender.id, group_id=group_id
+            )
+            if result in {"submitted", "already_submitted"}:
+                await screen(
+                    db,
+                    session,
+                    "⏳ Заявка отправлена на проверку.\n\n"
+                    "Владелец проверит поступление в Альфа-Банке и подтвердит "
+                    "оплату вручную. До подтверждения доступ не продлевается. "
+                    "Сообщение о результате появится здесь.",
+                    [[("Главное меню", "home")]],
+                    "billing_wait",
+                    {"group_id": str(group_id), "order_id": str(order_id)},
+                )
+            else:
+                await billing_status_screen(db, session, settings, sender.id)
     elif action.startswith("billing_month_") and session.step == "billing_period":
         try:
             selected_months = int(action.removeprefix("billing_month_"))
