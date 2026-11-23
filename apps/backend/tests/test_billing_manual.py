@@ -4,7 +4,6 @@ import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from sqlalchemy import func, select
 from test_bot_start import last, tap
 from test_headman import deliver, run
