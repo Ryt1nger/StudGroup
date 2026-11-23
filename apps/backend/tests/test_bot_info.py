@@ -112,12 +112,14 @@ def test_no_topic_asks_people_to_type_a_command(topic):
         assert not re.search(r"(?<![\w/])/[A-Za-z_]{3,}", text), text
 
 
-def test_tariffs_publish_no_prices(client):
+def test_tariffs_publish_one_price_for_the_whole_group(client):
     private(client, "/tariffs", uid=2)
     text = panel_frames(client)[-1]["text"]
-    assert "скоро" in text
-    assert "₽" not in text and "руб" not in text.lower()
-    assert not any(ch.isdigit() for ch in text)
+    assert "800 ₽" in text
+    assert "всей группы" in text
+    assert "7 дней" in text
+    assert "1, 2, 3 или 4" in text
+    assert "Telegram Stars" in text
 
 
 def test_howto_offers_the_webapp_button(client):
