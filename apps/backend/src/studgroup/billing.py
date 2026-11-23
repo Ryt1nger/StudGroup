@@ -346,13 +346,13 @@ async def tick(engine, settings) -> None:
                 if is_trial and subscription.trial_warning_at is None:
                     sent = await enqueue_once(
                         db,
-                    "sendMessage",
+                        "sendMessage",
                         {
                             "chat_id": telegram_id,
                             "text": (
                                 "⏳ Бесплатный период StudGroup заканчивается завтра.\n\n"
                                 + PRICE_NOTE
-                                + "\n\n"
+                            + "\n\n"
                                 + "Продлить доступ может один участник за всю группу.\n"
                                 + OPEN_CHECKOUT_TEXT
                             ),
@@ -368,7 +368,7 @@ async def tick(engine, settings) -> None:
                 ):
                     sent = await enqueue_once(
                         db,
-                    "sendMessage",
+                        "sendMessage",
                         {
                             "chat_id": telegram_id,
                             "text": (
@@ -411,8 +411,7 @@ async def tick(engine, settings) -> None:
                         "text": (
                             "⏳ Оплаченный период StudGroup завершился.\n\n"
                             "В течение двух дней доступ всей группы сохраняется. "
-                            "Для продолжения выберите 1–4 месяца.\n"
-                            + OPEN_CHECKOUT_TEXT
+                            "Для продолжения выберите 1–4 месяца.\n" + OPEN_CHECKOUT_TEXT
                         ),
                         **({"reply_markup": keyboard} if keyboard else {}),
                     },
