@@ -312,9 +312,15 @@ async def cleanup_due(engine, settings):
 
 
 async def cleanup_loop(engine, settings):
+    from studgroup.billing_campaign import queue_billing_announcement
+
     while True:
         try:
             await cleanup_due(engine, settings)
         except Exception as error:  # noqa: BLE001
             LOGGER.warning("bank_payment_cleanup_failed kind=%s", type(error).__name__)
+        try:
+            await queue_billing_announcement(engine, settings)
+        except Exception as error:  # noqa: BLE001
+            LOGGER.warning("billing_notice_iteration_failed kind=%s", type(error).__name__)
         await asyncio.sleep(3)

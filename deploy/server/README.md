@@ -43,8 +43,10 @@ removed during a rollback.
 
 ## Group billing rollout (Germany)
 
-The authoritative DB is Supabase Frankfurt `qzninfmbjegxuxncsueu`, never
-the old US West `ytghmfxjjyxkcaglbhfj`. YDB remains unchanged.
+The authoritative DB is Supabase Frankfurt **on the Startimmon2009 account**, project
+`xwerhtwptcpsjyubdumq`. The former Frankfurt `qzninfmbjegxuxncsueu`
+and older US West `ytghmfxjjyxkcaglbhfj` projects are NOT current targets.
+YDB remains unchanged.
 The previous Stars billing schema is revision `0067`; manual bank-link
 orders require **revision `0068`**. `deploy.sh` does **not** run Alembic.
 Before enabling the bank-link flow, run `alembic upgrade head` against the
@@ -73,6 +75,8 @@ recipient, and amount checks:
 ```sh
 BILLING_PAYMENT_MODE=manual_alfa
 BILLING_ENABLED=true
+BILLING_ANNOUNCEMENT_ENABLED=true
+BOT_USERNAME=studgroup_rf_bot
 BILLING_ALFA_URL_1M=https://<actual-bank-issued-800-rub-link>
 BILLING_ALFA_URL_2M=https://<actual-bank-issued-1600-rub-link>
 BILLING_ALFA_URL_3M=https://<actual-bank-issued-2400-rub-link>
@@ -107,3 +111,41 @@ Production deployment follows successful Backend CI and the protected
 VPS workflow. If this fails, inspect GitHub Actions and server logs.
 Do not use the historic Render service. Never enable access enforcement
 during first rollout.
+
+
+### One-time billing announcement — 30 November 2026
+
+The backend queues the announcement **once per eligible Telegram user** on
+**30 November 2026 at 12:00 Europe/Moscow** (09:00 UTC). It deliberately does
+not queue anything before this moment, or after its 24-hour dispatch window.
+
+Target: active members of active, pilot-authorized groups. **Exclude all
+members of BI 1.2**, authoritative group UUID
+`4449bbe8-1515-5148-b460-ade389d3f656`, even if someone is also a member
+of a different group. The checked production database currently contains
+42 eligible member accounts from five groups and 26 excluded BI 1.2 members.
+Recipients are recomputed at dispatch time. Notifications are private messages
+to known Telegram users, not group-wide chat posts. The bot can reach only
+people who have started it and have not blocked it.
+
+The worker runs in `billing_manual.cleanup_loop` while
+`BILLING_ENABLED=true` and `BILLING_PAYMENT_MODE=manual_alfa`.
+`BILLING_ANNOUNCEMENT_ENABLED=true` is the explicit campaign switch.
+It **requires all four real bank payment links**, a configured bot token,
+owner Telegram ID and valid `BOT_USERNAME`. If anything is missing, the
+announcement **will not be sent**; it will not fabricate bank links or switch
+to Stars. The outbox dedup key `billing-20261130:<telegram_user_id>`
+prevents duplicate messages across restarts and repeat polls.
+
+The notice contains a single button to the StudGroup bot's
+`/start billing` flow, not a direct bank link. The student chooses 1–4 months,
+opens the bank link for the relevant amount and submits their payment claim.
+Only the owner's manual review changes paid access.
+
+**Operator check before 30 November:** verify VPS `DATABASE_URL` really
+points to `xwerhtwptcpsjyubdumq`, confirm Alembic `0068`,
+verify four actual Alfa URLs correspond to 800/1600/2400/3200 RUB, set
+`BOT_USERNAME`, the numeric `OWNER_TELEGRAM_USER_ID`, and
+`BILLING_ENABLED=true`. Keep `BILLING_ENFORCE_ACCESS=false`
+until payment E2E is verified. Delivery does not happen just because
+the GitHub commit exists: the VPS must be running the updated release.
