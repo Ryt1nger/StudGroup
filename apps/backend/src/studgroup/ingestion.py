@@ -234,6 +234,15 @@ async def webhook(update: Update, request: Request, db: Annotated[AsyncSession, 
         await db.commit()
         return {"ok": True}
 
+    # Owner-only bank receipt confirmation is intentionally separate from
+    # the public /start panel. Never activate access from a student's claim.
+    if update.callback_query is not None and (update.callback_query.data or "").startswith("mb:"):
+        from studgroup.billing_manual import owner_callback
+
+        await owner_callback(db, update.callback_query, request.app.state.settings)
+        await db.commit()
+        return {"ok": True}
+
     from studgroup.bot_panels import dispatch
 
     if await dispatch(db, update, request.app.state.settings):
