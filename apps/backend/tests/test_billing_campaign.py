@@ -3,13 +3,13 @@
 import asyncio
 import json
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import select
+from test_headman import run
 
 from studgroup import billing_campaign
 from studgroup.models import BotOutbox, Group, Membership, User
-from test_headman import run
 
 pytest_plugins = ["test_schedule_api"]
 
