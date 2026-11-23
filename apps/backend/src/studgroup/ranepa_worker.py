@@ -73,12 +73,8 @@ ACCOUNT_TIMEOUT_SECONDS = 600
 MAX_AUTOMATIC_CAPTCHA_ATTEMPTS = 3
 # Optional Moodle discovery must not use up the entire account deadline.
 # The six verified timetable weeks are persisted before link enrichment.
-# A verified production canary found 39 safe candidates but cut off two course-heavy weeks at
-# 70 seconds each. Keep the account crawl bounded while allowing dynamic Moodle sections and the
-# already-capped 16 detail pages to settle. The outer workflow/account timeout remains the hard
-# guard and the course cache prevents paying this allowance repeatedly for recurring lessons.
-MAX_SDO_SCAN_TOTAL_SECONDS = 480
-MAX_SDO_SCAN_WEEK_SECONDS = 120
+MAX_SDO_SCAN_TOTAL_SECONDS = 330
+MAX_SDO_SCAN_WEEK_SECONDS = 70
 
 
 def owner_student_name(student, profile) -> str:
