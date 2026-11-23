@@ -197,6 +197,8 @@ async def topic_screen(db, session, settings, topic):
     rows = []
     if topic == "howto":
         rows.append([app_button(settings)])
+    if topic == "tariffs" and settings.billing_enabled:
+        rows.append([("💳 Доступ группы", "billing_status")])
     if topic == "about":
         rows.append([("Документы и согласия", "legal_docs")])
     links = [(label, action) for label, action in TOPIC_LINKS.get(topic, [])]
@@ -534,6 +536,130 @@ async def registration_complete(db, session, settings, telegram_id):
     )
 
 
+
+async def billing_status_screen(db, session, settings, telegram_id):
+    """A single group subscription, never a personal student subscription."""
+    from studgroup import billing
+
+    found = await billing.member_group(db, telegram_id)
+    if not found:
+        await home(db, session, settings, telegram_id)
+        return
+    _member, group = found
+    if not billing.payment_ready(settings):
+        await screen(
+            db,
+            session,
+            "💳 Доступ группы\n\n"
+            "Первая неделя бесплатно. Далее — 800 ₽ за 30 дней для всей учебной группы.\n"
+            "Оплата на 1–4 месяца одним платежом.\n\n"
+            "Приём платежей пока не подключён. Доступ текущего пилота не меняется.",
+            [[("‹ Назад", "home")]],
+            "billing_unavailable",
+        )
+        return
+    subscription = await billing.ensure_subscription(db, group.id)
+    status = billing.state(subscription, datetime.now(UTC))
+    labels = {
+        "trial": "🎁 Бесплатная неделя",
+        "active": "✅ Доступ оплачен",
+        "grace": "⏳ Льготный период",
+        "expired": "⚠️ Доступ требуется продлить",
+    }
+    end = subscription.paid_until or subscription.trial_ends_at
+    content = (
+        f"💳 Доступ группы «{group.name}»\n\n"
+        f"{labels[status]}\n"
+        f"Действует до: {billing.formatted_date(end)}\n\n"
+        f"{billing.PRICE_NOTE}\n\n"
+        "Можно оплатить сразу 1, 2, 3 или 4 месяца.\n"
+        "В Telegram цифровой доступ оплачивается звёздами ⭐, "
+        "без ввода банковских реквизитов в боте."
+    )
+    await screen(
+        db,
+        session,
+        content,
+        [[("💳 Продлить доступ группы", "billing_pay")], [("‹ Назад", "home")]],
+        "billing_status",
+        {"group_id": str(group.id)},
+    )
+
+
+async def billing_period_screen(db, session, settings, telegram_id):
+    from studgroup import billing
+
+    found = await billing.member_group(db, telegram_id)
+    if not found or not billing.payment_ready(settings):
+        await billing_status_screen(db, session, settings, telegram_id)
+        return
+    _member, group = found
+    await screen(
+        db,
+        session,
+        "📅 На сколько месяцев продлить доступ всей группы?\n\n"
+        "1 месяц — 800 ₽\n"
+        "2 месяца — 1 600 ₽\n"
+        "3 месяца — 2 400 ₽\n"
+        "4 месяца — 3 200 ₽\n\n"
+        "Один платёж действует для всех участников. "
+        "Сумма платежа в Telegram будет показана в звёздах ⭐.",
+        [
+            [("1 месяц · 800 ₽", "billing_month_1")],
+            [("2 месяца · 1 600 ₽", "billing_month_2")],
+            [("3 месяца · 2 400 ₽", "billing_month_3")],
+            [("4 месяца · 3 200 ₽", "billing_month_4")],
+            [("‹ Назад", "billing_status")],
+        ],
+        "billing_period",
+        {"group_id": str(group.id)},
+    )
+
+
+async def billing_checkout_screen(db, session, settings, telegram_id, months):
+    from studgroup import billing
+
+    found = await billing.member_group(db, telegram_id)
+    if not found or not billing.payment_ready(settings):
+        await billing_status_screen(db, session, settings, telegram_id)
+        return
+    _member, group = found
+    data = json.loads(session.payload)
+    if data.get("group_id") != str(group.id):
+        await billing_status_screen(db, session, settings, telegram_id)
+        return
+    result = await billing.create_invoice(
+        db, settings, group_id=group.id, buyer_id=telegram_id, months=months
+    )
+    if result is None:
+        await screen(
+            db,
+            session,
+            "⚠️ Не удалось подготовить платёж.\n\n"
+            "Деньги не списаны. Попробуйте создать новый счёт или обратитесь в поддержку.",
+            [[("🔄 Попробовать снова", "billing_pay")], [("‹ Назад", "billing_status")]],
+            "billing_error",
+        )
+        return
+    order, url = result
+    await screen(
+        db,
+        session,
+        f"✅ Счёт для всей группы готов\n\n"
+        f"Период: {months} мес. ({30 * months} дней)\n"
+        f"Базовая стоимость: {order.amount_rub:,} ₽\n"
+        f"К оплате в Telegram: ⭐ {order.stars_amount}\n\n"
+        "Нажмите ниже, чтобы открыть защищённую оплату Telegram. "
+        "Доступ продлится автоматически только после подтверждения платежа.",
+        [
+            [{"text": f"⭐ Оплатить {order.stars_amount} Stars", "url": url}],
+            [("‹ Выбрать другой срок", "billing_pay")],
+        ],
+        "billing_checkout",
+        {"group_id": str(group.id), "order_id": str(order.id)},
+    )
+
+
 async def home(db, session, settings, telegram_id):
     found = await current_membership(db, telegram_id)
     if found:
@@ -546,6 +672,8 @@ async def home(db, session, settings, telegram_id):
             [("Уведомления", "notifications")],
             [("СДО / ЛК", "external_services")],
         ]
+        if settings.billing_enabled:
+            rows.append([("💳 Доступ группы", "billing_status")])
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
         if member.role == "headman" and not group.academic_group_code:
@@ -570,7 +698,8 @@ async def home(db, session, settings, telegram_id):
         "Привет! 👋 Это StudGroup.\n\n"
         "Мы помогаем учебной группе не терять важное в Telegram: собираем задания, "
         "дедлайны, расписание и события в удобном приложении.\n\n"
-        "Здесь можно узнать о проекте или подключиться к своей группе.",
+        "Здесь можно узнать о проекте или подключиться к своей группе.\n\n"
+        "🎁 Первая неделя бесплатно. Потом 800 ₽ за 30 дней для всей группы.",
         [[("Подключить группу", "connect")], *info_row()],
         "home",
     )
@@ -1633,6 +1762,8 @@ async def handle(db, update, settings, topic=None):
                 # Accept older links carrying the raw token as well as current invite_* links.
                 await forget(db, chat, message)  # the code is a secret: never leave it in the chat
                 await redeem(db, session, settings, sender.id, extract_code(argument), typed=False)
+            elif argument == "billing":
+                await billing_status_screen(db, session, settings, sender.id)
             elif argument == "subgroups":
                 found = await current_membership(db, sender.id)
                 if found:
@@ -1825,6 +1956,19 @@ async def handle(db, update, settings, topic=None):
         await demo_student_summary(db, session, english, data["informatics"])
     elif action == "home":
         await home(db, session, settings, sender.id)
+    elif action == "billing_status":
+        await billing_status_screen(db, session, settings, sender.id)
+    elif action == "billing_pay":
+        await billing_period_screen(db, session, settings, sender.id)
+    elif action.startswith("billing_month_") and session.step == "billing_period":
+        try:
+            selected_months = int(action.removeprefix("billing_month_"))
+        except ValueError:
+            selected_months = 0
+        if selected_months in (1, 2, 3, 4):
+            await billing_checkout_screen(db, session, settings, sender.id, selected_months)
+        else:
+            await billing_period_screen(db, session, settings, sender.id)
     elif action == "external_services":
         if await current_membership(db, sender.id):
             await external_services_screen(db, session)
