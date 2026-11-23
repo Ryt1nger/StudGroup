@@ -54,7 +54,7 @@ def test_expired_group_renews_from_payment_date():
 
 
 def test_timestamps_must_be_timezone_aware():
-    naive = datetime(2026, 11, 23, 8, 0)
+    naive = datetime(2026, 11, 23, 8, 0, tzinfo=UTC).replace(tzinfo=None)
     with pytest.raises(ValueError):
         trial_end(naive)
     with pytest.raises(ValueError):
