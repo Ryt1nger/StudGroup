@@ -1478,7 +1478,7 @@ class GroupPaymentOrder(Base):
     )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     group_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("groups.id", ondelete="CASCADE"), index=True
+        ForeignKey("groups.id", ondelete="RESTRICT"), index=True
     )
     payer_telegram_id: Mapped[int] = mapped_column(BigInteger)
     months: Mapped[int] = mapped_column(Integer)
