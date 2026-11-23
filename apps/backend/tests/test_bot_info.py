@@ -44,6 +44,7 @@ def sent(client):
         ("/help@studgroup_rf_bot", "howto"),
         ("/connect", "connect"),
         ("/support", "support"),
+        ("/paysupport", "support"),
         # Not info topics: must keep falling through to the existing flows.
         ("/start", None),
         ("/start invite_abc123", None),
