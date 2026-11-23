@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from test_bot_start import last, tap
 from test_headman import deliver, run
 from test_ingestion import send
@@ -70,7 +69,7 @@ def telegram_checkout(client, order, price=200, query_id=70000):
         {
             "update_id": query_id,
             "pre_checkout_query": {
-                "id": "pc-%d" % query_id,
+                "id": f"pc-{query_id}",
                 "from": {"id": 1},
                 "currency": "XTR",
                 "total_amount": price,
