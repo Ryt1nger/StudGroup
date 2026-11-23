@@ -352,7 +352,7 @@ async def tick(engine, settings) -> None:
                             "text": (
                                 "⏳ Бесплатный период StudGroup заканчивается завтра.\n\n"
                                 + PRICE_NOTE
-                            + "\n\n"
+                                + "\n\n"
                                 + "Продлить доступ может один участник за всю группу.\n"
                                 + OPEN_CHECKOUT_TEXT
                             ),
@@ -390,7 +390,7 @@ async def tick(engine, settings) -> None:
                         "text": (
                             "🎓 Бесплатная неделя StudGroup завершилась.\n\n"
                             + PRICE_NOTE
-                                + "\n\n"
+                            + "\n\n"
                             + "Выберите срок — 1, 2, 3 или 4 месяца. "
                             + OPEN_CHECKOUT_TEXT
                         ),
