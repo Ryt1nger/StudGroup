@@ -9,10 +9,7 @@ import asyncio
 from studgroup.bot_admin import telegram_request
 from studgroup.main import Settings
 
-STUDENT_COMMANDS = [
-    {"command": "start", "description": "Открыть StudGroup"},
-    {"command": "paysupport", "description": "Помощь с оплатой"},
-]
+STUDENT_COMMANDS = [{"command": "start", "description": "Открыть StudGroup"}]
 OWNER_COMMANDS = [
     *STUDENT_COMMANDS,
     {"command": "admin", "description": "Администрирование"},
