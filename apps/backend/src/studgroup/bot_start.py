@@ -536,7 +536,6 @@ async def registration_complete(db, session, settings, telegram_id):
     )
 
 
-
 async def billing_status_screen(db, session, settings, telegram_id):
     """A single group subscription, never a personal student subscription."""
     from studgroup import billing
