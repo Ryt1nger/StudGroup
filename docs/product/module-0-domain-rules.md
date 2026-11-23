@@ -348,17 +348,22 @@ normal Today section, visibly marked as completed. Completed homework without a
 known deadline remains excluded. Archive rules take precedence. Completion is not reset. Empty sections and their headings
 are omitted; the page title remains. Detail access and retention are unchanged.
 
-- Payment method: SBP through T-Bank.
-- Price: `599 RUB` for `30 days` per group.
-- The subscription belongs to `group_id`, not to an individual student.
-- Access activates only after a verified T-Bank webhook; a success page cannot activate it.
-- Repeated provider events must not create a second renewal.
-- Early renewal adds 30 days to the current end date; remaining days do not expire.
-- After expiration, the group receives two days of full service as a grace period.
-- After the grace period, ingestion, AI, and notifications stop, while existing cards remain read-only until normal deletion.
-- A confirmed payment restores service without repeating group setup.
-- Refund processing adjusts payment, subscription, and partner accrual idempotently.
-- The owner will register an individual entrepreneur before production payment connection. Banking, Telegram, receipt, and legal details are verified again in the payment implementation module.
+### Group access and payment (owner update, 2026-11-23)
+
+- One connected and verified **group** gets seven free days, counted once from its initial activation; a new student or repeated `/start` never restarts the group trial.
+- The price is **800 RUB per group per 30-day billing month**, not per student. A one-time payment may buy 1, 2, 3, or 4 months: respectively 800, 1,600, 2,400, or 3,200 RUB. This replaces the earlier 599-RUB single-month rule. No volume discount was approved.
+- An unobtrusive explanation near the beginning of the subscription journey may show an illustrative split of the *single group price*: 30–35 students ≈ 23–27 RUB each, 25–30 ≈ 27–32 RUB each, and below 25 the share varies (20 students = 40 RUB each). There are no individual invoices or individual entitlements.
+- The group's subscription is keyed by `group_id`. A single settled invoice extends all current members of that group. The headman retains subscription management authority under the existing role rules; paying does not grant headman privileges.
+- Student journey: an informative warning 24 hours before trial expiry; after trial expiry, the payment offer; choose 1–4 months; select a permitted payment method; review the provider-specific payment invoice; provider-confirmed receipt; one group-level activation notification. Do not spam students with daily requests or assume money was received because a payment link was opened.
+- The owner's desired **bank-selection → prefilled 800×months-RUB bank app link** is only a proposed flow for a separate legally permissible external checkout. Bank links require a real PSP/merchant integration, confirmed bank deeplink capabilities, fixed sum, unique order identity, and verified signed webhook/reconciliation. A person-to-person transfer link or manually supplied receipt is not automatic confirmation.
+- **Telegram digital-services rule:** sales of StudGroup access *within* the Telegram bot/Mini App must use Telegram Stars (`XTR`), not RUB/third-party bank checkout. An in-bot Stars amount is configured and displayed separately from this RUB marketing price; no hard-coded RUB→Stars conversion is implied. The Telegram payment method and any separately permissible external merchant checkout need owner/provider approval before activation. No unverified or fake payment buttons.
+- Checkout, payment acceptance, reminders, and access restrictions are **disabled until** the provider, legal obligations, price-in-payment-currency, verification, and staging tests have been approved. The fixed quote/time logic can be prepared safely ahead of the provider integration.
+- Entitlement activates or extends only after a validated, uniquely processed provider settlement. A success page, user click, repeated Telegram update, or replayed provider callback cannot grant a second renewal.
+- Early renewal adds the selected 30×months days to the current paid-through date; if expired, the purchased period starts from verified payment time. Remaining days do not disappear.
+- After paid expiration, the group retains two days of full-service grace, as previously approved. After grace, ingestion, AI, and notifications stop; existing cards remain read-only under normal retention. A confirmed payment restores service without repeating group setup.
+- Payment/order IDs, immutable amount/currency/months, duplicate-event constraints, settlement and refund records, and audit history must reside in PostgreSQL; handle competing group payments with transactional locking.
+- Refund processing adjusts the group subscription and future partner accruals idempotently; business tax/receipt obligations must be approved before actual sales.
+- The intended deployment uses the **new Germany/Frankfurt Supabase project** `qzninfmbjegxuxncsueu`. Do not apply payment migrations to the historical US West migration project `ytghmfxjjyxkcaglbhfj`. Identify the new Render service/workspace explicitly before configuring or deploying; do not assume the former server.
 
 ## 16. Referral program
 

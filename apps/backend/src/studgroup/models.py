@@ -1449,3 +1449,45 @@ class GroupEventRevision(Base):
     actor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     origin: Mapped[str] = mapped_column(String(24))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GroupSubscription(Base):
+    """One group-level entitlement. Students never own individual subscriptions."""
+
+    __tablename__ = "group_subscriptions"
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True
+    )
+    trial_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    trial_ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    paid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trial_warning_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trial_expired_notice_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    renewal_warning_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class GroupPaymentOrder(Base):
+    """Frozen order terms; only verified Telegram settlement can mark it paid."""
+
+    __tablename__ = "group_payment_orders"
+    __table_args__ = (
+        CheckConstraint("months BETWEEN 1 AND 4", name="months_1_4"),
+        CheckConstraint("amount_rub > 0 AND stars_amount > 0", name="positive_amounts"),
+        UniqueConstraint("telegram_charge_id"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    group_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("groups.id", ondelete="RESTRICT"), index=True
+    )
+    payer_telegram_id: Mapped[int] = mapped_column(BigInteger)
+    months: Mapped[int] = mapped_column(Integer)
+    amount_rub: Mapped[int] = mapped_column(Integer)
+    stars_amount: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3), default="XTR")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    invoice_url: Mapped[str | None] = mapped_column(Text)
+    telegram_charge_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
