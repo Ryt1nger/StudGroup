@@ -120,7 +120,9 @@ class Settings(BaseSettings):
     # During owner-funded pilots every verified group gets live C+ and DeepSeek vision.
     # No per-group financial activation is required. Set OWNER_FUNDED_PILOT=false to
     # restore the previous manually funded/allowlisted operating mode.
-    owner_funded_pilot: bool = True
+    # Paid processing must be an explicit production opt-in. A permissive default can spend
+    # money merely by starting the API with an otherwise minimal environment.
+    owner_funded_pilot: bool = False
     # Off until the operator sets an approved Stars price and enables live checkout.
     # The RUB tariff is marketing information; Telegram's currency is XTR.
     billing_enabled: bool = False

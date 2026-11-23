@@ -37,6 +37,12 @@ def test_health_reports_enabled_ai_without_exposing_configuration():
         }
 
 
+def test_paid_owner_pilot_is_disabled_by_default():
+    settings = Settings(_env_file=None)
+
+    assert settings.owner_funded_pilot is False
+
+
 def test_cors_allows_only_frontend_origin():
     with TestClient(create_app(Settings())) as client:
         headers = {"Origin": "http://localhost:5173", "Access-Control-Request-Method": "POST"}
