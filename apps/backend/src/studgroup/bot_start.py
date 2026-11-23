@@ -652,7 +652,12 @@ async def billing_checkout_screen(db, session, settings, telegram_id, months):
             "3. Вернитесь сюда и нажмите «Я оплатил».\n\n"
             "Доступ будет продлён только после ручной проверки поступления.",
             [
-                [{"text": f"🏦 Перейти к оплате · {order.amount_rub:,} ₽", "url": order.payment_url}],
+                [
+                    {
+                        "text": f"🏦 Перейти к оплате · {order.amount_rub:,} ₽",
+                        "url": order.payment_url,
+                    }
+                ],
                 [("✅ Я оплатил", "billing_submitted")],
                 [("‹ Выбрать другой срок", "billing_pay")],
             ],
