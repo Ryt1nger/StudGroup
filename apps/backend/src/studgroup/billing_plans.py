@@ -25,7 +25,7 @@ class GroupPriceQuote:
 def price_quote(group_id: UUID, months: int) -> GroupPriceQuote:
     """Quote a fixed, non-discounted group plan (not a Telegram Stars invoice)."""
     if not isinstance(group_id, UUID):
-        raise ValueError("Valid group_id is required")
+        raise TypeError("Valid group_id is required")
     if type(months) is not int or months not in ALLOWED_MONTHS:
         raise ValueError("Choose 1, 2, 3, or 4 months")
     return GroupPriceQuote(
@@ -58,8 +58,7 @@ def extended_paid_until(*, now: datetime, paid_until: datetime | None, months: i
     base = _aware(now)
     if paid_until is not None:
         current = _aware(paid_until)
-        if current > base:
-            base = current
+        base = max(base, current)
     return base + timedelta(days=BILLING_MONTH_DAYS * months)
 
 
