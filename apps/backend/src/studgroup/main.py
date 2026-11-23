@@ -131,6 +131,8 @@ class Settings(BaseSettings):
     billing_alfa_url_2m: str = ""
     billing_alfa_url_3m: str = ""
     billing_alfa_url_4m: str = ""
+    # One-time November 30 notice; still requires enabled checkout and four bank links.
+    billing_announcement_enabled: bool = True
     # Kept for already-issued legacy Telegram invoices, not used in manual mode.
     billing_stars_per_month: int = Field(default=0, ge=0, le=2500)
     # Independent second gate: do not interrupt existing study processing on rollout.
