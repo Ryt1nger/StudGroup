@@ -494,7 +494,7 @@ async def recover_account_crawl_notifications(
             else None
         )
         failure_code = None if observation.result_code == "succeeded" else observation.result_code
-        await notify_account_crawl_result(
+        queued = await notify_account_crawl_result(
             engine,
             owner_id=owner_id,
             job_id=job.id,
@@ -520,6 +520,8 @@ async def recover_account_crawl_notifications(
                 saved.notification_state = "queued"
                 recovered += 1
                 await db.commit()
+            elif queued:
+                recovered += 1
     return recovered
 
 
