@@ -660,6 +660,7 @@ async def resolve_moodle_courses(
         # One independent Moodle login per account. In particular, do not
         # resubmit a rejected form for each following week.
         dashboard_cache.update(courses=index, error=error)
+    attempted_courses = set()
     for lesson in result.snapshot.lessons:
         if lesson.room != "СДО":
             continue
@@ -683,7 +684,20 @@ async def resolve_moodle_courses(
             continue
         course = matches[0]
         courses[key] = course
+        # A verified course shell may be empty before its activities hydrate.
+        # Allow one bounded re-read on a later resolution call, not once per lesson.
+        empty_reads = dashboard_cache.setdefault("empty_course_reads", {})
         if course not in course_cache:
+            empty_reads.setdefault(course, 0)
+        elif (
+            not course_cache[course][0]
+            and empty_reads.get(course, 0) < 1
+            and course not in attempted_courses
+        ):
+            course_cache.pop(course)
+            empty_reads[course] = 1
+        if course not in course_cache:
+            attempted_courses.add(course)
             page = await context.new_page()
             try:
                 _login_stage("lms_course_requested")

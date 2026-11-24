@@ -852,7 +852,8 @@ def test_verified_exit_cache_reuses_course_but_rematches_teacher(monkeypatch):
     asyncio.run(scenario())
 
 
-def test_moodle_dashboard_resolves_without_cabinet_exit(monkeypatch):
+@pytest.mark.parametrize("empty_reads", [0, 1, 2])
+def test_moodle_dashboard_resolves_without_cabinet_exit(monkeypatch, empty_reads):
     from studgroup.ranepa_lms import LinkCandidate
 
     calls = []
@@ -877,6 +878,8 @@ def test_moodle_dashboard_resolves_without_cabinet_exit(monkeypatch):
         return {"https://lms.ranepa.ru/course/view.php?id=77": "История России"}, None
 
     async def read_course(_page, _context):
+        if calls.count("https://lms.ranepa.ru/course/view.php?id=77") <= empty_reads:
+            return (), True
         return (
             (
                 LinkCandidate(
@@ -892,7 +895,8 @@ def test_moodle_dashboard_resolves_without_cabinet_exit(monkeypatch):
 
     async def scenario():
         dashboard_cache, course_cache = {}, {}
-        for day in (date(2026, 11, 23), date(2026, 11, 30)):
+        for index in range(3):
+            day = date(2026, 11, 23) + timedelta(weeks=index)
             lesson = ExternalLesson(
                 day=day,
                 starts=time(9),
@@ -913,7 +917,14 @@ def test_moodle_dashboard_resolves_without_cabinet_exit(monkeypatch):
                 dashboard_cache=dashboard_cache,
                 course_cache=course_cache,
             )
-            assert list(result.links.values()) == ["https://my.mts-link.ru/j/Ranepa/123"]
-        assert calls == ["dashboard", "https://lms.ranepa.ru/course/view.php?id=77"]
+            expected = (
+                []
+                if index < empty_reads or empty_reads == 2
+                else ["https://my.mts-link.ru/j/Ranepa/123"]
+            )
+            assert list(result.links.values()) == expected
+        assert calls == ["dashboard"] + ["https://lms.ranepa.ru/course/view.php?id=77"] * (
+            2 if empty_reads else 1
+        )
 
     asyncio.run(scenario())
