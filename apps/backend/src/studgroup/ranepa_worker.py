@@ -47,7 +47,7 @@ from studgroup.ranepa_crawl_guard import (
     record_crawl_outcome,
     reserve_daily_paid_tasks,
 )
-from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
+from studgroup.ranepa_crawl_jobs import FAST_RETRY_DIAGNOSTICS, claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_notifications import (
     CrawlRunStats,
     failed_account_line,
@@ -543,7 +543,17 @@ async def _process_one(
             if failure == "login_failed":
                 notice_failure_detail = "login_rejected"
     async with AsyncSession(engine) as db:
-        finished = await finish(db, job_id, group_id, user_id, failure_code=failure)
+        fast_retry = (
+            trace is not None
+            and not trace.captcha_seen
+            and (
+                failure == "parse_failed"
+                or (failure == "source_unavailable" and trace.diagnostic in FAST_RETRY_DIAGNOSTICS)
+            )
+        )
+        finished = await finish(
+            db, job_id, group_id, user_id, failure_code=failure, fast_retry=fast_retry
+        )
         if finished and trace is not None:
             db.add(
                 trace.observation(

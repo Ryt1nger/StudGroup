@@ -2,16 +2,18 @@
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.legal import has_consent, legal_ready
 from studgroup.models import (
     BackgroundProcess,
     Group,
+    LegalConsentEvent,
     Membership,
     MemberSubgroup,
     RanepaCrawlJob,
+    RanepaCrawlObservation,
     UrgentSDORun,
     UrgentSDOTarget,
     UserProfile,
@@ -19,6 +21,7 @@ from studgroup.models import (
 from studgroup.process_control import ensure_process
 from studgroup.process_runtime import ALERT_PREFIX, utc
 from studgroup.ranepa_crawl_jobs import (
+    CONSENT_REVALIDATED,
     CREDENTIALS_UPDATED,
     RETRY_BACKOFF,
     enqueue_week,
@@ -135,6 +138,7 @@ async def previous_login_block(db, user_id):
             RanepaCrawlJob.state == "failed",
             RanepaCrawlJob.failure_code == "login_failed",
             RanepaCrawlJob.retry_reason.is_distinct_from(CREDENTIALS_UPDATED),
+            RanepaCrawlJob.retry_reason.is_distinct_from(CONSENT_REVALIDATED),
         )
     )
     if failed is None:
@@ -145,6 +149,61 @@ async def previous_login_block(db, user_id):
         )
     )
     return success is None or utc(success) <= utc(failed)
+
+
+async def release_legacy_login_blocks(db, user_id):
+    """One owner-requested recheck after later consent and profile save.
+
+    Older workers recorded preflight or ambiguous login timeouts as login_failed.
+    Never release an observed rejection, and never reclassify a new failure.
+    The caller already verified current consent and active membership.
+    """
+    profile = await db.get(UserProfile, user_id)
+    if profile is None or not profile.sdu_credential_id:
+        return False
+    consent = await db.scalar(
+        select(LegalConsentEvent)
+        .where(LegalConsentEvent.user_id == user_id, LegalConsentEvent.purpose == "sdo")
+        .order_by(LegalConsentEvent.created_at.desc(), LegalConsentEvent.id.desc())
+        .limit(1)
+    )
+    if (
+        consent is None
+        or consent.action != "grant"
+        or utc(profile.updated_at) < utc(consent.created_at)
+    ):
+        return False
+    failures = (
+        await db.scalars(
+            select(RanepaCrawlJob)
+            .where(
+                RanepaCrawlJob.user_id == user_id,
+                RanepaCrawlJob.state == "failed",
+                RanepaCrawlJob.failure_code == "login_failed",
+                RanepaCrawlJob.retry_reason.is_distinct_from(CREDENTIALS_UPDATED),
+                RanepaCrawlJob.retry_reason.is_distinct_from(CONSENT_REVALIDATED),
+            )
+            .with_for_update()
+        )
+    ).all()
+    if not failures:
+        return False
+    for job in failures:
+        if job.finished_at is None or utc(consent.created_at) <= utc(job.finished_at):
+            return False
+        observation = await db.get(RanepaCrawlObservation, (job.id, job.attempts))
+        if observation is not None and observation.failure_detail not in {
+            "consent_missing",
+            "credentials_missing",
+            "profile_missing",
+            "legal_not_ready",
+            "access_not_approved",
+        }:
+            return False
+    for job in failures:
+        job.retry_reason = CONSENT_REVALIDATED
+    await db.flush()
+    return True
 
 
 async def prepare_urgent(engine, settings, today):
@@ -165,6 +224,10 @@ async def prepare_urgent(engine, settings, today):
             distinct.setdefault(candidate.user_id, candidate)
         candidates = list(distinct.values())
         monday = today - timedelta(days=today.weekday())
+        if db.get_bind().dialect.name == "postgresql":
+            await db.execute(text("SELECT pg_advisory_xact_lock(832610071)"))
+        for candidate in candidates:
+            await release_legacy_login_blocks(db, candidate.user_id)
         # This mode may queue an account before its cooldown expires, but never
         # overrides next_attempt_at, invalid credentials, or exhausted retries.
         await enqueue_week(db, monday, candidates, urgent_refresh=True)
@@ -230,6 +293,48 @@ async def finalize_urgent(engine, settings):
             target.state = "blocked"
             target.failure_code = "queue_item_unavailable"
             target.completed_at = datetime.now(UTC)
+        # Reconsider legacy blocks in an already requested run after an upgrade.
+        if db.get_bind().dialect.name == "postgresql":
+            await db.execute(text("SELECT pg_advisory_xact_lock(832610071)"))
+        candidates = await eligible_candidates(db, settings)
+        eligible = {(candidate.user_id, candidate.group_id) for candidate in candidates}
+        blocked_targets = (
+            await db.scalars(
+                select(UrgentSDOTarget).where(
+                    UrgentSDOTarget.run_id == row.id,
+                    UrgentSDOTarget.state == "blocked",
+                    UrgentSDOTarget.failure_code == "retry_policy_blocked",
+                )
+            )
+        ).all()
+        for target in blocked_targets:
+            if (target.user_id, target.group_id) not in eligible:
+                continue
+            if not await release_legacy_login_blocks(db, target.user_id):
+                continue
+            if await previous_login_block(db, target.user_id):
+                continue
+            today = datetime.now(UTC).date()
+            monday = today - timedelta(days=today.weekday())
+            await enqueue_week(
+                db, monday, [CrawlCandidate(target.group_id, target.user_id)], urgent_refresh=True
+            )
+            job = await db.scalar(
+                select(RanepaCrawlJob).where(
+                    RanepaCrawlJob.group_id == target.group_id,
+                    RanepaCrawlJob.user_id == target.user_id,
+                    RanepaCrawlJob.week_start == monday,
+                    RanepaCrawlJob.state == "queued",
+                )
+            )
+            if job is None:
+                continue
+            target.job_id = job.id
+            target.baseline_attempts = job.attempts
+            target.state = "pending"
+            target.failure_code = None
+            target.completed_at = None
+            row.queued_count += 1
         await db.flush()
         result = await run_json(db, row)
         if result["remaining"]:
@@ -238,7 +343,7 @@ async def finalize_urgent(engine, settings):
         # Only after every primary/previous-round target has finalized, reopen
         # retryable failures. Preserve the durable account-wide retry clock and
         # attempt budget; a refused login is never retried here.
-        eligible = {candidate.user_id for candidate in await eligible_candidates(db, settings)}
+        eligible_users = {user_id for user_id, _group_id in eligible}
         failed_targets = (
             await db.scalars(
                 select(UrgentSDOTarget).where(
@@ -249,7 +354,7 @@ async def finalize_urgent(engine, settings):
         ).all()
         reopened = 0
         for target in failed_targets:
-            if target.user_id not in eligible or target.job_id is None:
+            if target.user_id not in eligible_users or target.job_id is None:
                 continue
             job = await db.get(RanepaCrawlJob, target.job_id, with_for_update=True)
             code = target.failure_code
@@ -277,7 +382,7 @@ async def finalize_urgent(engine, settings):
         row.finished_at = datetime.now(UTC)
         owner = settings.bot_admin_user_id
         if type(owner) is int and owner > 0:
-            text = (
+            message = (
                 "✅ Срочный SDO-прогон завершён. "
                 f"Найдено: {result['found']}; в очереди: {result['queued']}; "
                 f"выполнено: {result['completed']}; успешно: {result['succeeded']}; "
@@ -287,7 +392,7 @@ async def finalize_urgent(engine, settings):
             await enqueue_once(
                 db,
                 "sendMessage",
-                {"chat_id": owner, "text": text},
+                {"chat_id": owner, "text": message},
                 f"{ALERT_PREFIX}urgent:{row.id}:completed",
             )
         await db.commit()

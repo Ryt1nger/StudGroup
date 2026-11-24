@@ -84,7 +84,7 @@ def test_urgent_uses_existing_queue_without_bypassing_cooldown(client, monkeypat
     assert run["remaining"] == 0
 
 
-def test_urgent_retry_round_waits_for_primary_then_preserves_backoff(client, monkeypatch):
+def test_urgent_retry_round_waits_for_primary_then_runs_fast_retry(client, monkeypatch):
     from studgroup.models import UrgentSDORun, UrgentSDOTarget, User
 
     settings = client.app.state.settings
@@ -124,7 +124,13 @@ def test_urgent_retry_round_waits_for_primary_then_preserves_backoff(client, mon
             assert first is not None
             first_id = first.id
             assert await finish(
-                db, first.id, first.group_id, first.user_id, failure_code="source_unavailable", now=now
+                db,
+                first.id,
+                first.group_id,
+                first.user_id,
+                failure_code="source_unavailable",
+                now=now,
+                fast_retry=True,
             )
             await db.commit()
         await finalize_urgent(engine, settings)
@@ -138,8 +144,7 @@ def test_urgent_retry_round_waits_for_primary_then_preserves_backoff(client, mon
             await db.commit()
         await finalize_urgent(engine, settings)
         async with AsyncSession(engine, expire_on_commit=False) as db:
-            assert await claim_next(db, now=now + timedelta(minutes=2)) is None
-            retry = await claim_next(db, now=now + timedelta(minutes=31))
+            retry = await claim_next(db, now=now + timedelta(minutes=2))
             assert retry is not None and retry.id == first_id
             assert await finish(
                 db,
@@ -147,7 +152,7 @@ def test_urgent_retry_round_waits_for_primary_then_preserves_backoff(client, mon
                 retry.group_id,
                 retry.user_id,
                 failure_code="login_failed",
-                now=now + timedelta(minutes=31),
+                now=now + timedelta(minutes=2),
             )
             await db.commit()
         await finalize_urgent(engine, settings)

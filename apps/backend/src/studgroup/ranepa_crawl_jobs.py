@@ -24,6 +24,10 @@ from studgroup.ranepa_schedule import subgroup_choice_changed_since_check
 LEASE = timedelta(hours=1)
 REFRESH = timedelta(hours=6)
 CREDENTIALS_UPDATED = "credentials_updated"
+CONSENT_REVALIDATED = "consent_revalidated"
+REVALIDATED = (CREDENTIALS_UPDATED, CONSENT_REVALIDATED)
+FAST_RETRY_DELAY = timedelta(seconds=60)
+FAST_RETRY_DIAGNOSTICS = {"timeout", "session_expired", "page_changed", "connection", "dns"}
 RETRY_BACKOFF = {
     "source_unavailable": timedelta(minutes=30),
     "parse_failed": timedelta(minutes=5),
@@ -149,7 +153,7 @@ async def enqueue_week(
             # Account and week cooldown must be identical; a bad login
             # must not trigger automatic repeated password attempts.
             due = last_retry_at is None or last_retry_at <= now
-            renewed = existing.retry_reason == CREDENTIALS_UPDATED
+            renewed = existing.retry_reason in REVALIDATED
             can_retry = existing.failure_code != "login_failed" or force_refresh or renewed
             if (
                 existing.state in {"succeeded", "failed", "covered", "dead_letter"}
@@ -412,6 +416,7 @@ async def claim_next(
                 locked.state == "failed",
                 locked.failure_code == "login_failed",
                 locked.retry_reason.is_distinct_from(CREDENTIALS_UPDATED),
+                locked.retry_reason.is_distinct_from(CONSENT_REVALIDATED),
                 # An older invalid-password failure must not permanently
                 # block ordinary runs after a newer successful manual pilot.
                 ~select(recovered.id)
@@ -501,13 +506,18 @@ async def claim_next(
         return job
 
 
-async def finish(db, job_id, group_id, user_id, *, failure_code=None, now=None) -> bool:
+async def finish(
+    db, job_id, group_id, user_id, *, failure_code=None, now=None, fast_retry=False
+) -> bool:
     """Finalize only the claimed account and group; error text never enters SQL."""
     if failure_code is not None and failure_code not in FAILURES:
         raise ValueError("unsafe_failure_code")
     job = await db.get(RanepaCrawlJob, job_id, with_for_update=True)
     if job is None or job.state != "running" or job.group_id != group_id or job.user_id != user_id:
         return False
+    # A single early retry for a safe transient failure; subsequent failures
+    # use the normal exponential backoff. Never accelerate CAPTCHA or rejection.
+    first_transient = job.retry_reason not in RETRY_BACKOFF
     exhausted = failure_code != "login_failed" and terminal_failure(failure_code, job.attempts)
     job.state = (
         "dead_letter" if failure_code and exhausted else "failed" if failure_code else "succeeded"
@@ -517,6 +527,13 @@ async def finish(db, job_id, group_id, user_id, *, failure_code=None, now=None) 
     job.next_attempt_at = retry_at(
         job.finished_at, failure_code=failure_code, attempts=job.attempts
     )
+    if (
+        fast_retry
+        and first_transient
+        and not exhausted
+        and failure_code in {"source_unavailable", "parse_failed"}
+    ):
+        job.next_attempt_at = job.finished_at + FAST_RETRY_DELAY
     job.retry_reason = retry_reason(failure_code, job.attempts)
     job.claimed_at = None
     await db.execute(

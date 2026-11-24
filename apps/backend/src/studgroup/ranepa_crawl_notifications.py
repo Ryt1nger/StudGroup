@@ -371,6 +371,18 @@ async def notify_account_crawl_result(
         has_saved_schedule = stats.saved_weeks > 0 or stats.saved_lessons > 0
     if failure_code is not None:
         cause = _failure_summary(failure_code, failure_detail, diagnostic_code)
+        action = _action(failure_code, failure_detail, attempt)
+        if failure_code in {"source_unavailable", "parse_failed"}:
+            async with AsyncSession(engine) as db:
+                job = await db.get(RanepaCrawlJob, job_id)
+                if (
+                    job is not None
+                    and job.attempts == attempt
+                    and job.finished_at is not None
+                    and job.next_attempt_at is not None
+                    and (job.next_attempt_at - job.finished_at).total_seconds() <= 60
+                ):
+                    action = "Быстрый автоповтор после основной очереди, не раньше чем через 1 мин."
         lines = [
             (
                 "⚠️ StudGroup · обход СДО завершён частично"
@@ -382,7 +394,7 @@ async def notify_account_crawl_result(
             f"Группа РАНХиГС: {group}",
             f"Этап: {_stage(failure_code, failure_detail, last_step)}",
             f"Причина: {cause}.",
-            f"Что делать: {_action(failure_code, failure_detail, attempt)}",
+            f"Что делать: {action}",
             result_line,
         ]
         if historical_replay:
