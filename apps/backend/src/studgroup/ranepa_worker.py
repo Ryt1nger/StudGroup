@@ -30,6 +30,7 @@ from studgroup.models import (
 )
 from studgroup.process_runtime import ProcessGate, read_intent
 from studgroup.ranepa_browser import (
+    browser_trace,
     read_month,
     read_week,
     resolve_sdo_exits,
@@ -173,6 +174,7 @@ async def collect_bounded(
     on_captcha=None,
     manual_captcha=None,
 ):
+    token = browser_trace.set(trace)
     try:
         async with asyncio.timeout(900 if manual_captcha is not None else ACCOUNT_TIMEOUT_SECONDS):
             return await _collect(
@@ -207,6 +209,8 @@ async def collect_bounded(
             return None
         log_captcha_stage("crawl_timeout")
         return "source_unavailable"
+    finally:
+        browser_trace.reset(token)
 
 
 async def prepare_week(

@@ -2,12 +2,14 @@
 
 import asyncio
 import logging
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from urllib.parse import parse_qs, urljoin, urlsplit
 from zoneinfo import ZoneInfo
 
 from studgroup.ranepa_cabinet import MonthCard, extract_cabinet_month, extract_cabinet_week
+from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_failure_diagnostics import (
     diagnose_browser_state,
     diagnose_exception,
@@ -29,6 +31,13 @@ from studgroup.ranepa_ui import page_status
 SCHEDULE = "https://my.ranepa.ru/lk/student/schedule"
 HOST = "my.ranepa.ru"
 LOGGER = logging.getLogger(__name__)
+browser_trace: ContextVar[CrawlTrace | None] = ContextVar("lk_trace", default=None)
+
+
+def _login_stage(step: str) -> None:
+    trace = browser_trace.get()
+    if trace is not None:
+        trace.record(step)
 
 
 @dataclass(frozen=True)
@@ -111,14 +120,34 @@ async def wait_for_captcha_resolution(page, *, timeout_seconds: float = 6.0) -> 
 
 
 async def _sign_in(page, login: str, password: str) -> str:
+    _login_stage("lk_form_visible")
     await page.get_by_placeholder("Логин").fill(login, timeout=8000)
+    _login_stage("lk_login_filled")
     await page.locator('input[type="password"]').fill(password, timeout=8000)
+    _login_stage("lk_password_filled")
+    _login_stage("lk_submit_requested")
     await page.get_by_role("button", name="Войти", exact=True).click(timeout=8000)
+    _login_stage("lk_form_submitted")
     for _ in range(100):
         state = await _state(page)
         if state not in {"login_required", "empty_page", "challenge_pending"}:
+            step = {
+                "login_failed": "lk_explicit_rejection",
+                "captcha_required": "lk_captcha_required",
+                "unexpected_redirect": "lk_unexpected_redirect",
+                "rendered": "lk_rendered_after_submit",
+            }.get(state)
+            if step is not None:
+                _login_stage(step)
             return state
         await page.wait_for_timeout(250)
+    _login_stage(
+        {
+            "login_required": "lk_form_still_visible",
+            "empty_page": "lk_empty_after_submit",
+            "challenge_pending": "lk_challenge_pending",
+        }[state]
+    )
     # A stalled login form or loading spinner is not an explicit rejection.
     return "challenge_pending" if state == "challenge_pending" else "timeout"
 
@@ -128,7 +157,9 @@ async def _open(page, login: str, password: str) -> str:
     if current.hostname == HOST and current.path == urlsplit(SCHEDULE).path:
         state = await _wait_visible_state(page)
     else:
+        _login_stage("lk_open_requested")
         response = await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
+        _login_stage("lk_page_loaded")
         problem = diagnose_http_response(response)
         if problem is not None:
             return problem
@@ -136,22 +167,29 @@ async def _open(page, login: str, password: str) -> str:
     if state == "login_required":
         state = await _sign_in(page, login, password)
         if state == "rendered":
+            _login_stage("lk_schedule_requested")
             response = await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
             problem = diagnose_http_response(response)
             if problem is not None:
                 return problem
             state = await _wait_visible_state(page)
+    if state == "login_failed":
+        _login_stage("lk_explicit_rejection")
     return state
 
 
 async def _verify_group(page, code: str) -> bool:
+    _login_stage("lk_group_verify_requested")
     avatar = page.locator(".mobile-header__avatar")
     await avatar.click(timeout=8000)
     active = page.locator(".avatar-navigation__role-btn.active")
     labels = await active.all_text_contents()
     await avatar.click(timeout=8000)
     expected = group_code(code).casefold()
-    return len(labels) == 1 and labels[0].strip().casefold().startswith(expected + " ")
+    verified = len(labels) == 1 and labels[0].strip().casefold().startswith(expected + " ")
+    if verified:
+        _login_stage("lk_group_verified")
+    return verified
 
 
 async def _enrich(page, snapshot: WeekSnapshot) -> BrowserResult:
@@ -296,6 +334,7 @@ async def read_week(
             return BrowserResult("source_unavailable", diagnostic=diagnose_exception(error))
         if attempt == 1:
             break
+    _login_stage("lk_session_expired")
     return BrowserResult("source_unavailable", diagnostic="session_expired")
 
 
@@ -355,6 +394,7 @@ async def read_month(
             return BrowserMonthResult("source_unavailable", diagnostic=diagnose_exception(error))
         if attempt == 1:
             break
+    _login_stage("lk_session_expired")
     return BrowserMonthResult("source_unavailable", diagnostic="session_expired")
 
 

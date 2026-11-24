@@ -21,6 +21,7 @@ from studgroup.models import (
     User,
 )
 from studgroup.ranepa_crawl_jobs import retry_at, terminal_failure
+from studgroup.ranepa_crawl_trace import LOGIN_STAGE_LABELS
 from studgroup.ranepa_failure_diagnostics import DIAGNOSTIC_REASONS
 
 _CAPTCHA_LOCATIONS = {
@@ -182,6 +183,8 @@ _ACTIONS = {
 
 
 def _stage(code: str, detail: str | None, last_step: str | None) -> str:
+    if last_step in LOGIN_STAGE_LABELS:
+        return LOGIN_STAGE_LABELS[last_step]
     if detail in _FAILURE_STAGE:
         return _FAILURE_STAGE[detail]
     if last_step in {"month_requested", "month_recheck"}:
@@ -326,7 +329,7 @@ async def notify_account_crawl_result(
         raise ValueError("invalid_crawl_failure_detail")
     if diagnostic_code is not None and diagnostic_code not in DIAGNOSTIC_REASONS:
         raise ValueError("invalid_crawl_diagnostic_code")
-    if last_step is not None and last_step not in {
+    if last_step is not None and last_step not in LOGIN_STAGE_LABELS and last_step not in {
         "month_requested",
         "month_recheck",
         "week_requested",
@@ -356,6 +359,8 @@ async def notify_account_crawl_result(
         has_saved_schedule = stats.saved_weeks > 0 or stats.saved_lessons > 0
     if failure_code is not None:
         cause = _failure_summary(failure_code, failure_detail, diagnostic_code)
+        if last_step == "lk_explicit_rejection":
+            cause = "Личный кабинет показал явный отказ в авторизации"
         action = _action(failure_code, failure_detail, attempt)
         if failure_code in {"source_unavailable", "parse_failed"}:
             async with AsyncSession(engine) as db:

@@ -709,8 +709,24 @@ def test_sign_in_timeout_does_not_claim_invalid_password(monkeypatch):
     async def still_waiting(*args):
         return "login_required"
 
+    from studgroup.ranepa_crawl_trace import CrawlTrace
+
     monkeypatch.setattr(ranepa_browser, "_state", still_waiting)
-    assert asyncio.run(ranepa_browser._sign_in(Page(), "student", "test")) == "timeout"
+    trace = CrawlTrace()
+    token = ranepa_browser.browser_trace.set(trace)
+    try:
+        assert asyncio.run(ranepa_browser._sign_in(Page(), "student", "test")) == "timeout"
+    finally:
+        ranepa_browser.browser_trace.reset(token)
+    assert trace.last_notification_step() == "lk_form_still_visible"
+    assert [event["step"] for event in trace.events] == [
+        "lk_form_visible",
+        "lk_login_filled",
+        "lk_password_filled",
+        "lk_submit_requested",
+        "lk_form_submitted",
+        "lk_form_still_visible",
+    ]
 
     async def rejected(*args):
         return "login_failed"
