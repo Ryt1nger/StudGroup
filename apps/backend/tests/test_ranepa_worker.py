@@ -202,7 +202,7 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
         assert allow_empty
         visits = captured["reads"].get(monday, 0) + 1
         captured["reads"][monday] = visits
-        if monday == date(2026, 10, 26) and visits == 1:
+        if monday == date(2026, 11, 9) and visits == 1:
             if transient == "unreadable":
                 return SimpleNamespace(status="cabinet_day_mismatch", snapshot=None)
             if transient == "mismatch":
@@ -275,7 +275,7 @@ def test_crawl_reuses_valid_session_or_logs_in_when_expired(monkeypatch, expired
     assert stats.saved_weeks == 6
     assert stats.saved_lessons == 0
     assert stats.saved_sdo_links == 0
-    assert captured["reads"][date(2026, 10, 26)] == (1 if transient == "none" else 2)
+    assert captured["reads"][date(2026, 11, 9)] == (1 if transient == "none" else 2)
     assert captured["contexts"][0]["storage_state"] == previous_state
     assert captured["logins"] == ([("student", "password")] if expired else [])
     assert captured["saved"] == ([refreshed_state] if expired else [])
@@ -1008,23 +1008,27 @@ def test_worker_persists_verified_schedule_without_mocking_writer(tmp_path, monk
                 async def launch(self, **kwargs):
                     return FakeBrowser()
 
-            first = date(2026, 11, 1)
-            monday = first - timedelta(days=first.weekday())
+            monday = date(2026, 11, 16)
             cards = [
                 SimpleNamespace(
-                    day=date(2026, 11, 1) if i == 0 else monday + timedelta(weeks=i),
+                    day=monday + timedelta(weeks=i),
                     starts=time(9),
                     subject="История",
                 )
                 for i in range(6)
             ]
 
-            async def month(*args):
-                return SimpleNamespace(status="preview_only", cards=cards)
+            async def month(_page, _login, _password, _code, year, number):
+                return SimpleNamespace(
+                    status="preview_only",
+                    cards=[
+                        card for card in cards if (card.day.year, card.day.month) == (year, number)
+                    ],
+                )
 
             async def read(_page, _login, _password, code, start, *, allow_empty=False):
                 lesson = ExternalLesson(
-                    day=date(2026, 11, 1) if start.month == 10 else start,
+                    day=start,
                     starts=time(9),
                     ends=time(10, 20),
                     subject="История",
@@ -1178,10 +1182,14 @@ def test_failed_month_recheck_after_captcha_is_not_called_site_outage(monkeypatc
     assert trace.diagnostic == "challenge_pending"
 
 
-def test_bounded_optional_sdo_discovery_never_invalidates_six_committed_weeks(monkeypatch):
+@pytest.mark.parametrize("future_month_available", [True, False])
+def test_bounded_optional_sdo_discovery_never_invalidates_six_committed_weeks(
+    monkeypatch, future_month_available
+):
     from studgroup.ranepa_crawl_trace import CrawlTrace
 
     saved = []
+    months = []
 
     class FakeContext:
         async def new_page(self):
@@ -1218,13 +1226,30 @@ def test_bounded_optional_sdo_discovery_never_invalidates_six_committed_weeks(mo
         async def commit(self):
             return None
 
-    async def month(*args):
-        return SimpleNamespace(status="preview_only", cards=())
-
-    async def week(_page, _login, _password, code, monday, *, allow_empty=False):
+    async def month(_page, _login, _password, _code, year, number):
+        months.append((year, number))
+        if number == 1 and not future_month_available:
+            return SimpleNamespace(status="empty_source_requires_review")
+        cards = (
+            SimpleNamespace(day=date(2026, 12, 1), starts=time(9), subject="История"),
+            SimpleNamespace(day=date(2027, 1, 1), starts=time(9), subject="История"),
+        )
         return SimpleNamespace(
             status="preview_only",
-            snapshot=WeekSnapshot(code, monday, monday + timedelta(days=6), ()),
+            cards=[card for card in cards if (card.day.year, card.day.month) == (year, number)],
+        )
+
+    async def week(_page, _login, _password, code, monday, *, allow_empty=False):
+        end = monday + timedelta(days=6)
+        lessons = tuple(
+            ExternalLesson(day=day, starts=time(9), ends=time(10), subject="История")
+            for day in (date(2026, 12, 1), date(2027, 1, 1))
+            if monday <= day <= end
+        )
+        assert allow_empty == (not lessons)
+        return SimpleNamespace(
+            status="preview_only",
+            snapshot=WeekSnapshot(code, monday, end, lessons),
         )
 
     async def exits(*args, **kwargs):
@@ -1255,15 +1280,18 @@ def test_bounded_optional_sdo_discovery_never_invalidates_six_committed_weeks(mo
             "A-001",
             "login",
             "password",
-            date(2026, 11, 20),
+            date(2026, 11, 24),
             trace=trace,
             stats=stats,
         )
     )
-    assert outcome is None
-    assert stats.saved_weeks == 6
-    assert len(saved) == 6
-    assert trace.events[-1]["step"] == "schedule_verified"
+    assert months == [(2026, 11), (2026, 12), (2027, 1)]
+    expected_count = 6 if future_month_available else 5
+    assert outcome == (None if future_month_available else "parse_failed")
+    assert stats.saved_weeks == expected_count
+    assert saved == [date(2026, 11, 23) + timedelta(weeks=i) for i in range(expected_count)]
+    if future_month_available:
+        assert trace.events[-1]["step"] == "schedule_verified"
     assert any(e["step"] == "sdo_exits_timed_out" for e in trace.events)
 
 

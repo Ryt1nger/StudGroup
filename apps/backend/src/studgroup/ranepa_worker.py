@@ -30,6 +30,7 @@ from studgroup.models import (
 )
 from studgroup.process_runtime import ProcessGate, read_intent
 from studgroup.ranepa_browser import (
+    BrowserResult,
     browser_trace,
     read_month,
     read_week,
@@ -62,12 +63,15 @@ from studgroup.ranepa_crawl_notifications import (
 from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_failure_diagnostics import diagnose_browser_state, diagnose_exception
+from studgroup.ranepa_group_links import active_series_for_job, reuse_common_links
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_manual_captcha import offer_manual_captcha
 from studgroup.ranepa_materialization import materialize_verified_facts
 from studgroup.ranepa_personal import enrich_personal_links, remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
+from studgroup.ranepa_retention import prune_expired_schedule
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
+from studgroup.ranepa_schedule import WeekSnapshot
 from studgroup.ranepa_worker_health import heartbeat
 from studgroup.urgent_sdo import active_run, eligible_candidates, finalize_urgent, prepare_urgent
 
@@ -173,6 +177,8 @@ async def collect_bounded(
     stats: CrawlRunStats | None = None,
     on_captcha=None,
     manual_captcha=None,
+    series_id=None,
+    first_week_anchor=None,
 ):
     token = browser_trace.set(trace)
     try:
@@ -196,6 +202,8 @@ async def collect_bounded(
                 stats=stats,
                 on_captcha=on_captcha,
                 manual_captcha=manual_captcha,
+                series_id=series_id,
+                first_week_anchor=first_week_anchor,
             )
     except TimeoutError:
         if trace is not None:
@@ -295,6 +303,7 @@ async def _process_one(
                 log_captcha_stage("pilot_queue_idle")
             return "idle"
         job_id, group_id, user_id, attempt = (job.id, job.group_id, job.user_id, job.attempts)
+        series_id = await active_series_for_job(db, job_id, attempt)
         if processed_user_ids is not None:
             # One owner-authorized account per rescan, even with two memberships.
             processed_user_ids.add(user_id)
@@ -521,6 +530,8 @@ async def _process_one(
                 captcha_daily_limit=settings.ranepa_captcha_daily_max_tasks,
                 trace=trace,
                 stats=account_stats,
+                series_id=series_id,
+                first_week_anchor=group.first_week_anchor,
                 on_captcha=on_captcha
                 if settings.ranepa_crawl_notify_captcha_seen_enabled
                 and not settings.ranepa_manual_captcha_enabled
@@ -665,6 +676,8 @@ async def _collect(
     stats: CrawlRunStats | None = None,
     on_captcha=None,
     manual_captcha=None,
+    series_id=None,
+    first_week_anchor=None,
 ):
     try:
         async with async_playwright() as playwright:
@@ -782,96 +795,117 @@ async def _collect(
                         log_captcha_stage("motion_not_submitted")
                     return submitted
 
-                if trace is not None:
-                    trace.record("month_requested")
-                month = await read_month(page, login, password, code, today.year, today.month)
-                if month.status == "captcha_required":
-                    captcha_seen = True
+                async def read_verified_month(year, month_number):
+                    nonlocal captcha_seen, captcha_schedule_recovered
                     if trace is not None:
-                        trace.mark_captcha("month")
-                    log_captcha_stage("challenge_detected_month")
-                    if on_captcha is not None:
-                        await on_captcha("month")
-                    while (
-                        month.status == "captcha_required"
-                        and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
-                        and not captcha_solver_unavailable
-                    ):
-                        submitted = await solve_once(page, "month")
-                        if submitted:
-                            log_captcha_stage(await wait_for_captcha_resolution(page))
-                        if captcha_diagnostic_only or captcha_solver_unavailable:
-                            break
-                        # Read the real site again before considering another
-                        # paid request. Mouse motion is not proof of success.
-                        log_captcha_stage("schedule_recheck_after_captcha_month")
-                        if trace is not None:
-                            trace.record("month_recheck")
-                        month = await read_month(
-                            page, login, password, code, today.year, today.month
-                        )
-                        if month.status == "captcha_required":
-                            log_captcha_stage("challenge_still_present_month")
-                        elif month.status == "preview_only":
-                            captcha_schedule_recovered = True
-                            log_captcha_stage("month_verified_after_challenge")
-                        else:
-                            log_captcha_stage("month_not_verified_after_challenge")
-                if month.status == "captcha_required" and manual_captcha is not None:
-                    log_captcha_stage("owner_fallback_offered_month")
-                    if await manual_captcha(page, captcha_attempts_used):
-                        log_captcha_stage(await wait_for_captcha_resolution(page))
-                        month = await read_month(
-                            page, login, password, code, today.year, today.month
-                        )
-                        if month.status == "preview_only":
-                            captcha_schedule_recovered = True
-                            log_captcha_stage("month_verified_after_owner_solution")
-                if month.status != "preview_only":
+                        trace.record("month_requested")
+                    month = await read_month(page, login, password, code, year, month_number)
                     if month.status == "captcha_required":
-                        return "captcha"
-                    if month.status == "identity_unverified":
-                        return "identity_unverified"
-                    if month.status == "login_failed":
+                        captcha_seen = True
                         if trace is not None:
-                            trace.failure_detail = "login_rejected"
-                        return "login_failed"
+                            trace.mark_captcha("month")
+                        log_captcha_stage("challenge_detected_month")
+                        if on_captcha is not None:
+                            await on_captcha("month")
+                        while (
+                            month.status == "captcha_required"
+                            and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
+                            and not captcha_solver_unavailable
+                        ):
+                            submitted = await solve_once(page, "month")
+                            if submitted:
+                                log_captcha_stage(await wait_for_captcha_resolution(page))
+                            if captcha_diagnostic_only or captcha_solver_unavailable:
+                                break
+                            # Read the real site again before considering another
+                            # paid request. Mouse motion is not proof of success.
+                            log_captcha_stage("schedule_recheck_after_captcha_month")
+                            if trace is not None:
+                                trace.record("month_recheck")
+                            month = await read_month(
+                                page, login, password, code, year, month_number
+                            )
+                            if month.status == "captcha_required":
+                                log_captcha_stage("challenge_still_present_month")
+                            elif month.status == "preview_only":
+                                captcha_schedule_recovered = True
+                                log_captcha_stage("month_verified_after_challenge")
+                            else:
+                                log_captcha_stage("month_not_verified_after_challenge")
+                    if month.status == "captcha_required" and manual_captcha is not None:
+                        log_captcha_stage("owner_fallback_offered_month")
+                        if await manual_captcha(page, captcha_attempts_used):
+                            log_captcha_stage(await wait_for_captcha_resolution(page))
+                            month = await read_month(
+                                page, login, password, code, year, month_number
+                            )
+                            if month.status == "preview_only":
+                                captcha_schedule_recovered = True
+                                log_captcha_stage("month_verified_after_owner_solution")
+                    if month.status != "preview_only":
+                        if month.status == "captcha_required":
+                            return None, "captcha"
+                        if month.status == "identity_unverified":
+                            return None, "identity_unverified"
+                        if month.status == "login_failed":
+                            if trace is not None:
+                                trace.failure_detail = "login_rejected"
+                            return None, "login_failed"
+                        if trace is not None:
+                            diagnostic = getattr(
+                                month, "diagnostic", None
+                            ) or diagnose_browser_state(month.status)
+                            if diagnostic is not None:
+                                trace.mark_diagnostic(diagnostic)
+                        if (
+                            month.status.startswith("cabinet_")
+                            or month.status == "empty_source_requires_review"
+                        ):
+                            if trace is not None:
+                                trace.failure_detail = "month_incomplete"
+                            return None, "parse_failed"
+                        # The login CAPTCHA was observed, but subsequent page
+                        # verification failed. This is NOT proof the site is down.
+                        if captcha_seen:
+                            if trace is not None:
+                                trace.failure_detail = "captcha_unverified"
+                                trace.mark_diagnostic("challenge_pending")
+                            return None, "captcha"
+                        return None, "source_unavailable"
                     if trace is not None:
-                        diagnostic = getattr(month, "diagnostic", None) or diagnose_browser_state(
-                            month.status
-                        )
-                        if diagnostic is not None:
-                            trace.mark_diagnostic(diagnostic)
-                    if (
-                        month.status.startswith("cabinet_")
-                        or month.status == "empty_source_requires_review"
-                    ):
-                        if trace is not None:
-                            trace.failure_detail = "month_incomplete"
-                        return "parse_failed"
-                    # The login CAPTCHA was observed, but subsequent page
-                    # verification failed. This is NOT proof the site is down.
-                    if captcha_seen:
-                        if trace is not None:
-                            trace.failure_detail = "captcha_unverified"
-                            trace.mark_diagnostic("challenge_pending")
-                        return "captcha"
-                    return "source_unavailable"
-                if trace is not None:
-                    trace.record("month_verified")
+                        trace.record("month_verified")
+                    return month.cards, None
+
                 # One authenticated account, many weeks: do not re-parse the
                 # same Moodle course for every occurrence of the same lesson.
                 course_candidates_cache = {}
+                verified_exit_cache = {}
+                moodle_dashboard_cache = {}
                 observed_sdo_candidates = set()
                 sdo_discovery_deadline = monotonic() + MAX_SDO_SCAN_TOTAL_SECONDS
-                first = date(today.year, today.month, 1)
-                monday = first - timedelta(days=first.weekday())
+                monday = today - timedelta(days=today.weekday())
+                month_cache = {}
                 for offset in range(6):
                     week_start = monday + timedelta(weeks=offset)
+                    week_end = week_start + timedelta(days=6)
+                    # A boundary week must be checked against both calendar months.
+                    # Read months lazily so a not-yet-published future month cannot
+                    # invalidate already committed earlier weeks.
+                    month_keys = sorted(
+                        {(week_start.year, week_start.month), (week_end.year, week_end.month)}
+                    )
+                    for key in month_keys:
+                        if key not in month_cache:
+                            cards, failure = await read_verified_month(*key)
+                            if failure is not None:
+                                return failure
+                            month_cache[key] = cards
                     expected = [
                         card
-                        for card in month.cards
-                        if week_start <= card.day <= week_start + timedelta(days=6)
+                        for key in month_keys
+                        for card in month_cache[key]
+                        if (card.day.year, card.day.month) == key
+                        and week_start <= card.day <= week_end
                     ]
                     if trace is not None:
                         trace.record("week_requested")
@@ -958,11 +992,7 @@ async def _collect(
                                 trace.failure_detail = "week_unreadable"
                                 trace.record("week_unreadable")
                         else:
-                            actual = [
-                                row
-                                for row in result.snapshot.indexed().values()
-                                if row.day.month == today.month
-                            ]
+                            actual = result.snapshot.indexed().values()
                             if Counter((r.day, r.starts, r.subject) for r in actual) == Counter(
                                 (r.day, r.starts, r.subject) for r in expected
                             ):
@@ -1014,6 +1044,40 @@ async def _collect(
                     if stats is not None:
                         stats.saved_weeks += 1
                         stats.saved_lessons += len(actual)
+                    enrichment_result = result
+                    if series_id is not None:
+                        try:
+                            async with AsyncSession(engine) as db:
+                                reused = await reuse_common_links(
+                                    db, group_id, user_id, week_start, series_id
+                                )
+                                await db.commit()
+                            if reused:
+                                if trace is not None:
+                                    trace.record("sdo_common_links_reused")
+                                if stats is not None:
+                                    stats.saved_sdo_links += len(reused)
+                                remaining = tuple(
+                                    lesson
+                                    for lesson in result.snapshot.lessons
+                                    if (
+                                        lesson.day.isoformat(),
+                                        lesson.starts.isoformat(),
+                                        lesson.ends.isoformat(),
+                                        lesson.subject,
+                                        lesson.teacher,
+                                        lesson.room,
+                                    )
+                                    not in reused
+                                )
+                                enrichment_result = BrowserResult(
+                                    "preview_only",
+                                    WeekSnapshot(code, week_start, week_end, remaining),
+                                )
+                                if not any(lesson.room == "СДО" for lesson in remaining):
+                                    continue
+                        except Exception:  # noqa: BLE001 -- never skip on uncertain evidence
+                            log_captcha_stage("sdo_peer_reuse_unavailable")
                     if monotonic() >= sdo_discovery_deadline:
                         # The week was committed. Continue other weeks without
                         # spending the remaining account budget on optional URLs.
@@ -1024,7 +1088,12 @@ async def _collect(
                         trace.record("sdo_exits_requested")
                     sdo_captcha_unresolved = False
                     try:
-                        exit_kwargs = {"course_cache": course_candidates_cache}
+                        exit_kwargs = {
+                            "course_cache": course_candidates_cache,
+                            "exit_cache": verified_exit_cache,
+                            "dashboard_cache": moodle_dashboard_cache,
+                            "first_week_anchor": first_week_anchor,
+                        }
                         if (
                             captcha_client is not None
                             and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
@@ -1052,14 +1121,14 @@ async def _collect(
                             exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
                         if on_captcha is not None:
                             exit_kwargs["on_captcha"] = on_captcha
-                        async with asyncio.timeout(
-                            min(
-                                MAX_SDO_SCAN_WEEK_SECONDS,
-                                max(0.01, sdo_discovery_deadline - monotonic()),
-                            )
-                        ):
+                        scan_seconds = min(
+                            MAX_SDO_SCAN_WEEK_SECONDS,
+                            max(0.01, sdo_discovery_deadline - monotonic()),
+                        )
+                        exit_kwargs["deadline"] = monotonic() + max(0.005, scan_seconds - 0.5)
+                        async with asyncio.timeout(scan_seconds):
                             resolution = await resolve_sdo_exits(
-                                context, result, login, password, **exit_kwargs
+                                context, enrichment_result, login, password, **exit_kwargs
                             )
                         links, link_states, courses = resolution
                         # All vetted candidates are retained privately even when
@@ -1087,6 +1156,7 @@ async def _collect(
                                     courses=courses,
                                     link_states=link_states,
                                     candidates=candidates,
+                                    verified_run_id=series_id,
                                 )
                                 await db.commit()
                         if stats is not None:
@@ -1209,6 +1279,7 @@ async def run_forever(settings: Settings):
     try:
         next_prepare_at = 0.0
         next_notice_recovery_at = 0.0
+        retention_day = None
         previous_generation = None
         while not stop.is_set():
             generation = None
@@ -1235,6 +1306,13 @@ async def run_forever(settings: Settings):
                         except Exception:  # noqa: BLE001
                             log_captcha_stage("owner_account_notice_recovery_unavailable")
                         next_notice_recovery_at = monotonic() + 60
+                    if today != retention_day:
+                        try:
+                            await prune_expired_schedule(engine, today)
+                        except Exception:  # noqa: BLE001 -- retention must not block crawling
+                            log_captcha_stage("schedule_retention_unavailable")
+                        else:
+                            retention_day = today
                     await prepare_urgent(engine, settings, today)
                     if generation != previous_generation or monotonic() >= next_prepare_at:
                         await prepare_week(engine, today, settings, bootstrap=True)

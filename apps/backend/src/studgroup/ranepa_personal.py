@@ -78,7 +78,7 @@ def _safe_course(url: str) -> bool:
 LOGGER = logging.getLogger(__name__)
 
 
-MAX_COURSE_CANDIDATES = 80
+MAX_COURSE_CANDIDATES = 500
 
 
 def _sdo_cache_key(row):
@@ -226,6 +226,7 @@ def _previous_confirmed_meeting(row, course, by_course, identity):
                 group_label=row["subgroup_hint"],
                 day=date.fromisoformat(row["day"]),
                 starts=time.fromisoformat(row["starts"]),
+                lesson_type=row.get("lesson_type"),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -248,6 +249,7 @@ def _reuse_verified_candidate(row, course, by_course, identity):
             group_label=row.get("subgroup_hint") or "",
             day=date.fromisoformat(row["day"]),
             starts=time.fromisoformat(row["starts"]),
+            lesson_type=row.get("lesson_type"),
         )
         if choice.state == "matched":
             return choice.url
@@ -464,6 +466,8 @@ async def enrich_personal_links(
     link_states=None,
     candidates=None,
     checked_at=None,
+    verified_run_id=None,
+    peer_reused=False,
 ):
     """Update link fields only after schedule commit, in a separate transaction.
 
@@ -494,6 +498,8 @@ async def enrich_personal_links(
         ):
             continue
         url = links.get(key)
+        direct_url = url
+        row.pop("direct_link_run", None)
         course = courses.get(key) or row.get("course_url")
         state = link_states.get(key, "matched" if url else "not_checked")
         cached = cached_links.get(_sdo_cache_key(row), {}) if row["room"] == "СДО" else {}
@@ -544,6 +550,7 @@ async def enrich_personal_links(
                         group_label=row.get("subgroup_hint") or "",
                         day=date.fromisoformat(row["day"]),
                         starts=time.fromisoformat(row["starts"]),
+                        lesson_type=row.get("lesson_type"),
                     )
                     url = selected.url
             if url:
@@ -568,6 +575,16 @@ async def enrich_personal_links(
         row["course_url"] = course or row.get("course_url")
         row["link_state"] = state
         row["links_checked_at"] = checked
+        if peer_reused and url is not None:
+            row["link_source"] = "cached"
+        elif (
+            verified_run_id is not None
+            and direct_url
+            and direct_url == url
+            and not link_cached
+            and row.get("source_scope") not in {"common", "subgroup"}
+        ):
+            row["direct_link_run"] = str(verified_run_id)
     encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
     updated = stored.data_digest != sha256(encoded.encode()).hexdigest()
     stored.rows_json = encoded

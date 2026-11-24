@@ -776,3 +776,144 @@ def test_rate_limit_is_not_retried_as_connection_failure():
     page = Page()
     assert asyncio.run(ranepa_browser._open(page, "student", "test")) == "http_429"
     assert page.calls == 1
+
+
+def test_verified_exit_cache_reuses_course_but_rematches_teacher(monkeypatch):
+    from studgroup.ranepa_lms import LinkCandidate
+
+    class Invisible:
+        async def is_visible(self):
+            return False
+
+    class Page:
+        url = ""
+
+        async def goto(self, *_args, **_kwargs):
+            self.url = "https://lms.ranepa.ru/course/view.php?id=77"
+
+        def get_by_text(self, *_args, **_kwargs):
+            return Invisible()
+
+        async def close(self):
+            pass
+
+    class Context:
+        opened = 0
+
+        async def new_page(self):
+            self.opened += 1
+            return Page()
+
+    context = Context()
+    inventory = (
+        LinkCandidate(
+            "https://my.mts-link.ru/j/Ranepa/111",
+            "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка",
+        ),
+        LinkCandidate(
+            "https://my.mts-link.ru/j/Ranepa/222",
+            "Петров П.П. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка",
+        ),
+    )
+
+    async def candidates(*_args):
+        return inventory, True
+
+    monkeypatch.setattr(ranepa_browser, "_read_course_candidates", candidates)
+
+    async def scenario():
+        course_cache, exit_cache = {}, {}
+        for day, teacher, expected in (
+            (date(2026, 11, 23), "Иванов Иван Иванович", "111"),
+            (date(2026, 11, 30), "Петров Петр Петрович", "222"),
+        ):
+            lesson = ExternalLesson(
+                day=day,
+                starts=time(9),
+                ends=time(10),
+                subject="История",
+                teacher=teacher,
+                room="СДО",
+                subgroup_hint="Э-ОБ26-СГЯ-лек(43,44,45)",
+            )
+            result = await ranepa_browser.resolve_sdo_exits(
+                context,
+                ranepa_browser.BrowserResult(
+                    "preview_only",
+                    WeekSnapshot("A-001", day, day + timedelta(days=6), (lesson,)),
+                    ("https://my.ranepa.ru/moodle_out.php?id=77",),
+                ),
+                course_cache=course_cache,
+                exit_cache=exit_cache,
+            )
+            assert list(result.links.values()) == [f"https://my.mts-link.ru/j/Ranepa/{expected}"]
+        assert context.opened == 1
+
+    asyncio.run(scenario())
+
+
+def test_moodle_dashboard_resolves_without_cabinet_exit(monkeypatch):
+    from studgroup.ranepa_lms import LinkCandidate
+
+    calls = []
+
+    class Page:
+        url = ""
+
+        async def goto(self, url, **kwargs):
+            self.url = url
+            calls.append(url)
+
+        async def close(self):
+            pass
+
+    class Context:
+        async def new_page(self):
+            return Page()
+
+    async def dashboard(_context, login, password):
+        assert (login, password) == ("student", "password")
+        calls.append("dashboard")
+        return {"https://lms.ranepa.ru/course/view.php?id=77": "История России"}, None
+
+    async def read_course(_page, _context):
+        return (
+            (
+                LinkCandidate(
+                    "https://my.mts-link.ru/j/Ranepa/123",
+                    "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) постоянная ссылка",
+                ),
+            ),
+            True,
+        )
+
+    monkeypatch.setattr(ranepa_browser, "_load_moodle_dashboard", dashboard)
+    monkeypatch.setattr(ranepa_browser, "_read_course_candidates", read_course)
+
+    async def scenario():
+        dashboard_cache, course_cache = {}, {}
+        for day in (date(2026, 11, 23), date(2026, 11, 30)):
+            lesson = ExternalLesson(
+                day=day,
+                starts=time(9),
+                ends=time(10, 20),
+                subject="История России",
+                teacher="Иванов Иван Иванович",
+                room="СДО",
+                subgroup_hint="Э-ОБ26-СГЯ-лек(43,44,45)",
+            )
+            result = await ranepa_browser.resolve_sdo_exits(
+                Context(),
+                ranepa_browser.BrowserResult(
+                    "preview_only",
+                    WeekSnapshot("A-001", day, day + timedelta(days=6), (lesson,)),
+                ),
+                "student",
+                "password",
+                dashboard_cache=dashboard_cache,
+                course_cache=course_cache,
+            )
+            assert list(result.links.values()) == ["https://my.mts-link.ru/j/Ranepa/123"]
+        assert calls == ["dashboard", "https://lms.ranepa.ru/course/view.php?id=77"]
+
+    asyncio.run(scenario())
