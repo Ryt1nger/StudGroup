@@ -18,7 +18,6 @@ from studgroup.models import (
     Group,
     RanepaCrawlJob,
     RanepaCrawlObservation,
-    RanepaManualCaptcha,
     User,
 )
 from studgroup.ranepa_crawl_jobs import retry_at, terminal_failure
@@ -337,22 +336,8 @@ async def notify_account_crawl_result(
         "sdo_exits_finished",
     }:
         raise ValueError("invalid_crawl_notification_stage")
-    if failure_code == "captcha":
-        # The one-time owner WebApp notice already states the failed automatic
-        # crawl, both groups and the manual action. Do not send its duplicate
-        # final CAPTCHA error from a separate outbox item.
-        async with AsyncSession(engine) as db:
-            manual_notice = await db.scalar(
-                select(RanepaManualCaptcha.id)
-                .where(
-                    RanepaManualCaptcha.job_id == job_id,
-                    RanepaManualCaptcha.attempt == attempt,
-                    RanepaManualCaptcha.owner_telegram_id == owner_id,
-                )
-                .limit(1)
-            )
-            if manual_notice is not None:
-                return False
+    # The manual challenge prompt requests an action; it is not the finalized
+    # account result. Every completed attempt gets its own deduplicated report.
     group = _safe_label(group_code, fallback="группа не указана")
     telegram_group = _safe_label(telegram_group_name, fallback="не указана")
     name = _safe_label(student_name, fallback="студент")
@@ -382,7 +367,9 @@ async def notify_account_crawl_result(
                     and job.next_attempt_at is not None
                     and (job.next_attempt_at - job.finished_at).total_seconds() <= 60
                 ):
-                    action = "Быстрый автоповтор после основной очереди, не раньше чем через 1 мин."
+                    action = (
+                        "Быстрый автоповтор после основной очереди, не раньше чем через 1 мин."
+                    )
         lines = [
             (
                 "⚠️ StudGroup · обход СДО завершён частично"

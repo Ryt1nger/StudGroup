@@ -583,7 +583,7 @@ def test_regular_reports_only_when_work_was_performed(tmp_path, monkeypatch):
     asyncio.run(scenario())
 
 
-def test_manual_captcha_button_replaces_duplicate_final_account_failure(tmp_path):
+def test_manual_captcha_prompt_and_final_account_report_are_distinct(tmp_path):
     async def scenario():
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/manual-once.db")
         try:
@@ -665,20 +665,26 @@ def test_manual_captcha_button_replaces_duplicate_final_account_failure(tmp_path
                 "student_name": "Студент",
                 "stats": CrawlRunStats(),
             }
+            assert await notify_account_crawl_result(
+                engine, **params, attempt=1, failure_code="captcha"
+            )
             assert not await notify_account_crawl_result(
                 engine, **params, attempt=1, failure_code="captcha"
             )
             async with AsyncSession(engine) as db:
                 rows = (await db.scalars(select(BotOutbox))).all()
-                assert len(rows) == 1
-                payload = json.loads(rows[0].payload)
+                assert len(rows) == 2
+                prompt = next(
+                    row for row in rows if row.dedup_key.startswith("ranepa-owner-captcha:")
+                )
+                payload = json.loads(prompt.payload)
                 assert "Группа ТГ: Группа Telegram" in payload["text"]
                 assert "Группа РАНХиГС: Э-ОБ-385-04-26-03" in payload["text"]
                 assert payload["reply_markup"]["inline_keyboard"][0][0]["text"] == (
                     "🧩 Пройти CAPTCHA"
                 )
-            # A different parsing error after a human attempt remains reportable.
-            assert await notify_account_crawl_result(
+            # The finalized attempt has exactly one report, even on recovery.
+            assert not await notify_account_crawl_result(
                 engine, **params, attempt=1, failure_code="parse_failed"
             )
             # A new account attempt must not be silenced by an old manual link.

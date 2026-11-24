@@ -151,8 +151,24 @@ def test_urgent_retry_round_waits_for_primary_then_runs_fast_retry(client, monke
                 retry.id,
                 retry.group_id,
                 retry.user_id,
-                failure_code="login_failed",
+                failure_code="source_unavailable",
                 now=now + timedelta(minutes=2),
+                fast_retry=True,
+            )
+            assert retry.next_attempt_at == now + timedelta(minutes=62)
+            await db.commit()
+        await finalize_urgent(engine, settings)
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            assert await claim_next(db, now=now + timedelta(minutes=3)) is None
+            last = await claim_next(db, now=now + timedelta(minutes=62))
+            assert last is not None and last.id == first_id
+            assert await finish(
+                db,
+                last.id,
+                last.group_id,
+                last.user_id,
+                failure_code="login_failed",
+                now=now + timedelta(minutes=62),
             )
             await db.commit()
         await finalize_urgent(engine, settings)
@@ -161,5 +177,64 @@ def test_urgent_retry_round_waits_for_primary_then_runs_fast_retry(client, monke
             assert run.state == "completed"
             targets = (await db.scalars(select(UrgentSDOTarget))).all()
             assert sorted(target.state for target in targets) == ["failed", "succeeded"]
+
+    asyncio.run(scenario())
+
+
+def test_legacy_login_recheck_requires_later_consent_and_no_observed_rejection(client):
+    from studgroup.models import LegalConsentEvent, UserProfile
+    from studgroup.ranepa_crawl_trace import CrawlTrace
+    from studgroup.urgent_sdo import previous_login_block, release_legacy_login_blocks
+
+    now = datetime.now(UTC)
+    engine = client.app.state.engine
+
+    async def scenario():
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            member = await db.scalar(select(Membership))
+            job = RanepaCrawlJob(
+                group_id=member.group_id,
+                user_id=member.user_id,
+                week_start=now.date() - timedelta(days=now.weekday()),
+                priority=0,
+                state="failed",
+                attempts=1,
+                created_at=now - timedelta(hours=2),
+                finished_at=now - timedelta(hours=1),
+                failure_code="login_failed",
+                retry_reason="credentials_required",
+            )
+            db.add(job)
+            profile = await db.get(UserProfile, member.user_id)
+            if profile is None:
+                profile = UserProfile(user_id=member.user_id, updated_at=now)
+                db.add(profile)
+            profile.sdu_credential_id = uuid4()
+            profile.updated_at = now
+            await db.flush()
+            assert not await release_legacy_login_blocks(db, member.user_id)
+            db.add(
+                LegalConsentEvent(
+                    user_id=member.user_id,
+                    purpose="sdo",
+                    action="grant",
+                    document_version="test",
+                    document_sha256="a" * 64,
+                    source="miniapp",
+                    created_at=now - timedelta(minutes=1),
+                )
+            )
+            trace = CrawlTrace()
+            trace.failure_detail = "login_rejected"
+            observation = trace.observation(job_id=job.id, attempt=1, failure_code="login_failed")
+            db.add(observation)
+            await db.flush()
+            assert not await release_legacy_login_blocks(db, member.user_id)
+            assert await previous_login_block(db, member.user_id)
+            await db.delete(observation)
+            await db.flush()
+            assert await release_legacy_login_blocks(db, member.user_id)
+            assert not await previous_login_block(db, member.user_id)
+            assert not await release_legacy_login_blocks(db, member.user_id)
 
     asyncio.run(scenario())
