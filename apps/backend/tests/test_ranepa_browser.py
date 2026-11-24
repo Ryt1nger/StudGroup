@@ -776,3 +776,71 @@ def test_rate_limit_is_not_retried_as_connection_failure():
     page = Page()
     assert asyncio.run(ranepa_browser._open(page, "student", "test")) == "http_429"
     assert page.calls == 1
+
+
+
+def test_verified_exit_cache_reuses_course_but_rematches_teacher(monkeypatch):
+    from studgroup.ranepa_lms import LinkCandidate
+
+    class Invisible:
+        async def is_visible(self):
+            return False
+
+    class Page:
+        url = ""
+
+        async def goto(self, *_args, **_kwargs):
+            self.url = "https://lms.ranepa.ru/course/view.php?id=77"
+
+        def get_by_text(self, *_args, **_kwargs):
+            return Invisible()
+
+        async def close(self):
+            pass
+
+    class Context:
+        opened = 0
+
+        async def new_page(self):
+            self.opened += 1
+            return Page()
+
+    context = Context()
+    inventory = (
+        LinkCandidate("https://my.mts-link.ru/j/Ranepa/111", "Иванов И.И. постоянная ссылка"),
+        LinkCandidate("https://my.mts-link.ru/j/Ranepa/222", "Петров П.П. постоянная ссылка"),
+    )
+
+    async def candidates(*_args):
+        return inventory, True
+
+    monkeypatch.setattr(ranepa_browser, "_read_course_candidates", candidates)
+
+    async def scenario():
+        course_cache, exit_cache = {}, {}
+        for day, teacher, expected in (
+            (date(2026, 11, 23), "Иванов Иван Иванович", "111"),
+            (date(2026, 11, 30), "Петров Петр Петрович", "222"),
+        ):
+            lesson = ExternalLesson(
+                day=day,
+                starts=time(9),
+                ends=time(10),
+                subject="История",
+                teacher=teacher,
+                room="СДО",
+            )
+            result = await ranepa_browser.resolve_sdo_exits(
+                context,
+                ranepa_browser.BrowserResult(
+                    "preview_only",
+                    WeekSnapshot("A-001", day, day + timedelta(days=6), (lesson,)),
+                    ("https://my.ranepa.ru/moodle_out.php?id=77",),
+                ),
+                course_cache=course_cache,
+                exit_cache=exit_cache,
+            )
+            assert list(result.links.values()) == [f"https://my.mts-link.ru/j/Ranepa/{expected}"]
+        assert context.opened == 1
+
+    asyncio.run(scenario())

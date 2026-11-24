@@ -67,6 +67,7 @@ from studgroup.ranepa_manual_captcha import offer_manual_captcha
 from studgroup.ranepa_materialization import materialize_verified_facts
 from studgroup.ranepa_personal import enrich_personal_links, remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
+from studgroup.ranepa_retention import prune_expired_schedule
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
 from studgroup.ranepa_worker_health import heartbeat
 from studgroup.urgent_sdo import active_run, eligible_candidates, finalize_urgent, prepare_urgent
@@ -839,9 +840,9 @@ async def _collect(
                                 trace.failure_detail = "login_rejected"
                             return None, "login_failed"
                         if trace is not None:
-                            diagnostic = getattr(month, "diagnostic", None) or diagnose_browser_state(
-                                month.status
-                            )
+                            diagnostic = getattr(
+                                month, "diagnostic", None
+                            ) or diagnose_browser_state(month.status)
                             if diagnostic is not None:
                                 trace.mark_diagnostic(diagnostic)
                         if (
@@ -866,6 +867,7 @@ async def _collect(
                 # One authenticated account, many weeks: do not re-parse the
                 # same Moodle course for every occurrence of the same lesson.
                 course_candidates_cache = {}
+                verified_exit_cache = {}
                 observed_sdo_candidates = set()
                 sdo_discovery_deadline = monotonic() + MAX_SDO_SCAN_TOTAL_SECONDS
                 monday = today - timedelta(days=today.weekday())
@@ -1039,7 +1041,10 @@ async def _collect(
                         trace.record("sdo_exits_requested")
                     sdo_captcha_unresolved = False
                     try:
-                        exit_kwargs = {"course_cache": course_candidates_cache}
+                        exit_kwargs = {
+                            "course_cache": course_candidates_cache,
+                            "exit_cache": verified_exit_cache,
+                        }
                         if (
                             captcha_client is not None
                             and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
@@ -1224,6 +1229,7 @@ async def run_forever(settings: Settings):
     try:
         next_prepare_at = 0.0
         next_notice_recovery_at = 0.0
+        retention_day = None
         previous_generation = None
         while not stop.is_set():
             generation = None
@@ -1250,6 +1256,13 @@ async def run_forever(settings: Settings):
                         except Exception:  # noqa: BLE001
                             log_captcha_stage("owner_account_notice_recovery_unavailable")
                         next_notice_recovery_at = monotonic() + 60
+                    if today != retention_day:
+                        try:
+                            await prune_expired_schedule(engine, today)
+                        except Exception:  # noqa: BLE001 -- retention must not block crawling
+                            log_captcha_stage("schedule_retention_unavailable")
+                        else:
+                            retention_day = today
                     await prepare_urgent(engine, settings, today)
                     if generation != previous_generation or monotonic() >= next_prepare_at:
                         await prepare_week(engine, today, settings, bootstrap=True)

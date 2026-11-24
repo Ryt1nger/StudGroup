@@ -550,6 +550,21 @@ async def _shared_moodle_redirect(context, candidates):
     return next(iter(targets)) if len(targets) == 1 else None
 
 
+async def _choose_course_meeting(context, candidates, lesson):
+    choice = select_lesson_link(
+        candidates,
+        teacher=lesson.teacher or "",
+        group_label=lesson.subgroup_hint or "",
+        day=lesson.day,
+        starts=lesson.starts,
+    )
+    if choice.url is None and choice.state in {LinkState.AMBIGUOUS, LinkState.TIMING_UNVERIFIED}:
+        shared_target = await _shared_moodle_redirect(context, choice.candidates)
+        if shared_target is not None:
+            choice = LinkChoice(LinkState.MATCHED, shared_target, choice.candidates)
+    return choice
+
+
 async def resolve_sdo_exits(
     context,
     result: BrowserResult,
@@ -559,6 +574,7 @@ async def resolve_sdo_exits(
     solve_captcha=None,
     on_captcha=None,
     course_cache: dict | None = None,
+    exit_cache: dict | None = None,
 ) -> SdoLinkResolution:
     """Follow LK SDO exits; save all course candidates for future safe matching."""
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
@@ -569,6 +585,8 @@ async def resolve_sdo_exits(
     candidates_by_lesson = {}
     if course_cache is None:
         course_cache = {}
+    if exit_cache is None:
+        exit_cache = {}
     for lesson, exit_url in zip(result.snapshot.lessons, result.sdo_exits, strict=True):
         if lesson.room != "СДО":
             continue
@@ -583,6 +601,21 @@ async def resolve_sdo_exits(
         if exit_url is None:
             states[key] = LinkState.MISSING_COURSE_TRANSITION
             continue
+        cached_course = exit_cache.get(exit_url)
+        if cached_course is not None:
+            candidates, verified = course_cache.get(cached_course, ((), False))
+            if verified and candidates:
+                try:
+                    choice = await _choose_course_meeting(context, candidates, lesson)
+                except Exception:  # noqa: BLE001 -- use the normal verified read below
+                    pass
+                else:
+                    courses[key] = cached_course
+                    candidates_by_lesson[key] = candidates
+                    states[key] = choice.state
+                    if choice.url is not None:
+                        linked[key] = choice.url
+                    continue
         page = await context.new_page()
         try:
             await page.goto(exit_url, wait_until="domcontentloaded", timeout=30000)
@@ -659,24 +692,8 @@ async def resolve_sdo_exits(
                             empty_course_reads = 8
                             break
                         candidates_by_lesson[key] = candidates
-                        choice = select_lesson_link(
-                            candidates,
-                            teacher=lesson.teacher or "",
-                            group_label=lesson.subgroup_hint or "",
-                            day=lesson.day,
-                            starts=lesson.starts,
-                        )
-                        if choice.url is None and choice.state in {
-                            LinkState.AMBIGUOUS,
-                            LinkState.TIMING_UNVERIFIED,
-                        }:
-                            shared_target = await _shared_moodle_redirect(
-                                context, choice.candidates
-                            )
-                            if shared_target is not None:
-                                choice = LinkChoice(
-                                    LinkState.MATCHED, shared_target, choice.candidates
-                                )
+                        exit_cache[exit_url] = course
+                        choice = await _choose_course_meeting(context, candidates, lesson)
                         break
                     except SourceAccessError:
                         pass

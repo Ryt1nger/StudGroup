@@ -1288,9 +1288,7 @@ def test_bounded_optional_sdo_discovery_never_invalidates_six_committed_weeks(
     expected_count = 6 if future_month_available else 5
     assert outcome == (None if future_month_available else "parse_failed")
     assert stats.saved_weeks == expected_count
-    assert saved == [
-        date(2026, 11, 23) + timedelta(weeks=i) for i in range(expected_count)
-    ]
+    assert saved == [date(2026, 11, 23) + timedelta(weeks=i) for i in range(expected_count)]
     if future_month_available:
         assert trace.events[-1]["step"] == "schedule_verified"
     assert any(e["step"] == "sdo_exits_timed_out" for e in trace.events)
