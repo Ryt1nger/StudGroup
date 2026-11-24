@@ -22,6 +22,7 @@ from studgroup.ranepa_schedule import subgroup_choice_changed_since_check
 
 LEASE = timedelta(hours=1)
 REFRESH = timedelta(hours=6)
+CREDENTIALS_UPDATED = "credentials_updated"
 RETRY_BACKOFF = {
     "source_unavailable": timedelta(minutes=30),
     "parse_failed": timedelta(minutes=5),
@@ -147,11 +148,15 @@ async def enqueue_week(
             # Account and week cooldown must be identical; a bad login
             # must not trigger automatic repeated password attempts.
             due = last_retry_at is None or last_retry_at <= now
-            can_retry = existing.failure_code != "login_failed" or force_refresh
+            renewed = existing.retry_reason == CREDENTIALS_UPDATED
+            can_retry = existing.failure_code != "login_failed" or force_refresh or renewed
             if (
                 existing.state in {"succeeded", "failed", "covered", "dead_letter"}
                 and can_retry
-                and (force_refresh or ((due or urgent_refresh) and existing.state != "dead_letter"))
+                and (
+                    force_refresh
+                    or ((due or urgent_refresh or renewed) and existing.state != "dead_letter")
+                )
             ):
                 existing.state = "queued"
                 existing.priority = priority
@@ -393,6 +398,7 @@ async def claim_next(
                 locked.user_id == RanepaCrawlJob.user_id,
                 locked.state == "failed",
                 locked.failure_code == "login_failed",
+                locked.retry_reason.is_distinct_from(CREDENTIALS_UPDATED),
                 # An older invalid-password failure must not permanently
                 # block ordinary runs after a newer successful manual pilot.
                 ~select(recovered.id)
@@ -512,8 +518,8 @@ async def finish(db, job_id, group_id, user_id, *, failure_code=None, now=None) 
     return True
 
 
-async def enqueue_new_group_account(db, user_id, settings):
-    """Queue first verified group import in the same SQL transaction as credential saving."""
+async def enqueue_new_group_account(db, user_id, settings, *, password_resubmitted=False):
+    """Queue first import or one recovery after an explicit, confirmed password write."""
     from studgroup.legal import has_consent, legal_ready
     from studgroup.models import UserProfile
 
@@ -525,21 +531,38 @@ async def enqueue_new_group_account(db, user_id, settings):
         return
     if not await has_consent(db, user_id, "sdo", settings):
         return
-    groups = (
-        await db.scalars(
-            select(Group.id)
-            .join(Membership, Membership.group_id == Group.id)
+    if db.get_bind().dialect.name == "postgresql":
+        await db.execute(text("SELECT pg_advisory_xact_lock(832610071)"))
+        await db.execute(text("SELECT pg_advisory_xact_lock(832610069)"))
+    recovering = False
+    if password_resubmitted:
+        # Retain old failure history, but only a fresh password submission can
+        # release its account-wide block. A new login failure blocks again.
+        result = await db.execute(
+            update(RanepaCrawlJob)
             .where(
-                Membership.user_id == user_id,
-                Membership.status == "active",
-                Group.status == "active",
-                Group.academic_group_code.is_not(None),
-                ~select(RanepaMaterializationReceipt.group_id)
-                .where(RanepaMaterializationReceipt.group_id == Group.id)
-                .exists(),
+                RanepaCrawlJob.user_id == user_id,
+                RanepaCrawlJob.state == "failed",
+                RanepaCrawlJob.failure_code == "login_failed",
+                RanepaCrawlJob.retry_reason.is_distinct_from(CREDENTIALS_UPDATED),
             )
+            .values(retry_reason=CREDENTIALS_UPDATED)
         )
-    ).all()
+        recovering = bool(result.rowcount)
+    group_query = select(Group.id).join(Membership, Membership.group_id == Group.id)
+    group_query = group_query.where(
+        Membership.user_id == user_id,
+        Membership.status == "active",
+        Group.status == "active",
+        Group.academic_group_code.is_not(None),
+    )
+    if not recovering:
+        group_query = group_query.where(
+            ~select(RanepaMaterializationReceipt.group_id)
+            .where(RanepaMaterializationReceipt.group_id == Group.id)
+            .exists()
+        )
+    groups = (await db.scalars(group_query)).all()
     if not groups:
         return
     from zoneinfo import ZoneInfo
