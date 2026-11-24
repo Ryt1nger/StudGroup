@@ -240,7 +240,6 @@ def test_legacy_login_recheck_requires_later_consent_and_no_observed_rejection(c
     asyncio.run(scenario())
 
 
-
 def test_autonomous_preparation_revalidates_legacy_login_block(client, monkeypatch):
     from studgroup.models import LegalConsentEvent, RanepaCrawlObservation, UserProfile
     from studgroup.ranepa_crawl_trace import CrawlTrace

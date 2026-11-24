@@ -469,7 +469,6 @@ def test_one_matching_moodle_activity_is_enough_for_individual_publication():
     assert selected.url == "https://lms.ranepa.ru/mod/url/view.php?id=777"
 
 
-
 def test_course_activity_data_url_is_not_hidden_by_placeholder_href_or_src():
     html = (
         '<main class="course-content">'
