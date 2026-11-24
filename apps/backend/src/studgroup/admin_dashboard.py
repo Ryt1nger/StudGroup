@@ -166,9 +166,7 @@ async def require_billing_options_schema(
         ) from None
 
 
-@router.get(
-    "/v1/admin/billing-options", dependencies=[Depends(require_billing_options_schema)]
-)
+@router.get("/v1/admin/billing-options", dependencies=[Depends(require_billing_options_schema)])
 async def billing_options(
     db: Annotated[AsyncSession, Depends(database)],
     _admin: Annotated[User, Depends(admin_session)],
@@ -183,9 +181,7 @@ async def billing_options(
     return {"items": [billing_option_json(row) for row in rows]}
 
 
-@router.post(
-    "/v1/admin/billing-options", dependencies=[Depends(require_billing_options_schema)]
-)
+@router.post("/v1/admin/billing-options", dependencies=[Depends(require_billing_options_schema)])
 async def create_billing_option(
     body: BillingOptionBody,
     db: Annotated[AsyncSession, Depends(database)],
