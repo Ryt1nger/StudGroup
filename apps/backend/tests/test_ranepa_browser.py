@@ -747,7 +747,6 @@ def test_schedule_connection_rechecks_are_bounded(monkeypatch, failures, expecte
             self.calls += 1
             if self.calls <= failures:
                 raise ConnectionError("test connection failure")
-            return None
 
         async def wait_for_timeout(self, milliseconds):
             assert milliseconds in {2000, 4000}
