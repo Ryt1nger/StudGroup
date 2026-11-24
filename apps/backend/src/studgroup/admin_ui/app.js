@@ -492,7 +492,7 @@ async function start(){
 
 const processNames={ai:"AI / DeepSeek",sdo:"SDO / RANEPA",telegram_outbox:"Telegram outbox",scheduler:"Scheduler"};
 const processStates={running:"Запущен",stopped:"Остановлен",error:"Ошибка / заблокирован",unknown:"Не подтверждён"};
-const queueNames={ai_messages:"AI / сообщения",ai_jobs:"AI / задания",ai_images:"AI / фото",sdo:"SDO",telegram_outbox:"Telegram"};
+const queueNames={ai_messages:"AI / сообщения",ai_jobs:"AI / архивная очередь (legacy)",ai_images:"AI / фото",sdo:"SDO",telegram_outbox:"Telegram"};
 let processLoading=false,processChanging=false,processSignature="";
 function renderProcessControls(data,urgent){
   const signature=JSON.stringify([data,urgent]);if(signature===processSignature)return;processSignature=signature;
@@ -516,10 +516,19 @@ function renderProcessControls(data,urgent){
   const progress=$("urgent-progress");progress.replaceChildren();
   if(!urgent){text(progress,"p","chart-empty","Полный прогон ещё не запрашивался.");}
   else{
-    const labels={requested:"Запрос сохранён — ожидает SDO-worker",running:"Выполняется",completed:"Завершён"};
+    const labels={requested:"Запрос сохранён — ожидает SDO-worker",running:"Выполняется",completed:"Завершён",cancelled:"Отменён"};
     text(progress,"strong","",labels[urgent.state]||"Не подтверждён");
     if(urgent.state!=="requested"){
-      for(const [key,name] of [["found","Найдено аккаунтов"],["queued","Поставлено в очередь"],["completed","Выполнено попыток"],["succeeded","Успешно"],["failed","Ошибок"],["blocked","Заблокировано защитой"],["remaining","Осталось"]])statRow(progress,name,number(urgent[key]));
+      for(const [key,name] of [["found","Найдено аккаунтов"],["queued","Поставлено в очередь"],["completed","Обработано аккаунтов"],["succeeded","Успешно"],["failed","Ошибок"],["blocked","Заблокировано защитой"],["remaining","Осталось"]])statRow(progress,name,number(urgent[key]));
+      const targetStates={running:"Сейчас обрабатывается",cooldown:"Ожидает разрешённого времени",queued:"В очереди",succeeded:"Успешно",failed:"Ошибка",blocked:"Заблокирован"};
+      for(const target of urgent.targets||[]){
+        const details=[targetStates[target.state]||target.state];
+        if(target.reason)details.push(target.reason);
+        if(target.started_at)details.push("начало "+datetime(target.started_at));
+        if(target.next_attempt_at)details.push("не раньше "+datetime(target.next_attempt_at));
+        if(target.completed_at)details.push("завершено "+datetime(target.completed_at));
+        statRow(progress,(target.student||"Студент")+" · "+(target.group||"Группа"),details.join(" · "));
+      }
     }
   }
   $("urgent-start").disabled=processChanging||Boolean(urgent&&["requested","running"].includes(urgent.state));

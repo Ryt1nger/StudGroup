@@ -16,6 +16,7 @@ from studgroup.models import (
     RanepaCrawlObservation,
     UrgentSDORun,
     UrgentSDOTarget,
+    User,
     UserProfile,
 )
 from studgroup.process_control import ensure_process
@@ -92,6 +93,43 @@ async def run_json(db, row):
     )
     succeeded = counts.get("succeeded", 0)
     failed = counts.get("failed", 0)
+    # Owner-only progress: show durable per-account state, not browser guesses.
+    # A historical job may be refreshed later; never display that as this run.
+    targets = (
+        await db.execute(
+            select(UrgentSDOTarget, RanepaCrawlJob, User.display_name, Group.name)
+            .outerjoin(RanepaCrawlJob, RanepaCrawlJob.id == UrgentSDOTarget.job_id)
+            .join(User, User.id == UrgentSDOTarget.user_id)
+            .join(Group, Group.id == UrgentSDOTarget.group_id)
+            .where(UrgentSDOTarget.run_id == row.id)
+            .order_by(Group.name, User.display_name, UrgentSDOTarget.user_id)
+        )
+    ).all()
+    progress = []
+    now = datetime.now(UTC)
+    for target, job, name, group in targets:
+        state = target.state
+        started_at = next_attempt_at = None
+        if state == "pending" and job is not None:
+            if job.state == "running" and job.attempts > target.baseline_attempts:
+                state = "running"
+                started_at = utc(job.claimed_at) if job.claimed_at else None
+            elif job.next_attempt_at and utc(job.next_attempt_at) > now:
+                state = "cooldown"
+                next_attempt_at = utc(job.next_attempt_at)
+            else:
+                state = "queued"
+        progress.append(
+            {
+                "student": name,
+                "group": group,
+                "state": state,
+                "reason": target.failure_code,
+                "started_at": started_at,
+                "next_attempt_at": next_attempt_at,
+                "completed_at": utc(target.completed_at) if target.completed_at else None,
+            }
+        )
     return {
         "id": str(row.id),
         "state": row.state,
@@ -105,6 +143,7 @@ async def run_json(db, row):
         "failed": failed,
         "blocked": counts.get("blocked", 0),
         "remaining": counts.get("pending", 0),
+        "targets": progress,
     }
 
 
