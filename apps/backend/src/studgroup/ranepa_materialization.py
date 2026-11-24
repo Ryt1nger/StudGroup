@@ -18,7 +18,7 @@ from studgroup.models import (
     RanepaPersonalSnapshot,
     SubjectSplit,
 )
-from studgroup.ranepa_personal import _safe_course, _safe_link
+from studgroup.ranepa_personal import _safe_course, _safe_link, _split_for_ranepa_subject
 from studgroup.ranepa_schedule import (
     has_unverified_subgroup_hint,
     normalized,
@@ -121,7 +121,6 @@ async def materialize_verified_facts(db, group_id, source_user_id, week_start, *
     if source_user_id not in by_user:
         raise ValueError("source_membership_inactive")
     splits = (await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == group_id))).all()
-    by_subject = {normalized(split.subject_name): split for split in splits}
     choices = (
         await db.scalars(
             select(MemberSubgroup).where(
@@ -154,7 +153,7 @@ async def materialize_verified_facts(db, group_id, source_user_id, week_start, *
         own_count += 1
         if not week_start <= datetime.fromisoformat(row["day"]).date() <= source.week_end:
             raise ValueError("source_lesson_outside_week")
-        split = by_subject.get(normalized(row["subject"]))
+        split = _split_for_ranepa_subject(splits, row["subject"])
         if split is None:
             if has_unverified_subgroup_hint(row.get("subgroup_hint")):
                 continue

@@ -69,8 +69,8 @@ async def fixture(engine):
         split = SubjectSplit(
             id=UUID(int=300),
             group_id=group_id,
-            subject_id=subject_uuid(group_id, "Иностранный язык"),
-            subject_name="Иностранный язык",
+            subject_id=subject_uuid(group_id, "Английский язык"),
+            subject_name="Английский язык",
             created_at=CHECKED,
         )
         db.add(split)
