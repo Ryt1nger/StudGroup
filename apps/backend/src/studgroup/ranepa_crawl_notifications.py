@@ -441,6 +441,10 @@ async def notify_account_crawl_result(
             {"chat_id": owner_id, "text": message, "link_preview_options": {"is_disabled": True}},
             f"ranepa-crawl-account:{job_id}:{attempt}",
         )
+        if queued:
+            observation = await db.get(RanepaCrawlObservation, (job_id, attempt))
+            if observation is not None and observation.notification_state == "pending":
+                observation.notification_state = "queued"
         await db.commit()
         return queued
 

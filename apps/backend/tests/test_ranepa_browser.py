@@ -684,3 +684,36 @@ def test_course_reader_waits_for_late_meetings_from_other_teachers():
         "https://lms.ranepa.ru/mod/url/view.php?id=100",
         "https://lms.ranepa.ru/mod/url/view.php?id=101",
     }
+
+
+def test_sign_in_timeout_does_not_claim_invalid_password(monkeypatch):
+    class Page:
+        def get_by_placeholder(self, *args):
+            return self
+
+        def locator(self, *args):
+            return self
+
+        def get_by_role(self, *args, **kwargs):
+            return self
+
+        async def fill(self, *args, **kwargs):
+            pass
+
+        async def click(self, **kwargs):
+            pass
+
+        async def wait_for_timeout(self, *args):
+            pass
+
+    async def still_waiting(*args):
+        return "login_required"
+
+    monkeypatch.setattr(ranepa_browser, "_state", still_waiting)
+    assert asyncio.run(ranepa_browser._sign_in(Page(), "student", "test")) == "timeout"
+
+    async def rejected(*args):
+        return "login_failed"
+
+    monkeypatch.setattr(ranepa_browser, "_state", rejected)
+    assert asyncio.run(ranepa_browser._sign_in(Page(), "student", "test")) == "login_failed"

@@ -15,6 +15,7 @@ from studgroup.models import (
     RanepaMaterializationReceipt,
     RanepaPersonalSnapshot,
     SubjectSplit,
+    UrgentSDORun,
     UrgentSDOTarget,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
@@ -158,10 +159,11 @@ async def enqueue_week(
                     or ((due or urgent_refresh or renewed) and existing.state != "dead_letter")
                 )
             ):
+                retry = existing.failure_code if existing.state == "failed" else None
                 existing.state = "queued"
                 existing.priority = priority
                 existing.failure_code = None
-                existing.retry_reason = None
+                existing.retry_reason = retry if retry in RETRY_BACKOFF else None
                 existing.next_attempt_at = last_retry_at
             continue
         db.add(
@@ -392,6 +394,17 @@ async def claim_next(
     )
     due = []
     if group_id is None and not rescan_all:
+        # Completed urgent targets wait for the entire round before retrying.
+        due.append(
+            ~select(UrgentSDOTarget.run_id)
+            .join(UrgentSDORun, UrgentSDORun.id == UrgentSDOTarget.run_id)
+            .where(
+                UrgentSDORun.state == "running",
+                UrgentSDOTarget.user_id == RanepaCrawlJob.user_id,
+                UrgentSDOTarget.state.in_(("failed", "succeeded", "blocked")),
+            )
+            .exists()
+        )
         due.append(
             ~select(locked.id)
             .where(
@@ -444,7 +457,12 @@ async def claim_next(
                 *due,
             )
             .order_by(
-                case((RanepaCrawlJob.priority < 0, 0), (urgent, 1), else_=2),
+                case(
+                    (urgent, 0),
+                    (RanepaCrawlJob.retry_reason.in_(tuple(RETRY_BACKOFF)), 3),
+                    (RanepaCrawlJob.priority < 0, 1),
+                    else_=2,
+                ),
                 RanepaCrawlJob.week_start.desc(),
                 RanepaCrawlJob.attempts,
                 RanepaCrawlJob.priority,

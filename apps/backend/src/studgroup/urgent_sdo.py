@@ -18,7 +18,12 @@ from studgroup.models import (
 )
 from studgroup.process_control import ensure_process
 from studgroup.process_runtime import ALERT_PREFIX, utc
-from studgroup.ranepa_crawl_jobs import CREDENTIALS_UPDATED, enqueue_week
+from studgroup.ranepa_crawl_jobs import (
+    CREDENTIALS_UPDATED,
+    RETRY_BACKOFF,
+    enqueue_week,
+    terminal_failure,
+)
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
 
 ACTIVE = ("requested", "running")
@@ -228,6 +233,44 @@ async def finalize_urgent(engine, settings):
         await db.flush()
         result = await run_json(db, row)
         if result["remaining"]:
+            await db.commit()
+            return
+        # Only after every primary/previous-round target has finalized, reopen
+        # retryable failures. Preserve the durable account-wide retry clock and
+        # attempt budget; a refused login is never retried here.
+        eligible = {candidate.user_id for candidate in await eligible_candidates(db, settings)}
+        failed_targets = (
+            await db.scalars(
+                select(UrgentSDOTarget).where(
+                    UrgentSDOTarget.run_id == row.id,
+                    UrgentSDOTarget.state == "failed",
+                )
+            )
+        ).all()
+        reopened = 0
+        for target in failed_targets:
+            if target.user_id not in eligible or target.job_id is None:
+                continue
+            job = await db.get(RanepaCrawlJob, target.job_id, with_for_update=True)
+            code = target.failure_code
+            if (
+                job is None
+                or job.state not in {"failed", "queued"}
+                or code not in RETRY_BACKOFF
+                or terminal_failure(code, job.attempts)
+                or job.next_attempt_at is None
+                or await previous_login_block(db, target.user_id)
+            ):
+                continue
+            job.state = "queued"
+            job.failure_code = None
+            job.retry_reason = code
+            target.baseline_attempts = job.attempts
+            target.state = "pending"
+            target.failure_code = None
+            target.completed_at = None
+            reopened += 1
+        if reopened:
             await db.commit()
             return
         row.state = "completed"

@@ -294,7 +294,12 @@ async def _process_one(
         if processed_user_ids is not None:
             # One owner-authorized account per rescan, even with two memberships.
             processed_user_ids.add(user_id)
-        trace = CrawlTrace() if settings.ranepa_crawl_telemetry_enabled else None
+        trace = (
+            CrawlTrace()
+            if settings.ranepa_crawl_telemetry_enabled
+            or settings.ranepa_crawl_notify_account_results_enabled
+            else None
+        )
         if trace is not None:
             trace.record("job_claimed")
         group = await db.get(Group, group_id)
@@ -1189,6 +1194,7 @@ async def run_forever(settings: Settings):
     )
     try:
         next_prepare_at = 0.0
+        next_notice_recovery_at = 0.0
         previous_generation = None
         while not stop.is_set():
             generation = None
@@ -1204,6 +1210,17 @@ async def run_forever(settings: Settings):
                     if utc_day != budget_day:
                         captcha_budget = autonomous_captcha_budget(settings)
                         budget_day = utc_day
+                    if (
+                        settings.ranepa_crawl_notify_account_results_enabled
+                        and monotonic() >= next_notice_recovery_at
+                    ):
+                        try:
+                            await recover_account_crawl_notifications(
+                                engine, owner_id=settings.bot_admin_user_id
+                            )
+                        except Exception:  # noqa: BLE001
+                            log_captcha_stage("owner_account_notice_recovery_unavailable")
+                        next_notice_recovery_at = monotonic() + 60
                     await prepare_urgent(engine, settings, today)
                     if generation != previous_generation or monotonic() >= next_prepare_at:
                         await prepare_week(engine, today, settings, bootstrap=True)

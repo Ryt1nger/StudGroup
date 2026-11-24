@@ -119,7 +119,8 @@ async def _sign_in(page, login: str, password: str) -> str:
         if state not in {"login_required", "empty_page", "challenge_pending"}:
             return state
         await page.wait_for_timeout(250)
-    return "login_failed"
+    # A stalled login form or loading spinner is not an explicit rejection.
+    return "challenge_pending" if state == "challenge_pending" else "timeout"
 
 
 async def _open(page, login: str, password: str) -> str:
@@ -295,7 +296,7 @@ async def read_week(
             return BrowserResult("source_unavailable", diagnostic=diagnose_exception(error))
         if attempt == 1:
             break
-    return BrowserResult("login_failed")
+    return BrowserResult("source_unavailable", diagnostic="session_expired")
 
 
 async def read_month(
@@ -354,7 +355,7 @@ async def read_month(
             return BrowserMonthResult("source_unavailable", diagnostic=diagnose_exception(error))
         if attempt == 1:
             break
-    return BrowserMonthResult("login_failed")
+    return BrowserMonthResult("source_unavailable", diagnostic="session_expired")
 
 
 @dataclass
