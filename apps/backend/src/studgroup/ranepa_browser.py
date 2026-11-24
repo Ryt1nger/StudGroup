@@ -656,11 +656,10 @@ async def resolve_moodle_courses(
             async with asyncio.timeout(remaining):
                 index, error = await _load_moodle_dashboard(context, login, password)
         except TimeoutError:
-            return SdoLinkResolution(linked, states, courses, inventories)
-        if index:
-            dashboard_cache.update(courses=index, error=error)
-        else:
-            return SdoLinkResolution(linked, states, courses, inventories)
+            index, error = {}, LinkState.NAVIGATION_ERROR
+        # One independent Moodle login per account. In particular, do not
+        # resubmit a rejected form for each following week.
+        dashboard_cache.update(courses=index, error=error)
     for lesson in result.snapshot.lessons:
         if lesson.room != "СДО":
             continue
@@ -672,12 +671,12 @@ async def resolve_moodle_courses(
             lesson.teacher,
             lesson.room,
         )
-        if deadline is not None and monotonic() >= deadline:
-            break
         error = dashboard_cache["error"]
         if error is not None:
             states[key] = error
             continue
+        if deadline is not None and monotonic() >= deadline:
+            break
         matches = matching_courses(dashboard_cache["courses"], lesson.subject)
         if len(matches) != 1:
             states[key] = LinkState.AMBIGUOUS if matches else LinkState.NOT_FOUND
