@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { API, renderApp, server, useScenario } from './helpers';
@@ -75,4 +75,50 @@ describe('schedule (GET /v1/schedule)', () => {
     expect(await screen.findByText('Нет доступа к расписанию')).toBeInTheDocument();
     expect(calls).toBe(0);
   });
+
+  it.each(['credentials_required', 'queued', 'running', 'cooldown'] as const)(
+    'hides SDO maintenance details while the account state is %s and silently refreshes lessons',
+    async (refreshState) => {
+      useScenario();
+      let scheduleCalls = 0;
+      let refreshCalls = 0;
+      let checked = '2026-11-22T19:10:22Z';
+      const freshness = () => ({
+        account_connected: true,
+        oldest_required_checked_at: checked,
+        oldest_links_checked_at: checked,
+        last_success_at: checked,
+        refresh_state: refreshState,
+        weeks: [],
+      });
+      server.use(
+        http.get(`${API}/ranepa-schedule`, () => HttpResponse.json(freshness())),
+        http.get(`${API}/schedule`, () => {
+          scheduleCalls += 1;
+          return undefined;
+        }),
+        http.post(`${API}/ranepa-schedule/refresh`, () => {
+          refreshCalls += 1;
+          return HttpResponse.json({ state: 'queued', queued: true });
+        }),
+      );
+      const app = renderApp({ route: '/schedule' });
+      expect((await screen.findAllByText('Математический анализ')).length).toBeGreaterThan(0);
+      await waitFor(() => expect(
+        app.queryClient.getQueriesData({ queryKey: ['ranepa-freshness'] })[0]?.[1],
+      ).toMatchObject({ account_connected: true, last_success_at: checked }));
+      expect(screen.queryByRole('region', { name: 'Свежесть СДО' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Обновить СДО' })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Расписание СДО проверено|Ссылки СДО проверены|Требуется обновление|Не удалось войти в СДО|СДО обрабатывается в фоновом режиме|Заявка в очереди/)).not.toBeInTheDocument();
+
+      const before = scheduleCalls;
+      checked = '2026-11-24T06:00:00Z';
+      await act(async () => {
+        await app.queryClient.invalidateQueries({ queryKey: ['ranepa-freshness'] });
+      });
+      await waitFor(() => expect(scheduleCalls).toBeGreaterThan(before));
+      expect(refreshCalls).toBe(0);
+      expect(screen.queryByRole('region', { name: 'Свежесть СДО' })).not.toBeInTheDocument();
+    },
+  );
 });
