@@ -549,4 +549,3 @@ async def enqueue_new_group_account(db, user_id, settings):
     await enqueue_week(
         db, monday, [CrawlCandidate(group_id, user_id) for group_id in groups], bootstrap=True
     )
-
