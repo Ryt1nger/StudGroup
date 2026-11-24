@@ -38,6 +38,7 @@ from studgroup.models import (
     User,
     WebSession,
 )
+from studgroup.process_control import ProcessAction, ProcessName
 from studgroup.security import token_hash
 
 router = APIRouter()
@@ -449,3 +450,79 @@ async def dashboard(
             "owner_funded_pilot": request.app.state.settings.owner_funded_pilot,
         },
     }
+
+
+@router.get("/v1/admin/processes")
+async def background_processes(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(database)],
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.process_control import process_snapshot
+
+    settings = request.app.state.settings
+    delivery_configured = bool(
+        settings.bot_admin_user_id
+        or settings.owner_update_notifications_enabled
+        or settings.billing_enabled
+    )
+    defaults = {
+        "ai": settings.processing_mode == "embedded"
+        or settings.cabinet_schedule_background_enabled,
+        "sdo": settings.ranepa_crawl_enabled,
+        "telegram_outbox": delivery_configured,
+        "scheduler": delivery_configured or settings.billing_enabled,
+    }
+    processes = await process_snapshot(db)
+    for row in processes:
+        enabled = row.get("enabled")
+        row["effective_enabled"] = defaults[row["name"]] if enabled is None else enabled
+    return {
+        "processes": processes,
+        "queues": {
+            "ai_messages": await states(db, RawMessage, RawMessage.processing_state),
+            "ai_jobs": await states(db, AIJob, AIJob.state),
+            "ai_images": await states(db, ImageAnalysisJob, ImageAnalysisJob.state),
+            "sdo": await states(db, RanepaCrawlJob, RanepaCrawlJob.state),
+            "telegram_outbox": await states(db, BotOutbox, BotOutbox.state),
+        },
+    }
+
+
+@router.post("/v1/admin/processes/{name}/{action}", status_code=202)
+async def change_background_process(
+    name: ProcessName,
+    action: ProcessAction,
+    db: Annotated[AsyncSession, Depends(database)],
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.process_control import process_json, request_process
+
+    row = await request_process(db, name, action)
+    result = process_json(row)
+    result["effective_enabled"] = row.enabled
+    await db.commit()
+    return result
+
+
+@router.get("/v1/admin/sdo-runs")
+async def urgent_sdo_status(
+    db: Annotated[AsyncSession, Depends(database)],
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.urgent_sdo import latest_run
+
+    return {"run": await latest_run(db)}
+
+
+@router.post("/v1/admin/sdo-runs", status_code=202)
+async def urgent_sdo_request(
+    db: Annotated[AsyncSession, Depends(database)],
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.urgent_sdo import request_run, run_json
+
+    row = await request_run(db)
+    result = await run_json(db, row)
+    await db.commit()
+    return result

@@ -1537,3 +1537,57 @@ class BillingPaymentOption(Base):
     position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class BackgroundProcess(Base):
+    """Durable desired state and separately acknowledged worker state."""
+
+    __tablename__ = "background_processes"
+    __table_args__ = (
+        CheckConstraint(
+            "name IN ('ai', 'sdo', 'telegram_outbox', 'scheduler')",
+            name="background_process_name",
+        ),
+    )
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    enabled: Mapped[bool | None] = mapped_column(Boolean)
+    generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    applied_generation: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(24), default="unknown", server_default="unknown")
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_stage: Mapped[str | None] = mapped_column(String(32))
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class UrgentSDORun(Base):
+    """Owner-requested account snapshot and aggregate full-run progress."""
+
+    __tablename__ = "urgent_sdo_runs"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    state: Mapped[str] = mapped_column(String(24), default="requested")
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    found_count: Mapped[int] = mapped_column(Integer, default=0)
+    queued_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class UrgentSDOTarget(Base):
+    """No credentials or browser state; one durable result per distinct account."""
+
+    __tablename__ = "urgent_sdo_targets"
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("urgent_sdo_runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    group_id: Mapped[uuid.UUID] = mapped_column(Uuid)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ranepa_crawl_jobs.id", ondelete="SET NULL"), index=True
+    )
+    baseline_attempts: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(24))
+    failure_code: Mapped[str | None] = mapped_column(String(64))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
