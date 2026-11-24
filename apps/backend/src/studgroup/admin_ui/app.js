@@ -42,7 +42,7 @@ function clear(id){$(id).replaceChildren();}
 function hint(v){return v===undefined||v===null?"Нет данных":String(v);}
 function russianState(v){return state[v]||"Другой статус: "+String(v);}
 function criteria(){const p=new URLSearchParams({days:$("days").value});if($("group").value)p.set("group_id",$("group").value);return p;}
-async function api(url,options={}){const headers={Authorization:"Bearer "+token,...(options.headers||{})};const r=await fetch(url,{cache:"no-store",...options,headers});let result;try{result=await r.json();}catch{throw Error("Сервер ответил в непонятном формате");}if(!r.ok)throw Error(result.error?.message||"Сервер ответил с ошибкой "+r.status);return result;}
+async function api(url,options={}){const headers={Authorization:"Bearer "+token,...(options.headers||{})};const r=await fetch(url,{cache:"no-store",...options,headers});let result;try{result=await r.json();}catch{throw Error("Сервер вернул неожиданный ответ (HTTP "+r.status+"). Проверьте доступность API и миграции базы.");}if(!r.ok)throw Error(result.error?.message||"Сервер ответил с ошибкой "+r.status);return result;}
 function spark(host,values,color){
   if(!Array.isArray(values)||values.length<2)return;
   const ns="http://www.w3.org/2000/svg",svg=document.createElementNS(ns,"svg");
@@ -398,13 +398,13 @@ function renderBillingOptions(){
   }
 }
 async function loadBillingOptions(){
-  try{const result=await api("/v1/admin/billing-options");billingItems=result.items||[];renderBillingOptions();$("billing-status").textContent=billingItems.length?"Настройки загружены":"Добавьте первую платёжную кнопку";}
-  catch(error){$("billing-status").classList.add("error");$("billing-status").textContent="Не удалось загрузить кнопки: "+error.message;}
+  try{const result=await api("/v1/admin/billing-options");billingItems=result.items||[];renderBillingOptions();$("billing-status").classList.remove("error");$("billing-status").textContent=billingItems.length?"Настройки загружены":"Добавьте первую платёжную кнопку";return true;}
+  catch(error){$("billing-status").classList.add("error");$("billing-status").textContent="Не удалось загрузить кнопки: "+error.message;return false;}
 }
 async function saveBillingOption(event){
   event.preventDefault();const id=$("billing-id").value;const body={label:$("billing-label").value.trim(),months:Number($("billing-months").value),payment_url:$("billing-url").value.trim(),position:Number($("billing-position").value),enabled:$("billing-enabled").checked};
   $("billing-status").textContent="Сохраняем…";
-  try{await api(id?"/v1/admin/billing-options/"+id:"/v1/admin/billing-options",{method:id?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});resetBillingForm();await loadBillingOptions();$("billing-status").textContent="Сохранено";}
+  try{await api(id?"/v1/admin/billing-options/"+id:"/v1/admin/billing-options",{method:id?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});resetBillingForm();if(await loadBillingOptions())$("billing-status").textContent="Сохранено";}
   catch(error){$("billing-status").classList.add("error");$("billing-status").textContent=error.message;}
 }
 async function load(){
