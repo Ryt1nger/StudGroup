@@ -73,24 +73,14 @@ services:
       dockerfile: Dockerfile.ranepa-worker
     image: studgroup-ranepa-worker:${STUDGROUP_IMAGE_TAG:-latest}
     restart: unless-stopped
-    init: true
-    stop_grace_period: 17m
-    shm_size: 256m
     env_file: /etc/studgroup/backend.env
     environment:
       REDIS_URL: redis://redis:6379/0
-      RANEPA_WORKER_HEARTBEAT_FILE: /tmp/studgroup-sdo-heartbeat
     depends_on:
       redis:
         condition: service_healthy
     networks: [internal]
     mem_limit: 1400m
-    healthcheck:
-      test: ["CMD", "python", "-m", "studgroup.ranepa_worker_health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 120s
 
 networks:
   internal:

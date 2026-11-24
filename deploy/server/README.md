@@ -174,8 +174,7 @@ and worker logs. The worker marks a local heartbeat only after preflight
 and completed queue iterations. A CAPTCHA guard pause is not cleared by
 restarting the container. An unhealthy worker needs log inspection; Docker
 Compose restart policy alone does not restart a merely unhealthy container.
-The updated release script requires the target worker to pass startup health,
-not just API health, and checks errors explicitly before marking a SHA deployed.
-Rollback can restore an older release that has no worker healthcheck. The
-restricted SSH deploy script installed in /usr/local/sbin must be reviewed
-and updated by the host operator if its contents differ from the repository.
+No existing server configuration, Compose file, installed deploy script,
+SSH configuration or environment file is changed in this release. The image
+provides its own healthcheck. Existing deployment checks API health only;
+verify worker health separately before declaring the release successful.

@@ -1237,9 +1237,7 @@ async def run_forever(settings: Settings):
                 status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
                 heartbeat()
                 log_captcha_stage(f"autonomous_iteration_{status}")
-                delay = (
-                    60 if status in {"idle", "paused"} else settings.ranepa_crawl_pause_seconds
-                )
+                delay = 60 if status in {"idle", "paused"} else settings.ranepa_crawl_pause_seconds
             except Exception as error:  # noqa: BLE001 -- leave SQL leases to recover
                 log_captcha_stage("autonomous_iteration_failed_" + type(error).__name__)
             try:
