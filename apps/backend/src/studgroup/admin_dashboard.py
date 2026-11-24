@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, database
@@ -141,7 +141,34 @@ def validated_payment_url(value):
     return result
 
 
-@router.get("/v1/admin/billing-options")
+async def require_billing_options_schema(
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+):
+    """Check schema only after authenticating the owner; never echo SQL or link data."""
+    try:
+        await db.execute(select(BillingPaymentOption.id).limit(0))
+    except DBAPIError as error:
+        await db.rollback()
+        original = error.orig
+        missing = getattr(original, "sqlstate", None) == "42P01" or (
+            db.get_bind().dialect.name == "sqlite"
+            and str(original) == "no such table: billing_payment_options"
+        )
+        if missing:
+            raise ApiError(
+                "billing_schema_missing",
+                "Платёжные кнопки недоступны: требуется миграция базы 0069.",
+                503,
+            ) from None
+        raise ApiError(
+            "billing_storage_unavailable", "Хранилище платёжных кнопок недоступно", 503
+        ) from None
+
+
+@router.get(
+    "/v1/admin/billing-options", dependencies=[Depends(require_billing_options_schema)]
+)
 async def billing_options(
     db: Annotated[AsyncSession, Depends(database)],
     _admin: Annotated[User, Depends(admin_session)],
@@ -156,7 +183,9 @@ async def billing_options(
     return {"items": [billing_option_json(row) for row in rows]}
 
 
-@router.post("/v1/admin/billing-options")
+@router.post(
+    "/v1/admin/billing-options", dependencies=[Depends(require_billing_options_schema)]
+)
 async def create_billing_option(
     body: BillingOptionBody,
     db: Annotated[AsyncSession, Depends(database)],
@@ -183,7 +212,9 @@ async def create_billing_option(
     return billing_option_json(row)
 
 
-@router.put("/v1/admin/billing-options/{option_id}")
+@router.put(
+    "/v1/admin/billing-options/{option_id}", dependencies=[Depends(require_billing_options_schema)]
+)
 async def update_billing_option(
     option_id: UUID,
     body: BillingOptionBody,
@@ -209,7 +240,9 @@ async def update_billing_option(
     return billing_option_json(row)
 
 
-@router.delete("/v1/admin/billing-options/{option_id}")
+@router.delete(
+    "/v1/admin/billing-options/{option_id}", dependencies=[Depends(require_billing_options_schema)]
+)
 async def delete_billing_option(
     option_id: UUID,
     db: Annotated[AsyncSession, Depends(database)],
