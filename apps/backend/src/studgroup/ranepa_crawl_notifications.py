@@ -367,9 +367,7 @@ async def notify_account_crawl_result(
                     and job.next_attempt_at is not None
                     and (job.next_attempt_at - job.finished_at).total_seconds() <= 60
                 ):
-                    action = (
-                        "Быстрый автоповтор после основной очереди, не раньше чем через 1 мин."
-                    )
+                    action = "Быстрый автоповтор после основной очереди, не раньше чем через 1 мин."
         lines = [
             (
                 "⚠️ StudGroup · обход СДО завершён частично"
