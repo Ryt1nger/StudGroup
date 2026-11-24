@@ -1,9 +1,9 @@
-from pathlib import Path
+import os
 from time import time
 
 from studgroup.main import Settings
 from studgroup.ranepa_worker import autonomous_captcha_budget
-from studgroup.ranepa_worker_health import heartbeat, healthy
+from studgroup.ranepa_worker_health import healthy, heartbeat
 
 
 def test_autonomous_captcha_budget_respects_both_caps():
@@ -20,7 +20,5 @@ def test_container_heartbeat(tmp_path, monkeypatch):
     heartbeat()
     assert healthy()
     old = time() - 1300
-    import os
-
-    os.utime(Path(path), (old, old))
+    os.utime(path, (old, old))
     assert not healthy()
