@@ -21,17 +21,19 @@ def test_keepalive_routes_to_migrated_api_and_is_opt_in():
 
 def test_crawl_checks_schema_before_browser_and_student_access():
     data = workflow("ranepa-crawl.yml")
-    # The separately authorized 2026-11-18 main commit enables scheduled crawls;
-    # enforce the safe schema gate rather than the superseded opt-in switch.
+    # VPS owns the default execution path; GitHub is opt-in recovery only.
+    assert "vars.RANEPA_EXECUTION_BACKEND == 'github'" in data
     assert "github.event_name == 'schedule'" in data
     assert "https://studgroup-api-v2.onrender.com" in data
     assert "studgroup-tyjh.onrender.com" not in data
     assert "uv run alembic current" in data
-    assert data.index("Require Alembic 0066") < data.index("Install browser")
-    assert data.index("Require Alembic 0066") < data.index("Process one bounded queue shift")
+    assert "006[6-9]|007[01]" in data
+    assert data.index("Require compatible Alembic schema") < data.index("Install browser")
+    assert data.index("Require compatible Alembic schema") < data.index("Process one bounded queue shift")
 
 
 def test_watchdog_only_checks_enabled_schedule():
     data = workflow("ranepa-watchdog.yml")
     assert "vars.RANEPA_SCHEDULE_ENABLED == 'true'" in data
+    assert "vars.RANEPA_EXECUTION_BACKEND == 'github'" in data
     assert "python -m studgroup.ranepa_watchdog" in data
