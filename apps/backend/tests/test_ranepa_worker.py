@@ -1246,6 +1246,7 @@ def test_bounded_optional_sdo_discovery_never_invalidates_six_committed_weeks(
             for day in (date(2026, 12, 1), date(2027, 1, 1))
             if monday <= day <= end
         )
+        assert allow_empty == (not lessons)
         return SimpleNamespace(
             status="preview_only",
             snapshot=WeekSnapshot(code, monday, end, lessons),

@@ -868,6 +868,7 @@ async def _collect(
                 # same Moodle course for every occurrence of the same lesson.
                 course_candidates_cache = {}
                 verified_exit_cache = {}
+                moodle_dashboard_cache = {}
                 observed_sdo_candidates = set()
                 sdo_discovery_deadline = monotonic() + MAX_SDO_SCAN_TOTAL_SECONDS
                 monday = today - timedelta(days=today.weekday())
@@ -1044,6 +1045,7 @@ async def _collect(
                         exit_kwargs = {
                             "course_cache": course_candidates_cache,
                             "exit_cache": verified_exit_cache,
+                            "dashboard_cache": moodle_dashboard_cache,
                         }
                         if (
                             captcha_client is not None

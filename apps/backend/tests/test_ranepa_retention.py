@@ -51,14 +51,14 @@ def test_expiry_preserves_recent_and_future_weeks(tmp_path):
                 )
                 await db.flush()
                 for monday in [expired, *kept]:
-                    fields = dict(
-                        group_id=group_id,
-                        week_start=monday,
-                        week_end=monday + timedelta(days=6),
-                        data_digest="a" * 64,
-                        rows_json="[]",
-                        checked_at=now,
-                    )
+                    fields = {
+                        "group_id": group_id,
+                        "week_start": monday,
+                        "week_end": monday + timedelta(days=6),
+                        "data_digest": "a" * 64,
+                        "rows_json": "[]",
+                        "checked_at": now,
+                    }
                     db.add(GroupScheduleSnapshot(**fields))
                     db.add(RanepaPersonalSnapshot(user_id=user_id, **fields))
                 await db.commit()

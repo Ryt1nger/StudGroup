@@ -21,7 +21,7 @@ EXPLICITLY_TEMPORARY = re.compile(
     r"\b(?:одноразов|однократн|разов|временн)\w*|\bна\s+(?:одну|эту)\s+пару"
 )
 INLINE_JOIN = re.compile(r"https://[^\s<>\"']+", re.IGNORECASE)
-MAX_CANDIDATES = 80
+MAX_CANDIDATES = 500
 MAX_DETAIL_PAGES = 16
 LMS_MEETING_PATHS = frozenset(
     {"/mod/url/view.php", "/mod/mtslinkrnhgs/view.php", "/mod/bigbluebuttonbn/view.php"}
@@ -108,6 +108,37 @@ def _nodes_with_ancestors(node, ancestors=()):
         yield from _nodes_with_ancestors(child, (*ancestors, node))
 
 
+TEACHER_HEADING = re.compile(r"^[А-ЯЁ][а-яё-]+\s+[А-ЯЁ]\.\s*[А-ЯЁ]\.?$")
+
+
+def _teacher_section(ancestors):
+    """A section title applies to its activities, not neighboring teachers."""
+    for parent in reversed(ancestors):
+        if not (
+            parent.tag in {"section", "details", "li", "article"}
+            or parent.has("course-section")
+            or parent.has("section")
+        ):
+            continue
+        for child in parent.children:
+            headings = [
+                heading
+                for tag in ("h2", "h3", "h4", "h5", "summary")
+                for heading in child.tags(tag)
+                if TEACHER_HEADING.fullmatch(heading.text().strip())
+            ]
+            if len(headings) == 1:
+                return headings[0].text().strip()
+    return ""
+
+
+def _with_teacher(label, ancestors):
+    teacher = _teacher_section(ancestors)
+    if teacher and normalized(teacher) not in normalized(label):
+        return f"{teacher} | {label}"[:500]
+    return label[:500]
+
+
 def _nearby_label(node, ancestors, url):
     """Look for the closest single-link activity/paragraph, not a whole teacher list."""
     label = node.text().strip()
@@ -135,7 +166,7 @@ def _nearby_label(node, ancestors, url):
             or (not meeting_anchors and len(meeting_frames) == 1)
         ) and len(text) > len(best):
             best = text[:500]
-    return best
+    return _with_teacher(best, ancestors)
 
 
 def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandidate, ...]:
@@ -171,7 +202,7 @@ def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandida
                 label = _nearby_label(node, ancestors, url)
                 if label:
                     result.setdefault(url, LinkCandidate(url, label))
-        if node.tag not in {"p", "li", "div"} or not node.parts:
+        if node.tag not in {"p", "li", "div", "span"} or not node.parts:
             continue
         # Some Moodle labels show the actual link as plain text, not an anchor.
         text = " ".join(node.parts).strip()
@@ -181,10 +212,41 @@ def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandida
             raw = match.group().rstrip(".,;!)]}")
             url = meeting_url(raw)
             if url and url not in result:
-                result[url] = LinkCandidate(url, text)
+                result[url] = LinkCandidate(url, _with_teacher(text, ancestors))
         if len(result) >= MAX_CANDIDATES:
             break
     return tuple(result.values())[:MAX_CANDIDATES]
+
+
+def dashboard_courses(html: str) -> dict[str, str]:
+    """Discover only canonical course links from the authenticated Moodle UI."""
+    if len(html.encode("utf-8")) > 3_000_000:
+        raise SourceAccessError("lms_page_too_large")
+    document = Document()
+    document.feed(html)
+    result = {}
+    for anchor in document.root.tags("a"):
+        url = _canonical_lms_activity(anchor.attrs.get("href", ""), frozenset({"/course/view.php"}))
+        if url:
+            title = anchor.attrs.get("title") or anchor.text()
+            if title.strip():
+                result[url] = title.strip()[:500]
+    return result
+
+
+def matching_courses(courses, subject):
+    """Accept exact course title or a distinct subject token in a longer course title."""
+    needle = normalized(subject)
+    exact = [url for url, title in courses.items() if normalized(title) == needle]
+    if exact:
+        return tuple(exact)
+    if not needle:
+        return ()
+    return tuple(
+        url
+        for url, title in courses.items()
+        if re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", normalized(title))
+    )
 
 
 def _group_token(label: str) -> str:
@@ -218,22 +280,45 @@ def select_lesson_link(
     group_label: str,
     day: date,
     starts: time | None = None,
+    lesson_type: str | None = None,
 ) -> LinkChoice:
     """Never publish a guessed teacher/stream URL; prefer exact date, then permanent."""
-    if not teacher.strip() or not group_label.strip():
+    if not teacher.strip():
         return LinkChoice(LinkState.IDENTITY_MISSING, None, ())
     surname = normalized(teacher.split()[0])
     token = _group_token(group_label)
     if len(token) < 10:
-        return LinkChoice(LinkState.IDENTITY_MISSING, None, ())
+        token = ""
     dated = []
     permanent = []
     identity_matches = []
     undated = []
+    teacher_section_matches = []
+    kind = normalized(lesson_type)
     for link in links:
         label = normalized(link.label)
         compact = label.replace(" ", "").replace("_", "")
-        if not re.search(rf"(?<!\w){re.escape(surname)}(?!\w)", label) or token not in compact:
+        if not re.search(rf"(?<!\w){re.escape(surname)}(?!\w)", label):
+            continue
+        # Scoped teacher headings may contain a general permanent link for the
+        # teacher's lectures/practicals, with no explicit stream. Do not accept
+        # a different stream or an explicitly conflicting lesson type.
+        exact_stream = bool(token and token in compact)
+        section_teacher = "|" in link.label and TEACHER_HEADING.fullmatch(
+            link.label.split("|", 1)[0].strip()
+        )
+        explicit_stream = re.search(r"об\d{2}|сгя|\bгрупп\w*|\bпоток\w*", label)
+        is_lecture = "лекц" in label
+        is_practical = "практ" in label
+        kind_matches = ("лекц" in kind and is_lecture and not is_practical) or (
+            "практ" in kind and is_practical and not is_lecture
+        )
+        kind_conflicts = ("лекц" in kind and is_practical and not is_lecture) or (
+            "практ" in kind and is_lecture and not is_practical
+        )
+        if kind_conflicts:
+            continue
+        if not exact_stream and not (section_teacher and not explicit_stream and kind_matches):
             continue
         times = {
             time(int(match[1]), int(match[2]))
@@ -244,6 +329,10 @@ def select_lesson_link(
             continue
         identity_matches.append(link)
         found_dates = _lesson_dates(link.label, year=day.year)
+        if not exact_stream:
+            if day in found_dates or (not found_dates and "постоянн" in label):
+                teacher_section_matches.append(link)
+            continue
         if found_dates and day in found_dates:
             dated.append(link)
         elif not found_dates and "постоянн" in label:
@@ -264,6 +353,12 @@ def select_lesson_link(
         return LinkChoice(
             LinkState.MATCHED, next(iter(undated_unique)), tuple(undated_unique.values())
         )
+    if not identity_matches or teacher_section_matches:
+        scoped = {link.url: link for link in teacher_section_matches}
+        if len(scoped) == 1:
+            return LinkChoice(LinkState.MATCHED, next(iter(scoped)), tuple(scoped.values()))
+        if scoped:
+            return LinkChoice(LinkState.AMBIGUOUS, None, tuple(scoped.values()))
     if identity_matches:
         return LinkChoice(LinkState.TIMING_UNVERIFIED, None, tuple(identity_matches))
     return LinkChoice(LinkState.NOT_FOUND, None, ())

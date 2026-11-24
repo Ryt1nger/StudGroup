@@ -328,3 +328,46 @@ def test_explicitly_one_off_undated_link_does_not_become_permanent():
     )
     assert choice.url is None
     assert choice.state == "timing_unverified"
+
+
+
+def test_teacher_sections_preserve_scope_and_match_permanent_lecture():
+    html = (
+        '<main class="course-content"><section class="course-section">'
+        "<h3>Грибков И.В.</h3>"
+        '<a href="/mod/url/view.php?id=201">Постоянная ссылка для лекционных занятий и занятий ДОТ</a>'
+        "</section><section class=\"course-section\">"
+        "<h3>Ильинова А.И.</h3>"
+        '<a href="/mod/url/view.php?id=202">Постоянная ссылка для практических занятий</a>'
+        "</section></main>"
+    )
+    links = course_links(html)
+    choice = select_lesson_link(
+        links,
+        teacher="Грибков Иван Владимирович",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45)",
+        day=date(2026, 11, 24),
+        lesson_type="Лекция",
+    )
+    assert choice.url == "https://lms.ranepa.ru/mod/url/view.php?id=201"
+    assert select_lesson_link(
+        links,
+        teacher="Грибков Иван Владимирович",
+        group_label="Э-ОБ26-СГЯ-пр-179",
+        day=date(2026, 11, 24),
+        lesson_type="Практическое занятие",
+    ).url is None
+
+
+def test_dashboard_matches_course_not_unrelated_subject():
+    from studgroup.ranepa_lms import dashboard_courses, matching_courses
+
+    courses = dashboard_courses(
+        '<a href="/course/view.php?id=88849">История России</a>'
+        '<a href="/course/view.php?id=9">Математический анализ</a>'
+        '<a href="https://example.org/course/view.php?id=4">История России</a>'
+    )
+    assert matching_courses(courses, "История России") == (
+        "https://lms.ranepa.ru/course/view.php?id=88849",
+    )
+    assert not matching_courses(courses, "Философия")

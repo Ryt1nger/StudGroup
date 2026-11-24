@@ -21,6 +21,8 @@ from studgroup.ranepa_lms import (
     LinkChoice,
     course_detail_pages,
     course_links,
+    dashboard_courses,
+    matching_courses,
     meeting_url,
     select_lesson_link,
 )
@@ -557,12 +559,128 @@ async def _choose_course_meeting(context, candidates, lesson):
         group_label=lesson.subgroup_hint or "",
         day=lesson.day,
         starts=lesson.starts,
+        lesson_type=lesson.lesson_type,
     )
     if choice.url is None and choice.state in {LinkState.AMBIGUOUS, LinkState.TIMING_UNVERIFIED}:
         shared_target = await _shared_moodle_redirect(context, choice.candidates)
         if shared_target is not None:
             choice = LinkChoice(LinkState.MATCHED, shared_target, choice.candidates)
     return choice
+
+
+async def _load_moodle_dashboard(context, login, password):
+    """Authenticate to Moodle separately; do not treat an LK session as LMS login."""
+    page = await context.new_page()
+    try:
+        await page.goto("https://lms.ranepa.ru/my/", wait_until="domcontentloaded", timeout=30000)
+        login_attempted = False
+        courses = {}
+        for _ in range(40):
+            parsed = urlsplit(page.url)
+            if parsed.scheme != "https" or parsed.hostname != "lms.ranepa.ru":
+                return {}, LinkState.UNEXPECTED_REDIRECT
+            if parsed.path == "/login/index.php":
+                if login_attempted:
+                    await page.wait_for_timeout(250)
+                    continue
+                login_attempted = True
+                username = page.locator('input[name="username"]')
+                secret = page.locator('input[name="password"]')
+                if await username.count() != 1 or await secret.count() != 1:
+                    return {}, LinkState.LMS_LOGIN_REQUIRED
+                await username.fill(login, timeout=8000)
+                await secret.fill(password, timeout=8000)
+                await page.locator("#loginbtn").click(timeout=8000)
+                continue
+            if parsed.path in {"/my/", "/my/index.php", "/my/courses.php", "/"}:
+                courses.update(dashboard_courses(await page.content()))
+                if courses:
+                    break
+            await page.wait_for_timeout(250)
+        if urlsplit(page.url).path == "/login/index.php":
+            return {}, LinkState.LMS_LOGIN_REQUIRED
+        # Moodle dashboard may show only recent courses; the enrolled-course
+        # list is the authoritative supplementary read.
+        await page.goto(
+            "https://lms.ranepa.ru/my/courses.php",
+            wait_until="domcontentloaded",
+            timeout=15000,
+        )
+        for _ in range(12):
+            parsed = urlsplit(page.url)
+            if parsed.hostname != "lms.ranepa.ru" or parsed.path != "/my/courses.php":
+                break
+            courses.update(dashboard_courses(await page.content()))
+            await page.wait_for_timeout(250)
+        return courses, None if courses else LinkState.COURSE_CONTENT_UNAVAILABLE
+    except Exception:  # noqa: BLE001 -- no private page details in diagnostics
+        return {}, LinkState.NAVIGATION_ERROR
+    finally:
+        await page.close()
+
+
+async def resolve_moodle_courses(
+    context, result, login, password, *, dashboard_cache, course_cache
+):
+    """Find course by timetable subject; reuse inventories within this account only."""
+    linked, states, courses, inventories = {}, {}, {}, {}
+    if result.snapshot is None:
+        return SdoLinkResolution(linked, states, courses, inventories)
+    if not any(lesson.room == "СДО" for lesson in result.snapshot.lessons):
+        return SdoLinkResolution(linked, states, courses, inventories)
+    if "courses" not in dashboard_cache:
+        index, error = await _load_moodle_dashboard(context, login, password)
+        dashboard_cache.update(courses=index, error=error)
+    for lesson in result.snapshot.lessons:
+        if lesson.room != "СДО":
+            continue
+        key = (
+            lesson.day.isoformat(),
+            lesson.starts.isoformat(),
+            lesson.ends.isoformat(),
+            lesson.subject,
+            lesson.teacher,
+            lesson.room,
+        )
+        error = dashboard_cache["error"]
+        if error is not None:
+            states[key] = error
+            continue
+        matches = matching_courses(dashboard_cache["courses"], lesson.subject)
+        if len(matches) != 1:
+            states[key] = LinkState.AMBIGUOUS if matches else LinkState.NOT_FOUND
+            continue
+        course = matches[0]
+        courses[key] = course
+        if course not in course_cache:
+            page = await context.new_page()
+            try:
+                await page.goto(course, wait_until="domcontentloaded", timeout=15000)
+                parsed = urlsplit(page.url)
+                if parsed.hostname != "lms.ranepa.ru" or parsed.path != "/course/view.php":
+                    states[key] = LinkState.COURSE_CONTENT_UNAVAILABLE
+                    continue
+                if parse_qs(parsed.query).get("id") != parse_qs(urlsplit(course).query).get("id"):
+                    states[key] = LinkState.IDENTITY_MISSING
+                    continue
+                course_cache[course] = await _read_course_candidates(page, context)
+            except Exception:  # noqa: BLE001
+                states[key] = LinkState.NAVIGATION_ERROR
+                continue
+            finally:
+                await page.close()
+        candidates, verified = course_cache[course]
+        if not verified or not candidates:
+            states[key] = (
+                LinkState.NO_COURSE_LINKS if verified else LinkState.COURSE_CONTENT_UNAVAILABLE
+            )
+            continue
+        inventories[key] = candidates
+        choice = await _choose_course_meeting(context, candidates, lesson)
+        states[key] = choice.state
+        if choice.url is not None:
+            linked[key] = choice.url
+    return SdoLinkResolution(linked, states, courses, inventories)
 
 
 async def resolve_sdo_exits(
@@ -575,8 +693,18 @@ async def resolve_sdo_exits(
     on_captcha=None,
     course_cache: dict | None = None,
     exit_cache: dict | None = None,
+    dashboard_cache: dict | None = None,
 ) -> SdoLinkResolution:
-    """Follow LK SDO exits; save all course candidates for future safe matching."""
+    """Read Moodle independently when dashboard mode is enabled."""
+    if dashboard_cache is not None:
+        return await resolve_moodle_courses(
+            context,
+            result,
+            login,
+            password,
+            dashboard_cache=dashboard_cache,
+            course_cache=course_cache if course_cache is not None else {},
+        )
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
         return SdoLinkResolution({}, {"not_checked": 1}, {}, {})
     linked = {}
@@ -608,7 +736,7 @@ async def resolve_sdo_exits(
                 try:
                     choice = await _choose_course_meeting(context, candidates, lesson)
                 except Exception:  # noqa: BLE001 -- use the normal verified read below
-                    pass
+                    LOGGER.debug("cached_sdo_choice_unavailable")
                 else:
                     courses[key] = cached_course
                     candidates_by_lesson[key] = candidates
