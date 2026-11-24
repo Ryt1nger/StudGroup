@@ -22,6 +22,9 @@ EXPLICITLY_TEMPORARY = re.compile(
     r"\b(?:одноразов|однократн|разов|временн)\w*|\bна\s+(?:одну|эту)\s+пару"
 )
 INLINE_JOIN = re.compile(r"https://[^\s<>\"']+", re.IGNORECASE)
+GROUP_REFERENCE = re.compile(
+    r"\b\u0433\u0440\u0443\u043f\u043f\w*\s*(?:\u2116|n)?\s*(\d{1,3})(?!\d)"
+)
 MAX_CANDIDATES = 500
 MAX_COURSE_HTML_BYTES = 12_000_000
 WORD_DATE = re.compile(r"(?<!\d)(\d{1,2})\s+(" + "|".join(MONTHS) + r")\b")
@@ -197,8 +200,13 @@ def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandida
     result: dict[str, LinkCandidate] = {}
     for node, ancestors in _nodes_with_ancestors(document.root):
         if node.tag == "a":
-            url = meeting_url(node.attrs.get("href", "")) or meeting_url(
-                node.attrs.get("data-url", "")
+            url = next(
+                (
+                    accepted
+                    for attribute in ("href", "data-url", "data-href", "data-link")
+                    if (accepted := meeting_url(node.attrs.get(attribute, "")))
+                ),
+                None,
             )
             if url:
                 label = _nearby_label(node, ancestors, url)
@@ -214,18 +222,25 @@ def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandida
                     result.setdefault(url, LinkCandidate(url, label))
         if node.tag not in {"p", "li", "div", "span"} or not node.parts:
             continue
-        # Some Moodle labels show the actual link as plain text, not an anchor.
-        text = " ".join(node.parts).strip()
-        if len(text) > 500:
+        # Some Moodle labels show one or several actual meeting URLs as plain
+        # text. Keep each URL's local text slice: assigning a whole teacher
+        # card to every URL would mix different groups and dates.
+        text = " ".join(" ".join(node.parts).split()).strip()
+        if not text or len(text) > 4000:
             continue
         inline_matches = tuple(INLINE_JOIN.finditer(text))
-        if len(inline_matches) != 1:
-            continue
-        for match in inline_matches:
+        for index, match in enumerate(inline_matches):
             raw = match.group().rstrip(".,;!)]}")
             url = meeting_url(raw)
-            if url and url not in result:
-                result[url] = LinkCandidate(url, _with_teacher(text, ancestors))
+            if not url or url in result:
+                continue
+            left = 0 if index == 0 else inline_matches[index - 1].end()
+            right = (
+                len(text) if index + 1 == len(inline_matches) else inline_matches[index + 1].start()
+            )
+            local = text[left:right].strip()[:500]
+            if local:
+                result[url] = LinkCandidate(url, _with_teacher(local, ancestors))
         if len(result) >= MAX_CANDIDATES:
             break
     return tuple(result.values())[:MAX_CANDIDATES]
@@ -311,6 +326,14 @@ def _streams(label):
     return result
 
 
+def _stream_groups(streams):
+    return frozenset(number for _family, _kinds, groups in streams for number in groups)
+
+
+def _group_references(label):
+    return frozenset(int(match[1]) for match in GROUP_REFERENCE.finditer(normalized(label)))
+
+
 def _same_stream(expected, offered, lesson_type):
     for family, kinds, groups in expected:
         for other_family, other_kinds, other_groups in offered:
@@ -387,6 +410,7 @@ def select_lesson_link(
         return LinkChoice(LinkState.IDENTITY_MISSING, None, ())
     surname = normalized(teacher.split()[0])
     expected_streams = _streams(group_label)
+    expected_groups = _stream_groups(expected_streams)
     token = _group_token(group_label)
     if len(token) < 10:
         token = ""
@@ -407,7 +431,15 @@ def select_lesson_link(
         # a different stream or an explicitly conflicting lesson type.
         offered_streams = _streams(label)
         exact_stream = _same_stream(expected_streams, offered_streams, lesson_kinds)
-        if not expected_streams or not offered_streams:
+        offered_group_refs = _group_references(label)
+        if (
+            not exact_stream
+            and expected_groups
+            and offered_group_refs
+            and expected_groups.issubset(offered_group_refs)
+        ):
+            exact_stream = True
+        if not expected_streams or (not offered_streams and not offered_group_refs):
             exact_stream = bool(token and token in compact)
         section_teacher = "|" in link.label and TEACHER_HEADING.fullmatch(
             link.label.split("|", 1)[0].strip()

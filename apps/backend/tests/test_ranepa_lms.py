@@ -483,3 +483,58 @@ def test_course_activity_data_url_is_not_hidden_by_placeholder_href_or_src():
         "https://lms.ranepa.ru/mod/url/view.php?id=101",
         "https://lms.ranepa.ru/mod/mtslinkrnhgs/view.php?id=102",
     }
+
+
+def test_multiple_plain_mts_urls_in_one_teacher_card_keep_local_group_context():
+    html = (
+        '<main class="course-content"><section class="course-section">'
+        "<h3>Дмитриева Н.А.</h3><div>"
+        "https://my.mts-link.ru/j/Ranepa/111 "
+        "Дмитриева Н.А. Г-ОБ26-СГЯ-лек(22,23,128) 11.11.26 "
+        "https://my.mts-link.ru/j/Ranepa/222 "
+        "Дмитриева Н.А. О-ОБ26-СГЯ-лек(7,8,9) 11.11.26"
+        "</div></section></main>"
+    )
+    links = course_links(html)
+    assert len(links) == 2
+    selected = select_lesson_link(
+        links,
+        teacher="Дмитриева Наталья Алексеевна",
+        group_label="О-ОБ26-СГЯ-лек(7,8,9)",
+        day=date(2026, 11, 11),
+        lesson_type="Лекция",
+    )
+    assert selected.state == "matched"
+    assert selected.url == "https://my.mts-link.ru/j/Ranepa/222"
+
+
+def test_teacher_card_can_match_explicit_group_number_without_full_stream_code():
+    html = (
+        '<main class="course-content"><section class="course-section">'
+        "<h3>Козленко И.В.</h3>"
+        '<a href="https://my.mts-link.ru/j/Ranepa/333">'
+        "Козленко И.В. группа 107 История России</a>"
+        "</section></main>"
+    )
+    selected = select_lesson_link(
+        course_links(html),
+        teacher="Козленко Ирина Владимировна",
+        group_label="П-ОБ26-СГЯ-пр-107",
+        day=date(2026, 11, 24),
+        lesson_type="Практическое занятие",
+    )
+    assert selected.state == "matched"
+    assert selected.url == "https://my.mts-link.ru/j/Ranepa/333"
+
+
+def test_safe_moodle_activity_can_live_in_data_href_or_data_link():
+    html = (
+        '<main class="course-content">'
+        '<a href="#" data-href="/mod/url/view.php?id=301">Первая</a>'
+        '<a href="#" data-link="/mod/mtslinkrnhgs/view.php?id=302">Вторая</a>'
+        "</main>"
+    )
+    assert {link.url for link in course_links(html)} == {
+        "https://lms.ranepa.ru/mod/url/view.php?id=301",
+        "https://lms.ranepa.ru/mod/mtslinkrnhgs/view.php?id=302",
+    }
