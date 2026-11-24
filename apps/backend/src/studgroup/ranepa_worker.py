@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from cryptography.fernet import Fernet, InvalidToken
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.legal import has_consent, legal_ready
@@ -251,6 +251,9 @@ async def prepare_week(
         candidates = await eligible_candidates(
             db, settings, pilot_group_id=pilot_group_id, pilot_user_id=pilot_user_id
         )
+        # Follow the same advisory-lock order as urgent and credential recovery.
+        if db.get_bind().dialect.name == "postgresql":
+            await db.execute(text("SELECT pg_advisory_xact_lock(832610071)"))
         # Revalidate eligible accounts during ordinary autonomous preparation, not
         # only during an owner-requested urgent run. The existing recovery
         # policy requires renewed consent/profile and rejects observed bad passwords.
