@@ -511,6 +511,7 @@ async def finish(db, job_id, group_id, user_id, *, failure_code=None, now=None) 
     await db.flush()
     return True
 
+
 async def enqueue_new_group_account(db, user_id, settings):
     """Queue first verified group import in the same SQL transaction as credential saving."""
     from studgroup.legal import has_consent, legal_ready
