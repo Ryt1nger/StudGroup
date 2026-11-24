@@ -197,13 +197,17 @@ def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandida
     result: dict[str, LinkCandidate] = {}
     for node, ancestors in _nodes_with_ancestors(document.root):
         if node.tag == "a":
-            url = meeting_url(node.attrs.get("href", "") or node.attrs.get("data-url", ""))
+            url = meeting_url(node.attrs.get("href", "")) or meeting_url(
+                node.attrs.get("data-url", "")
+            )
             if url:
                 label = _nearby_label(node, ancestors, url)
                 if label and (url not in result or len(label) > len(result[url].label)):
                     result[url] = LinkCandidate(url, label)
         elif node.tag in {"iframe", "button"}:
-            url = meeting_url(node.attrs.get("src", "") or node.attrs.get("data-url", ""))
+            url = meeting_url(node.attrs.get("src", "")) or meeting_url(
+                node.attrs.get("data-url", "")
+            )
             if url:
                 label = _nearby_label(node, ancestors, url)
                 if label:

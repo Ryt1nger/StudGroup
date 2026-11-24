@@ -73,7 +73,13 @@ from studgroup.ranepa_retention import prune_expired_schedule
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
 from studgroup.ranepa_schedule import WeekSnapshot
 from studgroup.ranepa_worker_health import heartbeat
-from studgroup.urgent_sdo import active_run, eligible_candidates, finalize_urgent, prepare_urgent
+from studgroup.urgent_sdo import (
+    active_run,
+    eligible_candidates,
+    finalize_urgent,
+    prepare_urgent,
+    release_legacy_login_blocks,
+)
 
 ACCOUNT_TIMEOUT_SECONDS = 600
 MAX_AUTOMATIC_CAPTCHA_ATTEMPTS = 3
@@ -245,6 +251,11 @@ async def prepare_week(
         candidates = await eligible_candidates(
             db, settings, pilot_group_id=pilot_group_id, pilot_user_id=pilot_user_id
         )
+        # Revalidate eligible accounts during ordinary autonomous preparation, not
+        # only during an owner-requested urgent run. The existing recovery
+        # policy requires renewed consent/profile and rejects observed bad passwords.
+        for user_id in sorted({candidate.user_id for candidate in candidates}):
+            await release_legacy_login_blocks(db, user_id)
         count = await enqueue_week(
             db, monday, candidates, force_refresh=bypass_cooldown or rescan_all, bootstrap=bootstrap
         )
