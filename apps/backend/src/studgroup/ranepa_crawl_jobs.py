@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select, text, update
 from sqlalchemy.orm import aliased
 
 from studgroup.models import (
@@ -15,6 +15,7 @@ from studgroup.models import (
     RanepaMaterializationReceipt,
     RanepaPersonalSnapshot,
     SubjectSplit,
+    UrgentSDOTarget,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
 from studgroup.ranepa_schedule import subgroup_choice_changed_since_check
@@ -81,10 +82,16 @@ async def enqueue_week(
     now=None,
     *,
     force_refresh: bool = False,
+    urgent_refresh: bool = False,
+    bootstrap: bool = False,
 ) -> int:
     """Add jobs or refresh completed jobs; manual pilot may override its cooldown."""
     if week_start.weekday() != 0:
         raise ValueError("week_start_must_be_monday")
+    if urgent_refresh and force_refresh:
+        raise ValueError("incompatible_refresh_modes")
+    if db.get_bind().dialect.name == "postgresql":
+        await db.execute(text("SELECT pg_advisory_xact_lock(832610071)"))
     now = now or datetime.now(UTC)
     ordered = fair_crawl_order(candidates)
     created = 0
@@ -123,6 +130,14 @@ async def enqueue_week(
                 RanepaCrawlJob.week_start == week_start,
             )
         )
+        if bootstrap and not await db.scalar(
+            select(RanepaMaterializationReceipt.group_id)
+            .where(RanepaMaterializationReceipt.group_id == candidate.group_id)
+            .limit(1)
+        ):
+            priority -= len(ordered)
+        if existing is not None and existing.state == "queued" and bootstrap:
+            existing.priority = priority
         if last_completed_at is not None and last_completed_at.tzinfo is None:
             # SQLite tests return naive datetimes despite timezone=True.
             last_completed_at = last_completed_at.replace(tzinfo=UTC)
@@ -136,7 +151,7 @@ async def enqueue_week(
             if (
                 existing.state in {"succeeded", "failed", "covered", "dead_letter"}
                 and can_retry
-                and (force_refresh or (due and existing.state != "dead_letter"))
+                and (force_refresh or ((due or urgent_refresh) and existing.state != "dead_letter"))
             ):
                 existing.state = "queued"
                 existing.priority = priority
@@ -310,6 +325,23 @@ async def claim_next(
     if processed_user_ids:
         scope.append(RanepaCrawlJob.user_id.not_in(processed_user_ids))
     now = now or datetime.now(UTC)
+    if db.get_bind().dialect.name == "postgresql":
+        # Serialize the check-and-claim across updated VPS and recovery workers
+        # using the existing transaction; a live durable lease prevents a
+        # second browser even when another process has already committed.
+        acquired = await db.scalar(text("SELECT pg_try_advisory_xact_lock(832610069)"))
+        if not acquired:
+            return None
+        live = await db.scalar(
+            select(RanepaCrawlJob.id)
+            .where(
+                RanepaCrawlJob.state == "running",
+                RanepaCrawlJob.claimed_at >= now - LEASE,
+            )
+            .limit(1)
+        )
+        if live is not None:
+            return None
     stale = await db.scalar(
         select(RanepaCrawlJob)
         .where(
@@ -328,6 +360,11 @@ async def claim_next(
             stale.retry_reason = "lease_expired_exhausted"
             stale.next_attempt_at = None
             stale.finished_at = now
+            await db.execute(
+                update(UrgentSDOTarget)
+                .where(UrgentSDOTarget.job_id == stale.id, UrgentSDOTarget.state == "pending")
+                .values(state="failed", failure_code="internal", completed_at=now)
+            )
         else:
             stale.state = "queued"
             stale.retry_reason = "lease_expired"
@@ -340,6 +377,14 @@ async def claim_next(
     locked = aliased(RanepaCrawlJob)
     recovered = aliased(RanepaCrawlJob)
     running = aliased(RanepaCrawlJob)
+    urgent = (
+        select(UrgentSDOTarget.run_id)
+        .where(
+            UrgentSDOTarget.job_id == RanepaCrawlJob.id,
+            UrgentSDOTarget.state == "pending",
+        )
+        .exists()
+    )
     due = []
     if group_id is None and not rescan_all:
         due.append(
@@ -393,6 +438,7 @@ async def claim_next(
                 *due,
             )
             .order_by(
+                case((RanepaCrawlJob.priority < 0, 0), (urgent, 1), else_=2),
                 RanepaCrawlJob.week_start.desc(),
                 RanepaCrawlJob.attempts,
                 RanepaCrawlJob.priority,
@@ -404,7 +450,17 @@ async def claim_next(
         if job is None:
             await db.flush()
             return None
-        if group_id is None and not rescan_all and await _coverage_satisfied(db, job, now):
+        urgent_target = await db.scalar(
+            select(UrgentSDOTarget.run_id)
+            .where(UrgentSDOTarget.job_id == job.id, UrgentSDOTarget.state == "pending")
+            .limit(1)
+        )
+        if (
+            group_id is None
+            and not rescan_all
+            and urgent_target is None
+            and await _coverage_satisfied(db, job, now)
+        ):
             # No browser/payment needed. This is NOT a successful account crawl.
             job.state = "covered"
             job.finished_at = now
@@ -439,5 +495,57 @@ async def finish(db, job_id, group_id, user_id, *, failure_code=None, now=None) 
     )
     job.retry_reason = retry_reason(failure_code, job.attempts)
     job.claimed_at = None
+    await db.execute(
+        update(UrgentSDOTarget)
+        .where(
+            UrgentSDOTarget.job_id == job.id,
+            UrgentSDOTarget.state == "pending",
+            UrgentSDOTarget.baseline_attempts < job.attempts,
+        )
+        .values(
+            state="failed" if failure_code else "succeeded",
+            failure_code=failure_code,
+            completed_at=job.finished_at,
+        )
+    )
     await db.flush()
     return True
+
+
+async def enqueue_new_group_account(db, user_id, settings):
+    """Queue first verified group import in the same SQL transaction as credential saving."""
+    from studgroup.legal import has_consent, legal_ready
+    from studgroup.models import UserProfile
+
+    if not legal_ready(settings) or not settings.ranepa_access_approved:
+        return
+    await db.flush()
+    profile = await db.get(UserProfile, user_id)
+    if profile is None or not profile.sdu_credential_id:
+        return
+    if not await has_consent(db, user_id, "sdo", settings):
+        return
+    groups = (
+        await db.scalars(
+            select(Group.id)
+            .join(Membership, Membership.group_id == Group.id)
+            .where(
+                Membership.user_id == user_id,
+                Membership.status == "active",
+                Group.status == "active",
+                Group.academic_group_code.is_not(None),
+                ~select(RanepaMaterializationReceipt.group_id)
+                .where(RanepaMaterializationReceipt.group_id == Group.id)
+                .exists(),
+            )
+        )
+    ).all()
+    if not groups:
+        return
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    monday = today - timedelta(days=today.weekday())
+    await enqueue_week(
+        db, monday, [CrawlCandidate(group_id, user_id) for group_id in groups], bootstrap=True
+    )

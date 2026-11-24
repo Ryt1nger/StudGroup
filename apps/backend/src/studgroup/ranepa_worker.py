@@ -9,7 +9,7 @@ from collections import Counter, defaultdict, deque
 from datetime import UTC, date, datetime, timedelta
 from time import monotonic
 from urllib.parse import urlsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -18,18 +18,17 @@ from playwright.async_api import async_playwright
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from studgroup.bot_admin import enqueue_once
 from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
 from studgroup.models import (
     BotPanel,
     Group,
     Membership,
-    MemberSubgroup,
     RanepaCrawlJob,
     User,
     UserProfile,
 )
+from studgroup.process_runtime import ProcessGate, read_intent
 from studgroup.ranepa_browser import (
     read_month,
     read_week,
@@ -59,7 +58,6 @@ from studgroup.ranepa_crawl_notifications import (
     recover_account_crawl_notifications,
     successful_account_line,
 )
-from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_failure_diagnostics import diagnose_browser_state, diagnose_exception
@@ -69,6 +67,8 @@ from studgroup.ranepa_materialization import materialize_verified_facts
 from studgroup.ranepa_personal import enrich_personal_links, remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
+from studgroup.ranepa_worker_health import heartbeat
+from studgroup.urgent_sdo import active_run, eligible_candidates, finalize_urgent, prepare_urgent
 
 ACCOUNT_TIMEOUT_SECONDS = 600
 MAX_AUTOMATIC_CAPTCHA_ATTEMPTS = 3
@@ -218,6 +218,7 @@ async def prepare_week(
     pilot_user_id: UUID | None = None,
     bypass_cooldown: bool = False,
     rescan_all: bool = False,
+    bootstrap: bool = False,
 ) -> int:
     if (pilot_group_id is None) != (pilot_user_id is None):
         raise ValueError("pilot_scope_requires_both_ids")
@@ -229,45 +230,30 @@ async def prepare_week(
         return 0
     monday = today - timedelta(days=today.weekday())
     async with AsyncSession(engine, expire_on_commit=False) as db:
-        query = (
-            select(Membership, Group)
-            .join(Group, Group.id == Membership.group_id)
-            .join(UserProfile, UserProfile.user_id == Membership.user_id)
-            .where(
-                Membership.status == "active",
-                Group.status == "active",
-                Group.academic_group_code.is_not(None),
-            )
+        candidates = await eligible_candidates(
+            db, settings, pilot_group_id=pilot_group_id, pilot_user_id=pilot_user_id
         )
-        if pilot_group_id is not None:
-            query = query.where(
-                Membership.group_id == pilot_group_id,
-                Membership.user_id == pilot_user_id,
-            )
-        members = (await db.execute(query)).all()
-        candidates = []
-        for member, group in members:
-            profile = await db.get(UserProfile, member.user_id)
-            if not profile or not profile.sdu_credential_id:
-                continue
-            if not await has_consent(db, member.user_id, "sdo", settings):
-                continue
-            subgroups = (
-                await db.scalars(
-                    select(MemberSubgroup.subgroup_id).where(
-                        MemberSubgroup.membership_id == member.id
-                    )
-                )
-            ).all()
-            candidates.append(CrawlCandidate(group.id, member.user_id, frozenset(subgroups)))
         count = await enqueue_week(
-            db, monday, candidates, force_refresh=bypass_cooldown or rescan_all
+            db, monday, candidates, force_refresh=bypass_cooldown or rescan_all, bootstrap=bootstrap
         )
         await db.commit()
         return count
 
 
-async def process_one(
+async def process_one(engine, settings, today, *, require_scheduler=False, **kwargs):
+    """Control state plus SQL transaction claim fence and durable browser lease."""
+    if engine.dialect.name == "postgresql":
+        intent = await read_intent(engine, "sdo", settings.ranepa_crawl_enabled)
+        if not intent.enabled:
+            return "paused"
+        if require_scheduler and not (await read_intent(engine, "scheduler", True)).enabled:
+            return "paused"
+        if (kwargs.get("rescan_all") or kwargs.get("pilot_group_id")) and await active_run(engine):
+            return "paused"
+    return await _process_one(engine, settings, today, **kwargs)
+
+
+async def _process_one(
     engine,
     settings: Settings,
     today: date,
@@ -350,8 +336,17 @@ async def process_one(
         # A missing profile/consent is NOT a refused password. Report the
         # specific safe preflight reason rather than guessing a login failure.
         preflight_detail = None
-        if group is None or not group.academic_group_code:
+        active_member = await db.scalar(
+            select(Membership.id).where(
+                Membership.user_id == user_id,
+                Membership.group_id == group_id,
+                Membership.status == "active",
+            )
+        )
+        if group is None or group.status != "active" or not group.academic_group_code:
             preflight_detail = "group_missing"
+        elif active_member is None:
+            preflight_detail = "membership_inactive"
         elif profile is None:
             preflight_detail = "profile_missing"
         elif not profile.sdu_credential_id:
@@ -1144,48 +1139,103 @@ async def _collect(
         return "internal"
 
 
+async def sdo_health(engine, settings: Settings):
+    if not legal_ready(settings) or not settings.ranepa_access_approved:
+        return "approval_missing"
+    try:
+        Fernet(settings.profile_encryption_key.get_secret_value().encode())
+        store = configured_store(settings)
+        if store is None:
+            return "credentials_unavailable"
+        # A read of a random nonexistent identifier verifies the actual YDB
+        # credential table without reading or modifying a student's record.
+        await store.get(uuid4())
+    except (ValueError, CredentialStoreUnavailable):
+        return "credentials_unavailable"
+    try:
+        await ensure_owner_for_crawl(engine, settings)
+    except Exception:  # noqa: BLE001 -- owner lookup must fail closed
+        return "configuration_missing"
+    try:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page()
+                await page.goto("about:blank")
+            finally:
+                await browser.close()
+    except Exception:  # noqa: BLE001 -- no exception text can leave this probe
+        return "browser_unavailable"
+    return None
+
+
+def autonomous_captcha_budget(settings: Settings):
+    return CaptchaBudget(
+        min(settings.ranepa_captcha_max_tasks_per_run, settings.ranepa_captcha_daily_max_tasks)
+    )
+
+
 async def run_forever(settings: Settings):
-    if not settings.ranepa_crawl_enabled:
-        return
     warn_if_unconfigured(settings)
-    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
+    captcha_budget = autonomous_captcha_budget(settings)
+    budget_day = datetime.now(UTC).date()
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(signum, stop.set)
     engine = create_worker_engine(settings)
+    gate = ProcessGate(
+        engine, settings, "sdo", settings.ranepa_crawl_enabled, lambda: sdo_health(engine, settings)
+    )
     try:
-        await ensure_owner_for_crawl(engine, settings)
-        if type(settings.bot_admin_user_id) is int and settings.bot_admin_user_id > 0:
-            async with AsyncSession(engine) as db:
-                await enqueue_once(
-                    db,
-                    "sendMessage",
-                    {
-                        "chat_id": settings.bot_admin_user_id,
-                        "text": "✅ SDO-worker запущен автономно. Очередь обрабатывается последовательно.",
-                    },
-                    f"ranepa-worker-start:{os.getenv('HOSTNAME', 'worker')}:{datetime.now(UTC).isoformat()}",
-                )
-                await db.commit()
         next_prepare_at = 0.0
+        previous_generation = None
         while not stop.is_set():
-            today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-            if monotonic() >= next_prepare_at:
-                await prepare_week(engine, today, settings)
-                # Pick up new accounts during the week without rescanning every
-                # member before each browser job.
-                next_prepare_at = monotonic() + 3600
-            status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
+            generation = None
+            delay = 5
             try:
-                await asyncio.wait_for(
-                    stop.wait(),
-                    timeout=300
-                    if status in {"idle", "paused"}
-                    else settings.ranepa_crawl_pause_seconds,
-                )
-            except TimeoutError:
-                pass
+                generation = await gate.begin()
+                if generation is None and gate.reported_status == "stopped":
+                    heartbeat()
+                if generation is not None:
+                    heartbeat()
+                    today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+                    utc_day = datetime.now(UTC).date()
+                    if utc_day != budget_day:
+                        captcha_budget = autonomous_captcha_budget(settings)
+                        budget_day = utc_day
+                    await prepare_urgent(engine, settings, today)
+                    if generation != previous_generation or monotonic() >= next_prepare_at:
+                        await prepare_week(engine, today, settings, bootstrap=True)
+                        next_prepare_at = monotonic() + 60
+                        previous_generation = generation
+                    status = await process_one(
+                        engine, settings, today, captcha_budget=captcha_budget
+                    )
+                    await finalize_urgent(engine, settings)
+                    heartbeat()
+                    if status == "paused":
+                        await gate.failed(generation, "captcha_guard_paused")
+                    else:
+                        await gate.succeeded(generation)
+                    delay = (
+                        15
+                        if status == "idle"
+                        else 300
+                        if status == "paused"
+                        else settings.ranepa_crawl_pause_seconds
+                    )
+            except Exception:  # noqa: BLE001 -- durable queue and safe diagnostics
+                log_captcha_stage("process_control_iteration_failed")
+                if generation is not None:
+                    try:
+                        await gate.failed(generation)
+                    except Exception:  # noqa: BLE001 -- database outage cannot kill the poller
+                        log_captcha_stage("process_control_status_unavailable")
+            try:
+                await gate.sleep(generation, delay, stop)
+            except Exception:  # noqa: BLE001 -- retry control DB; never claim when unavailable
+                await asyncio.sleep(5)
     finally:
         await engine.dispose()
         for signum in (signal.SIGTERM, signal.SIGINT):
@@ -1334,6 +1384,7 @@ async def run_batch(
                     rescan_all=rescan_all,
                     allowed_user_ids=eligible_ids,
                     processed_user_ids=processed_ids if rescan_all else None,
+                    require_scheduler=not rescan_all,
                 )
                 if status in {"idle", "paused"}:
                     stop_reason = status

@@ -578,3 +578,24 @@ button.quick-stat:hover span,button.quick-stat:hover strong{color:#fff}
 @media(prefers-reduced-transparency:reduce){
  .chart-card,.glass-summary,.kpi-card,.modal-panel,.bot-tile{backdrop-filter:none;-webkit-backdrop-filter:none;background:#14171f}
 }
+
+/* Background process controls use the existing dark operational dashboard palette. */
+.process-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.process-card{min-width:0;padding:18px;display:flex;flex-direction:column;gap:10px}
+.process-card-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.process-card-heading h3{margin:0}
+.process-runtime{font-size:1rem;color:#43d9df}
+.process-runtime.process-error{color:#ef858a}
+.process-details{display:grid;gap:4px;overflow-wrap:anywhere}
+.process-details .quick-stat{font-size:.82rem}
+.process-urgent{margin-top:14px;padding:18px}
+.process-urgent p{color:#a4adbb}
+.process-switch{position:relative;display:inline-flex;width:46px;height:26px;flex:0 0 auto;cursor:pointer}
+.process-switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.process-track{pointer-events:none;background:#444b58;border-radius:99px;width:100%;height:100%;transition:background .15s}
+.process-track::before{content:"";display:block;width:20px;height:20px;border-radius:50%;background:#fff;margin:3px;transition:transform .15s}
+.process-switch input:checked+.process-track{background:#258c8c}
+.process-switch input:checked+.process-track::before{transform:translateX(20px)}
+.process-switch input:focus-visible+.process-track{outline:2px solid #43d9df;outline-offset:3px}
+.process-switch input:disabled+.process-track{opacity:.5}
+@media(max-width:680px){.process-grid{grid-template-columns:1fr}}

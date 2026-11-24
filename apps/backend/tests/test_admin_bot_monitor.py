@@ -93,13 +93,16 @@ def test_bot_monitor_splits_global_and_group_counts(client):
     assert client.get("/v1/admin/bot-monitor?days=0", headers=headers).status_code == 422
 
 
-def test_operator_console_contains_seven_separate_pages(client):
+def test_operator_console_contains_eight_separate_pages(client):
     html = client.get("/admin/")
     script = client.get("/admin/app.js")
     css = client.get("/admin/style.css")
     assert html.status_code == script.status_code == css.status_code == 200
-    assert html.text.count('data-screen="') == 7
-    assert html.text.count('data-nav="') == 7
+    assert html.text.count('data-screen="') == 8
+    assert html.text.count('data-nav="') == 8
+    assert 'data-screen="processes"' in html.text
+    assert 'data-nav="processes"' in html.text
+    assert 'id="urgent-start"' in html.text
     assert 'id="chart-bot-updates"' in html.text
     assert 'id="chart-bot-delivery"' in html.text
     assert "bot-monitor?" in script.text

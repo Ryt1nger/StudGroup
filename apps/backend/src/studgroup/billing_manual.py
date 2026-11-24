@@ -39,17 +39,7 @@ def owner_id(settings) -> int | None:
 def payment_link(settings, months: int) -> str | None:
     if months not in (1, 2, 3, 4):
         return None
-    value = getattr(settings, f"billing_alfa_url_{months}m", "").strip()
-    parsed = urlsplit(value)
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.fragment
-    ):
-        return None
-    return value
+    return payment_link_value(getattr(settings, f"billing_alfa_url_{months}m", ""))
 
 
 def ready(settings) -> bool:
@@ -63,7 +53,11 @@ def ready(settings) -> bool:
 
 
 def payment_link_value(value: str) -> str | None:
-    parsed = urlsplit((value or "").strip())
+    try:
+        parsed = urlsplit((value or "").strip())
+        _ = parsed.port  # Reject malformed ports before saving the link.
+    except ValueError:
+        return None
     if (
         parsed.scheme != "https"
         or not parsed.hostname

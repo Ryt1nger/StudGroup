@@ -2,7 +2,7 @@ name: RANEPA paced crawl
 
 # Owner-approved scheduled launch: default-branch only, serial, fail-closed
 # on legal/credential/Telegram preflight. No student is accessed without consent.
-# Scheduled crawls are enabled autonomously and require verified schema 0066.
+# VPS is the default autonomous worker. Legacy runners are explicit recovery only.
 # Manual and tagged owner actions retain their existing separate safeguards.
 on:
   # Explicit one-off owner activation on a tagged main-branch commit.
@@ -49,6 +49,7 @@ jobs:
   crawl:
     if: >-
       github.ref == 'refs/heads/main' &&
+      vars.RANEPA_EXECUTION_BACKEND == 'github' &&
       (github.event_name == 'schedule' ||
       (github.event_name == 'push' && (contains(github.event.head_commit.message, '[run-sdo-once]') || contains(github.event.head_commit.message, '[run-sdo-all-once]') || contains(github.event.head_commit.message, '[run-sdo-recovery-pilot]') || contains(github.event.head_commit.message, '[run-sdo-retry-captcha-failures]') || contains(github.event.head_commit.message, '[run-sdo-retry-missing-weeks]') || contains(github.event.head_commit.message, '[run-sdo-sample-15]'))) ||
       (github.event_name == 'workflow_dispatch' && inputs.pilot_group_id != '' && inputs.pilot_user_id != ''))
@@ -137,11 +138,11 @@ jobs:
           # private admin panel in the same production database. Do not print IDs.
       - name: Install pinned backend dependencies
         run: uv sync --frozen
-      - name: Require Alembic 0066 before any SDO account access
+      - name: Require compatible Alembic schema before any SDO account access
         run: |
           current="$(uv run alembic current)"
-          if ! printf '%s\n' "$current" | grep -Eq '(^|[^0-9])0066([^0-9]|$)'; then
-            echo "::error title=Production migration required::Apply and verify Alembic 0064 through 0066 through the controlled release process before any SDO crawl."
+          if ! printf '%s\n' "$current" | grep -Eq '(^|[^0-9])(006[6-9]|007[01])([^0-9]|$)'; then
+            echo "::error title=Production migration required::Require a verified compatible schema (0066–0071) before legacy SDO recovery."
             exit 1
           fi
       - name: Install browser

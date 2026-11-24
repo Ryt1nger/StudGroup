@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.main import create_app
-from studgroup.models import Membership, User, UserProfile, WebSession
+from studgroup.models import Group, Membership, RanepaCrawlJob, User, UserProfile, WebSession
 from studgroup.profile import UpdateProfile
 from studgroup.security import token_hash
 
@@ -542,3 +542,42 @@ def test_sdo_launch_prompt_does_not_grant_study_consent(client):
         headers=HEADERS,
     )
     assert saved.status_code in {403, 503}
+
+
+def test_first_sdo_credentials_queue_new_group_immediately(client, monkeypatch):
+    accept_study_credentials(client)
+    client.app.state.settings.ranepa_access_approved = True
+    records = {}
+
+    class FakeStore:
+        async def get(self, key):
+            return records.get(key)
+
+        async def put(self, key, login, ciphertext, version):
+            records[key] = (login, ciphertext, version)
+
+    monkeypatch.setattr("studgroup.profile.configured_store", lambda _: FakeStore())
+
+    async def configure():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group))
+            group.academic_group_code = "TEST-NEW-GROUP"
+            await db.commit()
+
+    async def jobs():
+        async with AsyncSession(client.app.state.engine) as db:
+            return [
+                (row.id, row.priority, row.state, row.attempts)
+                for row in (await db.scalars(select(RanepaCrawlJob))).all()
+            ]
+
+    asyncio.run(configure())
+    assert asyncio.run(jobs()) == []
+    body = {"sdu_login": "pilot-user", "sdu_password": "synthetic-password"}
+    response = client.patch("/v1/profile", json=body, headers=HEADERS)
+    assert response.status_code == 200, response.text
+    queued = asyncio.run(jobs())
+    assert len(queued) == 1
+    assert queued[0][1:] == (-1, "queued", 0)
+    assert client.patch("/v1/profile", json=body, headers=HEADERS).status_code == 200
+    assert asyncio.run(jobs()) == queued

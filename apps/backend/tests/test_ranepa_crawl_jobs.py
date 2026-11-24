@@ -639,3 +639,48 @@ def test_full_rescan_never_overrides_unselected_account(tmp_path):
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_new_group_bootstrap_is_claimed_before_regular_refresh(tmp_path):
+    async def scenario():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/bootstrap.db")
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                candidates = []
+                for index in range(2):
+                    group = Group(
+                        id=uuid4(),
+                        telegram_chat_id=-9800 - index,
+                        name=f"G{index}",
+                        academic_group_code=f"G{index}",
+                        timezone="Europe/Moscow",
+                    )
+                    user = User(id=uuid4(), telegram_user_id=9800 + index, display_name="U")
+                    db.add_all([group, user])
+                    await db.flush()
+                    db.add(
+                        Membership(
+                            group_id=group.id, user_id=user.id, role="student", status="active"
+                        )
+                    )
+                    candidates.append(CrawlCandidate(group.id, user.id))
+                await db.flush()
+                monday = date(2026, 11, 23)
+                await enqueue_week(db, monday, [candidates[0]])
+                await enqueue_week(db, monday, [candidates[1]], bootstrap=True)
+                await db.commit()
+                job = await claim_next(db)
+                assert job.group_id == candidates[1].group_id
+                assert job.priority < 0
+                assert await finish(db, job.id, job.group_id, job.user_id)
+                await db.commit()
+                # An account just processed remains subject to its six-hour cooldown.
+                await enqueue_week(db, monday, [candidates[1]], bootstrap=True)
+                next_job = await claim_next(db)
+                assert next_job.group_id == candidates[0].group_id
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

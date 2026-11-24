@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { LessonOccurrence, PublishedEvent } from '@studgroup/shared-types';
-import { useRanepaFreshnessQuery, useRequestRanepaRefresh, useScheduleQuery } from '../../api/queries';
+import { useRanepaFreshnessQuery, useScheduleQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
 import { addDays, dayKey, formatTime } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
@@ -107,10 +107,7 @@ export function ScheduleScreen() {
   const selected = days.indexOf(selectedKey);
   const query = useScheduleQuery(days[0]!, days[6]!, allowed);
   const ranepa = useRanepaFreshnessQuery(days[0]!, days[6]!, allowed);
-  const refresh = useRequestRanepaRefresh();
   const freshness = ranepa.data;
-  const scheduleChecked = freshness?.oldest_required_checked_at;
-  const linksChecked = freshness?.oldest_links_checked_at;
   const knownSourceCheck = useRef<string | null>(null);
 
   // The queue acknowledgment is not a finished crawl. When a worker writes
@@ -131,9 +128,6 @@ export function ScheduleScreen() {
   const eventItems = groupEvents.data?.events ?? NO_EVENTS;
   const data = query.data;
   const nowMs = useServerNow(data?.generated_at, query.dataUpdatedAt);
-  const sourceAgeHours = scheduleChecked
-    ? (nowMs - Date.parse(scheduleChecked)) / 3_600_000
-    : null;
   const ref = useRef<HTMLDivElement>(null);
   const eventsRef = useRef<HTMLDivElement>(null);
   const anchored = useRef('');
@@ -252,51 +246,6 @@ export function ScheduleScreen() {
           anchored.current = '';
         }} />
       </div>
-      {freshness?.account_connected ? (
-        <section aria-label="Свежесть СДО">
-          <div className="dim">
-            {sourceAgeHours === null
-              ? 'Расписание СДО ещё не подтверждено'
-              : 'Расписание СДО проверено: ' + new Date(scheduleChecked!).toLocaleString('ru-RU', { timeZone })}
-            {sourceAgeHours !== null && sourceAgeHours >= 6 ? ' · Требуется обновление' : ''}
-          </div>
-          <div className="dim">
-            {linksChecked
-              ? 'Ссылки СДО проверены: ' + new Date(linksChecked).toLocaleString('ru-RU', { timeZone })
-              : 'Прямые ссылки СДО ещё не проверены'}
-          </div>
-          <button
-            type="button"
-            disabled={refresh.isPending}
-            onClick={() => refresh.mutate()}
-          >
-            {refresh.isPending ? 'Запрашиваем проверку…' : 'Обновить СДО'}
-          </button>
-          {freshness?.refresh_state === 'queued' || freshness?.refresh_state === 'running' ? (
-            <div role="status" className="dim">
-              {freshness.refresh_state === 'running'
-                ? 'СДО обрабатывается в фоновом режиме. Расписание обновится после сохранения данных.'
-                : 'Заявка в очереди. Данные появятся после обработки, не нужно нажимать повторно.'}
-            </div>
-          ) : null}
-          {freshness?.refresh_state === 'credentials_required' ? (
-            <div role="status" className="dim">
-              Не удалось войти в СДО. Проверьте подключение учётной записи и согласие в профиле.
-            </div>
-          ) : null}
-          {refresh.data ? <div role="status" className="dim">
-            {refresh.data.queued ? 'Заявка уже в очереди или принята в обработку'
-              : refresh.data.state === 'cooldown' ? 'Повтор ограничен интервалом ожидания'
-              : refresh.data.state === 'credentials_required' ? 'Требуется проверить вход в СДО'
-              : 'Повторная проверка сейчас недоступна'}
-          </div> : null}
-          {refresh.isError ? (
-            <div role="alert" className="dim">
-              Сервер СДО не ответил на запрос проверки вовремя. Попробуйте позже: повторные нажатия не ускорят очередь.
-            </div>
-          ) : null}
-        </section>
-      ) : null}
       {features.events && groupEvents.isError ? <RequestError error={groupEvents.error} onRetry={() => void groupEvents.refetch()} /> : null}
       {features.events && groupEvents.isPending ? <Skeleton count={1} label="Загрузка событий календаря" /> : null}
       {eventItems.some((item) => groupEventOnDay(item, key, timeZone)) ? <div ref={eventsRef}><Sec id="schedule-group-events" title="События"><EventCards items={eventItems.filter((item) => groupEventOnDay(item, key, timeZone))} timeZone={timeZone} /></Sec></div> : null}
