@@ -725,6 +725,8 @@ def test_sign_in_timeout_does_not_claim_invalid_password(monkeypatch):
         "lk_password_filled",
         "lk_submit_requested",
         "lk_form_submitted",
+        "lk_response_recheck",
+        "lk_response_recheck",
         "lk_form_still_visible",
     ]
 
@@ -733,3 +735,45 @@ def test_sign_in_timeout_does_not_claim_invalid_password(monkeypatch):
 
     monkeypatch.setattr(ranepa_browser, "_state", rejected)
     assert asyncio.run(ranepa_browser._sign_in(Page(), "student", "test")) == "login_failed"
+
+
+@pytest.mark.parametrize(("failures", "expected_calls"), [(2, 3), (3, 3)])
+def test_schedule_connection_rechecks_are_bounded(monkeypatch, failures, expected_calls):
+    class Page:
+        calls = 0
+        url = "about:blank"
+
+        async def goto(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls <= failures:
+                raise ConnectionError("test connection failure")
+            return None
+
+        async def wait_for_timeout(self, milliseconds):
+            assert milliseconds in {2000, 4000}
+
+    async def rendered(*args):
+        return "rendered"
+
+    monkeypatch.setattr(ranepa_browser, "_wait_visible_state", rendered)
+    page = Page()
+    expected = "rendered" if failures == 2 else "connection"
+    assert asyncio.run(ranepa_browser._open(page, "student", "test")) == expected
+    assert page.calls == expected_calls
+
+
+def test_rate_limit_is_not_retried_as_connection_failure():
+    class Response:
+        status = 429
+
+    class Page:
+        calls = 0
+        url = "about:blank"
+
+        async def goto(self, *args, **kwargs):
+            self.calls += 1
+            return Response()
+
+    page = Page()
+    assert asyncio.run(ranepa_browser._open(page, "student", "test")) == "http_429"
+    assert page.calls == 1

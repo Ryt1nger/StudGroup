@@ -128,7 +128,10 @@ async def _sign_in(page, login: str, password: str) -> str:
     _login_stage("lk_submit_requested")
     await page.get_by_role("button", name="Войти", exact=True).click(timeout=8000)
     _login_stage("lk_form_submitted")
-    for _ in range(100):
+    # Three observation windows, not three password submissions.
+    for check in range(300):
+        if check in {100, 200}:
+            _login_stage("lk_response_recheck")
         state = await _state(page)
         if state not in {"login_required", "empty_page", "challenge_pending"}:
             step = {
@@ -152,27 +155,44 @@ async def _sign_in(page, login: str, password: str) -> str:
     return "challenge_pending" if state == "challenge_pending" else "timeout"
 
 
+NAVIGATION_CHECKS = 3
+NETWORK_RECHECK_CODES = frozenset({"timeout", "dns", "connection", "http_5xx"})
+
+
+async def _navigate_schedule(page) -> str:
+    """Retry read-only navigation, not rejected passwords or access restrictions."""
+    state = "timeout"
+    for attempt in range(NAVIGATION_CHECKS):
+        _login_stage("lk_open_requested")
+        try:
+            response = await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
+            _login_stage("lk_page_loaded")
+            problem = diagnose_http_response(response)
+            state = problem or await _wait_visible_state(page)
+            if state == "empty_page":
+                state = "timeout"
+        except Exception as error:  # noqa: BLE001 -- safe codes only
+            state = diagnose_exception(error)
+        if state not in NETWORK_RECHECK_CODES:
+            return state
+        if attempt + 1 < NAVIGATION_CHECKS:
+            _login_stage("lk_connection_recheck")
+            await page.wait_for_timeout(2000 * (attempt + 1))
+    _login_stage("lk_connection_checks_exhausted")
+    return state
+
+
 async def _open(page, login: str, password: str) -> str:
     current = urlsplit(page.url)
     if current.hostname == HOST and current.path == urlsplit(SCHEDULE).path:
         state = await _wait_visible_state(page)
     else:
-        _login_stage("lk_open_requested")
-        response = await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
-        _login_stage("lk_page_loaded")
-        problem = diagnose_http_response(response)
-        if problem is not None:
-            return problem
-        state = await _wait_visible_state(page)
+        state = await _navigate_schedule(page)
     if state == "login_required":
         state = await _sign_in(page, login, password)
         if state == "rendered":
             _login_stage("lk_schedule_requested")
-            response = await page.goto(SCHEDULE, wait_until="domcontentloaded", timeout=30000)
-            problem = diagnose_http_response(response)
-            if problem is not None:
-                return problem
-            state = await _wait_visible_state(page)
+            state = await _navigate_schedule(page)
     if state == "login_failed":
         _login_stage("lk_explicit_rejection")
     return state

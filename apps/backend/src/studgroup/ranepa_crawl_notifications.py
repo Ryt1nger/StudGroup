@@ -329,15 +329,20 @@ async def notify_account_crawl_result(
         raise ValueError("invalid_crawl_failure_detail")
     if diagnostic_code is not None and diagnostic_code not in DIAGNOSTIC_REASONS:
         raise ValueError("invalid_crawl_diagnostic_code")
-    if last_step is not None and last_step not in LOGIN_STAGE_LABELS and last_step not in {
-        "month_requested",
-        "month_recheck",
-        "week_requested",
-        "week_recheck",
-        "week_retry",
-        "sdo_exits_requested",
-        "sdo_exits_finished",
-    }:
+    if (
+        last_step is not None
+        and last_step not in LOGIN_STAGE_LABELS
+        and last_step
+        not in {
+            "month_requested",
+            "month_recheck",
+            "week_requested",
+            "week_recheck",
+            "week_retry",
+            "sdo_exits_requested",
+            "sdo_exits_finished",
+        }
+    ):
         raise ValueError("invalid_crawl_notification_stage")
     # The manual challenge prompt requests an action; it is not the finalized
     # account result. Every completed attempt gets its own deduplicated report.
