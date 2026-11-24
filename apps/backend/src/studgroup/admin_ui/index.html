@@ -91,6 +91,21 @@
         <section id="finance" class="report-section page-screen" data-screen="finance" hidden>
           <div class="section-heading"><div><span class="section-number">03 / ФИНАНСЫ</span><h2>Деньги и расходы</h2><p>Только подтверждённые записи журнала бюджетных AI-вызовов.</p></div><button class="link-button" data-detail="month_expenses" type="button">История списаний <span>↗</span></button></div>
           <div class="finance-header" id="finance-summary"></div>
+          <article class="billing-editor">
+            <div class="chart-title"><div><span class="card-overline">ОПЛАТА / КНОПКИ</span><h3>Ссылки и названия кнопок</h3></div></div>
+            <p class="billing-note">Активные кнопки появляются в боте. Для каждого срока 1–4 месяца может быть одна кнопка.</p>
+            <form id="billing-form" class="billing-form">
+              <input type="hidden" id="billing-id">
+              <label>Название кнопки<input id="billing-label" maxlength="80" required placeholder="Например: 1 месяц · 800 ₽"></label>
+              <label>Срок<select id="billing-months" required><option value="1">1 месяц</option><option value="2">2 месяца</option><option value="3">3 месяца</option><option value="4">4 месяца</option></select></label>
+              <label>HTTPS-ссылка на оплату<input id="billing-url" type="url" required placeholder="https://…"></label>
+              <label>Порядок<input id="billing-position" type="number" min="0" max="100" value="0" required></label>
+              <label class="billing-check"><input id="billing-enabled" type="checkbox" checked> Показывать в боте</label>
+              <div class="billing-actions"><button type="submit" class="refresh-button">Сохранить</button><button type="button" class="link-button" id="billing-cancel" hidden>Отмена</button></div>
+            </form>
+            <div id="billing-status" class="connection" role="status"></div>
+            <div id="billing-options" class="billing-options"></div>
+          </article>
           <div class="chart-grid wide">
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ТЕКУЩИЙ МЕСЯЦ</span><h3>Динамика затрат на AI</h3></div><span class="card-note">USD · UTC</span></div><div id="chart-finance" class="chart-host tall"></div><div class="chart-foot">По дате регистрации вызова. Не общий баланс компании.</div></article>
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">СТРУКТУРА РАСХОДОВ</span><h3>На что уходят деньги</h3></div><span class="card-note">за текущий месяц</span></div><div id="chart-finance-kind" class="chart-host tall"></div><div class="chart-foot">Категории берутся из реального биллингового журнала.</div></article>

@@ -19,7 +19,14 @@ from studgroup.billing_plans import (
     trial_end,
 )
 from studgroup.bot_admin import enqueue_once, telegram_request
-from studgroup.models import Group, GroupPaymentOrder, GroupSubscription, Membership, User
+from studgroup.models import (
+    Group,
+    GroupBankOrder,
+    GroupPaymentOrder,
+    GroupSubscription,
+    Membership,
+    User,
+)
 
 LOGGER = logging.getLogger(__name__)
 GRACE_DAYS = 2
@@ -62,6 +69,44 @@ def state(subscription: GroupSubscription, now: datetime) -> str:
 
 def formatted_date(value: datetime) -> str:
     return as_utc(value).strftime("%d.%m.%Y %H:%M UTC")
+
+
+async def payment_summary(db: AsyncSession, group_id: uuid.UUID) -> dict | None:
+    """Confirmed group payments across the current bank flow and legacy Stars flow."""
+    bank = (
+        await db.scalars(
+            select(GroupBankOrder).where(
+                GroupBankOrder.group_id == group_id,
+                GroupBankOrder.status == "paid",
+                GroupBankOrder.confirmed_at.is_not(None),
+            )
+        )
+    ).all()
+    stars = (
+        await db.scalars(
+            select(GroupPaymentOrder).where(
+                GroupPaymentOrder.group_id == group_id,
+                GroupPaymentOrder.status == "paid",
+                GroupPaymentOrder.paid_at.is_not(None),
+            )
+        )
+    ).all()
+    payments = [
+        (as_utc(order.confirmed_at), order.amount_rub, order.months, "Альфа-Банк") for order in bank
+    ] + [
+        (as_utc(order.paid_at), order.amount_rub, order.months, "Telegram Stars") for order in stars
+    ]
+    if not payments:
+        return None
+    latest = max(payments, key=lambda item: item[0])
+    return {
+        "last_paid_at": latest[0],
+        "last_amount_rub": latest[1],
+        "last_months": latest[2],
+        "last_method": latest[3],
+        "total_amount_rub": sum(item[1] for item in payments),
+        "payment_count": len(payments),
+    }
 
 
 async def member_group(db, telegram_id: int) -> tuple[Membership, Group] | None:
@@ -116,9 +161,11 @@ async def ensure_subscription(
 
 async def group_limited(db, group_id: uuid.UUID, settings, now=None) -> bool:
     """Check enforcement only when explicitly enabled; never restrict a pilot by default."""
-    from studgroup.billing_manual import ready as bank_ready
+    from studgroup.billing_manual import checkout_ready as bank_ready
 
-    if not settings.billing_enforce_access or not (payment_ready(settings) or bank_ready(settings)):
+    if not settings.billing_enforce_access or not (
+        payment_ready(settings) or await bank_ready(db, settings)
+    ):
         return False
     subscription = await ensure_subscription(db, group_id, now)
     return state(subscription, now or datetime.now(UTC)) == "expired"

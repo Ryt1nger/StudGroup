@@ -47,9 +47,8 @@ def single_order(client):
 
 def start_checkout(client):
     deliver(client, "/start", uid=1)
-    tap(client, "Доступ группы", uid=1)
+    tap(client, "Оплата и доступ", uid=1)
     assert "800 ₽" in last(client)["text"]
-    tap(client, "Продлить доступ группы", uid=1)
     assert "4 месяца" in last(client)["text"]
     tap(client, "2 месяца", uid=1)
     frame = last(client)
@@ -177,14 +176,14 @@ def test_telegram_refund_shortens_group_access_only_once(client, monkeypatch):
 def test_a_repeat_start_does_not_reset_the_groups_trial(client, monkeypatch):
     enable(client, monkeypatch)
     deliver(client, "/start", uid=1)
-    tap(client, "Доступ группы", uid=1)
+    tap(client, "Оплата и доступ", uid=1)
 
     async def get_trial(db):
         return await db.scalar(select(GroupSubscription.trial_ends_at))
 
     before = run(client, get_trial)
     deliver(client, "/start", uid=1)
-    tap(client, "Доступ группы", uid=1)
+    tap(client, "Оплата и доступ", uid=1)
     assert run(client, get_trial) == before
 
 

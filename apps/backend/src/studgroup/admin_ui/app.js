@@ -42,7 +42,7 @@ function clear(id){$(id).replaceChildren();}
 function hint(v){return v===undefined||v===null?"Нет данных":String(v);}
 function russianState(v){return state[v]||"Другой статус: "+String(v);}
 function criteria(){const p=new URLSearchParams({days:$("days").value});if($("group").value)p.set("group_id",$("group").value);return p;}
-async function api(url){const r=await fetch(url,{cache:"no-store",headers:{Authorization:"Bearer "+token}});let result;try{result=await r.json();}catch{throw Error("Сервер ответил в непонятном формате");}if(!r.ok)throw Error(result.error?.message||"Сервер ответил с ошибкой "+r.status);return result;}
+async function api(url,options={}){const headers={Authorization:"Bearer "+token,...(options.headers||{})};const r=await fetch(url,{cache:"no-store",...options,headers});let result;try{result=await r.json();}catch{throw Error("Сервер ответил в непонятном формате");}if(!r.ok)throw Error(result.error?.message||"Сервер ответил с ошибкой "+r.status);return result;}
 function spark(host,values,color){
   if(!Array.isArray(values)||values.length<2)return;
   const ns="http://www.w3.org/2000/svg",svg=document.createElementNS(ns,"svg");
@@ -380,10 +380,35 @@ function render(d,v,b,elapsed,reliability){
   $("rail-dot").classList.toggle("error",Boolean(d.summary.incidents_open));
   selectPage((location.hash||"").slice(1)||currentPage);
 }
+let billingItems=[];
+function resetBillingForm(){
+  $("billing-id").value="";$("billing-label").value="";$("billing-months").value="1";$("billing-url").value="";$("billing-position").value="0";$("billing-enabled").checked=true;$("billing-cancel").hidden=true;
+}
+function renderBillingOptions(){
+  const host=$("billing-options");host.replaceChildren();
+  if(!billingItems.length){text(host,"p","chart-empty","Платёжные кнопки ещё не добавлены.");return;}
+  for(const item of billingItems){
+    const row=dom("article","billing-option"),copy=dom("div");
+    text(copy,"strong","",item.label+(item.enabled?"":" · выключена"));
+    text(copy,"small","",item.months+" мес. · "+nf.format(item.amount_rub)+" ₽ · "+item.payment_url);row.append(copy);
+    const actions=dom("div","billing-option-actions"),edit=dom("button","link-button","Изменить"),remove=dom("button","danger-button","Удалить");
+    edit.type=remove.type="button";edit.dataset.billingEdit=item.id;remove.dataset.billingDelete=item.id;actions.append(edit,remove);row.append(actions);host.append(row);
+  }
+}
+async function loadBillingOptions(){
+  try{const result=await api("/v1/admin/billing-options");billingItems=result.items||[];renderBillingOptions();$("billing-status").textContent=billingItems.length?"Настройки загружены":"Добавьте первую платёжную кнопку";}
+  catch(error){$("billing-status").classList.add("error");$("billing-status").textContent="Не удалось загрузить кнопки: "+error.message;}
+}
+async function saveBillingOption(event){
+  event.preventDefault();const id=$("billing-id").value;const body={label:$("billing-label").value.trim(),months:Number($("billing-months").value),payment_url:$("billing-url").value.trim(),position:Number($("billing-position").value),enabled:$("billing-enabled").checked};
+  $("billing-status").textContent="Сохраняем…";
+  try{await api(id?"/v1/admin/billing-options/"+id:"/v1/admin/billing-options",{method:id?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});resetBillingForm();await loadBillingOptions();$("billing-status").textContent="Сохранено";}
+  catch(error){$("billing-status").classList.add("error");$("billing-status").textContent=error.message;}
+}
 async function load(){
   if(!token)return;const id=++activeRequest;const status=$("status");status.classList.remove("error");status.textContent="Обновляем показатели…";
   try{const begin=performance.now();const query=criteria().toString();const [d,v,b,reliability]=await Promise.all([api("/v1/admin/analytics?"+query),api("/v1/admin/visuals?"+query),api("/v1/admin/bot-monitor?"+query),api("/v1/admin/dashboard?"+query)]);
-    if(id!==activeRequest)return;render(d,v,b,Math.round(performance.now()-begin),reliability);status.textContent="Данные обновлены · "+datetime(d.as_of)+" · период: "+$("days").selectedOptions[0].textContent.toLowerCase();
+    if(id!==activeRequest)return;render(d,v,b,Math.round(performance.now()-begin),reliability);await loadBillingOptions();status.textContent="Данные обновлены · "+datetime(d.as_of)+" · период: "+$("days").selectedOptions[0].textContent.toLowerCase();
   }catch(error){if(id!==activeRequest)return;status.classList.add("error");status.textContent="Не удалось загрузить статистику: "+error.message;}
 }
 function explain(message){
@@ -431,6 +456,10 @@ for(const id of ["group","days"])$(id).addEventListener("change",load);
 $("refresh").addEventListener("click",load);
 window.addEventListener("hashchange",()=>selectPage(location.hash.slice(1)));
 document.addEventListener("click",e=>{
+  const edit=e.target.closest("[data-billing-edit]");
+  if(edit){const item=billingItems.find(x=>x.id===edit.dataset.billingEdit);if(item){$("billing-id").value=item.id;$("billing-label").value=item.label;$("billing-months").value=String(item.months);$("billing-url").value=item.payment_url;$("billing-position").value=String(item.position);$("billing-enabled").checked=item.enabled;$("billing-cancel").hidden=false;$("billing-label").focus();}return;}
+  const remove=e.target.closest("[data-billing-delete]");
+  if(remove){const item=billingItems.find(x=>x.id===remove.dataset.billingDelete);if(item&&confirm("Удалить кнопку «"+item.label+"»?")){api("/v1/admin/billing-options/"+item.id,{method:"DELETE"}).then(()=>{resetBillingForm();return loadBillingOptions();}).catch(error=>{$("billing-status").textContent=error.message;});}return;}
   const nav=e.target.closest("[data-nav]");
   const jump=e.target.closest("[data-goto]");
   if(nav||jump){
@@ -440,6 +469,7 @@ document.addEventListener("click",e=>{
     window.scrollTo({top:0,behavior:"smooth"});
   }
 });
+$("billing-form").addEventListener("submit",saveBillingOption);$("billing-cancel").addEventListener("click",resetBillingForm);
 let lastMeasuredWidth=0,resizePending=false,lastElapsedMs=null;
 window.addEventListener("resize",()=>{
   if(resizePending||!lastData||document.hidden)return;

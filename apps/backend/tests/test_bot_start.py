@@ -649,6 +649,7 @@ def test_the_welcome_screen_reaches_every_info_topic_by_buttons(foreman):
     assert "800 ₽" in last(foreman)["text"]
     assert "всей группы" in last(foreman)["text"]
     assert "7 дней" in last(foreman)["text"]
+    assert "💳 Перейти к оплате" in labels(foreman)
     tap(foreman, "Назад")
 
     assert button(foreman, "Поддержка") == {

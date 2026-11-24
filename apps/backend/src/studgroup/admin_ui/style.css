@@ -475,6 +475,13 @@ body{
 .finance-stat.primary .finance-main{color:#e5efff}
 .integration{border-style:dashed;color:#c5d0e4}
 .integration small{color:#d5c09a}
+.billing-editor{margin:13px 0;padding:20px 22px;border:1px solid var(--line);border-radius:17px;background:rgba(255,255,255,.025)}
+.billing-note{color:#9ca9bc;font-size:12px}
+.billing-form{display:grid;grid-template-columns:2fr 1fr 3fr .8fr 1.2fr;gap:10px;align-items:end;margin:16px 0}
+.billing-form label{display:grid;gap:6px;color:#9ca9bc;font-size:11px}
+.billing-form input,.billing-form select{min-height:40px;border:1px solid var(--line);border-radius:9px;background:#0d1118;color:#edf2fa;padding:8px 10px}
+.billing-form .billing-check{display:flex;align-items:center;gap:8px;min-height:40px}.billing-check input{min-height:auto}
+.billing-actions{display:flex;gap:8px}.billing-options{display:grid;gap:8px}.billing-option{display:grid;grid-template-columns:1fr auto;gap:10px;padding:12px;border:1px solid var(--line-soft);border-radius:11px}.billing-option small{color:#8e9aaf;word-break:break-all}.billing-option-actions{display:flex;gap:7px;align-items:center}.danger-button{border:1px solid #813b49;background:#3d1821;color:#ffd7df;border-radius:8px;padding:8px 10px}
 .queue-row,.incident-row,.detail{background:rgba(255,255,255,.035);border:1px solid var(--line)}
 .queue-row:hover,.incident-row:hover{background:rgba(255,255,255,.075);border-color:rgba(194,213,243,.25)}
 .queue-row strong,.incident-title,.reason-top strong{color:#e3e8f1}
@@ -548,6 +555,7 @@ button.quick-stat:hover span,button.quick-stat:hover strong{color:#fff}
  .chart-host.medium{height:233px}
  .summary-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
  .finance-header{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .billing-form{grid-template-columns:1fr}.billing-option{grid-template-columns:1fr}
  .integrations{grid-template-columns:1fr}
  .server-overview{grid-template-columns:repeat(2,minmax(0,1fr))}
  .modal{padding:8px}

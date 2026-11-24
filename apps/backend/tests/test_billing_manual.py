@@ -41,9 +41,8 @@ def order_state(client):
 
 def create_and_submit(client):
     deliver(client, "/start", uid=1)
-    tap(client, "Доступ группы", uid=1)
-    tap(client, "Продлить доступ", uid=1)
-    tap(client, "2 месяца", uid=1)
+    tap(client, "Оплата и доступ", uid=1)
+    tap(client, "2 мес.", uid=1)
     frame = last(client)
     assert "1,600 ₽" in frame["text"]
     assert any(
@@ -125,6 +124,15 @@ def test_only_owner_can_confirm_and_replay_never_extends_twice(client):
     assert again.status == "paid" and subscription.paid_until == deadline
     assert "Оплата подтверждена" in last(client)["text"]
 
+    deliver(client, "/start", uid=1)
+    tap(client, "Оплата и доступ", uid=1)
+    status = last(client)["text"]
+    assert "Доступ оплачен" in status
+    assert "Осталось:" in status
+    assert "Оплачено всего: 1,600 ₽" in status
+    assert "Последний платёж: 1,600 ₽ · 2 мес." in status
+    assert "Способ: Альфа-Банк" in status
+
 
 def test_rejection_never_extends_group(client):
     enable(client)
@@ -163,9 +171,9 @@ def test_success_screen_returns_to_home_after_20_second_window(client):
 def test_manual_flow_refuses_missing_or_insecure_links(client):
     settings = enable(client)
     settings.billing_alfa_url_3m = ""
-    assert not billing_manual.ready(settings)
+    assert billing_manual.payment_link(settings, 3) is None
     settings.billing_alfa_url_3m = "http://not-secure.example/pay"
-    assert not billing_manual.ready(settings)
+    assert billing_manual.payment_link(settings, 3) is None
     settings.billing_alfa_url_3m = "https://pay.alfabank.example/2400"
     assert billing_manual.payment_link(settings, 3) == settings.billing_alfa_url_3m
     assert billing_manual.payment_link(settings, 5) is None

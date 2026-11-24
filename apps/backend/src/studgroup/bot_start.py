@@ -15,6 +15,7 @@ journeys. It never writes group configuration or a member choice.
 """
 
 import json
+import math
 import re
 import secrets
 import uuid
@@ -31,6 +32,7 @@ from studgroup.homework import utc
 from studgroup.models import (
     Group,
     GroupInvitation,
+    GroupSubscription,
     HeadmanSession,
     Membership,
     StartSession,
@@ -197,8 +199,8 @@ async def topic_screen(db, session, settings, topic):
     rows = []
     if topic == "howto":
         rows.append([app_button(settings)])
-    if topic == "tariffs" and settings.billing_enabled:
-        rows.append([("💳 Доступ группы", "billing_status")])
+    if topic == "tariffs":
+        rows.append([("💳 Перейти к оплате", "billing_entry")])
     if topic == "about":
         rows.append([("Документы и согласия", "legal_docs")])
     links = [(label, action) for label, action in TOPIC_LINKS.get(topic, [])]
@@ -545,7 +547,17 @@ async def billing_status_screen(db, session, settings, telegram_id):
         await home(db, session, settings, telegram_id)
         return
     _member, group = found
-    if not (billing.payment_ready(settings) or billing_manual.ready(settings)):
+    subscription = await db.get(GroupSubscription, group.id)
+    now = datetime.now(UTC)
+    bank_ready = await billing_manual.checkout_ready(db, settings)
+    if subscription is None and (billing.payment_ready(settings) or bank_ready):
+        subscription = await billing.ensure_subscription(db, group.id, now)
+    status = billing.state(subscription, now) if subscription is not None else "expired"
+    payment = await billing.payment_summary(db, group.id)
+    paid = bool(
+        subscription and subscription.paid_until and billing.as_utc(subscription.paid_until) > now
+    )
+    if not paid and not (billing.payment_ready(settings) or bank_ready):
         await screen(
             db,
             session,
@@ -557,8 +569,9 @@ async def billing_status_screen(db, session, settings, telegram_id):
             "billing_unavailable",
         )
         return
-    subscription = await billing.ensure_subscription(db, group.id)
-    status = billing.state(subscription, datetime.now(UTC))
+    if subscription is None:
+        subscription = await billing.ensure_subscription(db, group.id)
+        status = billing.state(subscription, now)
     labels = {
         "trial": "🎁 Бесплатная неделя",
         "active": "✅ Доступ оплачен",
@@ -566,15 +579,33 @@ async def billing_status_screen(db, session, settings, telegram_id):
         "expired": "⚠️ Доступ требуется продлить",
     }
     end = subscription.paid_until or subscription.trial_ends_at
+    paid_details = ""
+    if paid:
+        paid_until = billing.as_utc(subscription.paid_until)
+        remaining_days = max(0, math.ceil((paid_until - now).total_seconds() / 86400))
+        local_zone = ZoneInfo(group.timezone)
+        paid_details = (
+            f"Осталось: {remaining_days} дн.\nОплачено всего: {payment['total_amount_rub']:,} ₽\n"
+            if payment
+            else f"Осталось: {remaining_days} дн.\n"
+        )
+        if payment:
+            paid_details += (
+                f"Последний платёж: {payment['last_amount_rub']:,} ₽ · "
+                f"{payment['last_months']} мес.\n"
+                f"Подтверждён: {payment['last_paid_at'].astimezone(local_zone):%d.%m.%Y %H:%M}\n"
+                f"Способ: {payment['last_method']}\n"
+            )
     content = (
         f"💳 Доступ группы «{group.name}»\n\n"
         f"{labels[status]}\n"
         f"Действует до: {billing.formatted_date(end)}\n\n"
+        f"{paid_details}\n"
         f"{billing.PRICE_NOTE}\n\n"
         "Можно оплатить сразу 1, 2, 3 или 4 месяца.\n"
         + (
-            "Оплата по ссылке Альфа-Банка, затем ручная проверка поступления."
-            if billing_manual.ready(settings)
+            "Оплата по ссылке Альфа-Банка с последующей проверкой платежа."
+            if bank_ready
             else "Оплата через Telegram Stars."
         )
     )
@@ -588,11 +619,39 @@ async def billing_status_screen(db, session, settings, telegram_id):
     )
 
 
+async def billing_entry_screen(db, session, settings, telegram_id):
+    """Paid groups see entitlement details; everybody else starts at period selection."""
+    from studgroup import billing, billing_manual
+
+    found = await billing.member_group(db, telegram_id)
+    if not found:
+        await home(db, session, settings, telegram_id)
+        return
+    _member, group = found
+    subscription = await db.get(GroupSubscription, group.id)
+    now = datetime.now(UTC)
+    bank_ready = await billing_manual.checkout_ready(db, settings)
+    if subscription is None and (billing.payment_ready(settings) or bank_ready):
+        subscription = await billing.ensure_subscription(db, group.id, now)
+    if (
+        subscription is not None
+        and subscription.paid_until is not None
+        and billing.as_utc(subscription.paid_until) > now
+    ):
+        await billing_status_screen(db, session, settings, telegram_id)
+    elif billing.payment_ready(settings) or bank_ready:
+        await billing_period_screen(db, session, settings, telegram_id)
+    else:
+        await billing_status_screen(db, session, settings, telegram_id)
+
+
 async def billing_period_screen(db, session, settings, telegram_id):
     from studgroup import billing, billing_manual
 
     found = await billing.member_group(db, telegram_id)
-    if not found or not (billing.payment_ready(settings) or billing_manual.ready(settings)):
+    bank_options = await billing_manual.payment_options(db, settings)
+    bank_ready = billing_manual.ready(settings) and bool(bank_options)
+    if not found or not (billing.payment_ready(settings) or bank_ready):
         await billing_status_screen(db, session, settings, telegram_id)
         return
     _member, group = found
@@ -607,16 +666,20 @@ async def billing_period_screen(db, session, settings, telegram_id):
         "Один платёж действует для всех участников. "
         + (
             "После перевода нажмите «Я оплатил», чтобы отправить заявку на проверку."
-            if billing_manual.ready(settings)
+            if bank_ready
             else "Сумма платежа в Telegram будет показана в звёздах ⭐."
         ),
-        [
-            [("1 месяц · 800 ₽", "billing_month_1")],
-            [("2 месяца · 1 600 ₽", "billing_month_2")],
-            [("3 месяца · 2 400 ₽", "billing_month_3")],
-            [("4 месяца · 3 200 ₽", "billing_month_4")],
-            [("‹ Назад", "billing_status")],
-        ],
+        (
+            [[(option.label, f"billing_month_{option.months}")] for option in bank_options]
+            if bank_ready
+            else [
+                [("1 месяц · 800 ₽", "billing_month_1")],
+                [("2 месяца · 1 600 ₽", "billing_month_2")],
+                [("3 месяца · 2 400 ₽", "billing_month_3")],
+                [("4 месяца · 3 200 ₽", "billing_month_4")],
+            ]
+        )
+        + [[("‹ Назад", "billing_status")]],
         "billing_period",
         {"group_id": str(group.id)},
     )
@@ -626,7 +689,8 @@ async def billing_checkout_screen(db, session, settings, telegram_id, months):
     from studgroup import billing, billing_manual
 
     found = await billing.member_group(db, telegram_id)
-    if not found or not (billing.payment_ready(settings) or billing_manual.ready(settings)):
+    bank_ready = await billing_manual.checkout_ready(db, settings)
+    if not found or not (billing.payment_ready(settings) or bank_ready):
         await billing_status_screen(db, session, settings, telegram_id)
         return
     _member, group = found
@@ -634,7 +698,7 @@ async def billing_checkout_screen(db, session, settings, telegram_id, months):
     if data.get("group_id") != str(group.id):
         await billing_status_screen(db, session, settings, telegram_id)
         return
-    if billing_manual.ready(settings):
+    if bank_ready:
         order = await billing_manual.create_order(
             db, settings, group_id=group.id, buyer_id=telegram_id, months=months
         )
@@ -650,7 +714,7 @@ async def billing_checkout_screen(db, session, settings, telegram_id, months):
             "1. Нажмите «Перейти к оплате».\n"
             "2. Подтвердите перевод в банке.\n"
             "3. Вернитесь сюда и нажмите «Я оплатил».\n\n"
-            "Доступ будет продлён только после ручной проверки поступления.",
+            "Доступ будет продлён после подтверждения платежа.",
             [
                 [
                     {
@@ -709,8 +773,7 @@ async def home(db, session, settings, telegram_id):
             [("Уведомления", "notifications")],
             [("СДО / ЛК", "external_services")],
         ]
-        if settings.billing_enabled:
-            rows.append([("💳 Доступ группы", "billing_status")])
+        rows.append([("💳 Оплата и доступ", "billing_entry")])
         if member.role in {"headman", "deputy"}:
             rows.insert(0, [("Кабинет старосты", "cabinet")])
         if member.role == "headman" and not group.academic_group_code:
@@ -1995,6 +2058,8 @@ async def handle(db, update, settings, topic=None):
         await home(db, session, settings, sender.id)
     elif action == "billing_status":
         await billing_status_screen(db, session, settings, sender.id)
+    elif action == "billing_entry":
+        await billing_entry_screen(db, session, settings, sender.id)
     elif action == "billing_pay":
         await billing_period_screen(db, session, settings, sender.id)
     elif action == "billing_submitted" and session.step == "billing_manual_checkout":
@@ -2015,8 +2080,7 @@ async def handle(db, update, settings, topic=None):
                     db,
                     session,
                     "⏳ Заявка отправлена на проверку.\n\n"
-                    "Владелец проверит поступление в Альфа-Банке и подтвердит "
-                    "оплату вручную. До подтверждения доступ не продлевается. "
+                    "Платёж проверяется. До подтверждения доступ не продлевается. "
                     "Сообщение о результате появится здесь.",
                     [[("Главное меню", "home")]],
                     "billing_wait",
