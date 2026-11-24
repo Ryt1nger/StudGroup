@@ -277,8 +277,8 @@ async def telegram_health(settings):
         result = await telegram_request(settings, "getMe", {})
         if result.get("ok") is True:
             return None
-    except Exception:  # noqa: BLE001 -- never expose provider URL or token
-        pass
+    except Exception as error:  # noqa: BLE001 -- never expose provider URL or token
+        LOGGER.warning("telegram_health_failed: %s", type(error).__name__)
     return "telegram_unavailable"
 
 

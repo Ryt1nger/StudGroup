@@ -271,6 +271,7 @@ const PAGE_META={
  audience:{title:"Пользователи",eyebrow:"STUDGROUP / ЛЮДИ",intro:"Кто пользуется приложением и насколько активны учебные группы."},
  ai:{title:"AI и обработка",eyebrow:"STUDGROUP / ОБРАБОТКА",intro:"Нагрузка, скорость, готовые результаты и ошибки искусственного интеллекта."},
  finance:{title:"Финансы",eyebrow:"STUDGROUP / РАСХОДЫ",intro:"Подтверждённые списания AI. Балансы и другие платежи показаны только при наличии данных."},
+ processes:{title:"Фоновые процессы",eyebrow:"STUDGROUP / УПРАВЛЕНИЕ",intro:"Управление автономными worker и проверяемый статус исполнения."},
  server:{title:"Система",eyebrow:"STUDGROUP / ПРОИЗВОДИТЕЛЬНОСТЬ",intro:"Скорость ответов сервера, нагрузка и состояние очередей."},
  errors:{title:"Ошибки",eyebrow:"STUDGROUP / ИНЦИДЕНТЫ",intro:"Что пошло не так, когда произошло и какие причины записала система."}
 };
@@ -344,6 +345,7 @@ function renderPage(){
   else if(currentPage==="audience")renderActivity(d,v,b);
   else if(currentPage==="ai")renderAi(d,v);
   else if(currentPage==="finance")renderFinance(d,v);
+  else if(currentPage==="processes")loadProcessControls();
   else if(currentPage==="server")renderServer(d,v,lastElapsedMs);
   else if(currentPage==="errors")renderErrors(d,v);
 }
@@ -487,4 +489,67 @@ async function start(){
   try{const r=await fetch("/v1/session/bootstrap",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({init_data:tg.initData}),cache:"no-store"});const result=await r.json();if(!r.ok)throw Error(result.error?.message||"Не удалось авторизоваться");token=result.access_token;await load();}
   catch(error){$("status").classList.add("error");$("status").textContent="Ошибка входа: "+error.message;}
 }
+
+const processNames={ai:"AI / DeepSeek",sdo:"SDO / RANEPA",telegram_outbox:"Telegram outbox",scheduler:"Scheduler"};
+const processStates={running:"Запущен",stopped:"Остановлен",error:"Ошибка / заблокирован",unknown:"Не подтверждён"};
+const queueNames={ai_messages:"AI / сообщения",ai_jobs:"AI / задания",ai_images:"AI / фото",sdo:"SDO",telegram_outbox:"Telegram"};
+let processLoading=false,processChanging=false,processSignature="";
+function renderProcessControls(data,urgent){
+  const signature=JSON.stringify([data,urgent]);if(signature===processSignature)return;processSignature=signature;
+  const host=$("process-cards");host.replaceChildren();
+  for(const item of data.processes||[]){
+    if(!Object.hasOwn(processNames,item.name))continue;
+    const card=dom("article","chart-card process-card");
+    const header=dom("div","process-card-heading");text(header,"h3","",processNames[item.name]);
+    const labelEl=dom("label","process-switch"),toggle=dom("input");toggle.type="checkbox";toggle.checked=Boolean(item.effective_enabled);toggle.setAttribute("role","switch");toggle.setAttribute("aria-label",processNames[item.name]);toggle.disabled=processChanging;
+    const track=dom("span","process-track");labelEl.append(toggle,track);header.append(labelEl);card.append(header);
+    text(card,"strong","process-runtime "+(item.status==="error"?"process-error":""),processStates[item.status]||"Не подтверждён");
+    text(card,"small","",item.pending?"Команда ожидает подтверждения":item.enabled==null?"Состояние наследуется из конфигурации":item.enabled?"Включён владельцем":"Выключен владельцем");
+    const details=dom("div","process-details");
+    for(const [name,value] of [["Heartbeat",datetime(item.heartbeat_at)],["Последний запуск",datetime(item.started_at)],["Последняя ошибка",datetime(item.error_at)],["Причина",item.error_code||"—"],["Этап",item.error_stage||"—"]]){const row=dom("div","quick-stat");text(row,"span","",name);text(row,"strong","",value);details.append(row);}
+    card.append(details);
+    const restart=dom("button","link-button","Перезапустить");restart.type="button";restart.disabled=processChanging;
+    restart.addEventListener("click",()=>changeProcess(item.name,"restart"));
+    toggle.addEventListener("change",()=>changeProcess(item.name,toggle.checked?"enable":"disable"));
+    card.append(restart);host.append(card);
+  }
+  const progress=$("urgent-progress");progress.replaceChildren();
+  if(!urgent){text(progress,"p","chart-empty","Полный прогон ещё не запрашивался.");}
+  else{
+    const labels={requested:"Запрос сохранён — ожидает SDO-worker",running:"Выполняется",completed:"Завершён"};
+    text(progress,"strong","",labels[urgent.state]||"Не подтверждён");
+    if(urgent.state!=="requested"){
+      for(const [key,name] of [["found","Найдено аккаунтов"],["queued","Поставлено в очередь"],["completed","Выполнено попыток"],["succeeded","Успешно"],["failed","Ошибок"],["blocked","Заблокировано защитой"],["remaining","Осталось"]])statRow(progress,name,number(urgent[key]));
+    }
+  }
+  $("urgent-start").disabled=processChanging||Boolean(urgent&&["requested","running"].includes(urgent.state));
+  const queues=$("process-queues");queues.replaceChildren();
+  for(const [key,values] of Object.entries(data.queues||{})){if(!Object.hasOwn(queueNames,key))continue;statRow(queues,queueNames[key],Object.entries(values).map(([k,v])=>russianState(k)+": "+number(v)).join(" · ")||"Пусто");}
+}
+async function loadProcessControls(){
+  if(!token||processLoading||processChanging)return;processLoading=true;
+  try{const [data,result]=await Promise.all([api("/v1/admin/processes"),api("/v1/admin/sdo-runs")]);renderProcessControls(data,result.run);$("process-status").textContent="Состояние получено из БД · "+datetime(new Date().toISOString());$("process-status").classList.remove("error");}
+  catch(error){$("process-status").textContent="Не удалось получить состояние: "+error.message;$("process-status").classList.add("error");}
+  finally{processLoading=false;}
+}
+async function changeProcess(name,action){
+  if(processChanging||!Object.hasOwn(processNames,name))return;
+  if(action==="restart"&&!confirm("Перезапустить "+processNames[name]+"?"))return;
+  processChanging=true;
+  for(const control of $("process-cards").querySelectorAll("input,button"))control.disabled=true;
+  let errorMessage=null;
+  try{await api("/v1/admin/processes/"+encodeURIComponent(name)+"/"+action,{method:"POST"});}
+  catch(error){errorMessage=error.message;}
+  finally{processChanging=false;processSignature="";await loadProcessControls();if(errorMessage){$("process-status").textContent=errorMessage;$("process-status").classList.add("error");}}
+}
+$("urgent-start").addEventListener("click",async()=>{
+  if(processChanging||!confirm("Поставить все подходящие аккаунты в полный SDO-прогон? Cooldown и защитные лимиты не будут отменены."))return;
+  processChanging=true;$("urgent-start").disabled=true;
+  let errorMessage=null;
+  try{await api("/v1/admin/sdo-runs",{method:"POST"});}
+  catch(error){errorMessage=error.message;}
+  finally{processChanging=false;processSignature="";await loadProcessControls();if(errorMessage){$("process-status").textContent=errorMessage;$("process-status").classList.add("error");}}
+});
+setInterval(()=>{if(token&&!document.hidden&&currentPage==="processes")loadProcessControls();},5000);
+
 start();setInterval(()=>{if(token&&!document.hidden&&$("modal").hidden)load();},60000);

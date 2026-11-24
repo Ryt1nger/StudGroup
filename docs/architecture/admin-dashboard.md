@@ -164,3 +164,27 @@ python-процесса (не более 2000 обезличенных собы�
 Доступ защищён существующей проверкой `BOT_ADMIN_USER_ID`.
 Фронтенд рисует SVG локально, без сторонних CDN и платных аналитических
 сервисов. Все графики и модальные окна являются read-only.
+
+
+## Background process control
+
+The owner-only /admin/#processes screen distinguishes requested state from actual worker acknowledgement.
+GET /v1/admin/processes returns safe aggregate queue state and process heartbeat; POST
+/v1/admin/processes/{name}/{enable|disable|restart} returns HTTP 202, not successful execution.
+The allowlist is ai, sdo, telegram_outbox, scheduler. Null desired state inherits deployment settings.
+A generation change fences stale acknowledgements. Existing claimed jobs are not deleted or
+cancelled by a control request. The independent owner-alert lane is not paused with normal Telegram
+outbox delivery. Paid AI and university/CAPTCHA safety configuration remain separate hard guards.
+
+POST /v1/admin/sdo-runs requests a durable full scan; GET returns the latest run and distinct
+account counters. The worker takes the snapshot of active, consented accounts with credential
+references, queues them using existing SQL jobs, and observes cooldown and retry restrictions.
+A new request while a run is active returns the same run. A blocked target is not counted as a
+successful attempt. No credential is copied into the new tables. Browser claims share a
+PostgreSQL advisory lock; a lost lock connection cancels the active work and leaves its durable
+lease to recover. Existing subgroup materialization rules are unchanged.
+
+Before rollout, apply migrations 0070 and 0071 to the verified production PostgreSQL target.
+The VPS deployment script does not currently run Alembic. Do not merge this change until CI,
+owner-only smoke checks, runtime settings and the migration rollout are verified. Do not point
+migration commands at the historical Supabase projects or change YDB credentials.

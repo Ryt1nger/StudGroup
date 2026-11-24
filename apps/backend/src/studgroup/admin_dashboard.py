@@ -454,12 +454,38 @@ async def dashboard(
 
 @router.get("/v1/admin/processes")
 async def background_processes(
+    request: Request,
     db: Annotated[AsyncSession, Depends(database)],
     owner: Annotated[User, Depends(admin_session)],
 ):
     from studgroup.process_control import process_snapshot
 
-    return {"processes": await process_snapshot(db)}
+    settings = request.app.state.settings
+    delivery_configured = bool(
+        settings.bot_admin_user_id
+        or settings.owner_update_notifications_enabled
+        or settings.billing_enabled
+    )
+    defaults = {
+        "ai": settings.processing_mode == "embedded" or settings.cabinet_schedule_background_enabled,
+        "sdo": settings.ranepa_crawl_enabled,
+        "telegram_outbox": delivery_configured,
+        "scheduler": delivery_configured or settings.billing_enabled,
+    }
+    processes = await process_snapshot(db)
+    for row in processes:
+        enabled = row.get("enabled")
+        row["effective_enabled"] = defaults[row["name"]] if enabled is None else enabled
+    return {
+        "processes": processes,
+        "queues": {
+            "ai_messages": await states(db, RawMessage, RawMessage.processing_state),
+            "ai_jobs": await states(db, AIJob, AIJob.state),
+            "ai_images": await states(db, ImageAnalysisJob, ImageAnalysisJob.state),
+            "sdo": await states(db, RanepaCrawlJob, RanepaCrawlJob.state),
+            "telegram_outbox": await states(db, BotOutbox, BotOutbox.state),
+        },
+    }
 
 
 @router.post("/v1/admin/processes/{name}/{action}", status_code=202)
@@ -473,6 +499,7 @@ async def change_background_process(
 
     row = await request_process(db, name, action)
     result = process_json(row)
+    result["effective_enabled"] = row.enabled
     await db.commit()
     return result
 
