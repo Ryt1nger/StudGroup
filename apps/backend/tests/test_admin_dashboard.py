@@ -256,3 +256,44 @@ def test_owner_reliability_aggregates_are_group_scoped_and_private(client):
     assert payload["ai_products"]["useful_packages_7d"] == 1
     assert "PRIVATE_ACADEMIC_COURSE" not in response.text
     assert "captcha" in response.text  # only enumerated retry codes, not user identity
+
+
+def test_missing_billing_schema_returns_safe_owner_error(client):
+    from sqlalchemy import text
+
+    client.app.state.settings.bot_admin_user_id = 1
+
+    async def remove_test_table():
+        async with client.app.state.engine.begin() as connection:
+            await connection.execute(text("DROP TABLE billing_payment_options"))
+
+    asyncio.run(remove_test_table())
+    url = "/v1/admin/billing-options"
+    assert client.get(url).status_code == 401
+    headers = {"Authorization": "Bearer valid"}
+    response = client.get(url, headers=headers)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "billing_schema_missing"
+    response = client.post(
+        url,
+        headers=headers,
+        json={
+            "label": "Месяц",
+            "months": 1,
+            "payment_url": "https://pay.example/800",
+        },
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "billing_schema_missing"
+
+
+def test_malformed_billing_url_is_validation_error(client):
+    client.app.state.settings.bot_admin_user_id = 1
+    for value in ("https://[broken", "https://pay.example:broken/800"):
+        response = client.post(
+            "/v1/admin/billing-options",
+            headers={"Authorization": "Bearer valid"},
+            json={"label": "Месяц", "months": 1, "payment_url": value},
+        )
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "invalid_payment_url"
