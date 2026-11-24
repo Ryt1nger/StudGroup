@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import aliased
 
 from studgroup.models import (
@@ -310,6 +310,23 @@ async def claim_next(
     if processed_user_ids:
         scope.append(RanepaCrawlJob.user_id.not_in(processed_user_ids))
     now = now or datetime.now(UTC)
+    if db.get_bind().dialect.name == "postgresql":
+        # Serialize the check-and-claim across updated VPS and recovery workers
+        # using the existing transaction; a live durable lease prevents a
+        # second browser even when another process has already committed.
+        acquired = await db.scalar(text("SELECT pg_try_advisory_xact_lock(832610069)"))
+        if not acquired:
+            return None
+        live = await db.scalar(
+            select(RanepaCrawlJob.id)
+            .where(
+                RanepaCrawlJob.state == "running",
+                RanepaCrawlJob.claimed_at >= now - LEASE,
+            )
+            .limit(1)
+        )
+        if live is not None:
+            return None
     stale = await db.scalar(
         select(RanepaCrawlJob)
         .where(

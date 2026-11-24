@@ -1,9 +1,9 @@
 name: Backend
 on:
   push:
-    paths: ['apps/backend/**', '.github/workflows/backend.yml']
+    paths: ['apps/backend/**', 'deploy/server/**', '.github/workflows/backend.yml', '.github/workflows/ranepa-crawl.yml', '.github/workflows/ranepa-watchdog.yml']
   pull_request:
-    paths: ['apps/backend/**', '.github/workflows/backend.yml']
+    paths: ['apps/backend/**', 'deploy/server/**', '.github/workflows/backend.yml', '.github/workflows/ranepa-crawl.yml', '.github/workflows/ranepa-watchdog.yml']
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -56,3 +56,16 @@ jobs:
           uv run pytest -q tests/test_ranepa_materialization.py tests/test_package_worker.py tests/test_ranepa_captcha_outcome.py tests/test_ranepa_worker.py --maxfail=1
           uv run pytest -q tests/test_ranepa_worker.py tests/test_ranepa_captcha_outcome.py tests/test_package_worker.py tests/test_ranepa_materialization.py --maxfail=1
       - run: uv run pytest -vv --maxfail=1
+
+  worker-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release shell syntax
+        run: bash -n deploy/server/deploy.sh
+      - name: Build independent SDO image
+        run: docker build -f apps/backend/Dockerfile.ranepa-worker -t studgroup-sdo-ci apps/backend
+      - name: Launch Chromium as the runtime user without network
+        run: |
+          docker run --rm --network none --shm-size=256m --entrypoint python studgroup-sdo-ci -c 'import os; from playwright.sync_api import sync_playwright; assert os.getuid() == 10001; p = sync_playwright().start(); b = p.chromium.launch(headless=True); page = b.new_page(); page.goto("about:blank"); b.close(); p.stop()'
