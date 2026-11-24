@@ -78,7 +78,7 @@ def _safe_course(url: str) -> bool:
 LOGGER = logging.getLogger(__name__)
 
 
-MAX_COURSE_CANDIDATES = 80
+MAX_COURSE_CANDIDATES = 500
 
 
 def _sdo_cache_key(row):
@@ -226,6 +226,7 @@ def _previous_confirmed_meeting(row, course, by_course, identity):
                 group_label=row["subgroup_hint"],
                 day=date.fromisoformat(row["day"]),
                 starts=time.fromisoformat(row["starts"]),
+                lesson_type=row.get("lesson_type"),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -248,6 +249,7 @@ def _reuse_verified_candidate(row, course, by_course, identity):
             group_label=row.get("subgroup_hint") or "",
             day=date.fromisoformat(row["day"]),
             starts=time.fromisoformat(row["starts"]),
+            lesson_type=row.get("lesson_type"),
         )
         if choice.state == "matched":
             return choice.url
@@ -548,6 +550,7 @@ async def enrich_personal_links(
                         group_label=row.get("subgroup_hint") or "",
                         day=date.fromisoformat(row["day"]),
                         starts=time.fromisoformat(row["starts"]),
+                        lesson_type=row.get("lesson_type"),
                     )
                     url = selected.url
             if url:

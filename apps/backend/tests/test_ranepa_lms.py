@@ -449,3 +449,21 @@ def test_old_dated_alternatives_never_become_current_by_redirect_deduplication()
     )
     assert choice.url is None
     assert not choice.may_resolve_duplicates
+
+
+def test_one_matching_moodle_activity_is_enough_for_individual_publication():
+    links = course_links(
+        '<main class="course-content"><section class="course-section">'
+        "<h3>Казакова К.С.</h3>"
+        '<a href="/mod/url/view.php?id=777">ссылка для практических занятий в СДО</a>'
+        "</section></main>"
+    )
+    selected = select_lesson_link(
+        links,
+        teacher="Казакова Ксения Сергеевна",
+        group_label="Э-ОБ26-СГЯ-пр-160",
+        day=date(2026, 12, 1),
+        lesson_type="Практические занятия",
+    )
+    assert selected.state == "matched"
+    assert selected.url == "https://lms.ranepa.ru/mod/url/view.php?id=777"

@@ -5,6 +5,7 @@ import logging
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from time import monotonic
 from urllib.parse import parse_qs, urljoin, urlsplit
 from zoneinfo import ZoneInfo
 
@@ -490,10 +491,16 @@ async def _read_course_candidates(page, context):
             await page.wait_for_timeout(250)
     if not verified:
         return (), False
+    nested_deadline = monotonic() + 8
     for url in tuple(child_pages)[:MAX_DETAIL_PAGES]:
+        remaining = nested_deadline - monotonic()
+        if remaining <= 0:
+            break
         child = await context.new_page()
         try:
-            await child.goto(url, wait_until="domcontentloaded", timeout=10000)
+            await child.goto(
+                url, wait_until="domcontentloaded", timeout=max(1, int(remaining * 1000))
+            )
             final = urlsplit(child.url)
             if (
                 final.scheme != "https"
@@ -627,7 +634,15 @@ async def _load_moodle_dashboard(context, login, password):
 
 
 async def resolve_moodle_courses(
-    context, result, login, password, *, dashboard_cache, course_cache, first_week_anchor=None
+    context,
+    result,
+    login,
+    password,
+    *,
+    dashboard_cache,
+    course_cache,
+    first_week_anchor=None,
+    deadline=None,
 ):
     """Find course by timetable subject; reuse inventories within this account only."""
     linked, states, courses, inventories = {}, {}, {}, {}
@@ -636,8 +651,16 @@ async def resolve_moodle_courses(
     if not any(lesson.room == "СДО" for lesson in result.snapshot.lessons):
         return SdoLinkResolution(linked, states, courses, inventories)
     if "courses" not in dashboard_cache:
-        index, error = await _load_moodle_dashboard(context, login, password)
-        dashboard_cache.update(courses=index, error=error)
+        try:
+            remaining = None if deadline is None else max(0.01, deadline - monotonic())
+            async with asyncio.timeout(remaining):
+                index, error = await _load_moodle_dashboard(context, login, password)
+        except TimeoutError:
+            return SdoLinkResolution(linked, states, courses, inventories)
+        if index:
+            dashboard_cache.update(courses=index, error=error)
+        else:
+            return SdoLinkResolution(linked, states, courses, inventories)
     for lesson in result.snapshot.lessons:
         if lesson.room != "СДО":
             continue
@@ -649,6 +672,8 @@ async def resolve_moodle_courses(
             lesson.teacher,
             lesson.room,
         )
+        if deadline is not None and monotonic() >= deadline:
+            break
         error = dashboard_cache["error"]
         if error is not None:
             states[key] = error
@@ -671,7 +696,9 @@ async def resolve_moodle_courses(
                 if parse_qs(parsed.query).get("id") != parse_qs(urlsplit(course).query).get("id"):
                     states[key] = LinkState.IDENTITY_MISSING
                     continue
-                course_cache[course] = await _read_course_candidates(page, context)
+                remaining = None if deadline is None else max(0.01, deadline - monotonic())
+                async with asyncio.timeout(remaining):
+                    course_cache[course] = await _read_course_candidates(page, context)
             except Exception:  # noqa: BLE001
                 states[key] = LinkState.NAVIGATION_ERROR
                 continue
@@ -684,9 +711,15 @@ async def resolve_moodle_courses(
             )
             continue
         inventories[key] = candidates
-        choice = await _choose_course_meeting(
-            context, candidates, lesson, first_week_anchor=first_week_anchor
-        )
+        try:
+            remaining = None if deadline is None else max(0.01, deadline - monotonic())
+            async with asyncio.timeout(remaining):
+                choice = await _choose_course_meeting(
+                    context, candidates, lesson, first_week_anchor=first_week_anchor
+                )
+        except TimeoutError:
+            states[key] = LinkState.NOT_CHECKED
+            break
         states[key] = choice.state
         if choice.url is not None:
             linked[key] = choice.url
@@ -705,6 +738,7 @@ async def resolve_sdo_exits(
     exit_cache: dict | None = None,
     dashboard_cache: dict | None = None,
     first_week_anchor: date | None = None,
+    deadline=None,
 ) -> SdoLinkResolution:
     """Read Moodle independently when dashboard mode is enabled."""
     if dashboard_cache is not None:
@@ -716,6 +750,7 @@ async def resolve_sdo_exits(
             dashboard_cache=dashboard_cache,
             course_cache=course_cache if course_cache is not None else {},
             first_week_anchor=first_week_anchor,
+            deadline=deadline,
         )
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
         return SdoLinkResolution({}, {"not_checked": 1}, {}, {})

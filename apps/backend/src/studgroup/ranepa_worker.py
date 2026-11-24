@@ -1121,12 +1121,12 @@ async def _collect(
                             exit_kwargs["solve_captcha"] = solve_sdo_with_owner_fallback
                         if on_captcha is not None:
                             exit_kwargs["on_captcha"] = on_captcha
-                        async with asyncio.timeout(
-                            min(
-                                MAX_SDO_SCAN_WEEK_SECONDS,
-                                max(0.01, sdo_discovery_deadline - monotonic()),
-                            )
-                        ):
+                        scan_seconds = min(
+                            MAX_SDO_SCAN_WEEK_SECONDS,
+                            max(0.01, sdo_discovery_deadline - monotonic()),
+                        )
+                        exit_kwargs["deadline"] = monotonic() + max(0.005, scan_seconds - 0.5)
+                        async with asyncio.timeout(scan_seconds):
                             resolution = await resolve_sdo_exits(
                                 context, enrichment_result, login, password, **exit_kwargs
                             )

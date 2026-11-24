@@ -17,7 +17,9 @@ from studgroup.ranepa_schedule import normalized
 
 
 def lesson_key(row):
-    return tuple(row.get(field) for field in ("day", "starts", "ends", "subject", "teacher", "room"))
+    return tuple(
+        row.get(field) for field in ("day", "starts", "ends", "subject", "teacher", "room")
+    )
 
 
 def occurrence_identity(row):
@@ -115,9 +117,7 @@ async def reuse_common_links(db, group_id, user_id, week_start, run_id):
     ).all()
     if len(sources) < 2:
         return {}
-    splits = (
-        await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == group_id))
-    ).all()
+    splits = (await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == group_id))).all()
     links = agreed_links(
         json.loads(own.rows_json),
         [(source.user_id, json.loads(source.rows_json)) for source in sources],

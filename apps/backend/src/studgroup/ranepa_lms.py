@@ -23,6 +23,7 @@ EXPLICITLY_TEMPORARY = re.compile(
 )
 INLINE_JOIN = re.compile(r"https://[^\s<>\"']+", re.IGNORECASE)
 MAX_CANDIDATES = 500
+MAX_COURSE_HTML_BYTES = 12_000_000
 WORD_DATE = re.compile(r"(?<!\d)(\d{1,2})\s+(" + "|".join(MONTHS) + r")\b")
 MAX_DETAIL_PAGES = 16
 LMS_MEETING_PATHS = frozenset(
@@ -86,7 +87,7 @@ def meeting_url(raw: str) -> str | None:
 
 def course_detail_pages(html: str) -> tuple[str, ...]:
     """Only bounded, same-origin Moodle text/book pages; never follow arbitrary links."""
-    if len(html.encode("utf-8")) > 3_000_000:
+    if len(html.encode("utf-8")) > MAX_COURSE_HTML_BYTES:
         raise SourceAccessError("lms_page_too_large")
     document = Document()
     document.feed(html)
@@ -121,6 +122,9 @@ def _teacher_section(ancestors):
             parent.tag in {"section", "details", "li", "article"}
             or parent.has("course-section")
             or parent.has("section")
+            or parent.has("activity-item")
+            or parent.has("subsection")
+            or parent.has("accordion-item")
         ):
             continue
         headings = [
@@ -145,7 +149,7 @@ def _nearby_label(node, ancestors, url):
     """Look for the closest single-link activity/paragraph, not a whole teacher list."""
     label = node.text().strip()
     best = label[:500]
-    for parent in reversed(ancestors):
+    for parent in reversed(ancestors[-6:]):
         if parent.tag not in {"li", "p", "div", "article", "details", "section"}:
             continue
         text = parent.text()
@@ -178,7 +182,7 @@ def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandida
     Collapsed <details> links are included; JavaScript-loaded sections are expanded
     by the browser before this parser is called.
     """
-    if len(html.encode("utf-8")) > 3_000_000:
+    if len(html.encode("utf-8")) > MAX_COURSE_HTML_BYTES:
         raise SourceAccessError("lms_page_too_large")
     document = Document()
     document.feed(html)
@@ -225,7 +229,7 @@ def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandida
 
 def dashboard_courses(html: str) -> dict[str, str]:
     """Discover only canonical course links from the authenticated Moodle UI."""
-    if len(html.encode("utf-8")) > 3_000_000:
+    if len(html.encode("utf-8")) > MAX_COURSE_HTML_BYTES:
         raise SourceAccessError("lms_page_too_large")
     document = Document()
     document.feed(html)
@@ -318,9 +322,7 @@ def _same_stream(expected, offered, lesson_type):
 
 def _recurrence_matches(label, day, starts, first_week_anchor):
     weekdays = {
-        number
-        for word, number in WEEKDAYS.items()
-        if re.search(rf"(?<!\w){word}(?!\w)", label)
+        number for word, number in WEEKDAYS.items() if re.search(rf"(?<!\w){word}(?!\w)", label)
     }
     if weekdays and day.weekday() not in weekdays:
         return False
@@ -407,9 +409,7 @@ def select_lesson_link(
             link.label.split("|", 1)[0].strip()
         )
         expected = normalized(teacher).split()
-        initials = re.search(
-            rf"(?<!\w){re.escape(surname)}\s+([а-я])\.?\s*([а-я])(?:\.|\b)", label
-        )
+        initials = re.search(rf"(?<!\w){re.escape(surname)}\s+([а-я])\.\s*([а-я])\.?", label)
         if (
             len(expected) >= 3
             and initials
