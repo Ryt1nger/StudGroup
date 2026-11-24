@@ -115,6 +115,58 @@ def test_admin_page_has_no_embedded_credentials(client):
     assert "no-store" in response.headers["cache-control"]
 
 
+def test_owner_manages_payment_buttons_without_code_changes(client):
+    client.app.state.settings.bot_admin_user_id = 1
+    headers = {"Authorization": "Bearer valid"}
+    created = client.post(
+        "/v1/admin/billing-options",
+        headers=headers,
+        json={
+            "label": "Оплатить месяц",
+            "months": 1,
+            "payment_url": "https://pay.alfabank.example/800",
+            "enabled": True,
+            "position": 2,
+        },
+    )
+    assert created.status_code == 200, created.text
+    option_id = created.json()["id"]
+    assert (
+        client.get("/v1/admin/billing-options", headers=headers).json()["items"][0]["label"]
+        == "Оплатить месяц"
+    )
+    updated = client.put(
+        f"/v1/admin/billing-options/{option_id}",
+        headers=headers,
+        json={
+            "label": "Месяц для всей группы",
+            "months": 1,
+            "payment_url": "https://pay.alfabank.example/new-800",
+            "enabled": False,
+            "position": 1,
+        },
+    )
+    assert updated.status_code == 200 and updated.json()["enabled"] is False
+    assert (
+        client.post(
+            "/v1/admin/billing-options",
+            headers=headers,
+            json={
+                "label": "Небезопасная",
+                "months": 2,
+                "payment_url": "http://example.com/pay",
+                "enabled": True,
+                "position": 2,
+            },
+        ).status_code
+        == 422
+    )
+    assert client.delete(f"/v1/admin/billing-options/{option_id}", headers=headers).json() == {
+        "deleted": True
+    }
+    assert client.get("/v1/admin/billing-options", headers=headers).json()["items"] == []
+
+
 def test_owner_reliability_aggregates_are_group_scoped_and_private(client):
     """No account identity, course title or message body escapes the operator counters."""
     client.app.state.settings.bot_admin_user_id = 1

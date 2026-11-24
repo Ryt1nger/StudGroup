@@ -93,6 +93,9 @@ def test_no_early_late_or_unconfigured_billing_notice(client):
     engine = client.app.state.engine
     assert asyncio.run(worker(engine, settings, now=ON_DATE - timedelta(days=1))) == 0
     assert asyncio.run(worker(engine, settings, now=ON_DATE + timedelta(days=2))) == 0
+    settings.billing_alfa_url_1m = ""
+    settings.billing_alfa_url_2m = ""
+    settings.billing_alfa_url_3m = ""
     settings.billing_alfa_url_4m = ""
     assert asyncio.run(worker(engine, settings, now=ON_DATE)) == 0
     settings.billing_alfa_url_4m = "https://pay.example.test/amount/3200"

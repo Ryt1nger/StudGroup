@@ -1519,3 +1519,21 @@ class GroupBankOrder(Base):
     confirmed_by: Mapped[int | None] = mapped_column(BigInteger)
     cleanup_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cleanup_done: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class BillingPaymentOption(Base):
+    """Owner-managed checkout button; the payment URL remains server-side."""
+
+    __tablename__ = "billing_payment_options"
+    __table_args__ = (
+        CheckConstraint("months BETWEEN 1 AND 4", name="billing_option_months_1_4"),
+        UniqueConstraint("months"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    label: Mapped[str] = mapped_column(String(80))
+    months: Mapped[int] = mapped_column(Integer)
+    payment_url: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

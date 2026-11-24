@@ -54,6 +54,10 @@ async def queue_billing_announcement(engine, settings, *, now=None):
     bot_name = (settings.bot_username or "").removeprefix("@")
     deep_link = "https://t.me/" + bot_name + "?" + urlencode({"start": "billing"})
     async with AsyncSession(engine, expire_on_commit=False) as db:
+        from studgroup.billing_manual import checkout_ready
+
+        if not await checkout_ready(db, settings):
+            return 0
         rows = (
             await db.execute(
                 select(User.id, User.telegram_user_id, Group.id)
@@ -88,7 +92,7 @@ async def queue_billing_announcement(engine, settings, *, now=None):
                         "Можно оплатить сразу 1–4 месяца: 800, 1 600, 2 400 или 3 200 ₽.\n\n"
                         "Нажмите кнопку, выберите срок и откройте банковскую ссылку. "
                         "После перевода вернитесь в бот и нажмите «Я оплатил». "
-                        "Владелец вручную проверит поступление, затем подтвердит продление.\n\n"
+                        "После проверки платежа доступ группы будет продлён.\n\n"
                         "Если оплата уже согласована со старостой, второй раз платить не нужно."
                     ),
                     "reply_markup": {

@@ -9,7 +9,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.api import ApiError, database
@@ -18,6 +20,7 @@ from studgroup.models import (
     AIAttempt,
     AIJob,
     AnalysisBudgetCall,
+    BillingPaymentOption,
     BotOutbox,
     CanonicalAcademicItem,
     Group,
@@ -39,6 +42,14 @@ from studgroup.security import token_hash
 
 router = APIRouter()
 UI = Path(__file__).with_name("admin_ui")
+
+
+class BillingOptionBody(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    months: int = Field(ge=1, le=4)
+    payment_url: str = Field(min_length=8, max_length=2000)
+    enabled: bool = True
+    position: int = Field(default=0, ge=0, le=100)
 
 
 @router.get("/admin", include_in_schema=False)
@@ -102,6 +113,114 @@ async def states(db, model, column, *criteria):
         )
     ).all()
     return {str(state or "unknown"): total for state, total in rows}
+
+
+def billing_option_json(row):
+    return {
+        "id": row.id,
+        "label": row.label,
+        "months": row.months,
+        "amount_rub": row.months * 800,
+        "payment_url": row.payment_url,
+        "enabled": row.enabled,
+        "position": row.position,
+        "updated_at": row.updated_at,
+    }
+
+
+def validated_payment_url(value):
+    from studgroup.billing_manual import payment_link_value
+
+    result = payment_link_value(value)
+    if result is None:
+        raise ApiError(
+            "invalid_payment_url",
+            "Нужна безопасная HTTPS-ссылка без логина, пароля и фрагмента",
+            422,
+        )
+    return result
+
+
+@router.get("/v1/admin/billing-options")
+async def billing_options(
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+):
+    rows = (
+        await db.scalars(
+            select(BillingPaymentOption).order_by(
+                BillingPaymentOption.position, BillingPaymentOption.months
+            )
+        )
+    ).all()
+    return {"items": [billing_option_json(row) for row in rows]}
+
+
+@router.post("/v1/admin/billing-options")
+async def create_billing_option(
+    body: BillingOptionBody,
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+):
+    now = datetime.now(UTC)
+    row = BillingPaymentOption(
+        label=" ".join(body.label.split()),
+        months=body.months,
+        payment_url=validated_payment_url(body.payment_url),
+        enabled=body.enabled,
+        position=body.position,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise ApiError(
+            "billing_option_exists", "Кнопка для этого срока уже существует", 409
+        ) from None
+    return billing_option_json(row)
+
+
+@router.put("/v1/admin/billing-options/{option_id}")
+async def update_billing_option(
+    option_id: UUID,
+    body: BillingOptionBody,
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+):
+    row = await db.get(BillingPaymentOption, option_id)
+    if row is None:
+        raise ApiError("billing_option_not_found", "Кнопка не найдена", 404)
+    row.label = " ".join(body.label.split())
+    row.months = body.months
+    row.payment_url = validated_payment_url(body.payment_url)
+    row.enabled = body.enabled
+    row.position = body.position
+    row.updated_at = datetime.now(UTC)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise ApiError(
+            "billing_option_exists", "Кнопка для этого срока уже существует", 409
+        ) from None
+    return billing_option_json(row)
+
+
+@router.delete("/v1/admin/billing-options/{option_id}")
+async def delete_billing_option(
+    option_id: UUID,
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+):
+    row = await db.get(BillingPaymentOption, option_id)
+    if row is None:
+        raise ApiError("billing_option_not_found", "Кнопка не найдена", 404)
+    await db.delete(row)
+    await db.commit()
+    return {"deleted": True}
 
 
 @router.get("/v1/admin/dashboard")

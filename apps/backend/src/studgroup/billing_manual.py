@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 
@@ -17,10 +18,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.billing_plans import extended_paid_until, price_quote
 from studgroup.bot_admin import enqueue, enqueue_once
-from studgroup.models import Group, GroupBankOrder, StartSession
+from studgroup.models import BillingPaymentOption, Group, GroupBankOrder, StartSession
 
 LOGGER = logging.getLogger(__name__)
 SUCCESS_SECONDS = 20
+
+
+@dataclass(frozen=True)
+class CheckoutOption:
+    label: str
+    months: int
+    payment_url: str
+    position: int
 
 
 def owner_id(settings) -> int | None:
@@ -50,8 +59,50 @@ def ready(settings) -> bool:
         and not settings.cutover_read_only
         and settings.telegram_bot_token
         and owner_id(settings) is not None
-        and all(payment_link(settings, months) for months in (1, 2, 3, 4))
     )
+
+
+def payment_link_value(value: str) -> str | None:
+    parsed = urlsplit((value or "").strip())
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        return None
+    return value.strip()
+
+
+async def payment_options(db, settings) -> list[CheckoutOption]:
+    """Owner-managed buttons, with environment links retained as a migration fallback."""
+    stored = (
+        await db.scalars(
+            select(BillingPaymentOption).order_by(
+                BillingPaymentOption.position, BillingPaymentOption.months
+            )
+        )
+    ).all()
+    if stored:
+        return [
+            CheckoutOption(row.label, row.months, row.payment_url, row.position)
+            for row in stored
+            if row.enabled and payment_link_value(row.payment_url)
+        ]
+    result = []
+    for months in (1, 2, 3, 4):
+        url = payment_link(settings, months)
+        if url:
+            quote = price_quote(uuid.UUID(int=0), months)
+            result.append(
+                CheckoutOption(f"{months} мес. · {quote.amount_rub:,} ₽", months, url, months)
+            )
+    return result
+
+
+async def checkout_ready(db, settings) -> bool:
+    return ready(settings) and bool(await payment_options(db, settings))
 
 
 async def create_order(db, settings, *, group_id, buyer_id, months):
@@ -64,8 +115,10 @@ async def create_order(db, settings, *, group_id, buyer_id, months):
     if not member or member[1].id != group_id:
         return None
     quote = price_quote(group_id, months)
-    url = payment_link(settings, months)
-    if not url:
+    option = next(
+        (row for row in await payment_options(db, settings) if row.months == months), None
+    )
+    if option is None:
         return None
     now = datetime.now(UTC)
     order = GroupBankOrder(
@@ -74,7 +127,7 @@ async def create_order(db, settings, *, group_id, buyer_id, months):
         payer_telegram_id=buyer_id,
         months=quote.months,
         amount_rub=quote.amount_rub,
-        payment_url=url,
+        payment_url=option.payment_url,
         status="pending",
         created_at=now,
         cleanup_done=False,
