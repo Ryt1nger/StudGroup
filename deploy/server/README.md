@@ -149,3 +149,30 @@ verify four actual Alfa URLs correspond to 800/1600/2400/3200 RUB, set
 `BILLING_ENABLED=true`. Keep `BILLING_ENFORCE_ACCESS=false`
 until payment E2E is verified. Delivery does not happen just because
 the GitHub commit exists: the VPS must be running the updated release.
+
+
+## Autonomous SDO worker
+
+VPS is the only default SDO executor. Keep the repository variable
+`RANEPA_EXECUTION_BACKEND` unset (or set to `vps`). The legacy GitHub runner
+is opt-in recovery only: stop and verify the VPS worker before selecting
+`github`, and finish/cancel old runner jobs before starting VPS again.
+Do not run both old binaries at once. Updated workers also serialize claims
+through PostgreSQL and honor the existing active job lease.
+
+The independent worker image uses the same pinned source as API and shared
+`PLAYWRIGHT_BROWSERS_PATH=/opt/playwright`. CI starts Chromium as UID 10001.
+The production worker requires `RANEPA_CRAWL_ENABLED=true`, verified legal
+approval and university access, existing YDB and Fernet credentials, and
+the correct production PostgreSQL project. Do not increase paid limits to
+work around a failure. Existing per-day SQL reservations and CAPTCHA guard
+remain authoritative. The autonomous local allowance resets at UTC midnight
+and never exceeds either configured limit.
+
+After deployment, inspect `docker compose -f deploy/server/compose.yml ps -a`
+and worker logs. The worker marks a local heartbeat only after preflight
+and completed queue iterations. A CAPTCHA guard pause is not cleared by
+restarting the container. An unhealthy worker needs log inspection; Docker
+Compose restart policy alone does not restart a merely unhealthy container.
+The restricted SSH deploy script installed in /usr/local/sbin must be
+reviewed separately if its contents differ from the repository.

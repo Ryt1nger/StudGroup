@@ -9,13 +9,13 @@ from collections import Counter, defaultdict, deque
 from datetime import UTC, date, datetime, timedelta
 from time import monotonic
 from urllib.parse import urlsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet, InvalidToken
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from studgroup.bot_admin import enqueue_once
@@ -69,6 +69,7 @@ from studgroup.ranepa_materialization import materialize_verified_facts
 from studgroup.ranepa_personal import enrich_personal_links, remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
+from studgroup.ranepa_worker_health import heartbeat
 
 ACCOUNT_TIMEOUT_SECONDS = 600
 MAX_AUTOMATIC_CAPTCHA_ATTEMPTS = 3
@@ -1144,18 +1145,69 @@ async def _collect(
         return "internal"
 
 
+async def autonomous_preflight(engine, settings: Settings):
+    """Read-only checks before claiming accounts or reporting successful startup."""
+    if not legal_ready(settings) or not settings.ranepa_access_approved:
+        raise RuntimeError("ranepa_approval_missing")
+    if not settings.database_url.startswith("postgresql+asyncpg://"):
+        raise RuntimeError("ranepa_postgresql_required")
+    try:
+        Fernet(settings.profile_encryption_key.get_secret_value().encode())
+        store = configured_store(settings)
+        if store is None:
+            raise ValueError
+        # Verify the existing YDB table using a random unused record identifier.
+        await store.get(uuid4())
+    except (ValueError, CredentialStoreUnavailable):
+        raise RuntimeError("ranepa_credential_store_unavailable") from None
+    async with AsyncSession(engine) as db:
+        await db.execute(text("SELECT 1"))
+    await ensure_owner_for_crawl(engine, settings)
+    try:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page()
+                await page.goto("about:blank")
+            finally:
+                await browser.close()
+    except PlaywrightError:
+        raise RuntimeError("ranepa_chromium_unavailable") from None
+
+
+def autonomous_captcha_budget(settings: Settings):
+    """A daily local allowance never exceeds either existing configured ceiling."""
+    return CaptchaBudget(
+        min(settings.ranepa_captcha_max_tasks_per_run, settings.ranepa_captcha_daily_max_tasks)
+    )
+
+
 async def run_forever(settings: Settings):
     if not settings.ranepa_crawl_enabled:
+        log_captcha_stage("autonomous_worker_disabled")
         return
     warn_if_unconfigured(settings)
-    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
+    captcha_budget = autonomous_captcha_budget(settings)
+    budget_day = datetime.now(UTC).date()
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(signum, stop.set)
     engine = create_worker_engine(settings)
     try:
-        await ensure_owner_for_crawl(engine, settings)
+        try:
+            await autonomous_preflight(engine, settings)
+        except Exception as error:  # noqa: BLE001 -- never log SQL, URLs or credentials
+            safe = {
+                "ranepa_approval_missing",
+                "ranepa_postgresql_required",
+                "ranepa_credential_store_unavailable",
+                "ranepa_owner_id_invalid",
+                "ranepa_unique_owner_recipient_required",
+                "ranepa_chromium_unavailable",
+            }
+            log_captcha_stage(str(error) if str(error) in safe else "autonomous_preflight_failed")
+            raise SystemExit(1) from None
         if type(settings.bot_admin_user_id) is int and settings.bot_admin_user_id > 0:
             async with AsyncSession(engine) as db:
                 await enqueue_once(
@@ -1163,27 +1215,35 @@ async def run_forever(settings: Settings):
                     "sendMessage",
                     {
                         "chat_id": settings.bot_admin_user_id,
-                        "text": "✅ SDO-worker запущен автономно. Очередь обрабатывается последовательно.",
+                        "text": "✅ Процесс запущен: SDO / RANEPA. Проверки пройдены.",
                     },
                     f"ranepa-worker-start:{os.getenv('HOSTNAME', 'worker')}:{datetime.now(UTC).isoformat()}",
                 )
                 await db.commit()
+        log_captcha_stage("autonomous_preflight_ok")
+        heartbeat()
         next_prepare_at = 0.0
         while not stop.is_set():
-            today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-            if monotonic() >= next_prepare_at:
-                await prepare_week(engine, today, settings)
-                # Pick up new accounts during the week without rescanning every
-                # member before each browser job.
-                next_prepare_at = monotonic() + 3600
-            status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
+            delay = 30
             try:
-                await asyncio.wait_for(
-                    stop.wait(),
-                    timeout=300
-                    if status in {"idle", "paused"}
-                    else settings.ranepa_crawl_pause_seconds,
+                today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+                utc_day = datetime.now(UTC).date()
+                if utc_day != budget_day:
+                    captcha_budget = autonomous_captcha_budget(settings)
+                    budget_day = utc_day
+                if monotonic() >= next_prepare_at:
+                    await prepare_week(engine, today, settings)
+                    next_prepare_at = monotonic() + 300
+                status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
+                heartbeat()
+                log_captcha_stage(f"autonomous_iteration_{status}")
+                delay = (
+                    60 if status in {"idle", "paused"} else settings.ranepa_crawl_pause_seconds
                 )
+            except Exception as error:  # noqa: BLE001 -- leave SQL leases to recover
+                log_captcha_stage("autonomous_iteration_failed_" + type(error).__name__)
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=delay)
             except TimeoutError:
                 pass
     finally:
