@@ -87,9 +87,9 @@ async def run_json(db, row):
     return {
         "id": str(row.id),
         "state": row.state,
-        "requested_at": row.requested_at,
-        "started_at": row.started_at,
-        "finished_at": row.finished_at,
+        "requested_at": utc(row.requested_at) if row.requested_at else None,
+        "started_at": utc(row.started_at) if row.started_at else None,
+        "finished_at": utc(row.finished_at) if row.finished_at else None,
         "found": row.found_count,
         "queued": row.queued_count,
         "completed": succeeded + failed,
