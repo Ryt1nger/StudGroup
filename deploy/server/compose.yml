@@ -67,6 +67,21 @@ services:
         condition: service_healthy
     mem_limit: 128m
 
+  ranepa-worker:
+    build:
+      context: ../../apps/backend
+      dockerfile: Dockerfile.ranepa-worker
+    image: studgroup-ranepa-worker:${STUDGROUP_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: /etc/studgroup/backend.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [internal]
+    mem_limit: 1400m
+
 networks:
   internal:
 

@@ -1,0 +1,7 @@
+FROM studgroup-api:latest
+
+USER root
+RUN python -m playwright install --with-deps chromium
+
+USER studgroup
+CMD ["python", "-m", "studgroup.ranepa_worker"]
