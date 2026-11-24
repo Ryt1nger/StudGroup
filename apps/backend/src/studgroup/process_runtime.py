@@ -29,6 +29,7 @@ ERROR_CODES = {
     "iteration_failed",
     "heartbeat_missed",
     "captcha_guard_paused",
+    "scheduler_paused",
 }
 STAGES = {"preflight", "iteration", "watchdog"}
 HEARTBEAT_TIMEOUT = {
@@ -131,6 +132,8 @@ class ProcessGate:
         self.poll_interval = poll_interval
         self.last_poll = 0.0
         self.intent = None
+        self.probe_retry_at = 0.0
+        self.probe_generation = None
 
     async def _report(self, generation, status, *, code=None, stage=None, fresh_start=False):
         if await report_process(
@@ -158,11 +161,16 @@ class ProcessGate:
                 await self._report(intent.generation, "stopped")
             return None
         if self.ready_generation != intent.generation:
+            if self.probe_generation == intent.generation and monotonic() < self.probe_retry_at:
+                return None
+            self.probe_generation = intent.generation
             code = await self.probe() if self.probe is not None else None
             if code is not None:
+                self.probe_retry_at = monotonic() + 30
                 if self._due(intent.generation, "error"):
                     await self._report(intent.generation, "error", code=code, stage="preflight")
                 return None
+            self.probe_retry_at = 0.0
             self.ready_generation = intent.generation
         return intent.generation
 
@@ -218,7 +226,7 @@ async def watchdog_once(engine, settings, now=None):
             pending_start = row.enabled is True and row.generation != row.applied_generation
             if pending_start:
                 reference = row.requested_at
-            elif row.status == "running":
+            elif row.status == "running" or (row.status == "error" and row.enabled is not False):
                 reference = row.heartbeat_at
             else:
                 continue

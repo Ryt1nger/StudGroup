@@ -1071,7 +1071,11 @@ async def deliver(engine, settings, *, request=None, control_only=False):
         except (httpx.HTTPError, ValueError):
             pass
         row.state = (
-            "sent" if ok else "failed" if row.attempts >= 5 and not testing_update and not control_only else "pending"
+            "sent"
+            if ok
+            else "failed"
+            if row.attempts >= 5 and not testing_update and not control_only
+            else "pending"
         )
         row.lease_until = None
         row.available_at = now + timedelta(seconds=min(60, row.attempts * 10))
@@ -1092,7 +1096,12 @@ async def delivery_loop(engine, settings, *, workers=1):
     from studgroup.process_runtime import ProcessGate, telegram_health
 
     gate = ProcessGate(
-        engine, settings, "telegram_outbox", True, lambda: telegram_health(settings), poll_interval=1
+        engine,
+        settings,
+        "telegram_outbox",
+        True,
+        lambda: telegram_health(settings),
+        poll_interval=1,
     )
     # A control request stops new batches; already claimed SQL rows finish normally.
     async with httpx.AsyncClient(timeout=10, trust_env=False, follow_redirects=False) as client:

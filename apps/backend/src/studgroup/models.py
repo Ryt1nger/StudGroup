@@ -1561,6 +1561,7 @@ class BackgroundProcess(Base):
     error_stage: Mapped[str | None] = mapped_column(String(32))
     requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+
 class UrgentSDORun(Base):
     """Owner-requested account snapshot and aggregate full-run progress."""
 

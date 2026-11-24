@@ -330,12 +330,29 @@ async def flush_incidents(engine, config, transport=None):
 
 
 async def sweep_once(config=None, provider=None):
+    from studgroup.process_runtime import ai_health, read_intent, report_process
+
     config = config or settings
     engine = create_async_engine(config.database_url, pool_pre_ping=True)
     try:
-        await purge_expired_analysis_outcomes(engine)
-        status = await dispatch_next(engine, config, provider)
-        await flush_incidents(engine, config)
+        intent = await read_intent(engine, "ai", True)
+        if not intent.enabled:
+            await report_process(engine, config, "ai", intent.generation, "stopped")
+            status = "paused"
+        elif not (await read_intent(engine, "scheduler", True)).enabled:
+            status = "paused"
+        else:
+            code = await ai_health(config) if provider is None else None
+            if code:
+                await report_process(
+                    engine, config, "ai", intent.generation, "error", code=code, stage="preflight"
+                )
+                status = "disabled"
+            else:
+                await purge_expired_analysis_outcomes(engine)
+                status = await dispatch_next(engine, config, provider)
+                await report_process(engine, config, "ai", intent.generation, "running")
+                await flush_incidents(engine, config)
         return {"status": status, "checked_at": datetime.now(UTC).isoformat()}
     finally:
         await engine.dispose()

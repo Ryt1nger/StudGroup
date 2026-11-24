@@ -467,7 +467,8 @@ async def background_processes(
         or settings.billing_enabled
     )
     defaults = {
-        "ai": settings.processing_mode == "embedded" or settings.cabinet_schedule_background_enabled,
+        "ai": settings.processing_mode == "embedded"
+        or settings.cabinet_schedule_background_enabled,
         "sdo": settings.ranepa_crawl_enabled,
         "telegram_outbox": delivery_configured,
         "scheduler": delivery_configured or settings.billing_enabled,

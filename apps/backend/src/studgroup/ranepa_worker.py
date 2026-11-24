@@ -1225,7 +1225,10 @@ async def run_forever(settings: Settings):
                     else:
                         await gate.succeeded(generation)
                     delay = (
-                        15 if status == "idle" else 300 if status == "paused"
+                        15
+                        if status == "idle"
+                        else 300
+                        if status == "paused"
                         else settings.ranepa_crawl_pause_seconds
                     )
             except Exception:  # noqa: BLE001 -- durable queue and safe diagnostics

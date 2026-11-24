@@ -48,9 +48,7 @@ async def eligible_candidates(db, settings, *, pilot_group_id=None, pilot_user_i
             continue
         subgroups = (
             await db.scalars(
-                select(MemberSubgroup.subgroup_id).where(
-                    MemberSubgroup.membership_id == member.id
-                )
+                select(MemberSubgroup.subgroup_id).where(MemberSubgroup.membership_id == member.id)
             )
         ).all()
         candidates.append(CrawlCandidate(group.id, member.user_id, frozenset(subgroups)))
@@ -103,9 +101,7 @@ async def run_json(db, row):
 
 
 async def latest_run(db):
-    row = await db.scalar(
-        select(UrgentSDORun).order_by(UrgentSDORun.requested_at.desc()).limit(1)
-    )
+    row = await db.scalar(select(UrgentSDORun).order_by(UrgentSDORun.requested_at.desc()).limit(1))
     return await run_json(db, row) if row is not None else None
 
 
@@ -122,9 +118,7 @@ async def urgent_requested(engine):
 async def active_run(engine):
     async with AsyncSession(engine) as db:
         return (
-            await db.scalar(
-                select(UrgentSDORun.id).where(UrgentSDORun.state.in_(ACTIVE)).limit(1)
-            )
+            await db.scalar(select(UrgentSDORun.id).where(UrgentSDORun.state.in_(ACTIVE)).limit(1))
             is not None
         )
 

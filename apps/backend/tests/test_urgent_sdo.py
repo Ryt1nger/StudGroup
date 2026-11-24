@@ -72,9 +72,7 @@ def test_urgent_uses_existing_queue_without_bypassing_cooldown(client, monkeypat
             assert await claim_next(db, now=now) is None
             job = await claim_next(db, now=now + timedelta(hours=7))
             assert job.id == job_id
-            assert await finish(
-                db, job.id, job.group_id, job.user_id, now=now + timedelta(hours=7)
-            )
+            assert await finish(db, job.id, job.group_id, job.user_id, now=now + timedelta(hours=7))
             await db.commit()
         await finalize_urgent(engine, settings)
 
