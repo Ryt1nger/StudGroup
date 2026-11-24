@@ -51,6 +51,7 @@ def _shared_row(
     # Inventories belong to the source account. Shared rows expose only the
     # chosen verified lesson link, never all private course meeting candidates.
     result.pop("link_candidates", None)
+    result.pop("direct_link_run", None)
     if result.get("link_state") != "matched" or not (
         result.get("online_url") and _safe_link(result["online_url"])
     ):

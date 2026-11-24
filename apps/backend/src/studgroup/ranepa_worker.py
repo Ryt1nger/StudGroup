@@ -30,6 +30,7 @@ from studgroup.models import (
 )
 from studgroup.process_runtime import ProcessGate, read_intent
 from studgroup.ranepa_browser import (
+    BrowserResult,
     browser_trace,
     read_month,
     read_week,
@@ -62,12 +63,14 @@ from studgroup.ranepa_crawl_notifications import (
 from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_failure_diagnostics import diagnose_browser_state, diagnose_exception
+from studgroup.ranepa_group_links import active_series_for_job, reuse_common_links
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_manual_captcha import offer_manual_captcha
 from studgroup.ranepa_materialization import materialize_verified_facts
 from studgroup.ranepa_personal import enrich_personal_links, remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_retention import prune_expired_schedule
+from studgroup.ranepa_schedule import WeekSnapshot
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
 from studgroup.ranepa_worker_health import heartbeat
 from studgroup.urgent_sdo import active_run, eligible_candidates, finalize_urgent, prepare_urgent
@@ -174,6 +177,7 @@ async def collect_bounded(
     stats: CrawlRunStats | None = None,
     on_captcha=None,
     manual_captcha=None,
+    series_id=None,
 ):
     token = browser_trace.set(trace)
     try:
@@ -197,6 +201,7 @@ async def collect_bounded(
                 stats=stats,
                 on_captcha=on_captcha,
                 manual_captcha=manual_captcha,
+                series_id=series_id,
             )
     except TimeoutError:
         if trace is not None:
@@ -296,6 +301,7 @@ async def _process_one(
                 log_captcha_stage("pilot_queue_idle")
             return "idle"
         job_id, group_id, user_id, attempt = (job.id, job.group_id, job.user_id, job.attempts)
+        series_id = await active_series_for_job(db, job_id, attempt)
         if processed_user_ids is not None:
             # One owner-authorized account per rescan, even with two memberships.
             processed_user_ids.add(user_id)
@@ -522,6 +528,7 @@ async def _process_one(
                 captcha_daily_limit=settings.ranepa_captcha_daily_max_tasks,
                 trace=trace,
                 stats=account_stats,
+                series_id=series_id,
                 on_captcha=on_captcha
                 if settings.ranepa_crawl_notify_captcha_seen_enabled
                 and not settings.ranepa_manual_captcha_enabled
@@ -666,6 +673,7 @@ async def _collect(
     stats: CrawlRunStats | None = None,
     on_captcha=None,
     manual_captcha=None,
+    series_id=None,
 ):
     try:
         async with async_playwright() as playwright:
@@ -1032,6 +1040,40 @@ async def _collect(
                     if stats is not None:
                         stats.saved_weeks += 1
                         stats.saved_lessons += len(actual)
+                    enrichment_result = result
+                    if series_id is not None:
+                        try:
+                            async with AsyncSession(engine) as db:
+                                reused = await reuse_common_links(
+                                    db, group_id, user_id, week_start, series_id
+                                )
+                                await db.commit()
+                            if reused:
+                                if trace is not None:
+                                    trace.record("sdo_common_links_reused")
+                                if stats is not None:
+                                    stats.saved_sdo_links += len(reused)
+                                remaining = tuple(
+                                    lesson
+                                    for lesson in result.snapshot.lessons
+                                    if (
+                                        lesson.day.isoformat(),
+                                        lesson.starts.isoformat(),
+                                        lesson.ends.isoformat(),
+                                        lesson.subject,
+                                        lesson.teacher,
+                                        lesson.room,
+                                    )
+                                    not in reused
+                                )
+                                enrichment_result = BrowserResult(
+                                    "preview_only",
+                                    WeekSnapshot(code, week_start, week_end, remaining),
+                                )
+                                if not any(lesson.room == "СДО" for lesson in remaining):
+                                    continue
+                        except Exception:  # noqa: BLE001 -- never skip on uncertain evidence
+                            log_captcha_stage("sdo_peer_reuse_unavailable")
                     if monotonic() >= sdo_discovery_deadline:
                         # The week was committed. Continue other weeks without
                         # spending the remaining account budget on optional URLs.
@@ -1081,7 +1123,7 @@ async def _collect(
                             )
                         ):
                             resolution = await resolve_sdo_exits(
-                                context, result, login, password, **exit_kwargs
+                                context, enrichment_result, login, password, **exit_kwargs
                             )
                         links, link_states, courses = resolution
                         # All vetted candidates are retained privately even when
@@ -1109,6 +1151,7 @@ async def _collect(
                                     courses=courses,
                                     link_states=link_states,
                                     candidates=candidates,
+                                    verified_run_id=series_id,
                                 )
                                 await db.commit()
                         if stats is not None:

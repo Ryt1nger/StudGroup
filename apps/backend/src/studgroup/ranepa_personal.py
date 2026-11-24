@@ -464,6 +464,8 @@ async def enrich_personal_links(
     link_states=None,
     candidates=None,
     checked_at=None,
+    verified_run_id=None,
+    peer_reused=False,
 ):
     """Update link fields only after schedule commit, in a separate transaction.
 
@@ -494,6 +496,8 @@ async def enrich_personal_links(
         ):
             continue
         url = links.get(key)
+        direct_url = url
+        row.pop("direct_link_run", None)
         course = courses.get(key) or row.get("course_url")
         state = link_states.get(key, "matched" if url else "not_checked")
         cached = cached_links.get(_sdo_cache_key(row), {}) if row["room"] == "СДО" else {}
@@ -568,6 +572,11 @@ async def enrich_personal_links(
         row["course_url"] = course or row.get("course_url")
         row["link_state"] = state
         row["links_checked_at"] = checked
+        if peer_reused and url is not None:
+            row["link_source"] = "cached"
+        elif verified_run_id is not None and direct_url and direct_url == url and not link_cached:
+            if row.get("source_scope") not in {"common", "subgroup"}:
+                row["direct_link_run"] = str(verified_run_id)
     encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
     updated = stored.data_digest != sha256(encoded.encode()).hexdigest()
     stored.rows_json = encoded

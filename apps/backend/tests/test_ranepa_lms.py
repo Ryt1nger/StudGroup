@@ -330,13 +330,12 @@ def test_explicitly_one_off_undated_link_does_not_become_permanent():
     assert choice.state == "timing_unverified"
 
 
-
 def test_teacher_sections_preserve_scope_and_match_permanent_lecture():
     html = (
         '<main class="course-content"><section class="course-section">'
         "<h3>Грибков И.В.</h3>"
         '<a href="/mod/url/view.php?id=201">Постоянная ссылка для лекционных занятий и занятий ДОТ</a>'
-        "</section><section class=\"course-section\">"
+        '</section><section class="course-section">'
         "<h3>Ильинова А.И.</h3>"
         '<a href="/mod/url/view.php?id=202">Постоянная ссылка для практических занятий</a>'
         "</section></main>"
@@ -350,13 +349,16 @@ def test_teacher_sections_preserve_scope_and_match_permanent_lecture():
         lesson_type="Лекция",
     )
     assert choice.url == "https://lms.ranepa.ru/mod/url/view.php?id=201"
-    assert select_lesson_link(
-        links,
-        teacher="Грибков Иван Владимирович",
-        group_label="Э-ОБ26-СГЯ-пр-179",
-        day=date(2026, 11, 24),
-        lesson_type="Практическое занятие",
-    ).url is None
+    assert (
+        select_lesson_link(
+            links,
+            teacher="Грибков Иван Владимирович",
+            group_label="Э-ОБ26-СГЯ-пр-179",
+            day=date(2026, 11, 24),
+            lesson_type="Практическое занятие",
+        ).url
+        is None
+    )
 
 
 def test_dashboard_matches_course_not_unrelated_subject():
@@ -371,3 +373,21 @@ def test_dashboard_matches_course_not_unrelated_subject():
         "https://lms.ranepa.ru/course/view.php?id=88849",
     )
     assert not matching_courses(courses, "Философия")
+
+
+def test_scoped_practical_link_and_old_dated_link_are_distinguished():
+    links = course_links(
+        '<main class="course-content"><section class="course-section">'
+        "<h3>Ильинова А.И.</h3>"
+        '<a href="/mod/url/view.php?id=202">Ссылка для практических занятий</a>'
+        '<a href="/mod/url/view.php?id=203">Практическое занятие 14 сентября</a>'
+        "</section></main>"
+    )
+    choice = select_lesson_link(
+        links,
+        teacher="Ильинова Анна Ивановна",
+        group_label="1 курс-2026г.",
+        day=date(2026, 11, 24),
+        lesson_type="Практические занятия",
+    )
+    assert choice.url == "https://lms.ranepa.ru/mod/url/view.php?id=202"

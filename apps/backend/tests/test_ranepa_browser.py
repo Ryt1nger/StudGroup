@@ -778,7 +778,6 @@ def test_rate_limit_is_not_retried_as_connection_failure():
     assert page.calls == 1
 
 
-
 def test_verified_exit_cache_reuses_course_but_rematches_teacher(monkeypatch):
     from studgroup.ranepa_lms import LinkCandidate
 

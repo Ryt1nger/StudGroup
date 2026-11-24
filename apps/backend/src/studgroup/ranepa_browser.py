@@ -17,6 +17,7 @@ from studgroup.ranepa_failure_diagnostics import (
 )
 from studgroup.ranepa_link_states import LinkState
 from studgroup.ranepa_lms import (
+    MAX_CANDIDATES,
     MAX_DETAIL_PAGES,
     LinkChoice,
     course_detail_pages,
@@ -514,7 +515,7 @@ async def _read_course_candidates(page, context):
             LOGGER.debug("sdo_nested_page_unavailable reason=%s", type(error).__name__)
         finally:
             await child.close()
-    return tuple(found.values())[:80], True
+    return tuple(found.values())[:MAX_CANDIDATES], True
 
 
 async def _shared_moodle_redirect(context, candidates):
@@ -572,6 +573,7 @@ async def _load_moodle_dashboard(context, login, password):
     """Authenticate to Moodle separately; do not treat an LK session as LMS login."""
     page = await context.new_page()
     try:
+        _login_stage("lms_dashboard_requested")
         await page.goto("https://lms.ranepa.ru/my/", wait_until="domcontentloaded", timeout=30000)
         login_attempted = False
         courses = {}
@@ -584,6 +586,7 @@ async def _load_moodle_dashboard(context, login, password):
                     await page.wait_for_timeout(250)
                     continue
                 login_attempted = True
+                _login_stage("lms_login_form")
                 username = page.locator('input[name="username"]')
                 secret = page.locator('input[name="password"]')
                 if await username.count() != 1 or await secret.count() != 1:
@@ -591,6 +594,7 @@ async def _load_moodle_dashboard(context, login, password):
                 await username.fill(login, timeout=8000)
                 await secret.fill(password, timeout=8000)
                 await page.locator("#loginbtn").click(timeout=8000)
+                _login_stage("lms_login_submitted")
                 continue
             if parsed.path in {"/my/", "/my/index.php", "/my/courses.php", "/"}:
                 courses.update(dashboard_courses(await page.content()))
@@ -612,6 +616,8 @@ async def _load_moodle_dashboard(context, login, password):
                 break
             courses.update(dashboard_courses(await page.content()))
             await page.wait_for_timeout(250)
+        if courses:
+            _login_stage("lms_courses_loaded")
         return courses, None if courses else LinkState.COURSE_CONTENT_UNAVAILABLE
     except Exception:  # noqa: BLE001 -- no private page details in diagnostics
         return {}, LinkState.NAVIGATION_ERROR
@@ -655,6 +661,7 @@ async def resolve_moodle_courses(
         if course not in course_cache:
             page = await context.new_page()
             try:
+                _login_stage("lms_course_requested")
                 await page.goto(course, wait_until="domcontentloaded", timeout=15000)
                 parsed = urlsplit(page.url)
                 if parsed.hostname != "lms.ranepa.ru" or parsed.path != "/course/view.php":

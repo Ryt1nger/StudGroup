@@ -6,7 +6,7 @@ from datetime import date, time
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 from studgroup.online_lessons import joining_url
-from studgroup.ranepa_cabinet import Document
+from studgroup.ranepa_cabinet import MONTHS, Document
 from studgroup.ranepa_link_states import LinkState
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import normalized
@@ -22,6 +22,7 @@ EXPLICITLY_TEMPORARY = re.compile(
 )
 INLINE_JOIN = re.compile(r"https://[^\s<>\"']+", re.IGNORECASE)
 MAX_CANDIDATES = 500
+WORD_DATE = re.compile(r"(?<!\d)(\d{1,2})\s+(" + "|".join(MONTHS) + r")\b")
 MAX_DETAIL_PAGES = 16
 LMS_MEETING_PATHS = frozenset(
     {"/mod/url/view.php", "/mod/mtslinkrnhgs/view.php", "/mod/bigbluebuttonbn/view.php"}
@@ -120,21 +121,20 @@ def _teacher_section(ancestors):
             or parent.has("section")
         ):
             continue
-        for child in parent.children:
-            headings = [
-                heading
-                for tag in ("h2", "h3", "h4", "h5", "summary")
-                for heading in child.tags(tag)
-                if TEACHER_HEADING.fullmatch(heading.text().strip())
-            ]
-            if len(headings) == 1:
-                return headings[0].text().strip()
+        headings = [
+            heading
+            for tag in ("h2", "h3", "h4", "h5", "summary")
+            for heading in parent.tags(tag)
+            if TEACHER_HEADING.fullmatch(heading.text().strip())
+        ]
+        if len(headings) == 1:
+            return headings[0].text().strip()
     return ""
 
 
 def _with_teacher(label, ancestors):
     teacher = _teacher_section(ancestors)
-    if teacher and normalized(teacher) not in normalized(label):
+    if teacher:
         return f"{teacher} | {label}"[:500]
     return label[:500]
 
@@ -251,7 +251,7 @@ def matching_courses(courses, subject):
 
 def _group_token(label: str) -> str:
     # Tooltip labels append faculty after " / "; match exact stream identity.
-    return normalized(label.split(" / ", 1)[0]).replace(" ", "")
+    return normalized(label.split(" / ", 1)[0]).replace(" ", "").replace("_", "")
 
 
 def _lesson_dates(label: str, *, year: int) -> set[date]:
@@ -270,6 +270,11 @@ def _lesson_dates(label: str, *, year: int) -> set[date]:
                 found.add(date(year, month, int(day_text.strip())))
             except ValueError:
                 continue
+    for match in WORD_DATE.finditer(normalized(label)):
+        try:
+            found.add(date(year, MONTHS[match[2]], int(match[1])))
+        except ValueError:
+            continue
     return found
 
 
@@ -294,6 +299,7 @@ def select_lesson_link(
     identity_matches = []
     undated = []
     teacher_section_matches = []
+    teacher_section_general = []
     kind = normalized(lesson_type)
     for link in links:
         label = normalized(link.label)
@@ -307,6 +313,12 @@ def select_lesson_link(
         section_teacher = "|" in link.label and TEACHER_HEADING.fullmatch(
             link.label.split("|", 1)[0].strip()
         )
+        if section_teacher:
+            expected = normalized(teacher).split()
+            observed = re.findall(r"[а-я]\.", normalized(link.label.split("|", 1)[0]))
+            if len(expected) >= 3 and len(observed) >= 2:
+                if [part[0] for part in expected[1:3]] != [part[0] for part in observed[:2]]:
+                    continue
         explicit_stream = re.search(r"об\d{2}|сгя|\bгрупп\w*|\bпоток\w*", label)
         is_lecture = "лекц" in label
         is_practical = "практ" in label
@@ -332,6 +344,8 @@ def select_lesson_link(
         if not exact_stream:
             if day in found_dates or (not found_dates and "постоянн" in label):
                 teacher_section_matches.append(link)
+            elif not found_dates and not EXPLICITLY_TEMPORARY.search(label):
+                teacher_section_general.append(link)
             continue
         if found_dates and day in found_dates:
             dated.append(link)
@@ -353,8 +367,8 @@ def select_lesson_link(
         return LinkChoice(
             LinkState.MATCHED, next(iter(undated_unique)), tuple(undated_unique.values())
         )
-    if not identity_matches or teacher_section_matches:
-        scoped = {link.url: link for link in teacher_section_matches}
+    if teacher_section_matches or teacher_section_general:
+        scoped = {link.url: link for link in teacher_section_matches or teacher_section_general}
         if len(scoped) == 1:
             return LinkChoice(LinkState.MATCHED, next(iter(scoped)), tuple(scoped.values()))
         if scoped:

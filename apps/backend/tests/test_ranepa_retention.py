@@ -65,9 +65,10 @@ def test_expiry_preserves_recent_and_future_weeks(tmp_path):
             await prune_expired_schedule(engine, now.date())
             async with AsyncSession(engine) as db:
                 for model in (GroupScheduleSnapshot, RanepaPersonalSnapshot):
-                    assert list(
-                        await db.scalars(select(model.week_start).order_by(model.week_start))
-                    ) == kept
+                    assert (
+                        list(await db.scalars(select(model.week_start).order_by(model.week_start)))
+                        == kept
+                    )
         finally:
             await engine.dispose()
 
