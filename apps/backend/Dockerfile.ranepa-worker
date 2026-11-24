@@ -1,7 +1,18 @@
-FROM studgroup-api:latest
-
-USER root
-RUN python -m playwright install --with-deps chromium
-
+# Self-contained image, built from the same pinned backend source as API.
+# Never inherit an unversioned local studgroup-api:latest image.
+FROM python:3.13-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+ENV RANEPA_WORKER_HEARTBEAT_FILE=/tmp/studgroup-sdo-heartbeat
+RUN pip install --no-cache-dir uv==0.11.12
+COPY pyproject.toml uv.lock /app/
+COPY src /app/src
+RUN uv sync --frozen --no-dev --no-editable && useradd --uid 10001 --create-home studgroup
+ENV PATH="/app/.venv/bin:$PATH"
+COPY alembic.ini /app/
+COPY migrations /app/migrations
+RUN python -m playwright install --with-deps chromium && chmod -R a+rX /opt/playwright
 USER studgroup
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 CMD ["python", "-m", "studgroup.ranepa_worker_health"]
 CMD ["python", "-m", "studgroup.ranepa_worker"]

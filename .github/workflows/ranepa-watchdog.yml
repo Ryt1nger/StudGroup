@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   missing-slot-check:
-    if: github.ref == 'refs/heads/main' && vars.RANEPA_SCHEDULE_ENABLED == 'true'
+    if: github.ref == 'refs/heads/main' && vars.RANEPA_EXECUTION_BACKEND == 'github' && vars.RANEPA_SCHEDULE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
