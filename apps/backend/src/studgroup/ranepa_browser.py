@@ -689,10 +689,13 @@ async def resolve_moodle_courses(
         empty_reads = dashboard_cache.setdefault("empty_course_reads", {})
         if course not in course_cache:
             empty_reads.setdefault(course, 0)
-        elif not course_cache[course][0] and empty_reads.get(course, 0) < 1:
-            if course not in attempted_courses:
-                course_cache.pop(course)
-                empty_reads[course] = 1
+        elif (
+            not course_cache[course][0]
+            and empty_reads.get(course, 0) < 1
+            and course not in attempted_courses
+        ):
+            course_cache.pop(course)
+            empty_reads[course] = 1
         if course not in course_cache:
             attempted_courses.add(course)
             page = await context.new_page()
