@@ -782,96 +782,115 @@ async def _collect(
                         log_captcha_stage("motion_not_submitted")
                     return submitted
 
-                if trace is not None:
-                    trace.record("month_requested")
-                month = await read_month(page, login, password, code, today.year, today.month)
-                if month.status == "captcha_required":
-                    captcha_seen = True
+                async def read_verified_month(year, month_number):
+                    nonlocal captcha_seen, captcha_schedule_recovered
                     if trace is not None:
-                        trace.mark_captcha("month")
-                    log_captcha_stage("challenge_detected_month")
-                    if on_captcha is not None:
-                        await on_captcha("month")
-                    while (
-                        month.status == "captcha_required"
-                        and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
-                        and not captcha_solver_unavailable
-                    ):
-                        submitted = await solve_once(page, "month")
-                        if submitted:
-                            log_captcha_stage(await wait_for_captcha_resolution(page))
-                        if captcha_diagnostic_only or captcha_solver_unavailable:
-                            break
-                        # Read the real site again before considering another
-                        # paid request. Mouse motion is not proof of success.
-                        log_captcha_stage("schedule_recheck_after_captcha_month")
-                        if trace is not None:
-                            trace.record("month_recheck")
-                        month = await read_month(
-                            page, login, password, code, today.year, today.month
-                        )
-                        if month.status == "captcha_required":
-                            log_captcha_stage("challenge_still_present_month")
-                        elif month.status == "preview_only":
-                            captcha_schedule_recovered = True
-                            log_captcha_stage("month_verified_after_challenge")
-                        else:
-                            log_captcha_stage("month_not_verified_after_challenge")
-                if month.status == "captcha_required" and manual_captcha is not None:
-                    log_captcha_stage("owner_fallback_offered_month")
-                    if await manual_captcha(page, captcha_attempts_used):
-                        log_captcha_stage(await wait_for_captcha_resolution(page))
-                        month = await read_month(
-                            page, login, password, code, today.year, today.month
-                        )
-                        if month.status == "preview_only":
-                            captcha_schedule_recovered = True
-                            log_captcha_stage("month_verified_after_owner_solution")
-                if month.status != "preview_only":
+                        trace.record("month_requested")
+                    month = await read_month(page, login, password, code, year, month_number)
                     if month.status == "captcha_required":
-                        return "captcha"
-                    if month.status == "identity_unverified":
-                        return "identity_unverified"
-                    if month.status == "login_failed":
+                        captcha_seen = True
                         if trace is not None:
-                            trace.failure_detail = "login_rejected"
-                        return "login_failed"
+                            trace.mark_captcha("month")
+                        log_captcha_stage("challenge_detected_month")
+                        if on_captcha is not None:
+                            await on_captcha("month")
+                        while (
+                            month.status == "captcha_required"
+                            and captcha_attempts_used < MAX_AUTOMATIC_CAPTCHA_ATTEMPTS
+                            and not captcha_solver_unavailable
+                        ):
+                            submitted = await solve_once(page, "month")
+                            if submitted:
+                                log_captcha_stage(await wait_for_captcha_resolution(page))
+                            if captcha_diagnostic_only or captcha_solver_unavailable:
+                                break
+                            # Read the real site again before considering another
+                            # paid request. Mouse motion is not proof of success.
+                            log_captcha_stage("schedule_recheck_after_captcha_month")
+                            if trace is not None:
+                                trace.record("month_recheck")
+                            month = await read_month(
+                                page, login, password, code, year, month_number
+                            )
+                            if month.status == "captcha_required":
+                                log_captcha_stage("challenge_still_present_month")
+                            elif month.status == "preview_only":
+                                captcha_schedule_recovered = True
+                                log_captcha_stage("month_verified_after_challenge")
+                            else:
+                                log_captcha_stage("month_not_verified_after_challenge")
+                    if month.status == "captcha_required" and manual_captcha is not None:
+                        log_captcha_stage("owner_fallback_offered_month")
+                        if await manual_captcha(page, captcha_attempts_used):
+                            log_captcha_stage(await wait_for_captcha_resolution(page))
+                            month = await read_month(
+                                page, login, password, code, year, month_number
+                            )
+                            if month.status == "preview_only":
+                                captcha_schedule_recovered = True
+                                log_captcha_stage("month_verified_after_owner_solution")
+                    if month.status != "preview_only":
+                        if month.status == "captcha_required":
+                            return None, "captcha"
+                        if month.status == "identity_unverified":
+                            return None, "identity_unverified"
+                        if month.status == "login_failed":
+                            if trace is not None:
+                                trace.failure_detail = "login_rejected"
+                            return None, "login_failed"
+                        if trace is not None:
+                            diagnostic = getattr(month, "diagnostic", None) or diagnose_browser_state(
+                                month.status
+                            )
+                            if diagnostic is not None:
+                                trace.mark_diagnostic(diagnostic)
+                        if (
+                            month.status.startswith("cabinet_")
+                            or month.status == "empty_source_requires_review"
+                        ):
+                            if trace is not None:
+                                trace.failure_detail = "month_incomplete"
+                            return None, "parse_failed"
+                        # The login CAPTCHA was observed, but subsequent page
+                        # verification failed. This is NOT proof the site is down.
+                        if captcha_seen:
+                            if trace is not None:
+                                trace.failure_detail = "captcha_unverified"
+                                trace.mark_diagnostic("challenge_pending")
+                            return None, "captcha"
+                        return None, "source_unavailable"
                     if trace is not None:
-                        diagnostic = getattr(month, "diagnostic", None) or diagnose_browser_state(
-                            month.status
-                        )
-                        if diagnostic is not None:
-                            trace.mark_diagnostic(diagnostic)
-                    if (
-                        month.status.startswith("cabinet_")
-                        or month.status == "empty_source_requires_review"
-                    ):
-                        if trace is not None:
-                            trace.failure_detail = "month_incomplete"
-                        return "parse_failed"
-                    # The login CAPTCHA was observed, but subsequent page
-                    # verification failed. This is NOT proof the site is down.
-                    if captcha_seen:
-                        if trace is not None:
-                            trace.failure_detail = "captcha_unverified"
-                            trace.mark_diagnostic("challenge_pending")
-                        return "captcha"
-                    return "source_unavailable"
-                if trace is not None:
-                    trace.record("month_verified")
+                        trace.record("month_verified")
+                    return month.cards, None
+
                 # One authenticated account, many weeks: do not re-parse the
                 # same Moodle course for every occurrence of the same lesson.
                 course_candidates_cache = {}
                 observed_sdo_candidates = set()
                 sdo_discovery_deadline = monotonic() + MAX_SDO_SCAN_TOTAL_SECONDS
-                first = date(today.year, today.month, 1)
-                monday = first - timedelta(days=first.weekday())
+                monday = today - timedelta(days=today.weekday())
+                month_cache = {}
                 for offset in range(6):
                     week_start = monday + timedelta(weeks=offset)
+                    week_end = week_start + timedelta(days=6)
+                    # A boundary week must be checked against both calendar months.
+                    # Read months lazily so a not-yet-published future month cannot
+                    # invalidate already committed earlier weeks.
+                    month_keys = sorted(
+                        {(week_start.year, week_start.month), (week_end.year, week_end.month)}
+                    )
+                    for key in month_keys:
+                        if key not in month_cache:
+                            cards, failure = await read_verified_month(*key)
+                            if failure is not None:
+                                return failure
+                            month_cache[key] = cards
                     expected = [
                         card
-                        for card in month.cards
-                        if week_start <= card.day <= week_start + timedelta(days=6)
+                        for key in month_keys
+                        for card in month_cache[key]
+                        if (card.day.year, card.day.month) == key
+                        and week_start <= card.day <= week_end
                     ]
                     if trace is not None:
                         trace.record("week_requested")
@@ -958,11 +977,7 @@ async def _collect(
                                 trace.failure_detail = "week_unreadable"
                                 trace.record("week_unreadable")
                         else:
-                            actual = [
-                                row
-                                for row in result.snapshot.indexed().values()
-                                if row.day.month == today.month
-                            ]
+                            actual = result.snapshot.indexed().values()
                             if Counter((r.day, r.starts, r.subject) for r in actual) == Counter(
                                 (r.day, r.starts, r.subject) for r in expected
                             ):
