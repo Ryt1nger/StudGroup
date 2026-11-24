@@ -180,11 +180,16 @@ POST /v1/admin/sdo-runs requests a durable full scan; GET returns the latest run
 account counters. The worker takes the snapshot of active, consented accounts with credential
 references, queues them using existing SQL jobs, and observes cooldown and retry restrictions.
 A new request while a run is active returns the same run. A blocked target is not counted as a
-successful attempt. No credential is copied into the new tables. Browser claims share a
-PostgreSQL advisory lock; a lost lock connection cancels the active work and leaves its durable
-lease to recover. Existing subgroup materialization rules are unchanged.
+successful attempt. No credential is copied into the new tables. Browser claims share a PostgreSQL transaction-scoped advisory lock and an existing live
+SQL job lease. This does not require an additional persistent database session. A lost worker's
+lease recovers under the existing retry policy. Existing subgroup materialization rules are unchanged.
 
 Before rollout, apply migrations 0070 and 0071 to the verified production PostgreSQL target.
 The VPS deployment script does not currently run Alembic. Do not merge this change until CI,
 owner-only smoke checks, runtime settings and the migration rollout are verified. Do not point
 migration commands at the historical Supabase projects or change YDB credentials.
+
+Initial group imports are queued in the same SQL transaction as confirmed credential saving.
+Groups without materialization receipts receive priority over regular refreshes. The idle worker
+polls its queue every 15 seconds and discovers newly configured groups at least every 60 seconds
+when idle; active accounts finish first. Existing consent, cooldown and guard still apply.

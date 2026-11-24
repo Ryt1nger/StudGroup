@@ -15,9 +15,8 @@ from zoneinfo import ZoneInfo
 from cryptography.fernet import Fernet, InvalidToken
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.pool import NullPool
 
 from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
@@ -68,6 +67,7 @@ from studgroup.ranepa_materialization import materialize_verified_facts
 from studgroup.ranepa_personal import enrich_personal_links, remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
+from studgroup.ranepa_worker_health import heartbeat
 from studgroup.urgent_sdo import active_run, eligible_candidates, finalize_urgent, prepare_urgent
 
 ACCOUNT_TIMEOUT_SECONDS = 600
@@ -241,45 +241,16 @@ async def prepare_week(
 
 
 async def process_one(engine, settings, today, *, require_scheduler=False, **kwargs):
-    """A dedicated PostgreSQL session serializes all worker browser claims."""
-    if engine.dialect.name != "postgresql":
-        return await _process_one(engine, settings, today, **kwargs)
-    options = database_engine_options(settings)
-    for key in ("pool_size", "max_overflow", "pool_timeout"):
-        options.pop(key, None)
-    lock_engine = create_async_engine(
-        settings.database_url, poolclass=NullPool, isolation_level="AUTOCOMMIT", **options
-    )
-    try:
-        async with lock_engine.connect() as lock:
-            acquired = await lock.scalar(text("SELECT pg_try_advisory_lock(832610070)"))
-            if not acquired:
-                return "idle"
-            try:
-                intent = await read_intent(engine, "sdo", settings.ranepa_crawl_enabled)
-                if not intent.enabled:
-                    return "paused"
-                if require_scheduler and not (await read_intent(engine, "scheduler", True)).enabled:
-                    return "paused"
-                if (kwargs.get("rescan_all") or kwargs.get("pilot_group_id")) and await active_run(
-                    engine
-                ):
-                    return "paused"
-                task = asyncio.create_task(_process_one(engine, settings, today, **kwargs))
-                try:
-                    while not task.done():
-                        done, _ = await asyncio.wait({task}, timeout=10)
-                        if not done:
-                            await asyncio.wait_for(lock.scalar(text("SELECT 1")), timeout=5)
-                    return await task
-                finally:
-                    if not task.done():
-                        task.cancel()
-                        await asyncio.gather(task, return_exceptions=True)
-            finally:
-                await lock.execute(text("SELECT pg_advisory_unlock(832610070)"))
-    finally:
-        await lock_engine.dispose()
+    """Control state plus SQL transaction claim fence and durable browser lease."""
+    if engine.dialect.name == "postgresql":
+        intent = await read_intent(engine, "sdo", settings.ranepa_crawl_enabled)
+        if not intent.enabled:
+            return "paused"
+        if require_scheduler and not (await read_intent(engine, "scheduler", True)).enabled:
+            return "paused"
+        if (kwargs.get("rescan_all") or kwargs.get("pilot_group_id")) and await active_run(engine):
+            return "paused"
+    return await _process_one(engine, settings, today, **kwargs)
 
 
 async def _process_one(
@@ -1168,7 +1139,7 @@ async def _collect(
         return "internal"
 
 
-async def sdo_health(settings: Settings):
+async def sdo_health(engine, settings: Settings):
     if not legal_ready(settings) or not settings.ranepa_access_approved:
         return "approval_missing"
     try:
@@ -1182,27 +1153,41 @@ async def sdo_health(settings: Settings):
     except (ValueError, CredentialStoreUnavailable):
         return "credentials_unavailable"
     try:
+        await ensure_owner_for_crawl(engine, settings)
+    except Exception:  # noqa: BLE001 -- owner lookup must fail closed
+        return "configuration_missing"
+    try:
         async with async_playwright() as playwright:
-            if not os.path.isfile(playwright.chromium.executable_path):
-                return "browser_unavailable"
+            browser = await playwright.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page()
+                await page.goto("about:blank")
+            finally:
+                await browser.close()
     except Exception:  # noqa: BLE001 -- no exception text can leave this probe
         return "browser_unavailable"
     return None
 
 
+def autonomous_captcha_budget(settings: Settings):
+    return CaptchaBudget(
+        min(settings.ranepa_captcha_max_tasks_per_run, settings.ranepa_captcha_daily_max_tasks)
+    )
+
+
 async def run_forever(settings: Settings):
     warn_if_unconfigured(settings)
-    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
+    captcha_budget = autonomous_captcha_budget(settings)
+    budget_day = datetime.now(UTC).date()
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(signum, stop.set)
     engine = create_worker_engine(settings)
     gate = ProcessGate(
-        engine, settings, "sdo", settings.ranepa_crawl_enabled, lambda: sdo_health(settings)
+        engine, settings, "sdo", settings.ranepa_crawl_enabled, lambda: sdo_health(engine, settings)
     )
     try:
-        await ensure_owner_for_crawl(engine, settings)
         next_prepare_at = 0.0
         previous_generation = None
         while not stop.is_set():
@@ -1210,8 +1195,15 @@ async def run_forever(settings: Settings):
             delay = 5
             try:
                 generation = await gate.begin()
+                if generation is None and gate.reported_status == "stopped":
+                    heartbeat()
                 if generation is not None:
+                    heartbeat()
                     today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+                    utc_day = datetime.now(UTC).date()
+                    if utc_day != budget_day:
+                        captcha_budget = autonomous_captcha_budget(settings)
+                        budget_day = utc_day
                     await prepare_urgent(engine, settings, today)
                     if generation != previous_generation or monotonic() >= next_prepare_at:
                         await prepare_week(engine, today, settings, bootstrap=True)
@@ -1221,6 +1213,7 @@ async def run_forever(settings: Settings):
                         engine, settings, today, captcha_budget=captcha_budget
                     )
                     await finalize_urgent(engine, settings)
+                    heartbeat()
                     if status == "paused":
                         await gate.failed(generation, "captcha_guard_paused")
                     else:
