@@ -34,9 +34,7 @@ def upgrade() -> None:
         ),
         sa.Column("user_id", sa.Uuid(), primary_key=True),
         sa.Column("group_id", sa.Uuid(), nullable=False),
-        sa.Column(
-            "job_id", sa.Uuid(), sa.ForeignKey("ranepa_crawl_jobs.id", ondelete="SET NULL")
-        ),
+        sa.Column("job_id", sa.Uuid(), sa.ForeignKey("ranepa_crawl_jobs.id", ondelete="SET NULL")),
         sa.Column("baseline_attempts", sa.Integer(), nullable=False),
         sa.Column("state", sa.String(24), nullable=False),
         sa.Column("failure_code", sa.String(64)),
