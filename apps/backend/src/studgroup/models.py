@@ -1537,3 +1537,26 @@ class BillingPaymentOption(Base):
     position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class BackgroundProcess(Base):
+    """Durable desired state and separately acknowledged worker state."""
+
+    __tablename__ = "background_processes"
+    __table_args__ = (
+        CheckConstraint(
+            "name IN ('ai', 'sdo', 'telegram_outbox', 'scheduler')",
+            name="background_process_name",
+        ),
+    )
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    enabled: Mapped[bool | None] = mapped_column(Boolean)
+    generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    applied_generation: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(24), default="unknown", server_default="unknown")
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_stage: Mapped[str | None] = mapped_column(String(32))
+    requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -38,6 +38,7 @@ from studgroup.models import (
     User,
     WebSession,
 )
+from studgroup.process_control import ProcessAction, ProcessName
 from studgroup.security import token_hash
 
 router = APIRouter()
@@ -449,3 +450,28 @@ async def dashboard(
             "owner_funded_pilot": request.app.state.settings.owner_funded_pilot,
         },
     }
+
+
+@router.get("/v1/admin/processes")
+async def background_processes(
+    db: Annotated[AsyncSession, Depends(database)],
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.process_control import process_snapshot
+
+    return {"processes": await process_snapshot(db)}
+
+
+@router.post("/v1/admin/processes/{name}/{action}", status_code=202)
+async def change_background_process(
+    name: ProcessName,
+    action: ProcessAction,
+    db: Annotated[AsyncSession, Depends(database)],
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.process_control import process_json, request_process
+
+    row = await request_process(db, name, action)
+    result = process_json(row)
+    await db.commit()
+    return result
