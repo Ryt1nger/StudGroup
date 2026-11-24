@@ -297,3 +297,48 @@ def test_malformed_billing_url_is_validation_error(client):
         )
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "invalid_payment_url"
+
+
+def test_owner_urgent_progress_exposes_durable_account_state(client):
+    from studgroup.models import Membership, UrgentSDORun, UrgentSDOTarget
+
+    client.app.state.settings.bot_admin_user_id = 1
+    now = datetime.now(UTC)
+
+    async def seed():
+        async with AsyncSession(client.app.state.engine) as db:
+            member = await db.scalar(select(Membership))
+            run = UrgentSDORun(state="running", requested_at=now, started_at=now)
+            db.add(run)
+            job = RanepaCrawlJob(
+                group_id=member.group_id,
+                user_id=member.user_id,
+                week_start=now.date() - timedelta(days=now.weekday()),
+                priority=0,
+                state="running",
+                attempts=2,
+                created_at=now,
+                claimed_at=now,
+            )
+            db.add(job)
+            await db.flush()
+            db.add(
+                UrgentSDOTarget(
+                    run_id=run.id,
+                    user_id=member.user_id,
+                    group_id=member.group_id,
+                    job_id=job.id,
+                    baseline_attempts=1,
+                    state="pending",
+                )
+            )
+            await db.commit()
+
+    asyncio.run(seed())
+    assert client.get("/v1/admin/sdo-runs").status_code == 401
+    response = client.get("/v1/admin/sdo-runs", headers={"Authorization": "Bearer valid"})
+    assert response.status_code == 200, response.text
+    target = response.json()["run"]["targets"][0]
+    assert target["state"] == "running"
+    assert target["started_at"] is not None
+    assert target["next_attempt_at"] is None
