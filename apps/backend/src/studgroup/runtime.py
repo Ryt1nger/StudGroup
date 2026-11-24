@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.analysis.dispatch import dispatch_next
 from studgroup.analysis.hold_reconciliation import reconcile_terminal_holds
+from studgroup.process_runtime import ProcessGate, ai_health
 from studgroup.processing import incident, incident_once
 from studgroup.processing_health import inspect
 
@@ -24,9 +25,16 @@ async def processing_loop(engine, settings, pause=None):
         logger.addHandler(logging.StreamHandler())
     previous = None
     last_health_check = None
+    gate = ProcessGate(engine, settings, "ai", True, lambda: ai_health(settings))
     while True:
+        generation = None
         try:
+            generation = await gate.begin()
+            if generation is None:
+                await asyncio.sleep(5)
+                continue
             status = await dispatch_next(engine, settings)
+            await gate.succeeded(generation)
             if status != previous:
                 logger.info("AI_PROCESSING_STATUS %s", status)
                 previous = status
@@ -62,6 +70,8 @@ async def processing_loop(engine, settings, pause=None):
             # database/HTTP exceptions can contain credentials or private content.
             logging.getLogger(__name__).error("pipeline_iteration_failed: %s", type(error).__name__)
             try:
+                if generation is not None:
+                    await gate.failed(generation)
                 async with AsyncSession(engine) as db:
                     await incident(
                         db, "pipeline_error", datetime.now(UTC), detail=type(error).__name__
@@ -70,4 +80,7 @@ async def processing_loop(engine, settings, pause=None):
                 await flush_incidents(engine, settings)
             except Exception:  # noqa: BLE001 -- alert delivery cannot terminate recovery or leak data
                 logger.error("owner_alert_pending_or_database_unavailable")
-        await asyncio.sleep(pause)
+        try:
+            await gate.sleep(generation, pause)
+        except Exception:  # noqa: BLE001 -- control state is unavailable; retry without claiming
+            await asyncio.sleep(5)

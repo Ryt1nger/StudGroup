@@ -1192,7 +1192,9 @@ async def run_forever(settings: Settings):
                         await prepare_week(engine, today, settings)
                         next_prepare_at = monotonic() + 3600
                         previous_generation = generation
-                    status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
+                    status = await process_one(
+                        engine, settings, today, captcha_budget=captcha_budget
+                    )
                     if status == "paused":
                         await gate.failed(generation, "captcha_guard_paused")
                     else:

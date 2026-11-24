@@ -269,8 +269,14 @@ async def process_next(engine, settings, provider=None, now=None):
 
 async def processing_loop(engine, settings, *, pause_seconds=3):
     """Runs in the deployed web process, which has no separate Celery worker."""
+    from studgroup.process_runtime import read_intent
+
     while True:
         try:
+            intent = await read_intent(engine, "ai", True)
+            if not intent.enabled:
+                await asyncio.sleep(pause_seconds)
+                continue
             status = await process_next(engine, settings)
         except asyncio.CancelledError:
             raise

@@ -1071,7 +1071,7 @@ async def deliver(engine, settings, *, request=None, control_only=False):
         except (httpx.HTTPError, ValueError):
             pass
         row.state = (
-            "sent" if ok else "failed" if row.attempts >= 5 and not testing_update else "pending"
+            "sent" if ok else "failed" if row.attempts >= 5 and not testing_update and not control_only else "pending"
         )
         row.lease_until = None
         row.available_at = now + timedelta(seconds=min(60, row.attempts * 10))
@@ -1089,32 +1089,38 @@ async def _periodic_delivery_job(engine, interval, task):
 
 
 async def delivery_loop(engine, settings, *, workers=1):
-    from studgroup.headman_digest import tick as digest_tick
-    from studgroup.owner_updates import tick as owner_tick
-    from studgroup.ranepa_manual_captcha import cleanup_expired_captcha_artwork
+    from studgroup.process_runtime import ProcessGate, telegram_health
 
-    async def send_owner_updates(db_engine):
-        await owner_tick(db_engine, settings)
-
-    # Reuse Telegram HTTP connections across a bounded number of concurrent senders.
-    # The SQL row lease and SKIP LOCKED selection prevent claiming the same job twice;
-    # per-panel locks preserve the correct screen revision under concurrent requests.
+    gate = ProcessGate(
+        engine, settings, "telegram_outbox", True, lambda: telegram_health(settings), poll_interval=1
+    )
+    # A control request stops new batches; already claimed SQL rows finish normally.
     async with httpx.AsyncClient(timeout=10, trust_env=False, follow_redirects=False) as client:
 
         async def request(config, method, payload):
             return await telegram_request(config, method, payload, client=client)
 
         async def drain():
-            while True:
-                try:
-                    await deliver(engine, settings, request=request)
-                except Exception as error:  # noqa: BLE001 -- durable retry; never log private data
-                    LOGGER.warning("bot_delivery_iteration_failed: %s", type(error).__name__)
-                await asyncio.sleep(0.1)
+            try:
+                await deliver(engine, settings, request=request)
+                return True
+            except Exception as error:  # noqa: BLE001 -- durable retry; never log private data
+                LOGGER.warning("bot_delivery_iteration_failed: %s", type(error).__name__)
+                return False
 
-        async with asyncio.TaskGroup() as tasks:
-            tasks.create_task(_periodic_delivery_job(engine, 5, send_owner_updates))
-            tasks.create_task(_periodic_delivery_job(engine, 30, digest_tick))
-            tasks.create_task(_periodic_delivery_job(engine, 300, cleanup_expired_captcha_artwork))
-            for _ in range(max(1, min(3, workers))):
-                tasks.create_task(drain())
+        while True:
+            generation = None
+            try:
+                generation = await gate.begin()
+                if generation is None:
+                    await asyncio.sleep(1)
+                    continue
+                outcomes = await asyncio.gather(*(drain() for _ in range(max(1, min(3, workers)))))
+                if all(outcomes):
+                    await gate.succeeded(generation)
+                else:
+                    await gate.failed(generation)
+            except Exception as error:  # noqa: BLE001 -- retry control state without claiming
+                LOGGER.warning("bot_delivery_control_failed: %s", type(error).__name__)
+                await asyncio.sleep(1)
+            await asyncio.sleep(0.1)

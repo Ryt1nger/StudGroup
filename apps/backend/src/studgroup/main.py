@@ -601,18 +601,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             from studgroup.process_runtime import monitor_loop
 
             process_monitor = asyncio.create_task(monitor_loop(app.state.delivery_engine, settings))
-        billing_task = None
-        bank_cleanup_task = None
-        if settings.billing_enabled:
-            from studgroup.billing import loop as billing_loop
+        scheduler_task = None
+        if delivery is not None or settings.billing_enabled:
+            from studgroup.process_runtime import scheduler_loop
 
-            billing_task = asyncio.create_task(billing_loop(app.state.background_engine, settings))
-            if settings.billing_payment_mode == "manual_alfa":
-                from studgroup.billing_manual import cleanup_loop
-
-                bank_cleanup_task = asyncio.create_task(
-                    cleanup_loop(app.state.background_engine, settings)
+            scheduler_task = asyncio.create_task(
+                scheduler_loop(
+                    app.state.background_engine,
+                    app.state.delivery_engine,
+                    settings,
+                    delivery_enabled=delivery is not None,
                 )
+            )
         try:
             yield
         finally:
@@ -620,14 +620,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 process_monitor.cancel()
                 with suppress(asyncio.CancelledError):
                     await process_monitor
-            if bank_cleanup_task is not None:
-                bank_cleanup_task.cancel()
+            if scheduler_task is not None:
+                scheduler_task.cancel()
                 with suppress(asyncio.CancelledError):
-                    await bank_cleanup_task
-            if billing_task is not None:
-                billing_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await billing_task
+                    await scheduler_task
             if diagnostics_task is not None:
                 diagnostics_task.cancel()
                 with suppress(asyncio.CancelledError):
