@@ -29,7 +29,9 @@ def test_crawl_checks_schema_before_browser_and_student_access():
     assert "uv run alembic current" in data
     assert "006[6-9]|007[01]" in data
     assert data.index("Require compatible Alembic schema") < data.index("Install browser")
-    assert data.index("Require compatible Alembic schema") < data.index("Process one bounded queue shift")
+    assert data.index("Require compatible Alembic schema") < data.index(
+        "Process one bounded queue shift"
+    )
 
 
 def test_watchdog_only_checks_enabled_schedule():
