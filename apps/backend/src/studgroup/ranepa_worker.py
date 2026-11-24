@@ -218,6 +218,7 @@ async def prepare_week(
     pilot_user_id: UUID | None = None,
     bypass_cooldown: bool = False,
     rescan_all: bool = False,
+    bootstrap: bool = False,
 ) -> int:
     if (pilot_group_id is None) != (pilot_user_id is None):
         raise ValueError("pilot_scope_requires_both_ids")
@@ -233,7 +234,7 @@ async def prepare_week(
             db, settings, pilot_group_id=pilot_group_id, pilot_user_id=pilot_user_id
         )
         count = await enqueue_week(
-            db, monday, candidates, force_refresh=bypass_cooldown or rescan_all
+            db, monday, candidates, force_refresh=bypass_cooldown or rescan_all, bootstrap=bootstrap
         )
         await db.commit()
         return count
@@ -1213,7 +1214,7 @@ async def run_forever(settings: Settings):
                     today = datetime.now(ZoneInfo("Europe/Moscow")).date()
                     await prepare_urgent(engine, settings, today)
                     if generation != previous_generation or monotonic() >= next_prepare_at:
-                        await prepare_week(engine, today, settings)
+                        await prepare_week(engine, today, settings, bootstrap=True)
                         next_prepare_at = monotonic() + 60
                         previous_generation = generation
                     status = await process_one(
