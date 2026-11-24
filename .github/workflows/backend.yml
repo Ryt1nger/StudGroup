@@ -50,7 +50,7 @@ jobs:
           uv run alembic upgrade head
       - name: Verify process controls, urgent SDO and payment settings
         run: |
-          uv run pytest -q tests/test_process_control.py tests/test_process_runtime.py tests/test_urgent_sdo.py tests/test_ranepa_autonomous_runtime.py tests/test_admin_dashboard.py --maxfail=1
+          uv run pytest -q tests/test_process_control.py tests/test_process_runtime.py tests/test_urgent_sdo.py tests/test_ranepa_autonomous_runtime.py tests/test_admin_dashboard.py tests/test_profile.py tests/test_ranepa_crawl_jobs.py --maxfail=1
       - name: Verify group billing and Telegram checkout in isolation
         run: |
           uv run pytest -q tests/test_billing_plans.py tests/test_billing_checkout.py tests/test_billing_manual.py tests/test_billing_campaign.py tests/test_bot_info.py --maxfail=1
