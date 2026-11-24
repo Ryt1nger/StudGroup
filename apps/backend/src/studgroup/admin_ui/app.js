@@ -410,7 +410,7 @@ async function saveBillingOption(event){
 async function load(){
   if(!token)return;const id=++activeRequest;const status=$("status");status.classList.remove("error");status.textContent="Обновляем показатели…";
   try{const begin=performance.now();const query=criteria().toString();const [d,v,b,reliability]=await Promise.all([api("/v1/admin/analytics?"+query),api("/v1/admin/visuals?"+query),api("/v1/admin/bot-monitor?"+query),api("/v1/admin/dashboard?"+query)]);
-    if(id!==activeRequest)return;render(d,v,b,Math.round(performance.now()-begin),reliability);await loadBillingOptions();status.textContent="Данные обновлены · "+datetime(d.as_of)+" · период: "+$("days").selectedOptions[0].textContent.toLowerCase();
+    if(id!==activeRequest)return;render(d,v,b,Math.round(performance.now()-begin),reliability);await Promise.all([loadBillingOptions(),loadAdminGroups()]);status.textContent="Данные обновлены · "+datetime(d.as_of)+" · период: "+$("days").selectedOptions[0].textContent.toLowerCase();
   }catch(error){if(id!==activeRequest)return;status.classList.add("error");status.textContent="Не удалось загрузить статистику: "+error.message;}
 }
 function explain(message){
@@ -560,5 +560,55 @@ $("urgent-start").addEventListener("click",async()=>{
   finally{processChanging=false;processSignature="";await loadProcessControls();if(errorMessage){$("process-status").textContent=errorMessage;$("process-status").classList.add("error");}}
 });
 setInterval(()=>{if(token&&!document.hidden&&currentPage==="processes")loadProcessControls();},5000);
+
+let adminGroupItems=[];
+async function loadAdminGroups(){
+  if(!token)return;
+  const host=$("admin-groups"),status=$("admin-groups-status");
+  try{
+    const data=await api("/v1/admin/groups");adminGroupItems=data.items||[];host.replaceChildren();
+    for(const group of adminGroupItems){
+      const card=dom("article","billing-option");
+      text(card,"strong","",group.name);text(card,"span","",group.academic_group_code||"Код РАНХиГС не указан");
+      text(card,"span","",`Участников: ${number(group.members)} · СДО подключено: ${number(group.sdo_connected)} · ${group.status}`);
+      const actions=dom("div","billing-actions");
+      for(const [labelText,action] of [["Участники","members"],[group.status==="suspended"?"Разблокировать":"Заблокировать",group.status==="suspended"?"unblock":"block"],["Удалить группу","delete"]]){
+        const button=dom("button",action==="delete"?"link-button danger":"link-button",labelText);button.type="button";button.dataset.adminGroup=group.id;button.dataset.adminAction=action;actions.append(button);
+      }
+      card.append(actions);host.append(card);
+    }
+    status.textContent=`Групп: ${number(adminGroupItems.length)}`;status.classList.remove("error");
+  }catch(error){status.textContent=error.message;status.classList.add("error");}
+}
+async function loadAdminMembers(groupId){
+  const data=await api(`/v1/admin/groups/${groupId}/members`),host=$("admin-members");host.replaceChildren();
+  const heading=dom("article","billing-option");text(heading,"strong","",`Участники · ${data.group.name}`);
+  const add=dom("button","refresh-button","Добавить участника");add.type="button";add.dataset.adminGroup=groupId;add.dataset.adminAction="add";heading.append(add);host.append(heading);
+  for(const item of data.items||[]){
+    const card=dom("article","billing-option");
+    const name=[item.last_name,item.first_name].filter(Boolean).join(" ")||item.display_name;
+    text(card,"strong","",name);text(card,"span","",`@${item.username||"—"} · Telegram ID ${item.telegram_user_id}`);
+    text(card,"span","",`Telegram: ${item.telegram_group} · РАНХиГС: ${item.ranepa_group||"—"} · СДО: ${item.sdo_connected?"подключено":"нет"} · ${item.status}`);
+    const actions=dom("div","billing-actions");
+    for(const [labelText,action] of [[item.status==="suspended"?"Разблокировать":"Заблокировать",item.status==="suspended"?"unblock":"block"],["Удалить из группы","remove"]]){const button=dom("button","link-button",labelText);button.type="button";button.dataset.adminMember=item.membership_id;button.dataset.adminAction=action;button.dataset.adminGroup=groupId;actions.append(button);}card.append(actions);host.append(card);
+  }
+}
+$("admin-groups-refresh").addEventListener("click",loadAdminGroups);
+$("admin-groups").addEventListener("click",async event=>{
+  const button=event.target.closest("[data-admin-group]");if(!button)return;const id=button.dataset.adminGroup,action=button.dataset.adminAction;
+  if(action==="members")return loadAdminMembers(id);
+  if(action==="add"){return;}
+  if(!confirm(action==="delete"?"Скрыть группу и закрыть доступ, сохранив историю?":"Изменить доступ группы?"))return;
+  await api(`/v1/admin/groups/${id}/status`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});await loadAdminGroups();
+});
+$("admin-members").addEventListener("click",async event=>{
+  const button=event.target.closest("[data-admin-action]");if(!button)return;const action=button.dataset.adminAction,groupId=button.dataset.adminGroup;
+  if(action==="add"){
+    const telegram=prompt("Telegram ID пользователя");if(!telegram)return;const display=prompt("Имя для отображения");if(!display)return;
+    await api(`/v1/admin/groups/${groupId}/members`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({telegram_user_id:Number(telegram),display_name:display,role:"student"})});return loadAdminMembers(groupId);
+  }
+  if(!confirm("Изменить доступ участника?"))return;
+  await api(`/v1/admin/memberships/${button.dataset.adminMember}/status`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});await loadAdminMembers(groupId);await loadAdminGroups();
+});
 
 start();setInterval(()=>{if(token&&!document.hidden&&$("modal").hidden)load();},60000);

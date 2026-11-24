@@ -36,6 +36,7 @@ from studgroup.models import (
     RawMessage,
     ShadowEvaluationRun,
     User,
+    UserProfile,
     WebSession,
 )
 from studgroup.process_control import ProcessAction, ProcessName
@@ -51,6 +52,16 @@ class BillingOptionBody(BaseModel):
     payment_url: str = Field(min_length=8, max_length=2000)
     enabled: bool = True
     position: int = Field(default=0, ge=0, le=100)
+
+
+class AdminMemberBody(BaseModel):
+    telegram_user_id: int = Field(gt=0)
+    display_name: str = Field(min_length=1, max_length=255)
+    role: str = Field(default="student", pattern="^(student|headman|deputy)$")
+
+
+class AdminStatusBody(BaseModel):
+    action: str = Field(pattern="^(block|unblock|remove|delete)$")
 
 
 @router.get("/admin", include_in_schema=False)
@@ -251,6 +262,155 @@ async def delete_billing_option(
     await db.delete(row)
     await db.commit()
     return {"deleted": True}
+
+
+@router.get("/v1/admin/groups")
+async def admin_groups(
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+):
+    credential_counts = dict(
+        (
+            await db.execute(
+                select(Membership.group_id, func.count(func.distinct(Membership.user_id)))
+                .join(UserProfile, UserProfile.user_id == Membership.user_id)
+                .where(
+                    Membership.status == "active",
+                    UserProfile.sdu_credential_id.is_not(None),
+                )
+                .group_by(Membership.group_id)
+            )
+        ).all()
+    )
+    member_counts = dict(
+        (
+            await db.execute(
+                select(Membership.group_id, func.count())
+                .where(Membership.status != "left")
+                .group_by(Membership.group_id)
+            )
+        ).all()
+    )
+    rows = (await db.scalars(select(Group).order_by(Group.name))).all()
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "name": row.name,
+                "academic_group_code": row.academic_group_code,
+                "status": row.status,
+                "members": member_counts.get(row.id, 0),
+                "sdo_connected": credential_counts.get(row.id, 0),
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.get("/v1/admin/groups/{group_id}/members")
+async def admin_group_members(
+    group_id: UUID,
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+):
+    group = await db.get(Group, group_id)
+    if group is None:
+        raise ApiError("group_not_found", "Группа не найдена", 404)
+    rows = (
+        await db.execute(
+            select(Membership, User, UserProfile)
+            .join(User, User.id == Membership.user_id)
+            .outerjoin(UserProfile, UserProfile.user_id == User.id)
+            .where(Membership.group_id == group_id)
+            .order_by(User.display_name)
+        )
+    ).all()
+    return {
+        "group": {"id": group.id, "name": group.name, "status": group.status},
+        "items": [
+            {
+                "membership_id": member.id,
+                "user_id": user.id,
+                "telegram_user_id": user.telegram_user_id,
+                "display_name": user.display_name,
+                "username": user.username,
+                "first_name": profile.first_name if profile else None,
+                "last_name": profile.last_name if profile else None,
+                "ranepa_group": group.academic_group_code,
+                "telegram_group": group.name,
+                "role": member.role,
+                "status": member.status,
+                "sdo_connected": bool(profile and profile.sdu_credential_id),
+            }
+            for member, user, profile in rows
+        ],
+    }
+
+
+@router.post("/v1/admin/groups/{group_id}/members")
+async def admin_add_member(
+    group_id: UUID,
+    body: AdminMemberBody,
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+):
+    group = await db.get(Group, group_id)
+    if group is None or group.status == "deleted":
+        raise ApiError("group_not_found", "Группа не найдена", 404)
+    user = await db.scalar(select(User).where(User.telegram_user_id == body.telegram_user_id))
+    if user is None:
+        user = User(
+            telegram_user_id=body.telegram_user_id,
+            display_name=" ".join(body.display_name.split()),
+            username=None,
+        )
+        db.add(user)
+        await db.flush()
+    member = await db.scalar(
+        select(Membership).where(Membership.group_id == group_id, Membership.user_id == user.id)
+    )
+    if member is None:
+        member = Membership(user_id=user.id, group_id=group_id, role=body.role, status="active")
+        db.add(member)
+    else:
+        member.role = body.role
+        member.status = "active"
+    await db.commit()
+    return {"membership_id": member.id, "status": member.status}
+
+
+@router.post("/v1/admin/groups/{group_id}/status")
+async def admin_group_status(
+    group_id: UUID,
+    body: AdminStatusBody,
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+):
+    group = await db.get(Group, group_id)
+    if group is None:
+        raise ApiError("group_not_found", "Группа не найдена", 404)
+    if body.action not in {"block", "unblock", "delete"}:
+        raise ApiError("invalid_action", "Недоступное действие", 422)
+    group.status = {"block": "suspended", "unblock": "active", "delete": "deleted"}[body.action]
+    await db.commit()
+    return {"id": group.id, "status": group.status}
+
+
+@router.post("/v1/admin/memberships/{membership_id}/status")
+async def admin_member_status(
+    membership_id: UUID,
+    body: AdminStatusBody,
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+):
+    member = await db.get(Membership, membership_id)
+    if member is None:
+        raise ApiError("membership_not_found", "Участник не найден", 404)
+    if body.action not in {"block", "unblock", "remove"}:
+        raise ApiError("invalid_action", "Недоступное действие", 422)
+    member.status = {"block": "suspended", "unblock": "active", "remove": "left"}[body.action]
+    await db.commit()
+    return {"id": member.id, "status": member.status}
 
 
 @router.get("/v1/admin/dashboard")

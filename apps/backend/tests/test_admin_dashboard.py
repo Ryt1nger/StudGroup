@@ -115,6 +115,44 @@ def test_admin_page_has_no_embedded_credentials(client):
     assert "no-store" in response.headers["cache-control"]
 
 
+def test_owner_manages_groups_and_members_without_deleting_history(client):
+    client.app.state.settings.bot_admin_user_id = 1
+    headers = {"Authorization": "Bearer valid"}
+    groups = client.get("/v1/admin/groups", headers=headers)
+    assert groups.status_code == 200
+    target = groups.json()["items"][0]
+    assert {"members", "sdo_connected", "academic_group_code"} <= target.keys()
+    created = client.post(
+        f"/v1/admin/groups/{target['id']}/members",
+        headers=headers,
+        json={"telegram_user_id": 987654321, "display_name": "Новый студент", "role": "student"},
+    )
+    assert created.status_code == 200, created.text
+    member_id = created.json()["membership_id"]
+    members = client.get(f"/v1/admin/groups/{target['id']}/members", headers=headers).json()
+    added = next(row for row in members["items"] if row["membership_id"] == member_id)
+    assert added["telegram_user_id"] == 987654321
+    assert {"first_name", "last_name", "telegram_group", "ranepa_group"} <= added.keys()
+    blocked = client.post(
+        f"/v1/admin/memberships/{member_id}/status",
+        headers=headers,
+        json={"action": "block"},
+    )
+    assert blocked.json()["status"] == "suspended"
+    restored = client.post(
+        f"/v1/admin/memberships/{member_id}/status",
+        headers=headers,
+        json={"action": "unblock"},
+    )
+    assert restored.json()["status"] == "active"
+    removed = client.post(
+        f"/v1/admin/memberships/{member_id}/status",
+        headers=headers,
+        json={"action": "remove"},
+    )
+    assert removed.json()["status"] == "left"
+
+
 def test_owner_manages_payment_buttons_without_code_changes(client):
     client.app.state.settings.bot_admin_user_id = 1
     headers = {"Authorization": "Bearer valid"}
