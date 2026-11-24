@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select, text, update
 from sqlalchemy.orm import aliased
 
 from studgroup.models import (
@@ -15,6 +15,7 @@ from studgroup.models import (
     RanepaMaterializationReceipt,
     RanepaPersonalSnapshot,
     SubjectSplit,
+    UrgentSDOTarget,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
 from studgroup.ranepa_schedule import subgroup_choice_changed_since_check
@@ -81,10 +82,15 @@ async def enqueue_week(
     now=None,
     *,
     force_refresh: bool = False,
+    urgent_refresh: bool = False,
 ) -> int:
     """Add jobs or refresh completed jobs; manual pilot may override its cooldown."""
     if week_start.weekday() != 0:
         raise ValueError("week_start_must_be_monday")
+    if urgent_refresh and force_refresh:
+        raise ValueError("incompatible_refresh_modes")
+    if db.get_bind().dialect.name == "postgresql":
+        await db.execute(text("SELECT pg_advisory_xact_lock(832610071)"))
     now = now or datetime.now(UTC)
     ordered = fair_crawl_order(candidates)
     created = 0
@@ -136,7 +142,7 @@ async def enqueue_week(
             if (
                 existing.state in {"succeeded", "failed", "covered", "dead_letter"}
                 and can_retry
-                and (force_refresh or (due and existing.state != "dead_letter"))
+                and (force_refresh or ((due or urgent_refresh) and existing.state != "dead_letter"))
             ):
                 existing.state = "queued"
                 existing.priority = priority
@@ -328,6 +334,11 @@ async def claim_next(
             stale.retry_reason = "lease_expired_exhausted"
             stale.next_attempt_at = None
             stale.finished_at = now
+            await db.execute(
+                update(UrgentSDOTarget)
+                .where(UrgentSDOTarget.job_id == stale.id, UrgentSDOTarget.state == "pending")
+                .values(state="failed", failure_code="internal", completed_at=now)
+            )
         else:
             stale.state = "queued"
             stale.retry_reason = "lease_expired"
@@ -340,6 +351,14 @@ async def claim_next(
     locked = aliased(RanepaCrawlJob)
     recovered = aliased(RanepaCrawlJob)
     running = aliased(RanepaCrawlJob)
+    urgent = (
+        select(UrgentSDOTarget.run_id)
+        .where(
+            UrgentSDOTarget.job_id == RanepaCrawlJob.id,
+            UrgentSDOTarget.state == "pending",
+        )
+        .exists()
+    )
     due = []
     if group_id is None and not rescan_all:
         due.append(
@@ -393,6 +412,7 @@ async def claim_next(
                 *due,
             )
             .order_by(
+                case((urgent, 0), else_=1),
                 RanepaCrawlJob.week_start.desc(),
                 RanepaCrawlJob.attempts,
                 RanepaCrawlJob.priority,
@@ -404,7 +424,17 @@ async def claim_next(
         if job is None:
             await db.flush()
             return None
-        if group_id is None and not rescan_all and await _coverage_satisfied(db, job, now):
+        urgent_target = await db.scalar(
+            select(UrgentSDOTarget.run_id)
+            .where(UrgentSDOTarget.job_id == job.id, UrgentSDOTarget.state == "pending")
+            .limit(1)
+        )
+        if (
+            group_id is None
+            and not rescan_all
+            and urgent_target is None
+            and await _coverage_satisfied(db, job, now)
+        ):
             # No browser/payment needed. This is NOT a successful account crawl.
             job.state = "covered"
             job.finished_at = now
@@ -439,5 +469,18 @@ async def finish(db, job_id, group_id, user_id, *, failure_code=None, now=None) 
     )
     job.retry_reason = retry_reason(failure_code, job.attempts)
     job.claimed_at = None
+    await db.execute(
+        update(UrgentSDOTarget)
+        .where(
+            UrgentSDOTarget.job_id == job.id,
+            UrgentSDOTarget.state == "pending",
+            UrgentSDOTarget.baseline_attempts < job.attempts,
+        )
+        .values(
+            state="failed" if failure_code else "succeeded",
+            failure_code=failure_code,
+            completed_at=job.finished_at,
+        )
+    )
     await db.flush()
     return True

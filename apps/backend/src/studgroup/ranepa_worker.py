@@ -15,8 +15,9 @@ from zoneinfo import ZoneInfo
 from cryptography.fernet import Fernet, InvalidToken
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
@@ -24,12 +25,11 @@ from studgroup.models import (
     BotPanel,
     Group,
     Membership,
-    MemberSubgroup,
     RanepaCrawlJob,
     User,
     UserProfile,
 )
-from studgroup.process_runtime import ProcessGate
+from studgroup.process_runtime import ProcessGate, read_intent
 from studgroup.ranepa_browser import (
     read_month,
     read_week,
@@ -59,7 +59,6 @@ from studgroup.ranepa_crawl_notifications import (
     recover_account_crawl_notifications,
     successful_account_line,
 )
-from studgroup.ranepa_crawl_plan import CrawlCandidate
 from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_failure_diagnostics import diagnose_browser_state, diagnose_exception
@@ -69,6 +68,7 @@ from studgroup.ranepa_materialization import materialize_verified_facts
 from studgroup.ranepa_personal import enrich_personal_links, remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
+from studgroup.urgent_sdo import active_run, eligible_candidates, finalize_urgent, prepare_urgent
 
 ACCOUNT_TIMEOUT_SECONDS = 600
 MAX_AUTOMATIC_CAPTCHA_ATTEMPTS = 3
@@ -229,37 +229,9 @@ async def prepare_week(
         return 0
     monday = today - timedelta(days=today.weekday())
     async with AsyncSession(engine, expire_on_commit=False) as db:
-        query = (
-            select(Membership, Group)
-            .join(Group, Group.id == Membership.group_id)
-            .join(UserProfile, UserProfile.user_id == Membership.user_id)
-            .where(
-                Membership.status == "active",
-                Group.status == "active",
-                Group.academic_group_code.is_not(None),
-            )
+        candidates = await eligible_candidates(
+            db, settings, pilot_group_id=pilot_group_id, pilot_user_id=pilot_user_id
         )
-        if pilot_group_id is not None:
-            query = query.where(
-                Membership.group_id == pilot_group_id,
-                Membership.user_id == pilot_user_id,
-            )
-        members = (await db.execute(query)).all()
-        candidates = []
-        for member, group in members:
-            profile = await db.get(UserProfile, member.user_id)
-            if not profile or not profile.sdu_credential_id:
-                continue
-            if not await has_consent(db, member.user_id, "sdo", settings):
-                continue
-            subgroups = (
-                await db.scalars(
-                    select(MemberSubgroup.subgroup_id).where(
-                        MemberSubgroup.membership_id == member.id
-                    )
-                )
-            ).all()
-            candidates.append(CrawlCandidate(group.id, member.user_id, frozenset(subgroups)))
         count = await enqueue_week(
             db, monday, candidates, force_refresh=bypass_cooldown or rescan_all
         )
@@ -267,7 +239,49 @@ async def prepare_week(
         return count
 
 
-async def process_one(
+async def process_one(engine, settings, today, *, require_scheduler=False, **kwargs):
+    """A dedicated PostgreSQL session serializes all worker browser claims."""
+    if engine.dialect.name != "postgresql":
+        return await _process_one(engine, settings, today, **kwargs)
+    options = database_engine_options(settings)
+    for key in ("pool_size", "max_overflow", "pool_timeout"):
+        options.pop(key, None)
+    lock_engine = create_async_engine(
+        settings.database_url, poolclass=NullPool, isolation_level="AUTOCOMMIT", **options
+    )
+    try:
+        async with lock_engine.connect() as lock:
+            acquired = await lock.scalar(text("SELECT pg_try_advisory_lock(832610070)"))
+            if not acquired:
+                return "idle"
+            try:
+                intent = await read_intent(engine, "sdo", settings.ranepa_crawl_enabled)
+                if not intent.enabled:
+                    return "paused"
+                if require_scheduler and not (await read_intent(engine, "scheduler", True)).enabled:
+                    return "paused"
+                if (kwargs.get("rescan_all") or kwargs.get("pilot_group_id")) and await active_run(
+                    engine
+                ):
+                    return "paused"
+                task = asyncio.create_task(_process_one(engine, settings, today, **kwargs))
+                try:
+                    while not task.done():
+                        done, _ = await asyncio.wait({task}, timeout=10)
+                        if not done:
+                            await asyncio.wait_for(lock.scalar(text("SELECT 1")), timeout=5)
+                    return await task
+                finally:
+                    if not task.done():
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+            finally:
+                await lock.execute(text("SELECT pg_advisory_unlock(832610070)"))
+    finally:
+        await lock_engine.dispose()
+
+
+async def _process_one(
     engine,
     settings: Settings,
     today: date,
@@ -350,8 +364,17 @@ async def process_one(
         # A missing profile/consent is NOT a refused password. Report the
         # specific safe preflight reason rather than guessing a login failure.
         preflight_detail = None
-        if group is None or not group.academic_group_code:
+        active_member = await db.scalar(
+            select(Membership.id).where(
+                Membership.user_id == user_id,
+                Membership.group_id == group_id,
+                Membership.status == "active",
+            )
+        )
+        if group is None or group.status != "active" or not group.academic_group_code:
             preflight_detail = "group_missing"
+        elif active_member is None:
+            preflight_detail = "membership_inactive"
         elif profile is None:
             preflight_detail = "profile_missing"
         elif not profile.sdu_credential_id:
@@ -1188,6 +1211,7 @@ async def run_forever(settings: Settings):
                 generation = await gate.begin()
                 if generation is not None:
                     today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+                    await prepare_urgent(engine, settings, today)
                     if generation != previous_generation or monotonic() >= next_prepare_at:
                         await prepare_week(engine, today, settings)
                         next_prepare_at = monotonic() + 3600
@@ -1195,12 +1219,14 @@ async def run_forever(settings: Settings):
                     status = await process_one(
                         engine, settings, today, captcha_budget=captcha_budget
                     )
+                    await finalize_urgent(engine, settings)
                     if status == "paused":
                         await gate.failed(generation, "captcha_guard_paused")
                     else:
                         await gate.succeeded(generation)
                     delay = (
-                        300 if status in {"idle", "paused"} else settings.ranepa_crawl_pause_seconds
+                        15 if status == "idle" else 300 if status == "paused"
+                        else settings.ranepa_crawl_pause_seconds
                     )
             except Exception:  # noqa: BLE001 -- durable queue and safe diagnostics
                 log_captcha_stage("process_control_iteration_failed")
@@ -1361,6 +1387,7 @@ async def run_batch(
                     rescan_all=rescan_all,
                     allowed_user_ids=eligible_ids,
                     processed_user_ids=processed_ids if rescan_all else None,
+                    require_scheduler=not rescan_all,
                 )
                 if status in {"idle", "paused"}:
                     stop_reason = status

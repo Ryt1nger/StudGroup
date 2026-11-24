@@ -475,3 +475,26 @@ async def change_background_process(
     result = process_json(row)
     await db.commit()
     return result
+
+
+@router.get("/v1/admin/sdo-runs")
+async def urgent_sdo_status(
+    db: Annotated[AsyncSession, Depends(database)],
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.urgent_sdo import latest_run
+
+    return {"run": await latest_run(db)}
+
+
+@router.post("/v1/admin/sdo-runs", status_code=202)
+async def urgent_sdo_request(
+    db: Annotated[AsyncSession, Depends(database)],
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.urgent_sdo import request_run, run_json
+
+    row = await request_run(db)
+    result = await run_json(db, row)
+    await db.commit()
+    return result
