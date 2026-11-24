@@ -596,6 +596,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     else 1,
                 )
             )
+        process_monitor = None
+        if settings.bot_admin_user_id is not None:
+            from studgroup.process_runtime import monitor_loop
+
+            process_monitor = asyncio.create_task(monitor_loop(app.state.delivery_engine, settings))
         billing_task = None
         bank_cleanup_task = None
         if settings.billing_enabled:
@@ -611,6 +616,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if process_monitor is not None:
+                process_monitor.cancel()
+                with suppress(asyncio.CancelledError):
+                    await process_monitor
             if bank_cleanup_task is not None:
                 bank_cleanup_task.cancel()
                 with suppress(asyncio.CancelledError):

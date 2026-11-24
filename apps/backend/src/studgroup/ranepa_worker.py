@@ -9,7 +9,7 @@ from collections import Counter, defaultdict, deque
 from datetime import UTC, date, datetime, timedelta
 from time import monotonic
 from urllib.parse import urlsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -18,7 +18,6 @@ from playwright.async_api import async_playwright
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from studgroup.bot_admin import enqueue_once
 from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
 from studgroup.models import (
@@ -30,6 +29,7 @@ from studgroup.models import (
     User,
     UserProfile,
 )
+from studgroup.process_runtime import ProcessGate
 from studgroup.ranepa_browser import (
     read_month,
     read_week,
@@ -1144,9 +1144,29 @@ async def _collect(
         return "internal"
 
 
+async def sdo_health(settings: Settings):
+    if not legal_ready(settings) or not settings.ranepa_access_approved:
+        return "approval_missing"
+    try:
+        Fernet(settings.profile_encryption_key.get_secret_value().encode())
+        store = configured_store(settings)
+        if store is None:
+            return "credentials_unavailable"
+        # A read of a random nonexistent identifier verifies the actual YDB
+        # credential table without reading or modifying a student's record.
+        await store.get(uuid4())
+    except (ValueError, CredentialStoreUnavailable):
+        return "credentials_unavailable"
+    try:
+        async with async_playwright() as playwright:
+            if not os.path.isfile(playwright.chromium.executable_path):
+                return "browser_unavailable"
+    except Exception:  # noqa: BLE001 -- no exception text can leave this probe
+        return "browser_unavailable"
+    return None
+
+
 async def run_forever(settings: Settings):
-    if not settings.ranepa_crawl_enabled:
-        return
     warn_if_unconfigured(settings)
     captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
     stop = asyncio.Event()
@@ -1154,38 +1174,43 @@ async def run_forever(settings: Settings):
     for signum in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(signum, stop.set)
     engine = create_worker_engine(settings)
+    gate = ProcessGate(
+        engine, settings, "sdo", settings.ranepa_crawl_enabled, lambda: sdo_health(settings)
+    )
     try:
         await ensure_owner_for_crawl(engine, settings)
-        if type(settings.bot_admin_user_id) is int and settings.bot_admin_user_id > 0:
-            async with AsyncSession(engine) as db:
-                await enqueue_once(
-                    db,
-                    "sendMessage",
-                    {
-                        "chat_id": settings.bot_admin_user_id,
-                        "text": "✅ SDO-worker запущен автономно. Очередь обрабатывается последовательно.",
-                    },
-                    f"ranepa-worker-start:{os.getenv('HOSTNAME', 'worker')}:{datetime.now(UTC).isoformat()}",
-                )
-                await db.commit()
         next_prepare_at = 0.0
+        previous_generation = None
         while not stop.is_set():
-            today = datetime.now(ZoneInfo("Europe/Moscow")).date()
-            if monotonic() >= next_prepare_at:
-                await prepare_week(engine, today, settings)
-                # Pick up new accounts during the week without rescanning every
-                # member before each browser job.
-                next_prepare_at = monotonic() + 3600
-            status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
+            generation = None
+            delay = 5
             try:
-                await asyncio.wait_for(
-                    stop.wait(),
-                    timeout=300
-                    if status in {"idle", "paused"}
-                    else settings.ranepa_crawl_pause_seconds,
-                )
-            except TimeoutError:
-                pass
+                generation = await gate.begin()
+                if generation is not None:
+                    today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+                    if generation != previous_generation or monotonic() >= next_prepare_at:
+                        await prepare_week(engine, today, settings)
+                        next_prepare_at = monotonic() + 3600
+                        previous_generation = generation
+                    status = await process_one(engine, settings, today, captcha_budget=captcha_budget)
+                    if status == "paused":
+                        await gate.failed(generation, "captcha_guard_paused")
+                    else:
+                        await gate.succeeded(generation)
+                    delay = (
+                        300 if status in {"idle", "paused"} else settings.ranepa_crawl_pause_seconds
+                    )
+            except Exception:  # noqa: BLE001 -- durable queue and safe diagnostics
+                log_captcha_stage("process_control_iteration_failed")
+                if generation is not None:
+                    try:
+                        await gate.failed(generation)
+                    except Exception:  # noqa: BLE001 -- database outage cannot kill the poller
+                        log_captcha_stage("process_control_status_unavailable")
+            try:
+                await gate.sleep(generation, delay, stop)
+            except Exception:  # noqa: BLE001 -- retry control DB; never claim when unavailable
+                await asyncio.sleep(5)
     finally:
         await engine.dispose()
         for signum in (signal.SIGTERM, signal.SIGINT):

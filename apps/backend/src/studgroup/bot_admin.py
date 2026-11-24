@@ -971,15 +971,20 @@ async def subgroup_notice_eligibility(db, row, now):
     return subgroups.quiet_delivery_at(now, group.timezone, preferences)
 
 
-async def deliver(engine, settings, *, request=None):
+async def deliver(engine, settings, *, request=None, control_only=False):
     if not settings.telegram_bot_token:
         return
+    from studgroup.process_runtime import ALERT_PREFIX
+
     request = request or telegram_request
     now = datetime.now(UTC)
+    control_filter = BotOutbox.dedup_key.startswith(ALERT_PREFIX)
+    if not control_only:
+        control_filter = or_(BotOutbox.dedup_key.is_(None), ~control_filter)
     async with AsyncSession(engine, expire_on_commit=False) as db:
         row = await db.scalar(
             select(BotOutbox)
-            .where(BotOutbox.state == "pending", BotOutbox.available_at <= now)
+            .where(BotOutbox.state == "pending", BotOutbox.available_at <= now, control_filter)
             .where((BotOutbox.lease_until.is_(None)) | (BotOutbox.lease_until <= now))
             # The user's callback and screen must not wait behind background alerts
             # or slow deleteMessage cleanup jobs.
@@ -997,6 +1002,14 @@ async def deliver(engine, settings, *, request=None):
             .with_for_update(skip_locked=True)
         )
         if not row:
+            return
+        if control_only and (
+            row.method != "sendMessage"
+            or not settings.bot_admin_user_id
+            or json.loads(row.payload).get("chat_id") != settings.bot_admin_user_id
+        ):
+            row.state = "superseded"
+            await db.commit()
             return
         if row.method == "sendMessage" and (row.dedup_key or "").startswith("subgroup-choice:"):
             eligible = await subgroup_notice_eligibility(db, row, now)
