@@ -590,12 +590,26 @@ async def _choose_course_meeting(context, candidates, lesson, *, first_week_anch
     return choice
 
 
+def _record_lms_diagnostic(code):
+    # Persist a closed-vocabulary code, not the exception or private URL.
+    trace = browser_trace.get()
+    if trace is not None:
+        trace.mark_diagnostic(code)
+    LOGGER.warning("sdo_navigation_failed reason=%s", code)
+
+
 async def _load_moodle_dashboard(context, login, password):
     """Authenticate to Moodle separately; do not treat an LK session as LMS login."""
     page = await context.new_page()
     try:
         _login_stage("lms_dashboard_requested")
-        await page.goto("https://lms.ranepa.ru/my/", wait_until="domcontentloaded", timeout=30000)
+        response = await page.goto(
+            "https://lms.ranepa.ru/my/", wait_until="domcontentloaded", timeout=30000
+        )
+        diagnostic = diagnose_http_response(response)
+        if diagnostic:
+            _record_lms_diagnostic(diagnostic)
+            return {}, LinkState.NAVIGATION_ERROR
         login_attempted = False
         courses = {}
         for _ in range(40):
@@ -626,21 +640,38 @@ async def _load_moodle_dashboard(context, login, password):
             return {}, LinkState.LMS_LOGIN_REQUIRED
         # Moodle dashboard may show only recent courses; the enrolled-course
         # list is the authoritative supplementary read.
-        await page.goto(
-            "https://lms.ranepa.ru/my/courses.php",
-            wait_until="domcontentloaded",
-            timeout=15000,
-        )
-        for _ in range(12):
-            parsed = urlsplit(page.url)
-            if parsed.hostname != "lms.ranepa.ru" or parsed.path != "/my/courses.php":
-                break
-            courses.update(dashboard_courses(await page.content()))
-            await page.wait_for_timeout(250)
+        try:
+            response = await page.goto(
+                "https://lms.ranepa.ru/my/courses.php",
+                wait_until="domcontentloaded",
+                timeout=15000,
+            )
+            diagnostic = diagnose_http_response(response)
+            if diagnostic:
+                _record_lms_diagnostic(diagnostic)
+                return {}, LinkState.NAVIGATION_ERROR
+            for _ in range(12):
+                parsed = urlsplit(page.url)
+                if parsed.scheme != "https" or parsed.hostname != "lms.ranepa.ru":
+                    return {}, LinkState.UNEXPECTED_REDIRECT
+                if parsed.path == "/login/index.php":
+                    return {}, LinkState.LMS_LOGIN_REQUIRED
+                if parsed.path != "/my/courses.php":
+                    break
+                courses.update(dashboard_courses(await page.content()))
+                await page.wait_for_timeout(250)
+        except Exception as error:  # noqa: BLE001 -- supplementary index is optional
+            diagnostic = diagnose_exception(error)
+            _record_lms_diagnostic(diagnostic)
+            # Do not throw away already authenticated course links on a
+            # supplementary-page timeout. Never ignore a denial/rate limit.
+            if not courses or diagnostic not in {"timeout", "connection", "dns"}:
+                return {}, LinkState.NAVIGATION_ERROR
         if courses:
             _login_stage("lms_courses_loaded")
         return courses, None if courses else LinkState.COURSE_CONTENT_UNAVAILABLE
-    except Exception:  # noqa: BLE001 -- no private page details in diagnostics
+    except Exception as error:  # noqa: BLE001 -- no private page details in diagnostics
+        _record_lms_diagnostic(diagnose_exception(error))
         return {}, LinkState.NAVIGATION_ERROR
     finally:
         await page.close()
@@ -669,6 +700,7 @@ async def resolve_moodle_courses(
             async with asyncio.timeout(remaining):
                 index, error = await _load_moodle_dashboard(context, login, password)
         except TimeoutError:
+            _record_lms_diagnostic("timeout")
             index, error = {}, LinkState.NAVIGATION_ERROR
         # One independent Moodle login per account. In particular, do not
         # resubmit a rejected form for each following week.
@@ -714,7 +746,14 @@ async def resolve_moodle_courses(
             page = await context.new_page()
             try:
                 _login_stage("lms_course_requested")
-                await page.goto(course, wait_until="domcontentloaded", timeout=15000)
+                response = await page.goto(course, wait_until="domcontentloaded", timeout=15000)
+                diagnostic = diagnose_http_response(response)
+                if diagnostic:
+                    _record_lms_diagnostic(diagnostic)
+                    states[key] = LinkState.NAVIGATION_ERROR
+                    if diagnostic in {"http_403", "http_429"}:
+                        dashboard_cache["error"] = LinkState.NAVIGATION_ERROR
+                    continue
                 parsed = urlsplit(page.url)
                 if parsed.hostname != "lms.ranepa.ru" or parsed.path != "/course/view.php":
                     states[key] = LinkState.COURSE_CONTENT_UNAVAILABLE
@@ -725,7 +764,8 @@ async def resolve_moodle_courses(
                 remaining = None if deadline is None else max(0.01, deadline - monotonic())
                 async with asyncio.timeout(remaining):
                     course_cache[course] = await _read_course_candidates(page, context)
-            except Exception:  # noqa: BLE001
+            except Exception as error:  # noqa: BLE001
+                _record_lms_diagnostic(diagnose_exception(error))
                 states[key] = LinkState.NAVIGATION_ERROR
                 continue
             finally:
