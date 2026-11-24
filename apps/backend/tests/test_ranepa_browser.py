@@ -928,3 +928,55 @@ def test_moodle_dashboard_resolves_without_cabinet_exit(monkeypatch, empty_reads
         )
 
     asyncio.run(scenario())
+
+
+
+@pytest.mark.parametrize("supplement_status", [None, 403, 429])
+def test_moodle_keeps_verified_dashboard_on_supplement_timeout(supplement_status):
+    from studgroup.ranepa_crawl_trace import CrawlTrace
+    from studgroup.ranepa_link_states import LinkState
+
+    class Response:
+        status = supplement_status
+
+    class Page:
+        url = ""
+
+        async def goto(self, url, **kwargs):
+            self.url = url
+            if url.endswith("/my/courses.php"):
+                if supplement_status is None:
+                    raise TimeoutError("private URL must never appear in trace")
+                return Response()
+            return None
+
+        async def content(self):
+            return '<a href="/course/view.php?id=77">История России</a>'
+
+        async def close(self):
+            pass
+
+    class Context:
+        async def new_page(self):
+            return Page()
+
+    async def scenario():
+        trace = CrawlTrace()
+        token = ranepa_browser.browser_trace.set(trace)
+        try:
+            courses, error = await ranepa_browser._load_moodle_dashboard(
+                Context(), "student", "password"
+            )
+        finally:
+            ranepa_browser.browser_trace.reset(token)
+        if supplement_status is None:
+            assert courses == {"https://lms.ranepa.ru/course/view.php?id=77": "История России"}
+            assert error is None
+            assert trace.diagnostic == "timeout"
+        else:
+            assert courses == {}
+            assert error == LinkState.NAVIGATION_ERROR
+            assert trace.diagnostic == f"http_{supplement_status}"
+        assert "private URL" not in str(trace.events)
+
+    asyncio.run(scenario())
