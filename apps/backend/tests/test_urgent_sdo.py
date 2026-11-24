@@ -238,3 +238,83 @@ def test_legacy_login_recheck_requires_later_consent_and_no_observed_rejection(c
             assert not await release_legacy_login_blocks(db, member.user_id)
 
     asyncio.run(scenario())
+
+
+def test_autonomous_preparation_revalidates_legacy_login_block(client, monkeypatch):
+    from studgroup.models import LegalConsentEvent, RanepaCrawlObservation, UserProfile
+    from studgroup.ranepa_crawl_trace import CrawlTrace
+    from studgroup.ranepa_worker import prepare_week
+
+    settings = client.app.state.settings
+    settings.ranepa_access_approved = True
+    engine = client.app.state.engine
+    now = datetime.now(UTC)
+    monday = now.date() - timedelta(days=now.weekday())
+    candidates = []
+
+    async def eligible(db, config, **kwargs):
+        return candidates
+
+    monkeypatch.setattr("studgroup.ranepa_worker.eligible_candidates", eligible)
+    monkeypatch.setattr("studgroup.ranepa_worker.legal_ready", lambda _: True)
+
+    async def scenario():
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            member = await db.scalar(select(Membership))
+            group = await db.get(Group, member.group_id)
+            group.academic_group_code = "TEST-AUTONOMOUS"
+            candidates.append(CrawlCandidate(group.id, member.user_id))
+            job = RanepaCrawlJob(
+                group_id=group.id,
+                user_id=member.user_id,
+                week_start=monday,
+                priority=0,
+                state="failed",
+                attempts=1,
+                created_at=now - timedelta(hours=2),
+                finished_at=now - timedelta(hours=1),
+                failure_code="login_failed",
+                retry_reason="credentials_required",
+            )
+            db.add(job)
+            profile = await db.get(UserProfile, member.user_id)
+            if profile is None:
+                profile = UserProfile(user_id=member.user_id, updated_at=now)
+                db.add(profile)
+            profile.sdu_credential_id = uuid4()
+            profile.updated_at = now
+            db.add(
+                LegalConsentEvent(
+                    user_id=member.user_id,
+                    purpose="sdo",
+                    action="grant",
+                    document_version="test",
+                    document_sha256="a" * 64,
+                    source="miniapp",
+                    created_at=now - timedelta(minutes=1),
+                )
+            )
+            await db.flush()
+            job_id = job.id
+            trace = CrawlTrace()
+            trace.failure_detail = "login_rejected"
+            db.add(trace.observation(job_id=job_id, attempt=1, failure_code="login_failed"))
+            await db.commit()
+
+        await prepare_week(engine, monday, settings)
+        async with AsyncSession(engine) as db:
+            job = await db.get(RanepaCrawlJob, job_id)
+            assert job.state == "failed"
+            assert job.retry_reason == "credentials_required"
+            observation = await db.get(RanepaCrawlObservation, (job_id, 1))
+            await db.delete(observation)
+            await db.commit()
+
+        await prepare_week(engine, monday, settings)
+        async with AsyncSession(engine) as db:
+            job = await db.get(RanepaCrawlJob, job_id)
+            assert job.state == "queued"
+            assert job.failure_code is None
+            assert job.attempts == 1
+
+    asyncio.run(scenario())

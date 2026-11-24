@@ -467,3 +467,19 @@ def test_one_matching_moodle_activity_is_enough_for_individual_publication():
     )
     assert selected.state == "matched"
     assert selected.url == "https://lms.ranepa.ru/mod/url/view.php?id=777"
+
+
+def test_course_activity_data_url_is_not_hidden_by_placeholder_href_or_src():
+    html = (
+        '<main class="course-content">'
+        '<a href="#" data-url="/mod/url/view.php?id=101&amp;sesskey=private">'
+        "Иванова И.И. постоянная ссылка</a>"
+        '<button src="about:blank" data-url="/mod/mtslinkrnhgs/view.php?id=102">'
+        "Федотова Е.А. постоянная ссылка</button>"
+        '<a href="#" data-url="https://evil.example/mod/url/view.php?id=103">'
+        "Посторонняя ссылка</a></main>"
+    )
+    assert {link.url for link in course_links(html)} == {
+        "https://lms.ranepa.ru/mod/url/view.php?id=101",
+        "https://lms.ranepa.ru/mod/mtslinkrnhgs/view.php?id=102",
+    }
