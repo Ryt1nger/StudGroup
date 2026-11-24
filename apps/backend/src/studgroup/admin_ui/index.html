@@ -128,6 +128,13 @@
           <div class="section-heading"><div><span class="section-number">04 / СИСТЕМА</span><h2>Скорость и стабильность</h2><p>Насколько быстро отвечает приложение и были ли ошибки связи за последние 15 минут.</p></div></div>
           <div class="server-overview" id="server-overview"></div>
           <div id="sdo-reliability" class="quick-stat-list" aria-label="Надёжность СДО"></div>
+          <article class="chart-card extra-top">
+            <div class="chart-title"><div><span class="card-overline">ДОСТУП / ГРУППЫ</span><h3>Группы и участники</h3></div><button id="admin-groups-refresh" class="link-button" type="button">Обновить</button></div>
+            <p class="billing-note">Показываются Telegram-группа, код РАНХиГС, участники и число подключённых СДО. Удаление мягкое: история сохраняется.</p>
+            <div id="admin-groups-status" class="connection" role="status"></div>
+            <div id="admin-groups" class="billing-options"></div>
+            <div id="admin-members" class="billing-options"></div>
+          </article>
           <div class="chart-grid wide">
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПОСЛЕДНИЕ 15 МИНУТ</span><h3>Запросы к серверу</h3></div><span class="card-note">запросов за минуту</span></div><div id="chart-requests" class="chart-host tall"></div><div class="chart-foot" id="server-caption"></div></article>
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ФОНОВЫЕ ПРОЦЕССЫ</span><h3>Состояние очередей</h3></div><span class="card-note">текущие записи</span></div><div id="queue-detail" class="queue-grid"></div><div class="chart-foot">Очередь Telegram общесистемная. Некоторые показатели накопительные.</div></article>
