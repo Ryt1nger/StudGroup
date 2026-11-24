@@ -1214,7 +1214,7 @@ async def run_forever(settings: Settings):
                     await prepare_urgent(engine, settings, today)
                     if generation != previous_generation or monotonic() >= next_prepare_at:
                         await prepare_week(engine, today, settings)
-                        next_prepare_at = monotonic() + 3600
+                        next_prepare_at = monotonic() + 60
                         previous_generation = generation
                     status = await process_one(
                         engine, settings, today, captcha_budget=captcha_budget

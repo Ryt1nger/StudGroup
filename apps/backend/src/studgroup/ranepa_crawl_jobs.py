@@ -22,6 +22,7 @@ from studgroup.ranepa_schedule import subgroup_choice_changed_since_check
 
 LEASE = timedelta(hours=1)
 REFRESH = timedelta(hours=6)
+BOOTSTRAP_PRIORITY = -1
 RETRY_BACKOFF = {
     "source_unavailable": timedelta(minutes=30),
     "parse_failed": timedelta(minutes=5),
@@ -129,6 +130,14 @@ async def enqueue_week(
                 RanepaCrawlJob.week_start == week_start,
             )
         )
+        if not await db.scalar(
+            select(RanepaMaterializationReceipt.group_id)
+            .where(RanepaMaterializationReceipt.group_id == candidate.group_id)
+            .limit(1)
+        ):
+            priority = BOOTSTRAP_PRIORITY
+        if existing is not None and existing.state == "queued":
+            existing.priority = priority
         if last_completed_at is not None and last_completed_at.tzinfo is None:
             # SQLite tests return naive datetimes despite timezone=True.
             last_completed_at = last_completed_at.replace(tzinfo=UTC)
@@ -412,7 +421,7 @@ async def claim_next(
                 *due,
             )
             .order_by(
-                case((urgent, 0), else_=1),
+                case((RanepaCrawlJob.priority == BOOTSTRAP_PRIORITY, 0), (urgent, 1), else_=2),
                 RanepaCrawlJob.week_start.desc(),
                 RanepaCrawlJob.attempts,
                 RanepaCrawlJob.priority,
@@ -484,3 +493,40 @@ async def finish(db, job_id, group_id, user_id, *, failure_code=None, now=None) 
     )
     await db.flush()
     return True
+
+async def enqueue_new_group_account(db, user_id, settings):
+    """Queue first verified group import in the same SQL transaction as credential saving."""
+    from studgroup.legal import has_consent, legal_ready
+    from studgroup.models import UserProfile
+
+    if not legal_ready(settings) or not settings.ranepa_access_approved:
+        return
+    await db.flush()
+    profile = await db.get(UserProfile, user_id)
+    if profile is None or not profile.sdu_credential_id:
+        return
+    if not await has_consent(db, user_id, "sdo", settings):
+        return
+    groups = (
+        await db.scalars(
+            select(Group.id)
+            .join(Membership, Membership.group_id == Group.id)
+            .where(
+                Membership.user_id == user_id,
+                Membership.status == "active",
+                Group.status == "active",
+                Group.academic_group_code.is_not(None),
+                ~select(RanepaMaterializationReceipt.group_id)
+                .where(RanepaMaterializationReceipt.group_id == Group.id)
+                .exists(),
+            )
+        )
+    ).all()
+    if not groups:
+        return
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+    monday = today - timedelta(days=today.weekday())
+    await enqueue_week(db, monday, [CrawlCandidate(group_id, user_id) for group_id in groups])
+

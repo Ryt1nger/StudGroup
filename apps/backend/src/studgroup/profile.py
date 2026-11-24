@@ -280,6 +280,10 @@ async def update_profile(
                 raise ApiError("service_unavailable", "Хранение пароля сейчас недоступно", 503)
             row.sdu_password_encrypted = fernet.encrypt(secret.encode()).decode()
     row.updated_at = datetime.now(UTC)
+    if supplied_sdo and row.sdu_credential_id and not body.clear_sdu_password:
+        from studgroup.ranepa_crawl_jobs import enqueue_new_group_account
+
+        await enqueue_new_group_account(db, user.id, request.app.state.settings)
     await db.commit()
     result = representation(user, row)
     if ydb_record and row.sdu_credential_id:
