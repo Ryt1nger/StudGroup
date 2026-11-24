@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from studgroup import runtime
+from studgroup import process_runtime, runtime
 from studgroup.main import Settings
 from studgroup.processing_health import BacklogHealth
 
@@ -19,6 +19,16 @@ def test_pause_defaults_to_four_seconds_and_is_configurable():
 @pytest.mark.parametrize("configured", [1, 4])
 def test_processing_loop_sleeps_for_the_configured_pause(monkeypatch, configured):
     pauses = []
+    clock = [0.0]
+
+    async def read_intent(engine, name, default):
+        return process_runtime.Intent(True, 0)
+
+    async def report_process(*args, **kwargs):
+        return True
+
+    async def ai_health(settings):
+        return None
 
     async def dispatch(engine, settings):
         return "idle"
@@ -28,6 +38,7 @@ def test_processing_loop_sleeps_for_the_configured_pause(monkeypatch, configured
 
     async def sleep(seconds):
         pauses.append(seconds)
+        clock[0] += seconds
         if len(pauses) == 2:
             raise asyncio.CancelledError
 
@@ -49,6 +60,10 @@ def test_processing_loop_sleeps_for_the_configured_pause(monkeypatch, configured
     async def record_recovery(db, code, now, recover=False, detail=None):
         recoveries.append((code, recover))
 
+    monkeypatch.setattr(process_runtime, "read_intent", read_intent)
+    monkeypatch.setattr(process_runtime, "report_process", report_process)
+    monkeypatch.setattr(process_runtime, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(runtime, "ai_health", ai_health)
     monkeypatch.setattr(runtime, "AsyncSession", lambda engine: FakeSession())
     monkeypatch.setattr(runtime, "incident", record_recovery)
     monkeypatch.setattr(runtime, "inspect", inspect_health)
