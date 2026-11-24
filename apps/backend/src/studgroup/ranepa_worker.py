@@ -18,6 +18,7 @@ from playwright.async_api import async_playwright
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from studgroup.bot_admin import enqueue_once
 from studgroup.legal import has_consent, legal_ready
 from studgroup.main import Settings, database_engine_options
 from studgroup.models import (
@@ -1155,6 +1156,18 @@ async def run_forever(settings: Settings):
     engine = create_worker_engine(settings)
     try:
         await ensure_owner_for_crawl(engine, settings)
+        if type(settings.bot_admin_user_id) is int and settings.bot_admin_user_id > 0:
+            async with AsyncSession(engine) as db:
+                await enqueue_once(
+                    db,
+                    "sendMessage",
+                    {
+                        "chat_id": settings.bot_admin_user_id,
+                        "text": "✅ SDO-worker запущен автономно. Очередь обрабатывается последовательно.",
+                    },
+                    f"ranepa-worker-start:{os.getenv('HOSTNAME', 'worker')}:{datetime.now(UTC).isoformat()}",
+                )
+                await db.commit()
         next_prepare_at = 0.0
         while not stop.is_set():
             today = datetime.now(ZoneInfo("Europe/Moscow")).date()
