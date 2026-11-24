@@ -70,8 +70,8 @@ from studgroup.ranepa_materialization import materialize_verified_facts
 from studgroup.ranepa_personal import enrich_personal_links, remember_personal
 from studgroup.ranepa_proxy import current_proxy_url, playwright_proxy_settings
 from studgroup.ranepa_retention import prune_expired_schedule
-from studgroup.ranepa_schedule import WeekSnapshot
 from studgroup.ranepa_rotate import _read_original_halves, solve_rotating_halves
+from studgroup.ranepa_schedule import WeekSnapshot
 from studgroup.ranepa_worker_health import heartbeat
 from studgroup.urgent_sdo import active_run, eligible_candidates, finalize_urgent, prepare_urgent
 
@@ -178,6 +178,7 @@ async def collect_bounded(
     on_captcha=None,
     manual_captcha=None,
     series_id=None,
+    first_week_anchor=None,
 ):
     token = browser_trace.set(trace)
     try:
@@ -202,6 +203,7 @@ async def collect_bounded(
                 on_captcha=on_captcha,
                 manual_captcha=manual_captcha,
                 series_id=series_id,
+                first_week_anchor=first_week_anchor,
             )
     except TimeoutError:
         if trace is not None:
@@ -529,6 +531,7 @@ async def _process_one(
                 trace=trace,
                 stats=account_stats,
                 series_id=series_id,
+                first_week_anchor=group.first_week_anchor,
                 on_captcha=on_captcha
                 if settings.ranepa_crawl_notify_captcha_seen_enabled
                 and not settings.ranepa_manual_captcha_enabled
@@ -674,6 +677,7 @@ async def _collect(
     on_captcha=None,
     manual_captcha=None,
     series_id=None,
+    first_week_anchor=None,
 ):
     try:
         async with async_playwright() as playwright:
@@ -1088,6 +1092,7 @@ async def _collect(
                             "course_cache": course_candidates_cache,
                             "exit_cache": verified_exit_cache,
                             "dashboard_cache": moodle_dashboard_cache,
+                            "first_week_anchor": first_week_anchor,
                         }
                         if (
                             captcha_client is not None

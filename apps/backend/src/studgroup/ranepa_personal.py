@@ -574,9 +574,14 @@ async def enrich_personal_links(
         row["links_checked_at"] = checked
         if peer_reused and url is not None:
             row["link_source"] = "cached"
-        elif verified_run_id is not None and direct_url and direct_url == url and not link_cached:
-            if row.get("source_scope") not in {"common", "subgroup"}:
-                row["direct_link_run"] = str(verified_run_id)
+        elif (
+            verified_run_id is not None
+            and direct_url
+            and direct_url == url
+            and not link_cached
+            and row.get("source_scope") not in {"common", "subgroup"}
+        ):
+            row["direct_link_run"] = str(verified_run_id)
     encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
     updated = stored.data_digest != sha256(encoded.encode()).hexdigest()
     stored.rows_json = encoded

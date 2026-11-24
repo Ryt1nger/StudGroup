@@ -553,7 +553,7 @@ async def _shared_moodle_redirect(context, candidates):
     return next(iter(targets)) if len(targets) == 1 else None
 
 
-async def _choose_course_meeting(context, candidates, lesson):
+async def _choose_course_meeting(context, candidates, lesson, *, first_week_anchor=None):
     choice = select_lesson_link(
         candidates,
         teacher=lesson.teacher or "",
@@ -561,8 +561,9 @@ async def _choose_course_meeting(context, candidates, lesson):
         day=lesson.day,
         starts=lesson.starts,
         lesson_type=lesson.lesson_type,
+        first_week_anchor=first_week_anchor,
     )
-    if choice.url is None and choice.state in {LinkState.AMBIGUOUS, LinkState.TIMING_UNVERIFIED}:
+    if choice.url is None and choice.may_resolve_duplicates:
         shared_target = await _shared_moodle_redirect(context, choice.candidates)
         if shared_target is not None:
             choice = LinkChoice(LinkState.MATCHED, shared_target, choice.candidates)
@@ -626,7 +627,7 @@ async def _load_moodle_dashboard(context, login, password):
 
 
 async def resolve_moodle_courses(
-    context, result, login, password, *, dashboard_cache, course_cache
+    context, result, login, password, *, dashboard_cache, course_cache, first_week_anchor=None
 ):
     """Find course by timetable subject; reuse inventories within this account only."""
     linked, states, courses, inventories = {}, {}, {}, {}
@@ -683,7 +684,9 @@ async def resolve_moodle_courses(
             )
             continue
         inventories[key] = candidates
-        choice = await _choose_course_meeting(context, candidates, lesson)
+        choice = await _choose_course_meeting(
+            context, candidates, lesson, first_week_anchor=first_week_anchor
+        )
         states[key] = choice.state
         if choice.url is not None:
             linked[key] = choice.url
@@ -701,6 +704,7 @@ async def resolve_sdo_exits(
     course_cache: dict | None = None,
     exit_cache: dict | None = None,
     dashboard_cache: dict | None = None,
+    first_week_anchor: date | None = None,
 ) -> SdoLinkResolution:
     """Read Moodle independently when dashboard mode is enabled."""
     if dashboard_cache is not None:
@@ -711,6 +715,7 @@ async def resolve_sdo_exits(
             password,
             dashboard_cache=dashboard_cache,
             course_cache=course_cache if course_cache is not None else {},
+            first_week_anchor=first_week_anchor,
         )
     if result.snapshot is None or len(result.sdo_exits) != len(result.snapshot.lessons):
         return SdoLinkResolution({}, {"not_checked": 1}, {}, {})

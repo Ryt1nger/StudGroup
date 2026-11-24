@@ -391,3 +391,61 @@ def test_scoped_practical_link_and_old_dated_link_are_distinguished():
         lesson_type="Практические занятия",
     )
     assert choice.url == "https://lms.ranepa.ru/mod/url/view.php?id=202"
+
+
+def test_stream_punctuation_order_and_teacher_initials_from_moodle_labels():
+    links = course_links(
+        fixture(
+            "Клишина О.С._Э-ОБ-26-СГЯ-лек(45,43,44)_постоянная ссылка",
+            "Клишина О.С._У-ОБ26-СГЯ-лек(43,44,45)_постоянная ссылка",
+            "Клишина А.С._Э-ОБ26-СГЯ-лек(43,44,45)_постоянная ссылка",
+            "Клишина О.С._Э-ОБ26-СГЯ-лек(43,44,450)_постоянная ссылка",
+        )
+    )
+    choice = select_lesson_link(
+        links,
+        teacher="Клишина Ольга Семеновна",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45) / ОБИ",
+        day=date(2026, 11, 24),
+        lesson_type="Лекционные занятия",
+    )
+    assert choice.url == "https://lms.ranepa.ru/mod/url/view.php?id=100"
+
+
+def test_recurring_meeting_requires_correct_weekday_pair_and_known_parity():
+    links = course_links(
+        fixture(
+            "Лисович И.И._Э-ОБ26-СГЯ-лек(177,178,179) пт, 3-я пара по нечетным неделям",
+            "Лисович И.И._Э-ОБ26-СГЯ-лек(177,178,179) пт, 3-я пара по четным неделям",
+        )
+    )
+    kwargs = {
+        "teacher": "Лисович Иван Иванович",
+        "group_label": "Э-ОБ26-СГЯ-лек(177,178,179)",
+        "day": date(2026, 11, 27),
+        "starts": time(12, 20),
+    }
+    assert select_lesson_link(links, **kwargs).url is None
+    odd = select_lesson_link(links, **kwargs, first_week_anchor=date(2026, 11, 23))
+    even = select_lesson_link(links, **kwargs, first_week_anchor=date(2026, 11, 16))
+    assert odd.url.endswith("id=100")
+    assert even.url.endswith("id=101")
+    kwargs["starts"] = time(10, 40)
+    assert select_lesson_link(links, **kwargs, first_week_anchor=date(2026, 11, 23)).url is None
+
+
+def test_old_dated_alternatives_never_become_current_by_redirect_deduplication():
+    links = course_links(
+        fixture(
+            "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) 14 сентября",
+            "Иванов И.И. Э-ОБ26-СГЯ-лек(43,44,45) 23.10.2026",
+        )
+    )
+    choice = select_lesson_link(
+        links,
+        teacher="Иванов Иван Иванович",
+        group_label="Э-ОБ26-СГЯ-лек(43,44,45)",
+        day=date(2026, 11, 24),
+    )
+    assert choice.url is None
+    assert not choice.may_resolve_duplicates

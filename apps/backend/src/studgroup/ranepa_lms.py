@@ -10,6 +10,7 @@ from studgroup.ranepa_cabinet import MONTHS, Document
 from studgroup.ranepa_link_states import LinkState
 from studgroup.ranepa_probe import SourceAccessError
 from studgroup.ranepa_schedule import normalized
+from studgroup.schedule import week_kind
 
 URL_BASE = "https://lms.ranepa.ru"
 DATE = re.compile(r"(?<!\d)(\d{1,2})\.(\d{1,2})\.(20\d{2}|\d{2})(?!\d)")
@@ -41,6 +42,7 @@ class LinkChoice:
     state: LinkState
     url: str | None
     candidates: tuple[LinkCandidate, ...]
+    may_resolve_duplicates: bool = False
 
 
 def _canonical_lms_activity(raw: str, paths: frozenset[str]) -> str | None:
@@ -208,7 +210,10 @@ def course_links(html: str, *, require_course: bool = True) -> tuple[LinkCandida
         text = " ".join(node.parts).strip()
         if len(text) > 500:
             continue
-        for match in INLINE_JOIN.finditer(text):
+        inline_matches = tuple(INLINE_JOIN.finditer(text))
+        if len(inline_matches) != 1:
+            continue
+        for match in inline_matches:
             raw = match.group().rstrip(".,;!)]}")
             url = meeting_url(raw)
             if url and url not in result:
@@ -249,6 +254,89 @@ def matching_courses(courses, subject):
     )
 
 
+# The screenshot examples use a stable stream family and a list of group
+# numbers; punctuation and order of the list are not meaningful.
+STREAM = re.compile(
+    r"(?<![а-я0-9])([а-я]{1,4})\s*-\s*([а-я]{2,4})\s*-?\s*(\d{2})"
+    r"\s*-\s*сгя\s*[- ]*\s*(лек(?:ци\w*)?|пр(?:акт\w*)?|семинар\w*)?"
+    r"\s*[- ]*\s*(?:\(\s*([\d,\s]+)\s*\)|(\d+(?:\s*,\s*\d+)*))"
+)
+WEEKDAYS = {
+    "пн": 0,
+    "понедельник": 0,
+    "вт": 1,
+    "вторник": 1,
+    "ср": 2,
+    "среда": 2,
+    "среду": 2,
+    "чт": 3,
+    "четверг": 3,
+    "пт": 4,
+    "пятница": 4,
+    "пятницу": 4,
+    "сб": 5,
+    "суббота": 5,
+    "субботу": 5,
+}
+PAIR = re.compile(r"(?<!\d)([1-8])\s*(?:-\s*[аяй])?\s*пар[аыуе]\b")
+# Standard slots observed in the verified LK timetable. Unknown slots
+# are not assigned a pair number.
+PAIR_STARTS = (time(9), time(10, 40), time(12, 20), time(14), time(15, 40), time(17, 20))
+
+
+def _kind(label):
+    clean = normalized(label).replace("_", " ")
+    lecture = bool(re.search(r"лекц|(?:^|[-\s])лек(?:\b|\()", clean))
+    practical = bool(re.search(r"практ|семинар|(?:^|[-\s])пр(?:\b|-)", clean))
+    return frozenset(
+        kind for kind, present in (("lecture", lecture), ("practical", practical)) if present
+    )
+
+
+def _streams(label):
+    clean = normalized(label).replace("_", " ")
+    result = []
+    for match in STREAM.finditer(clean):
+        groups = frozenset(int(number) for number in re.findall(r"\d+", match[5] or match[6]))
+        types = _kind(match[4] or "") or _kind(clean)
+        result.append((match[1:4], types, groups))
+    return result
+
+
+def _same_stream(expected, offered, lesson_type):
+    for family, kinds, groups in expected:
+        for other_family, other_kinds, other_groups in offered:
+            if family != other_family or not groups.issubset(other_groups):
+                continue
+            if kinds and other_kinds and not kinds.intersection(other_kinds):
+                continue
+            if lesson_type and other_kinds and not lesson_type.intersection(other_kinds):
+                continue
+            return True
+    return False
+
+
+def _recurrence_matches(label, day, starts, first_week_anchor):
+    weekdays = {
+        number
+        for word, number in WEEKDAYS.items()
+        if re.search(rf"(?<!\w){word}(?!\w)", label)
+    }
+    if weekdays and day.weekday() not in weekdays:
+        return False
+    pairs = {int(match[1]) for match in PAIR.finditer(label)}
+    if pairs and (starts not in PAIR_STARTS or PAIR_STARTS.index(starts) + 1 not in pairs):
+        return False
+    odd = bool(re.search(r"не\s*четн\w*\s+недел", label))
+    even = bool(re.search(r"(?<!не)(?<!не )четн\w*\s+недел", label))
+    if odd or even:
+        if first_week_anchor is None or odd == even:
+            return False
+        if (week_kind(day, first_week_anchor) == "first") != odd:
+            return False
+    return True
+
+
 def _group_token(label: str) -> str:
     # Tooltip labels append faculty after " / "; match exact stream identity.
     return normalized(label.split(" / ", 1)[0]).replace(" ", "").replace("_", "")
@@ -286,11 +374,13 @@ def select_lesson_link(
     day: date,
     starts: time | None = None,
     lesson_type: str | None = None,
+    first_week_anchor: date | None = None,
 ) -> LinkChoice:
     """Never publish a guessed teacher/stream URL; prefer exact date, then permanent."""
     if not teacher.strip():
         return LinkChoice(LinkState.IDENTITY_MISSING, None, ())
     surname = normalized(teacher.split()[0])
+    expected_streams = _streams(group_label)
     token = _group_token(group_label)
     if len(token) < 10:
         token = ""
@@ -300,37 +390,43 @@ def select_lesson_link(
     undated = []
     teacher_section_matches = []
     teacher_section_general = []
-    kind = normalized(lesson_type)
+    lesson_kinds = _kind(lesson_type)
     for link in links:
-        label = normalized(link.label)
+        label = normalized(INLINE_JOIN.sub(" ", link.label)).replace("_", " ")
         compact = label.replace(" ", "").replace("_", "")
         if not re.search(rf"(?<!\w){re.escape(surname)}(?!\w)", label):
             continue
         # Scoped teacher headings may contain a general permanent link for the
         # teacher's lectures/practicals, with no explicit stream. Do not accept
         # a different stream or an explicitly conflicting lesson type.
-        exact_stream = bool(token and token in compact)
+        offered_streams = _streams(label)
+        exact_stream = _same_stream(expected_streams, offered_streams, lesson_kinds)
+        if not expected_streams or not offered_streams:
+            exact_stream = bool(token and token in compact)
         section_teacher = "|" in link.label and TEACHER_HEADING.fullmatch(
             link.label.split("|", 1)[0].strip()
         )
-        if section_teacher:
-            expected = normalized(teacher).split()
-            observed = re.findall(r"[а-я]\.", normalized(link.label.split("|", 1)[0]))
-            if len(expected) >= 3 and len(observed) >= 2:
-                if [part[0] for part in expected[1:3]] != [part[0] for part in observed[:2]]:
-                    continue
-        explicit_stream = re.search(r"об\d{2}|сгя|\bгрупп\w*|\bпоток\w*", label)
-        is_lecture = "лекц" in label
-        is_practical = "практ" in label
-        kind_matches = ("лекц" in kind and is_lecture and not is_practical) or (
-            "практ" in kind and is_practical and not is_lecture
+        expected = normalized(teacher).split()
+        initials = re.search(
+            rf"(?<!\w){re.escape(surname)}\s+([а-я])\.?\s*([а-я])(?:\.|\b)", label
         )
-        kind_conflicts = ("лекц" in kind and is_practical and not is_lecture) or (
-            "практ" in kind and is_lecture and not is_practical
-        )
-        if kind_conflicts:
+        if (
+            len(expected) >= 3
+            and initials
+            and [part[0] for part in expected[1:3]] != list(initials.groups())
+        ):
             continue
-        if not exact_stream and not (section_teacher and not explicit_stream and kind_matches):
+        explicit_stream = re.search(r"об-?\d{2}|сгя|\bгрупп\w*|\bпоток\w*", label)
+        offered_kinds = _kind(label)
+        if lesson_kinds and offered_kinds and not lesson_kinds.intersection(offered_kinds):
+            continue
+        kind_matches = bool(lesson_kinds.intersection(offered_kinds))
+        generic_permanent = not offered_kinds and "постоянн" in label
+        if not exact_stream and not (
+            section_teacher and not explicit_stream and (kind_matches or generic_permanent)
+        ):
+            continue
+        if not _recurrence_matches(label, day, starts, first_week_anchor):
             continue
         times = {
             time(int(match[1]), int(match[2]))
@@ -340,7 +436,7 @@ def select_lesson_link(
         if starts is not None and times and starts not in times:
             continue
         identity_matches.append(link)
-        found_dates = _lesson_dates(link.label, year=day.year)
+        found_dates = _lesson_dates(label, year=day.year)
         if not exact_stream:
             if day in found_dates or (not found_dates and "постоянн" in label):
                 teacher_section_matches.append(link)
@@ -361,18 +457,20 @@ def select_lesson_link(
     if len(unique) == 1:
         return LinkChoice(LinkState.MATCHED, next(iter(unique)), tuple(unique.values()))
     if unique:
-        return LinkChoice(LinkState.AMBIGUOUS, None, tuple(unique.values()))
+        return LinkChoice(LinkState.AMBIGUOUS, None, tuple(unique.values()), True)
     undated_unique = {link.url: link for link in undated}
     if len(undated_unique) == 1:
         return LinkChoice(
             LinkState.MATCHED, next(iter(undated_unique)), tuple(undated_unique.values())
         )
+    if undated_unique:
+        return LinkChoice(LinkState.TIMING_UNVERIFIED, None, tuple(undated_unique.values()), True)
     if teacher_section_matches or teacher_section_general:
         scoped = {link.url: link for link in teacher_section_matches or teacher_section_general}
         if len(scoped) == 1:
             return LinkChoice(LinkState.MATCHED, next(iter(scoped)), tuple(scoped.values()))
         if scoped:
-            return LinkChoice(LinkState.AMBIGUOUS, None, tuple(scoped.values()))
+            return LinkChoice(LinkState.AMBIGUOUS, None, tuple(scoped.values()), True)
     if identity_matches:
         return LinkChoice(LinkState.TIMING_UNVERIFIED, None, tuple(identity_matches))
     return LinkChoice(LinkState.NOT_FOUND, None, ())
