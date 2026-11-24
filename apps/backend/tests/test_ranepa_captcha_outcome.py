@@ -137,7 +137,7 @@ def test_successful_crawl_reports_whether_captcha_appeared_and_was_recovered(
             return
         assert result is None
         assert calls == {
-            "month": 2 if challenge_present else 1,
+            "month": 3 if challenge_present else 2,
             "week": 6,
             "solve": 1 if challenge_present else 0,
             "wait": 1 if challenge_present else 0,
