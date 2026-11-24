@@ -283,7 +283,12 @@ async def update_profile(
     if supplied_sdo and row.sdu_credential_id and not body.clear_sdu_password:
         from studgroup.ranepa_crawl_jobs import enqueue_new_group_account
 
-        await enqueue_new_group_account(db, user.id, request.app.state.settings)
+        await enqueue_new_group_account(
+            db,
+            user.id,
+            request.app.state.settings,
+            password_resubmitted=body.sdu_password is not None,
+        )
     await db.commit()
     result = representation(user, row)
     if ydb_record and row.sdu_credential_id:

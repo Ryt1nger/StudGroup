@@ -581,3 +581,75 @@ def test_first_sdo_credentials_queue_new_group_immediately(client, monkeypatch):
     assert queued[0][1:] == (-1, "queued", 0)
     assert client.patch("/v1/profile", json=body, headers=HEADERS).status_code == 200
     assert asyncio.run(jobs()) == queued
+
+
+def test_password_resubmission_releases_login_block_once(client, monkeypatch):
+    from zoneinfo import ZoneInfo
+
+    from studgroup.ranepa_crawl_jobs import claim_next, finish
+    from studgroup.urgent_sdo import previous_login_block
+
+    accept_study_credentials(client)
+    client.app.state.settings.ranepa_access_approved = True
+    records = {}
+
+    class FakeStore:
+        async def get(self, key):
+            return records.get(key)
+
+        async def put(self, key, login, ciphertext, version):
+            records[key] = (login, ciphertext, version)
+
+    monkeypatch.setattr("studgroup.profile.configured_store", lambda _: FakeStore())
+
+    async def configure():
+        async with AsyncSession(client.app.state.engine) as db:
+            group = await db.scalar(select(Group))
+            group.academic_group_code = "TEST-RECOVERY"
+            await db.commit()
+
+    async def fail_login(*, add_history=False):
+        async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
+            job = await claim_next(db)
+            assert job is not None
+            now = datetime.now(UTC)
+            assert await finish(db, job.id, job.group_id, job.user_id, failure_code="login_failed")
+            if add_history:
+                today = datetime.now(ZoneInfo("Europe/Moscow")).date()
+                monday = today - timedelta(days=today.weekday())
+                db.add(
+                    RanepaCrawlJob(
+                        group_id=job.group_id,
+                        user_id=job.user_id,
+                        week_start=monday - timedelta(days=7),
+                        priority=0,
+                        state="failed",
+                        attempts=1,
+                        failure_code="login_failed",
+                        retry_reason="credentials_required",
+                        created_at=now - timedelta(days=7),
+                        finished_at=now - timedelta(days=7),
+                    )
+                )
+            await db.commit()
+            assert await previous_login_block(db, job.user_id)
+            assert await claim_next(db) is None
+            return job.user_id
+
+    asyncio.run(configure())
+    body = {"sdu_login": "pilot-user", "sdu_password": "synthetic-old-password"}
+    assert client.patch("/v1/profile", json=body, headers=HEADERS).status_code == 200
+    user_id = asyncio.run(fail_login(add_history=True))
+    response = client.patch("/v1/profile", json={"sdu_login": "pilot-user"}, headers=HEADERS)
+    assert response.status_code == 200
+
+    async def assert_blocked():
+        async with AsyncSession(client.app.state.engine) as db:
+            assert await previous_login_block(db, user_id)
+            assert await claim_next(db) is None
+
+    asyncio.run(assert_blocked())
+    body["sdu_password"] = "synthetic-new-password"
+    assert client.patch("/v1/profile", json=body, headers=HEADERS).status_code == 200
+    asyncio.run(fail_login())
+    asyncio.run(assert_blocked())

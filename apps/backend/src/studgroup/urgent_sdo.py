@@ -18,7 +18,7 @@ from studgroup.models import (
 )
 from studgroup.process_control import ensure_process
 from studgroup.process_runtime import ALERT_PREFIX, utc
-from studgroup.ranepa_crawl_jobs import enqueue_week
+from studgroup.ranepa_crawl_jobs import CREDENTIALS_UPDATED, enqueue_week
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
 
 ACTIVE = ("requested", "running")
@@ -129,6 +129,7 @@ async def previous_login_block(db, user_id):
             RanepaCrawlJob.user_id == user_id,
             RanepaCrawlJob.state == "failed",
             RanepaCrawlJob.failure_code == "login_failed",
+            RanepaCrawlJob.retry_reason.is_distinct_from(CREDENTIALS_UPDATED),
         )
     )
     if failed is None:
