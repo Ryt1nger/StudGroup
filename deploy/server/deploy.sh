@@ -30,8 +30,8 @@ mkdir -p "$STATE_DIR"
 deploy_sha() {
   local sha=$1 tag=${1:0:12}
   git checkout --quiet --detach "$sha"
-  STUDGROUP_IMAGE_TAG=$tag docker compose -f "$COMPOSE_FILE" build api caddy
-  STUDGROUP_IMAGE_TAG=$tag docker compose -f "$COMPOSE_FILE" up -d redis api caddy
+  STUDGROUP_IMAGE_TAG=$tag docker compose -f "$COMPOSE_FILE" build api caddy ranepa-worker
+  STUDGROUP_IMAGE_TAG=$tag docker compose -f "$COMPOSE_FILE" up -d redis api caddy ranepa-worker
 
   local state
   for _ in $(seq 1 36); do
