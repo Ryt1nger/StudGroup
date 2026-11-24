@@ -61,3 +61,9 @@ def test_private_profile_rejects_symlink(tmp_path):
     link.symlink_to(target, target_is_directory=True)
     with pytest.raises(ValueError, match="profile_symlink_not_allowed"):
         private_profile(link)
+
+
+def test_login_failure_requires_explicit_rejection():
+    url = "https://my.ranepa.ru/login"
+    assert page_status(url, "Войти", password_input=True) == "login_required"
+    assert page_status(url, "Неверный логин или пароль", password_input=True) == "login_failed"

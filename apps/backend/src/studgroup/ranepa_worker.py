@@ -30,6 +30,7 @@ from studgroup.models import (
 )
 from studgroup.process_runtime import ProcessGate, read_intent
 from studgroup.ranepa_browser import (
+    browser_trace,
     read_month,
     read_week,
     resolve_sdo_exits,
@@ -47,7 +48,7 @@ from studgroup.ranepa_crawl_guard import (
     record_crawl_outcome,
     reserve_daily_paid_tasks,
 )
-from studgroup.ranepa_crawl_jobs import claim_next, enqueue_week, finish
+from studgroup.ranepa_crawl_jobs import FAST_RETRY_DIAGNOSTICS, claim_next, enqueue_week, finish
 from studgroup.ranepa_crawl_notifications import (
     CrawlRunStats,
     failed_account_line,
@@ -173,6 +174,7 @@ async def collect_bounded(
     on_captcha=None,
     manual_captcha=None,
 ):
+    token = browser_trace.set(trace)
     try:
         async with asyncio.timeout(900 if manual_captcha is not None else ACCOUNT_TIMEOUT_SECONDS):
             return await _collect(
@@ -207,6 +209,8 @@ async def collect_bounded(
             return None
         log_captcha_stage("crawl_timeout")
         return "source_unavailable"
+    finally:
+        browser_trace.reset(token)
 
 
 async def prepare_week(
@@ -294,7 +298,12 @@ async def _process_one(
         if processed_user_ids is not None:
             # One owner-authorized account per rescan, even with two memberships.
             processed_user_ids.add(user_id)
-        trace = CrawlTrace() if settings.ranepa_crawl_telemetry_enabled else None
+        trace = (
+            CrawlTrace()
+            if settings.ranepa_crawl_telemetry_enabled
+            or settings.ranepa_crawl_notify_account_results_enabled
+            else None
+        )
         if trace is not None:
             trace.record("job_claimed")
         group = await db.get(Group, group_id)
@@ -538,7 +547,17 @@ async def _process_one(
             if failure == "login_failed":
                 notice_failure_detail = "login_rejected"
     async with AsyncSession(engine) as db:
-        finished = await finish(db, job_id, group_id, user_id, failure_code=failure)
+        fast_retry = (
+            trace is not None
+            and not trace.captcha_seen
+            and (
+                failure == "parse_failed"
+                or (failure == "source_unavailable" and trace.diagnostic in FAST_RETRY_DIAGNOSTICS)
+            )
+        )
+        finished = await finish(
+            db, job_id, group_id, user_id, failure_code=failure, fast_retry=fast_retry
+        )
         if finished and trace is not None:
             db.add(
                 trace.observation(
@@ -1189,6 +1208,7 @@ async def run_forever(settings: Settings):
     )
     try:
         next_prepare_at = 0.0
+        next_notice_recovery_at = 0.0
         previous_generation = None
         while not stop.is_set():
             generation = None
@@ -1204,6 +1224,17 @@ async def run_forever(settings: Settings):
                     if utc_day != budget_day:
                         captcha_budget = autonomous_captcha_budget(settings)
                         budget_day = utc_day
+                    if (
+                        settings.ranepa_crawl_notify_account_results_enabled
+                        and monotonic() >= next_notice_recovery_at
+                    ):
+                        try:
+                            await recover_account_crawl_notifications(
+                                engine, owner_id=settings.bot_admin_user_id
+                            )
+                        except Exception:  # noqa: BLE001
+                            log_captcha_stage("owner_account_notice_recovery_unavailable")
+                        next_notice_recovery_at = monotonic() + 60
                     await prepare_urgent(engine, settings, today)
                     if generation != previous_generation or monotonic() >= next_prepare_at:
                         await prepare_week(engine, today, settings, bootstrap=True)

@@ -684,3 +684,95 @@ def test_course_reader_waits_for_late_meetings_from_other_teachers():
         "https://lms.ranepa.ru/mod/url/view.php?id=100",
         "https://lms.ranepa.ru/mod/url/view.php?id=101",
     }
+
+
+def test_sign_in_timeout_does_not_claim_invalid_password(monkeypatch):
+    class Page:
+        def get_by_placeholder(self, *args):
+            return self
+
+        def locator(self, *args):
+            return self
+
+        def get_by_role(self, *args, **kwargs):
+            return self
+
+        async def fill(self, *args, **kwargs):
+            pass
+
+        async def click(self, **kwargs):
+            pass
+
+        async def wait_for_timeout(self, *args):
+            pass
+
+    async def still_waiting(*args):
+        return "login_required"
+
+    from studgroup.ranepa_crawl_trace import CrawlTrace
+
+    monkeypatch.setattr(ranepa_browser, "_state", still_waiting)
+    trace = CrawlTrace()
+    token = ranepa_browser.browser_trace.set(trace)
+    try:
+        assert asyncio.run(ranepa_browser._sign_in(Page(), "student", "test")) == "timeout"
+    finally:
+        ranepa_browser.browser_trace.reset(token)
+    assert trace.last_notification_step() == "lk_form_still_visible"
+    assert [event["step"] for event in trace.events] == [
+        "lk_form_visible",
+        "lk_login_filled",
+        "lk_password_filled",
+        "lk_submit_requested",
+        "lk_form_submitted",
+        "lk_response_recheck",
+        "lk_response_recheck",
+        "lk_form_still_visible",
+    ]
+
+    async def rejected(*args):
+        return "login_failed"
+
+    monkeypatch.setattr(ranepa_browser, "_state", rejected)
+    assert asyncio.run(ranepa_browser._sign_in(Page(), "student", "test")) == "login_failed"
+
+
+@pytest.mark.parametrize(("failures", "expected_calls"), [(2, 3), (3, 3)])
+def test_schedule_connection_rechecks_are_bounded(monkeypatch, failures, expected_calls):
+    class Page:
+        calls = 0
+        url = "about:blank"
+
+        async def goto(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls <= failures:
+                raise ConnectionError("test connection failure")
+
+        async def wait_for_timeout(self, milliseconds):
+            assert milliseconds in {2000, 4000}
+
+    async def rendered(*args):
+        return "rendered"
+
+    monkeypatch.setattr(ranepa_browser, "_wait_visible_state", rendered)
+    page = Page()
+    expected = "rendered" if failures == 2 else "connection"
+    assert asyncio.run(ranepa_browser._open(page, "student", "test")) == expected
+    assert page.calls == expected_calls
+
+
+def test_rate_limit_is_not_retried_as_connection_failure():
+    class Response:
+        status = 429
+
+    class Page:
+        calls = 0
+        url = "about:blank"
+
+        async def goto(self, *args, **kwargs):
+            self.calls += 1
+            return Response()
+
+    page = Page()
+    assert asyncio.run(ranepa_browser._open(page, "student", "test")) == "http_429"
+    assert page.calls == 1

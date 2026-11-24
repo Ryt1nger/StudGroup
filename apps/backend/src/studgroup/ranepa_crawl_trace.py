@@ -12,6 +12,30 @@ from datetime import UTC, datetime
 from studgroup.models import RanepaCrawlObservation
 from studgroup.ranepa_failure_diagnostics import DIAGNOSTIC_REASONS
 
+LOGIN_STAGE_LABELS = {
+    "lk_open_requested": "Открытие страницы личного кабинета",
+    "lk_page_loaded": "Страница ЛК загружена, проверка состояния",
+    "lk_form_visible": "Обнаружена форма авторизации",
+    "lk_login_filled": "Поле логина заполнено",
+    "lk_password_filled": "Поле пароля заполнено",
+    "lk_submit_requested": "Нажатие кнопки Войти",
+    "lk_form_submitted": "Форма отправлена, ожидание ответа",
+    "lk_response_recheck": "Повторная проверка ответа на отправленную форму",
+    "lk_connection_recheck": "Повторная проверка соединения с ЛК",
+    "lk_connection_checks_exhausted": "Соединение с ЛК не восстановилось за 3 проверки",
+    "lk_form_still_visible": "После отправки форма входа осталась открытой",
+    "lk_empty_after_submit": "После отправки страница не загрузилась",
+    "lk_challenge_pending": "После отправки не завершилась проверка браузера",
+    "lk_explicit_rejection": "ЛК показал явное сообщение об отказе входа",
+    "lk_captcha_required": "После отправки обнаружена CAPTCHA",
+    "lk_unexpected_redirect": "Переход на неожиданную страницу ЛК",
+    "lk_rendered_after_submit": "После отправки форма входа исчезла",
+    "lk_schedule_requested": "Переход к расписанию после входа",
+    "lk_session_expired": "Сессия истекла при чтении расписания",
+    "lk_group_verify_requested": "Проверка учебной группы после входа",
+    "lk_group_verified": "Учебная группа подтверждена",
+}
+
 STEPS = frozenset(
     {
         "job_claimed",
@@ -42,6 +66,7 @@ STEPS = frozenset(
         "schedule_verified",
     }
 )
+STEPS |= frozenset(LOGIN_STAGE_LABELS)
 STEPS |= frozenset(f"diagnostic_{code}" for code in DIAGNOSTIC_REASONS)
 MAX_EVENTS = 40
 _SAFE_RESULTS = frozenset(
@@ -108,6 +133,7 @@ class CrawlTrace:
             "sdo_exits_requested",
             "sdo_exits_finished",
         }
+        relevant.update(LOGIN_STAGE_LABELS)
         return next(
             (event["step"] for event in reversed(self.events) if event["step"] in relevant),
             None,

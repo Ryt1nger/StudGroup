@@ -15,6 +15,14 @@ CAPTCHA_MARKERS = (
     "используйте ползунки",
 )
 LOGIN_PATHS = ("/login", "/auth", "/signin")
+LOGIN_REJECTION_MARKERS = (
+    "неверный логин или пароль",
+    "неправильный логин или пароль",
+    "неверный пароль",
+    "некорректный логин или пароль",
+    "invalid username or password",
+    "invalid credentials",
+)
 TIME_RE = re.compile(r"\b\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2}\b")
 
 
@@ -37,6 +45,8 @@ def page_status(
         return "captcha_required"
     path = urlparse(url).path.casefold()
     if any(part in path for part in LOGIN_PATHS) or password_input:
+        if any(marker in text for marker in LOGIN_REJECTION_MARKERS):
+            return "login_failed"
         return "login_required"
     if not text.strip():
         return "empty_page"

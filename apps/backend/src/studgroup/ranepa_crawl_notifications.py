@@ -18,10 +18,10 @@ from studgroup.models import (
     Group,
     RanepaCrawlJob,
     RanepaCrawlObservation,
-    RanepaManualCaptcha,
     User,
 )
 from studgroup.ranepa_crawl_jobs import retry_at, terminal_failure
+from studgroup.ranepa_crawl_trace import LOGIN_STAGE_LABELS
 from studgroup.ranepa_failure_diagnostics import DIAGNOSTIC_REASONS
 
 _CAPTCHA_LOCATIONS = {
@@ -183,6 +183,8 @@ _ACTIONS = {
 
 
 def _stage(code: str, detail: str | None, last_step: str | None) -> str:
+    if last_step in LOGIN_STAGE_LABELS:
+        return LOGIN_STAGE_LABELS[last_step]
     if detail in _FAILURE_STAGE:
         return _FAILURE_STAGE[detail]
     if last_step in {"month_requested", "month_recheck"}:
@@ -327,32 +329,23 @@ async def notify_account_crawl_result(
         raise ValueError("invalid_crawl_failure_detail")
     if diagnostic_code is not None and diagnostic_code not in DIAGNOSTIC_REASONS:
         raise ValueError("invalid_crawl_diagnostic_code")
-    if last_step is not None and last_step not in {
-        "month_requested",
-        "month_recheck",
-        "week_requested",
-        "week_recheck",
-        "week_retry",
-        "sdo_exits_requested",
-        "sdo_exits_finished",
-    }:
+    if (
+        last_step is not None
+        and last_step not in LOGIN_STAGE_LABELS
+        and last_step
+        not in {
+            "month_requested",
+            "month_recheck",
+            "week_requested",
+            "week_recheck",
+            "week_retry",
+            "sdo_exits_requested",
+            "sdo_exits_finished",
+        }
+    ):
         raise ValueError("invalid_crawl_notification_stage")
-    if failure_code == "captcha":
-        # The one-time owner WebApp notice already states the failed automatic
-        # crawl, both groups and the manual action. Do not send its duplicate
-        # final CAPTCHA error from a separate outbox item.
-        async with AsyncSession(engine) as db:
-            manual_notice = await db.scalar(
-                select(RanepaManualCaptcha.id)
-                .where(
-                    RanepaManualCaptcha.job_id == job_id,
-                    RanepaManualCaptcha.attempt == attempt,
-                    RanepaManualCaptcha.owner_telegram_id == owner_id,
-                )
-                .limit(1)
-            )
-            if manual_notice is not None:
-                return False
+    # The manual challenge prompt requests an action; it is not the finalized
+    # account result. Every completed attempt gets its own deduplicated report.
     group = _safe_label(group_code, fallback="группа не указана")
     telegram_group = _safe_label(telegram_group_name, fallback="не указана")
     name = _safe_label(student_name, fallback="студент")
@@ -371,6 +364,20 @@ async def notify_account_crawl_result(
         has_saved_schedule = stats.saved_weeks > 0 or stats.saved_lessons > 0
     if failure_code is not None:
         cause = _failure_summary(failure_code, failure_detail, diagnostic_code)
+        if last_step == "lk_explicit_rejection":
+            cause = "Личный кабинет показал явный отказ в авторизации"
+        action = _action(failure_code, failure_detail, attempt)
+        if failure_code in {"source_unavailable", "parse_failed"}:
+            async with AsyncSession(engine) as db:
+                job = await db.get(RanepaCrawlJob, job_id)
+                if (
+                    job is not None
+                    and job.attempts == attempt
+                    and job.finished_at is not None
+                    and job.next_attempt_at is not None
+                    and (job.next_attempt_at - job.finished_at).total_seconds() <= 60
+                ):
+                    action = "Быстрый автоповтор после основной очереди, не раньше чем через 1 мин."
         lines = [
             (
                 "⚠️ StudGroup · обход СДО завершён частично"
@@ -382,7 +389,7 @@ async def notify_account_crawl_result(
             f"Группа РАНХиГС: {group}",
             f"Этап: {_stage(failure_code, failure_detail, last_step)}",
             f"Причина: {cause}.",
-            f"Что делать: {_action(failure_code, failure_detail, attempt)}",
+            f"Что делать: {action}",
             result_line,
         ]
         if historical_replay:
@@ -441,6 +448,10 @@ async def notify_account_crawl_result(
             {"chat_id": owner_id, "text": message, "link_preview_options": {"is_disabled": True}},
             f"ranepa-crawl-account:{job_id}:{attempt}",
         )
+        if queued:
+            observation = await db.get(RanepaCrawlObservation, (job_id, attempt))
+            if observation is not None and observation.notification_state == "pending":
+                observation.notification_state = "queued"
         await db.commit()
         return queued
 
@@ -490,7 +501,7 @@ async def recover_account_crawl_notifications(
             else None
         )
         failure_code = None if observation.result_code == "succeeded" else observation.result_code
-        await notify_account_crawl_result(
+        queued = await notify_account_crawl_result(
             engine,
             owner_id=owner_id,
             job_id=job.id,
@@ -516,6 +527,8 @@ async def recover_account_crawl_notifications(
                 saved.notification_state = "queued"
                 recovered += 1
                 await db.commit()
+            elif queued:
+                recovered += 1
     return recovered
 
 
