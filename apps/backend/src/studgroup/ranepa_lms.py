@@ -299,7 +299,7 @@ def _streams(label):
     for match in STREAM.finditer(clean):
         groups = frozenset(int(number) for number in re.findall(r"\d+", match[5] or match[6]))
         types = _kind(match[4] or "") or _kind(clean)
-        result.append((match[1:4], types, groups))
+        result.append((match.groups()[:3], types, groups))
     return result
 
 
