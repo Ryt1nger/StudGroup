@@ -217,13 +217,13 @@ describe('Today', () => {
     expect(screen.queryByText('На сегодня заданий нет')).not.toBeInTheDocument();
   });
 
-  it('shows the delayed-processing text without inventing cards', async () => {
+  it('keeps background processing invisible without inventing cards', async () => {
     useScenario('delayed');
     renderApp();
-    expect(
-      await screen.findByText('Обработка информации задерживается. Данные появятся автоматически'),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Данные могли устареть · обновлено в/)).toBeInTheDocument();
+    expect(await screen.findByRole('group', { name: 'День' })).toBeInTheDocument();
+    expect(screen.queryByText('Обработка информации задерживается. Данные появятся автоматически')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Данные могли устареть · обновлено в/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Обновить' })).not.toBeInTheDocument();
     expect(screen.queryByText('На сегодня заданий нет')).not.toBeInTheDocument();
   });
 

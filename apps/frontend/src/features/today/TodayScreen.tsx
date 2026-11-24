@@ -1,13 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import type { HomeworkSummary, TodayResponse } from '@studgroup/shared-types';
-import { STALE_AFTER_MS } from '../../api/cachePolicy';
 import { useAcademicDeadlinesQuery, useScheduleQuery, useTodayQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
-import { addDays, dayKey, formatLongDay, formatTime, plural } from '../../lib/format';
+import { addDays, dayKey, formatLongDay, plural } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
-import { useProcessingPoll } from '../../lib/processingPoll';
 import { SectionTop } from '../../shell/TopBar';
 import { Banner, Skeleton } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
@@ -132,12 +130,6 @@ export function TodayScreen() {
     return () => window.clearTimeout(timer);
   }, [data, nowMs, refetch, refetchHomework, refetchDeadlines, query.isError]);
 
-  const processingActive = data !== undefined && data.processing.state !== 'idle';
-  const { gaveUp, restart } = useProcessingPoll(processingActive, query.refetch);
-  const staleByClock = data ? nowMs - Date.parse(data.freshness.last_successful_sync_at) > STALE_AFTER_MS : false;
-  // A restored encrypted snapshot is displayed immediately, but the automatic
-  // network refresh is already in flight. Offer manual retry only if it fails.
-  const stale = data ? !query.isFetching && (data.freshness.stale || staleByClock || query.isError) : false;
   const select = (index: number) =>
     setParams((previous) => {
       const next = new URLSearchParams(previous);
@@ -164,20 +156,6 @@ export function TodayScreen() {
       }} /> : <Skeleton count={1} label={ru.states.loading} />}
       {data && selectedKey && today ? <div className="datel">{relativeLabel(selectedKey, today)} · {formatLongDay(`${selectedKey}T12:00:00Z`, 'UTC')}</div> : null}
 
-      {data && staleByClock && query.isFetching ? <Banner tone="info" icon="refresh">Обновляем данные…</Banner> : null}
-      {data && stale ? (
-        <Banner
-          tone="warning"
-          icon="clock"
-          action={<button type="button" className="bact" aria-label="Обновить" onClick={() => void query.refetch()}><Ic name="refresh" size={16} /></button>}
-        >
-          {ru.freshness.stale(formatTime(data.freshness.last_successful_sync_at, data.group_timezone))}
-        </Banner>
-      ) : null}
-      {data && data.processing.state === 'delayed' ? <Banner tone="warning" icon="alert">{ru.today.delayed}</Banner> : null}
-      {processingActive && gaveUp ? (
-        <Banner tone="info" icon="alert" action={<button type="button" className="bact txt" onClick={restart}>{ru.today.recheck}</button>}>{ru.today.pollStopped}</Banner>
-      ) : null}
 
       {features.events && groupEvents.isError ? <RequestError error={groupEvents.error} onRetry={() => void groupEvents.refetch()} /> : null}
       {features.events && groupEvents.isPending ? <Skeleton count={1} label="Загрузка событий календаря" /> : null}
