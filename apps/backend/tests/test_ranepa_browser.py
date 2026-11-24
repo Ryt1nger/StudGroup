@@ -930,7 +930,6 @@ def test_moodle_dashboard_resolves_without_cabinet_exit(monkeypatch, empty_reads
     asyncio.run(scenario())
 
 
-
 @pytest.mark.parametrize("supplement_status", [None, 403, 429])
 def test_moodle_keeps_verified_dashboard_on_supplement_timeout(supplement_status):
     from studgroup.ranepa_crawl_trace import CrawlTrace
