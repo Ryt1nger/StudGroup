@@ -1,9 +1,9 @@
 name: Backend
 on:
   push:
-    paths: ['apps/backend/**', '.github/workflows/backend.yml']
+    paths: ['apps/backend/**', 'deploy/server/**', '.github/workflows/backend.yml', '.github/workflows/ranepa-crawl.yml', '.github/workflows/ranepa-watchdog.yml']
   pull_request:
-    paths: ['apps/backend/**', '.github/workflows/backend.yml']
+    paths: ['apps/backend/**', 'deploy/server/**', '.github/workflows/backend.yml', '.github/workflows/ranepa-crawl.yml', '.github/workflows/ranepa-watchdog.yml']
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -62,6 +62,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Validate release shell syntax
+        run: bash -n deploy/server/deploy.sh
       - name: Build independent SDO image
         run: docker build -f apps/backend/Dockerfile.ranepa-worker -t studgroup-sdo-ci apps/backend
       - name: Launch Chromium as the runtime user without network

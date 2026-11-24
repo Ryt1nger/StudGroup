@@ -28,10 +28,11 @@ previous=$(git rev-parse HEAD)
 mkdir -p "$STATE_DIR"
 
 deploy_sha() {
-  local sha=$1 tag=${1:0:12}
-  git checkout --quiet --detach "$sha"
-  STUDGROUP_IMAGE_TAG=$tag docker compose -f "$COMPOSE_FILE" build api caddy ranepa-worker
-  STUDGROUP_IMAGE_TAG=$tag docker compose -f "$COMPOSE_FILE" up -d redis api caddy ranepa-worker
+  local sha=$1 tag=${1:0:12} require_worker=${2:-0}
+  # Explicit checks are required: bash disables errexit inside an if-tested function.
+  git checkout --quiet --detach "$sha" || return 1
+  STUDGROUP_IMAGE_TAG=$tag docker compose -f "$COMPOSE_FILE" build api caddy ranepa-worker || return 1
+  STUDGROUP_IMAGE_TAG=$tag docker compose -f "$COMPOSE_FILE" up -d redis api caddy ranepa-worker || return 1
 
   local state
   for _ in $(seq 1 36); do
@@ -39,16 +40,32 @@ deploy_sha() {
     [[ $state == healthy ]] && break
     sleep 5
   done
-  [[ ${state:-} == healthy ]]
+  [[ ${state:-} == healthy ]] || return 1
   docker exec server-api-1 python -c \
-    "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=15); raise SystemExit(0 if r.status == 200 else 1)"
+    "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=15); raise SystemExit(0 if r.status == 200 else 1)" || return 1
   curl --fail --silent --show-error --max-time 20 \
-    https://api.109-237-97-85.sslip.io/health >/dev/null
+    https://api.109-237-97-85.sslip.io/health >/dev/null || return 1
   curl --fail --silent --show-error --max-time 20 \
-    https://app.109-237-97-85.sslip.io/ >/dev/null
+    https://app.109-237-97-85.sslip.io/ >/dev/null || return 1
+
+  if [[ $require_worker == 1 ]]; then
+    local worker_id
+    worker_id=$(STUDGROUP_IMAGE_TAG=$tag docker compose -f "$COMPOSE_FILE" ps -q ranepa-worker) || return 1
+    [[ -n $worker_id ]] || return 1
+    for _ in $(seq 1 36); do
+      state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$worker_id" 2>/dev/null || true)
+      [[ $state == healthy ]] && break
+      sleep 5
+    done
+    if [[ ${state:-} != healthy ]]; then
+      echo "SDO-worker did not pass startup health check" >&2
+      return 1
+    fi
+  fi
+  return 0
 }
 
-if deploy_sha "$target"; then
+if deploy_sha "$target" 1; then
   printf '%s\n' "$target" >"$STATE_DIR/deployed-sha"
   echo "deployed $target"
   exit 0
