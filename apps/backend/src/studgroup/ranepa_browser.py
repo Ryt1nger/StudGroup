@@ -443,7 +443,7 @@ async def _expand_lms_sections(page) -> None:
         return
     try:
         await page.evaluate(
-            """() => {
+            """async () => {
                 for (const item of document.querySelectorAll('main details:not([open])')) {
                     item.open = true;
                 }
@@ -454,6 +454,19 @@ async def _expand_lms_sections(page) -> None:
                 )) {
                     item.click();
                 }
+                // Large Moodle courses may hydrate activities only after their
+                // sections enter the viewport. Trigger that read-only loading
+                // without opening activities or submitting any forms.
+                const sections = Array.from(document.querySelectorAll(
+                    'main .course-section, main .activity-item'
+                )).slice(0, 200);
+                for (const section of sections) {
+                    section.scrollIntoView({block: 'center'});
+                    await new Promise(resolve => requestAnimationFrame(
+                        () => requestAnimationFrame(resolve)
+                    ));
+                }
+                window.scrollTo(0, 0);
             }"""
         )
     except Exception:  # noqa: BLE001 -- optional progressive page reveal
