@@ -33,7 +33,23 @@ from studgroup.ranepa_schedule import (
     subgroup_choice_changed_since_check,
 )
 from studgroup.ranepa_storage import encode_rows
-from studgroup.subject_identity import subject_uuid
+from studgroup.subject_identity import match_key, subject_uuid
+
+# RANEPA uses broader official labels than the subgroup setup shown to students. Keep these
+# aliases local to timetable projection: they must not merge homework subject identities or
+# rename the split configured by the group administrator.
+RANEPA_SPLIT_SUBJECT_ALIASES = {
+    match_key("Иностранный язык"): {match_key("Английский язык")},
+    match_key("Основы информатики"): {match_key("Информатика")},
+}
+
+
+def _split_for_ranepa_subject(splits, subject):
+    """Return one compatible configured split, never an ambiguous match."""
+    lesson_key = match_key(subject)
+    compatible = {lesson_key, *RANEPA_SPLIT_SUBJECT_ALIASES.get(lesson_key, set())}
+    found = [split for split in splits if match_key(split.subject_name) in compatible]
+    return found[0] if len(found) == 1 else None
 
 
 def _safe_link(url: str) -> bool:
@@ -765,7 +781,6 @@ async def personal_with_group_fallback(db, group_id, user_id, start: date, end: 
         choice_updated[(row.membership_id, row.split_id)] = row.updated_at
     target_choices = by_member.get(target.id, {})
     splits = (await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == group_id))).all()
-    split_by_name = {normalized(row.subject_name): row for row in splits}
     own_weeks = set(
         (
             await db.scalars(
@@ -802,7 +817,7 @@ async def personal_with_group_fallback(db, group_id, user_id, start: date, end: 
                 continue
             if not start <= date.fromisoformat(lesson["day"]) <= end:
                 continue
-            split = split_by_name.get(normalized(lesson["subject"]))
+            split = _split_for_ranepa_subject(splits, lesson["subject"])
             if split is None and has_unverified_subgroup_hint(lesson.get("subgroup_hint")):
                 continue
             if split is not None and (

@@ -27,6 +27,7 @@ from studgroup.ranepa_personal import (
     _display_link_from_candidates,
     _reuse_verified_candidate,
     _sdo_cache_key,
+    _split_for_ranepa_subject,
     enrich_personal_links,
     personal_with_group_fallback,
     remember_personal,
@@ -39,6 +40,18 @@ from studgroup.subject_identity import subject_uuid
 pytest_plugins = ["test_schedule_api"]
 AUTH = {"Authorization": "Bearer valid"}
 CODE = "Э-ОБ-385-04-26-02"
+
+
+@pytest.mark.parametrize(
+    ("configured", "ranepa"),
+    [
+        ("Английский язык", "Иностранный язык"),
+        ("Информатика", "Основы информатики"),
+    ],
+)
+def test_ranepa_official_subject_names_match_configured_splits(configured, ranepa):
+    split = SimpleNamespace(subject_name=configured)
+    assert _split_for_ranepa_subject([split], ranepa) is split
 
 
 def week(subject="История России"):
@@ -319,8 +332,8 @@ def test_group_fallback_never_gives_another_subgroups_lesson(tmp_path):
                 split = SubjectSplit(
                     id=uuid4(),
                     group_id=group.id,
-                    subject_id=subject_uuid(group.id, "Иностранный язык"),
-                    subject_name="Иностранный язык",
+                    subject_id=subject_uuid(group.id, "Английский язык"),
+                    subject_name="Английский язык",
                     created_at=datetime.now(UTC),
                 )
                 db.add_all([*members, split])
