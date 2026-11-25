@@ -31,6 +31,8 @@ def test_browser_failure_diagnostics_are_closed_vocabulary():
         browser_failure_reason(RuntimeError("Executable doesn't exist at /private"))
         == "binary_missing"
     )
-    assert browser_failure_reason(RuntimeError("No space left on device")) == "shared_memory_or_disk"
+    assert (
+        browser_failure_reason(RuntimeError("No space left on device")) == "shared_memory_or_disk"
+    )
     assert browser_failure_reason(RuntimeError("Cannot allocate memory")) == "memory_exhausted"
     assert browser_failure_reason(RuntimeError("private URL and credentials")) == "unknown"
