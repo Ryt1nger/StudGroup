@@ -112,7 +112,9 @@ async def list_review_events(request: Request, context: CurrentStaff, db: Db):
         await db.scalars(
             select(GroupEvent)
             .where(
-                GroupEvent.group_id == context.group.id, GroupEvent.delete_at > datetime.now(UTC)
+                GroupEvent.group_id == context.group.id,
+                GroupEvent.state != "deleted",
+                GroupEvent.delete_at > datetime.now(UTC),
             )
             .order_by(GroupEvent.created_at.desc())
             .limit(100)
@@ -149,7 +151,7 @@ class EventUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     payload: dict[str, Any]
-    state: Literal["draft", "active", "cancelled"] = "draft"
+    state: Literal["draft", "active", "cancelled", "deleted"] = "draft"
     accept_source_ids: list[UUID] = Field(default_factory=list, max_length=100)
 
 
