@@ -9,7 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.deadline_backfill import repair_all
-from studgroup.models import Group, Homework, Membership, PersonalCompletion, RawMessage, SchedulePattern
+from studgroup.models import (
+    Group,
+    Homework,
+    Membership,
+    PersonalCompletion,
+    RawMessage,
+    SchedulePattern,
+)
 from studgroup.subject_identity import subject_uuid
 
 pytest_plugins = ["test_schedule_api"]
@@ -25,7 +32,9 @@ def test_existing_homework_uses_original_date_and_is_not_reprocessed_twice(clien
         async with AsyncSession(engine, expire_on_commit=False) as db:
             group = await db.scalar(select(Group).where(Group.telegram_chat_id == -1001))
             member = await db.scalar(select(Membership).where(Membership.group_id == group.id))
-            await db.execute(SchedulePattern.__table__.delete().where(SchedulePattern.group_id == group.id))
+            await db.execute(
+                SchedulePattern.__table__.delete().where(SchedulePattern.group_id == group.id)
+            )
             db.add(
                 SchedulePattern(
                     group_id=group.id,
