@@ -23,6 +23,10 @@ def test_runtime_acknowledgement_and_heartbeat(client):
     async def exercise():
         gate = ProcessGate(engine, settings, "sdo", False)
         assert await gate.begin() == generation
+        async with AsyncSession(engine) as db:
+            row = await db.get(BackgroundProcess, "sdo")
+            assert row.status == "starting"
+            assert row.applied_generation != generation
         await gate.succeeded(generation)
         await gate.succeeded(generation)
         async with AsyncSession(engine) as db:
