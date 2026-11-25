@@ -937,6 +937,7 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                     ShadowEvaluationRun.delete_at > now,
                 )
             )
+            scheduled_slot = None
             planned = None
             if catchup_due and (
                 last_run_at is None or _utc(last_run_at) <= now - timedelta(seconds=60)
@@ -954,7 +955,6 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                     minimum_targets=CATCHUP_MIN_TARGETS,
                 )
             if planned is None:
-                scheduled_slot = None
                 if settings.owner_funded_pilot or settings.ai_schedule_enabled:
                     scheduled_slot = staggered_slot(
                         now,
