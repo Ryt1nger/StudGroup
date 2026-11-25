@@ -1126,9 +1126,8 @@ a.pcard:active { transform: scale(.98); }
 
 
 
-/* Keep the sticky calendar header full width; generic view max-width must not
-   constrain the deliberately full-bleed header. Use the same safe-area padding
-   as the scroll container so the week, toolbar and content align on WebViews. */
+/* The sticky calendar header uses the same inner width as the schedule.
+   Horizontal negative margins previously clipped the weekday row. */
 .scroll {
   --scroll-pad: 16px;
   padding-left: calc(var(--scroll-pad) + var(--left-inset));
@@ -1136,9 +1135,9 @@ a.pcard:active { transform: scale(.98); }
 }
 @media (max-width: 360px) { .scroll { --scroll-pad: 12px; } }
 .view > .pinned {
-  max-width: none;
-  margin-inline: calc(-1 * (var(--scroll-pad) + var(--left-inset))) calc(-1 * (var(--scroll-pad) + var(--right-inset)));
-  padding-inline: calc(var(--scroll-pad) + var(--left-inset)) calc(var(--scroll-pad) + var(--right-inset));
+  max-width: 100%;
+  margin-inline: 0;
+  padding-inline: 0;
   padding-bottom: 6px;
 }
 .pinned .week { margin-bottom: 8px; }

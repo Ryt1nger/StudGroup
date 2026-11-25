@@ -225,7 +225,6 @@ def test_manual_delete_hides_event_and_blocks_source_replay(client, monkeypatch)
     assert client.get("/v1/group-events", headers=AUTH).json()["events"] == []
 
 
-
 def test_pilot_event_review_and_delete_follow_session_feature_policy(client, monkeypatch):
     from test_staff_api import db_run
 

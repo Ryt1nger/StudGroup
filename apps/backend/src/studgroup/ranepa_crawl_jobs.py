@@ -398,9 +398,11 @@ async def claim_next(
         )
         .exists()
     )
-    active_urgent = select(UrgentSDORun.id).where(
-        UrgentSDORun.state.in_(("requested", "initializing", "running"))
-    ).exists()
+    active_urgent = (
+        select(UrgentSDORun.id)
+        .where(UrgentSDORun.state.in_(("requested", "initializing", "running")))
+        .exists()
+    )
     # A full run owns the worker until completion. Ordinary jobs cannot leak
     # into the new queue or run while the initialization transaction is pending.
     due = [~active_urgent | urgent]
@@ -417,7 +419,8 @@ async def claim_next(
             .exists()
         )
         due.append(
-            urgent | ~select(locked.id)
+            urgent
+            | ~select(locked.id)
             .where(
                 locked.user_id == RanepaCrawlJob.user_id,
                 locked.state == "failed",
@@ -437,7 +440,8 @@ async def claim_next(
             .exists()
         )
         due.append(
-            urgent | ~select(completed.id)
+            urgent
+            | ~select(completed.id)
             .where(
                 completed.user_id == RanepaCrawlJob.user_id,
                 completed.next_attempt_at > now,
@@ -543,9 +547,7 @@ async def finish(
     )
     job.failure_code = failure_code
     job.finished_at = now or datetime.now(UTC)
-    job.next_attempt_at = retry_at(
-        job.finished_at, failure_code=failure_code, attempts=attempts
-    )
+    job.next_attempt_at = retry_at(job.finished_at, failure_code=failure_code, attempts=attempts)
     if (
         fast_retry
         and first_transient

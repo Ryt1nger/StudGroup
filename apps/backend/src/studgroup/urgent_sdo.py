@@ -317,7 +317,8 @@ async def prepare_urgent(engine, settings, today):
                 blocked_users[candidate.user_id] = "credentials_required"
                 continue
             captcha = await db.scalar(
-                select(RanepaCrawlJob.id).where(
+                select(RanepaCrawlJob.id)
+                .where(
                     RanepaCrawlJob.user_id == candidate.user_id,
                     (
                         (RanepaCrawlJob.failure_code == "captcha")
@@ -328,12 +329,14 @@ async def prepare_urgent(engine, settings, today):
                         (RanepaCrawlJob.next_attempt_at > now)
                         | (RanepaCrawlJob.state == "dead_letter")
                     ),
-                ).limit(1)
+                )
+                .limit(1)
             )
             if captcha is not None:
                 blocked_users[candidate.user_id] = "captcha_protection"
         await enqueue_week(
-            db, monday,
+            db,
+            monday,
             [candidate for candidate in candidates if candidate.user_id not in blocked_users],
             urgent_refresh=True,
         )
@@ -417,7 +420,9 @@ async def finalize_urgent(engine, settings):
                 select(UrgentSDOTarget).where(
                     UrgentSDOTarget.run_id == row.id,
                     UrgentSDOTarget.state == "blocked",
-                    UrgentSDOTarget.failure_code.in_(("retry_policy_blocked", "credentials_required")),
+                    UrgentSDOTarget.failure_code.in_(
+                        ("retry_policy_blocked", "credentials_required")
+                    ),
                 )
             )
         ).all()
