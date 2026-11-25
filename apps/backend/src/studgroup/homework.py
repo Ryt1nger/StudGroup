@@ -86,7 +86,8 @@ async def representation(db, row, user, now, context=None):
         membership = context["membership"]
         subgroup = context["subgroups"].get(row.subgroup_id)
         permissions = context["permissions"]
-    from studgroup.support_session import context as support_context, editing
+    from studgroup.support_session import context as support_context
+    from studgroup.support_session import editing
 
     support = support_context(db)
     if support:
