@@ -25,12 +25,17 @@ export function eventHandlers(baseUrl: string) {
     findings: [],
     retained_until: `${addDays(today, 10)}T00:00:00+03:00`,
   };
+  let deleted = false;
   return [
-    http.get(`${baseUrl}/staff/image-findings/events`, () => HttpResponse.json({ events: [item] })),
+    http.get(`${baseUrl}/staff/image-findings/events`, () => HttpResponse.json({ events: deleted ? [] : [item] })),
     http.put(`${baseUrl}/staff/image-findings/events/:id`, async ({ request, params }) => {
       const body = (await request.json()) as ReviewImageEventData['body'];
-      if (params.id !== item.id) return HttpResponse.json({}, { status: 404 });
+      if (deleted || params.id !== item.id) return HttpResponse.json({}, { status: 404 });
       if (body.expected_revision !== item.revision) return HttpResponse.json({}, { status: 409 });
+      if (body.state === 'deleted') {
+        deleted = true;
+        return HttpResponse.json({ ...item, state: 'deleted', revision: item.revision + 1 });
+      }
       const before = eventDays(item, 'Europe/Moscow');
       const after = eventDays(body.payload, 'Europe/Moscow');
       item = {
@@ -51,7 +56,7 @@ export function eventHandlers(baseUrl: string) {
       const days = eventDays(item, 'Europe/Moscow');
       const status = query.get('status') ?? 'active';
       const visible =
-        item.state !== 'draft' &&
+        !deleted && item.state !== 'draft' &&
         (status === 'all' || item.state === status) &&
         (!start || !end || (days && days.first <= end && start <= days.last)) &&
         (query.get('upcoming') !== 'true' ||
@@ -63,7 +68,7 @@ export function eventHandlers(baseUrl: string) {
       return HttpResponse.json({ events: visible ? [item] : [] });
     }),
     http.get(`${baseUrl}/group-events/:id`, ({ params }) =>
-      params.id === item.id && item.state !== 'draft'
+      !deleted && params.id === item.id && item.state !== 'draft'
         ? HttpResponse.json(item)
         : HttpResponse.json({}, { status: 404 }),
     ),
