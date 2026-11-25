@@ -21,7 +21,7 @@ def progress_key(job_id, attempt):
 
 
 def progress_payload(trace, stats, mode):
-    step = trace.events[-1]["step"] if trace.events else "job_claimed"
+    step = trace.events[-1]["step"] if trace is not None and trace.events else "job_claimed"
     return {
         "step": step if step in STEPS else "job_claimed",
         "saved_weeks": min(6, max(0, stats.saved_weeks)),
@@ -87,12 +87,17 @@ async def current_account(db, redis):
                 candidate = json.loads(raw)
                 if (
                     isinstance(candidate, dict)
-                    and candidate.get("step") in STEPS
+                    and isinstance(candidate.get("step"), str)
+                    and candidate["step"] in STEPS
                     and type(candidate.get("saved_weeks")) is int
                     and 0 <= candidate["saved_weeks"] <= 6
-                    and candidate.get("mode") in {"manual", "worker"}
+                    and candidate.get("mode") in ("manual", "worker")
                 ):
-                    live = candidate
+                    live = {
+                        key: candidate[key]
+                        for key in ("step", "saved_weeks", "mode", "updated_at")
+                        if key in candidate
+                    }
         except (RedisError, OSError, TimeoutError, ValueError, TypeError):
             pass
     return {
