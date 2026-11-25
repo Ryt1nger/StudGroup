@@ -495,10 +495,10 @@ const processStates={running:"Запущен",stopped:"Остановлен",err
 const queueNames={ai_messages:"AI / сообщения",ai_jobs:"AI / архивная очередь (legacy)",ai_images:"AI / фото",sdo:"SDO",telegram_outbox:"Telegram"};
 let processLoading=false,processChanging=false,processSignature="";
 function renderProcessControls(data,urgent){
-  const signature=JSON.stringify([data,urgent]);if(signature===processSignature)return;processSignature=signature;
+  const signature=JSON.stringify([data,urgent]);if(signature===processSignature)return;
   const host=$("process-cards");host.replaceChildren();
   for(const item of data.processes||[]){
-    if(!Object.hasOwn(processNames,item.name))continue;
+    if(!Object.prototype.hasOwnProperty.call(processNames,item.name))continue;
     const card=dom("article","chart-card process-card");
     const header=dom("div","process-card-heading");text(header,"h3","",processNames[item.name]);
     const labelEl=dom("label","process-switch"),toggle=dom("input");toggle.type="checkbox";toggle.checked=Boolean(item.effective_enabled);toggle.setAttribute("role","switch");toggle.setAttribute("aria-label",processNames[item.name]);toggle.disabled=processChanging;
@@ -515,6 +515,7 @@ function renderProcessControls(data,urgent){
     toggle.addEventListener("change",()=>changeProcess(item.name,toggle.checked?"enable":"disable"));
     card.append(restart);host.append(card);
   }
+  if(!host.children.length)text(host,"p","chart-empty","Нет данных о фоновых процессах. Проверьте подключение и обновите страницу.");
   const progress=$("urgent-progress");progress.replaceChildren();
   if(!urgent){text(progress,"p","chart-empty","Полный прогон ещё не запрашивался.");}
   else{
@@ -535,7 +536,8 @@ function renderProcessControls(data,urgent){
   }
   $("urgent-start").disabled=processChanging||Boolean(urgent&&["requested","running"].includes(urgent.state));
   const queues=$("process-queues");queues.replaceChildren();
-  for(const [key,values] of Object.entries(data.queues||{})){if(!Object.hasOwn(queueNames,key))continue;statRow(queues,queueNames[key],Object.entries(values).map(([k,v])=>russianState(k)+": "+number(v)).join(" · ")||"Пусто");}
+  for(const [key,values] of Object.entries(data.queues||{})){if(!Object.prototype.hasOwnProperty.call(queueNames,key))continue;statRow(queues,queueNames[key],Object.entries(values).map(([k,v])=>russianState(k)+": "+number(v)).join(" · ")||"Пусто");}
+  processSignature=signature;
 }
 async function loadProcessControls(){
   if(!token||processLoading||processChanging)return;processLoading=true;
@@ -544,7 +546,7 @@ async function loadProcessControls(){
   finally{processLoading=false;}
 }
 async function changeProcess(name,action){
-  if(processChanging||!Object.hasOwn(processNames,name))return;
+  if(processChanging||!Object.prototype.hasOwnProperty.call(processNames,name))return;
   if(action==="restart"&&!confirm("Перезапустить "+processNames[name]+"?"))return;
   processChanging=true;
   for(const control of $("process-cards").querySelectorAll("input,button"))control.disabled=true;
