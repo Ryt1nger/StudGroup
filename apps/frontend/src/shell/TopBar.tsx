@@ -15,6 +15,11 @@ export function initialsOf(name: string): string {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase() || '?';
 }
 
+/** User avatars use one letter; group initials retain their existing format. */
+export function avatarLetter(name: string): string {
+  return Array.from(name.trim())[0]?.toUpperCase() || '?';
+}
+
 /** Bell and avatar: the two buttons at the right of every top row. */
 /** The name the person gave in their profile, else the one Telegram knows. */
 function useOwnName(): { first: string; full: string } {
@@ -35,7 +40,7 @@ function Actions() {
   return (
     <div className="tr">
       <BellButton />
-      <Link className="avatar" to="/profile" aria-label={`Профиль: ${name}`}>{initialsOf(name)}</Link>
+      <Link className="avatar" to="/profile" aria-label={`Профиль: ${name}`}>{avatarLetter(name)}</Link>
     </div>
   );
 }

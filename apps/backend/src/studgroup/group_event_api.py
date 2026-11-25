@@ -14,7 +14,7 @@ from studgroup.analysis.event_lifetime import approved_snapshot
 from studgroup.analysis.group_events import get_event, retained_sources, review_update
 from studgroup.analysis.image_contracts import ImageEvent
 from studgroup.api import ApiError, active_membership
-from studgroup.models import GroupEvent, GroupEventRevision, RawMessage
+from studgroup.models import Group, GroupEvent, GroupEventRevision, RawMessage
 from studgroup.staff_api import CurrentStaff, Db
 from studgroup.student_cards import telegram_url
 
@@ -112,7 +112,9 @@ async def list_review_events(request: Request, context: CurrentStaff, db: Db):
         await db.scalars(
             select(GroupEvent)
             .where(
-                GroupEvent.group_id == context.group.id, GroupEvent.delete_at > datetime.now(UTC)
+                GroupEvent.group_id == context.group.id,
+                GroupEvent.state != "deleted",
+                GroupEvent.delete_at > datetime.now(UTC),
             )
             .order_by(GroupEvent.created_at.desc())
             .limit(100)
@@ -149,7 +151,7 @@ class EventUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     expected_revision: int = Field(ge=1)
     payload: dict[str, Any]
-    state: Literal["draft", "active", "cancelled"] = "draft"
+    state: Literal["draft", "active", "cancelled", "deleted"] = "draft"
     accept_source_ids: list[UUID] = Field(default_factory=list, max_length=100)
 
 
@@ -162,6 +164,9 @@ async def update_review_event(
     gate(request, context.group.id)
     if body.state == "active":
         gate(request, context.group.id, public=True)
+    if body.state == "deleted":
+        # Match the lock order used by capture_event, including concurrent source replays.
+        await db.scalar(select(Group).where(Group.id == context.group.id).with_for_update())
     event = await get_event(db, context.group.id, ident, lock=True)
     try:
         await review_update(
@@ -177,6 +182,8 @@ async def update_review_event(
     except ValidationError:
         raise ApiError("invalid_request", "Некорректные поля события", 422) from None
     await db.commit()
+    if event.state == "deleted":
+        return view(event)
     return await present(db, context.group, event, datetime.now(UTC))
 
 

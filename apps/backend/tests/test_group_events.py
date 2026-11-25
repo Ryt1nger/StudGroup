@@ -189,3 +189,37 @@ def test_public_events_recheck_membership_and_never_cross_group_boundary(client,
     asyncio.run(move_to_other_group())
     assert client.get(path, headers=AUTH).status_code == 404
     assert client.get("/v1/group-events", headers=AUTH).json()["events"] == []
+
+
+def test_manual_delete_hides_event_and_blocks_source_replay(client, monkeypatch):
+    event, payload = prepare(client, monkeypatch)
+    detail = f"/v1/group-events/{event.id}"
+    review = "/v1/staff/image-findings/events"
+    assert put(client, event, payload, "deleted").status_code == 403
+    make(client, "headman")
+    assert put(client, event, payload, "deleted", event.revision + 1).status_code == 409
+    removed = put(client, event, payload, "deleted")
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["state"] == "deleted"
+    assert client.get(detail, headers=AUTH).status_code == 404
+    assert client.get("/v1/group-events?status=all", headers=AUTH).json()["events"] == []
+    assert client.get(review, headers=AUTH).json()["events"] == []
+    assert put(client, event, payload, "active", removed.json()["revision"]).status_code == 404
+
+    async def replay():
+        async with AsyncSession(client.app.state.engine) as db:
+            raw = await db.scalar(select(RawMessage))
+            incoming = ImageEvent.model_validate_json(json.dumps(payload))
+            assert await capture_event(db, raw.group_id, raw, incoming, datetime.now(UTC)) == "held"
+            changed = incoming.model_copy(
+                update={"title": "Иное название", "when_text": "Другая дата"}
+            )
+            assert await capture_event(db, raw.group_id, raw, changed, datetime.now(UTC)) == "held"
+            await db.commit()
+
+    asyncio.run(replay())
+    rows = stored(client, GroupEvent)
+    assert len(rows) == 1
+    assert rows[0].state == "deleted" and rows[0].manual_lock
+    assert json.loads(rows[0].payload_json)["description"] == ""
+    assert client.get("/v1/group-events", headers=AUTH).json()["events"] == []

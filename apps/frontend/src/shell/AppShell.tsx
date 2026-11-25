@@ -88,7 +88,7 @@ function Frame() {
 
   return (
     <>
-      {supportRequested && state.status === 'ready' ? <div role="status" style={{ padding: 8, background: '#292b39', color: 'white', fontSize: 12 }}>Поддержка · {supportMode === 'edit' ? 'Редактирование' : 'Просмотр'} · {state.session.user.display_name} · {state.session.group?.name} <button type="button" onClick={exitSupport}>В админку</button></div> : null}
+      {supportRequested && state.status === 'ready' ? <div role="status" className="support-session-banner"><span>Поддержка · {supportMode === 'edit' ? 'Редактирование' : 'Просмотр'} · {state.session.user.display_name} · {state.session.group?.name}</span><button type="button" onClick={exitSupport}>В админку</button></div> : null}
       <div ref={scrollRef} className="scroll">
         <div key={pathname} className={clsx('view', section === 'today' && 'today-view', dir === 'none' && 'still')} data-dir={dir === 'none' ? 'none' : dir}>
           <Outlet />

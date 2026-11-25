@@ -7,7 +7,7 @@ import { useGroupTimeZone } from '../../session/useGroupTimeZone';
 import { BackTop } from '../../shell/TopBar';
 import { Banner, ConfirmModal, Skeleton, StateView } from '../../ui/Blocks';
 import { RequestError } from '../../ui/RequestError';
-import { EventSource, EventStatus } from './EventCard';
+import { DeleteGroupEventButton, EventSource, EventStatus } from './EventCard';
 import { useEventCapabilities, useEventReview, useReviewEvent } from './api';
 import { eventDate } from './calendar';
 
@@ -36,7 +36,7 @@ export function EventReviewDetailScreen() {
   const [reload, setReload] = useState(0);
   return (
     <>
-      <BackTop fallback="/events/review" />
+      <BackTop fallback="/events/review" right={features.event_review && item ? <DeleteGroupEventButton item={item} backTo="/events" /> : undefined} />
       <h1 className="ptitle">Проверка события</h1>
       {!features.event_review ? (
         <StateView

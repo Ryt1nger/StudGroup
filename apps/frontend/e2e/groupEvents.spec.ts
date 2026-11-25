@@ -23,6 +23,10 @@ for (const theme of ['light', 'dark']) {
     await page.getByRole('link', { name: 'Расписание', exact: true }).click();
     await selectCalendarDate(page, original);
     await expect(page.getByRole('heading', { name: 'Открытая лекция о космосе' })).toBeInViewport();
+    const compact = page.locator('.schedule-event-card').filter({ hasText: 'Открытая лекция о космосе' });
+    await expect(compact).toBeVisible();
+    await expect(compact).not.toContainText('Обсудим исследования Луны.');
+    await expect(compact).not.toContainText('Источник в Telegram');
     await page.screenshot({ animations: 'disabled', path: info.outputPath(`calendar-event-${theme}.png`) });
     await page.getByRole('link', { name: /Открытая лекция о космосе/ }).click();
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
@@ -49,6 +53,12 @@ for (const theme of ['light', 'dark']) {
     await expect(page.getByRole('navigation')).toHaveCSS('position', 'absolute');
     await page.getByRole('button', { name: 'История', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Открытая лекция о космосе' })).toBeInViewport();
+    await page.getByRole('link', { name: /Открытая лекция о космосе/ }).click();
+    await page.getByRole('button', { name: 'Удалить событие', exact: true }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Удалить', exact: true }).click();
+    await expect(page).toHaveURL(/\/events$/);
+    await page.getByRole('button', { name: 'История', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Открытая лекция о космосе' })).toHaveCount(0);
   });
 }
 

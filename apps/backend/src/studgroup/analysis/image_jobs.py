@@ -394,6 +394,7 @@ async def context_snapshot(db, raw):
             select(GroupEvent)
             .where(
                 GroupEvent.group_id == raw.group_id,
+                GroupEvent.state != "deleted",
                 GroupEvent.delete_at > datetime.now(UTC),
             )
             .order_by(GroupEvent.created_at.desc())
