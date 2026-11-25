@@ -588,7 +588,7 @@ async function loadAdminMembers(groupId){
     const card=dom("article","billing-option");
     const name=[item.last_name,item.first_name].filter(Boolean).join(" ")||item.display_name;
     text(card,"strong","",name);text(card,"span","",`@${item.username||"—"} · Telegram ID ${item.telegram_user_id}`);
-    text(card,"span","",`Telegram: ${item.telegram_group} · РАНХиГС: ${item.ranepa_group||"—"} · СДО: ${item.sdo_connected?"подключено":"нет"} · ${item.status}`);
+    text(card,"span","",`Telegram: ${item.telegram_group} · РАНХиГС: ${item.ranepa_group||"—"} · СДО: ${item.sdo_connected?"подключено":"нет"} · ${memberRole(item.role)} · ${item.status}`);
     const actions=dom("div","billing-actions");
     for(const [labelText,action] of [[item.status==="suspended"?"Разблокировать":"Заблокировать",item.status==="suspended"?"unblock":"block"],["Удалить из группы","remove"]]){const button=dom("button","link-button",labelText);button.type="button";button.dataset.adminMember=item.membership_id;button.dataset.adminAction=action;button.dataset.adminGroup=groupId;actions.append(button);}card.append(actions);host.append(card);
   }
@@ -611,6 +611,8 @@ $("admin-members").addEventListener("click",async event=>{
   await api(`/v1/admin/memberships/${button.dataset.adminMember}/status`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});await loadAdminMembers(groupId);await loadAdminGroups();
 });
 
+const roleLabel={headman:"Староста",deputy:"Заместитель старосты",student:"Студент"};
+const memberRole=role=>roleLabel[role]||"Неизвестная роль";
 let adminUsersLoaded=false,adminUsersOffset=0,adminUsersRequest=0;
 async function loadAdminUsers(append=false){
   const request=++adminUsersRequest,host=$("admin-users"),status=$("admin-users-status");
@@ -625,9 +627,9 @@ async function loadAdminUsers(append=false){
       text(card,"span","",`@${item.username||"—"} · Telegram ID ${item.telegram_user_id} · СДО: ${item.sdo_connected?"подключено":"нет"}`);
       if(!item.memberships.length)text(card,"span","","Нет групп");
       for(const member of item.memberships){
-        text(card,"span","",`${member.name} · ${member.academic_group_code||"—"} · ${member.status}`);
+        text(card,"span","",`${member.name} · ${memberRole(member.role)} · ${member.academic_group_code||"—"} · ${member.status}`);
         if(member.status==="active"&&member.group_status==="active"){
-          const view=dom("button","link-button","Просмотреть приложение · "+member.name);
+          const view=dom("button","link-button","Открыть StudGroup · "+member.name);
           view.type="button";view.dataset.previewUser=item.id;view.dataset.previewGroup=member.group_id;card.append(view);
         }
       }
@@ -646,6 +648,35 @@ async function loadAdminUsers(append=false){
   }catch(error){if(request===adminUsersRequest){status.textContent=error.message;status.classList.add("error");}}
 }
 let previewRequest=0;
+function chooseSupport(userId,groupId){
+  const host=$("admin-preview");previewRequest++;host.replaceChildren();
+  const card=dom("article","billing-option");text(card,"strong","","Открыть StudGroup");
+  text(card,"span","","Выберите режим до входа. Изменения действуют на реальные данные.");
+  for(const [mode,label] of [["view","Только просмотр"],["edit","Просмотр и редактирование"]]){
+    const button=dom("button","refresh-button",label);button.type="button";
+    button.addEventListener("click",()=>openSupport(userId,groupId,mode));card.append(button);
+  }
+  host.append(card);host.scrollIntoView({block:"start"});
+}
+async function openSupport(userId,groupId,mode){
+  if(mode==="edit"&&!confirm("Открыть режим изменения реальных учебных данных?"))return;
+  const popup=window.open("about:blank","_blank");
+  if(!popup){$("admin-users-status").textContent="Разрешите открытие нового окна.";return;}
+  let receive=null,timeout=null;
+  try{
+    const result=await api("/v1/admin/support-sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:userId,group_id:groupId,mode})});
+    const origin=new URL(result.app_url).origin;
+    receive=event=>{
+      if(event.origin!==origin||event.source!==popup||event.data?.type!=="studgroup-support-ready")return;
+      popup.postMessage({type:"studgroup-support-session",result},origin);
+      window.removeEventListener("message",receive);clearTimeout(timeout);
+    };
+    window.addEventListener("message",receive);
+    timeout=setTimeout(()=>{window.removeEventListener("message",receive);},60000);
+    popup.location.href=result.app_url;
+  }catch(error){popup.close();$("admin-users-status").textContent=error.message;}
+}
+
 async function previewStudent(userId,groupId){
   const request=++previewRequest,host=$("admin-preview");host.replaceChildren();
   text(host,"strong","","Загрузка просмотра…");
@@ -676,7 +707,7 @@ $("admin-user-search").addEventListener("submit",event=>{event.preventDefault();
 $("admin-users-more").addEventListener("click",()=>loadAdminUsers(true));
 $("admin-users").addEventListener("click",async event=>{
   const view=event.target.closest("[data-preview-user]");
-  if(view)return previewStudent(view.dataset.previewUser,view.dataset.previewGroup);
+  if(view)return chooseSupport(view.dataset.previewUser,view.dataset.previewGroup);
   const button=event.target.closest("[data-user-access]");if(!button)return;
   if(!confirm("Изменить доступ пользователя во всех его текущих группах? История сохранится."))return;
   try{

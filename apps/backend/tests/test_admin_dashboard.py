@@ -434,3 +434,51 @@ def test_owner_can_manage_all_existing_memberships(client):
     assert client.post(url, headers=headers, json={"action": "unblock"}).json()["changed"] == 1
     assert client.post(url, headers=headers, json={"action": "remove"}).json()["changed"] == 1
     assert client.post(url, headers=headers, json={"action": "unblock"}).json()["changed"] == 0
+
+
+
+def test_support_capability_does_not_create_student_session(client):
+    from studgroup.models import WebSession
+    from studgroup.security import token_hash
+
+    headers = {"Authorization": "Bearer valid"}
+    client.app.state.settings.bot_admin_user_id = 1
+    client.app.state.settings.telegram_webhook_secret = "support-test-secret"
+    owner = next(
+        row
+        for row in client.get("/v1/admin/users", headers=headers).json()["items"]
+        if row["is_owner"]
+    )
+    member = next(row for row in owner["memberships"] if row["status"] == "active")
+    body = {"user_id": owner["id"], "group_id": member["group_id"], "mode": "view"}
+    url = "/v1/admin/support-sessions"
+    assert client.post(url, json=body).status_code == 401
+    issued = client.post(url, headers=headers, json=body)
+    assert issued.status_code == 200, issued.text
+    token = issued.json()["access_token"]
+    scoped = {"Authorization": "Bearer " + token}
+
+    async def persisted():
+        async with AsyncSession(client.app.state.engine) as db:
+            return await db.get(WebSession, token_hash(token))
+
+    assert asyncio.run(persisted()) is None
+    assert client.get("/v1/profile", headers=scoped).status_code == 200
+    assert client.get("/v1/today", headers=scoped).status_code == 200
+    assert client.patch("/v1/profile", headers=scoped, json={"first_name": "No"}).status_code == 403
+    assert client.get("/v1/admin/users", headers=scoped).status_code == 403
+    assert (
+        client.get("/v1/profile", headers={"Authorization": "Bearer " + token + "x"}).status_code
+        == 403
+    )
+    body["mode"] = "edit"
+    edit = client.post(url, headers=headers, json=body).json()["access_token"]
+    scope = {"Authorization": "Bearer " + edit}
+    assert (
+        client.patch("/v1/profile", headers=scope, json={"first_name": "Support"}).status_code
+        == 200
+    )
+    assert client.patch("/v1/profile", headers=scope, json={"sdu_password": "No"}).status_code == 403
+    assert client.post("/v1/legal/consents", headers=scope, json={}).status_code == 403
+    client.app.state.settings.bot_admin_user_id = 9999999
+    assert client.get("/v1/profile", headers=scope).status_code == 403
