@@ -5,7 +5,7 @@ import { useGroupTimeZone } from '../../session/useGroupTimeZone';
 import { BackTop, SectionTop } from '../../shell/TopBar';
 import { Banner, Empty, Skeleton, StateView } from '../../ui/Blocks';
 import { RequestError } from '../../ui/RequestError';
-import { EventCard, EventCards, EventSource, EventStatus } from './EventCard';
+import { DeleteGroupEventButton, EventCard, EventCards, EventSource, EventStatus } from './EventCard';
 import { useEventCapabilities, useEventReview, useGroupEvent, useGroupEvents } from './api';
 import { eventDate, eventInHistory } from './calendar';
 
@@ -80,10 +80,13 @@ export function GroupEventScreen() {
       <BackTop
         fallback="/events"
         right={
-          features.event_review ? (
-            <Link className="pillb" to={`/events/review/${eventId}`}>
-              Редактировать
-            </Link>
+          features.event_review && item ? (
+            <>
+              <DeleteGroupEventButton item={item} />
+              <Link className="pillb" to={`/events/review/${eventId}`}>
+                Редактировать
+              </Link>
+            </>
           ) : undefined
         }
       />
