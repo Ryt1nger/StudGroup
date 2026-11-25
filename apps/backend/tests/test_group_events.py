@@ -209,7 +209,7 @@ def test_manual_delete_hides_event_and_blocks_source_replay(client, monkeypatch)
     async def replay():
         async with AsyncSession(client.app.state.engine) as db:
             raw = await db.scalar(select(RawMessage))
-            incoming = ImageEvent.model_validate(payload)
+            incoming = ImageEvent.model_validate_json(json.dumps(payload))
             assert await capture_event(db, raw.group_id, raw, incoming, datetime.now(UTC)) == "held"
             changed = incoming.model_copy(
                 update={"title": "Иное название", "when_text": "Другая дата"}
