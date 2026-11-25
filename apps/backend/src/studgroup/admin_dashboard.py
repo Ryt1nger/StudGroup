@@ -314,7 +314,7 @@ async def launch_support(
         else ["today.read", "homework.read", "schedule.read"]
     )
     features = group_features(request.app.state.settings, group, member)
-    features.update(event_review=False, schedule_review=False)
+    features.update(event_review=False, schedule_review=False, owner_diagnostics=True)
     response.headers["Cache-Control"] = "no-store"
     LOGGER.info(
         "ADMIN_SUPPORT_OPEN actor=%s user=%s group=%s mode=%s",

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import type { HomeworkSummary, TodayResponse } from '@studgroup/shared-types';
 import { STALE_AFTER_MS } from '../../api/cachePolicy';
+import { useSession } from '../../session/SessionProvider';
 import { useAcademicDeadlinesQuery, useScheduleQuery, useTodayQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
 import { addDays, dayKey, formatLongDay, formatTime, plural } from '../../lib/format';
@@ -71,6 +72,8 @@ function relativeLabel(key: string, today: string): string {
 
 export function TodayScreen() {
   const [params, setParams] = useSearchParams();
+  const { state } = useSession();
+  const ownerDiagnostics = state.status === 'ready' && state.session.features?.owner_diagnostics === true;
   const query = useTodayQuery('today');
   // The initial feed is the critical path. Delay secondary/long-running reads
   // until it is ready so they cannot exhaust the small Supabase connection pool.
@@ -164,8 +167,8 @@ export function TodayScreen() {
       }} /> : <Skeleton count={1} label={ru.states.loading} />}
       {data && selectedKey && today ? <div className="datel">{relativeLabel(selectedKey, today)} · {formatLongDay(`${selectedKey}T12:00:00Z`, 'UTC')}</div> : null}
 
-      {data && staleByClock && query.isFetching ? <Banner tone="info" icon="refresh">Обновляем данные…</Banner> : null}
-      {data && stale ? (
+      {ownerDiagnostics && data && staleByClock && query.isFetching ? <Banner tone="info" icon="refresh">Обновляем данные…</Banner> : null}
+      {ownerDiagnostics && data && stale ? (
         <Banner
           tone="warning"
           icon="clock"

@@ -237,6 +237,7 @@ export type SessionContext = {
         events?: boolean;
         event_review?: boolean;
         schedule_review?: boolean;
+        owner_diagnostics?: boolean;
     };
     server_time: string;
 };

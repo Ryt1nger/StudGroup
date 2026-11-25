@@ -137,7 +137,10 @@ async def bootstrap(
             if group
             else None,
             "permissions": permissions,
-            "features": group_features(settings, group, member),
+            "features": {
+                **group_features(settings, group, member),
+                "owner_diagnostics": user.telegram_user_id == settings.bot_admin_user_id,
+            },
             "server_time": now,
         },
     }

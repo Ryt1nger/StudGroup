@@ -2093,6 +2093,9 @@ components:
             schedule_review:
               type: boolean
               default: false
+            owner_diagnostics:
+              type: boolean
+              default: false
         server_time:
           type: string
           format: date-time

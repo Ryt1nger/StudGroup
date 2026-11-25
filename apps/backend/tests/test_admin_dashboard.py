@@ -436,7 +436,6 @@ def test_owner_can_manage_all_existing_memberships(client):
     assert client.post(url, headers=headers, json={"action": "unblock"}).json()["changed"] == 0
 
 
-
 def test_support_capability_does_not_create_student_session(client):
     from studgroup.models import WebSession
     from studgroup.security import token_hash
@@ -478,7 +477,9 @@ def test_support_capability_does_not_create_student_session(client):
         client.patch("/v1/profile", headers=scope, json={"first_name": "Support"}).status_code
         == 200
     )
-    assert client.patch("/v1/profile", headers=scope, json={"sdu_password": "No"}).status_code == 403
+    assert (
+        client.patch("/v1/profile", headers=scope, json={"sdu_password": "No"}).status_code == 403
+    )
     assert client.post("/v1/legal/consents", headers=scope, json={}).status_code == 403
     client.app.state.settings.bot_admin_user_id = 9999999
     assert client.get("/v1/profile", headers=scope).status_code == 403
