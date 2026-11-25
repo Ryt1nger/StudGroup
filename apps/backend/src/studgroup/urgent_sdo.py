@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.legal import has_consent, legal_ready
@@ -23,6 +23,7 @@ from studgroup.process_control import ensure_process
 from studgroup.process_runtime import ALERT_PREFIX, utc
 from studgroup.ranepa_crawl_jobs import (
     CONSENT_REVALIDATED,
+    LEASE,
     CREDENTIALS_UPDATED,
     RETRY_BACKOFF,
     enqueue_week,
@@ -64,16 +65,27 @@ async def eligible_candidates(db, settings, *, pilot_group_id=None, pilot_user_i
     return candidates
 
 
-async def request_run(db):
-    # Serializes simultaneous clicks; a second request returns the same active run.
+async def request_run(db, *, replace=False):
+    # Ordinary retries deduplicate. A confirmed replacement supersedes the old run.
     await ensure_process(db, "sdo")
     await db.get(BackgroundProcess, "sdo", with_for_update=True)
     row = await db.scalar(
         select(UrgentSDORun)
         .where(UrgentSDORun.state.in_(ACTIVE))
         .order_by(UrgentSDORun.requested_at.desc())
+        .with_for_update()
         .limit(1)
     )
+    if row is not None and replace:
+        now = datetime.now(UTC)
+        row.state = "cancelled"
+        row.finished_at = now
+        await db.execute(
+            update(UrgentSDOTarget)
+            .where(UrgentSDOTarget.run_id == row.id, UrgentSDOTarget.state == "pending")
+            .values(state="cancelled", completed_at=now, failure_code="superseded")
+        )
+        row = None
     if row is None:
         row = UrgentSDORun(state="requested", requested_at=datetime.now(UTC))
         db.add(row)
@@ -142,6 +154,7 @@ async def run_json(db, row):
         "succeeded": succeeded,
         "failed": failed,
         "blocked": counts.get("blocked", 0),
+        "cancelled": counts.get("cancelled", 0),
         "remaining": counts.get("pending", 0),
         "targets": progress,
     }
@@ -256,6 +269,17 @@ async def prepare_urgent(engine, settings, today):
             .limit(1)
         )
         if row is None:
+            return
+        # Do not attribute an in-flight attempt from the previous run to its replacement.
+        live_job = await db.scalar(
+            select(RanepaCrawlJob.id)
+            .where(
+                RanepaCrawlJob.state == "running",
+                RanepaCrawlJob.claimed_at >= datetime.now(UTC) - LEASE,
+            )
+            .limit(1)
+        )
+        if live_job is not None:
             return
         ordered = fair_crawl_order(await eligible_candidates(db, settings))
         distinct = {}
