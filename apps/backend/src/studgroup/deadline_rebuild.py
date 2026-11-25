@@ -117,7 +117,9 @@ async def rebuild_after_schedule_change(db, group, now):
     return changes
 
 
-async def commit_item_revision(db, item, now, *, action, actor, timezone_confirmed=None):
+async def commit_item_revision(
+    db, item, now, *, action, actor, timezone_confirmed=None, project=True
+):
     """Publish an edited canonical item as its next revision without asking for notifications.
 
     The card keeps its sources (evidence is carried over), the shown deadline is appended to the
@@ -168,7 +170,7 @@ async def commit_item_revision(db, item, now, *, action, actor, timezone_confirm
         )
     )
     await db.flush()
-    if await db.get(CanonicalProjectionLink, item.id):
+    if project and await db.get(CanonicalProjectionLink, item.id):
         await project_item(db, item, now, writer_mode="new", emit_notifications=False)
 
 
