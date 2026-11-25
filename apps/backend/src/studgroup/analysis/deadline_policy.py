@@ -84,6 +84,7 @@ def decide_deadline(
     model_deadline=None,
     model_evidence=False,
     no_lesson_days=frozenset(),
+    subgroup_id=None,
 ):
     """``sources`` = ``[(text, sent_at), ...]`` of one card; ``model_deadline`` = ``(at, date_only)``."""
     if not sources or any(stamp.utcoffset() is None for _, stamp in sources):
@@ -142,7 +143,7 @@ def decide_deadline(
         return _unknown(basis)  # the text names a deadline we could not read: never guess
     if kind != "homework":
         return _unknown("not_inferable_for_kind")
-    return _next_lesson(ordered, timezone, subject, schedule, no_lesson_days)
+    return _next_lesson(ordered, timezone, subject, schedule, no_lesson_days, subgroup_id)
 
 
 def _literal_date(ordered, timezone, model_deadline):
@@ -177,7 +178,7 @@ def _literal_date(ordered, timezone, model_deadline):
     )
 
 
-def _next_lesson(ordered, timezone, subject, schedule, no_lesson_days):
+def _next_lesson(ordered, timezone, subject, schedule, no_lesson_days, subgroup_id=None):
     if not subject:
         return _unknown("subject_unknown")
     if schedule is None or not schedule.ready:
@@ -188,6 +189,9 @@ def _next_lesson(ordered, timezone, subject, schedule, no_lesson_days):
         return _unknown("schedule_does_not_cover_source_date")
     wanted = match_key(subject)
     upcoming = []
+    cancelled = False
+    no_lesson = False
+    ambiguous_subgroup = False
     for lesson in schedule.lessons:
         starts = datetime.fromisoformat(lesson["starts_at"])
         local_day = starts.astimezone(zone).date()
@@ -196,20 +200,28 @@ def _next_lesson(ordered, timezone, subject, schedule, no_lesson_days):
             and local_day > reference_day  # never the day of the source message
             and schedule.covered_from <= local_day <= schedule.covered_until
         ):
-            ends = datetime.fromisoformat(lesson["ends_at"]) if lesson.get("ends_at") else starts
-            upcoming.append((starts, local_day, lesson.get("status", "scheduled"), ends))
+            lesson_subgroup = lesson.get("subgroup_id")
+            if lesson_subgroup and str(lesson_subgroup) != str(subgroup_id):
+                ambiguous_subgroup = ambiguous_subgroup or subgroup_id is None
+                continue
+            if lesson.get("status", "scheduled") != "scheduled":
+                cancelled = True
+                continue
+            if local_day in no_lesson_days:
+                no_lesson = True
+                continue
+            upcoming.append(starts)
     if not upcoming:
+        if ambiguous_subgroup:
+            return _unknown("next_subject_lesson_subgroup_unknown")
+        if cancelled:
+            return _unknown("cancelled_lesson_in_window")
+        if no_lesson:
+            return _unknown("no_lesson_day_in_window")
         return _unknown("next_subject_lesson_unknown")
-    starts, local_day, status, ends = min(upcoming)
-    # Owner decision (Q2): the timetable is trusted only while the window from the source day to
-    # the chosen lesson holds no cancelled lesson and no day without lessons.
-    if status != "scheduled":
-        return _unknown("cancelled_lesson_in_window")
-    if any(reference_day < day <= local_day for day in no_lesson_days):
-        return _unknown("no_lesson_day_in_window")
-    # Owner decision (19.10): a deadline tied to a lesson ends with that lesson, so the stored
-    # moment is the lesson end and the card leaves the active list when the lesson is over.
-    return DeadlineDecision(ends, False, "schedule_inferred", "next_subject_lesson")
+    # Explicitly cancelled lessons and known non-study days do not invalidate later classes.
+    # Dateless homework is due before the next applicable lesson begins.
+    return DeadlineDecision(min(upcoming), False, "schedule_inferred", "next_subject_lesson")
 
 
 def student_label(decision):
