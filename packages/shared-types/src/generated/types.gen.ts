@@ -987,7 +987,7 @@ export type ScheduleSuggestion = {
 export type StaffEvent = {
     id: string;
     revision: number;
-    state: 'draft' | 'active' | 'cancelled';
+    state: 'draft' | 'active' | 'cancelled' | 'deleted';
     /**
      * Exclusive deletion instant: midnight after the seventh local day following event end.
      */
@@ -1365,7 +1365,7 @@ export type ListImageEventDraftsResponse = ListImageEventDraftsResponses[keyof L
 export type ReviewImageEventData = {
     body: {
         expected_revision: number;
-        state?: 'draft' | 'active' | 'cancelled';
+        state?: 'draft' | 'active' | 'cancelled' | 'deleted';
         accept_source_ids?: Array<string>;
         payload: EventPayload;
     };
