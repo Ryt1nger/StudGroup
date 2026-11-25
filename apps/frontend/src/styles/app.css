@@ -1094,3 +1094,24 @@ a.pcard:active { transform: scale(.98); }
   .hi b, .d-head h1 { font-size: 26px; }
   .nav { left: calc(8px + var(--left-inset)); right: calc(8px + var(--right-inset)); }
 }
+
+
+/* Prevent intrinsic grid and flex minimums from widening the screen. */
+.stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.stats.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.stat, .hinfo, .pcard .pc-text, .srow > *, .segc > * { min-width: 0; overflow-wrap: anywhere; }
+.srow { grid-template-columns: 34px minmax(0, 1fr) minmax(0, max-content); }
+.srow.plain { grid-template-columns: minmax(0, 1fr) minmax(0, max-content); }
+.srow .sv { max-width: 110px; }
+.pcard .avatar, .chipx b, .when svg { flex: none; }
+.chipx, .when, .sec h2 { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.seg { margin-inline: 0; padding-inline: 0; min-width: 0; max-width: 100%; }
+.nav a { overflow-wrap: anywhere; text-align: center; }
+@media (max-width: 360px) {
+  .stat span:last-child { font-size: 11px; }
+  .wd b { width: 30px; height: 30px; line-height: 30px; }
+  .hrow { gap: 10px; }
+  .hero .time { font-size: 38px; }
+  .srow { gap: 8px; padding-inline: 12px; }
+  .srow .sv { max-width: 86px; }
+}
