@@ -1115,3 +1115,12 @@ a.pcard:active { transform: scale(.98); }
   .srow { gap: 8px; padding-inline: 12px; }
   .srow .sv { max-width: 86px; }
 }
+
+
+/* The paired section titles must fit side by side, including at 320px. */
+.titles { min-width: 0; max-width: calc(100% - 8px); gap: clamp(8px, 3vw, 20px); }
+.titles .tt { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 390px) {
+  .titles .tt { font-size: clamp(17px, 5.2vw, 22px); line-height: 1.3; }
+  .titles .tt.on { font-size: clamp(25px, 7.5vw, 34px); line-height: 1.2; }
+}
