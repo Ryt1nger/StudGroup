@@ -96,6 +96,22 @@ async def capture_event(db, group_id, raw, incoming, now, job=None):
                 .with_for_update()
                 .limit(1)
             )
+    if event is not None and event.state == "deleted":
+        return "held"
+    if event is None:
+        # A replay with changed wording must not recreate a manually removed event.
+        removed = await db.scalar(
+            select(GroupEvent.id)
+            .join(GroupEventSource, GroupEventSource.event_id == GroupEvent.id)
+            .where(
+                GroupEvent.group_id == group_id,
+                GroupEvent.state == "deleted",
+                GroupEventSource.raw_message_id == raw.id,
+            )
+            .limit(1)
+        )
+        if removed is not None:
+            return "held"
     new = event is None
     if new:
         event = GroupEvent(
@@ -186,6 +202,8 @@ async def publish_verified_group_event(db, event, now):
     """
     from studgroup.analysis.event_lifetime import payload_hash, retention_end
 
+    if event.state == "deleted":
+        return False
     payload = ImageEvent.model_validate_json(event.payload_json)
     if payload.audience != "group" or not await verified(db, event, now):
         return False
@@ -287,6 +305,7 @@ async def get_event(db, group_id, ident, now=None, lock=False):
     query = select(GroupEvent).where(
         GroupEvent.id == ident,
         GroupEvent.group_id == group_id,
+        GroupEvent.state != "deleted",
         GroupEvent.delete_at > (now or datetime.now(UTC)),
     )
     event = await db.scalar(query.with_for_update() if lock else query)
@@ -300,6 +319,29 @@ async def review_update(
 ):
     if event.revision != expected_revision:
         raise ApiError("revision_conflict", "Событие уже изменилось", 409)
+    if state == "deleted":
+        # Retain a minimal, hidden identity for as long as its original sources can be replayed.
+        # No event description or historical snapshot is retained past a manual removal.
+        source_expiry = await db.scalar(
+            select(RawMessage.delete_at)
+            .join(GroupEventSource, GroupEventSource.raw_message_id == RawMessage.id)
+            .where(GroupEventSource.event_id == event.id, RawMessage.group_id == event.group_id)
+            .order_by(RawMessage.delete_at.desc())
+            .limit(1)
+        )
+        if source_expiry and utc(source_expiry) > utc(event.delete_at):
+            event.delete_at = source_expiry
+        event.payload_json = ImageEvent(title="Удалённое событие").model_dump_json()
+        event.state = "deleted"
+        event.manual_lock = True
+        event.approved_payload_sha256 = None
+        event.updated_at = now
+        event.revision += 1
+        await db.execute(
+            delete(GroupEventRevision).where(GroupEventRevision.event_id == event.id)
+        )
+        snapshot(db, event, "manual_delete", now, actor)
+        return
     incoming = ImageEvent.model_validate_json(json.dumps(payload, ensure_ascii=False))
     sources = (
         await db.scalars(
