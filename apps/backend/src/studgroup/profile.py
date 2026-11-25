@@ -159,6 +159,10 @@ async def read_profile(
 ):
     user, row = await current(db, authorization)
     result = representation(user, row)
+    if getattr(request.state, "support", None):
+        result["email"] = None
+        result["sdu"].update(login=None, url=None, calendar_url=None)
+        return result
     if row and row.sdu_credential_id:
         store = configured_store(request.app.state.settings)
         if store is None:
@@ -183,6 +187,20 @@ async def update_profile(
     fields = body.model_fields_set
     if not fields:
         raise ApiError("invalid_request", "Нет изменений", 422)
+    if getattr(request.state, "support", None):
+        if fields - {"first_name", "last_name"}:
+            raise ApiError("support_denied", "Можно исправлять только имя и фамилию", 403)
+        if row is None:
+            row = UserProfile(user_id=user.id, updated_at=datetime.now(UTC))
+            db.add(row)
+        for name in fields:
+            setattr(row, name, getattr(body, name))
+        row.updated_at = datetime.now(UTC)
+        await db.commit()
+        result = representation(user, row)
+        result["email"] = None
+        result["sdu"].update(login=None, url=None, calendar_url=None)
+        return result
     # Credentials are voluntary and require a separately recorded, current consent.
     supplied_sdo = any(
         name in fields and getattr(body, name) is not None

@@ -86,6 +86,12 @@ async def representation(db, row, user, now, context=None):
         membership = context["membership"]
         subgroup = context["subgroups"].get(row.subgroup_id)
         permissions = context["permissions"]
+    from studgroup.support_session import context as support_context
+    from studgroup.support_session import editing
+
+    support = support_context(db)
+    if support:
+        permissions = ["homework.edit"] if editing(db, row.group_id) else []
     source_detail = enrichment["sources"][0]
     verification_state = row.verification_state
     if verification_state in {"needs_clarification", "inferred"} and (
@@ -139,7 +145,7 @@ async def representation(db, row, user, now, context=None):
         "generated_at": now,
         "permissions": [
             "homework.read",
-            "homework.completion.write",
+            *([] if support and support["mode"] == "view" else ["homework.completion.write"]),
             *permissions,
         ],
     }
@@ -779,7 +785,10 @@ async def today(
         "server_time": now,
         "group_timezone": group.timezone,
         "freshness": {
-            "last_successful_sync_at": utc(last_success) if last_success else now,
+            "last_successful_sync_at": now,
+            "schedule_source_checked_at": utc(last_success)
+            if personal_enabled and last_success
+            else None,
             "stale": personal_enabled
             and not published_covered
             and (last_success is None or now - utc(last_success) > timedelta(days=7)),

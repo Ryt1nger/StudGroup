@@ -2093,6 +2093,9 @@ components:
             schedule_review:
               type: boolean
               default: false
+            owner_diagnostics:
+              type: boolean
+              default: false
         server_time:
           type: string
           format: date-time
@@ -2481,7 +2484,10 @@ components:
           format: date-time
         stale:
           type: boolean
-          description: True after 15 minutes without a successful refresh.
+          description: Backend source freshness warning, separate from API response age.
+        schedule_source_checked_at:
+          type: [string, "null"]
+          format: date-time
     FeedProcessing:
       type: object
       additionalProperties: false

@@ -223,7 +223,7 @@ describe('Today', () => {
     expect(
       await screen.findByText('Обработка информации задерживается. Данные появятся автоматически'),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Данные могли устареть · обновлено в/)).toBeInTheDocument();
+    expect(screen.queryByText(/Данные могли устареть|Требуется проверка расписания СДО|Не удалось обновить данные приложения/)).not.toBeInTheDocument();
     expect(screen.queryByText('На сегодня заданий нет')).not.toBeInTheDocument();
   });
 

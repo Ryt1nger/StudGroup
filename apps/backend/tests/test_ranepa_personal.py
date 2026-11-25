@@ -296,6 +296,7 @@ def test_today_retains_group_timetable_when_sdo_is_enabled_without_any_own_scan(
     body = result.json()
     assert body["next_lesson"]["lesson"]["subject"] == "Математика"
     assert body["freshness"]["stale"] is False
+    assert body["freshness"]["last_successful_sync_at"] == body["generated_at"]
     assert body["day_lessons_state"] == "empty"
 
 

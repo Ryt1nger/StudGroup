@@ -380,3 +380,106 @@ def test_owner_urgent_progress_exposes_durable_account_state(client):
     assert target["state"] == "running"
     assert target["started_at"] is not None
     assert target["next_attempt_at"] is None
+
+
+def test_owner_user_directory_and_read_only_preview(client):
+    headers = {"Authorization": "Bearer valid"}
+    assert client.get("/v1/admin/users", headers=headers).status_code == 403
+    client.app.state.settings.bot_admin_user_id = 1
+    response = client.get("/v1/admin/users?limit=1", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    owner = next(
+        row
+        for row in client.get("/v1/admin/users", headers=headers).json()["items"]
+        if row["is_owner"]
+    )
+    assert "sdu_login" not in response.text
+    assert "sdu_password" not in response.text
+    member = next(row for row in owner["memberships"] if row["status"] == "active")
+    url = f"/v1/admin/users/{owner['id']}/preview/{member['group_id']}"
+    preview = client.get(url, headers=headers)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["read_only"] is True
+    assert {"lessons", "homework", "deadlines"} <= preview.json().keys()
+    assert client.post(url, headers=headers).status_code == 405
+    assert client.get(url).status_code == 401
+    assert "access_token" not in preview.text
+    assert "online_url" not in preview.text
+    assert (
+        client.post(
+            f"/v1/admin/users/{owner['id']}/memberships/status",
+            headers=headers,
+            json={"action": "block"},
+        ).status_code
+        == 403
+    )
+
+
+def test_owner_can_manage_all_existing_memberships(client):
+    client.app.state.settings.bot_admin_user_id = 1
+    headers = {"Authorization": "Bearer valid"}
+    group = client.get("/v1/admin/groups", headers=headers).json()["items"][0]
+    created = client.post(
+        f"/v1/admin/groups/{group['id']}/members",
+        headers=headers,
+        json={"telegram_user_id": 987654321, "display_name": "Registry Student"},
+    )
+    assert created.status_code == 200
+    result = client.get("/v1/admin/users?q=Registry", headers=headers).json()["items"]
+    assert len(result) == 1
+    user = result[0]
+    url = f"/v1/admin/users/{user['id']}/memberships/status"
+    assert client.post(url, headers=headers, json={"action": "block"}).json()["changed"] == 1
+    assert client.post(url, headers=headers, json={"action": "unblock"}).json()["changed"] == 1
+    assert client.post(url, headers=headers, json={"action": "remove"}).json()["changed"] == 1
+    assert client.post(url, headers=headers, json={"action": "unblock"}).json()["changed"] == 0
+
+
+def test_support_capability_does_not_create_student_session(client):
+    from studgroup.models import WebSession
+    from studgroup.security import token_hash
+
+    headers = {"Authorization": "Bearer valid"}
+    client.app.state.settings.bot_admin_user_id = 1
+    client.app.state.settings.telegram_webhook_secret = "support-test-secret"
+    owner = next(
+        row
+        for row in client.get("/v1/admin/users", headers=headers).json()["items"]
+        if row["is_owner"]
+    )
+    member = next(row for row in owner["memberships"] if row["status"] == "active")
+    body = {"user_id": owner["id"], "group_id": member["group_id"], "mode": "view"}
+    url = "/v1/admin/support-sessions"
+    assert client.post(url, json=body).status_code == 401
+    issued = client.post(url, headers=headers, json=body)
+    assert issued.status_code == 200, issued.text
+    token = issued.json()["access_token"]
+    scoped = {"Authorization": "Bearer " + token}
+
+    async def persisted():
+        async with AsyncSession(client.app.state.engine) as db:
+            return await db.get(WebSession, token_hash(token))
+
+    assert asyncio.run(persisted()) is None
+    assert client.get("/v1/profile", headers=scoped).status_code == 200
+    assert client.get("/v1/today", headers=scoped).status_code == 200
+    assert client.patch("/v1/profile", headers=scoped, json={"first_name": "No"}).status_code == 403
+    assert client.get("/v1/admin/users", headers=scoped).status_code == 403
+    assert (
+        client.get("/v1/profile", headers={"Authorization": "Bearer " + token + "x"}).status_code
+        == 403
+    )
+    body["mode"] = "edit"
+    edit = client.post(url, headers=headers, json=body).json()["access_token"]
+    scope = {"Authorization": "Bearer " + edit}
+    assert (
+        client.patch("/v1/profile", headers=scope, json={"first_name": "Support"}).status_code
+        == 200
+    )
+    assert (
+        client.patch("/v1/profile", headers=scope, json={"sdu_password": "No"}).status_code == 403
+    )
+    assert client.post("/v1/legal/consents", headers=scope, json={}).status_code == 403
+    client.app.state.settings.bot_admin_user_id = 9999999
+    assert client.get("/v1/profile", headers=scope).status_code == 403

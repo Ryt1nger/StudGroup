@@ -35,7 +35,7 @@ test('cached Today is visible after verified login before a slow refresh finishe
   await page.goto('/?scenario=slow');
   await expect(page.getByRole('heading', { name: 'Сегодня', level: 1 })).toBeVisible({ timeout: 7_000 });
   await expect(page.getByText('ДЗ №12–140').first()).toBeVisible({ timeout: 1_000 });
-  await expect(page.getByText('Обновляем данные…')).toBeVisible();
+  await expect(page.getByText('Обновляем данные…')).toHaveCount(0);
   await expect(page.getByText(/Данные могли устареть/)).toHaveCount(0);
   await expect(page.getByText('Обновляем данные…')).toHaveCount(0, { timeout: 10_000 });
   await expect(page.getByText(/Данные могли устареть/)).toHaveCount(0);

@@ -252,7 +252,7 @@ export function ScheduleScreen() {
       {data?.week_state === 'needs_clarification' ? (
         <Banner tone="warning" icon="clock"><strong>{ru.schedule.clarifyTitle}.</strong> {ru.schedule.clarifyBody}</Banner>
       ) : null}
-      {query.isError && data ? <Banner tone="warning" icon="clock">{ru.freshness.stale(formatTime(data.generated_at, data.group_timezone))}</Banner> : null}
+      {state.status === 'ready' && state.session.features?.owner_diagnostics === true && query.isError && data ? <Banner tone="warning" icon="clock">{ru.freshness.stale(formatTime(data.generated_at, data.group_timezone))}</Banner> : null}
       {query.isPending ? <Skeleton label={ru.states.loading} /> : null}
       {query.isError && !data ? <RequestError error={query.error} onRetry={() => void query.refetch()} /> : null}
       {data && lessons.length === 0 && data.week_state === 'ready' ? <Empty title="Пар нет" body="В этот день занятий не запланировано." /> : null}

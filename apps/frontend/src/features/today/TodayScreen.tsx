@@ -2,9 +2,10 @@ import { useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import type { HomeworkSummary, TodayResponse } from '@studgroup/shared-types';
 import { STALE_AFTER_MS } from '../../api/cachePolicy';
+import { useSession } from '../../session/SessionProvider';
 import { useAcademicDeadlinesQuery, useScheduleQuery, useTodayQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
-import { addDays, dayKey, formatLongDay, formatTime, plural } from '../../lib/format';
+import { addDays, dayKey, formatLongDay, plural } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
 import { useProcessingPoll } from '../../lib/processingPoll';
@@ -71,6 +72,8 @@ function relativeLabel(key: string, today: string): string {
 
 export function TodayScreen() {
   const [params, setParams] = useSearchParams();
+  const { state } = useSession();
+  const ownerDiagnostics = state.status === 'ready' && state.session.features?.owner_diagnostics === true;
   const query = useTodayQuery('today');
   // The initial feed is the critical path. Delay secondary/long-running reads
   // until it is ready so they cannot exhaust the small Supabase connection pool.
@@ -134,7 +137,8 @@ export function TodayScreen() {
 
   const processingActive = data !== undefined && data.processing.state !== 'idle';
   const { gaveUp, restart } = useProcessingPoll(processingActive, query.refetch);
-  const staleByClock = data ? nowMs - Date.parse(data.freshness.last_successful_sync_at) > STALE_AFTER_MS : false;
+  const staleByClock = data ? nowMs - Date.parse(data.generated_at) > STALE_AFTER_MS : false;
+  const diagnosticTime = (value: string) => new Intl.DateTimeFormat('ru-RU', { timeZone: data?.group_timezone, day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
   // A restored encrypted snapshot is displayed immediately, but the automatic
   // network refresh is already in flight. Offer manual retry only if it fails.
   const stale = data ? !query.isFetching && (data.freshness.stale || staleByClock || query.isError) : false;
@@ -164,14 +168,14 @@ export function TodayScreen() {
       }} /> : <Skeleton count={1} label={ru.states.loading} />}
       {data && selectedKey && today ? <div className="datel">{relativeLabel(selectedKey, today)} · {formatLongDay(`${selectedKey}T12:00:00Z`, 'UTC')}</div> : null}
 
-      {data && staleByClock && query.isFetching ? <Banner tone="info" icon="refresh">Обновляем данные…</Banner> : null}
-      {data && stale ? (
+      {ownerDiagnostics && data && staleByClock && query.isFetching ? <Banner tone="info" icon="refresh">Обновляем данные…</Banner> : null}
+      {ownerDiagnostics && data && stale ? (
         <Banner
           tone="warning"
           icon="clock"
-          action={<button type="button" className="bact" aria-label="Обновить" onClick={() => void query.refetch()}><Ic name="refresh" size={16} /></button>}
+          action={<button type="button" className="bact" aria-label="Обновить" onClick={() => void Promise.all([query.refetch(), schedule.refetch(), all.refetch(), deadlines.refetch()])}><Ic name="refresh" size={16} /></button>}
         >
-          {ru.freshness.stale(formatTime(data.freshness.last_successful_sync_at, data.group_timezone))}
+          {query.isError || staleByClock ? `Не удалось обновить данные приложения · последний ответ ${diagnosticTime(data.generated_at)}` : `Требуется проверка расписания СДО · ${data.freshness.schedule_source_checked_at ? `последняя проверка ${diagnosticTime(data.freshness.schedule_source_checked_at)}` : 'нет подтверждённого времени проверки'}`}
         </Banner>
       ) : null}
       {data && data.processing.state === 'delayed' ? <Banner tone="warning" icon="alert">{ru.today.delayed}</Banner> : null}

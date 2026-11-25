@@ -1,16 +1,18 @@
 """Read-only, owner-scoped operational dashboard. No private message content leaves this API."""
 
 import json
+import logging
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +46,7 @@ from studgroup.security import token_hash
 
 router = APIRouter()
 UI = Path(__file__).with_name("admin_ui")
+LOGGER = logging.getLogger(__name__)
 
 
 class BillingOptionBody(BaseModel):
@@ -262,6 +265,301 @@ async def delete_billing_option(
     await db.delete(row)
     await db.commit()
     return {"deleted": True}
+
+
+class SupportLaunchBody(BaseModel):
+    user_id: UUID
+    group_id: UUID
+    mode: Literal["view", "edit"]
+
+
+@router.post("/v1/admin/support-sessions")
+async def launch_support(
+    body: SupportLaunchBody,
+    request: Request,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(database)],
+    admin: Annotated[User, Depends(admin_session)],
+    authorization: str = Header(),
+):
+    from studgroup.api import group_features, role_permissions
+    from studgroup.support_session import issue
+
+    target = await db.get(User, body.user_id)
+    member = await db.scalar(
+        select(Membership).where(
+            Membership.user_id == body.user_id,
+            Membership.group_id == body.group_id,
+            Membership.status == "active",
+        )
+    )
+    group = await db.get(Group, body.group_id)
+    if (
+        target is None
+        or member is None
+        or group is None
+        or group.status != "active"
+        or not group.pilot_authorized
+    ):
+        raise ApiError("preview_unavailable", "Нет активного доступа к группе", 403)
+    parent = await db.get(WebSession, token_hash(authorization[7:]))
+    now = datetime.now(UTC)
+    try:
+        token, expires = issue(request.app.state.settings, parent, admin, member, body.mode, now)
+    except ValueError:
+        raise ApiError("support_unavailable", "Режим поддержки недоступен", 503) from None
+    permissions = (
+        role_permissions("headman")
+        if body.mode == "edit"
+        else ["today.read", "homework.read", "schedule.read"]
+    )
+    features = group_features(request.app.state.settings, group, member)
+    features.update(event_review=False, schedule_review=False, owner_diagnostics=True)
+    response.headers["Cache-Control"] = "no-store"
+    LOGGER.info(
+        "ADMIN_SUPPORT_OPEN actor=%s user=%s group=%s mode=%s",
+        admin.id,
+        target.id,
+        group.id,
+        body.mode,
+    )
+    return {
+        "access_token": token,
+        "token_type": "Bearer",
+        "expires_at": expires,
+        "mode": body.mode,
+        "app_url": request.app.state.settings.webapp_origin.rstrip("/") + "/?support=1",
+        "session": {
+            "user": {
+                "id": target.id,
+                "telegram_user_id": target.telegram_user_id,
+                "display_name": target.display_name,
+                "username": target.username,
+            },
+            "access_state": "active",
+            "membership": {
+                "id": member.id,
+                "role": member.role,
+                "status": member.status,
+                "can_recheck": False,
+            },
+            "group": {
+                "id": group.id,
+                "name": group.name,
+                "academic_group_code": group.academic_group_code,
+                "timezone": group.timezone,
+                "status": group.status,
+                "pilot_authorized": group.pilot_authorized,
+            },
+            "permissions": permissions,
+            "features": features,
+            "server_time": now,
+        },
+    }
+
+
+@router.get("/v1/admin/users")
+async def admin_users(
+    response: Response,
+    db: Annotated[AsyncSession, Depends(database)],
+    _admin: Annotated[User, Depends(admin_session)],
+    q: str = Query(default="", max_length=120),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    response.headers["Cache-Control"] = "no-store"
+    query = select(User, UserProfile).outerjoin(UserProfile, UserProfile.user_id == User.id)
+    if search := q.strip().lstrip("@"):
+        for part in search.split():
+            # Escape SQL LIKE wildcards supplied by the operator.
+            pattern = "%" + part.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+            conditions = [
+                field.ilike(pattern, escape="!")
+                for field in (
+                    User.display_name,
+                    User.username,
+                    UserProfile.first_name,
+                    UserProfile.last_name,
+                )
+            ]
+            if part.isdigit() and len(part) <= 18:
+                conditions.append(User.telegram_user_id == int(part))
+            query = query.where(or_(*conditions))
+    rows = (
+        await db.execute(query.order_by(User.display_name, User.id).offset(offset).limit(limit + 1))
+    ).all()
+    rows = list(rows)
+    more = len(rows) > limit
+    rows = rows[:limit]
+    ids = [user.id for user, _profile in rows]
+    memberships = (
+        await db.execute(
+            select(Membership, Group)
+            .join(Group, Group.id == Membership.group_id)
+            .where(Membership.user_id.in_(ids))
+            .order_by(Group.name, Membership.id)
+        )
+    ).all()
+    by_user = {}
+    for member, group in memberships:
+        by_user.setdefault(member.user_id, []).append(
+            {
+                "id": member.id,
+                "group_id": group.id,
+                "name": group.name,
+                "academic_group_code": group.academic_group_code,
+                "group_status": group.status,
+                "status": member.status,
+                "role": member.role,
+            }
+        )
+    return {
+        "items": [
+            {
+                "id": user.id,
+                "telegram_user_id": user.telegram_user_id,
+                "display_name": user.display_name,
+                "username": user.username,
+                "first_name": profile.first_name if profile else None,
+                "last_name": profile.last_name if profile else None,
+                "sdo_connected": bool(profile and profile.sdu_credential_id),
+                "memberships": by_user.get(user.id, []),
+                "is_owner": user.id == _admin.id,
+            }
+            for user, profile in rows
+        ],
+        "next_offset": offset + limit if more else None,
+    }
+
+
+@router.post("/v1/admin/users/{user_id}/memberships/status")
+async def admin_user_memberships_status(
+    user_id: UUID,
+    body: AdminStatusBody,
+    db: Annotated[AsyncSession, Depends(database)],
+    admin: Annotated[User, Depends(admin_session)],
+):
+    if user_id == admin.id:
+        raise ApiError("owner_protected", "Нельзя изменить собственный доступ владельца", 403)
+    if await db.get(User, user_id) is None:
+        raise ApiError("user_not_found", "Пользователь не найден", 404)
+    if body.action not in {"block", "unblock", "remove"}:
+        raise ApiError("invalid_action", "Недоступное действие", 422)
+    members = (
+        await db.scalars(select(Membership).where(Membership.user_id == user_id).with_for_update())
+    ).all()
+    transitions = {
+        "block": ({"active"}, "suspended"),
+        "unblock": ({"suspended"}, "active"),
+        "remove": ({"active", "suspended"}, "left"),
+    }
+    allowed, status = transitions[body.action]
+    changed = 0
+    for member in members:
+        if member.status in allowed:
+            member.status = status
+            changed += 1
+    await db.commit()
+    LOGGER.info(
+        "ADMIN_MEMBERSHIP_ACCESS actor=%s user=%s action=%s changed=%s",
+        admin.id,
+        user_id,
+        body.action,
+        changed,
+    )
+    return {"changed": changed, "status": status}
+
+
+@router.get("/v1/admin/users/{user_id}/preview/{group_id}")
+async def admin_user_preview(
+    user_id: UUID,
+    group_id: UUID,
+    request: Request,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(database)],
+    admin: Annotated[User, Depends(admin_session)],
+):
+    from studgroup import subgroups
+    from studgroup.academic_deadlines import items
+    from studgroup.api import schedule_data
+    from studgroup.homework import (
+        archived_condition,
+        completed_lesson_bindings,
+        representation,
+        representation_context,
+    )
+    from studgroup.ranepa_personal import (
+        personal_with_group_fallback,
+        schedule_with_group_fallback,
+    )
+
+    response.headers["Cache-Control"] = "no-store"
+    member = await db.scalar(
+        select(Membership).where(
+            Membership.user_id == user_id,
+            Membership.group_id == group_id,
+            Membership.status == "active",
+        )
+    )
+    group = await db.get(Group, group_id)
+    if member is None or group is None or group.status != "active" or not group.pilot_authorized:
+        raise ApiError("preview_unavailable", "Нет активного доступа к этой группе", 403)
+    now = datetime.now(UTC)
+    day = now.astimezone(ZoneInfo(group.timezone)).date()
+    start = day - timedelta(days=day.weekday())
+    end = start + timedelta(days=13)
+    hidden = await subgroups.hidden_for_member(db, member)
+    schedule = await schedule_data(start, end, group, db)
+    schedule["lessons"] = subgroups.visible_lessons(schedule["lessons"], hidden)
+    if request.app.state.settings.ranepa_schedule_view_enabled and group.academic_group_code:
+        personal = await personal_with_group_fallback(db, group_id, user_id, start, end)
+        schedule = schedule_with_group_fallback(personal, schedule, group)
+    # The owner sees the academic projection, never a student's access URLs or token.
+    lesson_fields = ("subject", "starts_at", "ends_at", "teacher", "location", "status")
+    archived = archived_condition(
+        now, group.timezone, await completed_lesson_bindings(db, group, now)
+    )
+    rows = (
+        await db.scalars(
+            select(Homework)
+            .where(
+                Homework.group_id == group_id,
+                Homework.status.in_(["published", "needs_clarification", "completed"]),
+                Homework.delete_at > now,
+                ~archived,
+                subgroups.visible(Homework.subgroup_id, hidden),
+            )
+            .order_by(Homework.created_at, Homework.id)
+            .limit(101)
+        )
+    ).all()
+    context = await representation_context(db, group, rows[:100], user_id, member, now)
+    homework = []
+    for row in rows[:100]:
+        card = await representation(db, row, user_id, now, context)
+        homework.append(
+            {key: card[key] for key in ("title", "subject", "summary", "deadline", "my_state")}
+        )
+    deadlines = await items(db, group, now, hidden=hidden)
+    LOGGER.info("ADMIN_STUDENT_PREVIEW actor=%s user=%s group=%s", admin.id, user_id, group_id)
+    return {
+        "read_only": True,
+        "group": group.name,
+        "timezone": group.timezone,
+        "start": start,
+        "end": end,
+        "lessons": [{key: row.get(key) for key in lesson_fields} for row in schedule["lessons"]],
+        "homework": homework,
+        "homework_truncated": len(rows) > 100,
+        "deadlines": [
+            {
+                key: row[key]
+                for key in ("subject", "title", "description", "deadline_at", "date_hint")
+            }
+            for row in deadlines[:100]
+        ],
+        "deadlines_truncated": len(deadlines) > 100,
+    }
 
 
 @router.get("/v1/admin/groups")

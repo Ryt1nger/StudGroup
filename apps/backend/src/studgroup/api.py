@@ -29,6 +29,10 @@ EDIT_PERMISSIONS = ["homework.edit", "homework.material.write"]
 async def edit_permissions(db, group_id, user_id):
     """Card-editing permissions of the caller in the group (headman/deputy only); a UI hint,
     every edit request re-checks the role on the server."""
+    from studgroup.support_session import context, editing
+
+    if context(db):
+        return list(EDIT_PERMISSIONS) if editing(db, group_id) else []
     allowed = await db.scalar(
         select(Membership.id).where(
             Membership.user_id == user_id,
@@ -41,7 +45,13 @@ async def edit_permissions(db, group_id, user_id):
 
 
 async def database(request: Request):
-    async with AsyncSession(request.app.state.engine, expire_on_commit=False) as session:
+    from studgroup.support_session import SupportDatabase
+
+    support = getattr(request.state, "support", None)
+    session_type = SupportDatabase if support else AsyncSession
+    async with session_type(request.app.state.engine, expire_on_commit=False) as session:
+        if support:
+            session.info["support"] = support
         yield session
 
 
@@ -127,7 +137,10 @@ async def bootstrap(
             if group
             else None,
             "permissions": permissions,
-            "features": group_features(settings, group, member),
+            "features": {
+                **group_features(settings, group, member),
+                "owner_diagnostics": user.telegram_user_id == settings.bot_admin_user_id,
+            },
             "server_time": now,
         },
     }

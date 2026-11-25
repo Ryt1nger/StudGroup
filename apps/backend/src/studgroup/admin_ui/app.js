@@ -342,7 +342,7 @@ function renderPage(){
   const d=lastData,v=lastVisuals,b=lastBot;
   if(currentPage==="overview")renderOverview(d,v,b);
   else if(currentPage==="bot")renderBot(d,v,b);
-  else if(currentPage==="audience")renderActivity(d,v,b);
+  else if(currentPage==="audience"){renderActivity(d,v,b);if(!adminUsersLoaded)loadAdminUsers();}
   else if(currentPage==="ai")renderAi(d,v);
   else if(currentPage==="finance")renderFinance(d,v);
   else if(currentPage==="processes")loadProcessControls();
@@ -588,7 +588,7 @@ async function loadAdminMembers(groupId){
     const card=dom("article","billing-option");
     const name=[item.last_name,item.first_name].filter(Boolean).join(" ")||item.display_name;
     text(card,"strong","",name);text(card,"span","",`@${item.username||"—"} · Telegram ID ${item.telegram_user_id}`);
-    text(card,"span","",`Telegram: ${item.telegram_group} · РАНХиГС: ${item.ranepa_group||"—"} · СДО: ${item.sdo_connected?"подключено":"нет"} · ${item.status}`);
+    text(card,"span","",`Telegram: ${item.telegram_group} · РАНХиГС: ${item.ranepa_group||"—"} · СДО: ${item.sdo_connected?"подключено":"нет"} · ${memberRole(item.role)} · ${item.status}`);
     const actions=dom("div","billing-actions");
     for(const [labelText,action] of [[item.status==="suspended"?"Разблокировать":"Заблокировать",item.status==="suspended"?"unblock":"block"],["Удалить из группы","remove"]]){const button=dom("button","link-button",labelText);button.type="button";button.dataset.adminMember=item.membership_id;button.dataset.adminAction=action;button.dataset.adminGroup=groupId;actions.append(button);}card.append(actions);host.append(card);
   }
@@ -609,6 +609,112 @@ $("admin-members").addEventListener("click",async event=>{
   }
   if(!confirm("Изменить доступ участника?"))return;
   await api(`/v1/admin/memberships/${button.dataset.adminMember}/status`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});await loadAdminMembers(groupId);await loadAdminGroups();
+});
+
+const roleLabel={headman:"Староста",deputy:"Заместитель старосты",student:"Студент"};
+const memberRole=role=>roleLabel[role]||"Неизвестная роль";
+let adminUsersLoaded=false,adminUsersOffset=0,adminUsersRequest=0;
+async function loadAdminUsers(append=false){
+  const request=++adminUsersRequest,host=$("admin-users"),status=$("admin-users-status");
+  if(!append){adminUsersOffset=0;host.replaceChildren();$("admin-preview").replaceChildren();}
+  try{
+    const query=new URLSearchParams({q:$("admin-user-query").value,offset:String(adminUsersOffset)});
+    const data=await api("/v1/admin/users?"+query);
+    if(request!==adminUsersRequest)return;
+    for(const item of data.items){
+      const card=dom("article","billing-option");
+      text(card,"strong","",[item.last_name,item.first_name].filter(Boolean).join(" ")||item.display_name);
+      text(card,"span","",`@${item.username||"—"} · Telegram ID ${item.telegram_user_id} · СДО: ${item.sdo_connected?"подключено":"нет"}`);
+      if(!item.memberships.length)text(card,"span","","Нет групп");
+      for(const member of item.memberships){
+        text(card,"span","",`${member.name} · ${memberRole(member.role)} · ${member.academic_group_code||"—"} · ${member.status}`);
+        if(member.status==="active"&&member.group_status==="active"){
+          const view=dom("button","link-button","Открыть StudGroup · "+member.name);
+          view.type="button";view.dataset.previewUser=item.id;view.dataset.previewGroup=member.group_id;card.append(view);
+        }
+      }
+      if(!item.is_owner&&item.memberships.length){
+        const actions=dom("div","billing-actions");
+        for(const [label,action] of [["Блокировать во всех группах","block"],["Разблокировать","unblock"],["Удалить из всех групп","remove"]]){
+          const button=dom("button","link-button",label);button.type="button";button.dataset.userAccess=item.id;button.dataset.action=action;actions.append(button);
+        }
+        card.append(actions);
+      }
+      host.append(card);
+    }
+    adminUsersOffset=data.next_offset;adminUsersLoaded=true;
+    $("admin-users-more").hidden=data.next_offset===null;
+    status.textContent="Показано: "+host.children.length;status.classList.remove("error");
+  }catch(error){if(request===adminUsersRequest){status.textContent=error.message;status.classList.add("error");}}
+}
+let previewRequest=0;
+function chooseSupport(userId,groupId){
+  const host=$("admin-preview");previewRequest++;host.replaceChildren();
+  const card=dom("article","billing-option");text(card,"strong","","Открыть StudGroup");
+  text(card,"span","","Выберите режим до входа. Изменения действуют на реальные данные.");
+  for(const [mode,label] of [["view","Только просмотр"],["edit","Просмотр и редактирование"]]){
+    const button=dom("button","refresh-button",label);button.type="button";
+    button.addEventListener("click",()=>openSupport(userId,groupId,mode));card.append(button);
+  }
+  host.append(card);host.scrollIntoView({block:"start"});
+}
+async function openSupport(userId,groupId,mode){
+  if(mode==="edit"&&!confirm("Открыть режим изменения реальных учебных данных?"))return;
+  const popup=window.open("about:blank","_blank");
+  if(!popup){$("admin-users-status").textContent="Разрешите открытие нового окна.";return;}
+  let receive=null,timeout=null;
+  try{
+    const result=await api("/v1/admin/support-sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:userId,group_id:groupId,mode})});
+    const origin=new URL(result.app_url).origin;
+    receive=event=>{
+      if(event.origin!==origin||event.source!==popup||event.data?.type!=="studgroup-support-ready")return;
+      popup.postMessage({type:"studgroup-support-session",result},origin);
+      window.removeEventListener("message",receive);clearTimeout(timeout);
+    };
+    window.addEventListener("message",receive);
+    timeout=setTimeout(()=>{window.removeEventListener("message",receive);},60000);
+    popup.location.href=result.app_url;
+  }catch(error){popup.close();$("admin-users-status").textContent=error.message;}
+}
+
+async function previewStudent(userId,groupId){
+  const request=++previewRequest,host=$("admin-preview");host.replaceChildren();
+  text(host,"strong","","Загрузка просмотра…");
+  try{
+    const data=await api(`/v1/admin/users/${userId}/preview/${groupId}`);
+    if(request!==previewRequest)return;
+    host.replaceChildren();
+    const header=dom("article","billing-option");text(header,"strong","","Только просмотр · "+data.group);
+    text(header,"span","",data.start+" — "+data.end+" · "+data.timezone);
+    const close=dom("button","link-button","Закрыть");close.type="button";close.addEventListener("click",()=>{previewRequest++;host.replaceChildren();});header.append(close);host.append(header);
+    for(const [title,items] of [["Расписание",data.lessons],["Домашние задания",data.homework],["Дедлайны",data.deadlines]]){
+      const section=dom("article","billing-option");text(section,"strong","",title);
+      if(!items.length)text(section,"span","","Нет записей");
+      for(const row of items){
+        const label=row.title||row.subject;
+        text(section,"span","",label+" · "+(row.starts_at?datetime(row.starts_at):row.deadline_at?datetime(row.deadline_at):row.deadline?.at?datetime(row.deadline.at):""));
+        if(row.teacher||row.location)text(section,"small","",[row.teacher,row.location].filter(Boolean).join(" · "));
+        if(row.summary||row.description)text(section,"small","",row.summary||row.description);
+        if(row.my_state)text(section,"small","",row.my_state.completion==="completed"?"Выполнено":"Не выполнено");
+      }
+      host.append(section);
+    }
+    if(data.homework_truncated||data.deadlines_truncated)text(host,"span","","Показаны первые 100 записей каждого раздела.");
+    host.scrollIntoView({block:"start"});
+  }catch(error){if(request===previewRequest){host.replaceChildren();text(host,"span","error",error.message);}}
+}
+$("admin-user-search").addEventListener("submit",event=>{event.preventDefault();previewRequest++;loadAdminUsers();});
+$("admin-users-more").addEventListener("click",()=>loadAdminUsers(true));
+$("admin-users").addEventListener("click",async event=>{
+  const view=event.target.closest("[data-preview-user]");
+  if(view)return chooseSupport(view.dataset.previewUser,view.dataset.previewGroup);
+  const button=event.target.closest("[data-user-access]");if(!button)return;
+  if(!confirm("Изменить доступ пользователя во всех его текущих группах? История сохранится."))return;
+  try{
+    button.disabled=true;
+    await api(`/v1/admin/users/${button.dataset.userAccess}/memberships/status`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:button.dataset.action})});
+    previewRequest++;await loadAdminUsers();await loadAdminGroups();
+  }catch(error){$("admin-users-status").textContent=error.message;}finally{button.disabled=false;}
 });
 
 start();setInterval(()=>{if(token&&!document.hidden&&$("modal").hidden)load();},60000);

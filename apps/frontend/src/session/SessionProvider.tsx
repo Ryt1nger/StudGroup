@@ -1,4 +1,5 @@
 import type { SessionContext } from '@studgroup/shared-types';
+import { receiveSupportSession, supportRequested } from './support';
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api/queries';
@@ -51,16 +52,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     queryClient.clear();
     setAccessToken(null);
     async function boot() {
-      if (!adapter || !adapter.initData) {
+      if (!supportRequested && (!adapter || !adapter.initData)) {
         setState({ status: 'no-telegram' });
         return;
       }
       setState({ status: 'loading' });
       try {
-        const res = await api.bootstrap(adapter.initData);
+        const res = supportRequested ? await receiveSupportSession() : await api.bootstrap(adapter!.initData);
         if (cancelled) return;
         setAccessToken(res.access_token);
-        const owner = academicCacheOwner(res.session);
+        const owner = supportRequested ? null : academicCacheOwner(res.session);
         if (owner) {
           // Restore only after the backend has verified Telegram membership. A slow or
           // blocked IndexedDB must never turn into another startup spinner.
@@ -120,6 +121,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   const recheck = useCallback(async () => {
+    if (supportRequested) return;
     const session = await api.recheck();
     const newOwner = academicCacheOwner(session);
     const oldOwner = state.status === 'ready' ? academicCacheOwner(state.session) : null;
@@ -154,13 +156,14 @@ export function useHasPermission(permission: SessionContext['permissions'][numbe
 // eslint-disable-next-line react-refresh/only-export-components
 export function useIsHeadman(): boolean {
   const value = useContext(Ctx);
-  return value?.state.status === 'ready' && value.state.session.membership?.role === 'headman';
+  return value?.state.status === 'ready' && (supportRequested ? value.state.session.permissions.includes('schedule.write') : value.state.session.membership?.role === 'headman');
 }
 
 /** Headman or deputy: may review cards and open the editor (the backend still decides every write). */
 // eslint-disable-next-line react-refresh/only-export-components
 export function useIsEditor(): boolean {
   const value = useContext(Ctx);
+  if (supportRequested) return value?.state.status === 'ready' && value.state.session.permissions.includes('schedule.write');
   const role = value?.state.status === 'ready' ? value.state.session.membership?.role : undefined;
   return role === 'headman' || role === 'deputy';
 }

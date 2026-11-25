@@ -115,6 +115,13 @@ class EditDeadlineRequest(BaseModel):
 
 async def editor(db, group, authorization):
     """The caller as (user, membership); only an active headman/deputy of THIS group passes."""
+    from studgroup.support_session import editing
+
+    if editing(db, group.id):
+        from studgroup.staff_api import staff
+
+        context = await staff(db, authorization)
+        return context.user, context.member
     session = await db.get(WebSession, token_hash(authorization[7:]))
     user = await db.get(User, session.user_id)
     try:

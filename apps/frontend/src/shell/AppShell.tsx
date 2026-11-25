@@ -9,6 +9,8 @@ import { FeedbackProvider, useFeedback } from '../ui/Feedback';
 import { Ic } from '../ui/Ic';
 import type { IconName } from '../ui/iconData';
 import { AppRootContext } from './AppRoot';
+import { exitSupport, supportMode, supportRequested } from '../session/support';
+import { useSession } from '../session/SessionProvider';
 
 const NAV: ReadonlyArray<readonly [string, string, IconName]> = [
   ['/tasks', 'Задания', 'tasks'],
@@ -51,6 +53,7 @@ const STAGGER = '.top,.titles,.ptitle,.pcard,.stats,.stat,.task,.tile,.ev,.sec,.
 
 function Frame() {
   const { pathname } = useLocation();
+  const { state } = useSession();
   const online = useOnline();
   const scrollRef = useRef<HTMLDivElement>(null);
   // Direction is derived from the previous path while rendering, so the new screen mounts with it.
@@ -85,6 +88,7 @@ function Frame() {
 
   return (
     <>
+      {supportRequested && state.status === 'ready' ? <div role="status" style={{ padding: 8, background: '#292b39', color: 'white', fontSize: 12 }}>Поддержка · {supportMode === 'edit' ? 'Редактирование' : 'Просмотр'} · {state.session.user.display_name} · {state.session.group?.name} <button type="button" onClick={exitSupport}>В админку</button></div> : null}
       <div ref={scrollRef} className="scroll">
         <div key={pathname} className={clsx('view', section === 'today' && 'today-view', dir === 'none' && 'still')} data-dir={dir === 'none' ? 'none' : dir}>
           <Outlet />
@@ -100,7 +104,7 @@ function Frame() {
           </NavLink>
         ))}
       </nav>
-      <SdoLaunchAnnouncement pathname={pathname} />
+      {!supportRequested ? <SdoLaunchAnnouncement pathname={pathname} /> : null}
       {!online ? (
         <div className="offline">
           <Banner tone="warning" icon="wifioff">Нет соединения. Проверьте интернет. Последние загруженные данные показаны ниже, если они есть.</Banner>
