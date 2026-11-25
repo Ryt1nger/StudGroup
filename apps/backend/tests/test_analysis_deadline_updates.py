@@ -187,7 +187,7 @@ def test_locked_confirmed_and_archived_cards_are_not_rebuilt():
     assert result == []
 
 
-def test_a_cancelled_lesson_in_the_new_timetable_makes_the_deadline_unknown_not_stale():
+def test_a_cancelled_lesson_in_the_new_timetable_moves_the_inferred_deadline():
     from studgroup.analysis.deadline_updates import rebuild_inferred_deadlines
 
     base = expanded([("second", 2, 10)])
@@ -195,4 +195,5 @@ def test_a_cancelled_lesson_in_the_new_timetable_makes_the_deadline_unknown_not_
         if lesson["starts_at"].startswith("2026-10-14"):
             lesson["status"] = "cancelled"
     changes = rebuild_inferred_deadlines([card("a", 12)], now=msk(12), timezone=TZ, schedule=base)
-    assert (changes[0].new_at, changes[0].reason) == (None, "cancelled_lesson_in_window")
+    assert changes[0].new_at.astimezone(MOSCOW).date() == date(2026, 10, 28)
+    assert changes[0].reason == "next_subject_lesson"
