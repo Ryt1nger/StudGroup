@@ -506,7 +506,9 @@ function renderProcessControls(data,urgent){
     text(card,"strong","process-runtime "+(item.status==="error"?"process-error":""),processStates[item.status]||"Не подтверждён");
     text(card,"small","",item.pending?"Команда ожидает подтверждения":item.enabled==null?"Состояние наследуется из конфигурации":item.enabled?"Включён владельцем":"Выключен владельцем");
     const details=dom("div","process-details");
-    for(const [name,value] of [["Heartbeat",datetime(item.heartbeat_at)],["Последний запуск",datetime(item.started_at)],["Последняя ошибка",datetime(item.error_at)],["Причина",item.error_code||"—"],["Этап",item.error_stage||"—"]]){const row=dom("div","quick-stat");text(row,"span","",name);text(row,"strong","",value);details.append(row);}
+    const activeError=item.error_active??(item.status==="error");
+    const historyLabel=item.status==="running"?"Прошлая ошибка · восстановлено":"Прошлая ошибка";
+    for(const [name,value] of [["Heartbeat",datetime(item.heartbeat_at)],["Последний запуск",datetime(item.started_at)],[activeError?"Текущая ошибка":historyLabel,datetime(item.error_at)],[activeError?"Причина":"Прошлая причина",item.error_code||"—"],[activeError?"Этап":"Прошлый этап",item.error_stage||"—"]]){const row=dom("div","quick-stat");text(row,"span","",name);text(row,"strong","",value);details.append(row);}
     card.append(details);
     const restart=dom("button","link-button","Перезапустить");restart.type="button";restart.disabled=processChanging;
     restart.addEventListener("click",()=>changeProcess(item.name,"restart"));

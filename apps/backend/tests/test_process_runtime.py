@@ -51,6 +51,18 @@ def test_runtime_acknowledgement_and_heartbeat(client):
             assert len(notices) == 2
 
     asyncio.run(exercise())
+
+    async def recovered():
+        assert await report_process(engine, settings, "sdo", generation, "running")
+        async with AsyncSession(engine) as db:
+            row = await db.get(BackgroundProcess, "sdo")
+            assert row.status == "running"
+            assert row.error_code == "heartbeat_missed"  # preserve the audit record
+
+    asyncio.run(recovered())
+    processes = client.get("/v1/admin/processes", headers=owner).json()["processes"]
+    assert next(row for row in processes if row["name"] == "sdo")["error_active"] is False
+
     disabled = client.post("/v1/admin/processes/sdo/disable", headers=owner).json()
 
     async def stopped():

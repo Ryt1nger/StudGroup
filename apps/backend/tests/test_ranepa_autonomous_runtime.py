@@ -22,3 +22,15 @@ def test_container_heartbeat(tmp_path, monkeypatch):
     old = time() - 1300
     os.utime(path, (old, old))
     assert not healthy()
+
+
+def test_browser_failure_diagnostics_are_closed_vocabulary():
+    from studgroup.ranepa_browser_health import browser_failure_reason
+
+    assert (
+        browser_failure_reason(RuntimeError("Executable doesn't exist at /private"))
+        == "binary_missing"
+    )
+    assert browser_failure_reason(RuntimeError("No space left on device")) == "shared_memory_or_disk"
+    assert browser_failure_reason(RuntimeError("Cannot allocate memory")) == "memory_exhausted"
+    assert browser_failure_reason(RuntimeError("private URL and credentials")) == "unknown"
