@@ -1,4 +1,4 @@
-"""Durable urgent SDO requests use existing jobs, consent, cooldown and retry limits."""
+"""Owner-requested SDO cycles supersede regular timers, not account access safeguards."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -306,13 +306,41 @@ async def prepare_urgent(engine, settings, today):
         monday = today - timedelta(days=today.weekday())
         if db.get_bind().dialect.name == "postgresql":
             await db.execute(text("SELECT pg_advisory_xact_lock(832610071)"))
+        # Keep the claim fence while replacing ordinary timers and priorities.
+        if db.get_bind().dialect.name == "postgresql":
+            await db.execute(text("SELECT pg_advisory_xact_lock(832610069)"))
+        now = datetime.now(UTC)
+        blocked_users = {}
         for candidate in candidates:
             await release_legacy_login_blocks(db, candidate.user_id)
-        # This mode may queue an account before its cooldown expires, but never
-        # overrides next_attempt_at, invalid credentials, or exhausted retries.
-        await enqueue_week(db, monday, candidates, urgent_refresh=True)
-        now = datetime.now(UTC)
-        for candidate in candidates:
+            if await previous_login_block(db, candidate.user_id):
+                blocked_users[candidate.user_id] = "credentials_required"
+                continue
+            captcha = await db.scalar(
+                select(RanepaCrawlJob.id)
+                .where(
+                    RanepaCrawlJob.user_id == candidate.user_id,
+                    (
+                        (RanepaCrawlJob.failure_code == "captcha")
+                        | (RanepaCrawlJob.retry_reason == "captcha")
+                        | (RanepaCrawlJob.retry_reason == "attempts_exhausted:captcha")
+                    ),
+                    (
+                        (RanepaCrawlJob.next_attempt_at > now)
+                        | (RanepaCrawlJob.state == "dead_letter")
+                    ),
+                )
+                .limit(1)
+            )
+            if captcha is not None:
+                blocked_users[candidate.user_id] = "captcha_protection"
+        await enqueue_week(
+            db,
+            monday,
+            [candidate for candidate in candidates if candidate.user_id not in blocked_users],
+            urgent_refresh=True,
+        )
+        for priority, candidate in enumerate(candidates):
             job = await db.scalar(
                 select(RanepaCrawlJob).where(
                     RanepaCrawlJob.user_id == candidate.user_id,
@@ -320,22 +348,32 @@ async def prepare_urgent(engine, settings, today):
                     RanepaCrawlJob.week_start == monday,
                 )
             )
-            blocked = (
-                job is None
-                or job.state == "dead_letter"
-                or await previous_login_block(db, candidate.user_id)
-            )
+            reason = blocked_users.get(candidate.user_id)
+            if reason is None and job is None:
+                reason = "queue_item_unavailable"
+            if reason is None:
+                # Preserve monotonic attempt IDs and observations. Only the normal
+                # scheduling clock is reset; the new run gets a fresh retry budget.
+                await db.execute(
+                    update(RanepaCrawlJob)
+                    .where(RanepaCrawlJob.user_id == candidate.user_id)
+                    .values(next_attempt_at=None)
+                )
+                job.state = "queued"
+                job.priority = priority
+                job.claimed_at = None
+                job.failure_code = None
+                job.retry_reason = None
+            blocked = reason is not None
             db.add(
                 UrgentSDOTarget(
                     run_id=row.id,
                     user_id=candidate.user_id,
                     group_id=candidate.group_id,
                     job_id=job.id if job else None,
-                    baseline_attempts=(
-                        max(0, job.attempts - int(job.state == "running")) if job else 0
-                    ),
+                    baseline_attempts=job.attempts if job else 0,
                     state="blocked" if blocked else "pending",
-                    failure_code="retry_policy_blocked" if blocked else None,
+                    failure_code=reason,
                     completed_at=now if blocked else None,
                 )
             )
@@ -382,7 +420,9 @@ async def finalize_urgent(engine, settings):
                 select(UrgentSDOTarget).where(
                     UrgentSDOTarget.run_id == row.id,
                     UrgentSDOTarget.state == "blocked",
-                    UrgentSDOTarget.failure_code == "retry_policy_blocked",
+                    UrgentSDOTarget.failure_code.in_(
+                        ("retry_policy_blocked", "credentials_required")
+                    ),
                 )
             )
         ).all()
@@ -441,7 +481,7 @@ async def finalize_urgent(engine, settings):
                 job is None
                 or job.state not in {"failed", "queued"}
                 or code not in RETRY_BACKOFF
-                or terminal_failure(code, job.attempts)
+                or terminal_failure(code, job.attempts - target.baseline_attempts)
                 or job.next_attempt_at is None
                 or await previous_login_block(db, target.user_id)
             ):
@@ -449,7 +489,6 @@ async def finalize_urgent(engine, settings):
             job.state = "queued"
             job.failure_code = None
             job.retry_reason = code
-            target.baseline_attempts = job.attempts
             target.state = "pending"
             target.failure_code = None
             target.completed_at = None

@@ -568,12 +568,12 @@ function renderProcessControls(data,urgent,current){
     progressBar(progress,"Общий прогресс прогона",waiting?null:urgent.found?done:urgent.state==="completed"?1:0,urgent.found||1,waiting?"Инициализация списка аккаунтов":number(done)+" / "+number(urgent.found||0)+" аккаунтов с итогом");
     if(!waiting){
       for(const [key,name] of [["found","Найдено аккаунтов"],["queued","Поставлено в очередь"],["completed","Обработано аккаунтов"],["succeeded","Успешно"],["failed","Ошибок"],["blocked","Заблокировано защитой"],["remaining","Осталось"]])statRow(progress,name,number(urgent[key]));
-      const targetStates={running:"Сейчас обрабатывается",cooldown:"Ожидает разрешённого времени",queued:"В очереди",succeeded:"Успешно",failed:"Ошибка",blocked:"Заблокирован",cancelled:"Отменён"};
+      const targetStates={running:"Сейчас обрабатывается",cooldown:"Ожидает повторной попытки",queued:"В очереди",succeeded:"Успешно",failed:"Ошибка",blocked:"Заблокирован",cancelled:"Отменён"};
       for(const target of urgent.targets||[]){
         const details=[targetStates[target.state]||target.state];
-        if(target.reason)details.push(target.reason);
+        const reasons={credentials_required:"Нужно обновить данные для входа",captcha_protection:"Защита CAPTCHA",queue_item_unavailable:"Задание недоступно",retry_policy_blocked:"Защитное ограничение",superseded:"Заменён новым прогоном"};
+        if(target.reason)details.push(reasons[target.reason]||target.reason);
         if(target.started_at)details.push("начало "+datetime(target.started_at));
-        if(target.next_attempt_at)details.push("не раньше "+datetime(target.next_attempt_at));
         if(target.completed_at)details.push("завершено "+datetime(target.completed_at));
         statRow(progress,(target.student||"Студент")+" · "+(target.group||"Группа"),details.join(" · "));
       }
@@ -604,7 +604,7 @@ async function changeProcess(name,action){
 }
 $("urgent-start").addEventListener("click",async()=>{
   const replace=Boolean(lastUrgent&&activeRunStates.includes(lastUrgent.state));
-  if(processChanging||!confirm(replace?"Отменить старый прогон? Текущая учётная запись безопасно завершится перед новым прогоном. Лимиты сохраняются.":"Поставить все подходящие аккаунты в полный SDO-прогон? Cooldown и защитные лимиты не будут отменены."))return;
+  if(processChanging||!confirm(replace?"Отменить старый прогон? Текущая учётная запись безопасно завершится перед новым прогоном. Лимиты сохраняются.":"Запустить полный SDO-прогон сейчас? Плановые таймеры будут пересчитаны; защита входа и CAPTCHA сохраняется."))return;
   processChanging=true;$("urgent-start").disabled=true;
   $("process-status").textContent="Отправляется запрос на прогон…";
   let errorMessage=null;

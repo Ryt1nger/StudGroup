@@ -68,7 +68,6 @@ export function EventCard({
           {eventDate(item, timeZone)}
         </p>
         {item.place ? <p>{item.place}</p> : null}
-        {item.description ? <p className="group-event-summary">{item.description}</p> : null}
         <EventStatus item={item} />
       </Link>
       <EventSource url={item.source_url} />
@@ -108,7 +107,14 @@ export function DeleteGroupEventButton({ item, backTo = '/events' }: { item: { i
                   },
                   onError: (error) => {
                     setAsking(false);
-                    toast(isApiRequestError(error) && error.status === 409 ? 'Событие изменилось. Проверьте актуальную версию.' : 'Не удалось удалить событие');
+                    if (isApiRequestError(error)) {
+                      const message = error.status === 409
+                        ? 'Событие изменилось. Проверьте актуальную версию.'
+                        : error.error?.message || (error.status ? `Не удалось удалить событие (HTTP ${error.status})` : 'Не удалось связаться с сервером');
+                      toast(error.correlationId ? `${message} · ${error.correlationId}` : message);
+                    } else {
+                      toast('Не удалось удалить событие');
+                    }
                   },
                 },
               );

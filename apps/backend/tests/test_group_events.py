@@ -223,3 +223,39 @@ def test_manual_delete_hides_event_and_blocks_source_replay(client, monkeypatch)
     assert rows[0].state == "deleted" and rows[0].manual_lock
     assert json.loads(rows[0].payload_json)["description"] == ""
     assert client.get("/v1/group-events", headers=AUTH).json()["events"] == []
+
+
+def test_pilot_event_review_and_delete_follow_session_feature_policy(client, monkeypatch):
+    from test_staff_api import db_run
+
+    from studgroup.models import Group
+
+    event, payload = prepare(client, monkeypatch)
+    make(client, "headman")
+    settings = client.app.state.settings
+    settings.image_event_review_enabled = False
+    settings.image_analysis_groups = []
+    settings.owner_funded_pilot = True
+
+    async def authorize(db):
+        group = await db.get(Group, event.group_id)
+        group.status = "active"
+        group.pilot_authorized = True
+
+    async def disallow(db):
+        (await db.get(Group, event.group_id)).pilot_authorized = False
+
+    db_run(client, disallow)
+    assert put(client, event, payload, "deleted").status_code == 403
+    db_run(client, authorize)
+    settings.owner_funded_pilot = False
+    assert put(client, event, payload, "deleted").status_code == 404
+    settings.owner_funded_pilot = True
+    make(client, "student")
+    assert put(client, event, payload, "deleted").status_code == 403
+    make(client, "deputy")
+    assert client.get("/v1/staff/image-findings/events", headers=AUTH).status_code == 200
+    response = put(client, event, {"title": payload["title"]}, "deleted")
+    assert response.status_code == 200, response.text
+    assert client.get(f"/v1/group-events/{event.id}", headers=AUTH).status_code == 404
+    assert client.get("/v1/group-events?status=all", headers=AUTH).json()["events"] == []

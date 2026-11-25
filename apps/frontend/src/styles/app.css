@@ -146,10 +146,10 @@ a { color: inherit; text-decoration: none; }
 .chip[aria-pressed='true'] { color: var(--on-accent); background: var(--grad); border-color: transparent; box-shadow: var(--glow); }
 
 /* timeline */
-.tline { position: relative; margin-left: 52px; margin-top: 4px; }
+.tline { position: relative; margin-left: var(--schedule-time-gutter, 52px); margin-top: 18px; }
 .hr { position: absolute; left: -52px; right: 0; height: 0; border-top: .5px solid var(--sep); }
 .hr span { position: absolute; left: 0; top: -9px; font-size: 12px; color: var(--label-3); font-weight: 500; font-variant-numeric: tabular-nums; }
-.ev { z-index: 2; position: absolute; left: 6px; right: 0; padding: 10px 14px 10px 18px; border-radius: 20px; background: var(--card); border: .5px solid hsl(var(--sc-hsl) / 0.35); overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
+.ev { z-index: 2; position: absolute; left: var(--schedule-card-inset, 6px); right: 0; padding: 10px 14px 10px 18px; border-radius: 20px; background: var(--card); border: .5px solid hsl(var(--sc-hsl) / 0.35); overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
 .ev .bar { left: 7px; top: 11px; bottom: 11px; }
 .ev b { font-size: 15.5px; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; overflow-wrap: anywhere; }
 .ev span:not(.bar) { font-size: 12.5px; color: var(--label-2); }
@@ -627,12 +627,11 @@ a.pcard:active { transform: scale(.98); }
 .ev.past { opacity: .5; filter: grayscale(.9); }
 
 /* Group events share the existing surfaces and theme tokens; academic cards remain separate. */
-.group-event-card { display: block; padding: 16px; margin: 10px 0; border-left: 3px solid var(--accent); }
+.group-event-card { display: block; padding: 16px; margin: 16px 0; border-left: 3px solid var(--accent); }
 .group-event-main { display: block; color: var(--label); }
 .group-event-main h3 { margin: 8px 0; font-size: 17px; text-transform: none; letter-spacing: -.01em; overflow-wrap: anywhere; color: var(--label); }
 .group-event-main p { margin: 6px 0; color: var(--label-2); line-height: 1.4; display: flex; align-items: center; gap: 6px; }
 .group-event-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--accent); }
-.group-event-main .group-event-summary { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
 .event-source { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; color: var(--accent); }
 .event-description { white-space: pre-wrap; overflow-wrap: anywhere; }
 .event-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
@@ -1124,3 +1123,44 @@ a.pcard:active { transform: scale(.98); }
   .titles .tt { font-size: clamp(17px, 5.2vw, 22px); line-height: 1.3; }
   .titles .tt.on { font-size: clamp(25px, 7.5vw, 34px); line-height: 1.2; }
 }
+
+
+
+/* The sticky calendar header uses the same inner width as the schedule.
+   Horizontal negative margins previously clipped the weekday row. */
+.scroll {
+  --scroll-pad: 16px;
+  padding-left: calc(var(--scroll-pad) + var(--left-inset));
+  padding-right: calc(var(--scroll-pad) + var(--right-inset));
+}
+@media (max-width: 360px) { .scroll { --scroll-pad: 12px; } }
+.view > .pinned {
+  max-width: 100%;
+  margin-inline: 0;
+  padding-inline: 0;
+  padding-bottom: 6px;
+}
+.pinned .week { margin-bottom: 8px; }
+.pinned .top .tr { flex: 0 0 auto; flex-wrap: nowrap; }
+.schedule-events {
+  margin: 14px 0 24px calc(var(--schedule-time-gutter, 52px) + var(--schedule-card-inset, 6px));
+  max-width: none;
+}
+.schedule-events .sec { margin: 0 0 10px; }
+.schedule-events .sec h2 { font-size: 17px; }
+.schedule-event-card {
+  position: relative;
+  margin: 0 0 8px;
+  padding: 10px 14px 10px 18px;
+  border: .5px solid var(--card-edge);
+  border-radius: 20px;
+}
+.schedule-event-card::before {
+  content: '';
+  position: absolute;
+  inset: 11px auto 11px 7px;
+  width: 4px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+.schedule-event-card h3 { font-size: 15px; }

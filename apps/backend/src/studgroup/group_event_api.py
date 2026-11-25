@@ -13,7 +13,7 @@ from sqlalchemy import select
 from studgroup.analysis.event_lifetime import approved_snapshot
 from studgroup.analysis.group_events import get_event, retained_sources, review_update
 from studgroup.analysis.image_contracts import ImageEvent
-from studgroup.api import ApiError, active_membership
+from studgroup.api import ApiError, active_membership, group_features
 from studgroup.models import Group, GroupEvent, GroupEventRevision, RawMessage
 from studgroup.staff_api import CurrentStaff, Db
 from studgroup.student_cards import telegram_url
@@ -21,16 +21,13 @@ from studgroup.student_cards import telegram_url
 router = APIRouter(prefix="/v1")
 
 
-def gate(request, group_id, public=False):
-    settings = request.app.state.settings
+def gate(request, group, member=None, public=False):
     if public:
-        # The public list is group-scoped by the authenticated membership and only
-        # returns approved active records.  It stays available when empty.
+        # Public events are scoped to active membership, independent of review flags.
         return
-    flag = (
-        settings.image_event_publication_enabled if public else settings.image_event_review_enabled
-    )
-    if not flag or str(group_id) not in settings.image_analysis_groups:
+    # The authenticated staff role and the same feature policy as the session UI
+    # must agree, including authorized owner-funded pilot groups.
+    if not group_features(request.app.state.settings, group, member)["event_review"]:
         raise ApiError("not_found", "Раздел недоступен", 404)
 
 
@@ -107,7 +104,7 @@ async def present(db, group, event, now, sources=None):
 
 @router.get("/staff/image-findings/events")
 async def list_review_events(request: Request, context: CurrentStaff, db: Db):
-    gate(request, context.group.id)
+    gate(request, context.group, context.member)
     rows = (
         await db.scalars(
             select(GroupEvent)
@@ -161,9 +158,9 @@ async def update_review_event(
 ):
     from pydantic import ValidationError
 
-    gate(request, context.group.id)
+    gate(request, context.group, context.member)
     if body.state == "active":
-        gate(request, context.group.id, public=True)
+        gate(request, context.group, public=True)
     if body.state == "deleted":
         # Match the lock order used by capture_event, including concurrent source replays.
         await db.scalar(select(Group).where(Group.id == context.group.id).with_for_update())
@@ -205,7 +202,7 @@ async def list_group_events(
     upcoming: bool = False,
 ):
     group, _member = context
-    gate(request, group.id, public=True)
+    gate(request, group, public=True)
     if (start is None) != (end is None) or (start and (end < start or (end - start).days > 365)):
         raise ApiError("invalid_period", "Укажите интервал не больше 366 дней", 422)
     now = datetime.now(UTC)
@@ -242,7 +239,7 @@ async def list_group_events(
 @router.get("/group-events/{ident}")
 async def group_event(ident: UUID, request: Request, db: Db, context: GroupContext):
     group, _member = context
-    gate(request, group.id, public=True)
+    gate(request, group, public=True)
     now = datetime.now(UTC)
     event = await get_event(db, group.id, ident, now)
     incoming = ImageEvent.model_validate_json(event.payload_json)

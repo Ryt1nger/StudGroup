@@ -390,13 +390,22 @@ async def claim_next(
     running = aliased(RanepaCrawlJob)
     urgent = (
         select(UrgentSDOTarget.run_id)
+        .join(UrgentSDORun, UrgentSDORun.id == UrgentSDOTarget.run_id)
         .where(
             UrgentSDOTarget.job_id == RanepaCrawlJob.id,
             UrgentSDOTarget.state == "pending",
+            UrgentSDORun.state == "running",
         )
         .exists()
     )
-    due = []
+    active_urgent = (
+        select(UrgentSDORun.id)
+        .where(UrgentSDORun.state.in_(("requested", "initializing", "running")))
+        .exists()
+    )
+    # A full run owns the worker until completion. Ordinary jobs cannot leak
+    # into the new queue or run while the initialization transaction is pending.
+    due = [~active_urgent | urgent]
     if group_id is None and not rescan_all:
         # Completed urgent targets wait for the entire round before retrying.
         due.append(
@@ -410,7 +419,8 @@ async def claim_next(
             .exists()
         )
         due.append(
-            ~select(locked.id)
+            urgent
+            | ~select(locked.id)
             .where(
                 locked.user_id == RanepaCrawlJob.user_id,
                 locked.state == "failed",
@@ -430,7 +440,8 @@ async def claim_next(
             .exists()
         )
         due.append(
-            ~select(completed.id)
+            urgent
+            | ~select(completed.id)
             .where(
                 completed.user_id == RanepaCrawlJob.user_id,
                 completed.next_attempt_at > now,
@@ -468,6 +479,7 @@ async def claim_next(
                     (RanepaCrawlJob.priority < 0, 1),
                     else_=2,
                 ),
+                case((urgent, RanepaCrawlJob.priority), else_=0),
                 RanepaCrawlJob.week_start.desc(),
                 RanepaCrawlJob.attempts,
                 RanepaCrawlJob.priority,
@@ -518,15 +530,24 @@ async def finish(
     # A single early retry for a safe transient failure; subsequent failures
     # use the normal exponential backoff. Never accelerate CAPTCHA or rejection.
     first_transient = job.retry_reason not in RETRY_BACKOFF
-    exhausted = failure_code != "login_failed" and terminal_failure(failure_code, job.attempts)
+    baseline = await db.scalar(
+        select(UrgentSDOTarget.baseline_attempts)
+        .join(UrgentSDORun, UrgentSDORun.id == UrgentSDOTarget.run_id)
+        .where(
+            UrgentSDOTarget.job_id == job.id,
+            UrgentSDOTarget.state == "pending",
+            UrgentSDORun.state == "running",
+        )
+        .limit(1)
+    )
+    attempts = job.attempts if baseline is None else max(1, job.attempts - baseline)
+    exhausted = failure_code != "login_failed" and terminal_failure(failure_code, attempts)
     job.state = (
         "dead_letter" if failure_code and exhausted else "failed" if failure_code else "succeeded"
     )
     job.failure_code = failure_code
     job.finished_at = now or datetime.now(UTC)
-    job.next_attempt_at = retry_at(
-        job.finished_at, failure_code=failure_code, attempts=job.attempts
-    )
+    job.next_attempt_at = retry_at(job.finished_at, failure_code=failure_code, attempts=attempts)
     if (
         fast_retry
         and first_transient
@@ -534,7 +555,11 @@ async def finish(
         and failure_code in {"source_unavailable", "parse_failed"}
     ):
         job.next_attempt_at = job.finished_at + FAST_RETRY_DELAY
-    job.retry_reason = retry_reason(failure_code, job.attempts)
+    if baseline is not None and failure_code is None and job.claimed_at is not None:
+        # The next normal cycle follows this account's new position in the
+        # urgent cycle, not the previous schedule or the browser's duration.
+        job.next_attempt_at = job.claimed_at + REFRESH
+    job.retry_reason = retry_reason(failure_code, attempts)
     job.claimed_at = None
     await db.execute(
         update(UrgentSDOTarget)

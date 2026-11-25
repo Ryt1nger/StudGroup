@@ -44,7 +44,7 @@ def test_urgent_run_request(client):
     asyncio.run(previous())
 
 
-def test_urgent_uses_existing_queue_without_bypassing_cooldown(client, monkeypatch):
+def test_urgent_replaces_regular_cooldown_and_reschedules_from_new_claim(client, monkeypatch):
     settings = client.app.state.settings
     settings.bot_admin_user_id = 1
     settings.ranepa_access_approved = True
@@ -85,10 +85,13 @@ def test_urgent_uses_existing_queue_without_bypassing_cooldown(client, monkeypat
     async def work():
         await prepare_urgent(engine, settings, now.date())
         async with AsyncSession(engine) as db:
-            assert await claim_next(db, now=now) is None
-            job = await claim_next(db, now=now + timedelta(hours=7))
-            assert job.id == job_id
-            assert await finish(db, job.id, job.group_id, job.user_id, now=now + timedelta(hours=7))
+            job = await claim_next(db, now=now)
+            assert job is not None and job.id == job_id
+            assert job.attempts == 2
+            assert await finish(
+                db, job.id, job.group_id, job.user_id, now=now + timedelta(minutes=5)
+            )
+            assert job.next_attempt_at == now + timedelta(hours=6)
             await db.commit()
         await finalize_urgent(engine, settings)
 

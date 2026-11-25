@@ -248,7 +248,7 @@ export function ScheduleScreen() {
       </div>
       {features.events && groupEvents.isError ? <RequestError error={groupEvents.error} onRetry={() => void groupEvents.refetch()} /> : null}
       {features.events && groupEvents.isPending ? <Skeleton count={1} label="Загрузка событий календаря" /> : null}
-      {eventItems.some((item) => groupEventOnDay(item, key, timeZone)) ? <div ref={eventsRef}><Sec id="schedule-group-events" title="События"><ScheduleEventCards items={eventItems.filter((item) => groupEventOnDay(item, key, timeZone))} timeZone={timeZone} /></Sec></div> : null}
+      {eventItems.some((item) => groupEventOnDay(item, key, timeZone)) ? <div ref={eventsRef} className="schedule-events"><Sec id="schedule-group-events" title="События"><ScheduleEventCards items={eventItems.filter((item) => groupEventOnDay(item, key, timeZone))} timeZone={timeZone} /></Sec></div> : null}
       {data?.week_state === 'needs_clarification' ? (
         <Banner tone="warning" icon="clock"><strong>{ru.schedule.clarifyTitle}.</strong> {ru.schedule.clarifyBody}</Banner>
       ) : null}
