@@ -5,7 +5,7 @@ import logging
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -265,6 +265,97 @@ async def delete_billing_option(
     await db.delete(row)
     await db.commit()
     return {"deleted": True}
+
+
+class SupportLaunchBody(BaseModel):
+    user_id: UUID
+    group_id: UUID
+    mode: Literal["view", "edit"]
+
+
+@router.post("/v1/admin/support-sessions")
+async def launch_support(
+    body: SupportLaunchBody,
+    request: Request,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(database)],
+    admin: Annotated[User, Depends(admin_session)],
+    authorization: str = Header(),
+):
+    from studgroup.api import group_features, role_permissions
+    from studgroup.support_session import issue
+
+    target = await db.get(User, body.user_id)
+    member = await db.scalar(
+        select(Membership).where(
+            Membership.user_id == body.user_id,
+            Membership.group_id == body.group_id,
+            Membership.status == "active",
+        )
+    )
+    group = await db.get(Group, body.group_id)
+    if (
+        target is None
+        or member is None
+        or group is None
+        or group.status != "active"
+        or not group.pilot_authorized
+    ):
+        raise ApiError("preview_unavailable", "Нет активного доступа к группе", 403)
+    parent = await db.get(WebSession, token_hash(authorization[7:]))
+    now = datetime.now(UTC)
+    try:
+        token, expires = issue(request.app.state.settings, parent, admin, member, body.mode, now)
+    except ValueError:
+        raise ApiError("support_unavailable", "Режим поддержки недоступен", 503) from None
+    permissions = (
+        role_permissions("headman")
+        if body.mode == "edit"
+        else ["today.read", "homework.read", "schedule.read"]
+    )
+    features = group_features(request.app.state.settings, group, member)
+    features.update(event_review=False, schedule_review=False)
+    response.headers["Cache-Control"] = "no-store"
+    LOGGER.info(
+        "ADMIN_SUPPORT_OPEN actor=%s user=%s group=%s mode=%s",
+        admin.id,
+        target.id,
+        group.id,
+        body.mode,
+    )
+    return {
+        "access_token": token,
+        "token_type": "Bearer",
+        "expires_at": expires,
+        "mode": body.mode,
+        "app_url": request.app.state.settings.webapp_origin.rstrip("/") + "/?support=1",
+        "session": {
+            "user": {
+                "id": target.id,
+                "telegram_user_id": target.telegram_user_id,
+                "display_name": target.display_name,
+                "username": target.username,
+            },
+            "access_state": "active",
+            "membership": {
+                "id": member.id,
+                "role": member.role,
+                "status": member.status,
+                "can_recheck": False,
+            },
+            "group": {
+                "id": group.id,
+                "name": group.name,
+                "academic_group_code": group.academic_group_code,
+                "timezone": group.timezone,
+                "status": group.status,
+                "pilot_authorized": group.pilot_authorized,
+            },
+            "permissions": permissions,
+            "features": features,
+            "server_time": now,
+        },
+    }
 
 
 @router.get("/v1/admin/users")

@@ -51,6 +51,10 @@ async def staff(
         .with_for_update()
         .execution_options(populate_existing=True)
     )
+    from studgroup.support_session import context, editing, editorial_member
+
+    if editing(db, group.id) and member.status == "active":
+        return Staff(group, await db.get(User, context(db)["owner_id"]), editorial_member(member))
     if member.status != "active" or member.role not in {"headman", "deputy"}:
         raise ApiError("permission_denied", "Доступно старосте и заместителю", 403)
     return Staff(group, await db.get(User, member.user_id), member)

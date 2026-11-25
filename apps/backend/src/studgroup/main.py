@@ -717,6 +717,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             app.state.owner_http_telemetry.record(status, (perf_counter() - start) * 1000)
 
+    @app.middleware("http")
+    async def support_capability_gate(request, call_next):
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from studgroup.support_session import LOGGER, PREFIX, allowed, validate
+
+        auth = request.headers.get("authorization", "")
+        if not auth.startswith("Bearer " + PREFIX):
+            return await call_next(request)
+        async with AsyncSession(app.state.engine) as db:
+            support = await validate(db, settings, auth[7:])
+        if not support or not allowed(support["mode"], request.method, request.url.path):
+            return JSONResponse(
+                {
+                    "error": {
+                        "code": "support_denied",
+                        "message": "Действие недоступно в режиме поддержки",
+                    }
+                },
+                status_code=403,
+                headers={"Cache-Control": "no-store"},
+            )
+        request.state.support = support
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        if request.method not in {"GET", "HEAD"}:
+            LOGGER.info(
+                "ADMIN_SUPPORT_WRITE actor=%s user=%s group=%s method=%s path=%s status=%s",
+                support["owner_id"],
+                support["user_id"],
+                support["group_id"],
+                request.method,
+                request.url.path,
+                response.status_code,
+            )
+        return response
+
     app.include_router(router)
     app.include_router(admin_dashboard_router)
     app.include_router(admin_insights_router)
