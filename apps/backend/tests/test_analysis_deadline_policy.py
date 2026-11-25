@@ -290,20 +290,17 @@ def test_text_date_always_wins_over_a_different_model_date():
     assert agree.basis == "relative_resolved"
 
 
-def test_a_cancelled_lesson_in_the_window_makes_the_timetable_unreliable():
+def test_a_cancelled_lesson_is_skipped_for_dateless_homework():
     cancelled = schedule(lesson(14, 10, status="cancelled"), lesson(21, 10))
     result = homework("номер 5 письменно", msk(13), schedule=cancelled)
-    assert (result.at, result.basis, result.reason) == (
-        None,
-        "unknown",
-        "cancelled_lesson_in_window",
-    )
+    assert result.at == datetime(2026, 10, 21, 10, 40, tzinfo=MOSCOW)
+    assert result.basis == "schedule_inferred"
 
 
-def test_a_day_without_lessons_in_the_window_makes_the_timetable_unreliable():
+def test_a_day_without_lessons_is_skipped_for_dateless_homework():
     holiday = {date(2026, 10, 14)}
     result = homework("номер 5 письменно", msk(13), schedule=WEEK, no_lesson_days=holiday)
-    assert result.reason == "no_lesson_day_in_window"
+    assert result.at == datetime(2026, 10, 15, 12, 40, tzinfo=MOSCOW)
     later = {date(2026, 10, 30)}
     ok = homework("номер 5 письменно", msk(13), schedule=WEEK, no_lesson_days=later)
     assert ok.basis == "schedule_inferred"
@@ -353,9 +350,18 @@ def test_headman_requests_for_homework_and_dated_events():
     assert headman_request(dated, "control_point") is None
 
 
-def test_deadline_tied_to_a_lesson_ends_with_that_lesson():
+def test_dateless_homework_is_due_at_the_start_of_the_next_lesson():
     ending = dict(lesson(14, 10), ends_at=datetime(2026, 10, 14, 12, 10, tzinfo=MOSCOW).isoformat())
     result = homework("номер 5 письменно", msk(13), schedule=schedule(ending))
     assert result.basis == "schedule_inferred"
-    assert result.at == datetime(2026, 10, 14, 12, 10, tzinfo=MOSCOW)
+    assert result.at == datetime(2026, 10, 14, 10, 40, tzinfo=MOSCOW)
     assert archive_instant(result, TZ) == result.at
+
+
+def test_dateless_homework_never_uses_another_subgroups_lesson():
+    a = dict(lesson(14, 10), subgroup_id="a")
+    b = dict(lesson(15, 12), subgroup_id="b")
+    context = schedule(a, b)
+    assert homework("номер 5 письменно", msk(13), schedule=context).at is None
+    result = homework("номер 5 письменно", msk(13), schedule=context, subgroup_id="b")
+    assert result.at == datetime(2026, 10, 15, 12, 40, tzinfo=MOSCOW)
