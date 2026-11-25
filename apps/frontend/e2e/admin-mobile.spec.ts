@@ -34,7 +34,10 @@ test('mobile admin cards, actions, support frame and process controls stay withi
       return;
     }
     if (path === '/v1/admin/sdo-runs') {
-      await route.fulfill({ json: { run: null } });
+      await route.fulfill({ json: {
+        run: { state: 'running', found: 10, queued: 10, completed: 3, succeeded: 2, failed: 1, blocked: 0, remaining: 7, targets: [] },
+        current_account: { student: 'Тестовый студент', group: groupName, attempt: 1, started_at: '2026-11-25T12:00:00Z', live: { mode: 'worker', step: 'week_requested', saved_weeks: 2, browser_started: true } },
+      } });
       return;
     }
     if (path === '/v1/admin/support-sessions') {
@@ -71,6 +74,10 @@ test('mobile admin cards, actions, support frame and process controls stay withi
   await page.evaluate("selectPage('processes'); loadProcessControls()");
   await expect(page.locator('#process-cards .process-card')).toHaveCount(4);
   await expect(page.getByRole('switch')).toHaveCount(4);
+  await expect(page.getByRole('progressbar', { name: 'Прогресс текущего аккаунта' })).toHaveJSProperty('value', 3);
+  await expect(page.getByRole('progressbar', { name: 'Общий прогресс прогона' })).toHaveJSProperty('value', 3);
+  await expect(page.getByText('Чтение недели · недель сохранено 2 / 6')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Остановить старый и начать новый' })).toBeEnabled();
   await expect(page.locator('#process-queues')).toContainText('AI / сообщения');
   await expect.poll(fits).toBe(true);
 });
