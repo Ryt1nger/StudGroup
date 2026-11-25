@@ -13,8 +13,8 @@ from studgroup.analysis.deadline_updates import group_timezone
 from studgroup.deadlines import ScheduleDeadlineContext
 from studgroup.models import (
     GroupNoLessonDay,
-    MemberSubgroup,
     Membership,
+    MemberSubgroup,
     RanepaPersonalSnapshot,
     SchedulePattern,
     SubjectSplit,
@@ -107,9 +107,7 @@ async def verified_weeks(db, group, timezone):
                     if (week, subgroup_id) in subgroup_seen:
                         continue
                     subject = split.subject_name
-                elif has_unverified_subgroup_hint(row.get("subgroup_hint")):
-                    continue
-                elif week in common_seen:
+                elif has_unverified_subgroup_hint(row.get("subgroup_hint")) or week in common_seen:
                     continue
                 prepared.append(
                     {
