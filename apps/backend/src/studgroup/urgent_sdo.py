@@ -31,7 +31,7 @@ from studgroup.ranepa_crawl_jobs import (
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
 
-ACTIVE = ("requested", "running")
+ACTIVE = ("requested", "initializing", "running")
 
 
 async def eligible_candidates(db, settings, *, pilot_group_id=None, pilot_user_id=None):
@@ -169,7 +169,7 @@ async def urgent_requested(engine):
     async with AsyncSession(engine) as db:
         return (
             await db.scalar(
-                select(UrgentSDORun.id).where(UrgentSDORun.state == "requested").limit(1)
+                select(UrgentSDORun.id).where(UrgentSDORun.state.in_(("requested", "initializing"))).limit(1)
             )
             is not None
         )
@@ -264,7 +264,7 @@ async def prepare_urgent(engine, settings, today):
     async with AsyncSession(engine, expire_on_commit=False) as db:
         row = await db.scalar(
             select(UrgentSDORun)
-            .where(UrgentSDORun.state == "requested")
+            .where(UrgentSDORun.state.in_(("requested", "initializing")))
             .with_for_update(skip_locked=True)
             .limit(1)
         )
@@ -280,6 +280,21 @@ async def prepare_urgent(engine, settings, today):
             .limit(1)
         )
         if live_job is not None:
+            return
+        row.state = "initializing"
+        if row.started_at is None:
+            row.started_at = datetime.now(UTC)
+        run_id = row.id
+        await db.commit()
+    # Publish the real initialization phase before enumerating accounts.
+    # A worker restart can resume this phase; a replacement may supersede it.
+    async with AsyncSession(engine, expire_on_commit=False) as db:
+        row = await db.scalar(
+            select(UrgentSDORun)
+            .where(UrgentSDORun.id == run_id, UrgentSDORun.state == "initializing")
+            .with_for_update(skip_locked=True)
+        )
+        if row is None:
             return
         ordered = fair_crawl_order(await eligible_candidates(db, settings))
         distinct = {}
@@ -326,7 +341,6 @@ async def prepare_urgent(engine, settings, today):
                 row.queued_count += 1
         row.found_count = len(candidates)
         row.state = "running"
-        row.started_at = now
         await db.commit()
 
 
