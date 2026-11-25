@@ -113,6 +113,11 @@ def test_admin_page_has_no_embedded_credentials(client):
     assert response.status_code == 200
     assert "initData" not in response.text
     assert "no-store" in response.headers["cache-control"]
+    assert "frame-src " in response.headers["content-security-policy"]
+    assert "support-frame-host" in response.text
+    script = client.get("/admin/app.js").text
+    assert 'window.open("about:blank"' not in script
+    assert 'event.source!==frame.contentWindow' in script
 
 
 def test_owner_manages_groups_and_members_without_deleting_history(client):
