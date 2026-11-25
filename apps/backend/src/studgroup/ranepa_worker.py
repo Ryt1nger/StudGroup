@@ -37,6 +37,7 @@ from studgroup.ranepa_browser import (
     resolve_sdo_exits,
     wait_for_captcha_resolution,
 )
+from studgroup.ranepa_browser_health import probe_browser
 from studgroup.ranepa_captcha import (
     CaptchaBudget,
     configured_solver,
@@ -1259,17 +1260,7 @@ async def sdo_health(engine, settings: Settings):
         await ensure_owner_for_crawl(engine, settings)
     except Exception:  # noqa: BLE001 -- owner lookup must fail closed
         return "configuration_missing"
-    try:
-        async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=True)
-            try:
-                page = await browser.new_page()
-                await page.goto("about:blank")
-            finally:
-                await browser.close()
-    except Exception:  # noqa: BLE001 -- no exception text can leave this probe
-        return "browser_unavailable"
-    return None
+    return await probe_browser()
 
 
 def autonomous_captcha_budget(settings: Settings):
@@ -1339,6 +1330,14 @@ async def run_forever(settings: Settings):
                     heartbeat()
                     if status == "paused":
                         await gate.failed(generation, "captcha_guard_paused")
+                    elif status == "failed":
+                        # A failed job can mean a login issue or a dead Chromium.
+                        # Probe locally before calling the overall worker healthy.
+                        browser_error = await probe_browser()
+                        if browser_error:
+                            await gate.failed(generation, browser_error)
+                        else:
+                            await gate.succeeded(generation)
                     else:
                         await gate.succeeded(generation)
                     delay = (

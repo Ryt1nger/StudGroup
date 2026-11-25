@@ -81,6 +81,7 @@ services:
         condition: service_healthy
     networks: [internal]
     mem_limit: 1400m
+    shm_size: 256m
 
 networks:
   internal:

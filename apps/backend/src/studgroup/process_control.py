@@ -77,5 +77,6 @@ def process_json(row: BackgroundProcess) -> dict:
         "error_at": row.error_at,
         "error_code": row.error_code,
         "error_stage": row.error_stage,
+        "error_active": row.status == "error",
         "requested_at": row.requested_at,
     }

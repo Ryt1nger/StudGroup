@@ -71,4 +71,4 @@ jobs:
         run: docker build -f apps/backend/Dockerfile.ranepa-worker -t studgroup-sdo-ci apps/backend
       - name: Launch Chromium as the runtime user without network
         run: |
-          docker run --rm --network none --shm-size=256m --entrypoint python studgroup-sdo-ci -c 'import os; from playwright.sync_api import sync_playwright; assert os.getuid() == 10001; p = sync_playwright().start(); b = p.chromium.launch(headless=True); page = b.new_page(); page.goto("about:blank"); b.close(); p.stop()'
+          docker run --rm --network none --memory=1400m --shm-size=256m --entrypoint python studgroup-sdo-ci -c 'import asyncio, os; from studgroup.ranepa_browser_health import probe_browser; assert os.getuid() == 10001; assert asyncio.run(probe_browser()) is None'
