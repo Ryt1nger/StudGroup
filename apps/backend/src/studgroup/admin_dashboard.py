@@ -6,6 +6,7 @@ from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -69,8 +70,20 @@ class AdminStatusBody(BaseModel):
 
 @router.get("/admin", include_in_schema=False)
 @router.get("/admin/", include_in_schema=False)
-async def admin_page():
-    return FileResponse(UI / "index.html", headers={"Cache-Control": "no-store"})
+async def admin_page(request: Request):
+    origin = urlsplit(request.app.state.settings.webapp_origin)
+    frame_source = "'none'"
+    if origin.scheme in {"http", "https"} and origin.hostname and not origin.username:
+        frame_source = f"{origin.scheme}://{origin.netloc}"
+    policy = (
+        "default-src 'none'; script-src 'self' https://telegram.org; "
+        "style-src 'self'; connect-src 'self'; img-src 'self'; "
+        f"base-uri 'none'; form-action 'none'; frame-src {frame_source}"
+    )
+    return FileResponse(
+        UI / "index.html",
+        headers={"Cache-Control": "no-store", "Content-Security-Policy": policy},
+    )
 
 
 @router.get("/admin/app.js", include_in_schema=False)

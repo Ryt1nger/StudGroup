@@ -4,7 +4,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#060709">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://telegram.org; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
   <title>StudGroup / Control</title>
   <link rel="stylesheet" href="/admin/style.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -170,5 +169,9 @@
     <div class="modal-footer"><button type="button" class="refresh-button" id="modal-more" hidden>Показать ещё</button></div>
   </section>
 </div>
+<section id="support-overlay" class="support-overlay" hidden aria-label="Приложение студента">
+  <div class="support-toolbar"><button id="support-close" type="button" class="refresh-button">‹ В админку</button><span>Режим поддержки</span></div>
+  <div id="support-frame-host" class="support-frame-host"></div>
+</section>
 </body>
 </html>

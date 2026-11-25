@@ -658,23 +658,55 @@ function chooseSupport(userId,groupId){
   }
   host.append(card);host.scrollIntoView({block:"start"});
 }
+let supportClose=null,supportOpening=false;
 async function openSupport(userId,groupId,mode){
+  if(supportOpening||supportClose)return;
   if(mode==="edit"&&!confirm("Открыть режим изменения реальных учебных данных?"))return;
-  const popup=window.open("about:blank","_blank");
-  if(!popup){$("admin-users-status").textContent="Разрешите открытие нового окна.";return;}
-  let receive=null,timeout=null;
+  supportOpening=true;
+  const status=$("admin-users-status"),tg=window.Telegram?.WebApp;
   try{
+    if(!tg?.initData)throw Error("Откройте админку внутри Telegram.");
+    status.textContent="Открываем приложение студента…";
     const result=await api("/v1/admin/support-sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:userId,group_id:groupId,mode})});
-    const origin=new URL(result.app_url).origin;
-    receive=event=>{
-      if(event.origin!==origin||event.source!==popup||event.data?.type!=="studgroup-support-ready")return;
-      popup.postMessage({type:"studgroup-support-session",result},origin);
-      window.removeEventListener("message",receive);clearTimeout(timeout);
+    const url=new URL(result.app_url);
+    if(url.protocol!=="https:"||url.username||url.password)throw Error("Некорректный адрес приложения.");
+    const origin=url.origin,overlay=$("support-overlay"),host=$("support-frame-host"),close=$("support-close"),workspace=document.querySelector(".workspace");
+    const frame=dom("iframe","support-frame");
+    frame.title="StudGroup · "+(mode==="edit"?"Редактирование":"Просмотр");
+    frame.referrerPolicy="no-referrer";
+    frame.setAttribute("sandbox","allow-scripts allow-same-origin allow-forms");
+    let timer=null,expiry=null;
+    const finish=message=>{
+      if(supportClose!==finish)return;
+      supportClose=null;
+      window.removeEventListener("message",receive);
+      clearTimeout(timer);clearTimeout(expiry);
+      close.removeEventListener("click",onClose);
+      try{tg.BackButton?.offClick(onClose);tg.BackButton?.hide();}catch{}
+      host.replaceChildren();overlay.hidden=true;
+      workspace.inert=false;document.body.classList.remove("support-open");
+      status.textContent=message||"Режим поддержки закрыт.";
     };
+    const onClose=()=>finish();
+    const receive=event=>{
+      if(event.origin!==origin||event.source!==frame.contentWindow)return;
+      if(event.data?.type==="studgroup-support-ready"){
+        if(Date.now()>=Date.parse(result.expires_at)){finish("Сессия поддержки истекла. Откройте её снова.");return;}
+        frame.contentWindow.postMessage({type:"studgroup-support-session",result},origin);
+        clearTimeout(timer);
+      }else if(event.data?.type==="studgroup-support-exit")finish();
+    };
+    supportClose=finish;
     window.addEventListener("message",receive);
-    timeout=setTimeout(()=>{window.removeEventListener("message",receive);},60000);
-    popup.location.href=result.app_url;
-  }catch(error){popup.close();$("admin-users-status").textContent=error.message;}
+    close.addEventListener("click",onClose);
+    workspace.inert=true;document.body.classList.add("support-open");overlay.hidden=false;
+    try{tg.BackButton?.onClick(onClose);tg.BackButton?.show();}catch{}
+    timer=setTimeout(()=>finish("Приложение не ответило. Попробуйте открыть его снова."),30000);
+    expiry=setTimeout(()=>finish("Сессия поддержки истекла. Откройте её снова."),Math.max(0,Date.parse(result.expires_at)-Date.now()));
+    frame.src=url.href;host.replaceChildren(frame);
+    status.textContent="";
+  }catch(error){if(supportClose)supportClose(error.message);else status.textContent=error.message;}
+  finally{supportOpening=false;}
 }
 
 async function previewStudent(userId,groupId){
