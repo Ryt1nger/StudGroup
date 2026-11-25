@@ -83,6 +83,8 @@ RUN_RETENTION = timedelta(days=30)
 EXISTING_ITEMS_LIMIT = 30  # active cards offered to the model as update/cancel targets
 EXISTING_ITEMS_WINDOW = timedelta(days=30)
 PHOTO_MEMORY = timedelta(days=14)  # how far back a repeated photo is still recognised
+CATCHUP_MIN_TARGETS = 10
+SMALL_PACKAGE_IMAGE_GRACE = timedelta(minutes=10)
 
 
 def _gate(settings, now):
@@ -563,6 +565,7 @@ async def _plan_next(
     *,
     scheduled_slot=None,
     catchup_cutoff=None,
+    minimum_targets=1,
 ):
     filters = _eligible(
         group, settings, now, scheduled_slot=scheduled_slot, catchup_cutoff=catchup_cutoff
@@ -589,9 +592,33 @@ async def _plan_next(
     if not pending:
         return None
     if catchup_cutoff is not None:
-        pending = newest_day_candidates(pending, settings.ai_schedule_timezone)
+        newest = newest_day_candidates(pending, settings.ai_schedule_timezone)
+        # Prefer the newest local day only when it can fill an economical batch.
+        # Otherwise coalesce older approved messages in the same group.
+        if sum(row.revision == newest[0].revision for row in newest) >= minimum_targets:
+            pending = newest
     revision = pending[0].revision
     targets = [row for row in pending if row.revision == revision][:DEFAULT_MAX_TARGETS]
+    if len(targets) < minimum_targets:
+        return None
+    if (
+        settings.owner_funded_pilot
+        and scheduled_slot is not None
+        and len(targets) < CATCHUP_MIN_TARGETS
+        and blocked
+        and now < scheduled_slot + SMALL_PACKAGE_IMAGE_GRACE
+    ):
+        blocked_target = await db.scalar(
+            select(RawMessage.id)
+            .where(
+                *_eligible(group, settings, now, scheduled_slot=scheduled_slot),
+                RawMessage.id.in_(blocked),
+            )
+            .limit(1)
+        )
+        # Give the independent image queue a bounded chance to coalesce the tail.
+        if blocked_target is not None:
+            return None
     # Catch-up prioritizes today's newest messages, but the resulting package
     # must always contain chronological targets and context.
     targets.sort(key=lambda row: (row.message_date, row.telegram_message_id))
@@ -713,6 +740,10 @@ async def _plan_next(
         await incident_once(db, "pipeline_error", now, detail="image_context_requires_review")
         await db.commit()
         return "image_context_review"
+    if len(package.target_ids) < minimum_targets:
+        # The size-aware planner can shrink a batch after seeing full evidence.
+        # Never use the accelerated path to purchase that small package.
+        return None
     # A reopened window (owner re-analysis) bumps the generation, so the same messages get a new
     # run key instead of being treated as the package that already ran.
     generation = max(
@@ -895,61 +926,62 @@ async def enqueue_next_package(engine, settings, now=None, provider=None, transp
                     )
                     is not None
                 )
-            scheduled_slot = None
-            if catchup_due:
-                # Each group gets a bounded turn and the normal one-open-run
-                # rule remains active; no parallel or duplicate model calls.
-                last_run_at = await db.scalar(
-                    select(func.max(ShadowEvaluationRun.created_at)).where(
-                        ShadowEvaluationRun.group_id == group.id,
-                        ShadowEvaluationRun.raw_message_id.is_(None),
-                        ShadowEvaluationRun.delete_at > now,
-                    )
-                )
-                if last_run_at is not None and _utc(last_run_at) > now - timedelta(seconds=60):
-                    continue
-            elif settings.owner_funded_pilot or settings.ai_schedule_enabled:
-                # One fixed wall-clock slot per group, per hour. Use the run's
-                # creation time, not the completed_at timestamp: a slow model
-                # response cannot suppress the next hourly slot.
-                scheduled_slot = staggered_slot(
-                    now,
-                    settings.ai_schedule_timezone,
-                    offsets[group.id],
-                    allow_overnight=(
-                        not settings.ai_schedule_enabled or production_enabled(settings, group.id)
-                    ),
-                )
-                if scheduled_slot is None:
-                    continue
-                last_run_at = await db.scalar(
-                    select(func.max(ShadowEvaluationRun.created_at)).where(
-                        ShadowEvaluationRun.group_id == group.id,
-                        ShadowEvaluationRun.raw_message_id.is_(None),
-                        ShadowEvaluationRun.delete_at > now,
-                    )
-                )
-                # Compare the whole local hour, not just the assigned minute.
-                # If the roster changes and offsets rebalance, a group that ran
-                # earlier this hour cannot buy a second package in its new slot.
-                hour_start = scheduled_slot - timedelta(minutes=offsets[group.id])
-                if last_run_at is not None and _utc(last_run_at) >= hour_start:
-                    continue
             if settings.photo_reading_enabled and settings.photo_backfill_since is not None:
                 await reopen_unread_photo_messages(
                     db, group, settings.photo_backfill_since, now, settings=settings
                 )
-            planned = await _plan_next(
-                db,
-                group,
-                route,
-                settings,
-                now,
-                provider,
-                transport,
-                scheduled_slot=scheduled_slot,
-                catchup_cutoff=catchup_cutoff if catchup_due else None,
+            last_run_at = await db.scalar(
+                select(func.max(ShadowEvaluationRun.created_at)).where(
+                    ShadowEvaluationRun.group_id == group.id,
+                    ShadowEvaluationRun.raw_message_id.is_(None),
+                    ShadowEvaluationRun.delete_at > now,
+                )
             )
+            scheduled_slot = None
+            planned = None
+            if catchup_due and (
+                last_run_at is None or _utc(last_run_at) <= now - timedelta(seconds=60)
+            ):
+                # Acceleration is reserved for substantial, actually ready batches.
+                planned = await _plan_next(
+                    db,
+                    group,
+                    route,
+                    settings,
+                    now,
+                    provider,
+                    transport,
+                    catchup_cutoff=catchup_cutoff,
+                    minimum_targets=CATCHUP_MIN_TARGETS,
+                )
+            if planned is None:
+                if settings.owner_funded_pilot or settings.ai_schedule_enabled:
+                    scheduled_slot = staggered_slot(
+                        now,
+                        settings.ai_schedule_timezone,
+                        offsets[group.id],
+                        allow_overnight=(
+                            not settings.ai_schedule_enabled
+                            or production_enabled(settings, group.id)
+                        ),
+                    )
+                    if scheduled_slot is None:
+                        continue
+                    # A small tail joins the ordinary hourly batch, including newer
+                    # eligible messages. Never buy a second small batch in this hour.
+                    hour_start = scheduled_slot - timedelta(minutes=offsets[group.id])
+                    if last_run_at is not None and _utc(last_run_at) >= hour_start:
+                        continue
+                planned = await _plan_next(
+                    db,
+                    group,
+                    route,
+                    settings,
+                    now,
+                    provider,
+                    transport,
+                    scheduled_slot=scheduled_slot,
+                )
             if planned is None:
                 continue
             if isinstance(planned, str):
