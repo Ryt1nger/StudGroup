@@ -599,3 +599,11 @@ button.quick-stat:hover span,button.quick-stat:hover strong{color:#fff}
 .process-switch input:focus-visible+.process-track{outline:2px solid #43d9df;outline-offset:3px}
 .process-switch input:disabled+.process-track{opacity:.5}
 @media(max-width:680px){.process-grid{grid-template-columns:1fr}}
+
+/* Full student application in the existing Telegram WebView, not a popup. */
+body.support-active{overflow:hidden}
+.support-overlay{position:fixed;inset:0;z-index:10000;background:#101217;display:flex;flex-direction:column;min-height:0}
+.support-overlay-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;color:#fff;flex:0 0 auto}
+.support-overlay-bar span{flex:1;font-size:12px;color:#a4adbb}
+.support-overlay-bar button{margin-left:auto}
+.support-frame{display:block;width:100%;flex:1;min-height:0;border:0;background:#fff}

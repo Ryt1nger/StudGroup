@@ -113,6 +113,7 @@ def test_admin_page_has_no_embedded_credentials(client):
     assert response.status_code == 200
     assert "initData" not in response.text
     assert "no-store" in response.headers["cache-control"]
+    assert "frame-src http://localhost:5173" in response.text
 
 
 def test_owner_manages_groups_and_members_without_deleting_history(client):

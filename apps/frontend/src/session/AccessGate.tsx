@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { ru } from '../i18n/ru';
 import { StateButton, StateView } from '../ui/Blocks';
 import { useSession as useSessionGate } from './SessionProvider';
+import { exitSupport, supportRequested } from './support';
 
 function Screen({ children }: { children: ReactNode }) {
   return (
@@ -36,6 +37,9 @@ export function AccessGate({ children }: { children: ReactNode }) {
 
   if (state.status === 'no-telegram') {
     return <Screen><StateView icon="lock" title={ru.gate.notTelegramTitle} body={ru.gate.notTelegramBody} /></Screen>;
+  }
+  if (supportRequested && (state.status === 'failed' || state.status === 'expired')) {
+    return <Screen><StateView icon="lock" title="Режим поддержки недоступен" body="Вернитесь в админку Telegram и заново откройте приложение студента." action={<StateButton onClick={exitSupport}>В админку</StateButton>} /></Screen>;
   }
   if (state.status === 'expired') {
     return <Screen><StateView icon="lock" title={ru.gate.expiredTitle} body={ru.gate.expiredBody} /></Screen>;
