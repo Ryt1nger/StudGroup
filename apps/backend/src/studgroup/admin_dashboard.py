@@ -1037,3 +1037,23 @@ async def urgent_sdo_request(
     result = await run_json(db, row)
     await db.commit()
     return result
+
+
+@router.get("/v1/admin/homework-deadlines/backfill")
+async def preview_homework_deadline_backfill(
+    request: Request,
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.deadline_backfill import repair_all
+
+    return await repair_all(request.app.state.engine)
+
+
+@router.post("/v1/admin/homework-deadlines/backfill")
+async def apply_homework_deadline_backfill(
+    request: Request,
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.deadline_backfill import repair_all
+
+    return await repair_all(request.app.state.engine, apply=True)
