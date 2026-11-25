@@ -185,7 +185,7 @@ def _next_lesson(ordered, timezone, subject, schedule, no_lesson_days, subgroup_
         return _unknown("schedule_unavailable")
     zone = ZoneInfo(timezone)
     reference_day = ordered[0][1].astimezone(zone).date()
-    if not schedule.covered_from <= reference_day <= schedule.covered_until:
+    if not schedule.covers(reference_day, reference_day, subgroup_id):
         return _unknown("schedule_does_not_cover_source_date")
     wanted = match_key(subject)
     upcoming = []
@@ -221,7 +221,10 @@ def _next_lesson(ordered, timezone, subject, schedule, no_lesson_days, subgroup_
         return _unknown("next_subject_lesson_unknown")
     # Explicitly cancelled lessons and known non-study days do not invalidate later classes.
     # Dateless homework is due before the next applicable lesson begins.
-    return DeadlineDecision(min(upcoming), False, "schedule_inferred", "next_subject_lesson")
+    next_lesson = min(upcoming)
+    if not schedule.covers(reference_day, next_lesson.astimezone(zone).date(), subgroup_id):
+        return _unknown("schedule_gap_before_next_lesson")
+    return DeadlineDecision(next_lesson, False, "schedule_inferred", "next_subject_lesson")
 
 
 def student_label(decision):
