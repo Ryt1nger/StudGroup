@@ -198,6 +198,7 @@ paths:
                     - draft
                     - active
                     - cancelled
+                    - deleted
                   default: draft
                 accept_source_ids:
                   type: array
@@ -561,6 +562,7 @@ components:
             - draft
             - active
             - cancelled
+            - deleted
         retained_until:
           type: string
           format: date-time
