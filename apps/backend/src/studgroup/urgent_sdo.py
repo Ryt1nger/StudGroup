@@ -23,8 +23,8 @@ from studgroup.process_control import ensure_process
 from studgroup.process_runtime import ALERT_PREFIX, utc
 from studgroup.ranepa_crawl_jobs import (
     CONSENT_REVALIDATED,
-    LEASE,
     CREDENTIALS_UPDATED,
+    LEASE,
     RETRY_BACKOFF,
     enqueue_week,
     terminal_failure,
