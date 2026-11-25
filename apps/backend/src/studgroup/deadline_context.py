@@ -59,9 +59,7 @@ async def verified_weeks(db, group, timezone):
             .order_by(RanepaPersonalSnapshot.checked_at.desc(), RanepaPersonalSnapshot.user_id)
         )
     ).all()
-    splits = (
-        await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == group.id))
-    ).all()
+    splits = (await db.scalars(select(SubjectSplit).where(SubjectSplit.group_id == group.id))).all()
     choices = defaultdict(dict)
     for row in (
         await db.scalars(
@@ -179,10 +177,7 @@ async def build_deadline_context(db, group, *, horizon=None):
         covered = {day for day in covered if day <= horizon}
     if not covered:
         return DeadlineContext(zone.name, zone.confirmed, None, no_lesson_days)
-    scoped = {
-        ident: frozenset(published_days | days)
-        for ident, days in subgroup_days.items()
-    }
+    scoped = {ident: frozenset(published_days | days) for ident, days in subgroup_days.items()}
     schedule = ScheduleDeadlineContext(
         lessons,
         min(covered),

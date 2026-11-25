@@ -32,8 +32,7 @@ class ScheduleDeadlineContext:
         if subgroup_id is not None and self.subgroup_days is not None:
             coverage = self.subgroup_days.get(str(subgroup_id), self.published_days)
         return all(
-            start + timedelta(days=offset) in coverage
-            for offset in range((end - start).days + 1)
+            start + timedelta(days=offset) in coverage for offset in range((end - start).days + 1)
         )
 
 

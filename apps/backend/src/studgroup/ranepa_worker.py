@@ -479,13 +479,17 @@ async def _process_one(
                 # The project currently has exactly one configured Fernet key, labelled v1.
                 # Other versions must not be decoded or overwritten with the wrong key.
                 session_cipher = (
-                    cipher if key_version == "v1" and settings.ranepa_session_reuse_enabled else None
+                    cipher
+                    if key_version == "v1" and settings.ranepa_session_reuse_enabled
+                    else None
                 )
                 storage_state = restored_storage_state(encrypted_session, session_cipher)
                 if trace is not None:
                     trace.record("credentials_ready")
                     trace.session_available = storage_state is not None
-                    trace.record("session_available" if trace.session_available else "session_fresh")
+                    trace.record(
+                        "session_available" if trace.session_available else "session_fresh"
+                    )
 
                 async def persist_session(state: dict):
                     # Browser state can include both LK and Moodle bearer cookies.
@@ -493,7 +497,9 @@ async def _process_one(
                     if session_cipher is None:
                         return
                     payload = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
-                    encrypted_state = session_cipher.encrypt(payload.encode("utf-8")).decode("utf-8")
+                    encrypted_state = session_cipher.encrypt(payload.encode("utf-8")).decode(
+                        "utf-8"
+                    )
                     try:
                         await store.update_session_state(
                             credential_id,
@@ -543,7 +549,10 @@ async def _process_one(
                         configured_solver(settings)
                         if available_budget.remaining > 0
                         and not settings.ranepa_captcha_diagnostic_only
-                        and (pilot_group_id is not None or settings.ranepa_captcha_daily_max_tasks > 0)
+                        and (
+                            pilot_group_id is not None
+                            or settings.ranepa_captcha_daily_max_tasks > 0
+                        )
                         else None
                     ),
                     captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,

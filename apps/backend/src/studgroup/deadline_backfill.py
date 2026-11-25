@@ -62,9 +62,7 @@ async def repair_group(db, group, now, *, apply=False):
 
     counts = Counter()
     ids = (
-        await db.scalars(
-            select(Homework.id).where(Homework.group_id == group.id, *candidates(now))
-        )
+        await db.scalars(select(Homework.id).where(Homework.group_id == group.id, *candidates(now)))
     ).all()
     if not ids:
         return {}
@@ -81,9 +79,7 @@ async def repair_group(db, group, now, *, apply=False):
         if link is not None:
             item = await db.scalar(
                 locked(
-                    select(CanonicalAcademicItem).where(
-                        CanonicalAcademicItem.id == link.item_id
-                    ),
+                    select(CanonicalAcademicItem).where(CanonicalAcademicItem.id == link.item_id),
                     apply,
                 )
             )
@@ -169,9 +165,7 @@ async def repair_group(db, group, now, *, apply=False):
         if item is None:
             # Legacy cards may include clarifications from other messages in their text.
             # The stored card must not itself contain an explicit or ambiguous deadline.
-            sources.append(
-                (row.description or "", min(stamp for _, stamp in sources))
-            )
+            sources.append((row.description or "", min(stamp for _, stamp in sources)))
         decision = decide_deadline(
             kind="homework",
             sources=sources,

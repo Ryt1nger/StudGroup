@@ -138,7 +138,9 @@ def test_a_holiday_before_the_next_lesson_does_not_block_the_deadline(client):
             )
             await db.flush()
             result = await run_one(db, group, "номер 5 письменно", proposal())
-            assert result.item.deadline_at.astimezone(MSK) == datetime(2026, 10, 14, 10, 40, tzinfo=MSK)
+            assert result.item.deadline_at.astimezone(MSK) == datetime(
+                2026, 10, 14, 10, 40, tzinfo=MSK
+            )
             assert result.item.deadline_reason == "next_subject_lesson"
 
     asyncio.run(run())

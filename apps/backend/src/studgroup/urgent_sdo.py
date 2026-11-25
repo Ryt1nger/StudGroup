@@ -169,7 +169,9 @@ async def urgent_requested(engine):
     async with AsyncSession(engine) as db:
         return (
             await db.scalar(
-                select(UrgentSDORun.id).where(UrgentSDORun.state.in_(("requested", "initializing"))).limit(1)
+                select(UrgentSDORun.id)
+                .where(UrgentSDORun.state.in_(("requested", "initializing")))
+                .limit(1)
             )
             is not None
         )
