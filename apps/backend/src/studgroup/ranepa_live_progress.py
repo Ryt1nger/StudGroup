@@ -25,6 +25,7 @@ def progress_payload(trace, stats, mode):
     return {
         "step": step if step in STEPS else "job_claimed",
         "saved_weeks": min(6, max(0, stats.saved_weeks)),
+        "browser_started": bool(trace is not None and trace.browser_started),
         "mode": mode,
         "updated_at": datetime.now(UTC).isoformat(),
     }
@@ -95,7 +96,7 @@ async def current_account(db, redis):
                 ):
                     live = {
                         key: candidate[key]
-                        for key in ("step", "saved_weeks", "mode", "updated_at")
+                        for key in ("step", "saved_weeks", "browser_started", "mode", "updated_at")
                         if key in candidate
                     }
         except (RedisError, OSError, TimeoutError, ValueError, TypeError):
