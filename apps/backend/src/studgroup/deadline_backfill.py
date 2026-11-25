@@ -185,7 +185,7 @@ async def repair_group(db, group, now, *, apply=False):
             continue
 
         if item is not None:
-            item.deadline_at = decision.at
+            item.deadline_at = utc(decision.at)
             item.deadline_date_only = False
             item.deadline_basis = decision.basis
             item.deadline_reason = decision.reason
@@ -210,7 +210,7 @@ async def repair_group(db, group, now, *, apply=False):
         # Update only deadline-related fields. Preserve descriptions, subgroup,
         # materials, retention, status and every student's completion.
         previous = row.revision
-        row.deadline_at = decision.at
+        row.deadline_at = utc(decision.at)
         row.deadline_date_only = False
         if row.verification_state != "needs_clarification":
             row.verification_state = "inferred"
