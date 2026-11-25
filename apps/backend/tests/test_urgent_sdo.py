@@ -27,6 +27,21 @@ def test_urgent_run_request(client):
     second = client.post(url, headers=headers)
     assert second.json()["id"] == first.json()["id"]
     assert client.get(url, headers=headers).json()["run"] == first.json()
+    replacement = client.post(url + "?replace=true", headers=headers)
+    assert replacement.status_code == 202
+    assert replacement.json()["id"] != first.json()["id"]
+    assert replacement.json()["state"] == "requested"
+    assert client.get(url, headers=headers).json()["run"] == replacement.json()
+
+    async def previous():
+        from studgroup.models import UrgentSDORun
+
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (await db.scalars(select(UrgentSDORun))).all()
+            assert sorted(row.state for row in rows) == ["cancelled", "requested"]
+            assert next(row for row in rows if row.state == "cancelled").finished_at is not None
+
+    asyncio.run(previous())
 
 
 def test_urgent_uses_existing_queue_without_bypassing_cooldown(client, monkeypatch):
