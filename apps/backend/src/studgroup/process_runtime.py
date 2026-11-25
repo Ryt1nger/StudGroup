@@ -299,11 +299,12 @@ async def scheduler_loop(engine, delivery_engine, settings, *, delivery_enabled)
     from studgroup.billing import tick as billing_tick
     from studgroup.billing_campaign import queue_billing_announcement
     from studgroup.billing_manual import cleanup_due
+    from studgroup.deadline_backfill import backfill_tick
     from studgroup.headman_digest import tick as digest_tick
     from studgroup.owner_updates import tick as owner_tick
     from studgroup.ranepa_manual_captcha import cleanup_expired_captcha_artwork
 
-    jobs = []
+    jobs = [(1800, lambda: backfill_tick(engine))]
     if delivery_enabled:
         jobs.extend(
             [
