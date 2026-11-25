@@ -1012,12 +1012,17 @@ async def change_background_process(
 
 @router.get("/v1/admin/sdo-runs")
 async def urgent_sdo_status(
+    request: Request,
     db: Annotated[AsyncSession, Depends(database)],
     owner: Annotated[User, Depends(admin_session)],
 ):
+    from studgroup.ranepa_live_progress import current_account
     from studgroup.urgent_sdo import latest_run
 
-    return {"run": await latest_run(db)}
+    return {
+        "run": await latest_run(db),
+        "current_account": await current_account(db, getattr(request.app.state, "redis", None)),
+    }
 
 
 @router.post("/v1/admin/sdo-runs", status_code=202)
