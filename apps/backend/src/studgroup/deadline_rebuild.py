@@ -9,6 +9,7 @@ import json
 
 from sqlalchemy import select
 
+from studgroup import subgroups
 from studgroup.analysis.deadline_application import REASON_CONFIRM_DEADLINE, REASON_SET_DEADLINE
 from studgroup.analysis.deadline_policy import headman_request
 from studgroup.analysis.deadline_updates import rebuild_inferred_deadlines
@@ -56,12 +57,20 @@ async def rebuild_after_schedule_change(db, group, now):
         }  # expired source text cannot be recomputed: such a card is left as it is
         if not sources:
             continue
+        subgroup_id, _ = await subgroups.assign(
+            db,
+            group.id,
+            item.subject,
+            item.audience_label if item.audience_scope == "subgroup" else None,
+            "\n".join(text for text, _ in sources.values()),
+        )
         by_id[item.id] = item
         cards.append(
             {
                 "id": item.id,
                 "kind": item.semantic_kind,
                 "subject": item.subject,
+                "subgroup_id": subgroup_id,
                 "sources": list(sources.values()),
                 "basis": item.deadline_basis,
                 "at": _utc(item.deadline_at),
