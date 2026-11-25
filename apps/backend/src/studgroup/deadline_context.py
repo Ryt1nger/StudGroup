@@ -169,9 +169,8 @@ async def build_deadline_context(db, group, *, horizon=None):
                         days_between(max(day, row.valid_from), min(chunk_end, row.valid_until))
                     )
             day = chunk_end + timedelta(days=1)
-    # Prefer verified official occurrences on complete source days; explicit
-    # published exceptions/cancellations remain authoritative for their matching lesson.
-    # Outside the official window the published timetable remains usable.
+    # Published timetable days remain authoritative, including manual exceptions.
+    # Verified university snapshots fill days not covered by the published timetable.
     zone_info = ZoneInfo(zone.name)
     for row in official:
         day = datetime.fromisoformat(row["starts_at"]).astimezone(zone_info).date()
