@@ -70,6 +70,21 @@ export function EventCard({
   );
 }
 
+/** Calendar-only summary; full event information remains on the detail screen. */
+export function ScheduleEventCards({ items, timeZone }: { items: readonly PublishedEvent[]; timeZone: string }) {
+  return (
+    <>
+      {items.map((item) => (
+        <Link key={item.id} className="schedule-event-card" to={`/events/${item.id}`}>
+          <strong><Ic name="cal" size={15} />{item.title}</strong>
+          <span>{eventDate(item, timeZone)}</span>
+          {item.place ? <span>{item.place}</span> : null}
+        </Link>
+      ))}
+    </>
+  );
+}
+
 export function EventCards({ items, timeZone }: { items: readonly PublishedEvent[]; timeZone: string }) {
   return (
     <>
