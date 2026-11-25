@@ -332,14 +332,24 @@ async def review_update(
         if source_expiry and utc(source_expiry) > utc(event.delete_at):
             event.delete_at = source_expiry
         event.payload_json = ImageEvent(title="Удалённое событие").model_dump_json()
+        # Keep only the source identity, not its content, until the raw message expires.
+        # Detach the image job so its earlier cleanup cannot remove the replay guard.
+        sources = (
+            await db.scalars(
+                select(GroupEventSource)
+                .where(GroupEventSource.event_id == event.id)
+                .with_for_update()
+            )
+        ).all()
+        for source in sources:
+            source.image_job_id = None
+            source.incoming_json = event.payload_json
         event.state = "deleted"
         event.manual_lock = True
         event.approved_payload_sha256 = None
         event.updated_at = now
         event.revision += 1
-        await db.execute(
-            delete(GroupEventRevision).where(GroupEventRevision.event_id == event.id)
-        )
+        await db.execute(delete(GroupEventRevision).where(GroupEventRevision.event_id == event.id))
         snapshot(db, event, "manual_delete", now, actor)
         return
     incoming = ImageEvent.model_validate_json(json.dumps(payload, ensure_ascii=False))
