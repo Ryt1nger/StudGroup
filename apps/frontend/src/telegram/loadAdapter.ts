@@ -1,11 +1,13 @@
 import type { TelegramAdapter } from './adapter';
 import { createRealAdapter } from './realAdapter';
+import { createSupportAdapter, supportRequested } from '../session/support';
 
 /**
  * Resolves the adapter. The mock path is statically unreachable in production builds:
  * `import.meta.env.DEV` is replaced by `false`, so Rollup drops the dynamic import.
  */
 export async function loadTelegramAdapter(): Promise<TelegramAdapter | null> {
+  if (supportRequested) return createSupportAdapter();
   const isDemo = import.meta.env.MODE === 'demo';
   const real = createRealAdapter();
   if (real) {

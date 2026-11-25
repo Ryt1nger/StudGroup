@@ -2,15 +2,18 @@
 
 import json
 import logging
+import re
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from html import escape
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -69,8 +72,21 @@ class AdminStatusBody(BaseModel):
 
 @router.get("/admin", include_in_schema=False)
 @router.get("/admin/", include_in_schema=False)
-async def admin_page():
-    return FileResponse(UI / "index.html", headers={"Cache-Control": "no-store"})
+async def admin_page(request: Request):
+    # Permit only the configured student application in the owner's WebView.
+    origin = urlsplit(request.app.state.settings.webapp_origin)
+    frame_source = "'none'"
+    if (
+        origin.scheme in {"http", "https"}
+        and re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]+)?", origin.netloc)
+        and not origin.query
+        and not origin.fragment
+        and origin.path in {"", "/"}
+    ):
+        frame_source = f"{origin.scheme}://{origin.netloc}"
+    page = (UI / "index.html").read_text(encoding="utf-8")
+    page = page.replace("form-action 'none'", f"form-action 'none'; frame-src {escape(frame_source)}")
+    return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/admin/app.js", include_in_schema=False)

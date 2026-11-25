@@ -658,23 +658,60 @@ function chooseSupport(userId,groupId){
   }
   host.append(card);host.scrollIntoView({block:"start"});
 }
+let supportOverlayClose=null,supportOpening=false;
 async function openSupport(userId,groupId,mode){
+  if(supportOpening||supportOverlayClose)return;
   if(mode==="edit"&&!confirm("Открыть режим изменения реальных учебных данных?"))return;
-  const popup=window.open("about:blank","_blank");
-  if(!popup){$("admin-users-status").textContent="Разрешите открытие нового окна.";return;}
-  let receive=null,timeout=null;
+  const tg=window.Telegram?.WebApp,status=$("admin-users-status");
+  if(!tg?.initData){status.textContent="Откройте админку в Telegram.";return;}
+  supportOpening=true;
   try{
     const result=await api("/v1/admin/support-sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({user_id:userId,group_id:groupId,mode})});
-    const origin=new URL(result.app_url).origin;
-    receive=event=>{
-      if(event.origin!==origin||event.source!==popup||event.data?.type!=="studgroup-support-ready")return;
-      popup.postMessage({type:"studgroup-support-session",result},origin);
-      window.removeEventListener("message",receive);clearTimeout(timeout);
+    const url=new URL(result.app_url),origin=url.origin;
+    if(url.protocol!=="https:"&&url.hostname!=="localhost")throw Error("Некорректный адрес приложения");
+    url.searchParams.set("theme",tg.colorScheme==="dark"?"dark":"light");
+    const overlay=dom("section","support-overlay"),bar=dom("div","support-overlay-bar");
+    overlay.setAttribute("aria-label","Режим поддержки StudGroup");
+    const title=dom("strong","",mode==="edit"?"Редактирование":"Просмотр");
+    const close=dom("button","refresh-button","В админку");close.type="button";
+    const notice=dom("span","","Открываем приложение…");
+    bar.append(title,notice,close);
+    const frame=dom("iframe","support-frame");frame.title="Приложение студента";
+    frame.setAttribute("sandbox","allow-scripts allow-same-origin");
+    frame.setAttribute("referrerpolicy","no-referrer");
+    overlay.append(bar,frame);
+    let delivered=false;
+    const timeout=setTimeout(()=>{if(!delivered)notice.textContent="Не удалось подключить приложение. Закройте и откройте снова.";},20000);
+    const dispose=()=>{
+      clearTimeout(timeout);window.removeEventListener("message",receive);
+      overlay.remove();supportOverlayClose=null;document.body.classList.remove("support-active");
     };
+    function receive(event){
+      if(event.origin!==origin||event.source!==frame.contentWindow)return;
+      const message=event.data;
+      if(message?.type==="studgroup-support-ready"){
+        frame.contentWindow.postMessage({type:"studgroup-support-session",result},origin);
+        delivered=true;clearTimeout(timeout);notice.textContent="";return;
+      }
+      if(!delivered)return;
+      if(message?.type==="studgroup-support-close"){dispose();return;}
+      if(message?.type==="studgroup-support-link"&&typeof message.url==="string"){
+        try{
+          const link=new URL(message.url);
+          if(link.protocol!=="https:"||link.username||link.password)return;
+          if(message.telegram===true){
+            if(link.hostname==="t.me"&&!link.port)tg.openTelegramLink(link.href);
+          }else if(message.telegram===false&&tg.openLink)tg.openLink(link.href,{try_instant_view:false});
+        }catch{/* Invalid links are ignored. */}
+      }
+    }
+    supportOverlayClose=dispose;
+    close.addEventListener("click",dispose);
     window.addEventListener("message",receive);
-    timeout=setTimeout(()=>{window.removeEventListener("message",receive);},60000);
-    popup.location.href=result.app_url;
-  }catch(error){popup.close();$("admin-users-status").textContent=error.message;}
+    document.body.classList.add("support-active");
+    frame.src=url.href;document.body.append(overlay);
+  }catch(error){status.textContent=error.message;}
+  finally{supportOpening=false;}
 }
 
 async function previewStudent(userId,groupId){
