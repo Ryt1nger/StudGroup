@@ -246,8 +246,11 @@ def test_pilot_event_review_and_delete_follow_session_feature_policy(client, mon
         (await db.get(Group, event.group_id)).pilot_authorized = False
 
     db_run(client, disallow)
-    assert put(client, event, payload, "deleted").status_code == 404
+    assert put(client, event, payload, "deleted").status_code == 403
     db_run(client, authorize)
+    settings.owner_funded_pilot = False
+    assert put(client, event, payload, "deleted").status_code == 404
+    settings.owner_funded_pilot = True
     make(client, "student")
     assert put(client, event, payload, "deleted").status_code == 403
     make(client, "deputy")
