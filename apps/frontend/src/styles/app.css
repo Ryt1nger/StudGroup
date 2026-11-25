@@ -1056,3 +1056,41 @@ a.pcard:active { transform: scale(.98); }
 .support-session-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px; min-width: 0; flex: 0 0 auto; background: #292b39; color: white; font-size: 12px; overflow-wrap: anywhere; }
 .support-session-banner span { flex: 1 1 160px; min-width: 0; }
 .support-session-banner button { flex: 0 0 auto; max-width: 100%; }
+
+
+/* Keep content within the actual WebView, including larger text and long names. */
+:root {
+  --left-inset: max(var(--sg-safe-left, 0px), env(safe-area-inset-left, 0px));
+  --right-inset: max(var(--sg-safe-right, 0px), env(safe-area-inset-right, 0px));
+}
+.scroll {
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  padding-left: calc(16px + var(--left-inset));
+  padding-right: calc(16px + var(--right-inset));
+}
+.view, .view > *, .top, .top .hi, .task > *, .field, .dates > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.top { gap: 10px; }
+.top .hi { flex: 1 1 auto; overflow-wrap: anywhere; }
+.top .tr { flex: 0 1 auto; min-width: 0; justify-content: flex-end; flex-wrap: wrap; }
+.top .icon-btn, .top .avatar { flex: 0 0 42px; }
+.top .pillb { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.task { grid-template-columns: 26px minmax(0, 1fr); }
+.task .t, .d-head h1, .block p, .event-description, .schedule-event-card h3 { overflow-wrap: anywhere; }
+.field :is(input, select, textarea), .dates input { min-width: 0; max-width: 100%; }
+.dates { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }
+.nav { grid-template-columns: repeat(var(--tabs, 4), minmax(0, 1fr)); }
+.nav a { min-width: 0; }
+@media (max-width: 360px) {
+  .scroll { padding-left: calc(12px + var(--left-inset)); padding-right: calc(12px + var(--right-inset)); }
+  .top { gap: 6px; }
+  .top .tr { gap: 5px; }
+  .top .pillb { font-size: 13px; padding: 9px 11px; }
+  .hi b, .d-head h1 { font-size: 26px; }
+  .nav { left: calc(8px + var(--left-inset)); right: calc(8px + var(--right-inset)); }
+}
