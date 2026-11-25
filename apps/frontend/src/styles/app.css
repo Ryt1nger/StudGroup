@@ -1046,3 +1046,13 @@ a.pcard:active { transform: scale(.98); }
   .sdo-launch-art-shield { right: 3px; bottom: 2px; }
   .sdo-launch-description { margin: 12px 0; }
 }
+
+/* Calendar events are compact summaries, not full event cards. */
+.schedule-event-card { display: grid; gap: 3px; min-width: 0; padding: 9px 12px; margin: 6px 0; border: .5px solid var(--card-edge); border-left: 3px solid var(--accent); border-radius: 13px; background: var(--card); color: var(--label); overflow-wrap: anywhere; }
+.schedule-event-card strong { display: flex; align-items: flex-start; gap: 6px; font-size: 14px; line-height: 1.3; }
+.schedule-event-card strong svg { color: var(--accent); flex: none; }
+.schedule-event-card > span { color: var(--label-2); font-size: 12px; line-height: 1.35; }
+.schedule-event-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.support-session-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px; min-width: 0; flex: 0 0 auto; background: #292b39; color: white; font-size: 12px; overflow-wrap: anywhere; }
+.support-session-banner span { flex: 1 1 160px; min-width: 0; }
+.support-session-banner button { flex: 0 0 auto; max-width: 100%; }
