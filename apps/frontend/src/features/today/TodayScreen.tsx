@@ -137,7 +137,8 @@ export function TodayScreen() {
 
   const processingActive = data !== undefined && data.processing.state !== 'idle';
   const { gaveUp, restart } = useProcessingPoll(processingActive, query.refetch);
-  const staleByClock = data ? nowMs - Date.parse(data.freshness.last_successful_sync_at) > STALE_AFTER_MS : false;
+  const staleByClock = data ? nowMs - Date.parse(data.generated_at) > STALE_AFTER_MS : false;
+  const diagnosticTime = (value: string) => new Intl.DateTimeFormat('ru-RU', { timeZone: data?.group_timezone, day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
   // A restored encrypted snapshot is displayed immediately, but the automatic
   // network refresh is already in flight. Offer manual retry only if it fails.
   const stale = data ? !query.isFetching && (data.freshness.stale || staleByClock || query.isError) : false;
@@ -172,9 +173,9 @@ export function TodayScreen() {
         <Banner
           tone="warning"
           icon="clock"
-          action={<button type="button" className="bact" aria-label="Обновить" onClick={() => void query.refetch()}><Ic name="refresh" size={16} /></button>}
+          action={<button type="button" className="bact" aria-label="Обновить" onClick={() => void Promise.all([query.refetch(), schedule.refetch(), all.refetch(), deadlines.refetch()])}><Ic name="refresh" size={16} /></button>}
         >
-          {ru.freshness.stale(formatTime(data.freshness.last_successful_sync_at, data.group_timezone))}
+          {query.isError || staleByClock ? `Не удалось обновить данные приложения · последний ответ ${diagnosticTime(data.generated_at)}` : `Требуется проверка расписания СДО · ${data.freshness.schedule_source_checked_at ? `последняя проверка ${diagnosticTime(data.freshness.schedule_source_checked_at)}` : 'нет подтверждённого времени проверки'}`}
         </Banner>
       ) : null}
       {data && data.processing.state === 'delayed' ? <Banner tone="warning" icon="alert">{ru.today.delayed}</Banner> : null}

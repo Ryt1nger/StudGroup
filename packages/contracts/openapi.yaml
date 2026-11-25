@@ -2484,7 +2484,10 @@ components:
           format: date-time
         stale:
           type: boolean
-          description: True after 15 minutes without a successful refresh.
+          description: Backend source freshness warning, separate from API response age.
+        schedule_source_checked_at:
+          type: [string, "null"]
+          format: date-time
     FeedProcessing:
       type: object
       additionalProperties: false

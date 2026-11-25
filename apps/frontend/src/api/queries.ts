@@ -142,6 +142,7 @@ export function useTodayQuery(day: 'today' | 'tomorrow' = 'today') {
     queryKey: [...queryKeys.today, day],
     queryFn: () => api.today(day),
     ...todayQueryOptions,
+    refetchInterval: 120_000,
   });
 }
 
@@ -251,6 +252,7 @@ export function useScheduleQuery(start: string, end: string, enabled = true, ref
     queryFn: () => api.schedule(start, end),
     enabled,
     ...scheduleQueryOptions,
+    refetchInterval: 120_000,
     // A 5xx must display an actionable error rather than chaining 3 long
     // sequential HTTP waits while the customer sees only a skeleton.
     retry: false,

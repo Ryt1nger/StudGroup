@@ -437,9 +437,10 @@ export type NextLesson = {
 export type Freshness = {
     last_successful_sync_at: string;
     /**
-     * True after 15 minutes without a successful refresh.
+     * Backend source freshness warning, separate from API response age.
      */
     stale: boolean;
+    schedule_source_checked_at?: string | null;
 };
 
 export type FeedProcessing = {

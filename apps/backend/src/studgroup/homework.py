@@ -785,7 +785,8 @@ async def today(
         "server_time": now,
         "group_timezone": group.timezone,
         "freshness": {
-            "last_successful_sync_at": utc(last_success) if last_success else now,
+            "last_successful_sync_at": now,
+            "schedule_source_checked_at": utc(last_success) if personal_enabled and last_success else None,
             "stale": personal_enabled
             and not published_covered
             and (last_success is None or now - utc(last_success) > timedelta(days=7)),
