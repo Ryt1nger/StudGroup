@@ -65,6 +65,7 @@ from studgroup.ranepa_crawl_trace import CrawlTrace
 from studgroup.ranepa_credential_store import CredentialStoreUnavailable, configured_store
 from studgroup.ranepa_failure_diagnostics import diagnose_browser_state, diagnose_exception
 from studgroup.ranepa_group_links import active_series_for_job, reuse_common_links
+from studgroup.ranepa_live_progress import live_progress
 from studgroup.ranepa_login import normalize_sdo_login
 from studgroup.ranepa_manual_captcha import offer_manual_captcha
 from studgroup.ranepa_materialization import materialize_verified_facts
@@ -326,6 +327,7 @@ async def _process_one(
             CrawlTrace()
             if settings.ranepa_crawl_telemetry_enabled
             or settings.ranepa_crawl_notify_account_results_enabled
+            or engine.dialect.name == "postgresql"
             else None
         )
         if trace is not None:
@@ -437,141 +439,150 @@ async def _process_one(
         code = group.academic_group_code
         credential_id = profile.sdu_credential_id
         await db.commit()
-    notice_failure_detail = None
-    store = configured_store(settings)
-    if store is None:
-        failure = "internal"
-        credential = None
-    else:
-        try:
-            credential = await store.get(credential_id, include_session_state=True)
-        except CredentialStoreUnavailable:
+    async with live_progress(
+        engine,
+        settings,
+        job_id,
+        attempt,
+        trace,
+        account_stats,
+        "manual" if pilot_group_id is not None or run_stats is not None else "worker",
+    ):
+        notice_failure_detail = None
+        store = configured_store(settings)
+        if store is None:
+            failure = "internal"
             credential = None
-        failure = "internal" if credential is None else None
-    secret = settings.profile_encryption_key.get_secret_value()
-    if failure is not None or not secret:
-        failure = "internal"
-    else:
-        try:
-            cipher = Fernet(secret.encode())
-            stored_login, encrypted_password, key_version, encrypted_session = credential
-            login = normalize_sdo_login(stored_login)
-            if not login:
-                raise ValueError("empty_sdo_login")
-            password = cipher.decrypt(encrypted_password.encode()).decode()
-        except (ValueError, InvalidToken, UnicodeDecodeError):
-            failure = "login_failed"
-            notice_failure_detail = "credentials_unreadable"
-            if trace is not None:
-                trace.failure_detail = "credentials_unreadable"
         else:
-            # The project currently has exactly one configured Fernet key, labelled v1.
-            # Other versions must not be decoded or overwritten with the wrong key.
-            session_cipher = (
-                cipher if key_version == "v1" and settings.ranepa_session_reuse_enabled else None
-            )
-            storage_state = restored_storage_state(encrypted_session, session_cipher)
-            if trace is not None:
-                trace.record("credentials_ready")
-                trace.session_available = storage_state is not None
-                trace.record("session_available" if trace.session_available else "session_fresh")
+            try:
+                credential = await store.get(credential_id, include_session_state=True)
+            except CredentialStoreUnavailable:
+                credential = None
+            failure = "internal" if credential is None else None
+        secret = settings.profile_encryption_key.get_secret_value()
+        if failure is not None or not secret:
+            failure = "internal"
+        else:
+            try:
+                cipher = Fernet(secret.encode())
+                stored_login, encrypted_password, key_version, encrypted_session = credential
+                login = normalize_sdo_login(stored_login)
+                if not login:
+                    raise ValueError("empty_sdo_login")
+                password = cipher.decrypt(encrypted_password.encode()).decode()
+            except (ValueError, InvalidToken, UnicodeDecodeError):
+                failure = "login_failed"
+                notice_failure_detail = "credentials_unreadable"
+                if trace is not None:
+                    trace.failure_detail = "credentials_unreadable"
+            else:
+                # The project currently has exactly one configured Fernet key, labelled v1.
+                # Other versions must not be decoded or overwritten with the wrong key.
+                session_cipher = (
+                    cipher if key_version == "v1" and settings.ranepa_session_reuse_enabled else None
+                )
+                storage_state = restored_storage_state(encrypted_session, session_cipher)
+                if trace is not None:
+                    trace.record("credentials_ready")
+                    trace.session_available = storage_state is not None
+                    trace.record("session_available" if trace.session_available else "session_fresh")
 
-            async def persist_session(state: dict):
-                # Browser state can include both LK and Moodle bearer cookies.
-                # Only Fernet ciphertext ever reaches the YDB Document API.
-                if session_cipher is None:
-                    return
-                payload = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
-                encrypted_state = session_cipher.encrypt(payload.encode("utf-8")).decode("utf-8")
-                try:
-                    await store.update_session_state(
-                        credential_id,
-                        encrypted_state,
-                        login=stored_login,
-                        ciphertext=encrypted_password,
-                        key_version=key_version,
-                    )
-                except CredentialStoreUnavailable:
-                    # An updated/revoked account must not be recreated by a late crawl.
-                    return
+                async def persist_session(state: dict):
+                    # Browser state can include both LK and Moodle bearer cookies.
+                    # Only Fernet ciphertext ever reaches the YDB Document API.
+                    if session_cipher is None:
+                        return
+                    payload = json.dumps(state, ensure_ascii=False, separators=(",", ":"))
+                    encrypted_state = session_cipher.encrypt(payload.encode("utf-8")).decode("utf-8")
+                    try:
+                        await store.update_session_state(
+                            credential_id,
+                            encrypted_state,
+                            login=stored_login,
+                            ciphertext=encrypted_password,
+                            key_version=key_version,
+                        )
+                    except CredentialStoreUnavailable:
+                        # An updated/revoked account must not be recreated by a late crawl.
+                        return
 
-            async def on_captcha(location: str) -> None:
-                if not settings.ranepa_crawl_notify_captcha_seen_enabled:
-                    return
-                try:
-                    queued = await notify_captcha_detected(
-                        engine,
-                        owner_id=settings.bot_admin_user_id,
-                        job_id=job_id,
-                        attempt=attempt,
-                        location=location,
-                        user_id=user_id,
-                        student_name=student_name,
-                        telegram_group_name=group.name if group is not None else None,
-                        group_code=code,
-                    )
-                except Exception:  # noqa: BLE001
-                    # A failed Telegram outbox write cannot obscure a genuine
-                    # CAPTCHA or change the authorized solver/queue behavior.
-                    log_captcha_stage("owner_captcha_seen_notice_unavailable")
-                    return
-                if queued:
-                    log_captcha_stage("owner_captcha_seen_notice_queued")
-
-            failure = await collect_bounded(
-                engine,
-                group_id,
-                user_id,
-                code,
-                login,
-                password,
-                today,
-                storage_state=storage_state,
-                persist_session=persist_session if session_cipher is not None else None,
-                captcha_client=(
-                    configured_solver(settings)
-                    if available_budget.remaining > 0
-                    and not settings.ranepa_captcha_diagnostic_only
-                    and (pilot_group_id is not None or settings.ranepa_captcha_daily_max_tasks > 0)
-                    else None
-                ),
-                captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,
-                captcha_budget=available_budget,
-                captcha_diagnostic_only=(
-                    settings.ranepa_captcha_diagnostic_only and pilot_group_id is not None
-                ),
-                # Owner-targeted retries also reserve the shared daily paid
-                # budget. Previously pilot tasks were not accounted for.
-                captcha_daily_limit=settings.ranepa_captcha_daily_max_tasks,
-                trace=trace,
-                stats=account_stats,
-                series_id=series_id,
-                first_week_anchor=group.first_week_anchor,
-                on_captcha=on_captcha
-                if settings.ranepa_crawl_notify_captcha_seen_enabled
-                and not settings.ranepa_manual_captcha_enabled
-                else None,
-                manual_captcha=(
-                    (
-                        lambda page, attempts_used: offer_manual_captcha(
+                async def on_captcha(location: str) -> None:
+                    if not settings.ranepa_crawl_notify_captcha_seen_enabled:
+                        return
+                    try:
+                        queued = await notify_captcha_detected(
                             engine,
-                            page=page,
                             owner_id=settings.bot_admin_user_id,
                             job_id=job_id,
                             attempt=attempt,
-                            settings=settings,
-                            auto_attempts=attempts_used,
-                            student_name=student.display_name if student else None,
+                            location=location,
+                            user_id=user_id,
+                            student_name=student_name,
+                            telegram_group_name=group.name if group is not None else None,
                             group_code=code,
-                            telegram_group_name=group.name,
                         )
-                    )
-                    if settings.ranepa_manual_captcha_enabled
-                    else None
-                ),
-            )
-            if failure == "login_failed":
-                notice_failure_detail = "login_rejected"
+                    except Exception:  # noqa: BLE001
+                        # A failed Telegram outbox write cannot obscure a genuine
+                        # CAPTCHA or change the authorized solver/queue behavior.
+                        log_captcha_stage("owner_captcha_seen_notice_unavailable")
+                        return
+                    if queued:
+                        log_captcha_stage("owner_captcha_seen_notice_queued")
+
+                failure = await collect_bounded(
+                    engine,
+                    group_id,
+                    user_id,
+                    code,
+                    login,
+                    password,
+                    today,
+                    storage_state=storage_state,
+                    persist_session=persist_session if session_cipher is not None else None,
+                    captcha_client=(
+                        configured_solver(settings)
+                        if available_budget.remaining > 0
+                        and not settings.ranepa_captcha_diagnostic_only
+                        and (pilot_group_id is not None or settings.ranepa_captcha_daily_max_tasks > 0)
+                        else None
+                    ),
+                    captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,
+                    captcha_budget=available_budget,
+                    captcha_diagnostic_only=(
+                        settings.ranepa_captcha_diagnostic_only and pilot_group_id is not None
+                    ),
+                    # Owner-targeted retries also reserve the shared daily paid
+                    # budget. Previously pilot tasks were not accounted for.
+                    captcha_daily_limit=settings.ranepa_captcha_daily_max_tasks,
+                    trace=trace,
+                    stats=account_stats,
+                    series_id=series_id,
+                    first_week_anchor=group.first_week_anchor,
+                    on_captcha=on_captcha
+                    if settings.ranepa_crawl_notify_captcha_seen_enabled
+                    and not settings.ranepa_manual_captcha_enabled
+                    else None,
+                    manual_captcha=(
+                        (
+                            lambda page, attempts_used: offer_manual_captcha(
+                                engine,
+                                page=page,
+                                owner_id=settings.bot_admin_user_id,
+                                job_id=job_id,
+                                attempt=attempt,
+                                settings=settings,
+                                auto_attempts=attempts_used,
+                                student_name=student.display_name if student else None,
+                                group_code=code,
+                                telegram_group_name=group.name,
+                            )
+                        )
+                        if settings.ranepa_manual_captcha_enabled
+                        else None
+                    ),
+                )
+                if failure == "login_failed":
+                    notice_failure_detail = "login_rejected"
     async with AsyncSession(engine) as db:
         fast_retry = (
             trace is not None
