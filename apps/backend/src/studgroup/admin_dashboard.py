@@ -85,7 +85,9 @@ async def admin_page(request: Request):
     ):
         frame_source = f"{origin.scheme}://{origin.netloc}"
     page = (UI / "index.html").read_text(encoding="utf-8")
-    page = page.replace("form-action 'none'", f"form-action 'none'; frame-src {escape(frame_source)}")
+    page = page.replace(
+        "form-action 'none'", f"form-action 'none'; frame-src {escape(frame_source)}"
+    )
     return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
 
