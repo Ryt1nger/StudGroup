@@ -19,6 +19,22 @@ class ScheduleDeadlineContext:
     covered_from: date
     covered_until: date
     ready: bool = True
+    covered_days: frozenset[date] | None = None
+    subgroup_days: dict[str, frozenset[date]] | None = None
+    published_days: frozenset[date] = frozenset()
+
+    def covers(self, start, end, subgroup_id=None):
+        if not self.covered_from <= start <= end <= self.covered_until:
+            return False
+        if self.covered_days is None:
+            return True
+        coverage = self.covered_days
+        if subgroup_id is not None and self.subgroup_days is not None:
+            coverage = self.subgroup_days.get(str(subgroup_id), self.published_days)
+        return all(
+            start + timedelta(days=offset) in coverage
+            for offset in range((end - start).days + 1)
+        )
 
 
 def canonical_subject(subject, schedule):
