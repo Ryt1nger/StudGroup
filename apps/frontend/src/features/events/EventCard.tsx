@@ -126,7 +126,7 @@ export function ScheduleEventCards({ items, timeZone }: { items: readonly Publis
     <>
       {items.map((item) => (
         <Link key={item.id} className="schedule-event-card" to={`/events/${item.id}`}>
-          <strong><Ic name="cal" size={15} />{item.title}</strong>
+          <h3><Ic name="cal" size={15} />{item.title}</h3>
           <span>{eventDate(item, timeZone)}</span>
           {item.place ? <span>{item.place}</span> : null}
         </Link>
