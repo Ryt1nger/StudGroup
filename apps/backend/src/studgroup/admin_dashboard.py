@@ -1024,10 +1024,11 @@ async def urgent_sdo_status(
 async def urgent_sdo_request(
     db: Annotated[AsyncSession, Depends(database)],
     owner: Annotated[User, Depends(admin_session)],
+    replace: bool = False,
 ):
     from studgroup.urgent_sdo import request_run, run_json
 
-    row = await request_run(db)
+    row = await request_run(db, replace=replace)
     result = await run_json(db, row)
     await db.commit()
     return result
