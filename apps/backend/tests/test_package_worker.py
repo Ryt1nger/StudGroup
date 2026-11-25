@@ -1817,3 +1817,45 @@ def test_failed_image_does_not_release_dependent_text_or_unverified_ocr(client):
     assert set(provider.targets) == {32, 33}
     assert states(client) == {31: "pending", 32: "completed", 33: "completed"}
     assert all("UNVERIFIED_FAILED_PHOTO" not in str(req.user_payload) for req in provider.requests)
+
+
+def test_catchup_small_tail_uses_hourly_slot_not_minute_loop(client):
+    seed(client)
+    make_new(client)
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    cfg = settings(
+        owner_funded_pilot=True,
+        pilot_catchup_before=now,
+    )
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, cfg, now) == "completed"
+    assert len(provider.targets) == 3
+    source(client, mid=34, text="Еще одно сообщение", when=BASE + timedelta(minutes=5))
+    next_provider = PackageProvider(propose=False)
+    assert step(client, next_provider, cfg, now + timedelta(minutes=2)) == "idle"
+    assert not next_provider.requests
+    assert states(client)[34] == "pending"
+    assert step(client, next_provider, cfg, now + timedelta(hours=1)) == "completed"
+    assert next_provider.targets == [34]
+
+
+def test_catchup_coalesces_small_days_into_one_large_package(client):
+    seed(client, offsets=tuple(range(12)))
+    make_new(client)
+    now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+
+    async def prepare():
+        async with AsyncSession(client.app.state.engine) as db:
+            rows = (await db.scalars(select(RawMessage))).all()
+            for row in rows:
+                day = 1 if row.telegram_message_id < 37 else 0
+                row.message_date = now - timedelta(days=day, hours=4)
+                row.live_received_at = row.message_date
+            await db.commit()
+
+    asyncio.run(prepare())
+    cfg = settings(owner_funded_pilot=True, pilot_catchup_before=now)
+    provider = PackageProvider(propose=False)
+    assert step(client, provider, cfg, now) == "completed"
+    assert len(provider.targets) == 12
+    assert count(client, ShadowEvaluationRun) == 1
