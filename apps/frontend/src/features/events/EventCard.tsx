@@ -1,5 +1,11 @@
 import type { EventPayload, PublishedEvent } from '@studgroup/shared-types';
-import { Link } from 'react-router';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router';
+import { isApiRequestError } from '../../api/errors';
+import { Float } from '../../shell/AppRoot';
+import { ConfirmModal } from '../../ui/Blocks';
+import { useFeedback } from '../../ui/Feedback';
+import { useReviewEvent } from './api';
 import { useTelegram } from '../../telegram/TelegramProvider';
 import { Ic } from '../../ui/Ic';
 import { eventDate } from './calendar';
@@ -67,6 +73,50 @@ export function EventCard({
       </Link>
       <EventSource url={item.source_url} />
     </article>
+  );
+}
+
+/** Permanent removal is distinct from cancelling an event in the public calendar. */
+export function DeleteGroupEventButton({ item, backTo = '/events' }: { item: { id: string; revision: number; title: string }; backTo?: string }) {
+  const [asking, setAsking] = useState(false);
+  const navigate = useNavigate();
+  const { toast } = useFeedback();
+  const remove = useReviewEvent(item.id);
+  return (
+    <>
+      <button type="button" className="icon-btn danger" aria-label="Удалить событие" disabled={remove.isPending} onClick={() => setAsking(true)}>
+        <Ic name="trash" size={18} />
+      </button>
+      {asking ? (
+        <Float>
+          <ConfirmModal
+            icon="trash"
+            title="Удалить событие?"
+            body="Событие исчезнет из календаря и истории у всех участников группы. Это действие нельзя отменить."
+            confirm={remove.isPending ? 'Удаляем…' : 'Удалить'}
+            cancel="Оставить"
+            onCancel={() => setAsking(false)}
+            onConfirm={() => {
+              if (remove.isPending) return;
+              remove.mutate(
+                { expected_revision: item.revision, payload: { title: item.title }, state: 'deleted' },
+                {
+                  onSuccess: () => {
+                    setAsking(false);
+                    toast('Событие удалено');
+                    void navigate(backTo, { replace: true });
+                  },
+                  onError: (error) => {
+                    setAsking(false);
+                    toast(isApiRequestError(error) && error.status === 409 ? 'Событие изменилось. Проверьте актуальную версию.' : 'Не удалось удалить событие');
+                  },
+                },
+              );
+            }}
+          />
+        </Float>
+      ) : null}
+    </>
   );
 }
 
