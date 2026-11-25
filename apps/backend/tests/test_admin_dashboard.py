@@ -380,3 +380,57 @@ def test_owner_urgent_progress_exposes_durable_account_state(client):
     assert target["state"] == "running"
     assert target["started_at"] is not None
     assert target["next_attempt_at"] is None
+
+
+def test_owner_user_directory_and_read_only_preview(client):
+    headers = {"Authorization": "Bearer valid"}
+    assert client.get("/v1/admin/users", headers=headers).status_code == 403
+    client.app.state.settings.bot_admin_user_id = 1
+    response = client.get("/v1/admin/users?limit=1", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    owner = next(
+        row
+        for row in client.get("/v1/admin/users", headers=headers).json()["items"]
+        if row["is_owner"]
+    )
+    assert "sdu_login" not in response.text
+    assert "sdu_password" not in response.text
+    member = next(row for row in owner["memberships"] if row["status"] == "active")
+    url = f"/v1/admin/users/{owner['id']}/preview/{member['group_id']}"
+    preview = client.get(url, headers=headers)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["read_only"] is True
+    assert {"lessons", "homework", "deadlines"} <= preview.json().keys()
+    assert client.post(url, headers=headers).status_code == 405
+    assert client.get(url).status_code == 401
+    assert "access_token" not in preview.text
+    assert "online_url" not in preview.text
+    assert (
+        client.post(
+            f"/v1/admin/users/{owner['id']}/memberships/status",
+            headers=headers,
+            json={"action": "block"},
+        ).status_code
+        == 403
+    )
+
+
+def test_owner_can_manage_all_existing_memberships(client):
+    client.app.state.settings.bot_admin_user_id = 1
+    headers = {"Authorization": "Bearer valid"}
+    group = client.get("/v1/admin/groups", headers=headers).json()["items"][0]
+    created = client.post(
+        f"/v1/admin/groups/{group['id']}/members",
+        headers=headers,
+        json={"telegram_user_id": 987654321, "display_name": "Registry Student"},
+    )
+    assert created.status_code == 200
+    result = client.get("/v1/admin/users?q=Registry", headers=headers).json()["items"]
+    assert len(result) == 1
+    user = result[0]
+    url = f"/v1/admin/users/{user['id']}/memberships/status"
+    assert client.post(url, headers=headers, json={"action": "block"}).json()["changed"] == 1
+    assert client.post(url, headers=headers, json={"action": "unblock"}).json()["changed"] == 1
+    assert client.post(url, headers=headers, json={"action": "remove"}).json()["changed"] == 1
+    assert client.post(url, headers=headers, json={"action": "unblock"}).json()["changed"] == 0

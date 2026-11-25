@@ -69,6 +69,21 @@
           </div>
         </section>
         <section id="activity" class="report-section page-screen" data-screen="audience" hidden>
+          <article class="chart-card">
+            <div class="chart-title"><div><span class="card-overline">ДОСТУП / ЛЮДИ</span><h3>Все пользователи</h3></div></div>
+            <form id="admin-user-search"><label for="admin-user-query">ФИО, username или Telegram ID</label><input id="admin-user-query" type="search" maxlength="120"><button type="submit" class="refresh-button">Найти</button></form>
+            <p id="admin-users-status" class="connection" role="status"></p>
+            <div id="admin-users" class="billing-options"></div>
+            <button id="admin-users-more" type="button" class="link-button" hidden>Показать ещё</button>
+            <div id="admin-preview" class="billing-options"></div>
+          </article>
+          <article class="chart-card extra-top">
+            <div class="chart-title"><div><span class="card-overline">ДОСТУП / ГРУППЫ</span><h3>Группы и участники</h3></div><button id="admin-groups-refresh" class="link-button" type="button">Обновить</button></div>
+            <p class="billing-note">Показываются Telegram-группа, код РАНХиГС, участники и число подключённых СДО. Удаление мягкое: история сохраняется.</p>
+            <div id="admin-groups-status" class="connection" role="status"></div>
+            <div id="admin-groups" class="billing-options"></div>
+            <div id="admin-members" class="billing-options"></div>
+          </article>
           <div class="section-heading"><div><span class="section-number">01 / АУДИТОРИЯ</span><h2>Активность в группах</h2><p>Реальный поток Telegram-сообщений. Это не посещения WebApp.</p></div><button class="link-button" data-detail="messages" type="button">Журнал сообщений <span>↗</span></button></div>
           <div class="chart-grid wide">
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПО ДНЯМ</span><h3>Динамика сообщений</h3></div><span class="card-note">сообщений / день</span></div><div id="chart-activity" class="chart-host tall"></div><div class="chart-foot" id="activity-caption"></div></article>
@@ -128,13 +143,6 @@
           <div class="section-heading"><div><span class="section-number">04 / СИСТЕМА</span><h2>Скорость и стабильность</h2><p>Насколько быстро отвечает приложение и были ли ошибки связи за последние 15 минут.</p></div></div>
           <div class="server-overview" id="server-overview"></div>
           <div id="sdo-reliability" class="quick-stat-list" aria-label="Надёжность СДО"></div>
-          <article class="chart-card extra-top">
-            <div class="chart-title"><div><span class="card-overline">ДОСТУП / ГРУППЫ</span><h3>Группы и участники</h3></div><button id="admin-groups-refresh" class="link-button" type="button">Обновить</button></div>
-            <p class="billing-note">Показываются Telegram-группа, код РАНХиГС, участники и число подключённых СДО. Удаление мягкое: история сохраняется.</p>
-            <div id="admin-groups-status" class="connection" role="status"></div>
-            <div id="admin-groups" class="billing-options"></div>
-            <div id="admin-members" class="billing-options"></div>
-          </article>
           <div class="chart-grid wide">
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ПОСЛЕДНИЕ 15 МИНУТ</span><h3>Запросы к серверу</h3></div><span class="card-note">запросов за минуту</span></div><div id="chart-requests" class="chart-host tall"></div><div class="chart-foot" id="server-caption"></div></article>
             <article class="chart-card"><div class="chart-title"><div><span class="card-overline">ФОНОВЫЕ ПРОЦЕССЫ</span><h3>Состояние очередей</h3></div><span class="card-note">текущие записи</span></div><div id="queue-detail" class="queue-grid"></div><div class="chart-foot">Очередь Telegram общесистемная. Некоторые показатели накопительные.</div></article>
