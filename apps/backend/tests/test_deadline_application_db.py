@@ -127,7 +127,7 @@ def test_the_first_week_pattern_does_not_serve_a_second_week_message(client):
     asyncio.run(run())
 
 
-def test_a_day_without_lessons_or_a_cancelled_lesson_leaves_the_deadline_unknown(client):
+def test_a_holiday_before_the_next_lesson_does_not_block_the_deadline(client):
     async def run():
         async with AsyncSession(client.app.state.engine, expire_on_commit=False) as db:
             group = await seed(db, "номер 5 письменно")
@@ -138,8 +138,8 @@ def test_a_day_without_lessons_or_a_cancelled_lesson_leaves_the_deadline_unknown
             )
             await db.flush()
             result = await run_one(db, group, "номер 5 письменно", proposal())
-            assert result.item.deadline_at is None
-            assert result.item.deadline_reason == "no_lesson_day_in_window"
+            assert result.item.deadline_at.astimezone(MSK) == datetime(2026, 10, 14, 10, 40, tzinfo=MSK)
+            assert result.item.deadline_reason == "next_subject_lesson"
 
     asyncio.run(run())
 
