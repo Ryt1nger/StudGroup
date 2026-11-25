@@ -5,7 +5,7 @@ import { STALE_AFTER_MS } from '../../api/cachePolicy';
 import { useSession } from '../../session/SessionProvider';
 import { useAcademicDeadlinesQuery, useScheduleQuery, useTodayQuery } from '../../api/queries';
 import { ru } from '../../i18n/ru';
-import { addDays, dayKey, formatLongDay, formatTime, plural } from '../../lib/format';
+import { addDays, dayKey, formatLongDay, plural } from '../../lib/format';
 import { useServerNow } from '../../lib/hooks';
 import { isHomeworkArchived } from '../../lib/homeworkArchive';
 import { useProcessingPoll } from '../../lib/processingPoll';
