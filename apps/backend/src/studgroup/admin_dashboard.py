@@ -355,9 +355,7 @@ async def admin_user_memberships_status(
     if body.action not in {"block", "unblock", "remove"}:
         raise ApiError("invalid_action", "Недоступное действие", 422)
     members = (
-        await db.scalars(
-            select(Membership).where(Membership.user_id == user_id).with_for_update()
-        )
+        await db.scalars(select(Membership).where(Membership.user_id == user_id).with_for_update())
     ).all()
     transitions = {
         "block": ({"active"}, "suspended"),
@@ -459,9 +457,7 @@ async def admin_user_preview(
         "timezone": group.timezone,
         "start": start,
         "end": end,
-        "lessons": [
-            {key: row.get(key) for key in lesson_fields} for row in schedule["lessons"]
-        ],
+        "lessons": [{key: row.get(key) for key in lesson_fields} for row in schedule["lessons"]],
         "homework": homework,
         "homework_truncated": len(rows) > 100,
         "deadlines": [
