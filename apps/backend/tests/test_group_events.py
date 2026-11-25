@@ -227,8 +227,9 @@ def test_manual_delete_hides_event_and_blocks_source_replay(client, monkeypatch)
 
 
 def test_pilot_event_review_and_delete_follow_session_feature_policy(client, monkeypatch):
-    from studgroup.models import Group
     from test_staff_api import db_run
+
+    from studgroup.models import Group
 
     event, payload = prepare(client, monkeypatch)
     make(client, "headman")
