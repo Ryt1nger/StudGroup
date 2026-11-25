@@ -261,6 +261,26 @@ describe('subjects', () => {
 });
 
 describe('homework detail and source', () => {
+  it('recovers from a first card read returning HTTP 500 without manual refresh', async () => {
+    useScenario();
+    let requests = 0;
+    server.use(http.get(`${API}/homework/${HW}`, () => {
+      requests += 1;
+      if (requests === 1) {
+        return HttpResponse.json(
+          { error: { code: 'service_unavailable', message: 'temporary', retryable: false } },
+          { status: 500 },
+        );
+      }
+      return HttpResponse.json(contractExamples.HomeworkDetailAvailable);
+    }));
+    renderApp();
+    await userEvent.click(await screen.findByRole('link', { name: /ДЗ №12–140/ }));
+    expect(await screen.findByText('Что нужно сделать', {}, { timeout: 6000 })).toBeInTheDocument();
+    expect(requests).toBe(2);
+    expect(screen.queryByText('Сервис временно недоступен')).not.toBeInTheDocument();
+  });
+
   it('opens a card from Today and the source through the Telegram adapter', async () => {
     useScenario();
     const { adapter } = renderApp();

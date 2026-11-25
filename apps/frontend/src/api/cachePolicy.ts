@@ -14,6 +14,14 @@ export function shouldRetry(failureCount: number, error: unknown): boolean {
   return error.retryable;
 }
 
+/** Card reads are idempotent: transient server/proxy errors can be retried even if
+ * an upstream error envelope omits the retryable flag. Never retry auth or access failures. */
+export function shouldRetryCard(failureCount: number, error: unknown): boolean {
+  if (failureCount >= MAX_RETRIES || !isApiRequestError(error)) return false;
+  if (error.status !== null && [500, 502, 503, 504].includes(error.status)) return true;
+  return shouldRetry(failureCount, error);
+}
+
 export function retryDelay(attempt: number, error: unknown): number {
   const after = isApiRequestError(error) ? error.retryAfterSeconds : null;
   if (after) return after * 1000;

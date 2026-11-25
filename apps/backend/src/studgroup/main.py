@@ -667,6 +667,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "/v1/deadlines",
             "/v1/profile",
         }
+        if request.method == "GET" and path.count("/") == 3:
+            parent = path.rsplit("/", 1)[0]
+            if parent in {"/v1/homework", "/v1/deadlines"}:
+                path = parent + "/{id}"
+                measured_routes.add(path)
         if path not in measured_routes:
             return await call_next(request)
         start = perf_counter()

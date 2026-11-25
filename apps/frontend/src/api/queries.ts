@@ -44,7 +44,7 @@ import {
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { unwrap, isApiRequestError } from './errors';
 import { queryKeys } from './keys';
-import { detailQueryOptions, scheduleQueryOptions, todayQueryOptions } from './cachePolicy';
+import { detailQueryOptions, scheduleQueryOptions, shouldRetryCard, todayQueryOptions } from './cachePolicy';
 
 /** Bound long-running academic requests so Telegram WebView cannot spin forever.
  * Abort releases the browser connection; unwrap maps the error to a retryable network state.
@@ -87,14 +87,14 @@ export const api = {
   subjects: (): Promise<SubjectListResponse> => unwrap(listSubjects()),
   deadlines: (archive = false, review = false) =>
     unwrap(listAcademicDeadlines({ query: { archive, ...(review ? { review: true } : {}) } })),
-  event: (id: string) => unwrap(getAcademicDeadline({ path: { deadline_id: id } })),
+  event: (id: string) => unwrap(withRequestTimeout((signal) => getAcademicDeadline({ path: { deadline_id: id }, signal }))),
   schedule: (start: string, end: string): Promise<ScheduleResponse> =>
     unwrap(withRequestTimeout((signal) => getSchedule({ query: { start, end }, signal }))),
   listHomework: (filter: HomeworkListFilter, cursor?: string): Promise<HomeworkListResponse> =>
     unwrap(listHomework({ query: { filter, limit: HOMEWORK_PAGE_SIZE, ...(cursor ? { cursor } : {}) } })),
   attachmentImage: (id: string): Promise<Blob> =>
     unwrap(getAttachmentImage({ path: { attachment_id: id }, parseAs: 'blob' })) as Promise<Blob>,
-  homework: (id: string): Promise<HomeworkDetail> => unwrap(getHomework({ path: { homework_id: id } })),
+  homework: (id: string): Promise<HomeworkDetail> => unwrap(withRequestTimeout((signal) => getHomework({ path: { homework_id: id }, signal }))),
   editHomework: (id: string, body: EditHomeworkRequest): Promise<HomeworkDetail> =>
     unwrap(editHomework({ path: { homework_id: id }, body })),
   homeworkFileLink: (id: string): Promise<string> =>
@@ -172,7 +172,9 @@ export function useAcademicDeadlineQuery(id: string) {
   return useQuery({
     queryKey: ['academic-deadline', id],
     queryFn: () => api.event(id),
+    enabled: id !== '',
     ...detailQueryOptions,
+    retry: shouldRetryCard,
   });
 }
 
@@ -274,7 +276,9 @@ export function useHomeworkQuery(id: string) {
   return useQuery({
     queryKey: queryKeys.homework(id),
     queryFn: () => api.homework(id),
+    enabled: id !== '',
     ...detailQueryOptions,
+    retry: shouldRetryCard,
   });
 }
 
