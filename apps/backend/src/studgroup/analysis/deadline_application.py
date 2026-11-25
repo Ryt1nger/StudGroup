@@ -27,7 +27,7 @@ class AppliedDeadline:
     reasons: list = field(default_factory=list)  # attention reasons to add for the headman
 
 
-def apply_policy(proposal, messages, subject, context):
+def apply_policy(proposal, messages, subject, context, *, subgroup_id=None):
     """Decide the deadline of ``proposal`` from its own cited messages (never the processing clock)."""
     cited = {row.telegram_message_id for row in proposal.evidence}
     sources = [
@@ -50,6 +50,7 @@ def apply_policy(proposal, messages, subject, context):
             model_deadline=model,
             model_evidence=model_evidence,
             no_lesson_days=context.no_lesson_days,
+            subgroup_id=subgroup_id,
         )
     request = headman_request(decision, proposal.semantic_kind)
     reasons = []

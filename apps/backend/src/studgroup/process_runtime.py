@@ -77,7 +77,7 @@ async def queue_alert(db, settings, row, text, now):
 async def report_process(
     engine, settings, name, generation, status, *, code=None, stage=None, fresh_start=False
 ) -> bool:
-    if name not in PROCESS_NAMES or status not in {"running", "stopped", "error"}:
+    if name not in PROCESS_NAMES or status not in {"starting", "running", "stopped", "error"}:
         raise ValueError("invalid_process_status")
     if status == "error" and (code not in ERROR_CODES or stage not in STAGES):
         raise ValueError("unsafe_process_error")
@@ -94,7 +94,8 @@ async def report_process(
         error_changed = status == "error" and (row.error_code != code or row.error_stage != stage)
         previously_running = row.status == "running"
         row.status = status
-        row.applied_generation = generation
+        if status != "starting":
+            row.applied_generation = generation
         row.heartbeat_at = now
         if status == "running" and (changed or fresh_start):
             row.started_at = now
@@ -164,6 +165,7 @@ class ProcessGate:
             if self.probe_generation == intent.generation and monotonic() < self.probe_retry_at:
                 return None
             self.probe_generation = intent.generation
+            await self._report(intent.generation, "starting")
             code = await self.probe() if self.probe is not None else None
             if code is not None:
                 self.probe_retry_at = monotonic() + 30
@@ -226,7 +228,9 @@ async def watchdog_once(engine, settings, now=None):
             pending_start = row.enabled is True and row.generation != row.applied_generation
             if pending_start:
                 reference = row.requested_at
-            elif row.status == "running" or (row.status == "error" and row.enabled is not False):
+            elif row.status in {"starting", "running"} or (
+                row.status == "error" and row.enabled is not False
+            ):
                 reference = row.heartbeat_at
             else:
                 continue
@@ -295,11 +299,12 @@ async def scheduler_loop(engine, delivery_engine, settings, *, delivery_enabled)
     from studgroup.billing import tick as billing_tick
     from studgroup.billing_campaign import queue_billing_announcement
     from studgroup.billing_manual import cleanup_due
+    from studgroup.deadline_backfill import backfill_tick
     from studgroup.headman_digest import tick as digest_tick
     from studgroup.owner_updates import tick as owner_tick
     from studgroup.ranepa_manual_captcha import cleanup_expired_captcha_artwork
 
-    jobs = []
+    jobs = [(1800, lambda: backfill_tick(engine))]
     if delivery_enabled:
         jobs.extend(
             [

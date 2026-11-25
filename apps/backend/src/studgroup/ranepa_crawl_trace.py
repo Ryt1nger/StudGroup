@@ -99,6 +99,7 @@ class CrawlTrace:
         self.captcha_location: str | None = None
         self.preceding_step: str | None = None
         self.session_available = False
+        self.browser_started = False
         # Predefined, privacy-safe reason for one incomplete weekly read.
         self.failure_detail: str | None = None
         self.diagnostic: str | None = None
@@ -106,6 +107,8 @@ class CrawlTrace:
     def record(self, step: str) -> None:
         if step not in STEPS:
             raise ValueError("unsafe_crawl_trace_step")
+        if step == "browser_started":
+            self.browser_started = True
         if len(self.events) >= MAX_EVENTS:
             self.events.pop(0)
         milliseconds = max(0, int((self._clock() - self._start) * 1000))

@@ -1012,22 +1012,48 @@ async def change_background_process(
 
 @router.get("/v1/admin/sdo-runs")
 async def urgent_sdo_status(
+    request: Request,
     db: Annotated[AsyncSession, Depends(database)],
     owner: Annotated[User, Depends(admin_session)],
 ):
+    from studgroup.ranepa_live_progress import current_account
     from studgroup.urgent_sdo import latest_run
 
-    return {"run": await latest_run(db)}
+    return {
+        "run": await latest_run(db),
+        "current_account": await current_account(db, getattr(request.app.state, "redis", None)),
+    }
 
 
 @router.post("/v1/admin/sdo-runs", status_code=202)
 async def urgent_sdo_request(
     db: Annotated[AsyncSession, Depends(database)],
     owner: Annotated[User, Depends(admin_session)],
+    replace: bool = False,
 ):
     from studgroup.urgent_sdo import request_run, run_json
 
-    row = await request_run(db)
+    row = await request_run(db, replace=replace)
     result = await run_json(db, row)
     await db.commit()
     return result
+
+
+@router.get("/v1/admin/homework-deadlines/backfill")
+async def preview_homework_deadline_backfill(
+    request: Request,
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.deadline_backfill import repair_all
+
+    return await repair_all(request.app.state.engine)
+
+
+@router.post("/v1/admin/homework-deadlines/backfill")
+async def apply_homework_deadline_backfill(
+    request: Request,
+    owner: Annotated[User, Depends(admin_session)],
+):
+    from studgroup.deadline_backfill import repair_all
+
+    return await repair_all(request.app.state.engine, apply=True)

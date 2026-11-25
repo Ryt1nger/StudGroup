@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from studgroup.legal import has_consent, legal_ready
@@ -24,13 +24,14 @@ from studgroup.process_runtime import ALERT_PREFIX, utc
 from studgroup.ranepa_crawl_jobs import (
     CONSENT_REVALIDATED,
     CREDENTIALS_UPDATED,
+    LEASE,
     RETRY_BACKOFF,
     enqueue_week,
     terminal_failure,
 )
 from studgroup.ranepa_crawl_plan import CrawlCandidate, fair_crawl_order
 
-ACTIVE = ("requested", "running")
+ACTIVE = ("requested", "initializing", "running")
 
 
 async def eligible_candidates(db, settings, *, pilot_group_id=None, pilot_user_id=None):
@@ -64,16 +65,27 @@ async def eligible_candidates(db, settings, *, pilot_group_id=None, pilot_user_i
     return candidates
 
 
-async def request_run(db):
-    # Serializes simultaneous clicks; a second request returns the same active run.
+async def request_run(db, *, replace=False):
+    # Ordinary retries deduplicate. A confirmed replacement supersedes the old run.
     await ensure_process(db, "sdo")
     await db.get(BackgroundProcess, "sdo", with_for_update=True)
     row = await db.scalar(
         select(UrgentSDORun)
         .where(UrgentSDORun.state.in_(ACTIVE))
         .order_by(UrgentSDORun.requested_at.desc())
+        .with_for_update()
         .limit(1)
     )
+    if row is not None and replace:
+        now = datetime.now(UTC)
+        row.state = "cancelled"
+        row.finished_at = now
+        await db.execute(
+            update(UrgentSDOTarget)
+            .where(UrgentSDOTarget.run_id == row.id, UrgentSDOTarget.state == "pending")
+            .values(state="cancelled", completed_at=now, failure_code="superseded")
+        )
+        row = None
     if row is None:
         row = UrgentSDORun(state="requested", requested_at=datetime.now(UTC))
         db.add(row)
@@ -142,6 +154,7 @@ async def run_json(db, row):
         "succeeded": succeeded,
         "failed": failed,
         "blocked": counts.get("blocked", 0),
+        "cancelled": counts.get("cancelled", 0),
         "remaining": counts.get("pending", 0),
         "targets": progress,
     }
@@ -156,7 +169,9 @@ async def urgent_requested(engine):
     async with AsyncSession(engine) as db:
         return (
             await db.scalar(
-                select(UrgentSDORun.id).where(UrgentSDORun.state == "requested").limit(1)
+                select(UrgentSDORun.id)
+                .where(UrgentSDORun.state.in_(("requested", "initializing")))
+                .limit(1)
             )
             is not None
         )
@@ -251,9 +266,35 @@ async def prepare_urgent(engine, settings, today):
     async with AsyncSession(engine, expire_on_commit=False) as db:
         row = await db.scalar(
             select(UrgentSDORun)
-            .where(UrgentSDORun.state == "requested")
+            .where(UrgentSDORun.state.in_(("requested", "initializing")))
             .with_for_update(skip_locked=True)
             .limit(1)
+        )
+        if row is None:
+            return
+        # Do not attribute an in-flight attempt from the previous run to its replacement.
+        live_job = await db.scalar(
+            select(RanepaCrawlJob.id)
+            .where(
+                RanepaCrawlJob.state == "running",
+                RanepaCrawlJob.claimed_at >= datetime.now(UTC) - LEASE,
+            )
+            .limit(1)
+        )
+        if live_job is not None:
+            return
+        row.state = "initializing"
+        if row.started_at is None:
+            row.started_at = datetime.now(UTC)
+        run_id = row.id
+        await db.commit()
+    # Publish the real initialization phase before enumerating accounts.
+    # A worker restart can resume this phase; a replacement may supersede it.
+    async with AsyncSession(engine, expire_on_commit=False) as db:
+        row = await db.scalar(
+            select(UrgentSDORun)
+            .where(UrgentSDORun.id == run_id, UrgentSDORun.state == "initializing")
+            .with_for_update(skip_locked=True)
         )
         if row is None:
             return
@@ -302,7 +343,6 @@ async def prepare_urgent(engine, settings, today):
                 row.queued_count += 1
         row.found_count = len(candidates)
         row.state = "running"
-        row.started_at = now
         await db.commit()
 
 

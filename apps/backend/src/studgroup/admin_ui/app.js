@@ -491,38 +491,84 @@ async function start(){
 }
 
 const processNames={ai:"AI / DeepSeek",sdo:"SDO / RANEPA",telegram_outbox:"Telegram outbox",scheduler:"Scheduler"};
-const processStates={running:"Запущен",stopped:"Остановлен",error:"Ошибка / заблокирован",unknown:"Не подтверждён"};
+const processStates={starting:"Инициализация / проверка готовности",running:"Запущен",stopped:"Остановлен",error:"Ошибка / заблокирован",unknown:"Не подтверждён"};
 const queueNames={ai_messages:"AI / сообщения",ai_jobs:"AI / архивная очередь (legacy)",ai_images:"AI / фото",sdo:"SDO",telegram_outbox:"Telegram"};
-let processLoading=false,processChanging=false,processSignature="";
-function renderProcessControls(data,urgent){
-  const signature=JSON.stringify([data,urgent]);if(signature===processSignature)return;processSignature=signature;
+let processLoading=false,processChanging=false,processSignature="",lastUrgent=null;
+const activeRunStates=["requested","initializing","running"];
+const crawlSteps={
+ job_claimed:"Инициализация аккаунта",credentials_ready:"Доступ к учётной записи проверен",
+ session_available:"Подготовка сохранённой сессии",session_fresh:"Подготовка новой сессии",browser_started:"Браузер запущен",
+ stored_session_rejected:"Повторная авторизация",month_requested:"Чтение календаря месяца",month_verified:"Календарь проверен",
+ week_requested:"Чтение недели",week_verified:"Неделя проверена — сохранение",week_retry:"Повторное чтение недели",
+ week_unreadable:"Не удалось прочитать неделю",week_month_mismatch:"Расхождение с календарём месяца",
+ sdo_exits_requested:"Поиск ссылок СДО",sdo_exits_finished:"Ссылки СДО обработаны",sdo_exits_timed_out:"Истекло время поиска ссылок",
+ sdo_exits_skipped_budget:"Пропуск дополнительных ссылок по лимиту",sdo_common_links_reused:"Проверенные общие ссылки использованы",
+ lms_dashboard_requested:"Открытие LMS",lms_login_form:"Авторизация LMS",lms_login_submitted:"Ожидание ответа LMS",lms_courses_loaded:"Курсы LMS получены",lms_course_requested:"Чтение курса LMS",
+ lk_open_requested:"Открытие личного кабинета",lk_page_loaded:"Проверка личного кабинета",lk_form_visible:"Форма авторизации",
+ lk_login_filled:"Подготовка авторизации",lk_password_filled:"Подготовка авторизации",lk_submit_requested:"Отправка формы",
+ lk_form_submitted:"Ожидание ответа авторизации",lk_response_recheck:"Проверка ответа",lk_connection_recheck:"Проверка соединения",
+ lk_explicit_rejection:"Отказ авторизации",lk_schedule_requested:"Открытие расписания",lk_group_verify_requested:"Проверка учебной группы",lk_group_verified:"Группа подтверждена",
+ captcha_month:"Проверка CAPTCHA календаря",captcha_week:"Проверка CAPTCHA недели",captcha_sdo:"Проверка CAPTCHA СДО",captcha_solver_started:"Обработка CAPTCHA",captcha_solver_submitted:"Проверка ответа CAPTCHA",captcha_solver_failed:"Неудачная обработка CAPTCHA",
+ month_recheck:"Повторная проверка месяца",week_recheck:"Повторная проверка недели",schedule_verified:"Завершение проверки расписания"
+};
+function progressBar(host,label,value,max,detail){
+ const block=dom("div","run-meter");text(block,"strong","",label);
+ const meter=dom("progress","");meter.max=max||1;meter.setAttribute("aria-label",label);
+ if(value!=null)meter.value=Math.max(0,Math.min(meter.max,value));
+ block.append(meter);text(block,"small","",detail);host.append(block);
+}
+function renderProcessControls(data,urgent,current){
+  lastUrgent=urgent;
+  const signature=JSON.stringify([data,urgent,current]);if(signature===processSignature)return;
   const host=$("process-cards");host.replaceChildren();
   for(const item of data.processes||[]){
-    if(!Object.hasOwn(processNames,item.name))continue;
+    if(!Object.prototype.hasOwnProperty.call(processNames,item.name))continue;
     const card=dom("article","chart-card process-card");
     const header=dom("div","process-card-heading");text(header,"h3","",processNames[item.name]);
     const labelEl=dom("label","process-switch"),toggle=dom("input");toggle.type="checkbox";toggle.checked=Boolean(item.effective_enabled);toggle.setAttribute("role","switch");toggle.setAttribute("aria-label",processNames[item.name]);toggle.disabled=processChanging;
     const track=dom("span","process-track");labelEl.append(toggle,track);header.append(labelEl);card.append(header);
-    text(card,"strong","process-runtime "+(item.status==="error"?"process-error":""),processStates[item.status]||"Не подтверждён");
+    const pending=item.pending&&item.status!=="error";
+    const runtimeLabel=pending?(item.effective_enabled?(item.status==="starting"?processStates.starting:"Ожидает запуска"):"Останавливается"):processStates[item.status]||"Не подтверждён";
+    text(card,"strong","process-runtime "+(item.status==="error"?"process-error":pending||item.status==="starting"?"process-pending":item.status==="running"?"process-success":""),runtimeLabel);
     text(card,"small","",item.pending?"Команда ожидает подтверждения":item.enabled==null?"Состояние наследуется из конфигурации":item.enabled?"Включён владельцем":"Выключен владельцем");
     const details=dom("div","process-details");
     const activeError=item.error_active??(item.status==="error");
     const historyLabel=item.status==="running"?"Прошлая ошибка · восстановлено":"Прошлая ошибка";
-    for(const [name,value] of [["Heartbeat",datetime(item.heartbeat_at)],["Последний запуск",datetime(item.started_at)],[activeError?"Текущая ошибка":historyLabel,datetime(item.error_at)],[activeError?"Причина":"Прошлая причина",item.error_code||"—"],[activeError?"Этап":"Прошлый этап",item.error_stage||"—"]]){const row=dom("div","quick-stat");text(row,"span","",name);text(row,"strong","",value);details.append(row);}
+    for(const [name,value] of [["Команда получена",datetime(item.requested_at)],["Heartbeat",datetime(item.heartbeat_at)],["Последний запуск",datetime(item.started_at)],[activeError?"Текущая ошибка":historyLabel,datetime(item.error_at)],[activeError?"Причина":"Прошлая причина",item.error_code||"—"],[activeError?"Этап":"Прошлый этап",item.error_stage||"—"]]){const row=dom("div","quick-stat");text(row,"span","",name);text(row,"strong","",value);details.append(row);}
     card.append(details);
     const restart=dom("button","link-button","Перезапустить");restart.type="button";restart.disabled=processChanging;
     restart.addEventListener("click",()=>changeProcess(item.name,"restart"));
     toggle.addEventListener("change",()=>changeProcess(item.name,toggle.checked?"enable":"disable"));
     card.append(restart);host.append(card);
   }
+  if(!host.children.length)text(host,"p","chart-empty","Нет данных о фоновых процессах. Проверьте подключение и обновите страницу.");
   const progress=$("urgent-progress");progress.replaceChildren();
+  if(current){
+    const live=current.live;
+    text(progress,"h3","","Текущая учётная запись");
+    statRow(progress,(current.student||"Студент")+" · "+(current.group||"Группа"),"Попытка "+number(current.attempt)+" · начало "+datetime(current.started_at));
+    if(live){
+      text(progress,"p","",live.mode==="manual"?"Ручной запуск":"SDO-worker");
+      progressBar(progress,"Прогресс текущего аккаунта",(live.browser_started?1:0)+live.saved_weeks,8, (crawlSteps[live.step]||live.step)+" · недель сохранено "+number(live.saved_weeks)+" / 6");
+    }else{
+      progressBar(progress,"Прогресс текущего аккаунта",null,8,"Учётная запись занята; подробный этап пока не получен");
+    }
+  }else{
+    text(progress,"p","chart-empty","Сейчас ни одна учётная запись не обрабатывается.");
+  }
   if(!urgent){text(progress,"p","chart-empty","Полный прогон ещё не запрашивался.");}
   else{
-    const labels={requested:"Запрос сохранён — ожидает SDO-worker",running:"Выполняется",completed:"Завершён",cancelled:"Отменён"};
+    const labels={requested:current?"Ожидает завершения предыдущего аккаунта":"Запрос принят — ожидает SDO-worker",initializing:"Инициализация: проверка подходящих аккаунтов",running:"Выполняется",completed:"Завершён",cancelled:"Отменён"};
     text(progress,"strong","",labels[urgent.state]||"Не подтверждён");
-    if(urgent.state!=="requested"){
+    statRow(progress,"Запрошен",datetime(urgent.requested_at));
+    statRow(progress,"Начат",datetime(urgent.started_at));
+    if(urgent.finished_at)statRow(progress,"Завершён",datetime(urgent.finished_at));
+    const waiting=["requested","initializing"].includes(urgent.state);
+    const done=Math.max(0,(urgent.found||0)-(urgent.remaining||0));
+    progressBar(progress,"Общий прогресс прогона",waiting?null:urgent.found?done:urgent.state==="completed"?1:0,urgent.found||1,waiting?"Инициализация списка аккаунтов":number(done)+" / "+number(urgent.found||0)+" аккаунтов с итогом");
+    if(!waiting){
       for(const [key,name] of [["found","Найдено аккаунтов"],["queued","Поставлено в очередь"],["completed","Обработано аккаунтов"],["succeeded","Успешно"],["failed","Ошибок"],["blocked","Заблокировано защитой"],["remaining","Осталось"]])statRow(progress,name,number(urgent[key]));
-      const targetStates={running:"Сейчас обрабатывается",cooldown:"Ожидает разрешённого времени",queued:"В очереди",succeeded:"Успешно",failed:"Ошибка",blocked:"Заблокирован"};
+      const targetStates={running:"Сейчас обрабатывается",cooldown:"Ожидает разрешённого времени",queued:"В очереди",succeeded:"Успешно",failed:"Ошибка",blocked:"Заблокирован",cancelled:"Отменён"};
       for(const target of urgent.targets||[]){
         const details=[targetStates[target.state]||target.state];
         if(target.reason)details.push(target.reason);
@@ -533,20 +579,23 @@ function renderProcessControls(data,urgent){
       }
     }
   }
-  $("urgent-start").disabled=processChanging||Boolean(urgent&&["requested","running"].includes(urgent.state));
+  $("urgent-start").disabled=processChanging;
+  $("urgent-start").textContent=urgent&&activeRunStates.includes(urgent.state)?"Остановить старый и начать новый":"Запустить полный прогон";
   const queues=$("process-queues");queues.replaceChildren();
-  for(const [key,values] of Object.entries(data.queues||{})){if(!Object.hasOwn(queueNames,key))continue;statRow(queues,queueNames[key],Object.entries(values).map(([k,v])=>russianState(k)+": "+number(v)).join(" · ")||"Пусто");}
+  for(const [key,values] of Object.entries(data.queues||{})){if(!Object.prototype.hasOwnProperty.call(queueNames,key))continue;statRow(queues,queueNames[key],Object.entries(values).map(([k,v])=>russianState(k)+": "+number(v)).join(" · ")||"Пусто");}
+  processSignature=signature;
 }
 async function loadProcessControls(){
   if(!token||processLoading||processChanging)return;processLoading=true;
-  try{const [data,result]=await Promise.all([api("/v1/admin/processes"),api("/v1/admin/sdo-runs")]);renderProcessControls(data,result.run);$("process-status").textContent="Состояние получено из БД · "+datetime(new Date().toISOString());$("process-status").classList.remove("error");}
+  try{const [data,result]=await Promise.all([api("/v1/admin/processes"),api("/v1/admin/sdo-runs")]);renderProcessControls(data,result.run,result.current_account);$("process-status").textContent="Состояние получено из БД · "+datetime(new Date().toISOString());$("process-status").classList.remove("error");}
   catch(error){$("process-status").textContent="Не удалось получить состояние: "+error.message;$("process-status").classList.add("error");}
   finally{processLoading=false;}
 }
 async function changeProcess(name,action){
-  if(processChanging||!Object.hasOwn(processNames,name))return;
+  if(processChanging||!Object.prototype.hasOwnProperty.call(processNames,name))return;
   if(action==="restart"&&!confirm("Перезапустить "+processNames[name]+"?"))return;
   processChanging=true;
+  $("process-status").textContent="Отправляется команда: "+processNames[name];
   for(const control of $("process-cards").querySelectorAll("input,button"))control.disabled=true;
   let errorMessage=null;
   try{await api("/v1/admin/processes/"+encodeURIComponent(name)+"/"+action,{method:"POST"});}
@@ -554,14 +603,16 @@ async function changeProcess(name,action){
   finally{processChanging=false;processSignature="";await loadProcessControls();if(errorMessage){$("process-status").textContent=errorMessage;$("process-status").classList.add("error");}}
 }
 $("urgent-start").addEventListener("click",async()=>{
-  if(processChanging||!confirm("Поставить все подходящие аккаунты в полный SDO-прогон? Cooldown и защитные лимиты не будут отменены."))return;
+  const replace=Boolean(lastUrgent&&activeRunStates.includes(lastUrgent.state));
+  if(processChanging||!confirm(replace?"Отменить старый прогон? Текущая учётная запись безопасно завершится перед новым прогоном. Лимиты сохраняются.":"Поставить все подходящие аккаунты в полный SDO-прогон? Cooldown и защитные лимиты не будут отменены."))return;
   processChanging=true;$("urgent-start").disabled=true;
+  $("process-status").textContent="Отправляется запрос на прогон…";
   let errorMessage=null;
-  try{await api("/v1/admin/sdo-runs",{method:"POST"});}
+  try{const run=await api("/v1/admin/sdo-runs"+(replace?"?replace=true":""),{method:"POST"});lastUrgent=run;$("urgent-progress").replaceChildren();text($("urgent-progress"),"strong","","Запрос принят — ожидает инициализации");}
   catch(error){errorMessage=error.message;}
   finally{processChanging=false;processSignature="";await loadProcessControls();if(errorMessage){$("process-status").textContent=errorMessage;$("process-status").classList.add("error");}}
 });
-setInterval(()=>{if(token&&!document.hidden&&currentPage==="processes")loadProcessControls();},5000);
+setInterval(()=>{if(token&&!document.hidden&&currentPage==="processes")loadProcessControls();},3000);
 
 let adminGroupItems=[];
 async function loadAdminGroups(){

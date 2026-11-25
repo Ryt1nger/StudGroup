@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
+from studgroup import subgroups
 from studgroup.analysis.card_editor import edit_card
 from studgroup.analysis.contracts import ApplicationOutcome
 from studgroup.analysis.deadline_application import apply_policy
@@ -105,12 +106,23 @@ async def apply_validated_batch(
                                 ],
                             }
                         )
+        deadline_subgroup = None
+        if deadline_context is not None and card.subject and proposal.semantic_kind == "homework":
+            cited = {ref.telegram_message_id for ref in proposal.evidence}
+            deadline_subgroup, _ = await subgroups.assign(
+                db,
+                group_id,
+                card.subject,
+                proposal.audience.label if proposal.audience.scope == "subgroup" else None,
+                "\n".join(m.text or "" for m in messages if m.telegram_message_id in cited),
+            )
         applied = (
             apply_policy(
                 proposal,
                 messages,
                 None if inferred_from_lesson else card.subject,
                 deadline_context,
+                subgroup_id=deadline_subgroup,
             )
             if deadline_context is not None
             else None

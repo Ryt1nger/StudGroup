@@ -140,6 +140,7 @@ def rebuild_inferred_deadlines(
             subject=card["subject"],
             schedule=schedule,
             no_lesson_days=frozenset(no_lesson_days),
+            subgroup_id=card.get("subgroup_id"),
         )
         if decision.at != card["at"] or decision.basis != card["basis"]:
             changes.append(

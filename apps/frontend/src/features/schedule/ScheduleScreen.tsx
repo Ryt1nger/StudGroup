@@ -14,7 +14,7 @@ import { Banner, Empty, Skeleton, StateView } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
 import { WeekStrip, weekKeys } from '../shared/WeekStrip';
-import { EventCards } from '../events/EventCard';
+import { ScheduleEventCards } from '../events/EventCard';
 import { useEventCapabilities, useGroupEvents } from '../events/api';
 import { groupEventOnDay } from '../events/calendar';
 import { Sec } from '../shared/Sec';
@@ -248,7 +248,7 @@ export function ScheduleScreen() {
       </div>
       {features.events && groupEvents.isError ? <RequestError error={groupEvents.error} onRetry={() => void groupEvents.refetch()} /> : null}
       {features.events && groupEvents.isPending ? <Skeleton count={1} label="Загрузка событий календаря" /> : null}
-      {eventItems.some((item) => groupEventOnDay(item, key, timeZone)) ? <div ref={eventsRef}><Sec id="schedule-group-events" title="События"><EventCards items={eventItems.filter((item) => groupEventOnDay(item, key, timeZone))} timeZone={timeZone} /></Sec></div> : null}
+      {eventItems.some((item) => groupEventOnDay(item, key, timeZone)) ? <div ref={eventsRef}><Sec id="schedule-group-events" title="События"><ScheduleEventCards items={eventItems.filter((item) => groupEventOnDay(item, key, timeZone))} timeZone={timeZone} /></Sec></div> : null}
       {data?.week_state === 'needs_clarification' ? (
         <Banner tone="warning" icon="clock"><strong>{ru.schedule.clarifyTitle}.</strong> {ru.schedule.clarifyBody}</Banner>
       ) : null}
