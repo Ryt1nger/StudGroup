@@ -7,7 +7,7 @@ import { useSession } from '../../session/SessionProvider';
 import { Float } from '../../shell/AppRoot';
 import { useDisplay } from '../../shell/display';
 import { ACCENT_INFO, THEMES, TEXT_SIZES, DENSITIES } from '../../shell/appearanceOptions';
-import { BackTop, initialsOf } from '../../shell/TopBar';
+import { avatarLetter, BackTop, initialsOf } from '../../shell/TopBar';
 import { ACCENTS, useTelegram } from '../../telegram/TelegramProvider';
 import { Banner, Empty, Skeleton, Spinner } from '../../ui/Blocks';
 import { useFeedback } from '../../ui/Feedback';
@@ -337,7 +337,7 @@ function Home() {
     <>
       <BackTop fallback="/today" />
       <Link className="pcard big" to="/profile/me" aria-label="Мои данные">
-        <div className="avatar big">{initialsOf(name)}</div>
+        <div className="avatar big">{avatarLetter(name)}</div>
         <div className="pc-text">
           <b>{name}</b>
           <span>{[role, group?.name].filter(Boolean).join(' · ')}</span>
