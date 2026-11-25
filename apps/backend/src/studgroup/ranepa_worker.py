@@ -1339,7 +1339,9 @@ async def run_forever(settings: Settings):
                         else:
                             retention_day = today
                     await prepare_urgent(engine, settings, today)
-                    if generation != previous_generation or monotonic() >= next_prepare_at:
+                    if not await active_run(engine) and (
+                        generation != previous_generation or monotonic() >= next_prepare_at
+                    ):
                         await prepare_week(engine, today, settings, bootstrap=True)
                         next_prepare_at = monotonic() + 60
                         previous_generation = generation
