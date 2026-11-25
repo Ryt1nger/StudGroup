@@ -607,17 +607,18 @@ async def _plan_next(
         and len(targets) < CATCHUP_MIN_TARGETS
         and blocked
         and now < scheduled_slot + SMALL_PACKAGE_IMAGE_GRACE
-        and await db.scalar(
+    ):
+        blocked_target = await db.scalar(
             select(RawMessage.id)
             .where(
                 *_eligible(group, settings, now, scheduled_slot=scheduled_slot),
                 RawMessage.id.in_(blocked),
             )
             .limit(1)
-        ) is not None
-    ):
+        )
         # Give the independent image queue a bounded chance to coalesce the tail.
-        return None
+        if blocked_target is not None:
+            return None
     # Catch-up prioritizes today's newest messages, but the resulting package
     # must always contain chronological targets and context.
     targets.sort(key=lambda row: (row.message_date, row.telegram_message_id))
