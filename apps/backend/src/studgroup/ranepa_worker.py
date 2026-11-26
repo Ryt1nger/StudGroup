@@ -341,7 +341,10 @@ async def _process_one(
         async def notify_finalized_attempt(
             failure_code: str | None, *, detail: str | None = None
         ) -> None:
-            if not settings.ranepa_crawl_notify_account_results_enabled and failure_code != "captcha":
+            if (
+                not settings.ranepa_crawl_notify_account_results_enabled
+                and failure_code != "captcha"
+            ):
                 return
             # Send each completed account outcome immediately, including during
             # a scheduled batch or a long-running sample. The final aggregate
@@ -1335,10 +1338,7 @@ async def run_forever(settings: Settings):
                     if utc_day != budget_day:
                         captcha_budget = autonomous_captcha_budget(settings)
                         budget_day = utc_day
-                    if (
-                        settings.bot_admin_user_id
-                        and monotonic() >= next_notice_recovery_at
-                    ):
+                    if settings.bot_admin_user_id and monotonic() >= next_notice_recovery_at:
                         try:
                             await recover_account_crawl_notifications(
                                 engine, owner_id=settings.bot_admin_user_id

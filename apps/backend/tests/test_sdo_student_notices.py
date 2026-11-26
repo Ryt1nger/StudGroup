@@ -78,7 +78,9 @@ def test_consent_callback_accepts_current_documents_only_for_recipient(client, m
             group.academic_group_code = "TEST"
             user = await db.scalar(select(User).where(User.telegram_user_id == 1))
             uid = user.id
-            db.add(UserProfile(user_id=uid, sdu_credential_id=uuid4(), updated_at=datetime.now(UTC)))
+            db.add(
+                UserProfile(user_id=uid, sdu_credential_id=uuid4(), updated_at=datetime.now(UTC))
+            )
             await db.commit()
         assert await notices.queue_student_notices(engine, settings) == 1
 

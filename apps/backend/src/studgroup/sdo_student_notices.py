@@ -144,9 +144,7 @@ async def queue_notice(db, user, settings, kind, key):
     }
     keyboard = [[{"text": labels[kind], "web_app": {"url": url}}]]
     if kind == "consent":
-        keyboard.insert(
-            0, [{"text": "Согласиться со всем", "callback_data": f"sdo:{ident.hex}"}]
-        )
+        keyboard.insert(0, [{"text": "Согласиться со всем", "callback_data": f"sdo:{ident.hex}"}])
     return await enqueue_once(
         db,
         "sendMessage",

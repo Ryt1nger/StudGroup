@@ -574,9 +574,7 @@ async def finish(
         .limit(1)
     )
     attempts = job.attempts if baseline is None else max(1, job.attempts - baseline)
-    deferred_captcha = (
-        captcha_retry_after_primary and failure_code == "captcha" and first_transient
-    )
+    deferred_captcha = captcha_retry_after_primary and failure_code == "captcha" and first_transient
     if deferred_captcha:
         attempts = 1
     exhausted = failure_code != "login_failed" and terminal_failure(failure_code, attempts)
