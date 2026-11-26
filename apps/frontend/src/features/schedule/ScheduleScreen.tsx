@@ -15,6 +15,7 @@ import { Ic } from '../../ui/Ic';
 import { RequestError } from '../../ui/RequestError';
 import { WeekStrip, weekKeys } from '../shared/WeekStrip';
 import { ScheduleEventCards } from '../events/EventCard';
+import { CalendarCard, CALENDAR_PX_PER_HOUR, calendarCardMinHeight } from './CalendarCard';
 import { useEventCapabilities, useGroupEvents } from '../events/api';
 import { groupEventOnDay } from '../events/calendar';
 import { Sec } from '../shared/Sec';
@@ -24,7 +25,7 @@ import { lessonAt, positionSchedule, scheduleExpansions, scheduleY } from './sch
 const NO_EVENTS: readonly PublishedEvent[] = [];
 const HR0 = 8;
 const HR1 = 21;
-const PX = 64;
+const PX = CALENDAR_PX_PER_HOUR;
 const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
@@ -68,12 +69,12 @@ function Event({ lesson, timeZone, nowMs, isToday, timelineY }: { lesson: Lesson
   const past = end <= nowMs;
   const from = formatTime(lesson.starts_at, timeZone);
   const to = formatTime(lesson.ends_at, timeZone);
-  const minHeight = Math.max(54, ((minutesOf(to) - minutesOf(from)) * PX) / 60 - 4);
+  const minHeight = calendarCardMinHeight((end - start) / 60_000);
   const online = safeLessonUrl(lesson.online_url);
   const joinNow = now && online !== null;
   return (
-    <Link
-      className={`ev${now ? ' now' : ''}${joinNow ? ' hasbadge' : ''}${past ? ' past' : ''}`}
+    <CalendarCard
+      className={`${now ? 'now ' : ''}${joinNow ? 'hasbadge ' : ''}${past ? 'past' : ''}`}
       data-start={start}
       data-end={end}
       data-start-minute={minutesOf(from)}
@@ -81,16 +82,12 @@ function Event({ lesson, timeZone, nowMs, isToday, timelineY }: { lesson: Lesson
       style={{ ...subjectStyle(lesson.subject), top: timelineY(minutesOf(from)), minHeight }}
       to={`/schedule/lesson/${encodeURIComponent(lesson.id)}`}
       state={{ lesson, timeZone }}
-    >
-      <span className="bar" />
-      {joinNow ? <JoinBadge url={online} /> : null}
-      <b>
-        {lesson.subject}
-        {online ? <i className="vid"><Ic name="video" size={14} /></i> : null}
-      </b>
-      <span>{from} – {to}</span>
-      <span className="dim">{[online ? 'Онлайн' : lesson.location, lesson.teacher].filter(Boolean).join(' · ')}</span>
-    </Link>
+      title={lesson.subject}
+      when={`${from} – ${to}`}
+      meta={[online ? 'Онлайн' : lesson.location, lesson.teacher].filter(Boolean).join(' · ')}
+      badge={joinNow ? <JoinBadge url={online} /> : null}
+      accessory={online ? <i className="vid"><Ic name="video" size={14} /></i> : null}
+    />
   );
 }
 
@@ -248,7 +245,7 @@ export function ScheduleScreen() {
       </div>
       {features.events && groupEvents.isError ? <RequestError error={groupEvents.error} onRetry={() => void groupEvents.refetch()} /> : null}
       {features.events && groupEvents.isPending ? <Skeleton count={1} label="Загрузка событий календаря" /> : null}
-      {eventItems.some((item) => groupEventOnDay(item, key, timeZone)) ? <div ref={eventsRef} className="schedule-events"><Sec id="schedule-group-events" title="События"><ScheduleEventCards items={eventItems.filter((item) => groupEventOnDay(item, key, timeZone))} timeZone={timeZone} /></Sec></div> : null}
+      {eventItems.some((item) => groupEventOnDay(item, key, timeZone)) ? <div ref={eventsRef} className="schedule-events"><Sec id="schedule-group-events" title="События"><ScheduleEventCards items={eventItems.filter((item) => groupEventOnDay(item, key, timeZone))} timeZone={timeZone} nowMs={nowMs} /></Sec></div> : null}
       {data?.week_state === 'needs_clarification' ? (
         <Banner tone="warning" icon="clock"><strong>{ru.schedule.clarifyTitle}.</strong> {ru.schedule.clarifyBody}</Banner>
       ) : null}

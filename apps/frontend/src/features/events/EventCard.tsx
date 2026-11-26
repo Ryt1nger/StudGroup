@@ -8,7 +8,8 @@ import { useFeedback } from '../../ui/Feedback';
 import { useReviewEvent } from './api';
 import { useTelegram } from '../../telegram/TelegramProvider';
 import { Ic } from '../../ui/Ic';
-import { eventDate } from './calendar';
+import { eventDate, eventInHistory } from './calendar';
+import { CalendarCard, calendarCardMinHeight } from '../schedule/CalendarCard';
 
 export function EventSource({ url }: { url?: string | null }) {
   const { adapter } = useTelegram();
@@ -33,6 +34,7 @@ export function EventSource({ url }: { url?: string | null }) {
 }
 
 export function EventStatus({ item }: { item: { state: string; rescheduled?: boolean } }) {
+  if (item.state === 'active' && !item.rescheduled) return null;
   return (
     <span className={`chipx${item.state === 'cancelled' ? ' warn' : ''}`}>
       {item.state === 'cancelled'
@@ -41,7 +43,7 @@ export function EventStatus({ item }: { item: { state: string; rescheduled?: boo
           ? 'Черновик'
           : item.rescheduled
             ? 'Перенесено'
-            : 'Опубликовано'}
+            : null}
     </span>
   );
 }
@@ -127,15 +129,19 @@ export function DeleteGroupEventButton({ item, backTo = '/events' }: { item: { i
 }
 
 /** Calendar-only summary; full event information remains on the detail screen. */
-export function ScheduleEventCards({ items, timeZone }: { items: readonly PublishedEvent[]; timeZone: string }) {
+export function ScheduleEventCards({ items, timeZone, nowMs }: { items: readonly PublishedEvent[]; timeZone: string; nowMs: number }) {
   return (
     <>
       {items.map((item) => (
-        <Link key={item.id} className="schedule-event-card" to={`/events/${item.id}`}>
-          <h3><Ic name="cal" size={15} />{item.title}</h3>
-          <span>{eventDate(item, timeZone)}</span>
-          {item.place ? <span>{item.place}</span> : null}
-        </Link>
+        <CalendarCard
+          key={item.id}
+          className={`schedule-event-card${eventInHistory(item, nowMs, timeZone) ? ' past' : ''}`}
+          to={`/events/${item.id}`}
+          title={item.title}
+          when={eventDate(item, timeZone)}
+          meta={item.place}
+          style={{ minHeight: calendarCardMinHeight(80) }}
+        />
       ))}
     </>
   );

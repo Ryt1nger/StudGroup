@@ -79,3 +79,26 @@ def test_runtime_acknowledgement_and_heartbeat(client):
             assert row.applied_generation == disabled["generation"]
 
     asyncio.run(stopped())
+
+
+def test_process_sleep_wakes_for_new_urgent_request(monkeypatch):
+    from studgroup.process_runtime import Intent
+
+    elapsed = 0.0
+
+    async def sleep(seconds):
+        nonlocal elapsed
+        elapsed += seconds
+
+    async def intent(*args):
+        return Intent(True, 1)
+
+    async def wake():
+        return elapsed >= 5
+
+    monkeypatch.setattr("studgroup.process_runtime.monotonic", lambda: elapsed)
+    monkeypatch.setattr("studgroup.process_runtime.asyncio.sleep", sleep)
+    monkeypatch.setattr("studgroup.process_runtime.read_intent", intent)
+    gate = ProcessGate(None, None, "sdo", True)
+    asyncio.run(gate.sleep(1, 3600, wake=wake))
+    assert elapsed == 5
