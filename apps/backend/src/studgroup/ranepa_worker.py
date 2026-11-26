@@ -1302,6 +1302,7 @@ async def run_forever(settings: Settings):
     gate = ProcessGate(
         engine, settings, "sdo", settings.ranepa_crawl_enabled, lambda: sdo_health(engine, settings)
     )
+
     async def wake_for_urgent():
         return await urgent_requested(engine)
 
