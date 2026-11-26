@@ -18,3 +18,30 @@ test('Today, Schedule and Subjects fit narrow mobile viewports', async ({ page }
     }
   }
 });
+
+
+// Outer scroll width alone misses overlapping child columns.
+test('Lesson time and title never overlap at mobile widths', async ({ page }) => {
+  await page.goto('/today');
+  await expect(page.locator('.week')).toBeVisible();
+  let checked = 0;
+  for (const width of [320, 360, 390, 430]) {
+    await page.setViewportSize({ width, height: 780 });
+    for (const day of await page.locator('.week .wd').all()) {
+      await day.click();
+      const rows = page.locator('.task.lrow');
+      for (const row of await rows.all()) {
+        await expect(row).toBeVisible();
+        const bounds = await row.evaluate((el) => {
+          const time = el.querySelector('.tm')!.getBoundingClientRect();
+          const body = el.querySelector('.tb')!.getBoundingClientRect();
+          return { gap: body.left - time.right, width: body.width };
+        });
+        expect(bounds.gap).toBeGreaterThanOrEqual(8);
+        expect(bounds.width).toBeGreaterThan(0);
+        checked++;
+      }
+    }
+  }
+  expect(checked).toBeGreaterThan(0);
+});

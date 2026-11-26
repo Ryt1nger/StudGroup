@@ -80,6 +80,13 @@ def test_postgres_event_move_and_cancel_are_atomic_calendar_changes():
                 await db.commit()
                 assert await calendar(later) == []
                 assert (await calendar(later, "cancelled"))[0]["id"] == event.id
+                await review_update(db, event, event.revision, {}, "deleted", None, now)
+                await db.commit()
+                assert event.state == "deleted"
+                assert await calendar(later, "all") == []
+                await db.refresh(event)
+                assert event.approved_payload_sha256 is None
+                assert event.manual_lock
         finally:
             async with AsyncSession(engine) as db:
                 await db.delete(await db.get(Group, group_id))

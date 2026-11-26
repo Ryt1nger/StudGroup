@@ -19,9 +19,11 @@ for (const theme of ['light', 'dark']) {
     await page.getByRole('button', { name: 'Подтвердить публикацию' }).click();
     await expect(page.getByRole('heading', { name: 'Открытая лекция о космосе', level: 1 })).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(page.getByText('Опубликовано', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Обсудим исследования Луны.', { exact: true })).toBeVisible();
     await page.getByRole('navigation').getByRole('link', { name: 'События', exact: true }).click();
     await expect(page.locator('.group-event-card')).not.toContainText('Обсудим исследования Луны.');
+    await expect(page.locator('.group-event-card')).not.toContainText('Опубликовано');
     await page.getByRole('link', { name: /Открытая лекция о космосе/ }).click();
     await page.screenshot({ animations: 'disabled', path: info.outputPath(`event-details-${theme}.png`) });
     await page.getByRole('link', { name: 'Расписание', exact: true }).click();
@@ -29,6 +31,10 @@ for (const theme of ['light', 'dark']) {
     await expect(page.getByRole('heading', { name: 'Открытая лекция о космосе' })).toBeInViewport();
     const compact = page.locator('.schedule-event-card').filter({ hasText: 'Открытая лекция о космосе' });
     await expect(compact).toBeVisible();
+    await expect(compact).toHaveClass(/\bev\b/);
+    await expect(compact.locator('.bar')).toBeVisible();
+    await expect(compact).toHaveCSS('border-radius', '20px');
+    expect(await compact.evaluate((el) => getComputedStyle(el).borderLeftWidth)).toBe(await compact.evaluate((el) => getComputedStyle(el).borderRightWidth));
     await expect(compact).not.toContainText('Обсудим исследования Луны.');
     await expect(compact).not.toContainText('Источник в Telegram');
     const geometry = await page.evaluate(() => {

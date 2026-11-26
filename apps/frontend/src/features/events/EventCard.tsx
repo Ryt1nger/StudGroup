@@ -33,6 +33,7 @@ export function EventSource({ url }: { url?: string | null }) {
 }
 
 export function EventStatus({ item }: { item: { state: string; rescheduled?: boolean } }) {
+  if (item.state === 'active' && !item.rescheduled) return null;
   return (
     <span className={`chipx${item.state === 'cancelled' ? ' warn' : ''}`}>
       {item.state === 'cancelled'
@@ -41,7 +42,7 @@ export function EventStatus({ item }: { item: { state: string; rescheduled?: boo
           ? 'Черновик'
           : item.rescheduled
             ? 'Перенесено'
-            : 'Опубликовано'}
+            : null}
     </span>
   );
 }
@@ -131,10 +132,11 @@ export function ScheduleEventCards({ items, timeZone }: { items: readonly Publis
   return (
     <>
       {items.map((item) => (
-        <Link key={item.id} className="schedule-event-card" to={`/events/${item.id}`}>
-          <h3><Ic name="cal" size={15} />{item.title}</h3>
+        <Link key={item.id} className="ev schedule-event-card" to={`/events/${item.id}`}>
+          <span className="bar" aria-hidden="true" />
+          <h3>{item.title}</h3>
           <span>{eventDate(item, timeZone)}</span>
-          {item.place ? <span>{item.place}</span> : null}
+          {item.place ? <span className="dim">{item.place}</span> : null}
         </Link>
       ))}
     </>
