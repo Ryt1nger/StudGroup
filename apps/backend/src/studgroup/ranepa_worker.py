@@ -1336,7 +1336,7 @@ async def run_forever(settings: Settings):
                         captcha_budget = autonomous_captcha_budget(settings)
                         budget_day = utc_day
                     if (
-                        settings.ranepa_crawl_notify_account_results_enabled
+                        settings.bot_admin_user_id
                         and monotonic() >= next_notice_recovery_at
                     ):
                         try:

@@ -83,7 +83,6 @@ async def active_user(db, telegram_id):
             User.telegram_user_id == telegram_id,
             Membership.status == "active",
             Group.status == "active",
-            Group.academic_group_code.is_not(None),
         )
         .limit(1)
     )
@@ -187,7 +186,6 @@ async def queue_student_notices(engine, settings):
                     User.telegram_user_id > 0,
                     Membership.status == "active",
                     Group.status == "active",
-                    Group.academic_group_code.is_not(None),
                 )
                 .distinct()
             )
