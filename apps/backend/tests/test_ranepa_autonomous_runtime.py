@@ -6,11 +6,15 @@ from studgroup.ranepa_worker import autonomous_captcha_budget
 from studgroup.ranepa_worker_health import healthy, heartbeat
 
 
-def test_autonomous_captcha_budget_respects_both_caps():
+def test_autonomous_captcha_budget_ignores_legacy_aggregate_caps():
     settings = Settings(ranepa_captcha_max_tasks_per_run=6, ranepa_captcha_daily_max_tasks=2)
-    assert autonomous_captcha_budget(settings).remaining == 2
+    budget = autonomous_captcha_budget(settings)
+    assert budget.remaining is None
+    assert all(budget.claim_many(2) for _ in range(100))
+    assert budget.remaining is None
+    assert not budget.claim_many(3)
     settings.ranepa_captcha_daily_max_tasks = 0
-    assert autonomous_captcha_budget(settings).remaining == 0
+    assert autonomous_captcha_budget(settings).claim_many(2)
 
 
 def test_container_heartbeat(tmp_path, monkeypatch):
