@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { useProfileQuery, useUpdateProfile } from '../../api/queries';
-import { acceptLegal, legalDocument, legalStatus, revokeSdoConsent, type LegalStatus } from '../../api/legal';
+import { acceptLegal, acknowledgeSdoNotice, legalDocument, legalStatus, revokeSdoConsent, type LegalStatus } from '../../api/legal';
 import { BackTop } from '../../shell/TopBar';
 import { Spinner } from '../../ui/Blocks';
 import { Ic } from '../../ui/Ic';
@@ -61,6 +61,21 @@ export function SdoCredentialsScreen() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const profile = profileQuery.data;
+  const [search, setSearch] = useSearchParams();
+  const noticeId = search.get('notice');
+
+  useEffect(() => {
+    if (!noticeId || !status || !profile) return;
+    let active = true;
+    void acknowledgeSdoNotice(noticeId).then(() => {
+      if (active) setSearch((current) => {
+        const next = new URLSearchParams(current);
+        next.delete('notice');
+        return next;
+      }, { replace: true });
+    }).catch(() => { /* Do not block the form if Telegram cleanup is unavailable. */ });
+    return () => { active = false; };
+  }, [noticeId, status, profile, setSearch]);
 
   useEffect(() => {
     let active = true;

@@ -240,8 +240,30 @@ async def accept(
         "webapp",
         settings,
     )
+    if body.purpose == "sdo":
+        from studgroup.ranepa_crawl_jobs import enqueue_new_group_account
+
+        await enqueue_new_group_account(db, user.id, settings, consent_revalidated=True)
     await db.commit()
     return {"purpose": body.purpose, "granted": True, "version": VERSION}
+
+
+@router.post("/sdo-notices/{notice_id}/opened")
+async def notice_opened(
+    notice_id: uuid.UUID,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(database)],
+    authorization: str | None = Header(None),
+):
+    if getattr(request.state, "support", None):
+        raise ApiError("permission_denied", "Доступно только владельцу аккаунта", 403)
+    user = await authenticated_user(db, authorization)
+    from studgroup.sdo_student_notices import acknowledge_open
+
+    if not await acknowledge_open(db, notice_id, user.telegram_user_id):
+        raise ApiError("not_found", "Уведомление недоступно", 404)
+    await db.commit()
+    return {"acknowledged": True}
 
 
 @router.delete("/consents/sdo")

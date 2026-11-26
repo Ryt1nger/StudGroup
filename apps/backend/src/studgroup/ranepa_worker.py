@@ -341,7 +341,7 @@ async def _process_one(
         async def notify_finalized_attempt(
             failure_code: str | None, *, detail: str | None = None
         ) -> None:
-            if not settings.ranepa_crawl_notify_account_results_enabled:
+            if not settings.ranepa_crawl_notify_account_results_enabled and failure_code != "captcha":
                 return
             # Send each completed account outcome immediately, including during
             # a scheduled batch or a long-running sample. The final aggregate
@@ -569,7 +569,8 @@ async def _process_one(
                     series_id=series_id,
                     first_week_anchor=group.first_week_anchor,
                     on_captcha=on_captcha
-                    if settings.ranepa_crawl_notify_captcha_seen_enabled
+                    if pilot_group_id is not None
+                    and settings.ranepa_crawl_notify_captcha_seen_enabled
                     and not settings.ranepa_manual_captcha_enabled
                     else None,
                     manual_captcha=(
@@ -587,7 +588,7 @@ async def _process_one(
                                 telegram_group_name=group.name,
                             )
                         )
-                        if settings.ranepa_manual_captcha_enabled
+                        if pilot_group_id is not None and settings.ranepa_manual_captcha_enabled
                         else None
                     ),
                 )
@@ -603,7 +604,13 @@ async def _process_one(
             )
         )
         finished = await finish(
-            db, job_id, group_id, user_id, failure_code=failure, fast_retry=fast_retry
+            db,
+            job_id,
+            group_id,
+            user_id,
+            failure_code=failure,
+            fast_retry=fast_retry,
+            captcha_retry_after_primary=pilot_group_id is None,
         )
         if finished and trace is not None:
             db.add(
@@ -612,7 +619,9 @@ async def _process_one(
                     attempt=attempt,
                     failure_code=failure,
                     stats=account_stats,
-                    notification_pending=settings.ranepa_crawl_notify_account_results_enabled,
+                    notification_pending=(
+                        settings.ranepa_crawl_notify_account_results_enabled or failure == "captcha"
+                    ),
                 )
             )
         if finished and settings.ranepa_captcha_guard_enabled:

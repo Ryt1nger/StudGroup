@@ -305,6 +305,7 @@ async def scheduler_loop(engine, delivery_engine, settings, *, delivery_enabled)
     from studgroup.headman_digest import tick as digest_tick
     from studgroup.owner_updates import tick as owner_tick
     from studgroup.ranepa_manual_captcha import cleanup_expired_captcha_artwork
+    from studgroup.sdo_student_notices import queue_student_notices
 
     jobs = [(1800, lambda: backfill_tick(engine))]
     if delivery_enabled:
@@ -312,6 +313,7 @@ async def scheduler_loop(engine, delivery_engine, settings, *, delivery_enabled)
             [
                 (5, lambda: owner_tick(delivery_engine, settings)),
                 (30, lambda: digest_tick(delivery_engine)),
+                (60, lambda: queue_student_notices(delivery_engine, settings)),
                 (300, lambda: cleanup_expired_captcha_artwork(delivery_engine)),
             ]
         )

@@ -12,6 +12,7 @@ from studgroup.models import (
     Membership,
     MemberSubgroup,
     RanepaCrawlJob,
+    RanepaCrawlObservation,
     RanepaMaterializationReceipt,
     RanepaPersonalSnapshot,
     SubjectSplit,
@@ -421,6 +422,11 @@ async def claim_next(
     )
     # A full run owns the worker until completion. Ordinary jobs cannot leak
     # into the new queue or run while the initialization transaction is pending.
+    captcha_retry = (
+        (RanepaCrawlJob.retry_reason == "captcha")
+        & (RanepaCrawlJob.failure_code == "captcha")
+        & (RanepaCrawlJob.next_attempt_at <= now)
+    )
     due = [~active_urgent | urgent]
     if group_id is None and not rescan_all:
         # Completed urgent targets wait for the entire round before retrying.
@@ -457,6 +463,7 @@ async def claim_next(
         )
         due.append(
             urgent
+            | captcha_retry
             | ~select(completed.id)
             .where(
                 completed.user_id == RanepaCrawlJob.user_id,
@@ -517,6 +524,7 @@ async def claim_next(
             group_id is None
             and not rescan_all
             and urgent_target is None
+            and job.retry_reason != "captcha"
             and await _coverage_satisfied(db, job, now)
         ):
             # No browser/payment needed. This is NOT a successful account crawl.
@@ -536,7 +544,15 @@ async def claim_next(
 
 
 async def finish(
-    db, job_id, group_id, user_id, *, failure_code=None, now=None, fast_retry=False
+    db,
+    job_id,
+    group_id,
+    user_id,
+    *,
+    failure_code=None,
+    now=None,
+    fast_retry=False,
+    captcha_retry_after_primary=False,
 ) -> bool:
     """Finalize only the claimed account and group; error text never enters SQL."""
     if failure_code is not None and failure_code not in FAILURES:
@@ -558,6 +574,11 @@ async def finish(
         .limit(1)
     )
     attempts = job.attempts if baseline is None else max(1, job.attempts - baseline)
+    deferred_captcha = (
+        captcha_retry_after_primary and failure_code == "captcha" and first_transient
+    )
+    if deferred_captcha:
+        attempts = 1
     exhausted = failure_code != "login_failed" and terminal_failure(failure_code, attempts)
     job.state = (
         "dead_letter" if failure_code and exhausted else "failed" if failure_code else "succeeded"
@@ -577,6 +598,11 @@ async def finish(
         # urgent cycle, not the previous schedule or the browser's duration.
         job.next_attempt_at = job.claimed_at + REFRESH
     job.retry_reason = retry_reason(failure_code, attempts)
+    if deferred_captcha:
+        job.next_attempt_at = job.finished_at
+        if baseline is None:
+            # Ordinary retry work ranks behind every ready primary account.
+            job.state = "queued"
     job.claimed_at = None
     await db.execute(
         update(UrgentSDOTarget)
@@ -595,7 +621,9 @@ async def finish(
     return True
 
 
-async def enqueue_new_group_account(db, user_id, settings, *, password_resubmitted=False):
+async def enqueue_new_group_account(
+    db, user_id, settings, *, password_resubmitted=False, consent_revalidated=False
+):
     """Queue first import or one recovery after an explicit, confirmed password write."""
     from studgroup.legal import has_consent, legal_ready
     from studgroup.models import UserProfile
@@ -626,6 +654,24 @@ async def enqueue_new_group_account(db, user_id, settings, *, password_resubmitt
             .values(retry_reason=CREDENTIALS_UPDATED)
         )
         recovering = bool(result.rowcount)
+    if consent_revalidated and not password_resubmitted:
+        blocked = (
+            await db.scalars(
+                select(RanepaCrawlJob)
+                .where(
+                    RanepaCrawlJob.user_id == user_id,
+                    RanepaCrawlJob.state == "failed",
+                    RanepaCrawlJob.failure_code == "login_failed",
+                )
+                .with_for_update()
+            )
+        ).all()
+        for job in blocked:
+            observation = await db.get(RanepaCrawlObservation, (job.id, job.attempts))
+            if observation is not None and observation.failure_detail == "consent_missing":
+                job.retry_reason = CONSENT_REVALIDATED
+                recovering = True
+        await db.flush()
     group_query = select(Group.id).join(Membership, Membership.group_id == Group.id)
     group_query = group_query.where(
         Membership.user_id == user_id,
