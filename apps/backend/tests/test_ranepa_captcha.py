@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from PIL import Image
-from pydantic import SecretStr, ValidationError
+from pydantic import SecretStr
 
 from studgroup import ranepa_browser, ranepa_captcha
 from studgroup.main import Settings
@@ -36,19 +36,21 @@ def test_rucaptcha_is_opt_in_and_missing_key_is_only_a_warning(caplog, monkeypat
     assert "CAPTCHA_API_KEY is missing" in caplog.text
 
 
-def test_owner_approved_full_rescan_budget_is_bounded_and_accepted():
+def test_legacy_budget_settings_accept_values_without_an_aggregate_cap():
+    from studgroup.ranepa_worker import autonomous_captcha_budget
+
     settings = Settings(
         _env_file=None,
         ranepa_captcha_enabled=True,
-        ranepa_captcha_max_tasks_per_run=40,
-        ranepa_captcha_daily_max_tasks=60,
+        ranepa_captcha_max_tasks_per_run=120,
+        ranepa_captcha_daily_max_tasks=240,
     )
-    assert settings.ranepa_captcha_max_tasks_per_run == 40
-    assert settings.ranepa_captcha_daily_max_tasks == 60
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, ranepa_captcha_daily_max_tasks=61)
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, ranepa_captcha_max_tasks_per_run=61)
+    assert settings.ranepa_captcha_max_tasks_per_run == 120
+    assert settings.ranepa_captcha_daily_max_tasks == 240
+    budget = autonomous_captcha_budget(settings)
+    assert all(budget.claim_many(2) for _ in range(200))
+    assert budget.remaining is None
+    assert not budget.claim_many(3)
 
 
 def test_configured_solver_uses_rucaptcha_not_2captcha(monkeypatch):

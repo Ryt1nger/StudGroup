@@ -1081,8 +1081,7 @@ async def deliver(engine, settings, *, request=None, control_only=False):
                     message_id = result.get("result", {}).get("message_id")
                     if isinstance(message_id, int):
                         notice["message_id"] = message_id
-                        data["_sdo_notice"] = notice
-                        row.payload = json.dumps(data, ensure_ascii=False)
+                        row.payload = json.dumps(data | {"_sdo_notice": notice}, ensure_ascii=False)
                     else:
                         ok = False
             elif row.method == "deleteMessage" and (row.dedup_key or "").startswith(
