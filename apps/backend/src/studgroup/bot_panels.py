@@ -253,6 +253,11 @@ async def dispatch(db, update_value, settings):
     if not message or not sender or message.chat.type != "private" or message.chat.id != sender.id:
         return False
     chat = sender.id
+    if callback and (callback.data or "").startswith("sdo:"):
+        from studgroup.sdo_student_notices import accept_callback
+
+        await accept_callback(db, settings, callback, chat, message.message_id)
+        return True
     text = (message.text or "").strip()
     command = text.split()[0].split("@")[0] if text else ""
     # Info commands and /start <topic> deep links (landing page) open the same single panel as

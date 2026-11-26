@@ -40,16 +40,20 @@ HINT = (
 
 @dataclass
 class CaptchaBudget:
-    """Upper bound for paid solver tasks in one serial worker process/run."""
+    """Optional task bound for isolated callers; None has no aggregate limit."""
 
-    remaining: int
+    remaining: int | None
 
     def claim(self) -> bool:
         return self.claim_many(1)
 
     def claim_many(self, count: int) -> bool:
         """Atomically reserve all tasks for one CAPTCHA before contacting API."""
-        if count not in (1, 2) or self.remaining < count:
+        if count not in (1, 2):
+            return False
+        if self.remaining is None:
+            return True
+        if self.remaining < count:
             return False
         self.remaining -= count
         return True

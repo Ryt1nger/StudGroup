@@ -56,3 +56,7 @@ export async function legalDocument(document: string): Promise<string> {
   if (!response.ok) throw new Error('Не удалось загрузить документ');
   return response.text();
 }
+
+export function acknowledgeSdoNotice(id: string): Promise<void> {
+  return legalRequest(`/sdo-notices/${encodeURIComponent(id)}/opened`, { method: 'POST' }).then(() => undefined);
+}

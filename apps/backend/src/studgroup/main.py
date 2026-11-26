@@ -100,11 +100,10 @@ class Settings(BaseSettings):
     ranepa_captcha_v2_progressive_context_enabled: bool = False
     captcha_api_key: SecretStr = SecretStr("")
     ranepa_captcha_timeout_seconds: int = Field(default=110, ge=30, le=150)
-    # Hard cap on billable challenges per batch/worker process (not per student).
-    ranepa_captcha_max_tasks_per_run: int = Field(default=1, ge=0, le=60)
-    # Conservative cap shared across scheduled GitHub runner shifts. Zero means
-    # recurring paid solving is disabled until an explicit daily allowance is set.
-    ranepa_captcha_daily_max_tasks: int = Field(default=0, ge=0, le=60)
+    # Legacy environment keys accepted for compatibility; no aggregate task caps.
+    # Explicit solver enablement and the per-account attempt bound still apply.
+    ranepa_captcha_max_tasks_per_run: int = 1
+    ranepa_captcha_daily_max_tasks: int = 0
     legal_operator_name: str = ""
     legal_operator_address: str = ""
     legal_operator_contact: str = ""

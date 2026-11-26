@@ -458,3 +458,74 @@ def test_urgent_primary_ignores_old_timers_after_replacement(client, monkeypatch
             assert result["remaining"] == 0
 
     asyncio.run(scenario())
+
+
+def test_captcha_account_retries_after_primary_without_three_hour_wait(client, monkeypatch):
+    from studgroup.models import UrgentSDORun, User
+
+    settings = client.app.state.settings
+    settings.ranepa_access_approved = True
+    engine = client.app.state.engine
+    now = datetime.now(UTC)
+    monday = now.date() - timedelta(days=now.weekday())
+    candidates_list = []
+
+    async def candidates(db, config):
+        return candidates_list
+
+    monkeypatch.setattr("studgroup.urgent_sdo.eligible_candidates", candidates)
+    monkeypatch.setattr("studgroup.urgent_sdo.legal_ready", lambda _: True)
+
+    async def scenario():
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            group = await db.scalar(select(Group))
+            group.academic_group_code = "TEST-CAPTCHA"
+            member = await db.scalar(select(Membership))
+            user = User(id=uuid4(), telegram_user_id=999818, display_name="Second")
+            db.add(user)
+            await db.flush()
+            db.add(Membership(group_id=group.id, user_id=user.id, status="active", role="student"))
+            candidates_list.extend(
+                [CrawlCandidate(group.id, member.user_id), CrawlCandidate(group.id, user.id)]
+            )
+            db.add(UrgentSDORun(state="requested", requested_at=now))
+            await db.commit()
+        await prepare_urgent(engine, settings, monday)
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            first = await claim_next(db, now=now)
+            assert first is not None
+            first_id = first.id
+            assert await finish(
+                db,
+                first.id,
+                first.group_id,
+                first.user_id,
+                failure_code="captcha",
+                now=now,
+                captcha_retry_after_primary=True,
+            )
+            assert first.next_attempt_at == now
+            await db.commit()
+        await finalize_urgent(engine, settings)
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            second = await claim_next(db, now=now)
+            assert second is not None and second.id != first_id
+            assert await finish(db, second.id, second.group_id, second.user_id, now=now)
+            await db.commit()
+        await finalize_urgent(engine, settings)
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            retry = await claim_next(db, now=now)
+            assert retry is not None and retry.id == first_id
+            assert await finish(
+                db,
+                retry.id,
+                retry.group_id,
+                retry.user_id,
+                failure_code="captcha",
+                now=now,
+                captcha_retry_after_primary=True,
+            )
+            assert retry.next_attempt_at == now + timedelta(hours=6)
+            await db.commit()
+
+    asyncio.run(scenario())

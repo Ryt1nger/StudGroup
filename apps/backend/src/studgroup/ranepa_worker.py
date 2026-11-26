@@ -296,7 +296,7 @@ async def _process_one(
     processed_user_ids: set[UUID] | None = None,
 ) -> str:
     account_stats = CrawlRunStats()
-    available_budget = captcha_budget or CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
+    available_budget = captcha_budget or CaptchaBudget(None)
     async with AsyncSession(engine, expire_on_commit=False) as db:
         # The durable CAPTCHA breaker never changes fair queue priorities.
         # Owner-authorized targeted pilots may run while scheduled jobs are paused.
@@ -341,7 +341,10 @@ async def _process_one(
         async def notify_finalized_attempt(
             failure_code: str | None, *, detail: str | None = None
         ) -> None:
-            if not settings.ranepa_crawl_notify_account_results_enabled:
+            if (
+                not settings.ranepa_crawl_notify_account_results_enabled
+                and failure_code != "captcha"
+            ):
                 return
             # Send each completed account outcome immediately, including during
             # a scheduled batch or a long-running sample. The final aggregate
@@ -548,12 +551,8 @@ async def _process_one(
                     persist_session=persist_session if session_cipher is not None else None,
                     captcha_client=(
                         configured_solver(settings)
-                        if available_budget.remaining > 0
+                        if (available_budget.remaining is None or available_budget.remaining > 0)
                         and not settings.ranepa_captcha_diagnostic_only
-                        and (
-                            pilot_group_id is not None
-                            or settings.ranepa_captcha_daily_max_tasks > 0
-                        )
                         else None
                     ),
                     captcha_timeout_seconds=settings.ranepa_captcha_timeout_seconds,
@@ -561,15 +560,14 @@ async def _process_one(
                     captcha_diagnostic_only=(
                         settings.ranepa_captcha_diagnostic_only and pilot_group_id is not None
                     ),
-                    # Owner-targeted retries also reserve the shared daily paid
-                    # budget. Previously pilot tasks were not accounted for.
-                    captcha_daily_limit=settings.ranepa_captcha_daily_max_tasks,
+                    captcha_daily_limit=0,
                     trace=trace,
                     stats=account_stats,
                     series_id=series_id,
                     first_week_anchor=group.first_week_anchor,
                     on_captcha=on_captcha
-                    if settings.ranepa_crawl_notify_captcha_seen_enabled
+                    if pilot_group_id is not None
+                    and settings.ranepa_crawl_notify_captcha_seen_enabled
                     and not settings.ranepa_manual_captcha_enabled
                     else None,
                     manual_captcha=(
@@ -587,7 +585,7 @@ async def _process_one(
                                 telegram_group_name=group.name,
                             )
                         )
-                        if settings.ranepa_manual_captcha_enabled
+                        if pilot_group_id is not None and settings.ranepa_manual_captcha_enabled
                         else None
                     ),
                 )
@@ -603,7 +601,13 @@ async def _process_one(
             )
         )
         finished = await finish(
-            db, job_id, group_id, user_id, failure_code=failure, fast_retry=fast_retry
+            db,
+            job_id,
+            group_id,
+            user_id,
+            failure_code=failure,
+            fast_retry=fast_retry,
+            captcha_retry_after_primary=pilot_group_id is None,
         )
         if finished and trace is not None:
             db.add(
@@ -612,7 +616,9 @@ async def _process_one(
                     attempt=attempt,
                     failure_code=failure,
                     stats=account_stats,
-                    notification_pending=settings.ranepa_crawl_notify_account_results_enabled,
+                    notification_pending=(
+                        settings.ranepa_crawl_notify_account_results_enabled or failure == "captcha"
+                    ),
                 )
             )
         if finished and settings.ranepa_captcha_guard_enabled:
@@ -1285,9 +1291,8 @@ async def sdo_health(engine, settings: Settings):
 
 
 def autonomous_captcha_budget(settings: Settings):
-    return CaptchaBudget(
-        min(settings.ranepa_captcha_max_tasks_per_run, settings.ranepa_captcha_daily_max_tasks)
-    )
+    # Owner removed aggregate caps; preserve explicit provider enablement.
+    return CaptchaBudget(None)
 
 
 async def run_forever(settings: Settings):
@@ -1326,10 +1331,7 @@ async def run_forever(settings: Settings):
                     if utc_day != budget_day:
                         captcha_budget = autonomous_captcha_budget(settings)
                         budget_day = utc_day
-                    if (
-                        settings.ranepa_crawl_notify_account_results_enabled
-                        and monotonic() >= next_notice_recovery_at
-                    ):
+                    if settings.bot_admin_user_id and monotonic() >= next_notice_recovery_at:
                         try:
                             await recover_account_crawl_notifications(
                                 engine, owner_id=settings.bot_admin_user_id
@@ -1447,7 +1449,7 @@ async def run_batch(
         raise RuntimeError("PostgreSQL DATABASE_URL is required")
     warn_if_unconfigured(settings)
     engine = create_worker_engine(settings)
-    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
+    captcha_budget = CaptchaBudget(None)
     completed = 0
     run_stats = CrawlRunStats()
     processed_ids: set[UUID] = set()
@@ -1605,7 +1607,7 @@ async def run_single_pilot(settings: Settings, *, group_id: UUID, user_id: UUID)
         raise RuntimeError("PostgreSQL DATABASE_URL is required")
     warn_if_unconfigured(settings)
     engine = create_worker_engine(settings)
-    captcha_budget = CaptchaBudget(settings.ranepa_captcha_max_tasks_per_run)
+    captcha_budget = CaptchaBudget(None)
     run_stats = CrawlRunStats()
     try:
         await ensure_owner_for_crawl(engine, settings)

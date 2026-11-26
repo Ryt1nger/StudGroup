@@ -59,9 +59,9 @@ def enqueue(db, method, payload, dedup_key=None):
     )
 
 
-async def enqueue_once(db, method, payload, dedup_key, *, available_at=None):
+async def enqueue_once(db, method, payload, dedup_key, *, available_at=None, ident=None):
     values = {
-        "id": uuid.uuid4(),
+        "id": ident or uuid.uuid4(),
         "method": method,
         "payload": json.dumps(payload, ensure_ascii=False),
         "state": "pending",
@@ -1021,6 +1021,13 @@ async def deliver(engine, settings, *, request=None, control_only=False):
                 row.available_at = eligible
                 await db.commit()
                 return
+        if row.method == "sendMessage" and (row.dedup_key or "").startswith("sdo-student:"):
+            from studgroup.sdo_student_notices import delivery_eligible
+
+            if not await delivery_eligible(db, row, settings):
+                row.state = "superseded"
+                await db.commit()
+                return
         testing_update = (row.dedup_key or "").startswith("owner-test:")
         if (
             testing_update
@@ -1066,8 +1073,30 @@ async def deliver(engine, settings, *, request=None, control_only=False):
                     return
                 ok = outcome == "sent"
             elif row.method in ["sendMessage", "answerCallbackQuery"]:
-                result = await request(settings, row.method, json.loads(row.payload))
+                data = json.loads(row.payload)
+                notice = data.pop("_sdo_notice", None)
+                result = await request(settings, row.method, data)
                 ok = result.get("ok") is True
+                if ok and notice is not None:
+                    message_id = result.get("result", {}).get("message_id")
+                    if isinstance(message_id, int):
+                        notice["message_id"] = message_id
+                        row.payload = json.dumps(data | {"_sdo_notice": notice}, ensure_ascii=False)
+                    else:
+                        ok = False
+            elif row.method == "deleteMessage" and (row.dedup_key or "").startswith(
+                "sdo-student-delete:"
+            ):
+                data = json.loads(row.payload)
+                result = await request(settings, row.method, data)
+                ok = result.get("ok") is True
+                if not ok and result.get("error_code") == 400:
+                    await request(
+                        settings,
+                        "editMessageReplyMarkup",
+                        data | {"reply_markup": {"inline_keyboard": []}},
+                    )
+                    ok = True
         except (httpx.HTTPError, ValueError):
             pass
         row.state = (

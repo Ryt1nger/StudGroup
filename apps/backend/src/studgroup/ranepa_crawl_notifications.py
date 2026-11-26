@@ -367,7 +367,7 @@ async def notify_account_crawl_result(
         if last_step == "lk_explicit_rejection":
             cause = "Личный кабинет показал явный отказ в авторизации"
         action = _action(failure_code, failure_detail, attempt)
-        if failure_code in {"source_unavailable", "parse_failed"}:
+        if failure_code in {"source_unavailable", "parse_failed", "captcha"}:
             async with AsyncSession(engine) as db:
                 job = await db.get(RanepaCrawlJob, job_id)
                 if (
@@ -377,7 +377,11 @@ async def notify_account_crawl_result(
                     and job.next_attempt_at is not None
                     and (job.next_attempt_at - job.finished_at).total_seconds() <= 60
                 ):
-                    action = "Быстрый автоповтор после основной очереди, не раньше чем через 1 мин."
+                    action = (
+                        "Повтор после основной очереди, без планового ожидания."
+                        if failure_code == "captcha"
+                        else "Быстрый автоповтор после основной очереди, не раньше чем через 1 мин."
+                    )
         lines = [
             (
                 "⚠️ StudGroup · обход СДО завершён частично"
