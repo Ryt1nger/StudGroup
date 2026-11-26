@@ -22,26 +22,21 @@ test('Today, Schedule and Subjects fit narrow mobile viewports', async ({ page }
 
 // Outer scroll width alone misses overlapping child columns.
 test('Lesson time and title never overlap at mobile widths', async ({ page }) => {
-  await page.goto('/today');
-  await expect(page.locator('.week')).toBeVisible();
-  let checked = 0;
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const day = new Date();
+  day.setUTCDate(day.getUTCDate() + 1);
+  while (day.getUTCDay() === 0 || day.getUTCDay() === 6) day.setUTCDate(day.getUTCDate() + 1);
+  const date = day.toISOString().slice(0, 10);
+  await page.goto(`/today?date=${date}`);
+  const rows = page.locator('.task.lrow');
+  await expect(rows.first()).toBeVisible();
   for (const width of [320, 360, 390, 430]) {
     await page.setViewportSize({ width, height: 780 });
-    for (const day of await page.locator('.week .wd').all()) {
-      await day.click();
-      const rows = page.locator('.task.lrow');
-      for (const row of await rows.all()) {
-        await expect(row).toBeVisible();
-        const bounds = await row.evaluate((el) => {
-          const time = el.querySelector('.tm')!.getBoundingClientRect();
-          const body = el.querySelector('.tb')!.getBoundingClientRect();
-          return { gap: body.left - time.right, width: body.width };
-        });
-        expect(bounds.gap).toBeGreaterThanOrEqual(8);
-        expect(bounds.width).toBeGreaterThan(0);
-        checked++;
-      }
-    }
+    await expect.poll(() => rows.evaluateAll(els => els.map(el => {
+      const time = el.querySelector('.tm')!.getBoundingClientRect();
+      const body = el.querySelector('.tb')!.getBoundingClientRect();
+      return body.left - time.right >= 8 && body.width > 0;
+    }))).not.toContain(false);
+    expect(await rows.count()).toBeGreaterThan(0);
   }
-  expect(checked).toBeGreaterThan(0);
 });

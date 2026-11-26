@@ -37,6 +37,7 @@ for (const theme of ['light', 'dark']) {
     expect(await compact.evaluate((el) => getComputedStyle(el).borderLeftWidth)).toBe(await compact.evaluate((el) => getComputedStyle(el).borderRightWidth));
     await expect(compact).not.toContainText('Обсудим исследования Луны.');
     await expect(compact).not.toContainText('Источник в Telegram');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     const geometry = await page.evaluate(() => {
       const pinned = document.querySelector<HTMLElement>('.pinned')!;
       const view = document.querySelector<HTMLElement>('.view')!;
@@ -45,12 +46,18 @@ for (const theme of ['light', 'dark']) {
       const v = view.getBoundingClientRect();
       const w = week.getBoundingClientRect();
       const b = card.getBoundingClientRect();
-      return { weekLeft: w.left - v.left, weekRight: v.right - w.right, cardLeft: b.left - v.left, cardRight: v.right - b.right };
+      const lesson = document.querySelector<HTMLElement>('.tline .ev');
+      const props = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'gap', 'backgroundColor'] as const;
+      const mismatched = lesson ? props.filter(prop => getComputedStyle(card)[prop] !== getComputedStyle(lesson)[prop]) : [];
+      const l = lesson?.getBoundingClientRect();
+      return { weekLeft: w.left - v.left, weekRight: v.right - w.right, cardLeft: b.left - v.left, cardRight: v.right - b.right, lessonDelta: l ? Math.max(Math.abs(l.left - b.left), Math.abs(l.right - b.right)) : 0, mismatched };
     });
     expect(Math.abs(geometry.weekLeft)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.weekRight)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.cardLeft - 58)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.cardRight)).toBeLessThanOrEqual(1);
+    expect(geometry.lessonDelta).toBeLessThanOrEqual(1);
+    expect(geometry.mismatched).toEqual([]);
     await page.screenshot({ animations: 'disabled', path: info.outputPath(`calendar-event-${theme}.png`) });
     await page.getByRole('link', { name: /Открытая лекция о космосе/ }).click();
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();

@@ -9,6 +9,7 @@ import { useReviewEvent } from './api';
 import { useTelegram } from '../../telegram/TelegramProvider';
 import { Ic } from '../../ui/Ic';
 import { eventDate } from './calendar';
+import { CalendarCard, calendarCardMinHeight } from '../schedule/CalendarCard';
 
 export function EventSource({ url }: { url?: string | null }) {
   const { adapter } = useTelegram();
@@ -132,12 +133,15 @@ export function ScheduleEventCards({ items, timeZone }: { items: readonly Publis
   return (
     <>
       {items.map((item) => (
-        <Link key={item.id} className="ev schedule-event-card" to={`/events/${item.id}`}>
-          <span className="bar" aria-hidden="true" />
-          <h3>{item.title}</h3>
-          <span>{eventDate(item, timeZone)}</span>
-          {item.place ? <span className="dim">{item.place}</span> : null}
-        </Link>
+        <CalendarCard
+          key={item.id}
+          className="schedule-event-card"
+          to={`/events/${item.id}`}
+          title={item.title}
+          when={eventDate(item, timeZone)}
+          meta={item.place}
+          style={{ minHeight: calendarCardMinHeight(80) }}
+        />
       ))}
     </>
   );

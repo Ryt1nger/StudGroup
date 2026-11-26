@@ -151,7 +151,7 @@ a { color: inherit; text-decoration: none; }
 .hr span { position: absolute; left: 0; top: -9px; font-size: 12px; color: var(--label-3); font-weight: 500; font-variant-numeric: tabular-nums; }
 .ev { z-index: 2; position: absolute; left: var(--schedule-card-inset, 6px); right: 0; padding: 10px 14px 10px 18px; border-radius: 20px; background: var(--card); border: .5px solid hsl(var(--sc-hsl) / 0.35); overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
 .ev .bar { left: 7px; top: 11px; bottom: 11px; }
-.ev :is(b, h3) { margin: 0; font-size: 15.5px; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; overflow-wrap: anywhere; }
+.ev :is(b, h3) { min-width: 0; margin: 0; font-size: 15.5px; font-weight: 650; letter-spacing: -.02em; line-height: 1.25; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; overflow-wrap: anywhere; }
 .ev span:not(.bar) { font-size: 12.5px; color: var(--label-2); }
 .ev .dim { color: var(--label-3) !important; line-height: 1.35; overflow-wrap: anywhere; }
 .ev .vid { color: var(--sc); display: grid; }
@@ -610,7 +610,7 @@ a.pcard:active { transform: scale(.98); }
 .nowbadge { position: absolute; top: 10px; right: 12px; z-index: 2; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 99px; font-size: 12.5px; font-weight: 700; color: var(--on-accent); background: var(--grad); box-shadow: 0 4px 12px rgba(0,0,0,.25); cursor: pointer; }
 .nowbadge:active { transform: scale(.94); }
 .nowbadge:focus-visible { outline: 2px solid var(--label); outline-offset: 2px; }
-.ev.hasbadge b { padding-right: 86px; }
+.ev.hasbadge :is(b, h3) { padding-right: 86px; }
 .chipx.live { color: var(--on-accent); background: var(--grad); padding-left: 10px; }
 
 /* Schedule: the title, date and week strip stay in place; only the calendar below scrolls. */
@@ -1072,8 +1072,8 @@ a.pcard:active { transform: scale(.98); }
 }
 .top { gap: 10px; }
 .top .hi { flex: 1 1 auto; overflow-wrap: anywhere; }
-.top .tr { flex: 0 1 auto; min-width: 0; justify-content: flex-end; flex-wrap: wrap; }
-.top .icon-btn, .top .avatar { flex: 0 0 42px; }
+.top .tr { flex: 0 0 auto; min-width: 0; justify-content: flex-end; flex-wrap: nowrap; }
+.top .icon-btn, .top .avatar { flex: 0 0 42px; width: 42px; height: 42px; }
 .top .pillb { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .task:not(.lrow) { grid-template-columns: 26px minmax(0, 1fr); }
 .task.lrow { grid-template-columns: max-content minmax(0, 1fr); column-gap: 12px; }
@@ -1136,22 +1136,23 @@ a.pcard:active { transform: scale(.98); }
 @media (max-width: 360px) { .scroll { --scroll-pad: 12px; } }
 .view > .pinned {
   max-width: 100%;
-  margin-inline: 0;
-  padding-inline: 0;
-  padding-bottom: 6px;
+  top: 0;
+  margin: 0;
+  padding: 0 0 6px;
 }
 .pinned .week { margin-bottom: 8px; }
 .pinned .top .tr { flex: 0 0 auto; flex-wrap: nowrap; }
 .schedule-events {
-  margin: 14px 0 24px calc(var(--schedule-time-gutter, 52px) + var(--schedule-card-inset, 6px));
+  margin: 14px 0 24px var(--schedule-time-gutter, 52px);
   max-width: none;
 }
-.schedule-events .sec { margin: 0 0 10px; }
+.schedule-events .sec { margin: 0 0 10px var(--schedule-card-inset, 6px); }
+.schedule-events section { min-width: 0; }
 .schedule-events .sec h2 { font-size: 17px; }
 .ev.schedule-event-card {
   position: relative;
   inset: auto;
-  margin: 0 0 10px;
+  margin: 0 0 10px var(--schedule-card-inset, 6px);
   min-width: 0;
   --sc: var(--accent);
   --sc-hsl: var(--hsl);
