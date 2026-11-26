@@ -8,7 +8,7 @@ import { useFeedback } from '../../ui/Feedback';
 import { useReviewEvent } from './api';
 import { useTelegram } from '../../telegram/TelegramProvider';
 import { Ic } from '../../ui/Ic';
-import { eventDate } from './calendar';
+import { eventDate, eventInHistory } from './calendar';
 import { CalendarCard, calendarCardMinHeight } from '../schedule/CalendarCard';
 
 export function EventSource({ url }: { url?: string | null }) {
@@ -129,13 +129,13 @@ export function DeleteGroupEventButton({ item, backTo = '/events' }: { item: { i
 }
 
 /** Calendar-only summary; full event information remains on the detail screen. */
-export function ScheduleEventCards({ items, timeZone }: { items: readonly PublishedEvent[]; timeZone: string }) {
+export function ScheduleEventCards({ items, timeZone, nowMs }: { items: readonly PublishedEvent[]; timeZone: string; nowMs: number }) {
   return (
     <>
       {items.map((item) => (
         <CalendarCard
           key={item.id}
-          className="schedule-event-card"
+          className={`schedule-event-card${eventInHistory(item, nowMs, timeZone) ? ' past' : ''}`}
           to={`/events/${item.id}`}
           title={item.title}
           when={eventDate(item, timeZone)}

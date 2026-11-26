@@ -7,15 +7,17 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 from test_postgres_image_jobs import seed
 
 from studgroup.analysis.event_lifetime import payload_hash, retention_end
-from studgroup.analysis.group_events import review_update, snapshot
+from studgroup.analysis.group_events import capture_event, review_update, snapshot
 from studgroup.analysis.image_contracts import ImageEvent
-from studgroup.group_event_api import list_group_events
-from studgroup.models import Group, GroupEvent
+from studgroup.group_event_api import EventUpdate, list_group_events, update_review_event
+from studgroup.models import Group, GroupEvent, GroupEventSource, RawMessage
+from studgroup.staff_api import Staff
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("POSTGRES_TEST_URL"), reason="PostgreSQL not configured"
@@ -87,6 +89,68 @@ def test_postgres_event_move_and_cancel_are_atomic_calendar_changes():
                 await db.refresh(event)
                 assert event.approved_payload_sha256 is None
                 assert event.manual_lock
+        finally:
+            async with AsyncSession(engine) as db:
+                await db.delete(await db.get(Group, group_id))
+                await db.commit()
+            await engine.dispose()
+
+    asyncio.run(run())
+
+
+def test_postgres_delete_published_text_event_without_date_and_block_replay():
+    async def run():
+        engine = create_async_engine(os.environ["POSTGRES_TEST_URL"], poolclass=NullPool)
+        _, group_id, _ = await seed(engine)
+        try:
+            async with AsyncSession(engine, expire_on_commit=False) as db:
+                group = await db.get(Group, group_id)
+                group.status = "active"
+                group.pilot_authorized = True
+                raw = await db.scalar(select(RawMessage).where(RawMessage.group_id == group_id))
+                raw.text = "Приглашение на встречу без указанной даты"
+                now = datetime.now(UTC)
+                payload = ImageEvent(
+                    title="Встреча для всех желающих",
+                    description="Тестовое приглашение",
+                    audience="group",
+                )
+                assert await capture_event(db, group_id, raw, payload, now) == "created"
+                await db.commit()
+                event = await db.scalar(select(GroupEvent).where(GroupEvent.group_id == group_id))
+                assert event.state == "active"
+                assert event.event_end_date is None
+                settings = SimpleNamespace(
+                    owner_funded_pilot=True,
+                    image_analysis_groups=[],
+                    image_event_review_enabled=False,
+                    image_schedule_review_enabled=False,
+                )
+                request = SimpleNamespace(
+                    app=SimpleNamespace(state=SimpleNamespace(settings=settings))
+                )
+                context = Staff(group, SimpleNamespace(id=None), SimpleNamespace(role="deputy"))
+                result = await update_review_event(
+                    event.id,
+                    EventUpdate(
+                        expected_revision=event.revision,
+                        payload={"title": payload.title},
+                        state="deleted",
+                    ),
+                    request,
+                    context,
+                    db,
+                )
+                assert result["state"] == "deleted"
+                listing = await list_group_events(request, db, (group, None), status="all")
+                assert listing["events"] == []
+                source = await db.scalar(
+                    select(GroupEventSource).where(GroupEventSource.event_id == event.id)
+                )
+                assert source.raw_message_id == raw.id
+                assert "Тестовое приглашение" not in source.incoming_json
+                assert await capture_event(db, group_id, raw, payload, now) == "held"
+                await db.commit()
         finally:
             async with AsyncSession(engine) as db:
                 await db.delete(await db.get(Group, group_id))

@@ -1136,7 +1136,7 @@ a.pcard:active { transform: scale(.98); }
 @media (max-width: 360px) { .scroll { --scroll-pad: 12px; } }
 .view > .pinned {
   max-width: 100%;
-  top: 0;
+  top: var(--top-inset);
   margin: 0;
   padding: 0 0 6px;
 }

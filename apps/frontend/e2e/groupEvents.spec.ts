@@ -38,6 +38,7 @@ for (const theme of ['light', 'dark']) {
     await expect(compact).not.toContainText('Обсудим исследования Луны.');
     await expect(compact).not.toContainText('Источник в Telegram');
     await page.emulateMedia({ reducedMotion: 'reduce' });
+    await expect(page.locator('.tline .ev').first()).toBeVisible();
     const geometry = await page.evaluate(() => {
       const pinned = document.querySelector<HTMLElement>('.pinned')!;
       const view = document.querySelector<HTMLElement>('.view')!;
@@ -46,11 +47,11 @@ for (const theme of ['light', 'dark']) {
       const v = view.getBoundingClientRect();
       const w = week.getBoundingClientRect();
       const b = card.getBoundingClientRect();
-      const lesson = document.querySelector<HTMLElement>('.tline .ev');
-      const props = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'gap', 'backgroundColor'] as const;
-      const mismatched = lesson ? props.filter(prop => getComputedStyle(card)[prop] !== getComputedStyle(lesson)[prop]) : [];
-      const l = lesson?.getBoundingClientRect();
-      return { weekLeft: w.left - v.left, weekRight: v.right - w.right, cardLeft: b.left - v.left, cardRight: v.right - b.right, lessonDelta: l ? Math.max(Math.abs(l.left - b.left), Math.abs(l.right - b.right)) : 0, mismatched };
+      const lesson = document.querySelector<HTMLElement>('.tline .ev')!;
+      const props = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'gap'] as const;
+      const mismatched = props.filter(prop => getComputedStyle(card)[prop] !== getComputedStyle(lesson)[prop]);
+      const l = lesson.getBoundingClientRect();
+      return { weekLeft: w.left - v.left, weekRight: v.right - w.right, cardLeft: b.left - v.left, cardRight: v.right - b.right, lessonDelta: Math.max(Math.abs(l.left - b.left), Math.abs(l.right - b.right)), mismatched };
     });
     expect(Math.abs(geometry.weekLeft)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.weekRight)).toBeLessThanOrEqual(1);

@@ -6,13 +6,15 @@ import { eventDays, eventInHistory } from '../features/events/calendar';
 
 export function eventHandlers(baseUrl: string) {
   const today = dayKey(Date.now(), 'Europe/Moscow');
+  let eventDay = addDays(today, 1);
+  while ([0, 6].includes(new Date(`${eventDay}T12:00:00Z`).getUTCDay())) eventDay = addDays(eventDay, 1);
   let item: EventReview = {
     id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     revision: 1,
     state: 'draft',
     title: 'Открытая лекция о космосе',
     description: 'Обсудим исследования Луны.',
-    starts_on: addDays(today, 1),
+    starts_on: eventDay,
     ends_on: null,
     starts_at: null,
     ends_at: null,
