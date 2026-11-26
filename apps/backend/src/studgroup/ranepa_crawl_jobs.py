@@ -398,6 +398,22 @@ async def claim_next(
         )
         .exists()
     )
+    # A primary target has not consumed an attempt in this run. Its old
+    # ordinary scheduling clock must never delay the owner-requested cycle.
+    # Retry targets, including CAPTCHA backoff, still obey their own clock.
+    urgent_primary = (
+        select(UrgentSDOTarget.run_id)
+        .join(UrgentSDORun, UrgentSDORun.id == UrgentSDOTarget.run_id)
+        .where(
+            UrgentSDOTarget.job_id == RanepaCrawlJob.id,
+            UrgentSDOTarget.state == "pending",
+            UrgentSDOTarget.baseline_attempts == RanepaCrawlJob.attempts,
+            UrgentSDORun.state == "running",
+            RanepaCrawlJob.retry_reason.is_(None),
+            RanepaCrawlJob.failure_code.is_(None),
+        )
+        .exists()
+    )
     active_urgent = (
         select(UrgentSDORun.id)
         .where(UrgentSDORun.state.in_(("requested", "initializing", "running")))
@@ -466,6 +482,7 @@ async def claim_next(
                 (
                     RanepaCrawlJob.next_attempt_at.is_(None)
                     | (RanepaCrawlJob.next_attempt_at <= now)
+                    | urgent_primary
                     | (group_id is not None)
                     | rescan_all
                 ),

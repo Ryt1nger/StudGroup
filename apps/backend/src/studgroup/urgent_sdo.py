@@ -126,7 +126,15 @@ async def run_json(db, row):
             if job.state == "running" and job.attempts > target.baseline_attempts:
                 state = "running"
                 started_at = utc(job.claimed_at) if job.claimed_at else None
-            elif job.next_attempt_at and utc(job.next_attempt_at) > now:
+            elif (
+                job.next_attempt_at
+                and utc(job.next_attempt_at) > now
+                and (
+                    job.attempts > target.baseline_attempts
+                    or job.retry_reason is not None
+                    or job.failure_code is not None
+                )
+            ):
                 state = "cooldown"
                 next_attempt_at = utc(job.next_attempt_at)
             else:
@@ -361,6 +369,7 @@ async def prepare_urgent(engine, settings, today):
                 )
                 job.state = "queued"
                 job.priority = priority
+                job.next_attempt_at = None
                 job.claimed_at = None
                 job.failure_code = None
                 job.retry_reason = None
@@ -448,6 +457,10 @@ async def finalize_urgent(engine, settings):
             )
             if job is None:
                 continue
+            # A newly unblocked primary also belongs to the current cycle,
+            # not the ordinary account clock inherited by enqueue_week.
+            job.next_attempt_at = None
+            job.retry_reason = None
             target.job_id = job.id
             target.baseline_attempts = job.attempts
             target.state = "pending"

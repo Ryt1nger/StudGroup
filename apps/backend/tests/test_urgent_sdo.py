@@ -336,3 +336,125 @@ def test_autonomous_preparation_revalidates_legacy_login_block(client, monkeypat
             assert job.attempts == 1
 
     asyncio.run(scenario())
+
+
+def test_urgent_primary_ignores_old_timers_after_replacement(client, monkeypatch):
+    from studgroup.models import UrgentSDORun, User
+    from studgroup.urgent_sdo import request_run, run_json
+
+    settings = client.app.state.settings
+    settings.bot_admin_user_id = 1
+    settings.ranepa_access_approved = True
+    engine = client.app.state.engine
+    now = datetime.now(UTC)
+    monday = now.date() - timedelta(days=now.weekday())
+    candidates_list = []
+
+    async def candidates(db, config):
+        return candidates_list
+
+    monkeypatch.setattr("studgroup.urgent_sdo.eligible_candidates", candidates)
+    monkeypatch.setattr("studgroup.urgent_sdo.legal_ready", lambda _: True)
+
+    async def scenario():
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            member = await db.scalar(select(Membership))
+            group = await db.get(Group, member.group_id)
+            group.academic_group_code = "TEST-RESET"
+            for index in range(3):
+                if index == 0:
+                    user_id = member.user_id
+                else:
+                    user = User(
+                        id=uuid4(), telegram_user_id=999820 + index, display_name=f"User {index}"
+                    )
+                    db.add(user)
+                    await db.flush()
+                    user_id = user.id
+                    db.add(
+                        Membership(
+                            group_id=group.id, user_id=user_id, status="active", role="student"
+                        )
+                    )
+                candidates_list.append(CrawlCandidate(group.id, user_id))
+                db.add(
+                    RanepaCrawlJob(
+                        group_id=group.id,
+                        user_id=user_id,
+                        week_start=monday,
+                        priority=index,
+                        state="failed" if index == 2 else "succeeded",
+                        attempts=1,
+                        created_at=now - timedelta(days=1),
+                        finished_at=now,
+                        next_attempt_at=now + timedelta(hours=4 + index),
+                        failure_code="captcha" if index == 2 else None,
+                        retry_reason="captcha" if index == 2 else None,
+                    )
+                )
+            old = await request_run(db)
+            old_id = old.id
+            await db.commit()
+
+        await prepare_urgent(engine, settings, monday)
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            first = await claim_next(db, now=now)
+            assert first is not None
+            first_user = first.user_id
+            assert await finish(db, first.id, first.group_id, first.user_id, now=now)
+            await db.commit()
+            new = await request_run(db, replace=True)
+            new_id = new.id
+            assert new_id != old_id
+            await db.commit()
+
+        await prepare_urgent(engine, settings, monday)
+        async with AsyncSession(engine, expire_on_commit=False) as db:
+            assert (await db.get(UrgentSDORun, old_id)).state == "cancelled"
+            run = await db.get(UrgentSDORun, new_id)
+            assert run.state == "running"
+            jobs = (await db.scalars(select(RanepaCrawlJob))).all()
+            for job in jobs:
+                if job.user_id == candidates_list[2].user_id:
+                    assert job.failure_code == "captcha"
+                    assert job.next_attempt_at is not None
+                else:
+                    assert job.state == "queued"
+                    assert job.next_attempt_at is None
+                    # Simulate a stale ordinary timer restored after initialization.
+                    job.next_attempt_at = now + timedelta(hours=8)
+            await db.commit()
+            progress = await run_json(db, run)
+            assert sorted(t["state"] for t in progress["targets"]) == [
+                "blocked",
+                "queued",
+                "queued",
+            ]
+            assert all(t["next_attempt_at"] is None for t in progress["targets"])
+
+            claimed_users = set()
+            for offset in (1, 2):
+                claim_time = now + timedelta(minutes=offset)
+                job = await claim_next(db, now=claim_time)
+                assert job is not None and job.user_id not in claimed_users
+                claimed_users.add(job.user_id)
+                assert await finish(
+                    db, job.id, job.group_id, job.user_id, now=claim_time + timedelta(seconds=10)
+                )
+                assert job.next_attempt_at == claim_time + timedelta(hours=6)
+                await db.commit()
+            assert first_user in claimed_users
+            assert claimed_users == {c.user_id for c in candidates_list[:2]}
+            assert await claim_next(db, now=now + timedelta(minutes=3)) is None
+            await db.commit()
+
+        await finalize_urgent(engine, settings)
+        async with AsyncSession(engine) as db:
+            run = await db.get(UrgentSDORun, new_id)
+            result = await run_json(db, run)
+            assert result["state"] == "completed"
+            assert result["succeeded"] == 2
+            assert result["blocked"] == 1
+            assert result["remaining"] == 0
+
+    asyncio.run(scenario())

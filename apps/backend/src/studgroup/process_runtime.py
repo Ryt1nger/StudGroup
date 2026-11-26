@@ -196,7 +196,7 @@ class ProcessGate:
         self.ready_generation = None
         await self._report(generation, "error", code=code, stage="iteration")
 
-    async def sleep(self, generation, seconds, stop=None):
+    async def sleep(self, generation, seconds, stop=None, *, wake=None):
         deadline = monotonic() + seconds
         while monotonic() < deadline:
             delay = min(5, max(0, deadline - monotonic()))
@@ -214,6 +214,8 @@ class ProcessGate:
                     return
                 if self.reported_status == "running":
                     await self.succeeded(generation)
+                if wake is not None and await wake():
+                    return
 
 
 async def watchdog_once(engine, settings, now=None):

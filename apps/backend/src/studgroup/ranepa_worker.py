@@ -81,6 +81,7 @@ from studgroup.urgent_sdo import (
     finalize_urgent,
     prepare_urgent,
     release_legacy_login_blocks,
+    urgent_requested,
 )
 
 ACCOUNT_TIMEOUT_SECONDS = 600
@@ -1301,6 +1302,9 @@ async def run_forever(settings: Settings):
     gate = ProcessGate(
         engine, settings, "sdo", settings.ranepa_crawl_enabled, lambda: sdo_health(engine, settings)
     )
+    async def wake_for_urgent():
+        return await urgent_requested(engine)
+
     try:
         next_prepare_at = 0.0
         next_notice_recovery_at = 0.0
@@ -1309,6 +1313,7 @@ async def run_forever(settings: Settings):
         while not stop.is_set():
             generation = None
             delay = 5
+            wake = None
             try:
                 generation = await gate.begin()
                 if generation is None and gate.reported_status == "stopped":
@@ -1369,6 +1374,8 @@ async def run_forever(settings: Settings):
                         if status == "paused"
                         else settings.ranepa_crawl_pause_seconds
                     )
+                    if status != "paused":
+                        wake = wake_for_urgent
             except Exception:  # noqa: BLE001 -- durable queue and safe diagnostics
                 log_captcha_stage("process_control_iteration_failed")
                 if generation is not None:
@@ -1377,7 +1384,7 @@ async def run_forever(settings: Settings):
                     except Exception:  # noqa: BLE001 -- database outage cannot kill the poller
                         log_captcha_stage("process_control_status_unavailable")
             try:
-                await gate.sleep(generation, delay, stop)
+                await gate.sleep(generation, delay, stop, wake=wake)
             except Exception:  # noqa: BLE001 -- retry control DB; never claim when unavailable
                 await asyncio.sleep(5)
     finally:
